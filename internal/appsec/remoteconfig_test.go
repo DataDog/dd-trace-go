@@ -107,15 +107,15 @@ func TestASMFeaturesCallback(t *testing.T) {
 	})
 }
 
+// We use the below placeholders to replace a real WAF handle for testing
+type noOpUpdater struct{}
+
+func (*noOpUpdater) UpdateRulesData([]rc.ASMDataRuleData) error {
+	return nil
+}
+
 func TestASMDataCallback(t *testing.T) {
-	cfg, err := newConfig()
-	require.NoError(t, err)
-	waf, err := waf.NewHandle(cfg.rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
-	if err != nil {
-		t.Skip("WAF needs to be available for this test")
-	}
-	defer waf.Close()
-	handle := wafHandleWrapper{waf}
+	handle := wafHandleWrapper{&noOpUpdater{}}
 
 	for _, tc := range []struct {
 		name     string

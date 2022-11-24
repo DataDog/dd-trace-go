@@ -84,7 +84,9 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 }
 
 type wafHandleWrapper struct {
-	*waf.Handle
+	handle interface {
+		UpdateRulesData([]rc.ASMDataRuleData) error
+	}
 }
 
 func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
@@ -124,7 +126,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 			rulesData = append(rulesData, data)
 		}
 	}
-	if err := h.UpdateRulesData(rulesData); err != nil {
+	if err := h.handle.UpdateRulesData(rulesData); err != nil {
 		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	}
@@ -222,7 +224,7 @@ func (a *appsec) enableRemoteActivation() error {
 	return nil
 }
 
-func (a *appsec) enableRCBlocking(handle *wafHandleWrapper) error {
+func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
