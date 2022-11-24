@@ -1,4 +1,5 @@
 stages:
   - benchmarks
+  - upload-to-s3
 
 include: ".gitlab/benchmarks.yml"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+REPORTS_DIR="$(pwd)/reports/"
 ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
 mkdir -p "${ARTIFACTS_DIR}"
 

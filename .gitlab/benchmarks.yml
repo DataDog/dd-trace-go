@@ -26,3 +26,15 @@ benchmark:
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
     FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
+
+upload-to-s3:
+  stage: upload-to-s3
+  when: on_success
+  trigger:
+    project: DataDog/apm-reliability/relenv-microbenchmarking-platform
+    branch: ddyurchenko/temp-s3-uploader
+  variables:
+    UPSTREAM_PROJECT_ID: $CI_PROJECT_ID
+    UPSTREAM_PROJECT_NAME: $CI_PROJECT_NAME
+    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
+    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA

@@ -24,3 +24,9 @@ cd /benchmark-analyzer
 ./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
 ./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
 
+# Extra artifacts for S3 uploader job
+cp "${ARTIFACTS_DIR}/pr_bench.txt" "$REPORTS_DIR/pr_bench.txt"
+cp "${ARTIFACTS_DIR}/main_bench.txt" "$REPORTS_DIR/main_bench.txt"
+cp "/benchmark-analyzer/pr.json" "$REPORTS_DIR/pr_bench.json"
+cp "/benchmark-analyzer/main.json" "$REPORTS_DIR/main_bench.json"
+echo "UPSTREAM_JOB_ID=$CI_JOB_ID" >> "$REPORTS_DIR/benchmark.env"
