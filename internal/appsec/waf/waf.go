@@ -103,15 +103,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	}
 
 	// Create a temporary unlimited encoder for the rules
-	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
-	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
-	ruleEncoder := encoder{
-		maxDepth:        maxInt,
-		maxStringLength: maxInt,
-		maxArrayLength:  maxInt,
-		maxMapLength:    maxInt,
-	}
-	wafRule, err := ruleEncoder.encode(rule)
+	wafRule, err := newMaxEncoder().encode(rule)
 	if err != nil {
 		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
 	}
@@ -231,7 +223,7 @@ func (h *Handle) RulesetInfo() RulesetInfo {
 
 // UpdateRulesData updates the data that some rules reference to.
 func (h *Handle) UpdateRulesData(data []rc.ASMDataRuleData) error {
-	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
+	encoded, err := newMaxEncoder().encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
 	if err != nil {
 		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
 	}
@@ -445,6 +437,17 @@ type encoder struct {
 	// fact Go maps are unordered, it means WAF map objects created from Go maps
 	// larger than this length will have random keys.
 	maxMapLength int
+}
+
+func newMaxEncoder() *encoder {
+	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
+	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
+	return &encoder{
+		maxDepth:        maxInt,
+		maxStringLength: maxInt,
+		maxArrayLength:  maxInt,
+		maxMapLength:    maxInt,
+	}
 }
 
 func (e *encoder) encode(v interface{}) (object *wafObject, err error) {
