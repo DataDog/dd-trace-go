@@ -34,11 +34,14 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
 	"unsafe"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	// Do not remove the following imports which allow supporting package
 	// vendoring by properly copying all the files needed by CGO: the libddwaf
@@ -100,15 +103,7 @@ func NewHandle(jsonRule []byte, keyRegex, valueRegex string) (*Handle, error) {
 	}
 
 	// Create a temporary unlimited encoder for the rules
-	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
-	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
-	ruleEncoder := encoder{
-		maxDepth:        maxInt,
-		maxStringLength: maxInt,
-		maxArrayLength:  maxInt,
-		maxMapLength:    maxInt,
-	}
-	wafRule, err := ruleEncoder.encode(rule)
+	wafRule, err := newMaxEncoder().encode(rule)
 	if err != nil {
 		return nil, fmt.Errorf("could not encode the JSON WAF rule into a WAF object: %v", err)
 	}
@@ -226,26 +221,19 @@ func (h *Handle) RulesetInfo() RulesetInfo {
 	return h.rulesetInfo
 }
 
-// UpdateRuleData updates the data that some rules reference to.
-// The given rule data must be a raw JSON string of the form
-// [ {rule data #1}, ... {rule data #2} ]
-func (h *Handle) UpdateRuleData(jsonData []byte) error {
-	var data []interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return fmt.Errorf("could not parse the WAF rule data: %v", err)
-	}
-
-	encoded, err := h.encoder.encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
+// UpdateRulesData updates the data that some rules reference to.
+func (h *Handle) UpdateRulesData(data []rc.ASMDataRuleData) error {
+	encoded, err := newMaxEncoder().encode(data) // FIXME: double-check with Anil that we are good with the current conversion of integers into strings here
 	if err != nil {
 		return fmt.Errorf("could not encode the JSON WAF rule data into a WAF object: %v", err)
 	}
 	defer freeWO(encoded)
 
-	return h.updateRuleData(encoded)
+	return h.updateRulesData(encoded)
 }
 
-// updateRuleData is the critical section of UpdateRuleData
-func (h *Handle) updateRuleData(data *wafObject) error {
+// updateRulesData is the critical section of UpdateRulesData
+func (h *Handle) updateRulesData(data *wafObject) error {
 	// Note about this lock: ddwaf_update_rule_data already is thread-safe to
 	// use, but we chose to lock at the goroutine-level instead in order to
 	// avoid locking OS threads and therefore prevent many other goroutines from
@@ -451,6 +439,17 @@ type encoder struct {
 	maxMapLength int
 }
 
+func newMaxEncoder() *encoder {
+	const intSize = 32 << (^uint(0) >> 63) // copied from recent versions of math.MaxInt
+	const maxInt = 1<<(intSize-1) - 1      // copied from recent versions of math.MaxInt
+	return &encoder{
+		maxDepth:        maxInt,
+		maxStringLength: maxInt,
+		maxArrayLength:  maxInt,
+		maxMapLength:    maxInt,
+	}
+}
+
 func (e *encoder) encode(v interface{}) (object *wafObject, err error) {
 	defer func() {
 		if v := recover(); v != nil {
@@ -542,6 +541,16 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 		fieldName := field.Name
 		if len(fieldName) < 1 || unicode.IsLower(rune(fieldName[0])) {
 			continue
+		}
+
+		// Use the json tag name as field name if present
+		if tag, ok := field.Tag.Lookup("json"); ok {
+			if i := strings.IndexByte(tag, byte(',')); i > 0 {
+				tag = tag[:i]
+			}
+			if len(tag) > 0 {
+				fieldName = tag
+			}
 		}
 
 		mapEntry := wo.index(C.uint64_t(length))
