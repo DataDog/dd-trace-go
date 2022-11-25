@@ -108,18 +108,31 @@ func TestASMFeaturesCallback(t *testing.T) {
 }
 
 // We use the below placeholders to replace a real WAF handle for testing
-type noOpUpdater struct{}
+type chanUpdater struct {
+	resChan chan []rc.ASMDataRuleData
+}
 
-func (*noOpUpdater) UpdateRulesData([]rc.ASMDataRuleData) error {
+func rulesDataToMap(rulesData []rc.ASMDataRuleData) map[string]int64 {
+	res := make(map[string]int64)
+	for _, data := range rulesData {
+		for _, v := range data.Data {
+			res[data.ID+v.Value] = v.Expiration
+		}
+	}
+
+	return res
+}
+
+func (u *chanUpdater) UpdateRulesData(rulesData []rc.ASMDataRuleData) error {
+	u.resChan <- rulesData
 	return nil
 }
 
 func TestASMDataCallback(t *testing.T) {
-	handle := wafHandleWrapper{&noOpUpdater{}}
-
 	for _, tc := range []struct {
 		name     string
 		update   remoteconfig.ProductUpdate
+		expected []rc.ASMDataRuleData
 		statuses map[string]rc.ApplyStatus
 	}{
 		{
@@ -139,6 +152,9 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
 			},
+			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+				{Expiration: 3494138481, Value: "user1"},
+			}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
 		{
@@ -146,12 +162,23 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
 			},
+			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+				{Expiration: 3494138481, Value: "user1"},
+				{Expiration: 3494138441, Value: "user2"},
+			}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
 		{
 			name: "multiple-entries",
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
+			},
+			expected: []rc.ASMDataRuleData{
+				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3494138444, Value: "user3"},
+				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3495138481, Value: "user4"},
+				}},
 			},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
 		},
@@ -161,6 +188,15 @@ func TestASMDataCallback(t *testing.T) {
 				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
 			},
+			expected: []rc.ASMDataRuleData{
+				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3494138445, Value: "user3"},
+				}},
+				{ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+					{Expiration: 3495138481, Value: "user4"},
+					{Expiration: 0, Value: "user5"},
+				}},
+			},
 			statuses: map[string]rc.ApplyStatus{
 				"some/path/1": {State: rc.ApplyStateAcknowledged},
 				"some/path/2": {State: rc.ApplyStateAcknowledged},
@@ -168,8 +204,17 @@ func TestASMDataCallback(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			u := chanUpdater{resChan: make(chan []rc.ASMDataRuleData, 4096)}
+			handle := wafHandleWrapper{&u}
+			defer close(u.resChan)
 			statuses := handle.asmDataCallback(tc.update)
-			for k, _ := range statuses {
+			// Check results by rule data ID since ordering is not guaranteed
+			if tc.expected != nil {
+				res := rulesDataToMap(<-u.resChan)
+				exp := rulesDataToMap(tc.expected)
+				require.Equal(t, exp, res)
+			}
+			for k := range statuses {
 				require.Equal(t, tc.statuses[k].State, statuses[k].State)
 				if statuses[k].State == rc.ApplyStateError {
 					require.NotEmpty(t, statuses[k].Error)
