@@ -33,7 +33,7 @@ require (
 	github.com/go-redis/redis/v8 v8.0.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
-	github.com/gofiber/fiber/v2 v2.11.0
+	github.com/gofiber/fiber/v2 v2.24.0
 	github.com/golang/protobuf v1.5.2
 	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b

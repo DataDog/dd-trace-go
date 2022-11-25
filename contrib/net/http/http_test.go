@@ -43,6 +43,8 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -71,6 +73,8 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestWrapHandler200(t *testing.T) {
@@ -101,6 +105,8 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestNoStack(t *testing.T) {
@@ -122,6 +128,8 @@ func TestNoStack(t *testing.T) {
 	s := spans[0]
 	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
 	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestServeMuxUsesResourceNamer(t *testing.T) {
@@ -154,6 +162,8 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

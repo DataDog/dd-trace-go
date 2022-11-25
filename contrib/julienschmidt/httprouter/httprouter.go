@@ -48,6 +48,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
+
+	r.config.spanOpts = append(r.config.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	r.config.spanOpts = append(r.config.spanOpts, tracer.Tag(ext.Component, "julienschmidt/httprouter"))
+
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
