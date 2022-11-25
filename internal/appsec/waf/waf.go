@@ -545,9 +545,11 @@ func (e *encoder) encodeStruct(v reflect.Value, wo *wafObject, depth int) error 
 
 		// Use the json tag name as field name if present
 		if tag, ok := field.Tag.Lookup("json"); ok {
-			name := strings.Split(tag, ",")[0]
-			if len(name) > 0 {
-				fieldName = name
+			if i := strings.IndexByte(tag, byte(',')); i > 0 {
+				tag = tag[:i]
+			}
+			if len(tag) > 0 {
+				fieldName = tag
 			}
 		}
 
