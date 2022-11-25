@@ -323,7 +323,9 @@ func TestRuleDataMerging(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := mergeRulesDataEntries(tc.in1, tc.in2)
-			require.Equal(t, tc.out, res)
+			resMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: res}})
+			expMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: tc.out}})
+			require.Equal(t, expMap, resMap)
 		})
 	}
 
