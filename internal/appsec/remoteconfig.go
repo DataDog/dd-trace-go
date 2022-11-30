@@ -33,10 +33,10 @@ func genApplyStatus(ack bool, err error) rc.ApplyStatus {
 	return status
 }
 
-func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[string]rc.ApplyStatus {
+func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[string]rc.ApplyStatus {
 	statuses := make(map[string]rc.ApplyStatus, len(u))
 	for path := range u {
-		statuses[path] = genApplyStatus(ack, nil)
+		statuses[path] = genApplyStatus(ack, err)
 	}
 	return statuses
 }
@@ -44,7 +44,7 @@ func defaultStatusesFromUpdate(u remoteconfig.ProductUpdate, ack bool) map[strin
 // asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-	statuses := defaultStatusesFromUpdate(u, false)
+	statuses := statusesFromUpdate(u, false, nil)
 	if l := len(u); l > 1 {
 		log.Error("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
 		return statuses
@@ -81,6 +81,82 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	}
 
 	return statuses
+}
+
+type wafHandleWrapper struct {
+	handle interface {
+		UpdateRulesData([]rc.ASMDataRuleData) error
+	}
+}
+
+func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
+	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
+	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
+	statuses := statusesFromUpdate(u, true, nil)
+
+	for path, raw := range u {
+		log.Debug("appsec: Remote config: processing %s", path)
+		var rulesData rc.ASMDataRulesData
+		if err := json.Unmarshal(raw, &rulesData); err != nil {
+			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
+			statuses[path] = genApplyStatus(false, err)
+			continue
+		}
+
+		// Check each entry against allRulesData to see if merging is necessary
+		for _, ruleData := range rulesData.RulesData {
+			if allRulesData[ruleData.ID] == nil {
+				allRulesData[ruleData.ID] = make(map[string]rc.ASMDataRuleData)
+			}
+			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
+				// Merge rules data entries with the same ID and Type
+				data.Data = mergeRulesDataEntries(data.Data, ruleData.Data)
+				allRulesData[ruleData.ID][ruleData.Type] = data
+			} else {
+				allRulesData[ruleData.ID][ruleData.Type] = ruleData
+			}
+		}
+	}
+
+	// Aggregate all the rules data before passing it over to the WAF
+	var rulesData []rc.ASMDataRuleData
+	for _, m := range allRulesData {
+		for _, data := range m {
+			rulesData = append(rulesData, data)
+		}
+	}
+	if err := h.handle.UpdateRulesData(rulesData); err != nil {
+		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
+		statuses = statusesFromUpdate(u, false, err)
+	}
+	return statuses
+}
+
+// mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
+// only keeping the longest expiration values for similar entries.
+func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
+	mergeMap := map[string]int64{}
+
+	for _, entry := range entries1 {
+		mergeMap[entry.Value] = entry.Expiration
+	}
+	// Replace the entry only if the new expiration timestamp goes later than the current one
+	// If no expiration timestamp was provided (default to 0), then the data doesn't expire
+	for _, entry := range entries2 {
+		if exp, ok := mergeMap[entry.Value]; !ok || entry.Expiration == 0 || entry.Expiration > exp {
+			mergeMap[entry.Value] = entry.Expiration
+		}
+	}
+	// Create the final slice and return it
+	entries := make([]rc.ASMDataRuleDataEntry, 0, len(mergeMap))
+	for val, exp := range mergeMap {
+		entries = append(entries, rc.ASMDataRuleDataEntry{
+			Value:      val,
+			Expiration: exp,
+		})
+	}
+	return entries
 }
 
 func (a *appsec) startRC() {
@@ -123,7 +199,7 @@ func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 }
 
 func (a *appsec) registerRCCallback(c remoteconfig.Callback, product string) error {
-	if a.rc != nil {
+	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	a.rc.RegisterCallback(c, product)
@@ -145,5 +221,15 @@ func (a *appsec) enableRemoteActivation() error {
 	a.registerRCProduct(rc.ProductASMFeatures)
 	a.registerRCCapability(remoteconfig.ASMActivation)
 	a.registerRCCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
+	return nil
+}
+
+func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
+	if a.rc == nil {
+		return fmt.Errorf("no valid remote configuration client")
+	}
+	a.registerRCProduct(rc.ProductASMData)
+	a.registerRCCapability(remoteconfig.ASMIPBlocking)
+	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
 	return nil
 }
