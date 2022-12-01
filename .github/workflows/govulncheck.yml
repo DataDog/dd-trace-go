@@ -34,11 +34,11 @@ jobs:
               found=$(($found || 1))
             fi
           }
-          path=./ddtrace/... check_results
-          path=./appsec/... check_results
-          path=./internal/... check_results
-          path=./contrib/... check_results
-          path=./profiler/... check_results
+          echo $(path=./ddtrace/... check_results)
+          echo $(path=./appsec/... check_results)
+          echo $(path=./internal/... check_results)
+          echo $(path=./contrib/... check_results)
+          echo $(path=./profiler/... check_results)
           exit $found
           
           
