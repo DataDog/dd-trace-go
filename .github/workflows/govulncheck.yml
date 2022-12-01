@@ -28,13 +28,13 @@ jobs:
         run: |
           found=0
           function check_results { 
-            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
-            echo $results
-            if [ $(echo $results | wc -l) -gt 0 ]; then
-              echo "Found these vulnerabilities in $path: $results"
+            govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq >> results.txt
+            export RESULTS=$(echo results.txt | wc -l)
+            if [ $(echo $RESULTS | wc -l) -gt 0 ]; then
+              echo "Found these vulnerabilities in $path: $RESULTS"
               found=$(($found || 1))
-              return $results
             fi
+            return $RESULTS
           }
           echo $(path=./ddtrace/... check_results)
           echo $(path=./appsec/... check_results)
