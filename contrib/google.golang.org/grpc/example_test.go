@@ -19,7 +19,9 @@ func Example_client() {
 	si := grpctrace.StreamClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 	ui := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
 
-	// Dial in using the created interceptor...
+	// Dial in using the created interceptor.
+	// Note: grpc.Dial does not support multiple UnaryInterceptor options directly.
+	// If this is needed, use grpc.WithChainUnaryInterceptor instead.
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(),
 		grpc.WithStreamInterceptor(si), grpc.WithUnaryInterceptor(ui))
 	if err != nil {
