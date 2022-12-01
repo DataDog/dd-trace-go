@@ -1,9 +1,16 @@
+found=0
 function check_results {
-  results=$(echo $content | grep -Eo '\w+-\d+-\d+' | uniq)
+  results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
   if [ $(echo $results | wc -l) -gt 0 ]; then
   echo "Found these vulnerabilities in $path:"
   echo $results
-  exit 1
+  found=$(($found || 1))
   fi
 }
-content=$(govulncheck ./ddtrace/...) path=./ddtrace/... check_results
+path=./ddtrace/... check_results
+path=./appsec/... check_results
+path=./internal/... check_results
+path=./contrib/... check_results
+path=./profiler/... check_results
+
+
