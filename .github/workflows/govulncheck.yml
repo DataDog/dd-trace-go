@@ -29,9 +29,11 @@ jobs:
           found=0
           function check_results { 
             results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+            echo $results
             if [ $(echo $results | wc -l) -gt 0 ]; then
               echo "Found these vulnerabilities in $path: $results"
               found=$(($found || 1))
+              return $results
             fi
           }
           echo $(path=./ddtrace/... check_results)
