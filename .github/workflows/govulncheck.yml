@@ -27,12 +27,12 @@ jobs:
         shell: bash
         id: run_govulncheck
         run: |
-          found=0
+          FOUND=0
           function check_results { 
             RESULTS=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
             if [ $(echo $RESULTS | wc -l) -gt 0 ]; then
               echo "Found these vulnerabilities in $path: $RESULTS" >> $GITHUB_OUTPUT
-              found=$(($found || 1))
+              export FOUND=$(($found || 1))
             fi
           }
           path=./ddtrace/... check_results
@@ -40,9 +40,9 @@ jobs:
           path=./internal/... check_results
           path=./contrib/... check_results
           path=./profiler/... check_results
-          exit $found
       - name: Print
         run: |
           echo ${{join(steps.run_govulncheck.outputs.*, '\n')}}
+          exit $FOUND
           
           
