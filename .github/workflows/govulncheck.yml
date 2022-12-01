@@ -25,21 +25,24 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck in packages
         shell: bash
+        id: run_govulncheck
         run: |
           found=0
           function check_results { 
-            export RESULTS=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+            RESULTS=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
             if [ $(echo $RESULTS | wc -l) -gt 0 ]; then
-              echo "Found these vulnerabilities in $path: $RESULTS"
+              echo "Found these vulnerabilities in $path: $RESULTS" >> $GITHUB_OUTPUT
               found=$(($found || 1))
             fi
-            return $RESULTS
           }
-          echo $(path=./ddtrace/... check_results)
-          echo $(path=./appsec/... check_results)
-          echo $(path=./internal/... check_results)
-          echo $(path=./contrib/... check_results)
-          echo $(path=./profiler/... check_results)
+          path=./ddtrace/... check_results
+          path=./appsec/... check_results
+          path=./internal/... check_results
+          path=./contrib/... check_results
+          path=./profiler/... check_results
           exit $found
+      - name: Print
+        run: |
+          echo ${{join(steps.run_govulncheck.outputs.*, '\n')}}
           
           
