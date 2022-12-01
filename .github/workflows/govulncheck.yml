@@ -29,8 +29,7 @@ jobs:
         run: |
           RESULTS=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq)
            if [ $(echo $RESULTS  | wc -l) -gt 0 ]; then
-            echo "Found $(echo $RESULTS | wc -l )vulnerabilities: $RESULTS"
-            exit
+            echo "Found $(echo $RESULTS | wc -l) vulnerabilities: $RESULTS"
            fi
 #      - name: Print
 #        run: |
