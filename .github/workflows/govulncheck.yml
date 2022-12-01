@@ -29,8 +29,11 @@ jobs:
         run: |
           RESULTS=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq)
            if [ $(echo $RESULTS  | wc -l) -gt 0 ]; then
-            echo "Found $(echo $RESULTS | wc -l) vulnerabilities: $RESULTS"
+            echo "Found $(echo $RESULTS | wc -l) vulnerabilities: $RESULTS" >> $GITHUB_OUTPUT
            fi
+      - name: Slack Notification
+        run: |
+          echo ${{join(steps.run_govulncheck.outputs.*, '\n')}}
 #      - name: Print
 #        run: |
 #          echo ${{join(steps.run_govulncheck.outputs.*, '\n')}}
