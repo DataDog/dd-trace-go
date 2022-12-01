@@ -23,36 +23,19 @@ jobs:
       - name: Install govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck in ddtrace
-        env:
-          $CHECK_DIR: ./ddtrace/...
-          run: .github/workflows/govulncheck.sh
-#        run: |
-#          govulncheck ./ddtrace/... >> ddtrace_results.txt
-#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
-#            echo "Found ${num} vulnerabilities"
-#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
-#            exit 1
-#          fi
-#      - name: Run govulncheck in appsec
-#        if: always()
-#        run: |
-#          govulncheck ./ddtrace/... >> ddtrace_results.txt
-#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
-#            echo "Found ${num} vulnerabilities"
-#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
-#            exit 1
-#          fi
-#      - name: Run govulncheck in appsec
-#        if: always()
-#        run: |
-#          govulncheck ./ddtrace/... >> ddtrace_results.txt
-#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
-#            echo "Found ${num} vulnerabilities"
-#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
-#            exit 1
-#          fi
-
-
-
-
+      - name: Run govulncheck in packages
+        run: |
+          function check_results { 
+            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+            if [ $(echo $results | wc -l) -gt 0 ]; then
+            echo "Found these vulnerabilities in $path:"
+            echo $results
+            exit 1
+            fi
+          }
+          path=./ddtrace/... check_results
+          path=./appsec/... check_results
+          path=./internal/... check_results
+          path=./contrib/... check_results
+          path=./profiler/... check_results
+          

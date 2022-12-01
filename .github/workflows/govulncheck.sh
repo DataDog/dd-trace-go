@@ -1,6 +1,9 @@
-govulncheck $CHECK_DIR >> ddtrace_results.txt
-if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
-  echo "Found ${num} vulnerabilities"
-  echo $(cat ddtrace_results.txt | grep "Vulnerability #")
+function check_results {
+  results=$(echo $content | grep -Eo '\w+-\d+-\d+' | uniq)
+  if [ $(echo $results | wc -l) -gt 0 ]; then
+  echo "Found these vulnerabilities in $path:"
+  echo $results
   exit 1
-fi
+  fi
+}
+content=$(govulncheck ./ddtrace/...) path=./ddtrace/... check_results
