@@ -7,10 +7,8 @@ on:
 #  push:
 #    branches:
 #      - main
-#    tags:
-#      - "**"
 #  schedule:
-#    - cron:  '00 04 * * 2-6'
+#    - cron: '00 00 * * *'
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
@@ -22,17 +20,38 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: '1.18'
-      - name: Install and run govulncheck
+      - name: Install govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./ddtrace/...
-      - name: Comment results
-        run: |
-          num=$(govulncheck ./ddtrace/... | grep "Vulnerability #" | wc -l)
-          if [ $num -gt 0 ]; then
-            echo "Found ${num} vulnerabilities"
-            exit 1
-          fi
+      - name: Run govulncheck in ddtrace
+        env:
+          $CHECK_DIR: ./ddtrace/...
+          run: .github/workflows/govulncheck.sh
+#        run: |
+#          govulncheck ./ddtrace/... >> ddtrace_results.txt
+#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
+#            echo "Found ${num} vulnerabilities"
+#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
+#            exit 1
+#          fi
+#      - name: Run govulncheck in appsec
+#        if: always()
+#        run: |
+#          govulncheck ./ddtrace/... >> ddtrace_results.txt
+#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
+#            echo "Found ${num} vulnerabilities"
+#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
+#            exit 1
+#          fi
+#      - name: Run govulncheck in appsec
+#        if: always()
+#        run: |
+#          govulncheck ./ddtrace/... >> ddtrace_results.txt
+#          if [ $(cat ddtrace_results.txt | grep "Vulnerability #" | wc -l) -gt 0 ]; then
+#            echo "Found ${num} vulnerabilities"
+#            echo $(cat ddtrace_results.txt | grep "Vulnerability #")
+#            exit 1
+#          fi
 
 
 
