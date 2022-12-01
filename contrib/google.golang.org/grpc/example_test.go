@@ -21,7 +21,7 @@ func Example_client() {
 
 	// Dial in using the created interceptor.
 	// Note: To use multiple UnaryInterceptors with grpc.Dial, you must use
-	// grpc.WithChainUnaryInterceptor instead.
+	// grpc.WithChainUnaryInterceptor instead (as of google.golang.org/grpc v1.51.0).
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(),
 		grpc.WithStreamInterceptor(si), grpc.WithUnaryInterceptor(ui))
 	if err != nil {
