@@ -41,7 +41,7 @@ jobs:
           fi
       - name: testing the GH_summary
         run: |
-          echo ${{join(steps.cho "FOO=$(git status)" >> $GITHUB_EN.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
+          echo ${{join(steps.govulncheck.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
       - name: testing the GH_env
         if: always()
         run: |
@@ -54,12 +54,11 @@ jobs:
       - name: Set the value
         id: step_one
         run: |
-          echo "FOO=$(git status)" >> $GITHUB_ENV
           echo "VULN=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','))" >> $GITHUB_ENV
       - name: Use the value
         id: step_two
         run: |
-          echo "is ${{ steps.step_one.FOO }}"
+          echo "${{ env.VULN }}"
           echo "is ${{ steps.step_one.VULN }}"
 
       - name: Use the value
