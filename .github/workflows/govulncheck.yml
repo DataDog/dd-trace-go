@@ -32,6 +32,7 @@ jobs:
             if [ $num -gt 0 ]; then
               echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
               echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_OUTPUT
+              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
               found=$(( found | 1))
             fi
           }
@@ -39,6 +40,6 @@ jobs:
           path=./appsec/... check_results
           path=./internal/... check_results
           path=./profiler/... check_results
-          echo "${{join(steps.results.outputs.*, '\n')}}" >> $GITHUB_STEP_SUMMARY
+#          echo "${{join(steps.results.outputs.*, '\n')}}" >> $GITHUB_STEP_SUMMARY
 #          exit $found
 #          path=./contrib/... check_results
