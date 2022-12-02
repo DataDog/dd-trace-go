@@ -24,15 +24,24 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Comment results
+        id: govulncheck
         run: |
           num=$(govulncheck ./ddtrace/... | grep "Vulnerability #" | wc -l)
           v=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')
           if [ $num -gt 0 ]; then
             echo "Found ${num} vulnerabilities"
             echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_STEP_SUMMARY
+            echo 'VULNERABILITIES<<EOF' >> $GITHUB_ENV
             echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_ENV
+            echo 'EOF' >> $GITHUB_ENV
+            echo "VULNERABILITIES_1=green" >> $GITHUB_OUTPUT
+            echo "VULNERABILITIES=green" >> $GITHUB_OUTPUT
             exit 1
           fi
       - name: testing the GH_env
         run: |
           echo $GITHUB_ENV
+          echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
+          echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
+          echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
+          echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
