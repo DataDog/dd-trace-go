@@ -47,7 +47,7 @@ func TestAppSec(t *testing.T) {
 		// The request should have the attack attempts
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-100")) // XSS attack attempt
+		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
 		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
 	})
 
@@ -89,7 +89,7 @@ func TestAppSec(t *testing.T) {
 		// The request should have the attack attempts
 		event, _ := finished[5].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-100")) // XSS attack attempt
+		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
 		require.True(t, strings.Contains(event, "crs-942-100")) // SQL-injection attack attempt
 		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
 	})
