@@ -39,9 +39,15 @@ jobs:
             exit 1
           fi
       - name: testing the GH_env
+        if: always()
         run: |
-          echo $GITHUB_ENV
           echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
           echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
+      - name: testing the artifact
+        run: |
+          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','
+        with:
+          name: vulnerabilities-report
+          path: output/vulnerabilities-report.txt
