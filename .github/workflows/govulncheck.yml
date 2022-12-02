@@ -50,3 +50,20 @@ jobs:
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
           echo "VULNERABILITIES_3 is ${{ steps.govulncheck.outputs.VULNERABILITIES_3 }}"
+      - name: Set the value
+        id: step_one
+        run: |
+          echo "FOO=$(git status)" >> $GITHUB_ENV
+          echo "VULN=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','))" >> $GITHUB_ENV
+      - name: Use the value
+        id: step_two
+        run: |
+          echo "${{ env.FOO }}"
+          echo "${{ env.VULN }}"
+          echo "is ${{ steps.step_one.FOO }}"
+          echo "is ${{ steps.step_one.VULN }}"
+
+      - name: Use the value
+        id: step_two
+        run: |
+          echo "${{ env.action_state }}"
