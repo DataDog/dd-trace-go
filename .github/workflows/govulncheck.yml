@@ -37,7 +37,7 @@ jobs:
           path=./ddtrace/... check_results
           path=./appsec/... check_results
           path=./internal/... check_results
-          path=./contrib/... check_results
+#          path=./contrib/... check_results
           path=./profiler/... check_results
           echo ${{join(steps.govulncheck.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
           exit $found  
