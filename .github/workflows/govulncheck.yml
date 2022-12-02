@@ -28,6 +28,6 @@ jobs:
           num=$(govulncheck ./ddtrace/... | grep "Vulnerability #" | wc -l)
           v=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq )
           if [ $num -gt 0 ]; then
-            echo "Found ${num} vulnerabilities: ${v}"
+            echo "Found ${num} vulnerabilities: ${v}" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
