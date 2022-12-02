@@ -46,8 +46,9 @@ jobs:
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
       - name: testing the artifact
-        run: |
-          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','
+        uses: actions/upload-artifact@v3
         with:
           name: vulnerabilities-report
           path: output/vulnerabilities-report.txt
+        run: |
+          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','
