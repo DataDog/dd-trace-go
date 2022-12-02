@@ -36,7 +36,7 @@ jobs:
             echo 'EOF' >> $GITHUB_ENV
             echo "VULNERABILITIES_1=green" >> $GITHUB_OUTPUT
             echo "VULNERABILITIES=green" >> $GITHUB_OUTPUT
-            echo VULNERABILITIES_3=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_OUTPUT
+            echo "VULNERABILITIES_3=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_OUTPUT
             exit 1
           fi
       - name: testing the GH_summary
