@@ -64,6 +64,6 @@ jobs:
           echo "is ${{ steps.step_one.VULN }}"
 
       - name: Use the value
-        id: step_two
+        id: step_three
         run: |
           echo "${{ env.action_state }}"
