@@ -26,8 +26,13 @@ jobs:
       - name: Comment results
         run: |
           num=$(govulncheck ./ddtrace/... | grep "Vulnerability #" | wc -l)
-          v=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq )
+          v=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')
           if [ $num -gt 0 ]; then
-            echo "Found ${num} vulnerabilities: ${v}" >> $GITHUB_STEP_SUMMARY
+            echo "Found ${num} vulnerabilities"
+            echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_STEP_SUMMARY
+            echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_ENV
             exit 1
           fi
+      - name: testing the GH_env
+        run: |
+          echo $GITHUB_ENV
