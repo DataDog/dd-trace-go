@@ -37,10 +37,11 @@ jobs:
             echo "VULNERABILITIES_1=green" >> $GITHUB_OUTPUT
             echo "VULNERABILITIES=green" >> $GITHUB_OUTPUT
             echo "VULNERABILITIES_3=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_OUTPUT
+            echo "VULNERABILITIES_4=$(echo "VULNERABILITIES_4")" >> $GITHUB_OUTPUT
           fi
       - name: testing the GH_summary
         run: |
-          echo ${{join(steps.govulncheck.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
+          echo ${{join(steps.cho "FOO=$(git status)" >> $GITHUB_EN.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
       - name: testing the GH_env
         if: always()
         run: |
@@ -49,6 +50,7 @@ jobs:
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
           echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
           echo "VULNERABILITIES_3 is ${{ steps.govulncheck.outputs.VULNERABILITIES_3 }}"
+          echo "VULNERABILITIES_4 is ${{ steps.govulncheck.outputs.VULNERABILITIES_3 }}"
       - name: Set the value
         id: step_one
         run: |
@@ -57,8 +59,6 @@ jobs:
       - name: Use the value
         id: step_two
         run: |
-          echo "${{ env.FOO }}"
-          echo "${{ env.VULN }}"
           echo "is ${{ steps.step_one.FOO }}"
           echo "is ${{ steps.step_one.VULN }}"
 
