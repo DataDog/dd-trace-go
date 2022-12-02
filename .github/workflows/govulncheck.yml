@@ -26,42 +26,18 @@ jobs:
       - name: Comment results
         id: govulncheck
         run: |
-          num=$(govulncheck ./ddtrace/... | grep "Vulnerability #" | wc -l)
-          v=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')
-          if [ $num -gt 0 ]; then
-            echo "Found ${num} vulnerabilities"
-            echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_STEP_SUMMARY
-            echo 'VULNERABILITIES<<EOF' >> $GITHUB_ENV
-            echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_ENV
-            echo 'EOF' >> $GITHUB_ENV
-            echo "VULNERABILITIES_1=green" >> $GITHUB_OUTPUT
-            echo "VULNERABILITIES=green" >> $GITHUB_OUTPUT
-            echo "VULNERABILITIES_3=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')" >> $GITHUB_OUTPUT
-            echo "VULNERABILITIES_4=$(echo "$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',')")" >> $GITHUB_OUTPUT
-          fi
-      - name: testing the GH_summary
-        run: |
+          function check_results {
+            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+            num=$(echo $results | wc -l)
+            if [ $num -gt 0 ]; then
+            echo "Found $num vulnerabilities in $path. Run govulncheck $path to find out more" >> $GITHUB_OUTPUT
+            found=$(($found || 1))
+            fi
+          }
+          path=./ddtrace/... check_results
+          path=./appsec/... check_results
+          path=./internal/... check_results
+          path=./contrib/... check_results
+          path=./profiler/... check_results
           echo ${{join(steps.govulncheck.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
-      - name: testing the GH_env
-        if: always()
-        run: |
-          echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
-          echo "VULNERABILITIES_1 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
-          echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES }}"
-          echo "VULNERABILITIES_2 is ${{ steps.govulncheck.outputs.VULNERABILITIES_1 }}"
-          echo "VULNERABILITIES_3 is ${{ steps.govulncheck.outputs.VULNERABILITIES_3 }}"
-          echo "VULNERABILITIES_4 is ${{ steps.govulncheck.outputs.VULNERABILITIES_4 }}"
-      - name: Set the value
-        id: step_one
-        run: |
-          echo "VULN=$(govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ','))" >> $GITHUB_ENV
-      - name: Use the value
-        id: step_two
-        run: |
-          echo "${{ env.VULN }}"
-          echo "is ${{ steps.step_one.VULN }}"
-
-      - name: Use the value
-        id: step_three
-        run: |
-          echo "${{ env.action_state }}"
+          exit $found  
