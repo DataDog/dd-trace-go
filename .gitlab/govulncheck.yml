@@ -1,0 +1,9 @@
+govulncheck:
+  stage: govulncheck
+  image: registry.ddbuild.io/images/mirror/golang:1.18
+  # timeout: 1h
+  only:
+    refs:
+      - shevchenko/govulncheck
+  script:
+    - ./.gitlab/scripts/run-govulncheck.sh
