@@ -1,5 +1,7 @@
 govulncheck:
   stage: govulncheck
+  when: always
+  tags: [ "runner:apm-k8s-tweaked-metal" ]
   image: registry.ddbuild.io/images/mirror/golang:1.18
   # timeout: 1h
   only:
