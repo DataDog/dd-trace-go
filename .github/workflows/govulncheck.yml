@@ -26,10 +26,10 @@ jobs:
       - name: Comment results
         id: results
         run: |
-          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',' >> $GITHUB_OUTPUT
-      - name: GH_Summary results
-        run: |
-          ${{join(steps.results.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
+          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',' >> tee myoutput.txt
+#      - name: GH_Summary results
+#        run: |
+#          ${{join(steps.results.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
 
 #          function check_results {
 #            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
