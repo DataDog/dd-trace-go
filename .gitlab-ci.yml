@@ -1,4 +1,7 @@
 stages:
   - benchmarks
+  - govulncheck
 
-include: ".gitlab/benchmarks.yml"
+include:
+  - ".gitlab/benchmarks.yml"
+  - ".gitlab/govulncheck.yml"
