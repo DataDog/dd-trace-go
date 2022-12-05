@@ -28,7 +28,6 @@ jobs:
         run: |
           govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',' >> $GITHUB_OUTPUT
       - name: GH_Summary results
-        id: results
         run: |
           ${{join(steps.results.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
 
