@@ -22,17 +22,23 @@ jobs:
       - name: Comment results
         id: results
         run: |
-          function check_results {
-            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
-            num=$(echo $results | wc -l)
-            if [ $num -gt 0 ]; then
-              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
-              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
-              found=$(( found | 1))
-            fi
-          }
-          path=./ddtrace/... check_results
-          path=./appsec/... check_results
-          path=./internal/... check_results
-          path=./profiler/... check_results
-          exit $found
+          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',' >> $GITHUB_OUTPUT
+      - name: GH_Summary results
+        id: results
+        run: |
+          ${{join(steps.results.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
+
+#          function check_results {
+#            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+#            num=$(echo $results | wc -l)
+#            if [ $num -gt 0 ]; then
+#              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
+#              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
+#              found=$(( found | 1))
+#            fi
+#          }
+#          path=./ddtrace/... check_results
+#          path=./appsec/... check_results
+#          path=./internal/... check_results
+#          path=./profiler/... check_results
+#          exit $found
