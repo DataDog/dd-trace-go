@@ -12,6 +12,7 @@ package httpsec
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -346,12 +347,15 @@ func IPFromRequest(r *http.Request) instrumentation.NetaddrIP {
 	return IPFromHeaders(normalized, r.RemoteAddr)
 }
 
-var (
-	// BlockedTemplateJSON is the default JSON template used to write responses for blocked requests
-	BlockedTemplateJSON = []byte(`{"errors": [{"title": "You've been blocked", "detail": "Sorry, you cannot access this page. Please contact the customer service team. Security provided by Datadog."}]}`)
-	// BlockedTemplateHTML is the default HTML template used to write responses for blocked requests
-	BlockedTemplateHTML = []byte(`<!DOCTYPE html><html lang="en"><head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width,initial-scale=1"> <title>You've been blocked</title> <style>a, body, div, html, span{margin: 0; padding: 0; border: 0; font-size: 100%; font: inherit; vertical-align: baseline}body{background: -webkit-radial-gradient(26% 19%, circle, #fff, #f4f7f9); background: radial-gradient(circle at 26% 19%, #fff, #f4f7f9); display: -webkit-box; display: -ms-flexbox; display: flex; -webkit-box-pack: center; -ms-flex-pack: center; justify-content: center; -webkit-box-align: center; -ms-flex-align: center; align-items: center; -ms-flex-line-pack: center; align-content: center; width: 100%; min-height: 100vh; line-height: 1; flex-direction: column}p{display: block}main{text-align: center; flex: 1; display: -webkit-box; display: -ms-flexbox; display: flex; -webkit-box-pack: center; -ms-flex-pack: center; justify-content: center; -webkit-box-align: center; -ms-flex-align: center; align-items: center; -ms-flex-line-pack: center; align-content: center; flex-direction: column}p{font-size: 18px; line-height: normal; color: #646464; font-family: sans-serif; font-weight: 400}a{color: #4842b7}footer{width: 100%; text-align: center}footer p{font-size: 16px}</style></head><body> <main> <p>Sorry, you cannot access this page. Please contact the customer service team.</p></main> <footer> <p>Security provided by <a href="https://www.datadoghq.com/product/security-platform/application-security-monitoring/" target="_blank">Datadog</a></p></footer></body></html>`)
-)
+// blockedTemplateJSON is the default JSON template used to write responses for blocked requests
+//
+//go:embed blocked-template.json
+var blockedTemplateJSON []byte
+
+// blockedTemplateHTML is the default HTML template used to write responses for blocked requests
+//
+//go:embed blocked-template.html
+var blockedTemplateHTML []byte
 
 const (
 	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
@@ -359,7 +363,7 @@ const (
 )
 
 func init() {
-	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &BlockedTemplateJSON, envBlockedTemplateHTML: &BlockedTemplateHTML} {
+	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
 		if path, ok := os.LookupEnv(env); ok {
 			if t, err := os.ReadFile(path); err != nil {
 				log.Warn("Could not read template at %s: %v", path, err)

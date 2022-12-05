@@ -27,15 +27,15 @@ func (*BlockRequestAction) isAction() {}
 
 // NewBlockRequestAction creates, initializes and returns a new BlockRequestAction
 func NewBlockRequestAction(status int, template string) BlockRequestAction {
-	htmlHandler := newBlockRequestHandler(status, "application/html", BlockedTemplateHTML)
-	jsonHandler := newBlockRequestHandler(status, "application/json", BlockedTemplateJSON)
+	htmlHandler := newBlockRequestHandler(status, "application/html", blockedTemplateHTML)
+	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
 	var action BlockRequestAction
 	switch template {
 	case "json":
-		action.handler = newBlockRequestHandler(status, "application/json", BlockedTemplateJSON)
+		action.handler = newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
 		break
 	case "html":
-		action.handler = newBlockRequestHandler(status, "application/html", BlockedTemplateHTML)
+		action.handler = newBlockRequestHandler(status, "application/html", blockedTemplateHTML)
 		break
 	default:
 		action.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
