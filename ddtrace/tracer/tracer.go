@@ -186,6 +186,18 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	sp.SetUser(id, opts...)
 }
 
+// LocalRootSpan returns the local root span of the given span's trace.
+func LocalRootSpan(s Span) Span {
+	if s == nil {
+		return nil
+	}
+	sp, ok := s.(*span)
+	if !ok {
+		return nil
+	}
+	return sp.localRootSpan()
+}
+
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
@@ -520,8 +532,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
-	if span.context.trace != nil && span.context.trace.root != nil {
-		localRootSpan := span.context.trace.root
+	if localRootSpan := span.localRootSpan(); localRootSpan != nil {
 		if t.config.profilerHotspots {
 			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
 		}
