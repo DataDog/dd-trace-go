@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // getTestSpan returns a Span with different fields set
@@ -80,17 +81,18 @@ func TestTracesAgentIntegration(t *testing.T) {
 func TestResolveAgentAddr(t *testing.T) {
 	c := new(config)
 	for _, tt := range []struct {
-		inOpt                 StartOption
-		envHost, envPort, out string
+		inOpt            StartOption
+		envHost, envPort string
+		out              *url.URL
 	}{
-		{nil, "", "", defaultURL},
-		{nil, "ip.local", "", fmt.Sprintf("http://ip.local:%s", defaultPort)},
-		{nil, "", "1234", fmt.Sprintf("http://%s:1234", defaultHostname)},
-		{nil, "ip.local", "1234", "http://ip.local:1234"},
-		{WithAgentAddr("host:1243"), "", "", "http://host:1243"},
-		{WithAgentAddr("ip.other:9876"), "ip.local", "", "http://ip.other:9876"},
-		{WithAgentAddr("ip.other:1234"), "", "9876", "http://ip.other:1234"},
-		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", "http://ip.other:8888"},
+		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
+		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
+		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
+		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
+		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
+		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
+		{WithAgentAddr("ip.other:1234"), "", "9876", &url.URL{Scheme: "http", Host: "ip.other:1234"}},
+		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.other:8888"}},
 	} {
 		t.Run("", func(t *testing.T) {
 			if tt.envHost != "" {
@@ -101,13 +103,23 @@ func TestResolveAgentAddr(t *testing.T) {
 				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
 			}
-			c.agentURL = "http://" + resolveAgentAddr()
+			c.agentURL = resolveAgentAddr()
 			if tt.inOpt != nil {
 				tt.inOpt(c)
 			}
 			assert.Equal(t, tt.out, c.agentURL)
 		})
 	}
+
+	t.Run("UDS", func(t *testing.T) {
+		old := defaultSocketAPM
+		d, err := os.Getwd()
+		require.NoError(t, err)
+		defaultSocketAPM = d // Choose a file we know will exist
+		defer func() { defaultSocketAPM = old }()
+		c.agentURL = resolveAgentAddr()
+		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.agentURL)
+	})
 }
 
 func TestTransportResponse(t *testing.T) {

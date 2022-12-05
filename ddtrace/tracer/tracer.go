@@ -129,7 +129,7 @@ func Start(opts ...StartOption) {
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.agentURL
+	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
