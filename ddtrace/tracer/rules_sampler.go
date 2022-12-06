@@ -62,6 +62,9 @@ type SamplingRule struct {
 	// Name specifies the regex pattern that a span operation name must match.
 	Name *regexp.Regexp
 
+	// Resource specifies the regex pattern that a span resource name must match.
+	Resource *regexp.Regexp
+
 	// Rate specifies the sampling rate that should be applied to spans that match
 	// service and/or name of the rule.
 	Rate float64
@@ -70,10 +73,11 @@ type SamplingRule struct {
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
 
-	ruleType     SamplingRuleType
-	exactService string
-	exactName    string
-	limiter      *rateLimiter
+	ruleType      SamplingRuleType
+	exactService  string
+	exactName     string
+	exactResource string
+	limiter       *rateLimiter
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -86,6 +90,11 @@ func (sr *SamplingRule) match(s *span) bool {
 	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
 		return false
 	} else if sr.exactName != "" && sr.exactName != s.Name {
+		return false
+	}
+	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
+		return false
+	} else if sr.exactResource != "" && sr.exactResource != s.Resource {
 		return false
 	}
 	return true
@@ -135,6 +144,24 @@ func NameRule(name string, rate float64) SamplingRule {
 		exactName: name,
 		Rate:      rate,
 	}
+}
+
+// ResourceRule returns a SamplingRule that applies the provided sampling rate
+// to spans that match the resource name provided.
+func ResourceRule(resource string, rate float64, glob bool) SamplingRule {
+	var sr SamplingRule
+	if glob {
+		sr = SamplingRule{
+			Resource: globMatch(resource),
+			Rate:     rate,
+		}
+	} else {
+		sr = SamplingRule{
+			exactResource: resource,
+			Rate:          rate,
+		}
+	}
+	return sr
 }
 
 // NameServiceRule returns a SamplingRule that applies the provided sampling rate

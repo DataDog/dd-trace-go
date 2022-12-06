@@ -382,8 +382,8 @@ func TestRuleEnvVars(t *testing.T) {
 }
 
 func TestRulesSampler(t *testing.T) {
-	makeSpan := func(op string, svc string) *span {
-		return newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
+	makeSpan := func(op string, svc string, rsc string) *span {
+		return newSpan(op, svc, rsc, random.Uint64(), random.Uint64(), 0)
 	}
 	makeFinishedSpan := func(op string, svc string) *span {
 		s := newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
@@ -394,7 +394,7 @@ func TestRulesSampler(t *testing.T) {
 		assert := assert.New(t)
 		rs := newRulesSampler(nil, nil)
 
-		span := makeSpan("http.request", "test-service")
+		span := makeSpan("http.request", "test-service", "")
 		result := rs.SampleTrace(span)
 		assert.False(result)
 	})
@@ -406,13 +406,15 @@ func TestRulesSampler(t *testing.T) {
 			{NameServiceRule("http.request", "test-service", 1.0)},
 			{{Service: regexp.MustCompile("^test-"), Name: regexp.MustCompile("http\\..*"), Rate: 1.0}},
 			{ServiceRule("other-service-1", 0.0), ServiceRule("other-service-2", 0.0), ServiceRule("test-service", 1.0)},
+			{ResourceRule("/test-resource", 1.0, false), ResourceRule("/not-test-resource", 0.0, false)},
+			{ResourceRule("*test*", 1.0, true)},
 		}
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(v, nil)
 
-				span := makeSpan("http.request", "test-service")
+				span := makeSpan("http.request", "test-service", "/test-resource")
 				result := rs.SampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
@@ -435,7 +437,7 @@ func TestRulesSampler(t *testing.T) {
 				assert := assert.New(t)
 				rs := newRulesSampler(v, nil)
 
-				span := makeSpan("http.request", "test-service")
+				span := makeSpan("http.request", "test-service", "")
 				result := rs.SampleTrace(span)
 				assert.False(result)
 			})
@@ -623,7 +625,7 @@ func TestRulesSampler(t *testing.T) {
 					defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 					rs := newRulesSampler(nil, rules)
 
-					span := makeSpan("http.request", "test-service")
+					span := makeSpan("http.request", "test-service", "")
 					result := rs.SampleTrace(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
@@ -933,17 +935,17 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		in  SamplingRule
 		out string
 	}{
-		{SamplingRule{nil, nil, 0, 0, 0, "srv", "ops", nil},
+		{SamplingRule{nil, nil, nil, 0, 0, 0, "srv", "ops", "", nil},
 			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), nil, 0, 0, 0, "srv", "ops", nil},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), nil, nil, 0, 0, 0, "srv", "ops", "", nil},
 			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+]"), 0, 0, 0, "", "", nil},
+		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+]"), nil, 0, 0, 0, "", "", "", nil},
 			`{"service":"srv.*","name":"ops.[0-9]+]","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 0, "", "", nil},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, 0.55, 0, 0, "", "", "", nil},
 			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 1, "", "", nil},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, 0.55, 0, 1, "", "", "", nil},
 			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 1000, 1, "", "", nil},
+		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, 0.55, 1000, 1, "", "", "", nil},
 			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)","max_per_second":1000}`},
 	} {
 		m, err := tt.in.MarshalJSON()
