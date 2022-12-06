@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	_ "github.com/mattn/go-sqlite3"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
@@ -30,6 +32,12 @@ on conflict(name) do update set color = excluded.color;
 const query = `select color from colors where name = ?;`
 
 func main() {
+	tracer.Start(
+		tracer.WithProfilerCodeHotspots(true),
+		tracer.WithProfilerEndpoints(true),
+	)
+	defer tracer.Stop()
+
 	if err := profiler.Start(); err != nil {
 		log.Fatal("starting profile:", err)
 	}
@@ -49,7 +57,7 @@ func main() {
 		log.Fatal("creating:", err)
 	}
 
-	mux := http.NewServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/update", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
