@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestMain(m *testing.M) {
@@ -48,8 +48,8 @@ func TestStart(t *testing.T) {
 		// that we log some default configuration, e.g. enabled profiles
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
 		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "cpu")
-		assert.Contains(t, startupLog, "heap")
+		assert.Contains(t, startupLog, "\"cpu\"")
+		assert.Contains(t, startupLog, "\"heap\"")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)

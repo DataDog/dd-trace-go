@@ -633,28 +633,6 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		defer tracer.Stop()
 		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
 	})
-
-	t.Run("off", func(t *testing.T) {
-		tp := new(testLogger)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Len(t, removeAppSec(tp.Lines()), 0)
-		s := tracer.StartSpan("op").(*span)
-		_, ok := s.Meta["language"]
-		assert.False(t, ok)
-	})
-
-	t.Run("spans", func(t *testing.T) {
-		tracer := newTracer(WithRuntimeMetrics(), WithServiceName("main"))
-		defer tracer.Stop()
-
-		s := tracer.StartSpan("op").(*span)
-		assert.Equal(t, s.Meta["language"], "go")
-
-		s = tracer.StartSpan("op", ServiceName("secondary")).(*span)
-		_, ok := s.Meta["language"]
-		assert.False(t, ok)
-	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {
@@ -987,7 +965,7 @@ func TestNewRootSpanHasPid(t *testing.T) {
 	defer tracer.Stop()
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	assert.Equal(strconv.Itoa(os.Getpid()), root.Meta[ext.Pid])
+	assert.Equal(float64(os.Getpid()), root.Metrics[ext.Pid])
 }
 
 func TestNewChildHasNoPid(t *testing.T) {
@@ -1699,26 +1677,32 @@ func TestEnvironment(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		go func() {
-			parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-			defer parent.Finish()
+		wg := sync.WaitGroup{}
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+				defer parent.Finish()
 
-			for i := 0; i < 10; i++ {
-				tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
-			}
-		}()
+				for i := 0; i < 10; i++ {
+					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
+				}
+			}()
+		}
+		wg.Wait()
 	}
 }
 
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
 
 	for n := 0; n < b.N; n++ {
@@ -1728,8 +1712,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 }
 
 func BenchmarkStartSpan(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
 	defer stop()
+
 	root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 	ctx := ContextWithSpan(context.TODO(), root)
 

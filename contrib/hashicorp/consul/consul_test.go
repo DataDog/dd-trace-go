@@ -98,6 +98,8 @@ func TestKV(t *testing.T) {
 			assert.Equal(ext.SpanTypeConsul, span.Tag(ext.SpanType))
 			assert.Equal("consul", span.Tag(ext.ServiceName))
 			assert.Equal(key, span.Tag("consul.key"))
+			assert.Equal("hashicorp/consul", span.Tag(ext.Component))
+			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		})
 	}
 }

@@ -420,7 +420,7 @@ const (
 func TestSpanSetMetric(t *testing.T) {
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(3, len(span.Metrics))
+			assert.Equal(4, len(span.Metrics))
 			_, ok := span.Metrics[keySamplingPriority]
 			assert.True(ok)
 			_, ok = span.Metrics[keySamplingPriorityRate]
@@ -455,7 +455,7 @@ func TestSpanSetMetric(t *testing.T) {
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
 			span.SetTag("finished.test", 1337)
-			assert.Equal(3, len(span.Metrics))
+			assert.Equal(4, len(span.Metrics))
 			_, ok := span.Metrics["finished.test"]
 			assert.False(ok)
 		},
