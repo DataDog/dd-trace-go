@@ -221,6 +221,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			// The WAF event listener got concurrently released
 			return
 		}
+		defer wafCtx.Close()
 
 		// The same address is used for gRPC and http when it comes to client ip
 		values := map[string]interface{}{}
@@ -231,7 +232,6 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		}
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
-		wafCtx.Close()
 		if len(matches) > 0 {
 			interrupt := false
 			for _, id := range actionIds {
