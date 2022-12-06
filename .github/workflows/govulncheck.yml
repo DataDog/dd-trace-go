@@ -1,14 +1,10 @@
 name: Nightly govulncheck
-#on:
-#  push:
-#    branches:
-#      - main
-#  schedule:
-#    - cron: '00 00 * * *'
 on:
   push:
     branches:
-      - 'shevchenko/govulncheck'
+      - main
+  schedule:
+    - cron: '00 00 * * *'
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
@@ -26,23 +22,17 @@ jobs:
       - name: Comment results
         id: results
         run: |
-          govulncheck ./ddtrace/... | grep -Eo '\w+-\d+-\d+' | uniq | tr '\n' ',' | tee myoutput.txt
-          govulncheck ./ddtrace/...
-#      - name: GH_Summary results
-#        run: |
-#          ${{join(steps.results.outputs.*, '\n')}} >> $GITHUB_STEP_SUMMARY
-
-#          function check_results {
-#            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
-#            num=$(echo $results | wc -l)
-#            if [ $num -gt 0 ]; then
-#              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
-#              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
-#              found=$(( found | 1))
-#            fi
-#          }
-#          path=./ddtrace/... check_results
-#          path=./appsec/... check_results
-#          path=./internal/... check_results
-#          path=./profiler/... check_results
-#          exit $found
+          function check_results {
+            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
+            num=$(echo $results | wc -l)
+            if [ $num -gt 0 ]; then
+              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
+              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
+              found=$(( found | 1))
+            fi
+          }
+          path=./ddtrace/... check_results
+          path=./appsec/... check_results
+          path=./internal/... check_results
+          path=./profiler/... check_results
+          exit $found
