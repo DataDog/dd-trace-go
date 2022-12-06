@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -342,6 +343,9 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		for _, prof := range completed {
 			bat.addProfile(prof)
 		}
+
+		// Finish counting endpoint hits. See CPUProfile.Collect() for the start.
+		bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
 		p.enqueueUpload(bat)
 		select {
 		case <-ticker:

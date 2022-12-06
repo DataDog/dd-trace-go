@@ -132,12 +132,13 @@ func (p *profiler) doRequest(bat batch) error {
 }
 
 type uploadEvent struct {
-	Start       string   `json:"start"`
-	End         string   `json:"end"`
-	Attachments []string `json:"attachments"`
-	Tags        string   `json:"tags_profiler"`
-	Family      string   `json:"family"`
-	Version     string   `json:"version"`
+	Start          string           `json:"start"`
+	End            string           `json:"end"`
+	Attachments    []string         `json:"attachments"`
+	Tags           string           `json:"tags_profiler"`
+	Family         string           `json:"family"`
+	Version        string           `json:"version"`
+	EndpointCounts map[string]int64 `json:"endpoint_counts"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -152,12 +153,15 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	tags = append(tags, "runtime:go")
 
 	event := &uploadEvent{
-		Version: "4",
-		Family:  "go",
-		Start:   bat.start.Format(time.RFC3339),
-		End:     bat.end.Format(time.RFC3339),
-		Tags:    strings.Join(tags, ","),
+		Version:        "4",
+		Family:         "go",
+		Start:          bat.start.Format(time.RFC3339),
+		End:            bat.end.Format(time.RFC3339),
+		Tags:           strings.Join(tags, ","),
+		EndpointCounts: bat.endpointCounts,
 	}
+
+	fmt.Printf("DEBUG: uploadEvent: %#v\n", event)
 
 	for _, p := range bat.profiles {
 		event.Attachments = append(event.Attachments, p.name)
