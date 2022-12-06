@@ -68,7 +68,7 @@ const (
 	Error = "error"
 
 	// ErrorMsg specifies the error message.
-	ErrorMsg = "error.msg"
+	ErrorMsg = "error.message"
 
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
