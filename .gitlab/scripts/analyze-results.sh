@@ -4,6 +4,10 @@ ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
 REPORTS_DIR="$(pwd)/reports/"
 mkdir "${REPORTS_DIR}" || :
 
+# Change threshold for detection of regression
+# @see https://github.com/DataDog/relenv-benchmark-analyzer#what-is-a-significant-difference
+UNCONFIDENCE_THRESHOLD=2.0
+
 BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CI_COMMIT_REF_NAME" || :)
 
 source /benchmark-analyzer/.venv/bin/activate

@@ -15,7 +15,7 @@ benchmark:
   script:
     - ./.gitlab/scripts/capture-hardware-software-info.sh
     - ./.gitlab/scripts/run-benchmarks.sh
-    # - ./.gitlab/scripts/upload-results-to-s3.sh #commented out until we have merged our permissions changes
+    - ./.gitlab/scripts/upload-results-to-s3.sh
     - ./.gitlab/scripts/analyze-results.sh
     - ./.gitlab/scripts/post-pr-comment.sh
   artifacts:
