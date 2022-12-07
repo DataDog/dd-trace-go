@@ -1,6 +1,6 @@
 variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/relenv-microbenchmarking-platform
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/relenv-microbenchmarking-platform:dd-trace-go_knusbaum_test
+  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/relenv-microbenchmarking-platform/-/jobs/201492583
+  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/relenv-microbenchmarking-platform:dd-trace-go_knusbaum
   INDEX_FILE: index.txt
 
 benchmark:
