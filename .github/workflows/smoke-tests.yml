@@ -16,11 +16,10 @@ on:
 
 jobs:
   go-get-u:
+    #  Run go get -u to upgrade dd-trace-go dependencies to their
+    #  latest minor version and see if dd-trace-go still compiles.
+    #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'dd-trace-go still works after go get -u'
-    description: <
-      Run go get -u to upgrade dd-trace-go dependencies to their
-      latest minor version and see if dd-trace-go still compiles.
-      Ensure issue https://github.com/DataDog/dd-trace-go/issues/1607
     runs-on: ubuntu-latest
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
