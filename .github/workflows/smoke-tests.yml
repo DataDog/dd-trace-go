@@ -9,9 +9,6 @@ on:
       - '**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  pull_request:
-    branches:
-      - "**"
   workflow_dispatch: {} #manually
 
 jobs:
