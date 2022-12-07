@@ -38,6 +38,6 @@ cd /benchmark-analyzer
   --outpath="main.json" \
   "${ARTIFACTS_DIR}/main_bench.txt"
 
-./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
-./benchmark_analyzer compare pairwise --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
+./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
+./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
 
