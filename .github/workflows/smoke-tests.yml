@@ -19,7 +19,7 @@ jobs:
       latest minor version and see if dd-trace-go still compiles.
       Ensure issue https://github.com/DataDog/dd-trace-go/issues/1607
     runs-on: ubuntu-latest
-    environment:
+    env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
       - uses: actions/checkout@v2
