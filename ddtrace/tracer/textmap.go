@@ -177,6 +177,9 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if ps == "" {
 		return defaultPs
 	}
+	if ps == "none" {
+		return nil
+	}
 	var list []Propagator
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})

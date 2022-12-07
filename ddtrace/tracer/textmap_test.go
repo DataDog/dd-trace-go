@@ -501,6 +501,7 @@ func testB3(t *testing.T, b3Header string) {
 func TestB3(t *testing.T) {
 	testB3(t, "b3")
 	testB3(t, "b3multi")
+	testB3(t, "none,b3multi")
 
 	t.Run("config", func(t *testing.T) {
 		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
@@ -552,6 +553,64 @@ func TestB3(t *testing.T) {
 				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 			})
 		}
+	})
+}
+
+func TestNonePropagator(t *testing.T) {
+	t.Run("inject/none", func(t *testing.T) {
+		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx, ok := root.Context().(*spanContext)
+		ctx.traceID = 1
+		ctx.spanID = 1
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
+
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Nil(err)
+		assert.Len(headers, 0)
+	})
+
+	t.Run("extract/none", func(t *testing.T) {
+		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		assert := assert.New(t)
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		headers := TextMapCarrier(map[string]string{})
+
+		_, err := tracer.Extract(headers)
+
+		assert.Equal(err, ErrSpanContextNotFound)
+		assert.Len(headers, 0)
+	})
+
+	t.Run("inject,extract/none", func(t *testing.T) {
+		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
+		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		tracer := newTracer()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx, ok := root.Context().(*spanContext)
+		ctx.traceID = 1
+		ctx.spanID = 1
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
+
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Nil(err)
+		assert.Len(headers, 0)
+
+		_, err = tracer.Extract(headers)
+		assert.Equal(err, ErrSpanContextNotFound)
+		assert.Len(headers, 0)
 	})
 }
 
