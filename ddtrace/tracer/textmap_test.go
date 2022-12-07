@@ -610,7 +610,6 @@ func TestNonePropagator(t *testing.T) {
 
 		_, err = tracer.Extract(headers)
 		assert.Equal(err, ErrSpanContextNotFound)
-		assert.Len(headers, 0)
 	})
 }
 
