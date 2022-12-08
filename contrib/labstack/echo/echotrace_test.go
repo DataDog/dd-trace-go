@@ -251,7 +251,7 @@ func TestStatusError(t *testing.T) {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
-		{ //03
+		{
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
@@ -259,7 +259,7 @@ func TestStatusError(t *testing.T) {
 				return errors.New("oh no")
 			},
 		},
-		{ //04
+		{
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
