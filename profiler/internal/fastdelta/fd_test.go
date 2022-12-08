@@ -343,6 +343,43 @@ func makeGolden(t testing.TB, before, after []byte, fields ...pprofutils.ValueTy
 	return c
 }
 
+func TestDurationAndTime(t *testing.T) {
+	// given
+	dc := NewDeltaComputer(
+		vt("alloc_objects", "count"),
+		vt("alloc_space", "bytes"),
+	)
+	heapBytes, err := os.ReadFile("testdata/big-heap.pprof")
+	require.NoError(t, err)
+	inputPprof, err := profile.ParseData(heapBytes)
+	require.NoError(t, err)
+
+	// The first expected duration is the same as the first pprof fed to dc.
+	// We need to invoke dc.Delta at least 3 times to exercise the duration logic.
+	var fixtures = []int64{inputPprof.DurationNanos, 0, 0, 0}
+	for i := 1; i < len(fixtures); i++ {
+		fixtures[i] = int64(i) * 10
+	}
+
+	inputBuf := new(bytes.Buffer)
+	outputBuf := new(bytes.Buffer)
+	for i := 1; i < len(fixtures); i++ {
+		inputBuf.Reset()
+		outputBuf.Reset()
+		require.NoError(t, inputPprof.WriteUncompressed(inputBuf))
+		err = dc.Delta(inputBuf.Bytes(), outputBuf)
+		deltaPprof, err := profile.ParseData(outputBuf.Bytes())
+		require.NoError(t, err)
+
+		expectedDuration := fixtures[i-1]
+		require.Equal(t, expectedDuration, deltaPprof.DurationNanos)
+		require.Equal(t, inputPprof.TimeNanos, deltaPprof.TimeNanos)
+
+		// advance the time
+		inputPprof.TimeNanos += fixtures[i]
+	}
+}
+
 func TestCompaction(t *testing.T) {
 	// given
 

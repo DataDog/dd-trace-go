@@ -185,7 +185,7 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
-		case "b3":
+		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})

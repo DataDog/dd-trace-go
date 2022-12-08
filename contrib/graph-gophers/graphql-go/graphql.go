@@ -47,6 +47,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 		tracer.Tag(tagGraphqlOperationName, operationName),
+		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
@@ -77,6 +78,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
+		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {

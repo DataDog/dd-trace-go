@@ -38,6 +38,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 			cfg.serviceName = svc
 		}
 	}
+
 	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		span, ctx := startSpanFromContext(ctx, info.FullMethod, cfg.serviceName, cfg.analyticsRate)
@@ -54,6 +55,8 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 		tracer.Measured(),
+		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
@@ -88,7 +91,10 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanopts = append(spanopts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
+		spanopts = append(spanopts, tracer.Tag(ext.Component, "google.golang.org/grpc.v12"))
+		spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKindClient))
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)
+
 		md, ok := metadata.FromContext(ctx)
 		if !ok {
 			md = metadata.MD{}

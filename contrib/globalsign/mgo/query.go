@@ -22,7 +22,9 @@ type Query struct {
 
 // Iter invokes and traces Query.Iter
 func (q *Query) Iter() *Iter {
+	q.tags["createChild"] = "true" //flag to tell newChildSpanFromContext not to set span.kind
 	span := newChildSpanFromContext(q.cfg, q.tags)
+	delete(q.tags, "createChild") // removes flag after creating span
 	iter := q.Query.Iter()
 	span.Finish()
 	return &Iter{
@@ -97,7 +99,9 @@ func (q *Query) One(result interface{}) error {
 
 // Tail invokes and traces Query.Tail
 func (q *Query) Tail(timeout time.Duration) *Iter {
+	q.tags["createChild"] = "true" //flag to tell newChildSpanFromContext not to set span.kind
 	span := newChildSpanFromContext(q.cfg, q.tags)
+	delete(q.tags, "createChild") // removes flag after creating span
 	iter := q.Query.Tail(timeout)
 	span.Finish()
 	return &Iter{

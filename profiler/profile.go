@@ -80,6 +80,7 @@ type profileType struct {
 // profileTypes maps every ProfileType to its implementation.
 var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
+		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
@@ -437,6 +438,12 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 	pprofSut, err := pprofile.ParseData(resSut)
 	if err != nil {
 		cdp.reportError(err.Error())
+		return res, nil
+	}
+
+	if pprofGolden.DurationNanos != pprofSut.DurationNanos {
+		log.Error("profiles differ: golden_dur=%d sut_dur=%d", pprofGolden.DurationNanos, pprofSut.DurationNanos)
+		cdp.reportError("compare_failed")
 		return res, nil
 	}
 
