@@ -360,6 +360,7 @@ const (
 var grpcAddresses = []string{
 	grpcServerRequestMessage,
 	grpcServerRequestMetadata,
+	httpClientIPAddr,
 }
 
 func init() {
@@ -373,11 +374,16 @@ func init() {
 func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, notSupported []string) {
 	// Filter the supported addresses only
 	for _, addr := range ruleAddresses {
+		supported := false
 		if i := sort.SearchStrings(httpAddresses, addr); i < len(httpAddresses) && httpAddresses[i] == addr {
 			supportedHTTP = append(supportedHTTP, addr)
-		} else if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
+			supported = true
+		}
+		if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
 			supportedGRPC = append(supportedGRPC, addr)
-		} else {
+			supported = true
+		}
+		if !supported {
 			notSupported = append(notSupported, addr)
 		}
 	}

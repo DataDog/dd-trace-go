@@ -26,7 +26,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		ip := httpsec.IPFromHeaders(httpsec.NormalizeHTTPHeaders(md), "")
+		ip := httpsec.IPFromHeaders(md, "")
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: ip}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
@@ -50,7 +50,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
-		ip := httpsec.IPFromHeaders(httpsec.NormalizeHTTPHeaders(md), "")
+		ip := httpsec.IPFromHeaders(md, "")
 		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: ip}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})

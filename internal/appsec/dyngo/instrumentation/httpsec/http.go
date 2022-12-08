@@ -149,7 +149,7 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 		Cookies:    cookies,
 		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
-		ClientIP:   IPFromRequest(r),
+		ClientIP:   IPFromHeaders(headers, r.RemoteAddr),
 	}
 }
 
@@ -313,7 +313,7 @@ func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 }
 
 // IPFromHeaders returns the resolved client IP for set of normalized headers. The returned IP can be invalid.
-func IPFromHeaders(hdrs map[string]string, remoteAddr string) instrumentation.NetaddrIP {
+func IPFromHeaders(hdrs map[string][]string, remoteAddr string) instrumentation.NetaddrIP {
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
@@ -321,9 +321,10 @@ func IPFromHeaders(hdrs map[string]string, remoteAddr string) instrumentation.Ne
 	var headers []string
 	var ips []string
 	for _, hdr := range ipHeaders {
-		if v, ok := hdrs[hdr]; ok && v != "" {
+		if v, ok := hdrs[hdr]; ok && len(v) >= 1 {
 			headers = append(headers, hdr)
-			ips = append(ips, v)
+			// We currently only use the first entry for one specific header
+			ips = append(ips, v[0])
 		}
 	}
 	if len(ips) == 0 {
@@ -340,12 +341,6 @@ func IPFromHeaders(hdrs map[string]string, remoteAddr string) instrumentation.Ne
 	}
 
 	return instrumentation.NetaddrIP{}
-}
-
-// IPFromRequest returns the resolved client IP for a specific request. The returned IP can be invalid.
-func IPFromRequest(r *http.Request) instrumentation.NetaddrIP {
-	normalized := NormalizeHTTPHeaders(r.Header)
-	return IPFromHeaders(normalized, r.RemoteAddr)
 }
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
