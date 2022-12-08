@@ -37,6 +37,7 @@ jobs:
         run: |
           cd system-tests/parametric/apps/golang
           go get gopkg.in/DataDog/dd-trace-go.v1@$COMMIT_SHA
+          go mod tidy
 
       - name: Checkout Python
         uses: actions/checkout@v3
