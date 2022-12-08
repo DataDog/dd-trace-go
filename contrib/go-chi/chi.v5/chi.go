@@ -67,7 +67,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			// set the resource name as we get it only once the handler is executed
-			resourceName := chi.RouteContext(r.Context()).RoutePattern()
+			resourceName := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
 			span.SetTag(ext.HTTPRoute, resourceName)
 			if resourceName == "" {
 				resourceName = "unknown"
