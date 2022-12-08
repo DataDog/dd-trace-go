@@ -34,7 +34,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(ctx, span, events)
+			setAppSecTags(ctx, span, ip, events)
 		}()
 		if op.BlockedCode != nil {
 			op.AddTag("appsec.blocked", true)
@@ -58,7 +58,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(stream.Context(), span, events)
+			setAppSecTags(stream.Context(), span, ip, events)
 		}()
 		if op.BlockedCode != nil {
 			op.AddTag("appsec.blocked", true)
@@ -84,11 +84,11 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 }
 
 // Set the AppSec tags when security events were found.
-func setAppSecTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
+func setAppSecTags(ctx context.Context, span ddtrace.Span, clientIP instrumentation.NetaddrIP, events []json.RawMessage) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	var addr net.Addr
+	var peerAddr net.Addr
 	if p, ok := peer.FromContext(ctx); ok {
-		addr = p.Addr
+		peerAddr = p.Addr
 	}
-	grpcsec.SetSecurityEventTags(span, events, addr, md)
+	grpcsec.SetSecurityEventTags(span, events, clientIP, peerAddr, md)
 }
