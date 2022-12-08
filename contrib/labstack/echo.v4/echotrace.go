@@ -63,17 +63,17 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			span, ctx := httptrace.StartRequestSpan(request, opts...)
 			defer func() {
-				//httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
 				span.Finish(finishOpts...)
 			}()
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
-			// serve the request to the next middleware
+
 			if appsecEnabled {
 				afterMiddleware := useAppSec(c, span)
 				defer afterMiddleware()
 			}
+			// serve the request to the next middleware
 			err := next(c)
 			if err != nil {
 				// invokes the registered HTTP error handler
@@ -88,7 +88,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 					}
 					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
 				default:
-					// Any non-HTTPError errors appear as 5xx errors.
+					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
 					if cfg.isStatusError(500) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
@@ -96,13 +96,11 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					// mark 5xx server error
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
-					// mark 5xx server error
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
 				}
 				span.SetTag(ext.HTTPCode, "200")

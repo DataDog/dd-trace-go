@@ -69,29 +69,23 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				switch err := err.(type) {
 				case *echo.HTTPError:
 					if cfg.isStatusError(err.Code) {
-						fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
 				default:
-					// Any non-HTTPError errors appear as 5xx errors.
+					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
 					if cfg.isStatusError(500) {
-						fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, "500")
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					// mark 5xx server error
-					fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
-					// mark 5xx server error
-					fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
 				}
 				span.SetTag(ext.HTTPCode, "200")
