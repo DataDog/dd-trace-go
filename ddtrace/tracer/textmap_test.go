@@ -575,6 +575,30 @@ func TestNonePropagator(t *testing.T) {
 		assert.Len(headers, 0)
 	})
 
+	t.Run("inject/none,b3", func(t *testing.T) {
+		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none,b3")
+		tp := new(testLogger)
+		tracer := newTracer(WithLogger(tp))
+		// reinitializing to capture log output, since propagators are parsed before logger is set
+		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx, ok := root.Context().(*spanContext)
+		ctx.traceID = 1
+		ctx.spanID = 1
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
+
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Nil(err)
+		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
+		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
+		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
+			"To disable the propagator, set `DD_PROPAGATION_STYLE_INJECT=none`")
+	})
+
 	t.Run("extract/none", func(t *testing.T) {
 		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
 		assert := assert.New(t)
