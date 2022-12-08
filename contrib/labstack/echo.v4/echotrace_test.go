@@ -79,7 +79,7 @@ func TestTrace200(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -127,7 +127,7 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -174,7 +174,7 @@ func TestError(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -214,7 +214,7 @@ func TestErrorHandling(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -314,7 +314,7 @@ func TestStatusError(t *testing.T) {
 			router.ServeHTTP(w, r)
 
 			spans := mt.FinishedSpans()
-			assert.Len(spans, 1)
+			require.Len(t, spans, 1)
 			span := spans[0]
 			assert.Equal("http.request", span.OperationName())
 			assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
@@ -384,7 +384,7 @@ func TestNoDebugStack(t *testing.T) {
 	assert.True(traced)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())

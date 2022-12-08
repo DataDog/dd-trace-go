@@ -7,6 +7,7 @@
 package echo
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -81,13 +82,13 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
-				switch err := err.(type) {
-				case *echo.HTTPError:
-					if cfg.isStatusError(err.Code) {
+				var echoErr *echo.HTTPError
+				if errors.As(err, &echoErr) {
+					if cfg.isStatusError(echoErr.Code) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
-					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
-				default:
+					span.SetTag(ext.HTTPCode, strconv.Itoa(echoErr.Code))
+				} else {
 					// Any error that is not an *echo.HTTPError will be treated as an error with 500 status code.
 					if cfg.isStatusError(500) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
