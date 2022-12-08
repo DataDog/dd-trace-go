@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -27,24 +28,25 @@ func (*BlockRequestAction) isAction() {}
 
 // NewBlockRequestAction creates, initializes and returns a new BlockRequestAction
 func NewBlockRequestAction(status int, template string) BlockRequestAction {
-	htmlHandler := newBlockRequestHandler(status, "application/html", blockedTemplateHTML)
+	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
 	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
 	var action BlockRequestAction
 	switch template {
 	case "json":
-		action.handler = newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
+		action.handler = jsonHandler
 		break
 	case "html":
-		action.handler = newBlockRequestHandler(status, "application/html", blockedTemplateHTML)
+		action.handler = htmlHandler
 		break
 	default:
 		action.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := jsonHandler
-			for _, value := range r.Header.Values("Accept") {
-				if value == "application/html" {
-					h = htmlHandler
-					break
-				}
+			hdr := r.Header.Get("Accept")
+			htmlIdx := strings.Index(hdr, "text/html")
+			jsonIdx := strings.Index(hdr, "application/json")
+			// Switch to html handler if text/html comes before application/json in the Accept header
+			if htmlIdx != -1 && (jsonIdx == -1 || htmlIdx < jsonIdx) {
+				h = htmlHandler
 			}
 			h.ServeHTTP(w, r)
 		})
