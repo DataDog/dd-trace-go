@@ -51,7 +51,8 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			span, ctx := httptrace.StartRequestSpan(request, opts...)
 			defer func() {
-				httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
+				//httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
+				span.Finish(finishOpts...)
 			}()
 
 			// pass the span through the request context
@@ -68,12 +69,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				switch err := err.(type) {
 				case *echo.HTTPError:
 					if cfg.isStatusError(err.Code) {
+						fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, strconv.Itoa(err.Code))
 				default:
 					// Any non-HTTPError errors appear as 5xx errors.
 					if cfg.isStatusError(500) {
+						fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}
 					span.SetTag(ext.HTTPCode, "500")
@@ -81,12 +84,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
 					// mark 5xx server error
+					fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
 					// mark 5xx server error
+					fmt.Printf("FINISH OPTS ADDING ERROR!\n")
 					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
 				}
 				span.SetTag(ext.HTTPCode, "200")

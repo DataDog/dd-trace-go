@@ -18,7 +18,7 @@ type config struct {
 	analyticsRate     float64
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
-	isStatusError func(statusCode int) bool
+	isStatusError     func(statusCode int) bool
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -66,7 +66,6 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
@@ -82,6 +81,7 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequestFunc = ignoreRequestFunc
 	}
+}
 
 // WithStatusCheck specifies a function fn which reports whether the passed
 // statusCode should be considered an error.

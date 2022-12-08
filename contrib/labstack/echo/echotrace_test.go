@@ -18,6 +18,7 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -175,6 +176,7 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
@@ -215,6 +217,7 @@ func TestErrorHandling(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("labstack/echo", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
@@ -248,7 +251,7 @@ func TestStatusError(t *testing.T) {
 				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
 			},
 		},
-		{
+		{ //03
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
@@ -256,7 +259,7 @@ func TestStatusError(t *testing.T) {
 				return errors.New("oh no")
 			},
 		},
-		{
+		{ //04
 			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
 			err:           nil,
 			code:          "500",
@@ -320,6 +323,7 @@ func TestStatusError(t *testing.T) {
 			err := span.Tag(ext.Error)
 			if tt.err != nil {
 				assert.NotNil(err)
+				require.NotNil(t, span.Tag(ext.Error))
 				assert.Equal(tt.err.Error(), err.(error).Error())
 			} else {
 				assert.Nil(err)
@@ -380,6 +384,7 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
 	assert.Equal("labstack/echo", span.Tag(ext.Component))

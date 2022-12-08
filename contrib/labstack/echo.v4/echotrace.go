@@ -63,7 +63,8 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 			span, ctx := httptrace.StartRequestSpan(request, opts...)
 			defer func() {
-				httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
+				//httptrace.FinishRequestSpan(span, c.Response().Status, finishOpts...)
+				span.Finish(finishOpts...)
 			}()
 
 			// pass the span through the request context
