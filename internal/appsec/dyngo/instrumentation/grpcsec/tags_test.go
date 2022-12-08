@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -119,33 +120,55 @@ func TestSetSecurityEventTags(t *testing.T) {
 				},
 			} {
 				metadataCase := metadataCase
-				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, addrCase.name, metadataCase.name), func(t *testing.T) {
-					var span MockSpan
-					err := setSecurityEventTags(&span, eventCase.events, addrCase.addr, metadataCase.md)
-					if eventCase.expectedError {
-						require.Error(t, err)
-						return
-					}
-					require.NoError(t, err)
+				for _, clientIPCase := range []struct {
+					name                string
+					clientIP            instrumentation.NetaddrIP
+					expectedClientIPTag string
+				}{
+					{
+						name:                "invalid-client-ip",
+						clientIP:            instrumentation.NetaddrIP{},
+						expectedClientIPTag: "",
+					},
+					{
+						name:                "valid-client-ip",
+						clientIP:            instrumentation.NetaddrIPv4(1, 2, 3, 4),
+						expectedClientIPTag: "1.2.3.4",
+					},
+				} {
+					clientIPCase := clientIPCase
+					t.Run(fmt.Sprintf("%s-%s-%s-%s", eventCase.name, addrCase.name, metadataCase.name, clientIPCase.name), func(t *testing.T) {
+						var span MockSpan
+						err := setSecurityEventTags(&span, eventCase.events, clientIPCase.clientIP, addrCase.addr, metadataCase.md)
+						if eventCase.expectedError {
+							require.Error(t, err)
+							return
+						}
+						require.NoError(t, err)
 
-					expectedTags := map[string]interface{}{
-						"_dd.appsec.json": eventCase.expectedTag,
-						"manual.keep":     true,
-						"appsec.event":    true,
-						"_dd.origin":      "appsec",
-					}
+						expectedTags := map[string]interface{}{
+							"_dd.appsec.json": eventCase.expectedTag,
+							"manual.keep":     true,
+							"appsec.event":    true,
+							"_dd.origin":      "appsec",
+						}
 
-					if addr := addrCase.expectedTag; addr != "" {
-						expectedTags["network.client.ip"] = addr
-					}
+						if addr := addrCase.expectedTag; addr != "" {
+							expectedTags["network.client.ip"] = addr
+						}
 
-					for k, v := range metadataCase.expectedTags {
-						expectedTags[k] = v
-					}
+						for k, v := range metadataCase.expectedTags {
+							expectedTags[k] = v
+						}
 
-					require.Equal(t, expectedTags, span.tags)
-					require.False(t, span.finished)
-				})
+						if clientIPCase.expectedClientIPTag != "" {
+							expectedTags["http.client_ip"] = clientIPCase.expectedClientIPTag
+						}
+
+						require.Equal(t, expectedTags, span.tags)
+						require.False(t, span.finished)
+					})
+				}
 			}
 		}
 	}
