@@ -12,6 +12,7 @@ package httpsec
 
 import (
 	"context"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
@@ -23,6 +24,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -143,13 +145,14 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 	}
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
+	ip := IPFromHeaders(r.Header, r.RemoteAddr)
 	return HandlerOperationArgs{
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,
 		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
-		ClientIP:   IPFromHeaders(headers, r.RemoteAddr),
+		ClientIP:   ip,
 	}
 }
 
@@ -312,35 +315,10 @@ func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
 }
 
-// IPFromHeaders returns the resolved client IP for set of normalized headers. The returned IP can be invalid.
+// IPFromHeaders tries to resolve and return the user IP from request headers
 func IPFromHeaders(hdrs map[string][]string, remoteAddr string) instrumentation.NetaddrIP {
-	ipHeaders := defaultIPHeaders
-	if len(clientIPHeader) > 0 {
-		ipHeaders = []string{clientIPHeader}
-	}
-	var headers []string
-	var ips []string
-	for _, hdr := range ipHeaders {
-		if v, ok := hdrs[hdr]; ok && len(v) >= 1 {
-			headers = append(headers, hdr)
-			// We currently only use the first entry for one specific header
-			ips = append(ips, v[0])
-		}
-	}
-	if len(ips) == 0 {
-		if remoteIP := parseIP(remoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-			return remoteIP
-		}
-	} else if len(ips) == 1 {
-		for _, ipstr := range strings.Split(ips[0], ",") {
-			ip := parseIP(strings.TrimSpace(ipstr))
-			if ip.IsValid() && isGlobal(ip) {
-				return ip
-			}
-		}
-	}
-
-	return instrumentation.NetaddrIP{}
+	ip := IPTagsFromHeaders(hdrs, remoteAddr)[ext.HTTPClientIP]
+	return parseIP(ip)
 }
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests

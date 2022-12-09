@@ -106,42 +106,66 @@ func ippref(s string) *instrumentation.NetaddrIPPrefix {
 }
 
 // SetIPTags sets the IP related span tags for a given request
+func SetIPTags(s instrumentation.TagSetter, r *http.Request) {
+	for k, v := range IPTagsFromHeaders(r.Header, r.RemoteAddr) {
+		s.SetTag(k, v)
+	}
+
+}
+
+// IPTagsFromHeaders generates the IP related span tags for a given request's headers
 // See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
-func SetIPTags(span instrumentation.TagSetter, r *http.Request) {
+func IPTagsFromHeaders(hdrs map[string][]string, remoteAddr string) map[string]string {
+	tags := map[string]string{}
 	ipHeaders := defaultIPHeaders
 	if len(clientIPHeader) > 0 {
 		ipHeaders = []string{clientIPHeader}
 	}
-
 	var (
 		headers []string
 		ips     []string
 	)
+
+	// Make sure all headers are lower-case
+	for k, v := range hdrs {
+		hdrs[strings.ToLower(k)] = v
+	}
 	for _, hdr := range ipHeaders {
-		if v := r.Header.Get(hdr); v != "" {
+		if v := hdrs[hdr]; len(v) >= 1 && v[0] != "" {
 			headers = append(headers, hdr)
-			ips = append(ips, v)
+			ips = append(ips, v[0])
 		}
 	}
 
-	if l := len(ips); l == 0 {
-		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-			span.SetTag(ext.HTTPClientIP, remoteIP.String())
-		}
-	} else if l == 1 {
+	var privateIP instrumentation.NetaddrIP
+	// First try to use the IP from the headers if only one IP was found
+	if l := len(ips); l == 1 {
 		for _, ipstr := range strings.Split(ips[0], ",") {
 			ip := parseIP(strings.TrimSpace(ipstr))
-			if ip.IsValid() && isGlobal(ip) {
-				span.SetTag(ext.HTTPClientIP, ip.String())
-				break
+			if ip.IsValid() {
+				if isGlobal(ip) {
+					tags[ext.HTTPClientIP] = ip.String()
+					return tags
+				} else if !privateIP.IsValid() {
+					privateIP = ip
+				}
 			}
 		}
-	} else {
+	} else if l > 1 { // If more than one IP header, report them
 		for i := range ips {
-			span.SetTag(ext.HTTPRequestHeaders+"."+headers[i], ips[i])
+			tags[ext.HTTPRequestHeaders+"."+headers[i]] = ips[i]
 		}
-		span.SetTag(tagMultipleIPHeaders, strings.Join(headers, ","))
+		tags[tagMultipleIPHeaders] = strings.Join(headers, ",")
 	}
+
+	// Try to get a global IP from remoteAddr. If not, try to use any private IP we found
+	if remoteIP := parseIP(remoteAddr); remoteIP.IsValid() && (isGlobal(remoteIP) || !privateIP.IsValid()) {
+		tags[ext.HTTPClientIP] = remoteIP.String()
+	} else if privateIP.IsValid() {
+		tags[ext.HTTPClientIP] = privateIP.String()
+	}
+
+	return tags
 }
 
 func parseIP(s string) instrumentation.NetaddrIP {

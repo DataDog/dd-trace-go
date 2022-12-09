@@ -80,7 +80,7 @@ func genIPTestCases() []ipTestCase {
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv4-private." + header,
 			headers:    map[string]string{header: ipv4Private},
-			expectedIP: instrumentation.NetaddrIP{},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Private),
 		})
 	}
 	// Simple ipv6 test cases over all headers
@@ -93,7 +93,7 @@ func genIPTestCases() []ipTestCase {
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv6-private." + header,
 			headers:    map[string]string{header: ipv6Private},
-			expectedIP: instrumentation.NetaddrIP{},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Private),
 		})
 	}
 	// private and global in same header
