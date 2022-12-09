@@ -434,6 +434,12 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 		return res, nil
 	}
 
+	if pprofGolden.DurationNanos != pprofSut.DurationNanos {
+		log.Error("profiles differ: golden_dur=%d sut_dur=%d", pprofGolden.DurationNanos, pprofSut.DurationNanos)
+		cdp.reportError("compare_failed")
+		return res, nil
+	}
+
 	pprofDiff, err := PprofDiff(pprofSut, pprofGolden)
 	if err != nil {
 		cdp.reportError(err.Error())
