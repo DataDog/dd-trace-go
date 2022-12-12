@@ -12,11 +12,9 @@ package httpsec
 
 import (
 	"context"
-
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
-	"net"
 	"net/http"
 	"os"
 	"reflect"
@@ -24,7 +22,6 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -82,7 +79,7 @@ func applyActions(op *Operation) http.Handler {
 	for _, action := range op.Actions() {
 		switch a := action.(type) {
 		case *BlockRequestAction:
-			op.AddTag(tagBlockedRequest, true)
+			op.AddTag(BlockedRequestTag, true)
 			return a.handler
 		default:
 			log.Error("appsec: ignoring security action: unexpected action type %T", a)
@@ -96,9 +93,10 @@ func applyActions(op *Operation) http.Handler {
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		SetIPTags(span, r)
+		ipTags, clientIP := ClientIPTags(r.Header, r.RemoteAddr)
+		instrumentation.SetStringTags(span, ipTags)
 
-		args := MakeHandlerOperationArgs(r, pathParams)
+		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
 
@@ -118,11 +116,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			applyActions(op)
-			remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				remoteIP = r.RemoteAddr
-			}
-			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
+			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
 		handler.ServeHTTP(w, r)
@@ -133,7 +127,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP instrumentation.NetaddrIP, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
@@ -145,14 +139,13 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 	}
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
-	ip := IPFromHeaders(r.Header, r.RemoteAddr)
 	return HandlerOperationArgs{
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,
 		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
-		ClientIP:   ip,
+		ClientIP:   clientIP,
 	}
 }
 
@@ -313,12 +306,6 @@ func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOper
 // type-assertion on v whose type is the one returned by ListenedType().
 func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
-}
-
-// IPFromHeaders tries to resolve and return the user IP from request headers
-func IPFromHeaders(hdrs map[string][]string, remoteAddr string) instrumentation.NetaddrIP {
-	ip := IPTagsFromHeaders(hdrs, remoteAddr)[ext.HTTPClientIP]
-	return parseIP(ip)
 }
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests

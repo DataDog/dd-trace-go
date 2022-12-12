@@ -69,33 +69,87 @@ func genIPTestCases() []ipTestCase {
 	ipv6Global := randGlobalIPv6().String()
 	ipv4Private := randPrivateIPv4().String()
 	ipv6Private := randPrivateIPv6().String()
-	tcs := []ipTestCase{}
+
+	tcs := []ipTestCase{
+		{
+			name:       "ipv4-global-remoteaddr",
+			remoteAddr: ipv4Global,
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+		},
+		{
+			name:       "ipv4-private-remoteaddr",
+			remoteAddr: ipv4Private,
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Private),
+		},
+		{
+			name:       "ipv6-global-remoteaddr",
+			remoteAddr: ipv6Global,
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+		},
+		{
+			name:       "ipv6-private-remoteaddr",
+			remoteAddr: ipv6Private,
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Private),
+		},
+	}
+
 	// Simple ipv4 test cases over all headers
 	for _, header := range defaultIPHeaders {
-		tcs = append(tcs, ipTestCase{
-			name:       "ipv4-global." + header,
-			headers:    map[string]string{header: ipv4Global},
-			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
-		})
-		tcs = append(tcs, ipTestCase{
-			name:       "ipv4-private." + header,
-			headers:    map[string]string{header: ipv4Private},
-			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Private),
-		})
+		tcs = append(tcs,
+			ipTestCase{
+				name:       "ipv4-global." + header,
+				remoteAddr: ipv4Private,
+				headers:    map[string]string{header: ipv4Global},
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+			},
+			ipTestCase{
+				name:       "ipv4-private." + header,
+				headers:    map[string]string{header: ipv4Private},
+				remoteAddr: ipv6Private,
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv4Private),
+			},
+			ipTestCase{
+				name:       "ipv4-global-remoteaddr-local-ip-header." + header,
+				remoteAddr: ipv4Global,
+				headers:    map[string]string{header: ipv4Private},
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+			},
+			ipTestCase{
+				name:       "ipv4-global-remoteaddr-global-ip-header." + header,
+				remoteAddr: ipv6Global,
+				headers:    map[string]string{header: ipv4Global},
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+			})
 	}
+
 	// Simple ipv6 test cases over all headers
 	for _, header := range defaultIPHeaders {
 		tcs = append(tcs, ipTestCase{
 			name:       "ipv6-global." + header,
+			remoteAddr: ipv4Private,
 			headers:    map[string]string{header: ipv6Global},
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
-		})
-		tcs = append(tcs, ipTestCase{
-			name:       "ipv6-private." + header,
-			headers:    map[string]string{header: ipv6Private},
-			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Private),
-		})
+		},
+			ipTestCase{
+				name:       "ipv6-private." + header,
+				headers:    map[string]string{header: ipv6Private},
+				remoteAddr: ipv4Private,
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv6Private),
+			},
+			ipTestCase{
+				name:       "ipv6-global-remoteaddr-local-ip-header." + header,
+				remoteAddr: ipv6Global,
+				headers:    map[string]string{header: ipv6Private},
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+			},
+			ipTestCase{
+				name:       "ipv6-global-remoteaddr-global-ip-header." + header,
+				remoteAddr: ipv4Global,
+				headers:    map[string]string{header: ipv6Global},
+				expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+			})
 	}
+
 	// private and global in same header
 	tcs = append([]ipTestCase{
 		{
@@ -118,7 +172,18 @@ func genIPTestCases() []ipTestCase {
 			headers:    map[string]string{"x-forwarded-for": ipv6Global + "," + ipv6Private},
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
+		{
+			name:       "mixed-global+global",
+			headers:    map[string]string{"x-forwarded-for": ipv4Private + "," + ipv6Global + "," + ipv4Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+		},
+		{
+			name:       "mixed-global+global",
+			headers:    map[string]string{"x-forwarded-for": ipv4Private + "," + ipv4Global + "," + ipv6Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+		},
 	}, tcs...)
+
 	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
 	tcs = append([]ipTestCase{
 		{
@@ -127,21 +192,27 @@ func genIPTestCases() []ipTestCase {
 			expectedIP: instrumentation.NetaddrIP{},
 		},
 		{
+			name:       "invalid-ipv4-header-valid-remoteaddr",
+			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
+			remoteAddr: ipv4Private,
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Private),
+		},
+		{
 			name:       "invalid-ipv4-recover",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1, " + ipv4Global},
+			headers:    map[string]string{"x-forwarded-for": "127..0.0.1, " + ipv6Private + "," + ipv4Global},
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:         "ipv4-multi-header-1",
 			headers:      map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
 			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
+			multiHeaders: "forwarded-for,x-forwarded-for",
 		},
 		{
 			name:         "ipv4-multi-header-2",
 			headers:      map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
 			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
+			multiHeaders: "forwarded-for,x-forwarded-for",
 		},
 		{
 			name:       "invalid-ipv6",
@@ -157,82 +228,62 @@ func genIPTestCases() []ipTestCase {
 			name:         "ipv6-multi-header-1",
 			headers:      map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
 			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
+			multiHeaders: "forwarded-for,x-forwarded-for",
 		},
 		{
 			name:         "ipv6-multi-header-2",
 			headers:      map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
 			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
+			multiHeaders: "forwarded-for,x-forwarded-for",
 		},
-	}, tcs...)
-	tcs = append([]ipTestCase{
 		{
 			name:       "no-headers",
 			expectedIP: instrumentation.NetaddrIP{},
 		},
 		{
 			name:       "header-case",
-			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:           "user-header",
-			expectedIP:     instrumentation.NetaddrMustParseIP(ipv4Global),
 			headers:        map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
 			clientIPHeader: "custom-header",
+			expectedIP:     instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:           "user-header-not-found",
-			expectedIP:     instrumentation.NetaddrIP{},
 			headers:        map[string]string{"x-forwarded-for": ipv4Global},
 			clientIPHeader: "custom-header",
+			expectedIP:     instrumentation.NetaddrIP{},
 		},
 	}, tcs...)
 
 	return tcs
 }
 
-type mockspan struct {
-	tags map[string]interface{}
-}
-
-func (m *mockspan) SetTag(tag string, value interface{}) {
-	if m.tags == nil {
-		m.tags = make(map[string]interface{})
-	}
-	m.tags[tag] = value
-}
-
-func (m *mockspan) Tag(tag string) interface{} {
-	if m.tags == nil {
-		return nil
-	}
-	return m.tags[tag]
-}
-
 func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of clientIPHeader at the end of the test
-	defer func(s string) { clientIPHeader = s }(clientIPHeader)
+	// Make sure to restore the real value of clientIPHeaderCfg at the end of the test
+	defer func(s string) { clientIPHeaderCfg = s }(clientIPHeaderCfg)
 	for _, tc := range genIPTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			header := http.Header{}
 			for k, v := range tc.headers {
 				header.Add(k, v)
 			}
-			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
-			clientIPHeader = tc.clientIPHeader
-			var span mockspan
-			SetIPTags(&span, &r)
+			clientIPHeaderCfg = tc.clientIPHeader
+			tags, clientIP := ClientIPTags(header, tc.remoteAddr)
 			if tc.expectedIP.IsValid() {
-				require.Equal(t, tc.expectedIP.String(), span.Tag(ext.HTTPClientIP))
-				require.Nil(t, span.Tag(tagMultipleIPHeaders))
+				expectedIP := tc.expectedIP.String()
+				require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
+				require.Equal(t, expectedIP, clientIP.String())
+				require.NotContains(t, tags, multipleIPHeadersTag)
 			} else {
-				require.Nil(t, span.Tag(ext.HTTPClientIP))
+				require.NotContains(t, tags, ext.HTTPClientIP)
 				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, span.Tag(tagMultipleIPHeaders))
+					require.Equal(t, tc.multiHeaders, tags[multipleIPHeadersTag])
 					for hdr, ip := range tc.headers {
-						require.Equal(t, ip, span.Tag(ext.HTTPRequestHeaders+"."+hdr))
+						require.Equal(t, ip, tags[ext.HTTPRequestHeaders+"."+hdr])
 					}
 				}
 			}

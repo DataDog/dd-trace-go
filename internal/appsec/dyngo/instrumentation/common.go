@@ -81,6 +81,14 @@ func SetTags(span TagSetter, tags map[string]interface{}) {
 	}
 }
 
+// SetStringTags fills the span tags using the key/value pairs of strings found
+// in `tags`
+func SetStringTags(span TagSetter, tags map[string]string) {
+	for k, v := range tags {
+		span.SetTag(k, v)
+	}
+}
+
 // SetAppSecEnabledTags sets the AppSec-specific span tags that are expected to be in
 // the web service entry span (span of type `web`) when AppSec is enabled.
 func SetAppSecEnabledTags(span TagSetter) {
