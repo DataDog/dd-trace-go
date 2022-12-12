@@ -532,14 +532,14 @@ func parseTraceParent(ctx *spanContext, v string) error {
 	if len(v) != 55 {
 		return ErrSpanContextCorrupted
 	}
-	traceId := v[3:35]
-	ctx.traceID, err = strconv.ParseUint(traceId[16:], 16, 64)
+	traceID := v[3:35]
+	ctx.traceID, err = strconv.ParseUint(traceID[16:], 16, 64)
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
 	// setting trace-id to be used for span context propagation
 	// TODO(dianashevchenko): is DefaultTraceIDHeader the correct header
-	appendPropagatingTags(ctx, DefaultTraceIDHeader, traceId)
+	appendPropagatingTags(ctx, DefaultTraceIDHeader, traceID)
 
 	ctx.spanID, err = strconv.ParseUint(v[36:52], 16, 64)
 	if err != nil {

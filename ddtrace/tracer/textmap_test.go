@@ -559,8 +559,8 @@ func TestW3C(t *testing.T) {
 	t.Run("extract/valid", func(t *testing.T) {
 		var tests = []struct {
 			in              TextMapCarrier
-			traceId         uint64
-			spanId          uint64
+			traceID         uint64
+			spanID          uint64
 			priority        int
 			origin          string
 			propagatingTags map[string]string
@@ -570,55 +570,76 @@ func TestW3C(t *testing.T) {
 					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
-				traceId:         1229782938247303441,
-				spanId:          2459565876494606882,
-				priority:        2,
-				origin:          "rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2,
+				origin:   "rum",
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.t.dm":         "-4", "_dd.p.t.usr.id": "baz64==",
+					"tracestate": "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
 			},
 			{
 				in: TextMapCarrier{
 					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 					tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
-				traceId:         1229782938247303441,
-				spanId:          2459565876494606882,
-				priority:        1,
-				origin:          "rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-2", "_dd.p.t.usr.id": "baz64=="},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1,
+				origin:   "rum",
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.t.dm":         "-2",
+					"_dd.p.t.usr.id":     "baz64==",
+					"tracestate":         "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 			},
 			{
 				in: TextMapCarrier{
 					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 					tracestateHeader:  "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
-				traceId:         1229782938247303441,
-				spanId:          2459565876494606882,
-				priority:        2, // tracestate priority takes precedence
-				origin:          "rum:rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2, // tracestate priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.t.dm":         "-4", "_dd.p.t.usr.id": "baz64==",
+					"tracestate": "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
 			},
 			{
 				in: TextMapCarrier{
 					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
-				traceId:         1229782938247303441,
-				spanId:          2459565876494606882,
-				priority:        1, // traceparent priority takes precedence
-				origin:          "rum:rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.t.dm":     "-4",
+					"_dd.p.t.usr.id": "baz64==",
+					"tracestate":     "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
 			},
 			{
 				in: TextMapCarrier{
 					traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
 					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
-				traceId:         1229782938247303441,
-				spanId:          2459565876494606882,
-				priority:        1, // traceparent priority takes precedence
-				origin:          "rum:rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"tracestate":         "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.t.dm":         "-4",
+					"_dd.p.t.usr.id":     "baz64==",
+				},
 			},
 		}
 
@@ -632,8 +653,8 @@ func TestW3C(t *testing.T) {
 				sctx, ok := ctx.(*spanContext)
 				assert.True(ok)
 
-				assert.Equal(test.traceId, sctx.traceID)
-				assert.Equal(test.spanId, sctx.spanID)
+				assert.Equal(test.traceID, sctx.traceID)
+				assert.Equal(test.spanID, sctx.spanID)
 				assert.Equal(test.origin, sctx.origin)
 				p, ok := sctx.samplingPriority()
 				assert.True(ok)
@@ -647,51 +668,19 @@ func TestW3C(t *testing.T) {
 	})
 
 	t.Run("extract/invalid", func(t *testing.T) {
-		var tests = []struct {
-			in       TextMapCarrier
-			traceId  uint64
-			spanId   uint64
-			priority int
-			origin   string
-		}{
+		var tests = []TextMapCarrier{
+			{tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 			{
-				in: TextMapCarrier{
-					tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
-				},
-				traceId:  1229782938247303441,
-				spanId:   2459565876494606882,
-				priority: 0, // traceparent priority takes precedence
-				origin:   "rum",
+				traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 			},
 			{
-				in: TextMapCarrier{
-					traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
-					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
-				},
-				traceId:  1229782938247303441,
-				spanId:   2459565876494606882,
-				priority: 0, // traceparent priority takes precedence
-				origin:   "rum",
+				traceparentHeader: "100-00000000000000001111111111111111-2222222222222222-01", // invalid length
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 			},
 			{
-				in: TextMapCarrier{
-					traceparentHeader: "100-00000000000000001111111111111111-2222222222222222-01", // invalid length
-					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
-				},
-				traceId:  1229782938247303441,
-				spanId:   2459565876494606882,
-				priority: 2, // tracestate priority takes precedence
-				origin:   "rum",
-			},
-			{
-				in: TextMapCarrier{
-					traceparentHeader: "ff-00000000000000001111111111111111-2222222222222222-01", // invalid version
-					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
-				},
-				traceId:  1229782938247303441,
-				spanId:   2459565876494606882,
-				priority: 2, // tracestate priority takes precedence
-				origin:   "rum",
+				traceparentHeader: "ff-00000000000000001111111111111111-2222222222222222-01", // invalid version
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 			},
 		}
 
@@ -700,7 +689,7 @@ func TestW3C(t *testing.T) {
 				// todo: replace that with env variable configuration
 				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
 				assert := assert.New(t)
-				ctx, err := tracer.Extract(test.in)
+				ctx, err := tracer.Extract(test)
 				assert.NotNil(err)
 				assert.Nil(ctx)
 			})
