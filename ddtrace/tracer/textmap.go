@@ -177,6 +177,9 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 	if ps == "" {
 		return defaultPs
 	}
+	if ps == "none" {
+		return nil
+	}
 	var list []Propagator
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
@@ -190,6 +193,9 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
 			}
+		case "none":
+			log.Warn("Propagator \"none\" has no effect when combined with other propagators. "+
+				"To disable the propagator, set `%s=none`", env)
 		default:
 			log.Warn("unrecognized propagator: %s\n", v)
 		}
