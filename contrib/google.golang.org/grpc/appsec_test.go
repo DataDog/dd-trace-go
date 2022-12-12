@@ -14,7 +14,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func TestAppSec(t *testing.T) {
@@ -93,4 +95,91 @@ func TestAppSec(t *testing.T) {
 		require.True(t, strings.Contains(event, "crs-942-100")) // SQL-injection attack attempt
 		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
 	})
+}
+
+// Test that http blocking works by using custom rules/rules data
+func TestBlocking(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	rig, err := newRig(false)
+	require.NoError(t, err)
+	defer rig.Close()
+
+	client := rig.client
+
+	t.Run("unary-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
+		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
+
+		require.Nil(t, reply)
+		require.Equal(t, codes.Aborted, status.Code(err))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		// The request should have the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+
+	t.Run("unary-no-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// Send a XSS attack in the payload along with the canary value in the RPC metadata
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
+		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
+
+		require.Equal(t, "passed", reply.Message)
+		require.Equal(t, codes.OK, status.Code(err))
+	})
+
+	t.Run("stream-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+
+		require.Equal(t, codes.Aborted, status.Code(err))
+		require.Nil(t, reply)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		// The request should have the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+
+	t.Run("stream-no-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+
+		// Send a XSS attack
+		err = stream.Send(&FixtureRequest{Name: "<script>alert('xss');</script>"})
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+		require.Equal(t, codes.OK, status.Code(err))
+		require.Equal(t, "passed", reply.Message)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+	})
+
 }
