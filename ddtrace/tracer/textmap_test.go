@@ -696,7 +696,7 @@ func TestW3C(t *testing.T) {
 			})
 		}
 	})
-
+}
 
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
