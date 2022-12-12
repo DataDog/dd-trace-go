@@ -374,6 +374,19 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	}
 }
 
+// unmarshalPropagatingTags unmarshals tags from v into ctx
+func appendPropagatingTags(ctx *spanContext, k, v string) {
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	ctx.trace.mu.Lock()
+	defer ctx.trace.mu.Unlock()
+	if ctx.trace.propagatingTags == nil {
+		ctx.trace.propagatingTags = map[string]string{}
+	}
+	ctx.trace.propagatingTags[k] = v
+}
+
 const (
 	b3TraceIDHeader = "x-b3-traceid"
 	b3SpanIDHeader  = "x-b3-spanid"
@@ -455,4 +468,136 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
+}
+
+const (
+	traceparentHeader = "traceparent"
+	tracestateHeader  = "tracestate"
+)
+
+// propagatorW3c implements Propagator and injects/extracts span contexts
+// using W3C tracecontext/traceparent headers. Only TextMap carriers are supported.
+type propagatorW3c struct{}
+
+func (p *propagatorW3c) Inject(context ddtrace.SpanContext, carrier interface{}) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	switch c := carrier.(type) {
+	case TextMapReader:
+		return p.extractTextMap(c)
+	default:
+		return nil, ErrInvalidCarrier
+	}
+}
+
+func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	parentHeaders := []string{}
+	stateHeaders := []string{}
+	// to avoid parsing tracestate header(s) if traceparent is invalid
+	reader.ForeachKey(func(k, v string) error {
+		key := strings.ToLower(k)
+		switch key {
+		case traceparentHeader:
+			parentHeaders = append(parentHeaders, v)
+		case tracestateHeader:
+			stateHeaders = append(stateHeaders, v)
+		}
+		return nil
+	})
+	if len(parentHeaders) != 1 {
+		return nil, ErrSpanContextCorrupted
+	}
+	var ctx spanContext
+	err := parseTraceParent(&ctx, parentHeaders[0])
+	if err != nil {
+		return nil, ErrSpanContextNotFound
+	}
+	err = parseTracestate(&ctx, stateHeaders)
+	if ctx.traceID == 0 || ctx.spanID == 0 {
+		return nil, ErrSpanContextNotFound
+	}
+	return &ctx, nil
+}
+
+func parseTraceParent(ctx *spanContext, v string) error {
+	v = strings.Trim(v, "\t -")
+
+	version, err := strconv.ParseUint(v[:2], 16, 64)
+	if err != nil || version == 255 {
+		return ErrSpanContextCorrupted
+	}
+	if len(v) != 55 {
+		return ErrSpanContextCorrupted
+	}
+	traceId := v[3:35]
+	ctx.traceID, err = strconv.ParseUint(traceId[16:], 16, 64)
+	if err != nil {
+		return ErrSpanContextCorrupted
+	}
+	// setting trace-id to be used for span context propagation
+	// TODO(dianashevchenko): is DefaultTraceIDHeader the correct header
+	appendPropagatingTags(ctx, DefaultTraceIDHeader, traceId)
+
+	ctx.spanID, err = strconv.ParseUint(v[36:52], 16, 64)
+	if err != nil {
+		return ErrSpanContextCorrupted
+	}
+
+	priority, err := strconv.ParseInt(v[53:55], 8, 8)
+	if err != nil {
+		return ErrSpanContextCorrupted
+	}
+	ctx.setSamplingPriority(int(priority&0x1), samplernames.Unknown)
+	return nil
+}
+
+func parseTracestate(ctx *spanContext, headers []string) error {
+	// if multiple headers are present, they must be combined and stored
+	// TODO(dianashevchenko):
+	// 	is tracestateHeader a correct header
+	appendPropagatingTags(ctx, tracestateHeader, traceId)
+	for _, v := range headers {
+		list := strings.Split(v, ",")
+		for _, s := range list {
+			if strings.HasPrefix(s, "dd=") {
+				dd := strings.Split(s[3:], ";")
+				for _, tag := range dd {
+					k := strings.SplitN(tag, ":", 2)
+					if len(k) != 2 {
+						continue
+					}
+					switch k[0] {
+					case "o":
+						ctx.origin = k[1]
+					case "s":
+						p, err := strconv.Atoi(k[1])
+						if p > 0 && err == nil {
+							// priority from traceparent header
+							flagPriority, ok := ctx.samplingPriority()
+							if !ok {
+								return ErrSpanContextCorrupted
+							}
+							if flagPriority == 0 {
+								if p < 1 {
+									ctx.setSamplingPriority(p, samplernames.Unknown)
+								}
+							} else {
+								if p > 0 {
+									ctx.setSamplingPriority(p, samplernames.Unknown)
+								}
+							}
+						}
+					default:
+						if strings.HasPrefix(k[0], "t.") {
+							appendPropagatingTags(ctx, "_dd.p."+k[0], strings.ReplaceAll(k[1], "~", "="))
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
 }

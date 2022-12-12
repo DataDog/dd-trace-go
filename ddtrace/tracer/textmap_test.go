@@ -555,6 +555,160 @@ func TestB3(t *testing.T) {
 	})
 }
 
+func TestW3C(t *testing.T) {
+	t.Run("extract/valid", func(t *testing.T) {
+		var tests = []struct {
+			in              TextMapCarrier
+			traceId         uint64
+			spanId          uint64
+			priority        int
+			origin          string
+			propagatingTags map[string]string
+		}{
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:         1229782938247303441,
+				spanId:          2459565876494606882,
+				priority:        2,
+				origin:          "rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:         1229782938247303441,
+				spanId:          2459565876494606882,
+				priority:        1,
+				origin:          "rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-2", "_dd.p.t.usr.id": "baz64=="},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:         1229782938247303441,
+				spanId:          2459565876494606882,
+				priority:        2, // tracestate priority takes precedence
+				origin:          "rum:rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:         1229782938247303441,
+				spanId:          2459565876494606882,
+				priority:        1, // traceparent priority takes precedence
+				origin:          "rum:rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
+					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:         1229782938247303441,
+				spanId:          2459565876494606882,
+				priority:        1, // traceparent priority takes precedence
+				origin:          "rum:rum",
+				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111", "_dd.p.t.dm": "-4", "_dd.p.t.usr.id": "baz64=="},
+			},
+		}
+
+		for _, test := range tests {
+			t.Run("", func(t *testing.T) {
+				// todo: replace that with env variable configuration
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(test.in)
+				assert.Nil(err)
+				sctx, ok := ctx.(*spanContext)
+				assert.True(ok)
+
+				assert.Equal(test.traceId, sctx.traceID)
+				assert.Equal(test.spanId, sctx.spanID)
+				assert.Equal(test.origin, sctx.origin)
+				p, ok := sctx.samplingPriority()
+				assert.True(ok)
+				assert.Equal(test.priority, p)
+
+				assert.Equal("00000000000000001111111111111111", sctx.trace.propagatingTags[DefaultTraceIDHeader])
+				assert.Equal(test.propagatingTags, sctx.trace.propagatingTags)
+
+			})
+		}
+	})
+
+	t.Run("extract/invalid", func(t *testing.T) {
+		var tests = []struct {
+			in       TextMapCarrier
+			traceId  uint64
+			spanId   uint64
+			priority int
+			origin   string
+		}{
+			{
+				in: TextMapCarrier{
+					tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:  1229782938247303441,
+				spanId:   2459565876494606882,
+				priority: 0, // traceparent priority takes precedence
+				origin:   "rum",
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:  1229782938247303441,
+				spanId:   2459565876494606882,
+				priority: 0, // traceparent priority takes precedence
+				origin:   "rum",
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "100-00000000000000001111111111111111-2222222222222222-01", // invalid length
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:  1229782938247303441,
+				spanId:   2459565876494606882,
+				priority: 2, // tracestate priority takes precedence
+				origin:   "rum",
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "ff-00000000000000001111111111111111-2222222222222222-01", // invalid version
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceId:  1229782938247303441,
+				spanId:   2459565876494606882,
+				priority: 2, // tracestate priority takes precedence
+				origin:   "rum",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run("", func(t *testing.T) {
+				// todo: replace that with env variable configuration
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(test.in)
+				assert.NotNil(err)
+				assert.Nil(ctx)
+			})
+		}
+	})
+
+}
+
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
 }
