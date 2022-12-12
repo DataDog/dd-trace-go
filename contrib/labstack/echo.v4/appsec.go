@@ -6,8 +6,6 @@
 package echo
 
 import (
-	"net"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
@@ -16,23 +14,24 @@ import (
 )
 
 func useAppSec(c echo.Context, span tracer.Span) func() {
-	req := c.Request()
 	instrumentation.SetAppSecEnabledTags(span)
+
 	params := make(map[string]string)
 	for _, n := range c.ParamNames() {
 		params[n] = c.Param(n)
 	}
-	args := httpsec.MakeHandlerOperationArgs(req, params)
+
+	req := c.Request()
+	ipTags, clientIP := httpsec.ClientIPTags(req.Header, req.RemoteAddr)
+	instrumentation.SetStringTags(span, ipTags)
+
+	args := httpsec.MakeHandlerOperationArgs(req, clientIP, params)
 	ctx, op := httpsec.StartOperation(req.Context(), args)
 	c.SetRequest(req.WithContext(ctx))
 	return func() {
 		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Response().Status})
 		if len(events) > 0 {
-			remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
-			if err != nil {
-				remoteIP = req.RemoteAddr
-			}
-			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Response().Writer.Header())
+			httpsec.SetSecurityEventTags(span, events, args.Headers, c.Response().Writer.Header())
 		}
 		instrumentation.SetTags(span, op.Tags())
 	}
