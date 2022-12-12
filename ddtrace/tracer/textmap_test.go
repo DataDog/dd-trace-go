@@ -629,6 +629,8 @@ func TestNonePropagator(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
 		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
+		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
+			"To disable the propagator, set to `none`")
 	})
 
 	t.Run("extract/none", func(t *testing.T) {
