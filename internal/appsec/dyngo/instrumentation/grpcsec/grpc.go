@@ -15,6 +15,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+
+	"google.golang.org/grpc/codes"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -39,12 +41,14 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
+		BlockedCode *codes.Code
 	}
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
 		// Message received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
+		ClientIP instrumentation.NetaddrIP
 	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
