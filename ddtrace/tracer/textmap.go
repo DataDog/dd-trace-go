@@ -558,7 +558,7 @@ func parseTracestate(ctx *spanContext, headers []string) error {
 	// if multiple headers are present, they must be combined and stored
 	// TODO(dianashevchenko):
 	// 	is tracestateHeader a correct header
-	appendPropagatingTags(ctx, tracestateHeader, traceId)
+	appendPropagatingTags(ctx, tracestateHeader, strings.Join(headers, ";"))
 	for _, v := range headers {
 		list := strings.Split(v, ",")
 		for _, s := range list {
