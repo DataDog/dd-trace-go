@@ -360,10 +360,10 @@ func TestEnvVars(t *testing.T) {
 
 	testEnvs = []map[string]string{
 		{headerPropagationStyleInject: "b3"},
-		{headerPropagationStyleInjectDeprecated: "b3,none"},
+		{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
 		{headerPropagationStyle: "b3"},
-		{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* this should have no affect */},
-		{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* this should have no affect */},
+		{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 	}
 	for _, testEnv := range testEnvs {
 		t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
@@ -423,9 +423,9 @@ func TestEnvVars(t *testing.T) {
 	testEnvs = []map[string]string{
 		{headerPropagationStyleExtract: "b3"},
 		{headerPropagationStyleExtractDeprecated: "b3"},
-		{headerPropagationStyle: "b3,none"},
-		{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* this should have no affect */},
-		{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* this should have no affect */},
+		{headerPropagationStyle: "b3,none" /* none should have no affect */},
+		{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
 	}
 	for _, testEnv := range testEnvs {
 		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
@@ -478,10 +478,10 @@ func TestEnvVars(t *testing.T) {
 
 	testEnvs = []map[string]string{
 		{headerPropagationStyleInject: "datadog"},
-		{headerPropagationStyleInjectDeprecated: "datadog"},
+		{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
 		{headerPropagationStyle: "datadog"},
-		{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* this should have no affect */},
-		{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* this should have no affect */},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
 	}
 	for _, testEnv := range testEnvs {
 		t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
@@ -537,10 +537,10 @@ func TestEnvVars(t *testing.T) {
 	}
 
 	testEnvs = []map[string]string{
-		{headerPropagationStyleExtract: fmt.Sprintf("Datadog,b3")},
-		{headerPropagationStyleExtractDeprecated: fmt.Sprintf("Datadog,b3multi")},
-		{headerPropagationStyle: fmt.Sprintf("Datadog,b3")},
-		{headerPropagationStyle: fmt.Sprintf("Datadog,b3,none")},
+		{headerPropagationStyleExtract: "Datadog,b3"},
+		{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
+		{headerPropagationStyle: "Datadog,b3"},
+		{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
 	}
 	for _, testEnv := range testEnvs {
 		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
@@ -592,7 +592,7 @@ func TestEnvVars(t *testing.T) {
 
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
+		t.Setenv(headerPropagationStyleInject, "none")
 		tracer := newTracer()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
@@ -610,7 +610,7 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject/none,b3", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none,b3")
+		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp))
 		// reinitializing to capture log output, since propagators are parsed before logger is set
@@ -629,12 +629,10 @@ func TestNonePropagator(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
 		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
-		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
-			"To disable the propagator, set `DD_PROPAGATION_STYLE_INJECT=none`")
 	})
 
 	t.Run("extract/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		t.Setenv(headerPropagationStyleExtract, "none")
 		assert := assert.New(t)
 		tracer := newTracer()
 		root := tracer.StartSpan("web.request").(*span)
@@ -649,8 +647,7 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject,extract/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
-		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		t.Setenv(headerPropagationStyle, "none")
 		tracer := newTracer()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
