@@ -70,6 +70,8 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "net/http"))
 	log.Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if cfg.ignoreRequest(req) {
