@@ -12,11 +12,14 @@ package httpsec
 
 import (
 	"context"
+	// Blank import needed to use embed for the default blocked response payloads
+	_ "embed"
 	"encoding/json"
-	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -38,6 +41,8 @@ type (
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
 		PathParams map[string]string
+		// ClientIP corresponds to the addres `http.client_ip`
+		ClientIP instrumentation.NetaddrIP
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -68,17 +73,36 @@ func MonitorParsedBody(ctx context.Context, body interface{}) {
 	}
 }
 
+// applyActions executes the operation's actions and returns the resulting http handler
+func applyActions(op *Operation) http.Handler {
+	defer op.ClearActions()
+	for _, action := range op.Actions() {
+		switch a := action.(type) {
+		case *BlockRequestAction:
+			op.AddTag(BlockedRequestTag, true)
+			return a.handler
+		default:
+			log.Error("appsec: ignoring security action: unexpected action type %T", a)
+		}
+	}
+	return nil
+}
+
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		SetIPTags(span, r)
+		ipTags, clientIP := ClientIPTags(r.Header, r.RemoteAddr)
+		instrumentation.SetStringTags(span, ipTags)
 
-		args := MakeHandlerOperationArgs(r, pathParams)
+		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
+
+		if h := applyActions(op); h != nil {
+			handler = h
+		}
 		defer func() {
 			var status int
 			if mw, ok := w.(interface{ Status() int }); ok {
@@ -91,21 +115,19 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				return
 			}
 
-			remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				remoteIP = r.RemoteAddr
-			}
-			SetSecurityEventTags(span, events, remoteIP, args.Headers, w.Header())
+			applyActions(op)
+			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
 		handler.ServeHTTP(w, r)
+
 	})
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP instrumentation.NetaddrIP, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
@@ -123,6 +145,7 @@ func MakeHandlerOperationArgs(r *http.Request, pathParams map[string]string) Han
 		Cookies:    cookies,
 		Query:      r.URL.Query(), // TODO(Julio-Guerra): avoid actively parsing the query values thanks to dynamic instrumentation
 		PathParams: pathParams,
+		ClientIP:   clientIP,
 	}
 }
 
@@ -149,6 +172,8 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
+		mu      sync.RWMutex
+		actions []Action
 	}
 
 	// SDKBodyOperation type representing an SDK body. It must be created with
@@ -185,6 +210,27 @@ func fromContext(ctx context.Context) *Operation {
 func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
+}
+
+// Actions returns the actions linked to the operation
+func (op *Operation) Actions() []Action {
+	op.mu.RLock()
+	defer op.mu.RUnlock()
+	return op.actions
+}
+
+// AddAction adds an action to the operation
+func (op *Operation) AddAction(a Action) {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.actions = append(op.actions, a)
+}
+
+// ClearActions clears all the actions linked to the operation
+func (op *Operation) ClearActions() {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.actions = op.actions[0:0]
 }
 
 // StartSDKBodyOperation starts the SDKBody operation and emits a start event
@@ -260,4 +306,32 @@ func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOper
 // type-assertion on v whose type is the one returned by ListenedType().
 func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
+}
+
+// blockedTemplateJSON is the default JSON template used to write responses for blocked requests
+//
+//go:embed blocked-template.json
+var blockedTemplateJSON []byte
+
+// blockedTemplateHTML is the default HTML template used to write responses for blocked requests
+//
+//go:embed blocked-template.html
+var blockedTemplateHTML []byte
+
+const (
+	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
+	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+)
+
+func init() {
+	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
+		if path, ok := os.LookupEnv(env); ok {
+			if t, err := os.ReadFile(path); err != nil {
+				log.Warn("Could not read template at %s: %v", path, err)
+			} else {
+				*template = t
+			}
+		}
+
+	}
 }
