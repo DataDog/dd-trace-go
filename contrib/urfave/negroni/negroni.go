@@ -29,8 +29,6 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	opts = append(opts, tracer.Tag(ext.Component, "urfave/negroni"))
-	opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	defer func() {
@@ -59,6 +57,8 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "urfave/negroni"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
 
 	m := DatadogMiddleware{

@@ -30,6 +30,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, "gin-gonic/gin"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(c *gin.Context) {
 		if cfg.ignoreRequest(c) {
@@ -40,8 +42,6 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
-		opts = append(opts, tracer.Tag(ext.Component, "gin-gonic/gin"))
-		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
