@@ -7,16 +7,17 @@ package grpc
 
 import (
 	"encoding/json"
-	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
@@ -24,15 +25,28 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		var remoteAddr string
+		if p, ok := peer.FromContext(ctx); ok {
+			remoteAddr = p.Addr.String()
+		}
+		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
+		instrumentation.SetStringTags(span, ipTags)
+
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(ctx, span, events)
+			setAppSecEventsTags(ctx, span, events)
 		}()
+
+		if op.BlockedCode != nil {
+			op.AddTag(httpsec.BlockedRequestTag, true)
+			return nil, status.Errorf(*op.BlockedCode, "Request blocked")
+		}
+
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
 		return handler(ctx, req)
 	}
@@ -43,15 +57,28 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		var remoteAddr string
+		if p, ok := peer.FromContext(stream.Context()); ok {
+			remoteAddr = p.Addr.String()
+		}
+		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
+		instrumentation.SetStringTags(span, ipTags)
+
+		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(stream.Context(), span, events)
+			setAppSecEventsTags(stream.Context(), span, events)
 		}()
+
+		if op.BlockedCode != nil {
+			op.AddTag(httpsec.BlockedRequestTag, true)
+			return status.Error(*op.BlockedCode, "Request blocked")
+		}
+
 		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
 	}
 }
@@ -72,11 +99,7 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 }
 
 // Set the AppSec tags when security events were found.
-func setAppSecTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
+func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	var addr net.Addr
-	if p, ok := peer.FromContext(ctx); ok {
-		addr = p.Addr
-	}
-	grpcsec.SetSecurityEventTags(span, events, addr, md)
+	grpcsec.SetSecurityEventTags(span, events, md)
 }

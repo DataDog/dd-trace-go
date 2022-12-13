@@ -478,9 +478,9 @@ func TestSpanError(t *testing.T) {
 	err := errors.New("Something wrong")
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
-	assert.Equal("Something wrong", span.Meta["error.msg"])
-	assert.Equal("*errors.errorString", span.Meta["error.type"])
-	assert.NotEqual("", span.Meta["error.stack"])
+	assert.Equal("Something wrong", span.Meta[ext.ErrorMsg])
+	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
+	assert.NotEqual("", span.Meta[ext.ErrorStack])
 
 	// operating on a finished span is a no-op
 	span = tracer.newRootSpan("flask.request", "flask", "/")
@@ -491,9 +491,9 @@ func TestSpanError(t *testing.T) {
 
 	// '+1' is `_dd.p.dm`
 	assert.Equal(nMeta+1, len(span.Meta))
-	assert.Equal("", span.Meta["error.msg"])
-	assert.Equal("", span.Meta["error.type"])
-	assert.Equal("", span.Meta["error.stack"])
+	assert.Equal("", span.Meta[ext.ErrorMsg])
+	assert.Equal("", span.Meta[ext.ErrorType])
+	assert.Equal("", span.Meta[ext.ErrorStack])
 }
 
 func TestSpanError_Typed(t *testing.T) {
@@ -505,9 +505,9 @@ func TestSpanError_Typed(t *testing.T) {
 	err := &boomError{}
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
-	assert.Equal("boom", span.Meta["error.msg"])
-	assert.Equal("*tracer.boomError", span.Meta["error.type"])
-	assert.NotEqual("", span.Meta["error.stack"])
+	assert.Equal("boom", span.Meta[ext.ErrorMsg])
+	assert.Equal("*tracer.boomError", span.Meta[ext.ErrorType])
+	assert.NotEqual("", span.Meta[ext.ErrorStack])
 }
 
 func TestSpanErrorNil(t *testing.T) {

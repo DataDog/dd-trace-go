@@ -273,14 +273,14 @@ func (dc *DeltaComputer) pass4WriteAndPruneRecords() error {
 			case *pproflite.KeepFrames:
 				dc.includedStrings.Add(int(t.Value))
 			case *pproflite.TimeNanos:
-				curProfTimeNanos := int64(t.Value)
+				curProfTimeNanos := t.Value
 				if !firstPprof {
 					prevProfTimeNanos := dc.curProfTimeNanos
 					if err := dc.encoder.Encode(t); err != nil {
 						return err
 					}
 					dc.durationNanos.Value = curProfTimeNanos - prevProfTimeNanos
-					return dc.encoder.Encode(&dc.durationNanos)
+					f = &dc.durationNanos
 				}
 				dc.curProfTimeNanos = curProfTimeNanos
 			case *pproflite.DurationNanos:
