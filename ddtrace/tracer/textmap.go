@@ -601,7 +601,7 @@ func parseTracestate(ctx *spanContext, headers []string) error {
 					}
 				default:
 					if strings.HasPrefix(k[0], "t.") {
-						appendPropagatingTags(ctx, "_dd.p."+k[0], strings.ReplaceAll(k[1], "~", "="))
+						appendPropagatingTags(ctx, "_dd.p."+(k[0][2:]), strings.ReplaceAll(k[1], "~", "="))
 					}
 				}
 			}

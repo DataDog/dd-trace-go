@@ -577,7 +577,7 @@ func TestW3C(t *testing.T) {
 				origin:   "rum",
 				propagatingTags: map[string]string{
 					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.t.dm":         "-4", "_dd.p.t.usr.id": "baz64==",
+					"_dd.p.dm":           "-4", "_dd.p.usr.id": "baz64==",
 					"tracestate": "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 			},
@@ -592,8 +592,8 @@ func TestW3C(t *testing.T) {
 				origin:   "rum",
 				propagatingTags: map[string]string{
 					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.t.dm":         "-2",
-					"_dd.p.t.usr.id":     "baz64==",
+					"_dd.p.dm":           "-2",
+					"_dd.p.usr.id":       "baz64==",
 					"tracestate":         "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 			},
 			{
@@ -607,8 +607,9 @@ func TestW3C(t *testing.T) {
 				origin:   "rum:rum",
 				propagatingTags: map[string]string{
 					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.t.dm":         "-4", "_dd.p.t.usr.id": "baz64==",
-					"tracestate": "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"_dd.p.dm":           "-4",
+					"_dd.p.usr.id":       "baz64==",
+					"tracestate":         "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 			},
 			{
@@ -621,9 +622,9 @@ func TestW3C(t *testing.T) {
 				priority: 1, // traceparent priority takes precedence
 				origin:   "rum:rum",
 				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.t.dm":     "-4",
-					"_dd.p.t.usr.id": "baz64==",
-					"tracestate":     "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 			},
 			{
@@ -638,8 +639,8 @@ func TestW3C(t *testing.T) {
 				propagatingTags: map[string]string{
 					"tracestate":         "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.t.dm":         "-4",
-					"_dd.p.t.usr.id":     "baz64==",
+					"_dd.p.dm":           "-4",
+					"_dd.p.usr.id":       "baz64==",
 				},
 			},
 		}
