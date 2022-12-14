@@ -100,8 +100,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	spanopts = append(spanopts, tracer.Tag(ext.Component, "gorilla/mux"))
-	spanopts = append(spanopts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))
@@ -122,6 +120,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg := newConfig(opts)
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "gorilla/mux"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
 		Router: router,

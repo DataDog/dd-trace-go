@@ -29,7 +29,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, "go-chi/chi"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
@@ -37,8 +39,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				return
 			}
 			opts := spanOpts
-			opts = append(opts, tracer.Tag(ext.Component, "go-chi/chi"))
-			opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
