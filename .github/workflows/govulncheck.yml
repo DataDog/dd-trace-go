@@ -5,6 +5,8 @@ on:
       - main
   schedule:
     - cron: '00 00 * * *'
+  workflow_dispatch:
+
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
@@ -20,18 +22,4 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck
-        id: results
-        run: |
-          function check_results {
-            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
-            num=$(echo $results | wc -l)
-            if [ $num -gt 0 ]; then
-              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" | tee $GITHUB_STEP_SUMMARY
-              found=$(( found | 1))
-            fi
-          }
-          path=./ddtrace/... check_results
-          path=./appsec/... check_results
-          path=./internal/... check_results
-          path=./profiler/... check_results
-          exit $found
+        run: govulncheck -v -tags appsec ./ddtrace/... ./appsec/... ./profiler/... ./internal/... 
