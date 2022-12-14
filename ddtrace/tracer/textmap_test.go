@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -529,50 +528,47 @@ func TestEnvVars(t *testing.T) {
 		{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
 	}
 	for _, testEnv := range testEnvs {
-		t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
-			for k, v := range testEnv {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
-			}
-			var tests = []struct {
-				in  TextMapCarrier
-				out uint64
-			}{
-				{
-					TextMapCarrier{
-						b3TraceIDHeader: "1",
-						b3SpanIDHeader:  "1",
-						b3SampledHeader: "1",
-					},
-					1,
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []struct {
+			in  TextMapCarrier
+			out uint64
+		}{
+			{
+				TextMapCarrier{
+					b3TraceIDHeader: "1",
+					b3SpanIDHeader:  "1",
+					b3SampledHeader: "1",
 				},
-				{
-					TextMapCarrier{
-						DefaultTraceIDHeader:  "2",
-						DefaultParentIDHeader: "2",
-						DefaultPriorityHeader: "2",
-					},
-					2,
+				1,
+			},
+			{
+				TextMapCarrier{
+					DefaultTraceIDHeader:  "2",
+					DefaultParentIDHeader: "2",
+					DefaultPriorityHeader: "2",
 				},
-			}
-			for _, test := range tests {
-				t.Run("", func(t *testing.T) {
-					tracer := newTracer()
-					assert := assert.New(t)
+				2,
+			},
+		}
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+				tracer := newTracer()
+				assert := assert.New(t)
 
-					ctx, err := tracer.Extract(test.in)
-					assert.Nil(err)
-					sctx, ok := ctx.(*spanContext)
-					assert.True(ok)
+				ctx, err := tracer.Extract(test.in)
+				assert.Nil(err)
+				sctx, ok := ctx.(*spanContext)
+				assert.True(ok)
 
-					assert.Equal(sctx.traceID, test.out)
-					assert.Equal(sctx.spanID, test.out)
-					p, ok := sctx.samplingPriority()
-					assert.True(ok)
-					assert.Equal(int(test.out), p)
-				})
-			}
-		})
+				assert.Equal(sctx.traceID, test.out)
+				assert.Equal(sctx.spanID, test.out)
+				p, ok := sctx.samplingPriority()
+				assert.True(ok)
+				assert.Equal(int(test.out), p)
+			})
+		}
 	}
 
 	testEnvs = []map[string]string{
