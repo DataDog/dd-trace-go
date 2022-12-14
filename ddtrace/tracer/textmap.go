@@ -500,24 +500,27 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 }
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	parentHeaders := []string{}
+	var parentHeader string
 	stateHeaders := []string{}
 	// to avoid parsing tracestate header(s) if traceparent is invalid
-	reader.ForeachKey(func(k, v string) error {
+	err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
 		switch key {
 		case traceparentHeader:
-			parentHeaders = append(parentHeaders, v)
+			if parentHeader != "" {
+				return ErrSpanContextCorrupted
+			}
+			parentHeader = v
 		case tracestateHeader:
 			stateHeaders = append(stateHeaders, v)
 		}
 		return nil
 	})
-	if len(parentHeaders) != 1 {
+	if err != nil || parentHeader == "" {
 		return nil, ErrSpanContextCorrupted
 	}
 	var ctx spanContext
-	err := parseTraceParent(&ctx, parentHeaders[0])
+	err = parseTraceparent(&ctx, parentHeader)
 	if err != nil {
 		return nil, ErrSpanContextNotFound
 	}
@@ -528,14 +531,13 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	return &ctx, nil
 }
 
-func parseTraceParent(ctx *spanContext, v string) error {
+func parseTraceparent(ctx *spanContext, v string) error {
 	v = strings.Trim(v, "\t -")
-
-	version, err := strconv.ParseUint(v[:2], 16, 64)
-	if err != nil || version == 255 {
+	if len(v) != 55 {
 		return ErrSpanContextCorrupted
 	}
-	if len(v) != 55 {
+	version, err := strconv.ParseUint(v[:2], 16, 64)
+	if err != nil || version == 255 {
 		return ErrSpanContextCorrupted
 	}
 	traceID := v[3:35]
@@ -562,44 +564,44 @@ func parseTraceParent(ctx *spanContext, v string) error {
 
 func parseTracestate(ctx *spanContext, headers []string) error {
 	// if multiple headers are present, they must be combined and stored
-	// TODO(dianashevchenko):
-	// 	is tracestateHeader a correct header
+	// TODO(dianashevchenko): is tracestateHeader a correct header
 	appendPropagatingTags(ctx, tracestateHeader, strings.Join(headers, ";"))
 	for _, v := range headers {
 		list := strings.Split(v, ",")
 		for _, s := range list {
-			if strings.HasPrefix(s, "dd=") {
-				dd := strings.Split(s[3:], ";")
-				for _, tag := range dd {
-					k := strings.SplitN(tag, ":", 2)
-					if len(k) != 2 {
-						continue
+			if !strings.HasPrefix(s, "dd=") {
+				continue
+			}
+			dd := strings.Split(s[3:], ";")
+			for _, tag := range dd {
+				k := strings.SplitN(tag, ":", 2)
+				if len(k) != 2 {
+					continue
+				}
+				switch k[0] {
+				case "o":
+					ctx.origin = k[1]
+				case "s":
+					p, err := strconv.Atoi(k[1])
+					if p > 0 && err == nil {
+						// priority from traceparent header
+						flagPriority, ok := ctx.samplingPriority()
+						if !ok {
+							return ErrSpanContextCorrupted
+						}
+						if flagPriority == 0 {
+							if p < 1 {
+								ctx.setSamplingPriority(p, samplernames.Unknown)
+							}
+						} else {
+							if p > 0 {
+								ctx.setSamplingPriority(p, samplernames.Unknown)
+							}
+						}
 					}
-					switch k[0] {
-					case "o":
-						ctx.origin = k[1]
-					case "s":
-						p, err := strconv.Atoi(k[1])
-						if p > 0 && err == nil {
-							// priority from traceparent header
-							flagPriority, ok := ctx.samplingPriority()
-							if !ok {
-								return ErrSpanContextCorrupted
-							}
-							if flagPriority == 0 {
-								if p < 1 {
-									ctx.setSamplingPriority(p, samplernames.Unknown)
-								}
-							} else {
-								if p > 0 {
-									ctx.setSamplingPriority(p, samplernames.Unknown)
-								}
-							}
-						}
-					default:
-						if strings.HasPrefix(k[0], "t.") {
-							appendPropagatingTags(ctx, "_dd.p."+k[0], strings.ReplaceAll(k[1], "~", "="))
-						}
+				default:
+					if strings.HasPrefix(k[0], "t.") {
+						appendPropagatingTags(ctx, "_dd.p."+k[0], strings.ReplaceAll(k[1], "~", "="))
 					}
 				}
 			}

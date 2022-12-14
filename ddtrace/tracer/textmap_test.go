@@ -671,6 +671,8 @@ func TestW3C(t *testing.T) {
 	t.Run("extract/invalid", func(t *testing.T) {
 		var tests = []TextMapCarrier{
 			{tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+			{traceparentHeader: "0"},       // invalid length
+			{traceparentHeader: "\t- -\t"}, // invalid length
 			{
 				traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
 				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
