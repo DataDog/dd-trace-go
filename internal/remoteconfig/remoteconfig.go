@@ -199,13 +199,6 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		}
 	}
 
-	update := rc.Update{
-		TUFRoots:      pbUpdate.Roots,
-		TUFTargets:    pbUpdate.Targets,
-		TargetFiles:   fileMap,
-		ClientConfigs: pbUpdate.ClientConfigs,
-	}
-
 	mapify := func(s *rc.RepositoryState) map[string]string {
 		m := make(map[string]string)
 		for i := range s.Configs {
@@ -220,7 +213,15 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// This is needed because some products can stop sending configurations, and we want to make sure that the subscribers
 	// are provided with this information in this case
 	stateBefore, _ := c.repository.CurrentState()
-	products, err := c.repository.Update(update)
+	products, err := c.repository.Update(rc.Update{
+		TUFRoots:      pbUpdate.Roots,
+		TUFTargets:    pbUpdate.Targets,
+		TargetFiles:   fileMap,
+		ClientConfigs: pbUpdate.ClientConfigs,
+	})
+	if err != nil {
+		return fmt.Errorf("remote config: repository update error: %v", err)
+	}
 	stateAfter, _ := c.repository.CurrentState()
 
 	// Create a config files diff between before/after the update to see which config files are missing
@@ -232,17 +233,17 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 	// Set the payload data to nil for missing config files. The callbacks then can handle the nil config case to detect
 	// that this config will not be updated anymore.
-	updatedProducts := make(map[string]bool)
+	updatedProducts := make(map[string]struct{})
 	for path, product := range mBefore {
 		if productUpdates[product] == nil {
 			productUpdates[product] = make(ProductUpdate)
 		}
 		productUpdates[product][path] = nil
-		updatedProducts[product] = true
+		updatedProducts[product] = struct{}{}
 	}
 	// Aggregate updated products and missing products so that callbacks get called for both
 	for _, p := range products {
-		updatedProducts[p] = true
+		updatedProducts[p] = struct{}{}
 	}
 
 	// Performs the callbacks registered for all updated products and update the application status in the repository
@@ -255,7 +256,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
