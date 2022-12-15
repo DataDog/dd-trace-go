@@ -55,15 +55,15 @@ type SpanContextW3C interface {
 // within the "tracer" package.
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
-	StartSpan(operationName string, opts ...StartSpanOption) SpanW3C
+	StartSpan(operationName string, opts ...StartSpanOption) Span
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (SpanContextW3C, error)
+	Extract(carrier interface{}) (SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context SpanContextW3C, carrier interface{}) error
+	Inject(context SpanContext, carrier interface{}) error
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
@@ -76,7 +76,7 @@ type Span interface {
 	SpanCommon
 
 	// Context returns the SpanContext of this Span.
-	Context() SpanContextW3C
+	Context() SpanContext
 }
 
 type SpanCommon interface {
@@ -148,7 +148,7 @@ type FinishConfig struct {
 type StartSpanConfig struct {
 	// Parent holds the SpanContext that should be used as a parent for the
 	// new span. If nil, implementations should return a root span.
-	Parent SpanContextW3C
+	Parent SpanContext
 
 	// StartTime holds the time that should be used as the start time of the span.
 	// Implementations should use the current time when StartTime.IsZero().
