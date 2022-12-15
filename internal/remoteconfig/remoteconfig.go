@@ -21,6 +21,7 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -148,19 +149,19 @@ func (c *Client) Stop() {
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		c.lastError = err
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		c.lastError = err
+		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
 		return
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		c.lastError = err
+		log.Debug("remoteconfig: http request error: %v", err)
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -169,15 +170,18 @@ func (c *Client) updateState() {
 		resp.Body.Close()
 	}()
 
-	var update clientGetConfigsResponse
-	err = json.NewDecoder(resp.Body).Decode(&update)
-	if err != nil {
-		c.lastError = err
+	if sc := resp.StatusCode; sc != http.StatusOK {
+		log.Debug("remoteconfig: http request error: response status code is not 200 (OK) but %s", http.StatusText(sc))
 		return
 	}
 
-	err = c.applyUpdate(&update)
-	c.lastError = err
+	var update clientGetConfigsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&update); err != nil {
+		log.Error("remoteconfig: http request: could not parse the json response body: %v", err)
+		return
+	}
+
+	c.lastError = c.applyUpdate(&update)
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
