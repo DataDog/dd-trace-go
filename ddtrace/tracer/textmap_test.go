@@ -635,6 +635,144 @@ func TestEnvVars(t *testing.T) {
 			})
 		}
 	}
+
+	testEnvs = []map[string]string{
+		{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
+		{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
+		{headerPropagationStyleInject: "tracecontext", headerPropagationStyle: "tracecontext"},
+		{headerPropagationStyle: "tracecontext"},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []struct {
+			out             TextMapCarrier
+			traceID         uint64
+			spanID          uint64
+			priority        int
+			origin          string
+			updated         bool
+			propagatingTags map[string]string
+		}{
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2,
+				origin:   "rum",
+				updated:  true,
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.usr.id":       "baz64==",
+					"tracestate":         "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~",
+				},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1,
+				origin:   "rum",
+				updated:  true,
+
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.usr.id":       "baz64==",
+					"tracestate":         "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2, // tracestate priority takes precedence
+				origin:   "rum:rum",
+				updated:  true,
+				propagatingTags: map[string]string{
+					"x-datadog-trace-id": "00000000000000001111111111111111",
+					"_dd.p.usr.id":       "baz64==",
+					"tracestate":         "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:1;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				updated:  true,
+				priority: 1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+					tracestateHeader:  "dd=s:-1;o:rum_rum;t.usr.id:baz_64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				updated:  true,
+				priority: -1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"_dd.p.usr.id": "baz:64==",
+					"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+					tracestateHeader:  "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				updated:  false,
+				priority: -1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"_dd.p.usr.id": "baz:64==",
+					"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+		}
+		for i, test := range tests {
+			t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
+				// todo: replace that with env variable configuration
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				root := tracer.StartSpan("web.request").(*span)
+				root.SetTag(ext.SamplingPriority, test.priority)
+				root.SetBaggageItem("item", "x")
+				ctx, ok := root.Context().(*spanContext)
+				ctx.origin = test.origin
+				ctx.traceID = test.traceID
+				ctx.updated = test.updated
+				ctx.spanID = test.spanID
+				ctx.trace.propagatingTags = test.propagatingTags
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+
+				assert.True(ok)
+				assert.Nil(err)
+				assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
+				assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
+			})
+		}
+	}
 }
 
 func TestNonePropagator(t *testing.T) {

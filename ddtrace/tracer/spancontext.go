@@ -38,6 +38,7 @@ type spanContext struct {
 	baggage    map[string]string
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
+	updated    bool   // updated is tracking changes for priority / origin / x-datadog-tags
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given

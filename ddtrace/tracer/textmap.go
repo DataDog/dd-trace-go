@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -486,4 +487,103 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
+}
+
+const (
+	traceparentHeader = "traceparent"
+	tracestateHeader  = "tracestate"
+)
+
+// propagatorW3c implements Propagator and injects/extracts span contexts
+// using W3C tracecontext/traceparent headers. Only TextMap carriers are supported.
+type propagatorW3c struct{}
+
+func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	switch c := carrier.(type) {
+	case TextMapWriter:
+		return p.injectTextMap(spanCtx, c)
+	default:
+		return ErrInvalidCarrier
+	}
+}
+
+func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	ctx, ok := spanCtx.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return ErrInvalidSpanContext
+	}
+	flags := ""
+	p, ok := ctx.samplingPriority()
+	if ok && p >= ext.PriorityAutoKeep {
+		flags = "01"
+	} else {
+		flags = "00"
+	}
+	writer.Set(traceparentHeader, fmt.Sprintf("00-%032x-%016x-%v", ctx.traceID, ctx.spanID, flags))
+	// if context priority / origin / tags were updated after extraction,
+	// we need to recreate tracestate
+	if ctx.updated ||
+		(ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) {
+		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
+	} else {
+		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
+	}
+	return nil
+}
+
+// todo:  add a test to check that tracestateHeader stays 256 characters max
+func composeTracestate(ctx *spanContext, priority int, oldState string) string {
+	keyRgx := regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("dd=s:%d;", priority))
+	listLength := 1
+
+	if ctx.origin != "" {
+		b.WriteString(fmt.Sprintf("o:%s",
+			valueRgx.ReplaceAllString(ctx.origin, "_")))
+		listLength++
+	}
+
+	for k, v := range ctx.trace.propagatingTags {
+		if !strings.HasPrefix(k, "_dd.p.") {
+			continue
+		}
+		tag := fmt.Sprintf("t.%s:%s",
+			keyRgx.ReplaceAllString(k[6:], "_"),
+			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
+
+		if b.Len()+len(tag) <= 256 && listLength < 32 {
+			b.WriteString(";")
+			b.WriteString(tag)
+			listLength++
+			continue
+		}
+		break
+	}
+	// the old state is split by vendors, must be concatenated with a `,`
+	for _, s := range strings.Split(oldState, ",") {
+		// if another `dd=` list present, we have to replace it
+		if strings.HasPrefix(s, "dd=") {
+			continue
+		}
+		if b.Len()+len(s) < 255 {
+			if listLength+strings.Count(s, ";") < 32 {
+				b.WriteString("," + s)
+				continue
+			}
+			b.WriteString("," + strings.SplitAfterN(s, ";", 32-listLength)[0])
+			continue
+		}
+		if j := strings.LastIndex(s[:255-b.Len()], ";"); j != -1 {
+			b.WriteString(s[:j])
+		}
+		break
+	}
+	return b.String()
+}
+func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	//TODO implement me
+	panic("implement me")
 }
