@@ -20,7 +20,7 @@ var _ opentracing.Span = (*span)(nil)
 
 // span implements opentracing.Span on top of ddtrace.Span.
 type span struct {
-	ddtrace.Span
+	Span ddtrace.SpanW3C
 	*opentracer
 }
 
@@ -30,6 +30,7 @@ func (s *span) Tracer() opentracing.Tracer                            { return s
 func (s *span) LogEvent(event string)                                 { /* deprecated */ }
 func (s *span) LogEventWithPayload(event string, payload interface{}) { /* deprecated */ }
 func (s *span) Log(data opentracing.LogData)                          { /* deprecated */ }
+func (s *span) BaggageItem(restrictedKey string) string               { return "" } // TODO(katiehockman): Why did we have to add this now for it to compile?
 
 func (s *span) FinishWithOptions(opts opentracing.FinishOptions) {
 	for _, lr := range opts.LogRecords {
