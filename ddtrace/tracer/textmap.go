@@ -380,7 +380,8 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	}
 }
 
-// unmarshalPropagatingTags unmarshals tags from v into ctx
+// setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
+// creating the map if one is not initialized.
 func appendPropagatingTags(ctx *spanContext, k, v string) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
@@ -388,7 +389,7 @@ func appendPropagatingTags(ctx *spanContext, k, v string) {
 	ctx.trace.mu.Lock()
 	defer ctx.trace.mu.Unlock()
 	if ctx.trace.propagatingTags == nil {
-		ctx.trace.propagatingTags = map[string]string{}
+		ctx.trace.propagatingTags = make(map[string]string)
 	}
 	ctx.trace.propagatingTags[k] = v
 }
@@ -479,6 +480,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 const (
 	traceparentHeader = "traceparent"
 	tracestateHeader  = "tracestate"
+	w3cTraceIDTag     = "w3cTraceID"
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -501,9 +503,9 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
-	stateHeaders := []string{}
+	var stateHeaders []string
 	// to avoid parsing tracestate header(s) if traceparent is invalid
-	err := reader.ForeachKey(func(k, v string) error {
+	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
 		switch key {
 		case traceparentHeader:
@@ -515,16 +517,16 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 			stateHeaders = append(stateHeaders, v)
 		}
 		return nil
-	})
-	if err != nil || parentHeader == "" {
-		return nil, ErrSpanContextCorrupted
+	}); err != nil {
+		return nil, err
 	}
 	var ctx spanContext
-	err = parseTraceparent(&ctx, parentHeader)
-	if err != nil {
-		return nil, ErrSpanContextNotFound
+	if err := parseTraceparent(&ctx, parentHeader); err != nil {
+		return nil, err
 	}
-	err = parseTracestate(&ctx, stateHeaders)
+	if err := parseTracestate(&ctx, stateHeaders); err != nil {
+		return nil, err
+	}
 	if ctx.traceID == 0 || ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
 	}
@@ -536,29 +538,20 @@ func parseTraceparent(ctx *spanContext, v string) error {
 	if len(v) != 55 {
 		return ErrSpanContextCorrupted
 	}
-	version, err := strconv.ParseUint(v[:2], 16, 64)
+	var version, flags int
+	var traceID string
+	_, err := fmt.Sscanf(v, "%2d-%32s-%16x-%2d", &version, &traceID, &ctx.spanID, &flags)
 	if err != nil || version == 255 {
 		return ErrSpanContextCorrupted
 	}
-	traceID := v[3:35]
 	ctx.traceID, err = strconv.ParseUint(traceID[16:], 16, 64)
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
 	// setting trace-id to be used for span context propagation
 	// TODO(dianashevchenko): is DefaultTraceIDHeader the correct header
-	appendPropagatingTags(ctx, DefaultTraceIDHeader, traceID)
-
-	ctx.spanID, err = strconv.ParseUint(v[36:52], 16, 64)
-	if err != nil {
-		return ErrSpanContextCorrupted
-	}
-
-	priority, err := strconv.ParseInt(v[53:55], 8, 8)
-	if err != nil {
-		return ErrSpanContextCorrupted
-	}
-	ctx.setSamplingPriority(int(priority&0x1), samplernames.Unknown)
+	appendPropagatingTags(ctx, w3cTraceIDTag, traceID)
+	ctx.setSamplingPriority(flags&0x1, samplernames.Unknown)
 	return nil
 }
 

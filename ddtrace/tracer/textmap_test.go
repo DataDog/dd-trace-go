@@ -576,14 +576,14 @@ func TestW3C(t *testing.T) {
 				priority: 2,
 				origin:   "rum",
 				propagatingTags: map[string]string{
-					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.dm":           "-4", "_dd.p.usr.id": "baz64==",
+					"w3cTraceID": "00000000000000001111111111111111",
+					"_dd.p.dm":   "-4", "_dd.p.usr.id": "baz64==",
 					"tracestate": "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 			},
 			{
 				in: TextMapCarrier{
-					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
 					tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 				traceID:  1229782938247303441,
@@ -591,10 +591,10 @@ func TestW3C(t *testing.T) {
 				priority: 1,
 				origin:   "rum",
 				propagatingTags: map[string]string{
-					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.dm":           "-2",
-					"_dd.p.usr.id":       "baz64==",
-					"tracestate":         "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-2",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 			},
 			{
 				in: TextMapCarrier{
@@ -606,10 +606,10 @@ func TestW3C(t *testing.T) {
 				priority: 2, // tracestate priority takes precedence
 				origin:   "rum:rum",
 				propagatingTags: map[string]string{
-					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.dm":           "-4",
-					"_dd.p.usr.id":       "baz64==",
-					"tracestate":         "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 				},
 			},
 			{
@@ -621,7 +621,8 @@ func TestW3C(t *testing.T) {
 				spanID:   2459565876494606882,
 				priority: 1, // traceparent priority takes precedence
 				origin:   "rum:rum",
-				propagatingTags: map[string]string{"x-datadog-trace-id": "00000000000000001111111111111111",
+				propagatingTags: map[string]string{
+					"w3cTraceID":   "00000000000000001111111111111111",
 					"_dd.p.dm":     "-4",
 					"_dd.p.usr.id": "baz64==",
 					"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
@@ -637,10 +638,10 @@ func TestW3C(t *testing.T) {
 				priority: 1, // traceparent priority takes precedence
 				origin:   "rum:rum",
 				propagatingTags: map[string]string{
-					"tracestate":         "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
-					"x-datadog-trace-id": "00000000000000001111111111111111",
-					"_dd.p.dm":           "-4",
-					"_dd.p.usr.id":       "baz64==",
+					"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
 				},
 			},
 		}
@@ -662,7 +663,7 @@ func TestW3C(t *testing.T) {
 				assert.True(ok)
 				assert.Equal(test.priority, p)
 
-				assert.Equal("00000000000000001111111111111111", sctx.trace.propagatingTags[DefaultTraceIDHeader])
+				assert.Equal("00000000000000001111111111111111", sctx.trace.propagatingTags[w3cTraceIDTag])
 				assert.Equal(test.propagatingTags, sctx.trace.propagatingTags)
 
 			})
