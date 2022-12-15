@@ -65,8 +65,12 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	headerPropagationStyleInject  = "DD_PROPAGATION_STYLE_INJECT"
-	headerPropagationStyleExtract = "DD_PROPAGATION_STYLE_EXTRACT"
+	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
+	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
+	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+
+	headerPropagationStyleInjectDeprecated  = "DD_PROPAGATION_STYLE_INJECT"  // deprecated
+	headerPropagationStyleExtractDeprecated = "DD_PROPAGATION_STYLE_EXTRACT" // deprecated
 )
 
 const (
@@ -127,6 +131,13 @@ type PropagatorConfig struct {
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
+//
+// The inject and extract propagators are determined using environment variables
+// with the following order of precedence:
+//  1. DD_TRACE_PROPAGATION_STYLE_INJECT
+//  2. DD_PROPAGATION_STYLE_INJECT (deprecated)
+//  3. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
+//  4. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -149,9 +160,21 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 			extractors: propagators,
 		}
 	}
+	injectorsPs := os.Getenv(headerPropagationStyleInject)
+	if injectorsPs == "" {
+		if injectorsPs = os.Getenv(headerPropagationStyleInjectDeprecated); injectorsPs != "" {
+			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleInjectDeprecated, headerPropagationStyleInject, headerPropagationStyle)
+		}
+	}
+	extractorsPs := os.Getenv(headerPropagationStyleExtract)
+	if extractorsPs == "" {
+		if extractorsPs = os.Getenv(headerPropagationStyleExtractDeprecated); extractorsPs != "" {
+			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
+		}
+	}
 	return &chainedPropagator{
-		injectors:  getPropagators(cfg, headerPropagationStyleInject),
-		extractors: getPropagators(cfg, headerPropagationStyleExtract),
+		injectors:  getPropagators(cfg, injectorsPs),
+		extractors: getPropagators(cfg, extractorsPs),
 	}
 }
 
@@ -163,19 +186,22 @@ type chainedPropagator struct {
 	extractors []Propagator
 }
 
-// getPropagators returns a list of propagators based on the list found in the
-// given environment variable. If the list doesn't contain any valid values the
+// getPropagators returns a list of propagators based on ps, which is a comma seperated
+// list of propagators. If the list doesn't contain any valid values, the
 // default propagator will be returned. Any invalid values in the list will log
 // a warning and be ignored.
-func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
+func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	dd := &propagator{cfg}
-	ps := os.Getenv(env)
 	defaultPs := []Propagator{dd}
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
 	if ps == "" {
-		return defaultPs
+		if prop := os.Getenv(headerPropagationStyle); prop != "" {
+			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
+		} else {
+			return defaultPs // no env set, so use default from configuration
+		}
 	}
 	if ps == "none" {
 		return nil
@@ -194,15 +220,14 @@ func getPropagators(cfg *PropagatorConfig, env string) []Propagator {
 				list = append(list, &propagatorB3{})
 			}
 		case "none":
-			log.Warn("Propagator \"none\" has no effect when combined with other propagators. "+
-				"To disable the propagator, set `%s=none`", env)
+			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
+				"To disable the propagator, set to `none`")
 		default:
 			log.Warn("unrecognized propagator: %s\n", v)
 		}
 	}
 	if len(list) == 0 {
-		// return the default
-		return defaultPs
+		return defaultPs // no valid propagators, so return default
 	}
 	return list
 }
