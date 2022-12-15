@@ -20,20 +20,51 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+type TracerW3C interface {
+	// StartSpan starts a span with the given operation name and options.
+	StartSpan(operationName string, opts ...StartSpanOption) SpanW3C
+
+	// Extract extracts a span context from a given carrier. Note that baggage item
+	// keys will always be lower-cased to maintain consistency. It is impossible to
+	// maintain the original casing due to MIME header canonicalization standards.
+	Extract(carrier interface{}) (SpanContextW3C, error)
+
+	// Inject injects a span context into the given carrier.
+	Inject(context SpanContextW3C, carrier interface{}) error
+
+	// Stop stops the tracer. Calls to Stop should be idempotent.
+	Stop()
+}
+
+type SpanW3C interface {
+	SpanCommon
+
+	// Context returns the SpanContextW3C of this Span.
+	Context() SpanContextW3C
+}
+
+type SpanContextW3C interface {
+	SpanContext
+
+	// TraceIDHigh returns the 64 high order bits of the 128-bit trace ID that
+	// this context is carrying
+	TraceIDHigh() uint64
+}
+
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
 // within the "tracer" package.
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
-	StartSpan(operationName string, opts ...StartSpanOption) Span
+	StartSpan(operationName string, opts ...StartSpanOption) SpanW3C
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (SpanContext, error)
+	Extract(carrier interface{}) (SpanContextW3C, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context SpanContext, carrier interface{}) error
+	Inject(context SpanContextW3C, carrier interface{}) error
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
@@ -43,6 +74,13 @@ type Tracer interface {
 // timestamps and other metadata. A Tracer is used to create hierarchies of
 // spans in a request, buffer and submit them to the server.
 type Span interface {
+	SpanCommon
+
+	// Context returns the SpanContext of this Span.
+	Context() SpanContextW3C
+}
+
+type SpanCommon interface {
 	// SetTag sets a key/value pair as metadata on the span.
 	SetTag(key string, value interface{})
 
@@ -59,9 +97,6 @@ type Span interface {
 
 	// Finish finishes the current span with the given options. Finish calls should be idempotent.
 	Finish(opts ...FinishOption)
-
-	// Context returns the SpanContext of this Span.
-	Context() SpanContext
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -114,7 +149,7 @@ type FinishConfig struct {
 type StartSpanConfig struct {
 	// Parent holds the SpanContext that should be used as a parent for the
 	// new span. If nil, implementations should return a root span.
-	Parent SpanContext
+	Parent SpanContextW3C
 
 	// StartTime holds the time that should be used as the start time of the span.
 	// Implementations should use the current time when StartTime.IsZero().

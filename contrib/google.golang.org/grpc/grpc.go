@@ -45,7 +45,7 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
-) (ddtrace.Span, context.Context) {
+) (ddtrace.SpanW3C, context.Context) {
 	opts = append(opts,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
@@ -60,7 +60,7 @@ func startSpanFromContext(
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error, cfg *config) {
+func finishWithError(span ddtrace.SpanW3C, err error, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}

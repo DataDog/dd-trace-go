@@ -43,7 +43,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	}
 	go func() {
 		msgs := pc.Messages()
-		var prev ddtrace.Span
+		var prev ddtrace.SpanW3C
 		for msg := range msgs {
 			// create the next span from the message
 			opts := []tracer.StartSpanOption{
@@ -127,7 +127,7 @@ func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32
 func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
-	spans := make([]ddtrace.Span, len(msgs))
+	spans := make([]ddtrace.SpanW3C, len(msgs))
 	for i, msg := range msgs {
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
@@ -204,7 +204,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		errors:        make(chan *sarama.ProducerError),
 	}
 	go func() {
-		spans := make(map[uint64]ddtrace.Span)
+		spans := make(map[uint64]ddtrace.SpanW3C)
 		defer close(wrapped.input)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
@@ -254,7 +254,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	return wrapped
 }
 
-func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) ddtrace.Span {
+func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) ddtrace.SpanW3C {
 	carrier := NewProducerMessageCarrier(msg)
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.producerServiceName),
@@ -278,13 +278,13 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	return span
 }
 
-func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
+func finishProducerSpan(span ddtrace.SpanW3C, partition int32, offset int64, err error) {
 	span.SetTag("partition", partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
 }
 
-func getSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, bool) {
+func getSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContextW3C, bool) {
 	carrier := NewProducerMessageCarrier(msg)
 	spanctx, err := tracer.Extract(carrier)
 	if err != nil {

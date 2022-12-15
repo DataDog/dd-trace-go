@@ -1247,7 +1247,7 @@ func TestTracerTraceMaxSize(t *testing.T) {
 		traceStartSize, traceMaxSize = otss, otms
 	}()
 
-	spans := make([]ddtrace.Span, 5)
+	spans := make([]ddtrace.SpanW3C, 5)
 	spans[0] = StartSpan("span0")
 	spans[1] = StartSpan("span1", ChildOf(spans[0].Context()))
 	spans[2] = StartSpan("span2", ChildOf(spans[0].Context()))

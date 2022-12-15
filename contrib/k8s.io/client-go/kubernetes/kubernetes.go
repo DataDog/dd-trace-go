@@ -39,7 +39,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 }
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
-	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.SpanW3C) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, "k8s.io/client-go/kubernetes")
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)

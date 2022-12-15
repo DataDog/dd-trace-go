@@ -24,7 +24,7 @@ func TestStart(t *testing.T) {
 	assert.True(ok)
 	ott, ok := ot.(*opentracer)
 	assert.True(ok)
-	assert.Equal(ott.Tracer, dd)
+	assert.Equal(ott.TracerW3C, dd)
 }
 
 func TestSpanWithContext(t *testing.T) {

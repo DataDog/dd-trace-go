@@ -26,7 +26,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
-var _ ddtrace.Tracer = (*tracer)(nil)
+var _ ddtrace.TracerW3C = (*tracer)(nil)
 
 // tracer creates, buffers and submits Spans which are used to time blocks of
 // computation. They are accumulated and streamed into an internal payload,
@@ -148,8 +148,8 @@ func Stop() {
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
 // ddtrace.Span. It is recommended and is considered more correct to refer to this type as
-// ddtrace.Span instead.
-type Span = ddtrace.Span
+// ddtrace.SpanW3C instead.
+type Span = ddtrace.SpanW3C
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
@@ -160,14 +160,14 @@ func StartSpan(operationName string, opts ...StartSpanOption) Span {
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func Extract(carrier interface{}) (ddtrace.SpanContextW3C, error) {
 	return internal.GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+func Inject(ctx ddtrace.SpanContextW3C, carrier interface{}) error {
 	return internal.GetGlobalTracer().Inject(ctx, carrier)
 }
 
@@ -386,7 +386,7 @@ func (t *tracer) pushTrace(trace *finishedTrace) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) Span {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -565,12 +565,12 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx ddtrace.SpanContextW3C, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContextW3C, error) {
 	return t.config.propagator.Extract(carrier)
 }
 

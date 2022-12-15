@@ -49,6 +49,6 @@ func (c messageCarrier) Set(key, val string) {
 }
 
 // ExtractSpanContext retrieves the SpanContext from a kafka.Message
-func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContext, error) {
+func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContextW3C, error) {
 	return tracer.Extract(messageCarrier{&msg})
 }

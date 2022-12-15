@@ -44,7 +44,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	cfg := newConfig(options...)
 	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+		httptrace.WithBefore(func(req *http.Request, span ddtrace.SpanW3C) {
 			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 			if ok {
 				span.SetTag(ext.ServiceName, e.ServiceName)

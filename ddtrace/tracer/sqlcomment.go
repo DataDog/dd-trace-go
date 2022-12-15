@@ -72,7 +72,7 @@ type SQLCommentCarrier struct {
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
-func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
+func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContextW3C) error {
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
@@ -200,6 +200,6 @@ func commentQuery(query string, tags map[string]string) string {
 }
 
 // Extract is not implemented on SQLCommentCarrier
-func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
+func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContextW3C, error) {
 	return nil, nil
 }

@@ -64,7 +64,7 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 }
 
 // startSpan starts a span from the context set with WithContext.
-func (c *Client) startSpan(resourceName string) ddtrace.Span {
+func (c *Client) startSpan(resourceName string) ddtrace.SpanW3C {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),

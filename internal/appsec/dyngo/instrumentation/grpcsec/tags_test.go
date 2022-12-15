@@ -199,6 +199,6 @@ func (m *MockSpan) Finish(opts ...ddtrace.FinishOption) {
 	m.finished = true
 }
 
-func (m *MockSpan) Context() ddtrace.SpanContext {
+func (m *MockSpan) Context() ddtrace.SpanContextW3C {
 	panic("unused")
 }

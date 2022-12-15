@@ -77,7 +77,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 			defer tracer.Stop()
 
-			var spanCtx ddtrace.SpanContext
+			var spanCtx ddtrace.SpanContextW3C
 			if tc.injectSpan {
 				root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
 				root.SetTag(ext.SamplingPriority, tc.samplingPriority)

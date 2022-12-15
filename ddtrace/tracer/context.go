@@ -29,7 +29,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 		return &internal.NoopSpan{}, false
 	}
 	v := ctx.Value(activeSpanKey)
-	if s, ok := v.(ddtrace.Span); ok {
+	if s, ok := v.(ddtrace.SpanW3C); ok {
 		return s, true
 	}
 	return &internal.NoopSpan{}, false

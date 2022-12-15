@@ -90,7 +90,7 @@ func applyActions(op *Operation) http.Handler {
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
+func WrapHandler(handler http.Handler, span ddtrace.SpanW3C, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, r.RemoteAddr)

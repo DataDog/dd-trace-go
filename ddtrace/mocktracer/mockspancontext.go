@@ -12,7 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
-var _ ddtrace.SpanContext = (*spanContext)(nil)
+var _ ddtrace.SpanContextW3C = (*spanContext)(nil)
 
 type spanContext struct {
 	sync.RWMutex // guards below fields
@@ -20,12 +20,15 @@ type spanContext struct {
 	priority     int
 	hasPriority  bool
 
-	spanID  uint64
-	traceID uint64
-	span    *mockspan // context owner
+	spanID      uint64
+	traceID     uint64
+	traceIDHigh uint64
+	span        *mockspan // context owner
 }
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }
+
+func (sc *spanContext) TraceIDHigh() uint64 { return sc.traceIDHigh }
 
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
 

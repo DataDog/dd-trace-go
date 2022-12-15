@@ -16,14 +16,14 @@ type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (*raceTestTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.SpanW3C {
 	return NoopSpan{}
 }
 func (*raceTestTracer) SetServiceInfo(name, app, appType string) {}
-func (*raceTestTracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (*raceTestTracer) Extract(carrier interface{}) (ddtrace.SpanContextW3C, error) {
 	return NoopSpanContext{}, nil
 }
-func (*raceTestTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error { return nil }
+func (*raceTestTracer) Inject(context ddtrace.SpanContextW3C, carrier interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }
@@ -51,7 +51,7 @@ func TestGlobalTracer(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(index int) {
 			defer wg.Done()
-			var tracer ddtrace.Tracer = tracers[index]
+			var tracer ddtrace.TracerW3C = tracers[index]
 			SetGlobalTracer(tracer)
 
 			// get the global tracer: it must be any raceTestTracer

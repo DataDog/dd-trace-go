@@ -233,7 +233,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// running. decoySpan is a child span that finishes before the cpuHog work
 	// begins to test that span's restore their parent span labels when
 	// finishing.
-	var cpuSpan, decoySpan ddtrace.Span
+	var cpuSpan, decoySpan ddtrace.SpanW3C
 	if a.config.ChildOf {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
 		decoySpan = tracer.StartSpan("decoy", tracer.ChildOf(cpuSpan.Context()))

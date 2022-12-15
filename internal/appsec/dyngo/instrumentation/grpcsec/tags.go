@@ -16,13 +16,13 @@ import (
 
 // SetSecurityEventTags sets the AppSec-specific span tags when a security event
 // occurred into the service entry span.
-func SetSecurityEventTags(span ddtrace.Span, events []json.RawMessage, md map[string][]string) {
+func SetSecurityEventTags(span ddtrace.SpanW3C, events []json.RawMessage, md map[string][]string) {
 	if err := setSecurityEventTags(span, events, md); err != nil {
 		log.Error("appsec: %v", err)
 	}
 }
 
-func setSecurityEventTags(span ddtrace.Span, events []json.RawMessage, md map[string][]string) error {
+func setSecurityEventTags(span ddtrace.SpanW3C, events []json.RawMessage, md map[string][]string) error {
 	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
 		return err
 	}

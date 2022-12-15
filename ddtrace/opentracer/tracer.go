@@ -16,7 +16,8 @@
 // Opentracing operation name is what is called resource in Datadog's terms and the Opentracing "component"
 // tag is Datadog's operation name. Meaning that in order to define (in Opentracing terms) a span that
 // has the operation name "/user/profile" and the component "http.request", one would do:
-//  opentracing.StartSpan("http.request", opentracer.ResourceName("/user/profile"))
+//
+//	opentracing.StartSpan("http.request", opentracer.ResourceName("/user/profile"))
 //
 // Some libraries and frameworks are supported out-of-the-box by using our integrations. You can see a list
 // of supported integrations here: https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib. They are fully
@@ -43,7 +44,7 @@ func New(opts ...tracer.StartOption) opentracing.Tracer {
 var _ opentracing.Tracer = (*opentracer)(nil)
 
 // opentracer implements opentracing.Tracer on top of ddtrace.Tracer.
-type opentracer struct{ ddtrace.Tracer }
+type opentracer struct{ ddtrace.TracerW3C }
 
 // StartSpan implements opentracing.Tracer.
 func (t *opentracer) StartSpan(operationName string, options ...opentracing.StartSpanOption) opentracing.Span {
@@ -53,7 +54,7 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	}
 	opts := []ddtrace.StartSpanOption{tracer.StartTime(sso.StartTime)}
 	for _, ref := range sso.References {
-		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok {
+		if v, ok := ref.ReferencedContext.(ddtrace.SpanContextW3C); ok {
 			// opentracing.ChildOfRef and opentracing.FollowsFromRef will both be represented as
 			// children because Datadog APM does not have a concept of FollowsFrom references.
 			opts = append(opts, tracer.ChildOf(v))
@@ -64,20 +65,20 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 		opts = append(opts, tracer.Tag(k, v))
 	}
 	return &span{
-		Span:       t.Tracer.StartSpan(operationName, opts...),
+		Span:       t.TracerW3C.StartSpan(operationName, opts...),
 		opentracer: t,
 	}
 }
 
 // Inject implements opentracing.Tracer.
 func (t *opentracer) Inject(ctx opentracing.SpanContext, format interface{}, carrier interface{}) error {
-	sctx, ok := ctx.(ddtrace.SpanContext)
+	sctx, ok := ctx.(ddtrace.SpanContextW3C)
 	if !ok {
 		return opentracing.ErrUnsupportedFormat
 	}
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
-		return translateError(t.Tracer.Inject(sctx, carrier))
+		return translateError(t.TracerW3C.Inject(sctx, carrier))
 	default:
 		return opentracing.ErrUnsupportedFormat
 	}
@@ -87,7 +88,7 @@ func (t *opentracer) Inject(ctx opentracing.SpanContext, format interface{}, car
 func (t *opentracer) Extract(format interface{}, carrier interface{}) (opentracing.SpanContext, error) {
 	switch format {
 	case opentracing.TextMap, opentracing.HTTPHeaders:
-		sctx, err := t.Tracer.Extract(carrier)
+		sctx, err := t.TracerW3C.Extract(carrier)
 		return sctx, translateError(err)
 	default:
 		return nil, opentracing.ErrUnsupportedFormat

@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var _ ddtrace.Span = (*mockspan)(nil)
+var _ ddtrace.SpanW3C = (*mockspan)(nil)
 var _ Span = (*mockspan)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
@@ -45,7 +45,7 @@ type Span interface {
 	Tags() map[string]interface{}
 
 	// Context returns the span's SpanContext.
-	Context() ddtrace.SpanContext
+	Context() ddtrace.SpanContextW3C
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
@@ -157,6 +157,8 @@ func (s *mockspan) Tags() map[string]interface{} {
 
 func (s *mockspan) TraceID() uint64 { return s.context.traceID }
 
+func (s *mockspan) TraceIDHigh() uint64 { return s.context.traceIDHigh }
+
 func (s *mockspan) SpanID() uint64 { return s.context.spanID }
 
 func (s *mockspan) ParentID() uint64 { return s.parentID }
@@ -231,7 +233,7 @@ baggage: %#v
 }
 
 // Context returns the SpanContext of this Span.
-func (s *mockspan) Context() ddtrace.SpanContext { return s.context }
+func (s *mockspan) Context() ddtrace.SpanContextW3C { return s.context }
 
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user

@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
-var _ ddtrace.SpanContext = (*spanContext)(nil)
+var _ ddtrace.SpanContextW3C = (*spanContext)(nil)
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -33,8 +33,9 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
-	spanID  uint64
+	traceID     uint64
+	traceIDHigh uint64
+	spanID      uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
@@ -79,6 +80,9 @@ func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
 func (c *spanContext) TraceID() uint64 { return c.traceID }
+
+// TraceID implements ddtrace.SpanContext128TraceID.
+func (c *spanContext) TraceIDHigh() uint64 { return c.traceIDHigh }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {

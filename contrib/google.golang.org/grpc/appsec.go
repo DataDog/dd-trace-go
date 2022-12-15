@@ -21,7 +21,7 @@ import (
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+func appsecUnaryHandlerMiddleware(span ddtrace.SpanW3C, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
@@ -53,7 +53,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+func appsecStreamHandlerMiddleware(span ddtrace.SpanW3C, handler grpc.StreamHandler) grpc.StreamHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		md, _ := metadata.FromIncomingContext(stream.Context())
@@ -99,7 +99,7 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 }
 
 // Set the AppSec tags when security events were found.
-func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
+func setAppSecEventsTags(ctx context.Context, span ddtrace.SpanW3C, events []json.RawMessage) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	grpcsec.SetSecurityEventTags(span, events, md)
 }

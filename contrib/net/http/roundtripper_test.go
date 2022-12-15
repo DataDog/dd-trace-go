@@ -50,10 +50,10 @@ func TestRoundTripper(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span ddtrace.SpanW3C) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span ddtrace.SpanW3C) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -101,10 +101,10 @@ func TestRoundTripperServerError(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span ddtrace.SpanW3C) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span ddtrace.SpanW3C) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -149,10 +149,10 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer close(done)
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span ddtrace.SpanW3C) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span ddtrace.SpanW3C) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -328,7 +328,7 @@ func TestServiceName(t *testing.T) {
 		serviceName := "testServer"
 		rt := WrapRoundTripper(http.DefaultTransport,
 			RTWithServiceName("wrongServiceName"),
-			WithBefore(func(_ *http.Request, span ddtrace.Span) {
+			WithBefore(func(_ *http.Request, span ddtrace.SpanW3C) {
 				span.SetTag(ext.ServiceName, serviceName)
 			}),
 		)

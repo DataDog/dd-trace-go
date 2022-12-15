@@ -22,7 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var _ ddtrace.Tracer = (*mocktracer)(nil)
+var _ ddtrace.TracerW3C = (*mocktracer)(nil)
 var _ Tracer = (*mocktracer)(nil)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
@@ -72,7 +72,7 @@ func (*mocktracer) Stop() {
 	internal.Testing = false
 }
 
-func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.SpanW3C {
 	var cfg ddtrace.StartSpanConfig
 	for _, fn := range opts {
 		fn(&cfg)
@@ -128,7 +128,7 @@ const (
 	baggagePrefix  = tracer.DefaultBaggageHeaderPrefix
 )
 
-func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContextW3C, error) {
 	reader, ok := carrier.(tracer.TextMapReader)
 	if !ok {
 		return nil, tracer.ErrInvalidCarrier
@@ -172,7 +172,7 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return &sc, err
 }
 
-func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
+func (t *mocktracer) Inject(context ddtrace.SpanContextW3C, carrier interface{}) error {
 	writer, ok := carrier.(tracer.TextMapWriter)
 	if !ok {
 		return tracer.ErrInvalidCarrier

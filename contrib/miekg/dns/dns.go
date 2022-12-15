@@ -110,7 +110,7 @@ func (c *Client) ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (
 	return r, rtt, err
 }
 
-func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startSpan(ctx context.Context, opcode int) (ddtrace.SpanW3C, context.Context) {
 	return tracer.StartSpanFromContext(ctx, "dns.request",
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),

@@ -51,7 +51,7 @@ type Session struct {
 	tags map[string]string
 }
 
-func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.Span {
+func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.SpanW3C {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),

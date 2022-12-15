@@ -45,9 +45,9 @@ type (
 )
 
 var (
-	_ ddtrace.Span   = (*span)(nil)
-	_ msgp.Encodable = (*spanList)(nil)
-	_ msgp.Decodable = (*spanLists)(nil)
+	_ ddtrace.SpanW3C = (*span)(nil)
+	_ msgp.Encodable  = (*spanList)(nil)
+	_ msgp.Decodable  = (*spanLists)(nil)
 )
 
 // errorConfig holds customization options for setting error tags.
@@ -88,7 +88,7 @@ type span struct {
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
-func (s *span) Context() ddtrace.SpanContext { return s.context }
+func (s *span) Context() ddtrace.SpanContextW3C { return s.context }
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
 // are propagated down to descendant spans and injected cross-process. Use with

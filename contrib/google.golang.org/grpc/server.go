@@ -88,7 +88,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 		_, im := cfg.ignoredMethods[info.FullMethod]
 		_, um := cfg.untracedMethods[info.FullMethod]
 		if cfg.traceStreamCalls && !im && !um {
-			var span ddtrace.Span
+			var span ddtrace.SpanW3C
 			span, ctx = startSpanFromContext(
 				ctx,
 				info.FullMethod,

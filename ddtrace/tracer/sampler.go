@@ -67,7 +67,7 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn ddtrace.Span) bool {
+func (r *rateSampler) Sample(spn ddtrace.SpanW3C) bool {
 	if r.rate == 1 {
 		// fast path
 		return true

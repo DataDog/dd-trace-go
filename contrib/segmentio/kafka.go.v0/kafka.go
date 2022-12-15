@@ -41,10 +41,10 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 type Reader struct {
 	*kafka.Reader
 	cfg  *config
-	prev ddtrace.Span
+	prev ddtrace.SpanW3C
 }
 
-func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
+func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.SpanW3C {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(r.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.Topic),
@@ -126,7 +126,7 @@ type Writer struct {
 	cfg *config
 }
 
-func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
+func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.SpanW3C {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
@@ -148,7 +148,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	return span
 }
 
-func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
+func finishSpan(span ddtrace.SpanW3C, partition int, offset int64, err error) {
 	span.SetTag("partition", partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
@@ -158,7 +158,7 @@ func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
-	spans := make([]ddtrace.Span, len(msgs))
+	spans := make([]ddtrace.SpanW3C, len(msgs))
 	for i := range msgs {
 		spans[i] = w.startSpan(ctx, &msgs[i])
 	}

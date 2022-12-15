@@ -50,7 +50,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
 		httptrace.RTWithAnalyticsRate(conf.analyticsRate),
-		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
+		httptrace.WithBefore(func(r *http.Request, s ddtrace.SpanW3C) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
@@ -62,7 +62,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				s.SetTag("vault.namespace", ns)
 			}
 		}),
-		httptrace.WithAfter(func(res *http.Response, s ddtrace.Span) {
+		httptrace.WithAfter(func(res *http.Response, s ddtrace.SpanW3C) {
 			if res == nil {
 				// An error occurred during the request.
 				return

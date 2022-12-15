@@ -48,7 +48,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 	}
 }
 
-func startSpanFromContext(ctx context.Context, method, service string, rate float64) (ddtrace.Span, context.Context) {
+func startSpanFromContext(ctx context.Context, method, service string, rate float64) (ddtrace.SpanW3C, context.Context) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
@@ -81,7 +81,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 	log.Debug("contrib/google.golang.org/grpc.v12: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		var (
-			span ddtrace.Span
+			span ddtrace.SpanW3C
 			p    peer.Peer
 		)
 		spanopts := []ddtrace.StartSpanOption{

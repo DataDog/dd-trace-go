@@ -168,7 +168,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 func doClientRequest(
 	ctx context.Context, cfg *config, method string, methodKind string, opts []grpc.CallOption,
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
-) (ddtrace.Span, context.Context, error) {
+) (ddtrace.SpanW3C, context.Context, error) {
 	// inject the trace id into the metadata
 	span, ctx := startSpanFromContext(
 		ctx,
@@ -196,7 +196,7 @@ func doClientRequest(
 }
 
 // setSpanTargetFromPeer sets the target tags in a span based on the gRPC peer.
-func setSpanTargetFromPeer(span ddtrace.Span, p peer.Peer) {
+func setSpanTargetFromPeer(span ddtrace.SpanW3C, p peer.Peer) {
 	// if the peer was set, set the tags
 	if p.Addr != nil {
 		host, port, err := net.SplitHostPort(p.Addr.String())

@@ -41,7 +41,7 @@ type Consumer struct {
 	*kafka.Consumer
 	cfg    *config
 	events chan kafka.Event
-	prev   ddtrace.Span
+	prev   ddtrace.SpanW3C
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
@@ -65,7 +65,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	go func() {
 		defer close(out)
 		for evt := range in {
-			var next ddtrace.Span
+			var next ddtrace.SpanW3C
 
 			// only trace messages
 			if msg, ok := evt.(*kafka.Message); ok {
@@ -89,7 +89,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	return out
 }
 
-func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.SpanW3C {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + *msg.TopicPartition.Topic),
@@ -202,7 +202,7 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 	return in
 }
 
-func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (p *Producer) startSpan(msg *kafka.Message) ddtrace.SpanW3C {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
