@@ -46,9 +46,8 @@ type SpanW3C interface {
 type SpanContextW3C interface {
 	SpanContext
 
-	// TraceIDHigh returns the 64 high order bits of the 128-bit trace ID that
-	// this context is carrying
-	TraceIDHigh() uint64
+	// TraceID128 returns the full 128-bit trace ID that this context is carrying.
+	TraceID128() string
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -82,7 +83,7 @@ func (c *spanContext) SpanID() uint64 { return c.spanID }
 func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // TraceID implements ddtrace.SpanContext128TraceID.
-func (c *spanContext) TraceIDHigh() uint64 { return c.traceIDHigh }
+func (c *spanContext) TraceID128() string { return fmt.Sprintf("%d%d", c.traceIDHigh, c.traceID) }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {

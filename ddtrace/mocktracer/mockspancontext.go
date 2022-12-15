@@ -6,6 +6,7 @@
 package mocktracer
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -28,7 +29,7 @@ type spanContext struct {
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }
 
-func (sc *spanContext) TraceIDHigh() uint64 { return sc.traceIDHigh }
+func (sc *spanContext) TraceID128() string { return fmt.Sprintf("%d%d", sc.traceIDHigh, sc.traceID) }
 
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
 

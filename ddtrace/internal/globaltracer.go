@@ -100,8 +100,8 @@ func (NoopSpanContext) SpanID() uint64 { return 0 }
 // TraceID implements ddtrace.SpanContext.
 func (NoopSpanContext) TraceID() uint64 { return 0 }
 
-// TraceIDHigh implements ddtrace.SpanContextW3C.
-func (NoopSpanContext) TraceIDHigh() uint64 { return 0 }
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (NoopSpanContext) TraceID128() string { return "" }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (NoopSpanContext) ForeachBaggageItem(handler func(k, v string) bool) {}

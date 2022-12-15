@@ -157,7 +157,9 @@ func (s *mockspan) Tags() map[string]interface{} {
 
 func (s *mockspan) TraceID() uint64 { return s.context.traceID }
 
-func (s *mockspan) TraceIDHigh() uint64 { return s.context.traceIDHigh }
+func (s *mockspan) TraceID128() string {
+	return fmt.Sprintf("%d%d", s.context.traceIDHigh, s.context.traceID)
+}
 
 func (s *mockspan) SpanID() uint64 { return s.context.spanID }
 
