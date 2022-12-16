@@ -712,14 +712,14 @@ func TestW3C(t *testing.T) {
 			{
 				in: TextMapCarrier{
 					traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
-					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
 				},
 				traceID:  1229782938247303441,
 				spanID:   2459565876494606882,
 				priority: 1, // traceparent priority takes precedence
 				origin:   "rum:rum",
 				propagatingTags: map[string]string{
-					"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"tracestate":   "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
 					"w3cTraceID":   "00000000000000001111111111111111",
 					"_dd.p.dm":     "-4",
 					"_dd.p.usr.id": "baz64==",
@@ -861,7 +861,6 @@ func TestNonePropagator(t *testing.T) {
 		_, err = tracer.Extract(headers)
 		assert.Equal(err, ErrSpanContextNotFound)
 	})
-
 }
 
 func assertTraceTags(t *testing.T, expected, actual string) {

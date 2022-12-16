@@ -558,6 +558,19 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	return &ctx, nil
 }
 
+// parseTraceparent attempts to parse traceparentHeader which describes the position
+// of the incoming request in its trace graph in a portable, fixed-length format.
+// The format of the traceparentHeader is `-` separated string with in the
+// following format: `version-traceId-spanID-flags`,
+// where:
+// - version - represents the version of the W3C Tracecontext Propagation format in hex format.
+// - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
+// - spanID - represents the propagated spanID in the format of 16 hex-encoded digits.
+// - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
+// Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
+// Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
+// stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
+// hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *spanContext, v string) error {
 	v = strings.Trim(v, "\t -")
 	if len(v) != 55 {
@@ -569,38 +582,46 @@ func parseTraceparent(ctx *spanContext, v string) error {
 	if err != nil || version == 255 {
 		return ErrSpanContextCorrupted
 	}
-	ctx.traceID, err = strconv.ParseUint(traceID[16:], 16, 64)
-	if err != nil {
+	if ctx.spanID == 0 {
+		return ErrSpanContextCorrupted
+	}
+	if ctx.traceID, err = strconv.ParseUint(traceID[16:], 16, 64); err != nil || ctx.traceID == 0 {
 		return ErrSpanContextCorrupted
 	}
 	// setting trace-id to be used for span context propagation
-	// TODO(dianashevchenko): is DefaultTraceIDHeader the correct header
 	appendPropagatingTags(ctx, w3cTraceIDTag, traceID)
 	ctx.setSamplingPriority(flags&0x1, samplernames.Unknown)
 	return nil
 }
 
+// parseTracestate attempts to parse tracestateHeader which is a list
+// with zero or more comma-separated (,) list-members.
+// An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
+// Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
+// The keys to the “dd“ values have been shortened as follows to save space:
+// `sampling_priority` = `s`
+// `origin` = `o`
+// `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, headers []string) error {
 	// if multiple headers are present, they must be combined and stored
-	// TODO(dianashevchenko): is tracestateHeader a correct header
 	appendPropagatingTags(ctx, tracestateHeader, strings.Join(headers, ";"))
 	for _, v := range headers {
-		list := strings.Split(v, ",")
+		list := strings.Split(strings.Trim(v, "\t "), ",")
 		for _, s := range list {
 			if !strings.HasPrefix(s, "dd=") {
 				continue
 			}
-			dd := strings.Split(s[3:], ";")
-			for _, tag := range dd {
-				k := strings.SplitN(tag, ":", 2)
-				if len(k) != 2 {
-					continue
-				}
-				switch k[0] {
-				case "o":
-					ctx.origin = k[1]
-				case "s":
-					p, err := strconv.Atoi(k[1])
+			dd := strings.Split(s[len("dd="):], ";")
+			tags := make(map[string]string)
+			for _, val := range dd {
+				x := strings.SplitN(val, ":", 2)
+				tags[x[0]] = x[1]
+			}
+			for k, v := range tags {
+				if k == "o" {
+					ctx.origin = v
+				} else if k == "s" {
+					p, err := strconv.Atoi(v)
 					if p > 0 && err == nil {
 						// priority from traceparent header
 						flagPriority, ok := ctx.samplingPriority()
@@ -617,10 +638,10 @@ func parseTracestate(ctx *spanContext, headers []string) error {
 							}
 						}
 					}
-				default:
-					if strings.HasPrefix(k[0], "t.") {
-						appendPropagatingTags(ctx, "_dd.p."+(k[0][2:]), strings.ReplaceAll(k[1], "~", "="))
-					}
+				} else if strings.HasPrefix(k, "t.") {
+					k = k[len("t."):]
+					v = strings.ReplaceAll(v, "~", "=")
+					appendPropagatingTags(ctx, "_dd.p."+k, v)
 				}
 			}
 		}
