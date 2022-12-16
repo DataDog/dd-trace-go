@@ -175,9 +175,19 @@ func (c *Client) updateState() {
 		return
 	}
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		return
+	}
+
+	if body := string(respBody); body == `{}` || body == `null` {
+		return
+	}
+
 	var update clientGetConfigsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&update); err != nil {
-		log.Error("remoteconfig: http request: could not parse the json response body: %v", err)
+	if err := json.Unmarshal(respBody, &update); err != nil {
+		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
 		return
 	}
 
