@@ -212,7 +212,10 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// Check the repository state before and after the update to detect which configs are not being sent anymore.
 	// This is needed because some products can stop sending configurations, and we want to make sure that the subscribers
 	// are provided with this information in this case
-	stateBefore, _ := c.repository.CurrentState()
+	stateBefore, err := c.repository.CurrentState()
+	if err != nil {
+		return fmt.Errorf("repository current state error: %v", err)
+	}
 	products, err := c.repository.Update(rc.Update{
 		TUFRoots:      pbUpdate.Roots,
 		TUFTargets:    pbUpdate.Targets,
@@ -220,14 +223,16 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	})
 	if err != nil {
-		return fmt.Errorf("remote config: repository update error: %v", err)
+		return fmt.Errorf("repository update error: %v", err)
 	}
-	stateAfter, _ := c.repository.CurrentState()
+	stateAfter, err := c.repository.CurrentState()
+	if err != nil {
+		return fmt.Errorf("repository current state error after update: %v", err)
+	}
 
 	// Create a config files diff between before/after the update to see which config files are missing
 	mBefore := mapify(&stateBefore)
-	mAfter := mapify(&stateAfter)
-	for k := range mAfter {
+	for k := range mapify(&stateAfter) {
 		delete(mBefore, k)
 	}
 
@@ -291,15 +296,18 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		errMsg = c.lastError.Error()
 	}
 
-	pbConfigState := make([]*configState, 0, len(state.Configs))
-	for _, f := range state.Configs {
-		pbConfigState = append(pbConfigState, &configState{
-			ID:         f.ID,
-			Version:    f.Version,
-			Product:    f.Product,
-			ApplyState: f.ApplyStatus.State,
-			ApplyError: f.ApplyStatus.Error,
-		})
+	var pbConfigState []*configState
+	if !hasError {
+		pbConfigState = make([]*configState, 0, len(state.Configs))
+		for _, f := range state.Configs {
+			pbConfigState = append(pbConfigState, &configState{
+				ID:         f.ID,
+				Version:    f.Version,
+				Product:    f.Product,
+				ApplyState: f.ApplyStatus.State,
+				ApplyError: f.ApplyStatus.Error,
+			})
+		}
 	}
 
 	cap := big.NewInt(0)
