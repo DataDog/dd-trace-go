@@ -193,8 +193,7 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	dd := &propagator{cfg}
-	// W3C tracecontext propagator takes precedence over Datadog propagator
-	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPs := []Propagator{dd}
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
@@ -216,10 +215,6 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
-		case "tracecontext":
-			// W3C tracecontext propagator takes precedence over other propagators,
-			// including Datadog propagator
-			list = append([]Propagator{&propagatorW3c{}}, list...)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
@@ -538,7 +533,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
-		(ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) {
+		(ctx.trace != nil && ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) {
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
 	} else {
 		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
@@ -613,5 +608,5 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	return b.String()
 }
 func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return &spanContext{}, nil
+	return nil, ErrSpanContextNotFound
 }
