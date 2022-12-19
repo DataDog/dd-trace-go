@@ -193,7 +193,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd}
+	// W3C tracecontext propagator takes precedence over Datadog propagator
+	defaultPs := []Propagator{&propagatorW3c{}, dd}
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
@@ -215,6 +216,10 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		switch strings.ToLower(v) {
 		case "datadog":
 			list = append(list, dd)
+		case "tracecontext":
+			// W3C tracecontext propagator takes precedence over other propagators,
+			// including Datadog propagator
+			list = append([]Propagator{&propagatorW3c{}}, list...)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.

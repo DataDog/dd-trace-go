@@ -638,9 +638,10 @@ func TestEnvVars(t *testing.T) {
 
 	testEnvs = []map[string]string{
 		{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
+		{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
 		{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
-		{headerPropagationStyleInject: "tracecontext", headerPropagationStyle: "tracecontext"},
-		{headerPropagationStyle: "tracecontext"},
+		{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
+		{headerPropagationStyle: "datadog,tracecontext"},
 	}
 	for _, testEnv := range testEnvs {
 		for k, v := range testEnv {
@@ -766,8 +767,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, test := range tests {
 			t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
-				// todo: replace that with env variable configuration
-				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				tracer := newTracer()
 				assert := assert.New(t)
 				root := tracer.StartSpan("web.request").(*span)
 				root.SetTag(ext.SamplingPriority, test.priority)
