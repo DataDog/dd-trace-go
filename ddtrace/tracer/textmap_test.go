@@ -789,7 +789,6 @@ func TestEnvVars(t *testing.T) {
 		}
 	}
 
-
 	testEnvs = []map[string]string{
 		{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
 		{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
