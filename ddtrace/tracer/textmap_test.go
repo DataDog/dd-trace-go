@@ -767,7 +767,7 @@ func TestEnvVars(t *testing.T) {
 		}
 		for i, test := range tests {
 			t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
-				tracer := newTracer()
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
 				assert := assert.New(t)
 				root := tracer.StartSpan("web.request").(*span)
 				root.SetTag(ext.SamplingPriority, test.priority)
