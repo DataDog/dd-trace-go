@@ -789,7 +789,6 @@ func TestEnvVars(t *testing.T) {
 			})
 		}
 	}
-
 }
 
 func TestNonePropagator(t *testing.T) {
