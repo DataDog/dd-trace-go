@@ -216,8 +216,6 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		case "datadog":
 			list = append(list, dd)
 		case "tracecontext":
-			// W3C tracecontext propagator takes precedence over other propagators,
-			// including Datadog propagator
 			list = append(list, &propagatorW3c{})
 		case "b3", "b3multi":
 			if !cfg.B3 {
