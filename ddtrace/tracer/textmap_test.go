@@ -681,11 +681,11 @@ func TestEnvVars(t *testing.T) {
 				priority: 1,
 				origin:   "rum",
 				updated:  true,
-
 				propagatingTags: map[string]string{
 					"x-datadog-trace-id": "00000000000000001111111111111111",
 					"_dd.p.usr.id":       "baz64==",
-					"tracestate":         "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+					"tracestate":         "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
 			},
 			{
 				out: TextMapCarrier{
@@ -736,16 +736,15 @@ func TestEnvVars(t *testing.T) {
 			{
 				out: TextMapCarrier{
 					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
-					tracestateHeader:  "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					tracestateHeader:  "dd=s:1;o:old_rum;t.usr.id:baz64~~,oldvendor=t61rcWkgMzE",
 				},
-				traceID:  1229782938247303441,
-				spanID:   2459565876494606882,
-				updated:  false,
-				priority: -1, // traceparent priority takes precedence
-				origin:   "rum:rum",
+				traceID: 1229782938247303441,
+				spanID:  2459565876494606882,
+				updated: false,
+				origin:  "old_tracestate",
 				propagatingTags: map[string]string{
 					"_dd.p.usr.id": "baz:64==",
-					"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					"tracestate":   "dd=s:1;o:old_rum;t.usr.id:baz64~~,oldvendor=t61rcWkgMzE",
 				},
 			},
 		}
@@ -773,6 +772,7 @@ func TestEnvVars(t *testing.T) {
 			})
 		}
 	}
+
 }
 
 func TestNonePropagator(t *testing.T) {
