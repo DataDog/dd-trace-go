@@ -507,6 +507,14 @@ func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{})
 	}
 }
 
+// injectTextMap propagates span context attributes into the writer,
+// in the format of the traceparentHeader and tracestateHeader.
+// traceparentHeader encodes W3C Trace Propagation version, 128-bit traceID,
+// spanID, and a flags field, which supports 8 unique flags.
+// The current specification only supports a single flag called sampled,
+// which is equal to 00000001 when no other flag is present.
+// tracestateHeader is a comma-separated list of list-members with a <key>=<value> format,
+// where each list-member is managed by a vendor or instrumentation library.
 func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
@@ -519,8 +527,10 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	} else {
 		flags = "00"
 	}
+
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%032x-%016x-%v", ctx.traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
+	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
 		(ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) {
@@ -531,6 +541,16 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	return nil
 }
 
+// composeTracestate creates a tracestateHeader from the spancontext.
+// The Datadog tracing library is only responsible for managing the list member with key dd,
+// which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
+// All tag keys in the list must have all invalid characters replaced with the underscore.
+// Invalid key characters include characters outside the ASCII range 0x20 to 0x7E, space, comma and equal sign.
+// All tag values in the list must have all invalid characters replaced with the underscore.
+// Invalid value characters include characters outside the ASCII range 0x20 to 0x7E, space,
+// comma(reserved for tracestate list-member separator), semi-colon(reserved for separator between entries),
+// and tilde sign(reserved to represent equals sign).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	keyRgx := regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
 	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
@@ -549,6 +569,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			continue
 		}
+		// Datadog propagating tags must be appended to the tracestateHeader
+		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		tag := fmt.Sprintf("t.%s:%s",
 			keyRgx.ReplaceAllString(k[6:], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
@@ -563,12 +585,14 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	for _, s := range strings.Split(oldState, ",") {
-		// todo: if another `dd=` list present, we have to replace it completely?
-		// or only he overlapping parts (s/o/tags)?
 		if strings.HasPrefix(s, "dd=") {
 			continue
 		}
+		// if the vendor list can't fit in under 256 characters,
+		// append only the key-value pairs under the limit
 		if b.Len()+len(s) < 255 {
+			// if the resulting tracestateHeader exceeds 32 list-members,
+			// remove the rightmost list-member(s)
 			if listLength+strings.Count(s, ";") < 32 {
 				b.WriteString("," + s)
 				continue
