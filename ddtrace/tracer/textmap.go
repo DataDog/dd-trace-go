@@ -531,7 +531,6 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	return nil
 }
 
-// todo:  add a test to check that tracestateHeader stays 256 characters max
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	keyRgx := regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
 	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
@@ -564,7 +563,8 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	for _, s := range strings.Split(oldState, ",") {
-		// if another `dd=` list present, we have to replace it
+		// todo: if another `dd=` list present, we have to replace it completely?
+		// or only he overlapping parts (s/o/tags)?
 		if strings.HasPrefix(s, "dd=") {
 			continue
 		}

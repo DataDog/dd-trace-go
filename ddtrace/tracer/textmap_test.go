@@ -747,6 +747,22 @@ func TestEnvVars(t *testing.T) {
 					"tracestate":   "dd=s:1;o:old_rum;t.usr.id:baz64~~,oldvendor=t61rcWkgMzE",
 				},
 			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+					tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz_64~~,oldvendor=t61rcWkgMzE:2;o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;anothervendor=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1",
+				},
+				traceID: 1229782938247303442,
+				spanID:  2459565876494606882,
+				updated: true,
+				origin:  "old_tracestate",
+				// todo : should the propagator prioritize s / o tags first if the tag is too long
+				// todo : if another `dd=` list present, we have to replace it completely or only he overlapping parts (s/o/tags)?
+				propagatingTags: map[string]string{
+					"_dd.p.usr.id": "baz:64==",
+					"tracestate":   "dd=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;t.usr.id:baz64~~,oldvendor=t61rcWkgMzE:2;o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;,anothervendor=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;",
+				},
+			},
 		}
 		for i, test := range tests {
 			t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
@@ -755,12 +771,12 @@ func TestEnvVars(t *testing.T) {
 				assert := assert.New(t)
 				root := tracer.StartSpan("web.request").(*span)
 				root.SetTag(ext.SamplingPriority, test.priority)
-				root.SetBaggageItem("item", "x")
 				ctx, ok := root.Context().(*spanContext)
 				ctx.origin = test.origin
 				ctx.traceID = test.traceID
 				ctx.updated = test.updated
 				ctx.spanID = test.spanID
+				ctx.updated = test.updated
 				ctx.trace.propagatingTags = test.propagatingTags
 				headers := TextMapCarrier(map[string]string{})
 				err := tracer.Inject(ctx, headers)
@@ -769,6 +785,7 @@ func TestEnvVars(t *testing.T) {
 				assert.Nil(err)
 				assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
 				assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
+				assert.LessOrEqual(len(headers[tracestateHeader]), 256)
 			})
 		}
 	}
