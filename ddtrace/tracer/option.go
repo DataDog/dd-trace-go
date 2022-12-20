@@ -59,6 +59,10 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
+	// sendRetries is the number of times a trace payload send is retried upon
+	// failure.
+	sendRetries int
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -540,6 +544,7 @@ func WithDebugMode(enabled bool) StartOption {
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.logToStdout = enabled
+		c.sendRetries = 2
 	}
 }
 

@@ -74,6 +74,34 @@ func TestPayloadDecode(t *testing.T) {
 	}
 }
 
+func TestPayloadClone(t *testing.T) {
+	assert := assert.New(t)
+
+	p1 := newPayload()
+	s := newBasicSpan("X")
+	s.Meta["key"] = strings.Repeat("X", 10*1024)
+	trace := make(spanList, 4)
+	for i := 0; i < 4; i++ {
+		trace[i] = s
+	}
+	p1.push(trace)
+
+	p2 := p1.clone()
+
+	assert.Equal(p1.header, p2.header)
+	assert.Equal(p1.off, p2.off)
+	assert.Equal(p1.count, p2.count)
+	assert.Equal(p1.buf.Bytes(), p2.buf.Bytes())
+	assert.NotEqual(p1.buf.String(), "")
+
+	p1.push(trace)
+
+	assert.NotEqual(p1.header, p2.header)
+	assert.NotEqual(p1.count, p2.count)
+	assert.NotEqual(p1.buf.Bytes(), p2.buf.Bytes())
+	assert.NotEqual(p1.buf.String(), "")
+}
+
 func BenchmarkPayloadThroughput(b *testing.B) {
 	b.Run("10K", benchmarkPayloadThroughput(1))
 	b.Run("100K", benchmarkPayloadThroughput(10))

@@ -137,3 +137,13 @@ func (p *payload) Read(b []byte) (n int, err error) {
 	}
 	return p.buf.Read(b)
 }
+
+func (p *payload) clone() *payload {
+	newp := newPayload()
+	newp.off = p.off
+	newp.count = p.count
+	newp.header = make([]byte, len(p.header))
+	copy(newp.header, p.header)
+	newp.buf.Write(p.buf.Bytes())
+	return newp
+}
