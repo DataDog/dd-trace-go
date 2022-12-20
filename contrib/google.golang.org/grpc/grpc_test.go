@@ -343,7 +343,7 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
+		rig, err := newRig(true, WithRequestTags())
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
@@ -402,6 +402,7 @@ func TestSpanTree(t *testing.T) {
 		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
 		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
 		var clientSpans, serverSpans int
+		var reqMsgFound bool
 		for _, ms := range messageSpans {
 			if ms.ParentID() == clientStreamSpan.SpanID() {
 				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
@@ -409,6 +410,10 @@ func TestSpanTree(t *testing.T) {
 			} else {
 				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
 				serverSpans++
+				if !reqMsgFound {
+					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
+					reqMsgFound = true
+				}
 			}
 		}
 		assert.Equal(2, clientSpans)
