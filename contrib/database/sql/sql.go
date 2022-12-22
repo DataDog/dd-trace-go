@@ -9,7 +9,7 @@
 // We start by telling the package which driver we will be using. For example, if we are using "github.com/lib/pq",
 // we would do as follows:
 //
-//	sqltrace.Register("pq", pq.Driver{})
+//	sqltrace.Register("pq", &pq.Driver{})
 //	db, err := sqltrace.Open("pq", "postgres://pqgotest:password@localhost...")
 //
 // The rest of our application would continue as usual, but with tracing enabled.
