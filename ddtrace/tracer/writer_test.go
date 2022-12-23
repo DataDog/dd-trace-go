@@ -8,9 +8,11 @@ package tracer
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -316,6 +318,85 @@ func TestLogWriterOverflow(t *testing.T) {
 		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
 	})
+}
+
+type failingTransport struct {
+	dummyTransport
+	failCount    int
+	sendAttempts int
+	tracesSent   bool
+	traces       spanLists
+	assert       *assert.Assertions
+}
+
+func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {
+	t.sendAttempts++
+
+	traces, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	if t.sendAttempts == 1 {
+		t.traces = traces
+	} else {
+		t.assert.Equal(t.traces, traces)
+	}
+
+	if t.failCount > 0 {
+		t.failCount--
+		return nil, errors.New("oops, I failed")
+	}
+
+	t.tracesSent = true
+	return io.NopCloser(strings.NewReader("OK")), nil
+}
+
+func TestTraceWriterFlushRetries(t *testing.T) {
+	testcases := []struct {
+		configRetries int
+		failCount     int
+		tracesSent    bool
+		expAttempts   int
+	}{
+		{configRetries: 0, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 0, failCount: 1, tracesSent: false, expAttempts: 1},
+
+		{configRetries: 1, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 1, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 1, failCount: 2, tracesSent: false, expAttempts: 2},
+
+		{configRetries: 2, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 2, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, failCount: 2, tracesSent: true, expAttempts: 3},
+		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
+	}
+
+	ss := []*span{makeSpan(0)}
+	for _, test := range testcases {
+		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			p := &failingTransport{
+				failCount: test.failCount,
+				assert:    assert,
+			}
+			c := newConfig(func(c *config) {
+				c.transport = p
+				c.sendRetries = test.configRetries
+			})
+			statsd, err := newStatsdClient(c)
+			assert.Nil(err)
+
+			h := newAgentTraceWriter(c, nil, statsd)
+			h.add(ss)
+
+			h.flush()
+			h.wg.Wait()
+
+			assert.Equal(test.expAttempts, p.sendAttempts)
+			assert.Equal(test.tracesSent, p.tracesSent)
+		})
+	}
 }
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {
