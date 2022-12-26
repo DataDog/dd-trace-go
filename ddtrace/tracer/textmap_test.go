@@ -732,6 +732,22 @@ func TestEnvVars(t *testing.T) {
 					"_dd.p.usr.id": "baz64==",
 				},
 			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01", // invalid version
+					tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1,
+				origin:   "2",
+				propagatingTags: map[string]string{
+					"tracestate":   "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+				},
+			},
 		}
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("extract/valid  with env=%q", testEnv), func(t *testing.T) {

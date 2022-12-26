@@ -407,8 +407,9 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 
 // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
 // creating the map if one is not initialized.
-func appendPropagatingTags(ctx *spanContext, k, v string) {
+func setPropagatingTag(ctx *spanContext, k, v string) {
 	if ctx.trace == nil {
+		// extractors initialize a new spanContext, so the trace might be nil
 		ctx.trace = newTrace()
 	}
 	ctx.trace.mu.Lock()
@@ -589,7 +590,7 @@ func parseTraceparent(ctx *spanContext, v string) error {
 		return ErrSpanContextCorrupted
 	}
 	// setting trace-id to be used for span context propagation
-	appendPropagatingTags(ctx, w3cTraceIDTag, traceID)
+	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
 	ctx.setSamplingPriority(flags&0x1, samplernames.Unknown)
 	return nil
 }
@@ -604,7 +605,7 @@ func parseTraceparent(ctx *spanContext, v string) error {
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, headers []string) error {
 	// if multiple headers are present, they must be combined and stored
-	appendPropagatingTags(ctx, tracestateHeader, strings.Join(headers, ";"))
+	setPropagatingTag(ctx, tracestateHeader, strings.Join(headers, ";"))
 	for _, v := range headers {
 		list := strings.Split(strings.Trim(v, "\t "), ",")
 		for _, s := range list {
@@ -628,20 +629,14 @@ func parseTracestate(ctx *spanContext, headers []string) error {
 						if !ok {
 							return ErrSpanContextCorrupted
 						}
-						if flagPriority == 0 {
-							if p < 1 {
-								ctx.setSamplingPriority(p, samplernames.Unknown)
-							}
-						} else {
-							if p > 0 {
-								ctx.setSamplingPriority(p, samplernames.Unknown)
-							}
+						if (flagPriority == 0 && p < 1) || (flagPriority != 0 && p > 0) {
+							ctx.setSamplingPriority(p, samplernames.Unknown)
 						}
 					}
 				} else if strings.HasPrefix(k, "t.") {
 					k = k[len("t."):]
 					v = strings.ReplaceAll(v, "~", "=")
-					appendPropagatingTags(ctx, "_dd.p."+k, v)
+					setPropagatingTag(ctx, "_dd.p."+k, v)
 				}
 			}
 		}
