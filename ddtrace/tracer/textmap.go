@@ -193,7 +193,7 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd}
+	defaultPs := []Propagator{&propagatorW3c{}, dd}
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
@@ -216,7 +216,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		case "datadog":
 			list = append(list, dd)
 		case "tracecontext":
-			list = append(list, &propagatorW3c{})
+			list = append([]Propagator{&propagatorW3c{}}, list...)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
@@ -744,6 +744,9 @@ func parseTracestate(ctx *spanContext, headers []string) error {
 			tags := make(map[string]string)
 			for _, val := range dd {
 				x := strings.SplitN(val, ":", 2)
+				if len(x) != 2 {
+					continue
+				}
 				tags[x[0]] = x[1]
 			}
 			for k, v := range tags {
