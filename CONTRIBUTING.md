@@ -61,4 +61,8 @@ The maintainers of this repository assign milestones to pull requests to classif
 
 ### Benchmarks
 
-Some benchmarks will run on any new PR commits, the results will be commented into the PR on completion. To see the list of benchmarks or to add additional benchmarks run go to `.gitlab/scripts/run-benchmarks.sh`.
+Some benchmarks will run on any new PR commits, the results will be commented into the PR on completion.
+
+#### Adding a new benchmark
+To add additional benchmarks that should run for every PR go to `.gitlab/scripts/run-benchmarks.sh`.
+Add the name of your benchmark to the list in `-bench "BenchmarkConcurrentTracing|BenchmarkStartSpan"` using pipe character separators. Note that your new benchmark must already exist in the `main` branch, for that reason it is best for new benchmarks to be added in their own PR and a second PR opened afterwards to add them to the PR benchmark script.
