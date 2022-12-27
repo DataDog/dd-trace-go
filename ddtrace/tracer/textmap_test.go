@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -751,17 +752,29 @@ func TestEnvVars(t *testing.T) {
 			{
 				out: TextMapCarrier{
 					traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
-					tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz_64~~,oldvendor=t61rcWkgMzE:2;o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;anothervendor=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1",
+					tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz_64~~,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
 				},
 				traceID: 1229782938247303442,
 				spanID:  2459565876494606882,
 				updated: true,
 				origin:  "old_tracestate",
-				// todo : should the propagator prioritize s / o tags first if the tag is too long
-				// todo : if another `dd=` list present, we have to replace it completely or only he overlapping parts (s/o/tags)?
 				propagatingTags: map[string]string{
 					"_dd.p.usr.id": "baz:64==",
-					"tracestate":   "dd=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;t.usr.id:baz64~~,oldvendor=t61rcWkgMzE:2;o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;,anothervendor=o:very_long_origin_tag_for_a_very_long_tracestate;a:1;b:2;c:3;d:1;e:1;f:1;aa:1;ba:2;ca:3;da:1;ea:1;fa:1;s:1;",
+					"tracestate":   "dd=o:very_long_origin_tag,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1,a31=a:1,a32=a:1",
+				},
+			},
+			{
+				out: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+					tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz_64~~,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
+				},
+				traceID: 1229782938247303442,
+				spanID:  2459565876494606882,
+				updated: true,
+				origin:  "old_tracestate",
+				propagatingTags: map[string]string{
+					"_dd.p.usr.id": "baz:64==",
+					"tracestate":   "dd=o:very_long_origin_tag,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1,a31=a:1,a32=a:1",
 				},
 			},
 		}
@@ -785,8 +798,42 @@ func TestEnvVars(t *testing.T) {
 				assert.Nil(err)
 				assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
 				assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
-				assert.LessOrEqual(len(headers[tracestateHeader]), 256)
+				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+				assert.LessOrEqual(len(ddTag), 256)
 			})
+
+			t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				root := tracer.StartSpan("web.request").(*span)
+				root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+				ctx, ok := root.Context().(*spanContext)
+				ctx.origin = "old_tracestate"
+				ctx.traceID = 1229782938247303442
+				ctx.updated = true
+				ctx.spanID = 2459565876494606882
+				ctx.trace.propagatingTags = map[string]string{
+					"tracestate": "valid_vendor=a:1",
+				}
+				// dd part of the tracestate must not exceed 256 characters
+				for i := 0; i < 32; i++ {
+					ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
+				}
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+
+				assert.True(ok)
+				assert.Nil(err)
+				assert.Equal("00-00000000000000001111111111111112-2222222222222222-01", headers[traceparentHeader])
+				assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
+				// iterating through propagatingTags map doesn't guarantee order in tracestate header
+				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+				assert.Contains(ddTag, "s:2")
+				assert.Contains(ddTag, "s:2")
+				assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+				assert.LessOrEqual(len(ddTag), 256)
+			})
+
 		}
 	}
 }
