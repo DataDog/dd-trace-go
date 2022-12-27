@@ -545,7 +545,17 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		flags = "00"
 	}
 
-	writer.Set(traceparentHeader, fmt.Sprintf("00-%032x-%016x-%v", ctx.traceID, ctx.spanID, flags))
+	var traceID string
+	// if previous traceparent is valid, do NOT update the trace ID
+	if ctx.trace != nil && ctx.trace.propagatingTags != nil {
+		h := strings.Trim(ctx.trace.propagatingTags[traceparentHeader], "\t -")
+		if err := validateTraceparent(h); err == nil {
+			traceID = h[len("00-") : len("00-")+32]
+		} else {
+			traceID = fmt.Sprintf("%032x", ctx.traceID)
+		}
+	}
+	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
@@ -554,6 +564,29 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
 	} else {
 		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
+	}
+	return nil
+}
+
+func validateTraceparent(tp string) error {
+	var version, flags int
+	var spanID uint64
+	var traceID string
+	n, err := fmt.Sscanf(strings.Trim(tp, "\t -"), "%2d-%32s-%16x-%2d", &version, &traceID, &spanID, &flags)
+	if n != 4 || err != nil {
+		return ErrSpanContextCorrupted
+	}
+	//  if the version is 'ff', the traceparent is invalid
+	if version == 255 {
+		return ErrSpanContextCorrupted
+	}
+	// if span or trace id is 0, traceparent is invalid
+	if spanID == 0 {
+		return ErrSpanContextCorrupted
+	}
+	tID, err := strconv.ParseUint(traceID[16:], 16, 64)
+	if err != nil || tID == 0 {
+		return ErrSpanContextCorrupted
 	}
 	return nil
 }
@@ -579,7 +612,6 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	if ctx.origin != "" {
 		b.WriteString(fmt.Sprintf("o:%s",
 			valueRgx.ReplaceAllString(ctx.origin, "_")))
-		listLength++
 	}
 
 	for k, v := range ctx.trace.propagatingTags {
@@ -589,38 +621,26 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		tag := fmt.Sprintf("t.%s:%s",
-			keyRgx.ReplaceAllString(k[6:], "_"),
+			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-
-		if b.Len()+len(tag) <= 256 && listLength < 32 {
-			b.WriteString(";")
-			b.WriteString(tag)
-			listLength++
-			continue
+		if b.Len()+len(tag) > 256 {
+			break
 		}
-		break
+		b.WriteString(";")
+		b.WriteString(tag)
 	}
 	// the old state is split by vendors, must be concatenated with a `,`
 	for _, s := range strings.Split(oldState, ",") {
 		if strings.HasPrefix(s, "dd=") {
 			continue
 		}
-		// if the vendor list can't fit in under 256 characters,
-		// append only the key-value pairs under the limit
-		if b.Len()+len(s) < 255 {
-			// if the resulting tracestateHeader exceeds 32 list-members,
-			// remove the rightmost list-member(s)
-			if listLength+strings.Count(s, ";") < 32 {
-				b.WriteString("," + s)
-				continue
-			}
-			b.WriteString("," + strings.SplitAfterN(s, ";", 32-listLength)[0])
-			continue
+		listLength++
+		// if the resulting tracestateHeader exceeds 32 list-members,
+		// remove the rightmost list-member(s)
+		if listLength > 32 {
+			break
 		}
-		if j := strings.LastIndex(s[:255-b.Len()], ";"); j != -1 {
-			b.WriteString(s[:j])
-		}
-		break
+		b.WriteString("," + s)
 	}
 	return b.String()
 }
