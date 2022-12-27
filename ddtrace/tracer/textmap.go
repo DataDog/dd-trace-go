@@ -567,8 +567,8 @@ func validateTraceparent(tp string) error {
 	if spanID == 0 {
 		return ErrSpanContextCorrupted
 	}
-	tId, err := strconv.ParseUint(traceID[16:], 16, 64)
-	if err != nil || tId == 0 {
+	tID, err := strconv.ParseUint(traceID[16:], 16, 64)
+	if err != nil || tID == 0 {
 		return ErrSpanContextCorrupted
 	}
 	return nil
