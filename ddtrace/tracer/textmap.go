@@ -415,12 +415,7 @@ func setPropagatingTag(ctx *spanContext, k, v string) {
 		// extractors initialize a new spanContext, so the trace might be nil
 		ctx.trace = newTrace()
 	}
-	ctx.trace.mu.Lock()
-	defer ctx.trace.mu.Unlock()
-	if ctx.trace.propagatingTags == nil {
-		ctx.trace.propagatingTags = make(map[string]string)
-	}
-	ctx.trace.propagatingTags[k] = v
+	ctx.trace.setPropagatingTag(k, v)
 }
 
 const (
@@ -549,12 +544,10 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	var traceID string
 	// if previous traceparent is valid, do NOT update the trace ID
 	if ctx.trace != nil && ctx.trace.propagatingTags != nil {
-		h := strings.Trim(ctx.trace.propagatingTags[traceparentHeader], "\t -")
-		if err := validateTraceparent(h); err == nil {
-			h = h[len("00-")+16 : len("00-")+32] // full trace id
-			if ctx.trace.propagatingTags[w3cTraceIDTag] != "" && h[:16] == strings.Repeat("0", 16) {
-				traceID = ctx.trace.propagatingTags[w3cTraceIDTag] + h[16:]
-			}
+		tag := ctx.trace.propagatingTags[w3cTraceIDTag]
+		id, err := strconv.ParseUint(tag, 16, 64)
+		if err == nil && id != 0 {
+			traceID = tag
 		} else {
 			traceID = fmt.Sprintf("%032x", ctx.traceID)
 		}
@@ -568,29 +561,6 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
 	} else {
 		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
-	}
-	return nil
-}
-
-func validateTraceparent(tp string) error {
-	var version, flags int
-	var spanID uint64
-	var traceID string
-	n, err := fmt.Sscanf(strings.Trim(tp, "\t -"), "%2d-%32s-%16x-%2d", &version, &traceID, &spanID, &flags)
-	if n != 4 || err != nil {
-		return ErrSpanContextCorrupted
-	}
-	//  if the version is 'ff', the traceparent is invalid
-	if version == 255 {
-		return ErrSpanContextCorrupted
-	}
-	// if span or trace id is 0, traceparent is invalid
-	if spanID == 0 {
-		return ErrSpanContextCorrupted
-	}
-	tID, err := strconv.ParseUint(traceID[16:], 16, 64)
-	if err != nil || tID == 0 {
-		return ErrSpanContextCorrupted
 	}
 	return nil
 }
