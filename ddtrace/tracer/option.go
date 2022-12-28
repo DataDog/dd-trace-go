@@ -182,6 +182,10 @@ func forEachStringTag(str string, fn func(key string, val string)) {
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
 
+func (c *config) close() {
+	c.statsd.Close()
+}
+
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
 func newConfig(opts ...StartOption) *config {

@@ -593,6 +593,7 @@ func TestRulesSampler(t *testing.T) {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
+				defer c.close()
 				rs := newRulesSampler(nil, c.spanRules)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
@@ -643,6 +644,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 		NameRule("notweb.request", 1.0),
 	}
 	tracer := newTracer(WithSamplingRules(rules))
+	defer tracer.Stop()
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()

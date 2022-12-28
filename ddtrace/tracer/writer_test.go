@@ -95,7 +95,9 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		s := makeSpan(0)
 		for i := 0; i < 20; i++ {
@@ -117,7 +119,9 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		s := makeSpan(0)
 		s.Metrics["nan"] = math.NaN()
@@ -134,7 +138,9 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		type jsonSpan struct {
 			TraceID  string             `json:"trace_id"`
@@ -229,7 +235,9 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		cfg := newConfig(withStatsdClient(&tg))
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		s := makeSpan(10000)
 		h.add([]*span{s})
@@ -245,7 +253,9 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		cfg := newConfig(withStatsdClient(&tg))
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		s := makeSpan(10)
 		var trace []*span
@@ -272,7 +282,9 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		defer cfg.close()
+		h := newLogTraceWriter(cfg)
 		h.w = &buf
 		s := makeSpan(4000)
 		h.add([]*span{s})

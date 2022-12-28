@@ -53,8 +53,11 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 func TestStatsdUDPConnect(t *testing.T) {
 	defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 	os.Setenv("DD_DOGSTATSD_PORT", "8111")
-	testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
 	cfg := newConfig()
+	defer cfg.close()
+	testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
+	cfg = newConfig()
+	defer cfg.close()
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
 	client := cfg.statsd
@@ -87,7 +90,9 @@ func TestStatsdUDPConnect(t *testing.T) {
 
 func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8125"))
+		cfg := newConfig()
+		defer cfg.close()
+		testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8125"))
 	})
 
 	t.Run("socket", func(t *testing.T) {
@@ -118,6 +123,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 		cfg := newConfig()
+		defer cfg.close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
 		cfg.statsd.Count("name", 1, []string{"tag"}, 1)
 
@@ -132,7 +138,9 @@ func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("env", func(t *testing.T) {
 		defer func(old string) { os.Setenv("DD_DOGSTATSD_PORT", old) }(os.Getenv("DD_DOGSTATSD_PORT"))
 		os.Setenv("DD_DOGSTATSD_PORT", "8111")
-		testStatsd(t, newConfig(), net.JoinHostPort(defaultHostname, "8111"))
+		cfg := newConfig()
+		defer cfg.close()
+		testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8111"))
 	})
 
 	t.Run("agent", func(t *testing.T) {
@@ -142,6 +150,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			defer cfg.close()
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8125"))
 		})
 
@@ -151,6 +160,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			defer cfg.close()
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
 		})
 	})
@@ -159,7 +169,9 @@ func TestAutoDetectStatsd(t *testing.T) {
 func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("zero", func(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
-			assert.Zero(t, newConfig(WithLambdaMode(true)).agent)
+			cfg := newConfig(WithLambdaMode(true))
+			defer cfg.close()
+			assert.Zero(t, cfg.agent)
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
@@ -170,7 +182,9 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr("127.9.9.9:8181")).agent)
+			cfg := newConfig(WithAgentAddr("127.9.9.9:8181"))
+			defer cfg.close()
+			assert.Zero(t, cfg.agent)
 		})
 
 		t.Run("StatusNotFound", func(t *testing.T) {
@@ -178,7 +192,9 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
+			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			defer cfg.close()
+			assert.Zero(t, cfg.agent)
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -186,7 +202,9 @@ func TestLoadAgentFeatures(t *testing.T) {
 				w.Write([]byte("Not JSON"))
 			}))
 			defer srv.Close()
-			assert.Zero(t, newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://"))).agent)
+			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+			defer cfg.close()
+			assert.Zero(t, cfg.agent)
 		})
 	})
 
@@ -196,6 +214,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		defer cfg.close()
 		assert.True(t, cfg.agent.DropP0s)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
@@ -215,6 +234,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		}))
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		defer cfg.close()
 		assert.True(t, cfg.agent.DropP0s)
 		assert.True(t, cfg.agent.Stats)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
@@ -225,6 +245,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
 		assert.Equal("http://localhost:8126", c.agentURL)
@@ -235,6 +256,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("http-client", func(t *testing.T) {
 		c := newConfig()
+		defer c.close()
 		assert.Equal(t, defaultClient, c.httpClient)
 		client := &http.Client{}
 		WithHTTPClient(client)(c)
@@ -246,11 +268,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(math.NaN())
 			assert := assert.New(t)
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalyticsRate(0.5))
+			tracer := newTracer(WithAnalyticsRate(0.5))
+			defer tracer.Stop()
 			assert.Equal(0.5, globalconfig.AnalyticsRate())
-			newTracer(WithAnalytics(false))
+			tracer = newTracer(WithAnalytics(false))
+			defer tracer.Stop()
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalytics(true))
+			tracer = newTracer(WithAnalytics(true))
+			defer tracer.Stop()
 			assert.Equal(1., globalconfig.AnalyticsRate())
 		})
 
@@ -258,7 +283,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "true")
 			defer os.Unsetenv("DD_TRACE_ANALYTICS_ENABLED")
 			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newConfig()
+			c := newConfig()
+			defer c.close()
 			assert.Equal(t, 1.0, globalconfig.AnalyticsRate())
 		})
 
@@ -266,7 +292,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_TRACE_ANALYTICS_ENABLED", "kj12")
 			defer os.Unsetenv("DD_TRACE_ANALYTICS_ENABLED")
 			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newConfig()
+			c := newConfig()
+			defer c.close()
 			assert.True(t, math.IsNaN(globalconfig.AnalyticsRate()))
 		})
 	})
@@ -274,6 +301,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("dogstatsd", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
 		})
@@ -282,6 +310,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_AGENT_HOST", "my-host")
 			defer os.Unsetenv("DD_AGENT_HOST")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
 		})
@@ -290,6 +319,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_DOGSTATSD_PORT", "123")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
 		})
@@ -300,6 +330,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_AGENT_HOST")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
@@ -308,12 +339,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_ENV", "testEnv")
 			defer os.Unsetenv("DD_ENV")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "testEnv", c.env)
 		})
 
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
@@ -323,6 +356,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		os.Setenv("DD_AGENT_HOST", "trace-agent")
 		defer os.Unsetenv("DD_AGENT_HOST")
 		tracer := newTracer()
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(t, "http://trace-agent:8126", c.agentURL)
 	})
@@ -331,6 +365,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
@@ -340,6 +375,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
@@ -347,6 +383,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("code-override", func(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer(WithAgentAddr("testhost:3333"))
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "http://testhost:3333", c.agentURL)
 		})
@@ -358,6 +395,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		env := "production"
 		tracer := newTracer(WithEnv(env))
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(env, c.env)
 	})
@@ -365,6 +403,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace_enabled", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.enabled)
 		})
@@ -373,6 +412,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_TRACE_ENABLED", "false")
 			defer os.Unsetenv("DD_TRACE_ENABLED")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.False(t, c.enabled)
 		})
@@ -387,6 +427,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithDebugMode(true),
 			WithEnv("testEnv"),
 		)
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 		assert.Equal("http://ddagent.consul.local:58126", c.agentURL)
@@ -402,6 +443,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("test", c.globalTags["env"])
 		assert.Equal("aVal", c.globalTags["aKey"])
@@ -416,6 +458,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("profiler-endpoints", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
+			defer c.close()
 			assert.True(t, c.profilerEndpoints)
 		})
 
@@ -423,6 +466,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv(traceprof.EndpointEnvVar, "false")
 			defer os.Unsetenv(traceprof.EndpointEnvVar)
 			c := newConfig()
+			defer c.close()
 			assert.False(t, c.profilerEndpoints)
 		})
 	})
@@ -430,6 +474,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("profiler-hotspots", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c := newConfig()
+			defer c.close()
 			assert.True(t, c.profilerHotspots)
 		})
 
@@ -437,6 +482,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			defer os.Unsetenv(traceprof.CodeHotspotsEnvVar)
 			c := newConfig()
+			defer c.close()
 			assert.False(t, c.profilerHotspots)
 		})
 	})
@@ -447,6 +493,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("test2", c.serviceMappings["tracer.test"])
 		assert.Equal("Newsvc", c.serviceMappings["svc"])
@@ -460,6 +507,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
+			defer c.close()
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
@@ -467,6 +515,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
+			defer c.close()
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
@@ -476,6 +525,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
+			defer c.close()
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
@@ -485,6 +535,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
+			defer c.close()
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
@@ -568,6 +619,7 @@ func TestServiceName(t *testing.T) {
 		c := newConfig(
 			WithServiceName("api-intake"),
 		)
+		defer c.close()
 
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("", globalconfig.ServiceName())
@@ -579,6 +631,7 @@ func TestServiceName(t *testing.T) {
 		c := newConfig(
 			WithService("api-intake"),
 		)
+		defer c.close()
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
@@ -589,6 +642,7 @@ func TestServiceName(t *testing.T) {
 		defer os.Unsetenv("DD_SERVICE")
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
@@ -598,6 +652,7 @@ func TestServiceName(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)
 		c := newConfig(WithGlobalTag("service", "api-intake"))
+		defer c.close()
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
@@ -608,6 +663,7 @@ func TestServiceName(t *testing.T) {
 		defer os.Unsetenv("DD_TAGS")
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("api-intake", c.serviceName)
 		assert.Equal("api-intake", globalconfig.ServiceName())
@@ -617,6 +673,7 @@ func TestServiceName(t *testing.T) {
 		assert := assert.New(t)
 		globalconfig.SetServiceName("")
 		c := newConfig()
+		defer c.close()
 		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))
 		assert.Equal("", globalconfig.ServiceName())
 
@@ -624,11 +681,13 @@ func TestServiceName(t *testing.T) {
 		defer os.Unsetenv("DD_TAGS")
 		globalconfig.SetServiceName("")
 		c = newConfig()
+		defer c.close()
 		assert.Equal(c.serviceName, "testService")
 		assert.Equal("testService", globalconfig.ServiceName())
 
 		globalconfig.SetServiceName("")
 		c = newConfig(WithGlobalTag("service", "testService2"))
+		defer c.close()
 		assert.Equal(c.serviceName, "testService2")
 		assert.Equal("testService2", globalconfig.ServiceName())
 
@@ -636,11 +695,13 @@ func TestServiceName(t *testing.T) {
 		defer os.Unsetenv("DD_SERVICE")
 		globalconfig.SetServiceName("")
 		c = newConfig(WithGlobalTag("service", "testService2"))
+		defer c.close()
 		assert.Equal(c.serviceName, "testService3")
 		assert.Equal("testService3", globalconfig.ServiceName())
 
 		globalconfig.SetServiceName("")
 		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
+		defer c.close()
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
 	})
@@ -733,6 +794,7 @@ func TestTagSeparators(t *testing.T) {
 			os.Setenv("DD_TAGS", tag.in)
 			defer os.Unsetenv("DD_TAGS")
 			c := newConfig()
+			defer c.close()
 			for key, expected := range tag.out {
 				got, ok := c.globalTags[key]
 				assert.True(ok, "tag not found")
@@ -748,6 +810,7 @@ func TestVersionConfig(t *testing.T) {
 		c := newConfig(
 			WithServiceVersion("1.2.3"),
 		)
+		defer c.close()
 		assert.Equal("1.2.3", c.version)
 	})
 
@@ -756,6 +819,7 @@ func TestVersionConfig(t *testing.T) {
 		defer os.Unsetenv("DD_VERSION")
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("1.2.3", c.version)
 	})
@@ -763,6 +827,7 @@ func TestVersionConfig(t *testing.T) {
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithGlobalTag("version", "1.2.3"))
+		defer c.close()
 		assert.Equal("1.2.3", c.version)
 	})
 
@@ -771,6 +836,7 @@ func TestVersionConfig(t *testing.T) {
 		defer os.Unsetenv("DD_TAGS")
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 
 		assert.Equal("1.2.3", c.version)
 	})
@@ -778,22 +844,27 @@ func TestVersionConfig(t *testing.T) {
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
+		defer c.close()
 		assert.Equal(c.version, "")
 
 		os.Setenv("DD_TAGS", "version:1.1.1")
 		defer os.Unsetenv("DD_TAGS")
 		c = newConfig()
+		defer c.close()
 		assert.Equal("1.1.1", c.version)
 
 		c = newConfig(WithGlobalTag("version", "1.1.2"))
+		defer c.close()
 		assert.Equal("1.1.2", c.version)
 
 		os.Setenv("DD_VERSION", "1.1.3")
 		defer os.Unsetenv("DD_VERSION")
 		c = newConfig(WithGlobalTag("version", "1.1.2"))
+		defer c.close()
 		assert.Equal("1.1.3", c.version)
 
 		c = newConfig(WithGlobalTag("version", "1.1.2"), WithServiceVersion("1.1.4"))
+		defer c.close()
 		assert.Equal("1.1.4", c.version)
 	})
 }
@@ -804,6 +875,7 @@ func TestEnvConfig(t *testing.T) {
 		c := newConfig(
 			WithEnv("testing"),
 		)
+		defer c.close()
 		assert.Equal("testing", c.env)
 	})
 
@@ -812,13 +884,14 @@ func TestEnvConfig(t *testing.T) {
 		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
 		c := newConfig()
-
+		defer c.close()
 		assert.Equal("testing", c.env)
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithGlobalTag("env", "testing"))
+		defer c.close()
 		assert.Equal("testing", c.env)
 	})
 
@@ -827,7 +900,7 @@ func TestEnvConfig(t *testing.T) {
 		defer os.Unsetenv("DD_TAGS")
 		assert := assert.New(t)
 		c := newConfig()
-
+		defer c.close()
 		assert.Equal("testing", c.env)
 	})
 
@@ -835,21 +908,26 @@ func TestEnvConfig(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 		assert.Equal(c.env, "")
+		defer c.close()
 
 		os.Setenv("DD_TAGS", "env:testing1")
 		defer os.Unsetenv("DD_TAGS")
 		c = newConfig()
+		defer c.close()
 		assert.Equal("testing1", c.env)
 
 		c = newConfig(WithGlobalTag("env", "testing2"))
+		defer c.close()
 		assert.Equal("testing2", c.env)
 
 		os.Setenv("DD_ENV", "testing3")
 		defer os.Unsetenv("DD_ENV")
 		c = newConfig(WithGlobalTag("env", "testing2"))
+		defer c.close()
 		assert.Equal("testing3", c.env)
 
 		c = newConfig(WithGlobalTag("env", "testing2"), WithEnv("testing4"))
+		defer c.close()
 		assert.Equal("testing4", c.env)
 	})
 }
@@ -857,6 +935,7 @@ func TestEnvConfig(t *testing.T) {
 func TestStatsTags(t *testing.T) {
 	assert := assert.New(t)
 	c := newConfig(WithService("serviceName"), WithEnv("envName"))
+	defer c.close()
 	c.hostname = "hostName"
 	tags := statsTags(c)
 
@@ -875,6 +954,7 @@ func TestWithHostname(t *testing.T) {
 	t.Run("WithHostname", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithHostname("hostname"))
+		defer c.close()
 		assert.Equal("hostname", c.hostname)
 	})
 
@@ -883,6 +963,7 @@ func TestWithHostname(t *testing.T) {
 		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
 		c := newConfig()
+		defer c.close()
 		assert.Equal("hostname-env", c.hostname)
 	})
 
@@ -892,6 +973,7 @@ func TestWithHostname(t *testing.T) {
 		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
 		c := newConfig(WithHostname("hostname-middleware"))
+		defer c.close()
 		assert.Equal("hostname-middleware", c.hostname)
 	})
 }
@@ -900,6 +982,7 @@ func TestWithTraceEnabled(t *testing.T) {
 	t.Run("WithTraceEnabled", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithTraceEnabled(false))
+		defer c.close()
 		assert.False(c.enabled)
 	})
 
@@ -908,6 +991,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		os.Setenv("DD_TRACE_ENABLED", "false")
 		defer os.Unsetenv("DD_TRACE_ENABLED")
 		c := newConfig()
+		defer c.close()
 		assert.False(c.enabled)
 	})
 
@@ -916,12 +1000,14 @@ func TestWithTraceEnabled(t *testing.T) {
 		os.Setenv("DD_TRACE_ENABLED", "false")
 		defer os.Unsetenv("DD_TRACE_ENABLED")
 		c := newConfig(WithTraceEnabled(true))
+		defer c.close()
 		assert.True(c.enabled)
 	})
 }
 
 func TestWithLogStartup(t *testing.T) {
 	c := newConfig()
+	defer c.close()
 	assert.True(t, c.logStartup)
 	WithLogStartup(false)(c)
 	assert.False(t, c.logStartup)
