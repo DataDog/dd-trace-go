@@ -61,7 +61,7 @@ jobs:
           ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
 
   test-core:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
