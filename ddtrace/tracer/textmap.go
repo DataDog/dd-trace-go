@@ -545,12 +545,16 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	// if previous traceparent is valid, do NOT update the trace ID
 	if ctx.trace != nil && ctx.trace.propagatingTags != nil {
 		tag := ctx.trace.propagatingTags[w3cTraceIDTag]
-		id, err := strconv.ParseUint(tag, 16, 64)
-		if err == nil && id != 0 {
-			traceID = tag
-		} else {
+		if len(tag) == 32 {
+			id, err := strconv.ParseUint(tag[16:], 16, 64)
+			if err == nil && id != 0 {
+				traceID = tag
+			}
+		}
+		if len(traceID) == 0 {
 			traceID = fmt.Sprintf("%032x", ctx.traceID)
 		}
+
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
 	// if context priority / origin / tags were updated after extraction,
