@@ -551,7 +551,10 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	if ctx.trace != nil && ctx.trace.propagatingTags != nil {
 		h := strings.Trim(ctx.trace.propagatingTags[traceparentHeader], "\t -")
 		if err := validateTraceparent(h); err == nil {
-			traceID = h[len("00-") : len("00-")+32]
+			h = h[len("00-")+16 : len("00-")+32] // full trace id
+			if ctx.trace.propagatingTags[w3cTraceIDTag] != "" && h[:16] == strings.Repeat("0", 16) {
+				traceID = ctx.trace.propagatingTags[w3cTraceIDTag] + h[16:]
+			}
 		} else {
 			traceID = fmt.Sprintf("%032x", ctx.traceID)
 		}

@@ -865,9 +865,8 @@ func TestEnvVars(t *testing.T) {
 					origin:   "rum",
 					updated:  true,
 					propagatingTags: map[string]string{
-						"x-datadog-trace-id": "00000000000000001111111111111111",
-						"_dd.p.usr.id":       "baz64==",
-						"tracestate":         "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~",
 					},
 				},
 				{
@@ -881,9 +880,8 @@ func TestEnvVars(t *testing.T) {
 					origin:   "rum",
 					updated:  true,
 					propagatingTags: map[string]string{
-						"x-datadog-trace-id": "00000000000000001111111111111111",
-						"_dd.p.usr.id":       "baz64==",
-						"tracestate":         "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
 				},
 				{
@@ -897,9 +895,8 @@ func TestEnvVars(t *testing.T) {
 					origin:   "rum:rum",
 					updated:  true,
 					propagatingTags: map[string]string{
-						"x-datadog-trace-id": "00000000000000001111111111111111",
-						"_dd.p.usr.id":       "baz64==",
-						"tracestate":         "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
 				},
 				{
