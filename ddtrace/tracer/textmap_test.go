@@ -637,6 +637,177 @@ func TestEnvVars(t *testing.T) {
 	}
 }
 
+func TestNewStuff(t *testing.T) {
+	testEnvs := []map[string]string{
+		{headerPropagationStyleInject: "datadog", headerPropagationStyleExtract: "datadog"},
+		{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
+		{headerPropagationStyle: "datadog"},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []struct {
+			in              TextMapCarrier
+			traceID         uint64
+			spanID          uint64
+			priority        int
+			origin          string
+			propagatingTags map[string]string
+		}{
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2,
+				origin:   "rum",
+				propagatingTags: map[string]string{
+					"w3cTraceID": "00000000000000001111111111111111",
+					"_dd.p.dm":   "-4", "_dd.p.usr.id": "baz64==",
+					"tracestate": "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
+					tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1,
+				origin:   "rum",
+				propagatingTags: map[string]string{
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-2",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 2, // tracestate priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+					tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+					"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
+					tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1, // traceparent priority takes precedence
+				origin:   "rum:rum",
+				propagatingTags: map[string]string{
+					"tracestate":   "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+				},
+			},
+			{
+				in: TextMapCarrier{
+					traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01", // invalid version
+					tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+				},
+				traceID:  1229782938247303441,
+				spanID:   2459565876494606882,
+				priority: 1,
+				origin:   "2",
+				propagatingTags: map[string]string{
+					"tracestate":   "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					"w3cTraceID":   "00000000000000001111111111111111",
+					"_dd.p.dm":     "-4",
+					"_dd.p.usr.id": "baz64==",
+				},
+			},
+		}
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("extract/valid  with env=%q", testEnv), func(t *testing.T) {
+				// todo: replace that with env variable configuration
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(test.in)
+				assert.Nil(err)
+				sctx, ok := ctx.(*spanContext)
+				assert.True(ok)
+
+				assert.Equal(test.traceID, sctx.traceID)
+				assert.Equal(test.spanID, sctx.spanID)
+				assert.Equal(test.origin, sctx.origin)
+				p, ok := sctx.samplingPriority()
+				assert.True(ok)
+				assert.Equal(test.priority, p)
+
+				assert.Equal("00000000000000001111111111111111", sctx.trace.propagatingTags[w3cTraceIDTag])
+				assert.Equal(test.propagatingTags, sctx.trace.propagatingTags)
+			})
+		}
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []TextMapCarrier{
+			{tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+			{traceparentHeader: "0"},       // invalid length
+			{traceparentHeader: "\t- -\t"}, // invalid length
+			{
+				traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+			},
+			{
+				traceparentHeader: "100-00000000000000001111111111111111-2222222222222222-01", // invalid length
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+			},
+			{
+				traceparentHeader: "ff-00000000000000001111111111111111-2222222222222222-01", // invalid version
+				tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+			},
+		}
+
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("extract/invalid  with env=%q", testEnv), func(t *testing.T) {
+				// todo: replace that with env variable configuration
+				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{}, &propagatorW3c{})))
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(test)
+				assert.NotNil(err)
+				assert.Nil(ctx)
+			})
+		}
+	}
+}
+
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
