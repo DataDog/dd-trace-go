@@ -219,6 +219,4 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-require github.com/patrickmn/go-cache v2.1.0+incompatible
-
 require github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
