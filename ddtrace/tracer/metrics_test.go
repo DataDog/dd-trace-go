@@ -48,7 +48,7 @@ type testStatsdCall struct {
 
 func withStatsdClient(s statsdClient) StartOption {
 	return func(c *config) {
-		c.statsd = s
+		c.statsClient = s
 	}
 }
 
@@ -246,6 +246,8 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
 	trc := newUnstartedTracer(withStatsdClient(&tg))
+	trc.startStatsd()
+	defer trc.statsd.Close()
 
 	trc.wg.Add(1)
 	go func() {

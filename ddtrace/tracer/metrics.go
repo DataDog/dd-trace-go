@@ -46,7 +46,7 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 			runtime.ReadMemStats(&ms)
 			debug.ReadGCStats(&gc)
 
-			statsd := t.config.statsd
+			statsd := t.statsd
 			// CPU statistics
 			statsd.Gauge("runtime.go.num_cpu", float64(runtime.NumCPU()), nil, 1)
 			statsd.Gauge("runtime.go.num_goroutine", float64(runtime.NumGoroutine()), nil, 1)
@@ -99,9 +99,9 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			t.config.statsd.Count("datadog.tracer.spans_started", int64(atomic.SwapUint32(&t.spansStarted, 0)), nil, 1)
-			t.config.statsd.Count("datadog.tracer.spans_finished", int64(atomic.SwapUint32(&t.spansFinished, 0)), nil, 1)
-			t.config.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
+			t.statsd.Count("datadog.tracer.spans_started", int64(atomic.SwapUint32(&t.spansStarted, 0)), nil, 1)
+			t.statsd.Count("datadog.tracer.spans_finished", int64(atomic.SwapUint32(&t.spansFinished, 0)), nil, 1)
+			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return
 		}

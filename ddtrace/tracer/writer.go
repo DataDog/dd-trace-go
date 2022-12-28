@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -28,6 +29,10 @@ type traceWriter interface {
 
 	// stop gracefully shuts down the writer.
 	stop()
+
+	// sendStats tells the writer to send writer-specific stats periodically through
+	// statsd
+	sendStats(statsd statsdClient)
 }
 
 type agentTraceWriter struct {
@@ -46,6 +51,9 @@ type agentTraceWriter struct {
 	// prioritySampling is the prioritySampler into which agentTraceWriter will
 	// read sampling rates sent by the agent
 	prioritySampling *prioritySampler
+
+	// statsd is used to send metrics
+	statsd statsdClient
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
@@ -59,17 +67,17 @@ func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
 
 func (h *agentTraceWriter) add(trace []*span) {
 	if err := h.payload.push(trace); err != nil {
-		h.config.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
+		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
 	}
 	if h.payload.size() > payloadSizeLimit {
-		h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
+		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 		h.flush()
 	}
 }
 
 func (h *agentTraceWriter) stop() {
-	h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
+	h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
 	h.flush()
 	h.wg.Wait()
 }
@@ -87,22 +95,26 @@ func (h *agentTraceWriter) flush() {
 		defer func(start time.Time) {
 			<-h.climit
 			h.wg.Done()
-			h.config.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
+			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
 		}(time.Now())
 		size, count := p.size(), p.itemCount()
 		log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 		rc, err := h.config.transport.send(p)
 		if err != nil {
-			h.config.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
+			h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
 			log.Error("lost %d traces: %v", count, err)
 		} else {
-			h.config.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
-			h.config.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
+			h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
+			h.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
 			if err := h.prioritySampling.readRatesJSON(rc); err != nil {
-				h.config.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+				h.statsd.Incr("datadog.tracer.decode_error", nil, 1)
 			}
 		}
 	}(oldp)
+}
+
+func (a *agentTraceWriter) sendStats(statsd statsdClient) {
+	a.statsd = statsd
 }
 
 // logWriter specifies the output target of the logTraceWriter; replaced in tests.
@@ -116,12 +128,14 @@ type logTraceWriter struct {
 	buf       bytes.Buffer
 	hasTraces bool
 	w         io.Writer
+	statsd    statsdClient
 }
 
 func newLogTraceWriter(c *config) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
 		w:      logWriter,
+		statsd: &statsd.NoOpClient{},
 	}
 	w.resetBuffer()
 	return w
@@ -143,6 +157,10 @@ func (h *logTraceWriter) resetBuffer() {
 	h.buf.Reset()
 	h.buf.WriteString(`{"traces": [`)
 	h.hasTraces = false
+}
+
+func (h *logTraceWriter) sendStats(statsd statsdClient) {
+	h.statsd = statsd
 }
 
 // encodeFloat correctly encodes float64 into the JSON format followed by ES6.
@@ -290,7 +308,7 @@ func (h *logTraceWriter) add(trace []*span) {
 		n, err := h.writeTrace(trace)
 		if err != nil {
 			log.Error("Lost a trace: %s", err.cause)
-			h.config.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:" + err.dropReason}, 1)
+			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:" + err.dropReason}, 1)
 			return
 		}
 		trace = trace[n:]
@@ -303,7 +321,7 @@ func (h *logTraceWriter) add(trace []*span) {
 }
 
 func (h *logTraceWriter) stop() {
-	h.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
+	h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:shutdown"}, 1)
 	h.flush()
 }
 

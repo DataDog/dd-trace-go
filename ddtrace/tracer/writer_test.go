@@ -230,6 +230,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		var buf bytes.Buffer
 		var tg testStatsdClient
 		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		h.sendStats(&tg)
 		h.w = &buf
 		s := makeSpan(10000)
 		h.add([]*span{s})

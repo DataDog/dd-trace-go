@@ -133,6 +133,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 		ParentHeader:  "pid",
 	})
 	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
 
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("item", "x")
@@ -160,6 +161,7 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 		DefaultParentIDHeader: "1",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -188,6 +190,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -215,6 +218,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -242,6 +246,7 @@ func TestExtractOriginSynthetics(t *testing.T) {
 		DefaultParentIDHeader: "0",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -263,6 +268,7 @@ func TestTextMapPropagator(t *testing.T) {
 			traceTagsHeader:       "hello=world,=", // invalid value
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -282,6 +288,7 @@ func TestTextMapPropagator(t *testing.T) {
 			traceTagsHeader:       traceTags,
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -291,6 +298,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
 		tracer := newTracer()
+		defer tracer.Stop()
 		child := tracer.StartSpan("test")
 		for i := 0; i < 100; i++ {
 			child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
@@ -309,6 +317,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 	t.Run("InvalidTraceTags", func(t *testing.T) {
 		tracer := newTracer()
+		defer tracer.Stop()
 		internal.SetGlobalTracer(tracer)
 		child := tracer.StartSpan("test")
 		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
@@ -332,6 +341,7 @@ func TestTextMapPropagator(t *testing.T) {
 			ParentHeader:  "pid",
 		})
 		tracer := newTracer(WithPropagator(propagator))
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -397,6 +407,7 @@ func TestEnvVars(t *testing.T) {
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				root := tracer.StartSpan("web.request").(*span)
 				ctx, ok := root.Context().(*spanContext)
 				ctx.traceID = test.in[0]
@@ -453,6 +464,7 @@ func TestEnvVars(t *testing.T) {
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				assert := assert.New(t)
 				ctx, err := tracer.Extract(test.in)
 				assert.Nil(err)
@@ -505,6 +517,7 @@ func TestEnvVars(t *testing.T) {
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})))
+				defer tracer.Stop()
 				root := tracer.StartSpan("web.request").(*span)
 				ctx, ok := root.Context().(*spanContext)
 				ctx.traceID = test.in[0]
@@ -555,6 +568,7 @@ func TestEnvVars(t *testing.T) {
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				assert := assert.New(t)
 
 				ctx, err := tracer.Extract(test.in)
@@ -610,6 +624,7 @@ func TestEnvVars(t *testing.T) {
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				root := tracer.StartSpan("web.request").(*span)
 				root.SetTag(ext.SamplingPriority, -1)
 				root.SetBaggageItem("item", "x")
@@ -641,6 +656,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -660,6 +676,7 @@ func TestNonePropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp))
+		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
 		root := tracer.StartSpan("web.request").(*span)
@@ -684,6 +701,7 @@ func TestNonePropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleExtract, "none")
 		assert := assert.New(t)
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -698,6 +716,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject,extract/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyle, "none")
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")

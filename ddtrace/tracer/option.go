@@ -114,8 +114,9 @@ type config struct {
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr string
 
-	// statsd is used for tracking metrics associated with the runtime and the tracer.
-	statsd statsdClient
+	// statsClient is set when a user provides a custom statsd client for tracking metrics
+	// associated with the runtime and the tracer.
+	statsClient statsdClient
 
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to trace spans.
@@ -295,7 +296,7 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
-	if c.statsd == nil {
+	if c.statsClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
 		if addr == "" {
@@ -316,15 +317,21 @@ func newConfig(opts ...StartOption) *config {
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
 		c.dogstatsdAddr = addr
-		client, err := statsd.New(addr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
-		if err != nil {
-			log.Warn("Runtime and health metrics disabled: %v", err)
-			c.statsd = &statsd.NoOpClient{}
-		} else {
-			c.statsd = client
-		}
 	}
+
 	return c
+}
+
+func newStatsdClient(c *config) (statsdClient, error) {
+	if c.statsClient != nil {
+		return c.statsClient, nil
+	}
+
+	client, err := statsd.New(c.dogstatsdAddr, statsd.WithMaxMessagesPerPayload(40), statsd.WithTags(statsTags(c)))
+	if err != nil {
+		return &statsd.NoOpClient{}, err
+	}
+	return client, nil
 }
 
 // defaultHTTPClient returns the default http.Client to start the tracer with.
@@ -476,7 +483,7 @@ func statsTags(c *config) []string {
 // withNoopStats is used for testing to disable statsd client
 func withNoopStats() StartOption {
 	return func(c *config) {
-		c.statsd = &statsd.NoOpClient{}
+		c.statsClient = &statsd.NoOpClient{}
 	}
 }
 
