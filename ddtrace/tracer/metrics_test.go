@@ -48,7 +48,7 @@ type testStatsdCall struct {
 
 func withStatsdClient(s statsdClient) StartOption {
 	return func(c *config) {
-		c.statsClient = s
+		c.statsdClient = s
 	}
 }
 
