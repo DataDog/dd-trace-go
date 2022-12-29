@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -30,10 +28,6 @@ type traceWriter interface {
 
 	// stop gracefully shuts down the writer.
 	stop()
-
-	// sendStats tells the writer to send writer-specific stats periodically through
-	// statsd
-	sendStats(statsd statsdClient)
 }
 
 type agentTraceWriter struct {
@@ -57,12 +51,13 @@ type agentTraceWriter struct {
 	statsd statsdClient
 }
 
-func newAgentTraceWriter(c *config, s *prioritySampler) *agentTraceWriter {
+func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient statsdClient) *agentTraceWriter {
 	return &agentTraceWriter{
 		config:           c,
 		payload:          newPayload(),
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: s,
+		statsd:           statsdClient,
 	}
 }
 
@@ -114,10 +109,6 @@ func (h *agentTraceWriter) flush() {
 	}(oldp)
 }
 
-func (h *agentTraceWriter) sendStats(statsd statsdClient) {
-	h.statsd = statsd
-}
-
 // logWriter specifies the output target of the logTraceWriter; replaced in tests.
 var logWriter io.Writer = os.Stdout
 
@@ -132,11 +123,11 @@ type logTraceWriter struct {
 	statsd    statsdClient
 }
 
-func newLogTraceWriter(c *config) *logTraceWriter {
+func newLogTraceWriter(c *config, statsdClient statsdClient) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
 		w:      logWriter,
-		statsd: &statsd.NoOpClient{},
+		statsd: statsdClient,
 	}
 	w.resetBuffer()
 	return w
@@ -158,10 +149,6 @@ func (h *logTraceWriter) resetBuffer() {
 	h.buf.Reset()
 	h.buf.WriteString(`{"traces": [`)
 	h.hasTraces = false
-}
-
-func (h *logTraceWriter) sendStats(statsd statsdClient) {
-	h.statsd = statsd
 }
 
 // encodeFloat correctly encodes float64 into the JSON format followed by ES6.

@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -95,7 +96,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
 		for i := 0; i < 20; i++ {
@@ -104,7 +109,7 @@ func TestLogWriter(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.NoError(err)
 		assert.Len(v.Traces, 20, "Expected 20 traces, but have %d", len(v.Traces))
 		for _, t := range v.Traces {
@@ -117,7 +122,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
 		s.Metrics["nan"] = math.NaN()
@@ -134,7 +143,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		type jsonSpan struct {
 			TraceID  string             `json:"trace_id"`
@@ -201,7 +214,7 @@ func TestLogWriter(t *testing.T) {
 		h.flush()
 		d := json.NewDecoder(&buf)
 		var payload jsonPayload
-		err := d.Decode(&payload)
+		err = d.Decode(&payload)
 		assert.NoError(err)
 		assert.Equal(jsonPayload{[][]jsonSpan{{expected}}}, payload)
 	})
@@ -229,15 +242,18 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
-		h.sendStats(&tg)
+		cfg := newConfig(withStatsdClient(&tg))
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10000)
 		h.add([]*span{s})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
 		assert.Contains(tg.CallNames(), "datadog.tracer.traces_dropped")
 	})
@@ -246,7 +262,11 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		h := newLogTraceWriter(newConfig(withStatsdClient(&tg)))
+		cfg := newConfig(withStatsdClient(&tg))
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
 		var trace []*span
@@ -257,7 +277,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.NoError(err)
 		assert.Len(v.Traces, 1, "Expected 1 trace, but have %d", len(v.Traces))
 		spann := len(v.Traces[0])
@@ -273,7 +293,11 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		h := newLogTraceWriter(newConfig())
+		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(4000)
 		h.add([]*span{s})
@@ -281,7 +305,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
-		err := d.Decode(&v)
+		err = d.Decode(&v)
 		assert.NoError(err)
 		assert.Len(v.Traces, 1, "Expected 1 trace, but have %d", len(v.Traces))
 		assert.Len(v.Traces[0], 1, "Expected 1 span, but have %d", len(v.Traces[0]))

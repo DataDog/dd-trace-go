@@ -195,11 +195,15 @@ const payloadQueueSize = 1000
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
+	statsd, err := newStatsdClient(c)
+	if err != nil {
+		log.Warn("Runtime and health metrics disabled: %v", err)
+	}
 	var writer traceWriter
 	if c.logToStdout {
-		writer = newLogTraceWriter(c)
+		writer = newLogTraceWriter(c, statsd)
 	} else {
-		writer = newAgentTraceWriter(c, sampler)
+		writer = newAgentTraceWriter(c, sampler, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -230,23 +234,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
+		statsd: statsd,
 	}
 	return t
-}
-
-func (t *tracer) startStatsd() {
-	statsd, err := newStatsdClient(t.config)
-	if err != nil {
-		log.Warn("Runtime and health metrics disabled: %v", err)
-	}
-	t.statsd = statsd
-	t.traceWriter.sendStats(t.statsd)
 }
 
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	t.startStatsd()
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")

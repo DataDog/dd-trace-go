@@ -246,7 +246,6 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
 	trc := newUnstartedTracer(withStatsdClient(&tg))
-	trc.startStatsd()
 	defer trc.statsd.Close()
 
 	trc.wg.Add(1)

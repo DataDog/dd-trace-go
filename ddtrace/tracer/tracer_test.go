@@ -1427,7 +1427,6 @@ func TestPushTrace(t *testing.T) {
 	tp := new(testLogger)
 	log.UseLogger(tp)
 	tracer := newUnstartedTracer()
-	tracer.startStatsd()
 	defer tracer.statsd.Close()
 	trace := []*span{
 		&span{
@@ -1912,8 +1911,6 @@ func (w *testTraceWriter) reset() {
 	w.buf = w.buf[:0]
 	w.mu.Unlock()
 }
-
-func (w *testTraceWriter) sendStats(statsd statsdClient) {}
 
 // Buffered returns the spans buffered by the writer.
 func (w *testTraceWriter) Buffered() []*span {
