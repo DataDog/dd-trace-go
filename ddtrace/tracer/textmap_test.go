@@ -14,10 +14,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -525,6 +526,66 @@ func TestEnvVars(t *testing.T) {
 					assert := assert.New(t)
 					_, err := tracer.Extract(test.in)
 					assert.NotNil(err)
+				})
+			}
+		}
+	})
+
+	t.Run("b3 single header extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "B3 single header"},
+			{headerPropagationStyleExtractDeprecated: "B3 single header"},
+			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  TextMapCarrier
+				out []uint64 // contains [<trace_id>, <span_id>, <sampling_decision>]
+			}{
+				{
+					TextMapCarrier{
+						b3SingleHeader: "1-2",
+					},
+					[]uint64{1, 2},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "feeb0599801f4700-f8f5c76089ad8da5-1",
+					},
+					[]uint64{18368781661998368512, 17939463908140879269, 1},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "6e96719ded9c1864a21ba1551789e3f5-a1eb5bf36e56e50e-0",
+					},
+					[]uint64{11681107445354718197, 11667520360719770894, 0},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "6e96719ded9c1864a21ba1551789e3f5-a1eb5bf36e56e50e-d",
+					},
+					[]uint64{11681107445354718197, 11667520360719770894, 1},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer()
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.in)
+					require.Nil(t, err)
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(test.out[0], sctx.traceID)
+					assert.Equal(test.out[1], sctx.spanID)
+					if len(test.out) > 2 {
+						require.NotNil(t, sctx.trace)
+						assert.Equal(float64(test.out[2]), *sctx.trace.priority)
+					}
 				})
 			}
 		}

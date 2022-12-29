@@ -222,6 +222,8 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
 			}
+		case "b3 single header":
+			list = append(list, &propagatorB3SingleHeader{})
 		case "none":
 			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
 				"To disable the propagator, set to `none`")
@@ -422,6 +424,7 @@ const (
 	b3TraceIDHeader = "x-b3-traceid"
 	b3SpanIDHeader  = "x-b3-spanid"
 	b3SampledHeader = "x-b3-sampled"
+	b3SingleHeader  = "b3"
 )
 
 // propagatorB3 implements Propagator and injects/extracts span contexts
@@ -488,6 +491,78 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
+		default:
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if ctx.traceID == 0 || ctx.spanID == 0 {
+		return nil, ErrSpanContextNotFound
+	}
+	return &ctx, nil
+}
+
+// propagatorB3 implements Propagator and injects/extracts span contexts
+// using B3 headers. Only TextMap carriers are supported.
+type propagatorB3SingleHeader struct{}
+
+func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	panic("NO IMPL")
+}
+
+func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	panic("NO IMPL")
+}
+
+func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	switch c := carrier.(type) {
+	case TextMapReader:
+		return p.extractTextMap(c)
+	default:
+		return nil, ErrInvalidCarrier
+	}
+}
+
+func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	var ctx spanContext
+	err := reader.ForeachKey(func(k, v string) error {
+		var err error
+		key := strings.ToLower(k)
+		switch key {
+		case b3SingleHeader:
+			b3Parts := strings.Split(v, "-")
+			if len(b3Parts) >= 2 {
+				if len(b3Parts[0]) > 16 {
+					b3Parts[0] = b3Parts[0][len(b3Parts[0])-16:]
+				}
+				ctx.traceID, err = strconv.ParseUint(b3Parts[0], 16, 64)
+				if err != nil {
+					return ErrSpanContextCorrupted
+				}
+
+				ctx.spanID, err = strconv.ParseUint(b3Parts[1], 16, 64)
+				if err != nil {
+					return ErrSpanContextCorrupted
+				}
+				if len(b3Parts) >= 3 {
+					if b3Parts[2] != "" {
+						switch b3Parts[2] {
+						case "1":
+							ctx.setSamplingPriority(1, samplernames.Unknown)
+						case "0":
+							ctx.setSamplingPriority(0, samplernames.Unknown)
+						case "d": // Treat 'debug' traces as priority 1
+							ctx.setSamplingPriority(1, samplernames.Unknown)
+						default:
+							return ErrSpanContextCorrupted
+						}
+					}
+				}
+			} else {
+				return ErrSpanContextCorrupted
+			}
 		default:
 		}
 		return nil
