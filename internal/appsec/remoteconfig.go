@@ -74,8 +74,7 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 			a.stop()
 		}
 		if err != nil {
-			status.State = rc.ApplyStateError
-			status.Error = err.Error()
+			status = genApplyStatus(false, err)
 		}
 		statuses[path] = status
 	}
@@ -97,6 +96,15 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 
 	for path, raw := range u {
 		log.Debug("appsec: Remote config: processing %s", path)
+
+		// A nil config means ASM_DATA was disabled, and we stopped receiving the config file
+		// Don't ack the config in this case
+		if raw == nil {
+			log.Debug("appsec: remote config: %s disabled", path)
+			statuses[path] = genApplyStatus(false, nil)
+			continue
+		}
+
 		var rulesData rc.ASMDataRulesData
 		if err := json.Unmarshal(raw, &rulesData); err != nil {
 			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
