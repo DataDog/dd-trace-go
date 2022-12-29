@@ -114,8 +114,8 @@ func (h *agentTraceWriter) flush() {
 	}(oldp)
 }
 
-func (a *agentTraceWriter) sendStats(statsd statsdClient) {
-	a.statsd = statsd
+func (h *agentTraceWriter) sendStats(statsd statsdClient) {
+	h.statsd = statsd
 }
 
 // logWriter specifies the output target of the logTraceWriter; replaced in tests.
