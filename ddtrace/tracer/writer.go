@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
