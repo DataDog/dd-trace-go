@@ -509,7 +509,8 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 type propagatorB3SingleHeader struct{}
 
 func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	panic("NO IMPL")
+	return nil
+	// TODO IMPL ME
 }
 
 func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
