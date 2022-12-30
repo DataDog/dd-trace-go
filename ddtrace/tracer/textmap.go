@@ -199,7 +199,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	}
 	if ps == "" {
 		if prop := os.Getenv(headerPropagationStyle); prop != "" {
-			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
+			ps = strings.ToLower(prop) // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs // no env set, so use default from configuration
 		}
@@ -634,7 +634,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
-	var stateHeaders []string
+	var stateHeader string
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -645,7 +645,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 			}
 			parentHeader = v
 		case tracestateHeader:
-			stateHeaders = append(stateHeaders, v)
+			stateHeader = v
 		}
 		return nil
 	}); err != nil {
@@ -655,10 +655,11 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
-	if err := parseTracestate(&ctx, stateHeaders); err != nil {
+	if err := parseTracestate(&ctx, stateHeader); err != nil {
 		return nil, err
 	}
-	if ctx.traceID == 0 || ctx.spanID == 0 {
+	// ctx.traceID might be nil due to higher order bits, eg. 1....00000000
+	if ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
@@ -677,26 +678,61 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
 // stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
-func parseTraceparent(ctx *spanContext, v string) error {
-	v = strings.Trim(v, "\t -")
-	if len(v) != 55 {
+func parseTraceparent(ctx *spanContext, header string) error {
+	nonWordRegex := "\\W_"
+	header = strings.ToLower(strings.Trim(header, "\t -"))
+	if len(header) != 55 {
 		return ErrSpanContextCorrupted
 	}
-	var version, flags int
-	var traceID string
-	_, err := fmt.Sscanf(v, "%2d-%32s-%16x-%2d", &version, &traceID, &ctx.spanID, &flags)
-	if err != nil || version == 255 {
+	parts := strings.Split(header, "-")
+	if len(parts) != 4 {
 		return ErrSpanContextCorrupted
 	}
-	if ctx.spanID == 0 {
+	version := strings.Trim(parts[0], nonWordRegex)
+	if len(version) != 2 {
 		return ErrSpanContextCorrupted
 	}
-	if ctx.traceID, err = strconv.ParseUint(traceID[16:], 16, 64); err != nil || ctx.traceID == 0 {
+	if v, err := strconv.ParseUint(version, 16, 64); err != nil || v == 255 {
+		return ErrSpanContextCorrupted
+	}
+	// parsing traceID
+	fullTraceID := strings.Trim(parts[1], nonWordRegex)
+	if len(fullTraceID) != 32 {
+		return ErrSpanContextCorrupted
+	}
+	// checking that the entire TraceID is a valid hex string
+	if ok, err := regexp.MatchString("^[a-f0-9]+$", fullTraceID); !ok || err != nil {
+		return ErrSpanContextCorrupted
+	}
+	var err error
+	if ctx.traceID, err = strconv.ParseUint(fullTraceID[16:], 16, 64); err != nil {
+		return ErrSpanContextCorrupted
+	}
+	if ctx.traceID == 0 {
+		if strings.Trim(fullTraceID[:16], "0") == "" {
+			return ErrSpanContextCorrupted
+		}
+	}
+	// parsing spanID
+	spanID := strings.Trim(parts[2], nonWordRegex)
+	if len(spanID) != 16 {
+		return ErrSpanContextCorrupted
+	}
+	if ok, err := regexp.MatchString("[a-f0-9]+", spanID); !ok || err != nil {
+		return ErrSpanContextCorrupted
+	}
+	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil || ctx.spanID == 0 {
+		return ErrSpanContextCorrupted
+	}
+	// parsing flags
+	flags := parts[3]
+	f, err := strconv.ParseInt(flags, 16, 8)
+	if err != nil {
 		return ErrSpanContextCorrupted
 	}
 	// setting trace-id to be used for span context propagation
-	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
-	ctx.setSamplingPriority(flags&0x1, samplernames.Unknown)
+	setPropagatingTag(ctx, w3cTraceIDTag, fullTraceID)
+	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
 	return nil
 }
 
@@ -708,44 +744,42 @@ func parseTraceparent(ctx *spanContext, v string) error {
 // `sampling_priority` = `s`
 // `origin` = `o`
 // `_dd.p.` prefix = `t.`
-func parseTracestate(ctx *spanContext, headers []string) error {
+func parseTracestate(ctx *spanContext, header string) error {
 	// if multiple headers are present, they must be combined and stored
-	setPropagatingTag(ctx, tracestateHeader, strings.Join(headers, ";"))
-	for _, v := range headers {
-		list := strings.Split(strings.Trim(v, "\t "), ",")
-		for _, s := range list {
-			if !strings.HasPrefix(s, "dd=") {
+	setPropagatingTag(ctx, tracestateHeader, header)
+	list := strings.Split(strings.Trim(header, "\t "), ",")
+	for _, s := range list {
+		if !strings.HasPrefix(s, "dd=") {
+			continue
+		}
+		dd := strings.Split(s[len("dd="):], ";")
+		tags := make(map[string]string)
+		for _, val := range dd {
+			x := strings.SplitN(val, ":", 2)
+			if len(x) != 2 {
 				continue
 			}
-			dd := strings.Split(s[len("dd="):], ";")
-			tags := make(map[string]string)
-			for _, val := range dd {
-				x := strings.SplitN(val, ":", 2)
-				if len(x) != 2 {
-					continue
-				}
-				tags[x[0]] = x[1]
-			}
-			for k, v := range tags {
-				if k == "o" {
-					ctx.origin = v
-				} else if k == "s" {
-					p, err := strconv.Atoi(v)
-					if p > 0 && err == nil {
-						// priority from traceparent header
-						flagPriority, ok := ctx.samplingPriority()
-						if !ok {
-							return ErrSpanContextCorrupted
-						}
-						if (flagPriority == 0 && p < 1) || (flagPriority != 0 && p > 0) {
-							ctx.setSamplingPriority(p, samplernames.Unknown)
-						}
+			tags[x[0]] = x[1]
+		}
+		for k, v := range tags {
+			if k == "o" {
+				ctx.origin = v
+			} else if k == "s" {
+				p, err := strconv.Atoi(v)
+				if p > 0 && err == nil {
+					// priority from traceparent header
+					flagPriority, ok := ctx.samplingPriority()
+					if !ok {
+						return ErrSpanContextCorrupted
 					}
-				} else if strings.HasPrefix(k, "t.") {
-					k = k[len("t."):]
-					v = strings.ReplaceAll(v, "~", "=")
-					setPropagatingTag(ctx, "_dd.p."+k, v)
+					if (flagPriority == 0 && p < 1) || (flagPriority != 0 && p > 0) {
+						ctx.setSamplingPriority(p, samplernames.Unknown)
+					}
 				}
+			} else if strings.HasPrefix(k, "t.") {
+				k = k[len("t."):]
+				v = strings.ReplaceAll(v, "~", "=")
+				setPropagatingTag(ctx, "_dd.p."+k, v)
 			}
 		}
 	}
