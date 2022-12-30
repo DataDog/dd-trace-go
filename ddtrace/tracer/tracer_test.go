@@ -1431,6 +1431,7 @@ func TestPushTrace(t *testing.T) {
 	tp := new(testLogger)
 	log.UseLogger(tp)
 	tracer := newUnstartedTracer()
+	defer tracer.statsd.Close()
 	trace := []*span{
 		&span{
 			Name:     "pylons.request",
