@@ -496,6 +496,40 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
+	t.Run("b3/b3multi extract invalid", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "b3"},
+			{headerPropagationStyleExtractDeprecated: "b3"},
+			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in TextMapCarrier
+			}{
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "0",
+						b3SpanIDHeader:  "0",
+					},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer()
+					defer tracer.Stop()
+					assert := assert.New(t)
+					_, err := tracer.Extract(test.in)
+					assert.NotNil(err)
+				})
+			}
+		}
+	})
+
 	t.Run("datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "datadog"},
@@ -1120,6 +1154,20 @@ func TestEnvVars(t *testing.T) {
 					spanID:   1311768467284833366,
 					priority: 1,
 					origin:   "rum",
+					updated:  true,
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01", //invalid length
+						tracestateHeader:  "foo=1",
+					},
+					out: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01", //invalid length
+						tracestateHeader:  "dd=s:1,foo=1",
+					},
+					traceID:  8687463697196027922,
+					spanID:   1311768467284833366,
+					priority: 1,
 					updated:  true,
 				},
 			}

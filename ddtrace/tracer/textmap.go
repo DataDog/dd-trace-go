@@ -474,12 +474,12 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				v = v[len(v)-16:]
 			}
 			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil {
+			if err != nil || ctx.traceID == 0 {
 				return ErrSpanContextCorrupted
 			}
 		case b3SpanIDHeader:
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil {
+			if err != nil || ctx.spanID == 0 {
 				return ErrSpanContextCorrupted
 			}
 		case b3SampledHeader:
@@ -584,11 +584,11 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("dd=s:%d;", priority))
+	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
 	if ctx.origin != "" {
-		b.WriteString(fmt.Sprintf("o:%s",
+		b.WriteString(fmt.Sprintf(";o:%s",
 			valueRgx.ReplaceAllString(ctx.origin, "_")))
 	}
 
