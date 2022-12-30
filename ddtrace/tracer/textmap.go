@@ -509,12 +509,30 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 type propagatorB3SingleHeader struct{}
 
 func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
-	return nil
-	// TODO IMPL ME
+	switch c := carrier.(type) {
+	case TextMapWriter:
+		return p.injectTextMap(spanCtx, c)
+	default:
+		return ErrInvalidCarrier
+	}
 }
 
 func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	panic("NO IMPL")
+	ctx, ok := spanCtx.(*spanContext)
+	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
+		return ErrInvalidSpanContext
+	}
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("%016x-%016x", ctx.traceID, ctx.spanID))
+	if p, ok := ctx.samplingPriority(); ok {
+		if p >= ext.PriorityAutoKeep {
+			sb.WriteString("-1")
+		} else {
+			sb.WriteString("-0")
+		}
+	}
+	writer.Set(b3SingleHeader, sb.String())
+	return nil
 }
 
 func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanContext, error) {

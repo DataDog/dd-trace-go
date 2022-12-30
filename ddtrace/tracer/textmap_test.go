@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -588,6 +589,39 @@ func TestEnvVars(t *testing.T) {
 					}
 				})
 			}
+		}
+	})
+
+	t.Run("b3 single header inject", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "b3 single header")
+		var tests = []struct {
+			in  []uint64
+			out string
+		}{
+			{
+				[]uint64{18368781661998368512, 17939463908140879269, 1},
+				"feeb0599801f4700-f8f5c76089ad8da5-1",
+			},
+			{
+				[]uint64{11681107445354718197, 11667520360719770894, 0},
+				"a21ba1551789e3f5-a1eb5bf36e56e50e-0",
+			},
+		}
+		for i, test := range tests {
+			t.Run(fmt.Sprintf("b3 single header inject #%d", i), func(t *testing.T) {
+				tracer := newTracer()
+				defer tracer.Stop()
+				root := tracer.StartSpan("myrequest").(*span)
+				ctx, ok := root.Context().(*spanContext)
+				require.True(t, ok)
+				ctx.traceID = test.in[0]
+				ctx.spanID = test.in[1]
+				ctx.setSamplingPriority(int(test.in[2]), samplernames.Unknown)
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+				require.Nil(t, err)
+				assert.Equal(t, test.out, headers[b3SingleHeader])
+			})
 		}
 	})
 
