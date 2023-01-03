@@ -1122,6 +1122,56 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
+	t.Run("datadog extract / w3c,datadog inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "tracecontext,datadog", headerPropagationStyleExtract: "datadog"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				outW3c    TextMapCarrier
+				inDatadog TextMapCarrier
+			}{
+				{
+					outW3c: TextMapCarrier{
+						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
+						tracestateHeader:  "dd=s:-2;o:rum",
+					},
+					inDatadog: TextMapCarrier{
+						DefaultTraceIDHeader:  "123456789",
+						DefaultParentIDHeader: "987654321",
+						DefaultPriorityHeader: "-2",
+					},
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer()
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.inDatadog)
+					assert.Nil(err)
+
+					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+					defer root.Finish()
+					sctx, ok := ctx.(*spanContext)
+					sctx.origin = "test.origin"
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(sctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.outW3c[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.outW3c[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+
 	t.Run("w3c inject/extract", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
