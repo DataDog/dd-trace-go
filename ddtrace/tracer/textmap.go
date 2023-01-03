@@ -681,6 +681,9 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 func parseTraceparent(ctx *spanContext, header string) error {
 	nonWordRegex := "\\W_"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
+	if len(header) == 0 {
+		return ErrSpanContextNotFound
+	}
 	if len(header) != 55 {
 		return ErrSpanContextCorrupted
 	}
