@@ -710,7 +710,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	}
 	if ctx.traceID == 0 {
 		if strings.Trim(fullTraceID[:16], "0") == "" {
-			return ErrSpanContextCorrupted
+			return ErrSpanContextNotFound
 		}
 	}
 	// parsing spanID
@@ -722,7 +722,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil || ctx.spanID == 0 {
-		return ErrSpanContextCorrupted
+		return ErrSpanContextNotFound
 	}
 	// parsing flags
 	flags := parts[3]
