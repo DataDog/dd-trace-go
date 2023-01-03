@@ -1313,25 +1313,51 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject,extract/none", func(t *testing.T) {
-		t.Setenv(headerPropagationStyle, "NoNe")
-		tracer := newTracer()
-		defer tracer.Stop()
-		root := tracer.StartSpan("web.request").(*span)
-		root.SetTag(ext.SamplingPriority, -1)
-		root.SetBaggageItem("item", "x")
-		ctx, ok := root.Context().(*spanContext)
-		ctx.traceID = 1
-		ctx.spanID = 1
-		headers := TextMapCarrier(map[string]string{})
-		err := tracer.Inject(ctx, headers)
+		t.Run("", func(t *testing.T) {
+			t.Setenv(headerPropagationStyle, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = 1
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
 
-		assert := assert.New(t)
-		assert.True(ok)
-		assert.Nil(err)
-		assert.Len(headers, 0)
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
 
-		_, err = tracer.Extract(headers)
-		assert.Equal(err, ErrSpanContextNotFound)
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
+		t.Run("", func(t *testing.T) {
+			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
+			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
+			t.Setenv(headerPropagationStyleExtract, "NoNe")
+			t.Setenv(headerPropagationStyleInject, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = 1
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
 	})
 }
 

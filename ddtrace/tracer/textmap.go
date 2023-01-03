@@ -204,6 +204,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 			return defaultPs // no env set, so use default from configuration
 		}
 	}
+	ps = strings.ToLower(ps)
 	if ps == "none" {
 		return nil
 	}
