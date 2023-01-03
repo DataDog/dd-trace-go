@@ -920,6 +920,72 @@ func TestEnvVars(t *testing.T) {
 			}
 		}
 	})
+	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "traceContext"},
+			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
+			{headerPropagationStyle: "traceContext"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				inHeaders   TextMapCarrier
+				outHeaders  TextMapCarrier
+				traceID     uint64
+				fullTraceId string
+				spanID      uint64
+				priority    int
+				origin      string
+			}{
+				{
+					inHeaders: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-00",
+						tracestateHeader:  "foo=1,dd=s:-1",
+					},
+					outHeaders: TextMapCarrier{
+						traceparentHeader:     "00-12345678901234567890123456789012-1234567890123456-00",
+						tracestateHeader:      "dd=s:-1;o:synthetics,foo=1",
+						DefaultPriorityHeader: "-1",
+						DefaultTraceIDHeader:  "12345678901234567890123456789012",
+						DefaultParentIDHeader: "1234567890123456",
+					},
+					fullTraceId: "12345678901234567890123456789012",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    -1,
+					origin:      "synthetics",
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer()
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.inHeaders)
+					if err != nil {
+						t.Fatal(err)
+					}
+					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+					defer root.Finish()
+					sctx, ok := ctx.(*spanContext)
+					sctx.origin = test.origin
+					assert.True(ok)
+
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(sctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.outHeaders[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.outHeaders[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
 
 	t.Run("w3c inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
@@ -1159,15 +1225,15 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				outW3c    TextMapCarrier
-				inDatadog TextMapCarrier
+				outHeaders TextMapCarrier
+				inHeaders  TextMapCarrier
 			}{
 				{
-					outW3c: TextMapCarrier{
+					outHeaders: TextMapCarrier{
 						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
 						tracestateHeader:  "dd=s:-2;o:test.origin",
 					},
-					inDatadog: TextMapCarrier{
+					inHeaders: TextMapCarrier{
 						DefaultTraceIDHeader:  "123456789",
 						DefaultParentIDHeader: "987654321",
 						DefaultPriorityHeader: "-2",
@@ -1175,11 +1241,11 @@ func TestEnvVars(t *testing.T) {
 				},
 			}
 			for i, test := range tests {
-				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
+				t.Run(fmt.Sprintf("#%d with env=%q", i, testEnv), func(t *testing.T) {
 					tracer := newTracer()
 					defer tracer.Stop()
 					assert := assert.New(t)
-					ctx, err := tracer.Extract(test.inDatadog)
+					ctx, err := tracer.Extract(test.inHeaders)
 					assert.Nil(err)
 
 					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
@@ -1191,8 +1257,8 @@ func TestEnvVars(t *testing.T) {
 
 					assert.True(ok)
 					assert.Nil(err)
-					assert.Equal(test.outW3c[traceparentHeader], headers[traceparentHeader])
-					assert.Equal(test.outW3c[tracestateHeader], headers[tracestateHeader])
+					assert.Equal(test.outHeaders[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.outHeaders[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 					assert.LessOrEqual(len(ddTag), 256)
 				})

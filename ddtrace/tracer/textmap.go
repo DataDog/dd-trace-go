@@ -773,15 +773,13 @@ func parseTracestate(ctx *spanContext, header string) error {
 				ctx.origin = v
 			} else if k == "s" {
 				p, err := strconv.Atoi(v)
-				if p > 0 && err == nil {
-					// priority from traceparent header
-					flagPriority, ok := ctx.samplingPriority()
-					if !ok {
-						return ErrSpanContextCorrupted
-					}
-					if (flagPriority == 0 && p < 1) || (flagPriority != 0 && p > 0) {
-						ctx.setSamplingPriority(p, samplernames.Unknown)
-					}
+				if err != nil {
+					// if the tracestate priority is absent, relying on traceparent value
+					continue
+				}
+				flagPriority, _ := ctx.samplingPriority()
+				if (flagPriority == 1 && p > 0) || (flagPriority == 0 && p <= 0) {
+					ctx.setSamplingPriority(p, samplernames.Unknown)
 				}
 			} else if strings.HasPrefix(k, "t.") {
 				k = k[len("t."):]
