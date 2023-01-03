@@ -1074,6 +1074,20 @@ func TestEnvVars(t *testing.T) {
 						"tracestate":   "foo=bar ",
 					},
 				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz_64~~,foo=bar",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					updated: true,
+					origin:  "old_tracestate",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64==",
+						"tracestate":   "\tfoo=bar\t",
+					},
+				},
 			}
 			for i, test := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {

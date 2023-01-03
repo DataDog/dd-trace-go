@@ -612,7 +612,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	if len(oldState) == 0 {
 		return b.String()
 	}
-	for _, s := range strings.Split(strings.Trim(oldState, " "), ",") {
+	for _, s := range strings.Split(strings.Trim(oldState, " \t"), ",") {
 		if strings.HasPrefix(s, "dd=") {
 			continue
 		}
@@ -622,7 +622,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if listLength > 32 {
 			break
 		}
-		b.WriteString("," + strings.Trim(s, " "))
+		b.WriteString("," + strings.Trim(s, " \t"))
 	}
 	return b.String()
 }
