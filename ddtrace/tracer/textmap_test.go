@@ -1137,7 +1137,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					outW3c: TextMapCarrier{
 						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
-						tracestateHeader:  "dd=s:-2;o:rum",
+						tracestateHeader:  "dd=s:-2;o:test.origin",
 					},
 					inDatadog: TextMapCarrier{
 						DefaultTraceIDHeader:  "123456789",
