@@ -258,17 +258,12 @@ func defaultConfig() (*config, error) {
 		WithVersion(v)(&c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
+		tags := internal.ParseTagString(v)
+		for key, val := range internal.GetGitMetadataTags() {
+			tags[key] = val
 		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			WithTags(tag)(&c)
+		for key, val := range tags {
+			WithTags(key + ":" + val)(&c)
 		}
 	}
 	WithTags(

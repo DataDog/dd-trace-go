@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -62,6 +63,9 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient statsdClien
 }
 
 func (h *agentTraceWriter) add(trace []*span) {
+	if h.payload.itemCount() == 0 && len(trace) != 0 {
+		h.updateFirstSpanTags(trace[0])
+	}
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
@@ -107,6 +111,17 @@ func (h *agentTraceWriter) flush() {
 			}
 		}
 	}(oldp)
+}
+
+func (h *agentTraceWriter) updateFirstSpanTags(s *span) {
+	h.setGitMetadata(s)
+}
+
+func (h *agentTraceWriter) setGitMetadata(s *span) {
+	for k, v := range internal.GetTracerGitMetadataTags() {
+		// We can't use SetTag because trace was already finished
+		s.Meta[k] = v
+	}
 }
 
 // logWriter specifies the output target of the logTraceWriter; replaced in tests.
