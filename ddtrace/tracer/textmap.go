@@ -475,12 +475,12 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				v = v[len(v)-16:]
 			}
 			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil || ctx.traceID == 0 {
+			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 		case b3SpanIDHeader:
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil || ctx.spanID == 0 {
+			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 		case b3SampledHeader:
@@ -581,8 +581,28 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 // comma(reserved for tracestate list-member separator), semi-colon(reserved for separator between entries),
 // and tilde sign(reserved to represent equals sign).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
+	// keyRgx is used to sanitize the keys of the datadog propagating tags.
+	// Disallowed characters are comma (reserved as a list-member separator),
+	// equals (reserved for list-member key-value separator),
+	// space and characters outside the ASCII range 0x20 to 0x7E.
+	// Disallowed characters must be replaced with the underscore.
 	keyRgx := regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+
+	// valueRgx is used to sanitize the values of the datadog propagating tags.
+	// Disallowed characters are comma (reserved as a list-member separator),
+	// semi-colon (reserved for separator between entries in the dd list-member),
+	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
+	// and characters outside the ASCII range 0x20 to 0x7E.
+	// Equals character must be encoded with a tilde.
+	// Other disallowed characters must be replaced with the underscore.
 	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
+
+	// originRgx is used to sanitize the value of the datadog origin tag.
+	// Disallowed characters are comma (reserved as a list-member separator),
+	// semi-colon (reserved for separator between entries in the dd list-member),
+	// equals (reserved for list-member key-value separator).
+	// Disallowed characters must be replaced with the underscore.
+	originRgx := regexp.MustCompile(",|=|;|[^\\x20-\\x7E]+")
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
@@ -590,7 +610,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 
 	if ctx.origin != "" {
 		b.WriteString(fmt.Sprintf(";o:%s",
-			valueRgx.ReplaceAllString(ctx.origin, "_")))
+			originRgx.ReplaceAllString(ctx.origin, "_")))
 	}
 
 	for k, v := range ctx.trace.propagatingTags {
@@ -760,15 +780,12 @@ func parseTracestate(ctx *spanContext, header string) error {
 			continue
 		}
 		dd := strings.Split(s[len("dd="):], ";")
-		tags := make(map[string]string)
 		for _, val := range dd {
 			x := strings.SplitN(val, ":", 2)
 			if len(x) != 2 {
 				continue
 			}
-			tags[x[0]] = x[1]
-		}
-		for k, v := range tags {
+			k, v := x[0], x[1]
 			if k == "o" {
 				ctx.origin = v
 			} else if k == "s" {
