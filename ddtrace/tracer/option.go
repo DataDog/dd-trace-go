@@ -541,10 +541,18 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+// This option is only required if the the Datadog Lambda Extension is not
+// running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.logToStdout = enabled
-		c.sendRetries = 2
+	}
+}
+
+// WithSendRetries enables
+func WithSendRetries(retries int) StartOption {
+	return func(c *config) {
+		c.sendRetries = retries
 	}
 }
 
