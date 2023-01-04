@@ -93,6 +93,7 @@ func (h *agentTraceWriter) flush() {
 			// a memory leak when references to this object may still be kept by faulty transport
 			// implementations or the standard library. See dd-trace-go#976
 			p.buf = bytes.Buffer{}
+			p.reader = nil
 
 			<-h.climit
 			h.wg.Done()
