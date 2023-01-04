@@ -33,10 +33,10 @@ func newSpanList(n int) spanList {
 // allows us to read the same content as would have been encoded by
 // the codec.
 func TestPayloadIntegrity(t *testing.T) {
-	assert := assert.New(t)
 	want := new(bytes.Buffer)
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newPayload()
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {
@@ -72,34 +72,6 @@ func TestPayloadDecode(t *testing.T) {
 			assert.NoError(err)
 		})
 	}
-}
-
-func TestPayloadClone(t *testing.T) {
-	assert := assert.New(t)
-
-	p1 := newPayload()
-	s := newBasicSpan("X")
-	s.Meta["key"] = strings.Repeat("X", 10*1024)
-	trace := make(spanList, 4)
-	for i := 0; i < 4; i++ {
-		trace[i] = s
-	}
-	p1.push(trace)
-
-	p2 := p1.clone()
-
-	assert.Equal(p1.header, p2.header)
-	assert.Equal(p1.off, p2.off)
-	assert.Equal(p1.count, p2.count)
-	assert.Equal(p1.buf.Bytes(), p2.buf.Bytes())
-	assert.NotEqual(p1.buf.String(), "")
-
-	p1.push(trace)
-
-	assert.NotEqual(p1.header, p2.header)
-	assert.NotEqual(p1.count, p2.count)
-	assert.NotEqual(p1.buf.Bytes(), p2.buf.Bytes())
-	assert.NotEqual(p1.buf.String(), "")
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {

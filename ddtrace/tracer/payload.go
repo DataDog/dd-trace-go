@@ -40,6 +40,9 @@ type payload struct {
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer
+
+	// reader is used for reading the contents of buf.
+	reader *bytes.Reader
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -74,9 +77,8 @@ func (p *payload) size() int {
 	return p.buf.Len() + len(p.header) - p.off
 }
 
-// reset should *not* be used. It is not implemented and is only here to serve
-// as information on how to implement it in case the same payload object ever
-// needs to be reused.
+// reset sets up the payload to be read a second time. It maintains the
+// underlying byte contents of the buffer.
 func (p *payload) reset() {
 	// ⚠️  Warning!
 	//
@@ -89,7 +91,10 @@ func (p *payload) reset() {
 	// • https://github.com/DataDog/dd-trace-go/pull/549
 	// • https://github.com/DataDog/dd-trace-go/pull/976
 	//
-	panic("not implemented")
+	p.updateHeader()
+	if p.reader != nil {
+		p.reader.Seek(0, 0)
+	}
 }
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
@@ -120,10 +125,6 @@ func (p *payload) updateHeader() {
 
 // Close implements io.Closer
 func (p *payload) Close() error {
-	// Once the payload has been read, clear the buffer for garbage collection to avoid
-	// a memory leak when references to this object may still be kept by faulty transport
-	// implementations or the standard library. See dd-trace-go#976
-	p.buf = bytes.Buffer{}
 	return nil
 }
 
@@ -135,15 +136,8 @@ func (p *payload) Read(b []byte) (n int, err error) {
 		p.off += n
 		return n, nil
 	}
-	return p.buf.Read(b)
-}
-
-func (p *payload) clone() *payload {
-	newp := newPayload()
-	newp.off = p.off
-	newp.count = p.count
-	newp.header = make([]byte, len(p.header))
-	copy(newp.header, p.header)
-	newp.buf.Write(p.buf.Bytes())
-	return newp
+	if p.reader == nil {
+		p.reader = bytes.NewReader(p.buf.Bytes())
+	}
+	return p.reader.Read(b)
 }
