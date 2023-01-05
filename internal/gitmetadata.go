@@ -7,6 +7,7 @@ package internal
 
 import (
 	"os"
+	"reflect"
 	"runtime/debug"
 	"sync"
 
@@ -15,17 +16,17 @@ import (
 
 const (
 	envEnabledFlag   = "DD_TRACE_GIT_METADATA_ENABLED"
-	envRepositoryUrl = "DD_GIT_REPOSITORY_URL"
+	envRepositoryURL = "DD_GIT_REPOSITORY_URL"
 	envCommitSha     = "DD_GIT_COMMIT_SHA"
 	envMainPackage   = "DD_MAIN_PACKAGE"
 	envGlobalTags    = "DD_TAGS"
 
-	tagRepositoryUrl = "git.repository_url"
+	tagRepositoryURL = "git.repository_url"
 	tagCommitSha     = "git.commit.sha"
 
-	//traceTagRepositoryUrl = "_dd.git.repository_url"
+	//traceTagRepositoryURL = "_dd.git.repository_url"
 	//traceTagCommitSha     = "_dd.git.commit.sha"
-	traceTagRepositoryUrl = "git.repository_url"
+	traceTagRepositoryURL = "git.repository_url"
 	traceTagCommitSha     = "git.commit.sha"
 )
 
@@ -37,24 +38,30 @@ var (
 
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
-	repository_url := os.Getenv(envRepositoryUrl)
-	commit_sha := os.Getenv(envCommitSha)
+	repositoryURL := os.Getenv(envRepositoryURL)
+	commitSha := os.Getenv(envCommitSha)
 
-	if repository_url == "" || commit_sha == "" {
+	if repositoryURL == "" || commitSha == "" {
 		tags := ParseTagString(os.Getenv(envGlobalTags))
 
-		repository_url = tags[tagRepositoryUrl]
-		commit_sha = tags[tagCommitSha]
+		repositoryURL = tags[tagRepositoryURL]
+		commitSha = tags[tagCommitSha]
 	}
 
-	if repository_url == "" || commit_sha == "" {
+	if repositoryURL == "" || commitSha == "" {
 		return nil
 	}
 
 	return map[string]string{
-		tagRepositoryUrl: repository_url,
-		tagCommitSha:     commit_sha,
+		tagRepositoryURL: repositoryURL,
+		tagCommitSha:     commitSha,
 	}
+}
+
+func checkField(i interface{}, filedName string) bool {
+	metaValue := reflect.ValueOf(i).Elem()
+	field := metaValue.FieldByName(filedName)
+	return field != reflect.Value{}
 }
 
 // getTagsFrom binalry extracts git metadata from binary metadata:
@@ -65,22 +72,28 @@ func getTagsFromBinary() map[string]string {
 		log.Warn("ReadBuildInfo failed, skip source code metadata extracting")
 		return res
 	}
-	repository_url := info.Path
+
+	if !checkField(info, "Settings") {
+		log.Warn("BuildInfo has no Settings filed (go < 1.18), skip source code metadata extracting")
+		return res
+	}
+
+	repositoryURL := info.Path
 	vcs := ""
-	commit_sha := ""
+	commitSha := ""
 	for _, s := range info.Settings {
 		if s.Key == "vcs" {
 			vcs = s.Value
 		} else if s.Key == "vcs.revision" {
-			commit_sha = s.Value
+			commitSha = s.Value
 		}
 	}
 	if vcs != "git" {
 		log.Warn("Unknown VCS: '%s', skip source code metadata extracting", vcs)
 		return res
 	}
-	res[tagCommitSha] = commit_sha
-	res[tagRepositoryUrl] = repository_url
+	res[tagCommitSha] = commitSha
+	res[tagRepositoryURL] = repositoryURL
 	return res
 }
 
@@ -106,9 +119,9 @@ func GetGitMetadataTags() map[string]string {
 	return gitMetadataTags
 }
 
-// CleanTags cleans up tags from git metadata
+// CleanGitMetadataTags cleans up tags from git metadata
 func CleanGitMetadataTags(tags map[string]string) {
-	delete(tags, tagRepositoryUrl)
+	delete(tags, tagRepositoryURL)
 	delete(tags, tagCommitSha)
 }
 
@@ -120,14 +133,14 @@ func GetTracerGitMetadataTags() map[string]string {
 	res := make(map[string]string)
 	tags := GetGitMetadataTags()
 
-	repository_url := tags[tagRepositoryUrl]
-	commit_sha := tags[tagCommitSha]
+	repositoryURL := tags[tagRepositoryURL]
+	commitSha := tags[tagCommitSha]
 
-	if repository_url == "" || commit_sha == "" {
+	if repositoryURL == "" || commitSha == "" {
 		return res
 	}
 
-	res[traceTagCommitSha] = commit_sha
-	res[traceTagRepositoryUrl] = repository_url
+	res[traceTagCommitSha] = commitSha
+	res[traceTagRepositoryURL] = repositoryURL
 	return res
 }
