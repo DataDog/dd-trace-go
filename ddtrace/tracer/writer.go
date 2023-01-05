@@ -100,31 +100,27 @@ func (h *agentTraceWriter) flush() {
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
 		}(time.Now())
 
-		retries := h.config.sendRetries
-		for attempt := 0; attempt <= retries; attempt++ {
+		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
 			size, count := p.size(), p.itemCount()
 			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 			rc, err := h.config.transport.send(p)
-			if err != nil {
-				if retries > 0 && attempt != retries {
-					log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
-					p.reset()
-					time.Sleep(time.Millisecond)
-				} else {
-					h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
-					log.Error("lost %d traces: %v", count, err)
-				}
-			} else {
+			if err == nil {
+				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
 				h.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
 				if err := h.prioritySampling.readRatesJSON(rc); err != nil {
 					h.statsd.Incr("datadog.tracer.decode_error", nil, 1)
 				}
-				if attempt > 0 {
-					log.Debug("sent traces after %d attempts", attempt+1)
-				}
-				break
+				return
 			}
+			if attempt == h.config.sendRetries {
+				h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
+				log.Error("lost %d traces: %v", count, err)
+				return
+			}
+			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
+			p.reset()
+			time.Sleep(time.Millisecond)
 		}
 	}(oldp)
 }
