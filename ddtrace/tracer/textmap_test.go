@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -134,6 +133,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 		ParentHeader:  "pid",
 	})
 	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
 
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("item", "x")
@@ -161,6 +161,7 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 		DefaultParentIDHeader: "1",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +190,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -216,6 +218,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -243,6 +246,7 @@ func TestExtractOriginSynthetics(t *testing.T) {
 		DefaultParentIDHeader: "0",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -264,6 +268,7 @@ func TestTextMapPropagator(t *testing.T) {
 			traceTagsHeader:       "hello=world,=", // invalid value
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -283,6 +288,7 @@ func TestTextMapPropagator(t *testing.T) {
 			traceTagsHeader:       traceTags,
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -292,6 +298,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
 		tracer := newTracer()
+		defer tracer.Stop()
 		child := tracer.StartSpan("test")
 		for i := 0; i < 100; i++ {
 			child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
@@ -310,6 +317,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 	t.Run("InvalidTraceTags", func(t *testing.T) {
 		tracer := newTracer()
+		defer tracer.Stop()
 		internal.SetGlobalTracer(tracer)
 		child := tracer.StartSpan("test")
 		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
@@ -333,6 +341,7 @@ func TestTextMapPropagator(t *testing.T) {
 			ParentHeader:  "pid",
 		})
 		tracer := newTracer(WithPropagator(propagator))
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -355,11 +364,20 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 }
 
-func testB3(t *testing.T, b3Header string) {
-	t.Run("inject", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_INJECT", b3Header)
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+func TestEnvVars(t *testing.T) {
+	var testEnvs []map[string]string
 
+	testEnvs = []map[string]string{
+		{headerPropagationStyleInject: "b3"},
+		{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
+		{headerPropagationStyle: "b3"},
+		{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
 		var tests = []struct {
 			in  []uint64
 			out map[string]string
@@ -386,13 +404,11 @@ func testB3(t *testing.T, b3Header string) {
 				},
 			},
 		}
-
 		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
+			t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				root := tracer.StartSpan("web.request").(*span)
-				root.SetTag(ext.SamplingPriority, -1)
-				root.SetBaggageItem("item", "x")
 				ctx, ok := root.Context().(*spanContext)
 				ctx.traceID = test.in[0]
 				ctx.spanID = test.in[1]
@@ -406,12 +422,19 @@ func testB3(t *testing.T, b3Header string) {
 				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 			})
 		}
-	})
+	}
 
-	t.Run("extract", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", b3Header)
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
-
+	testEnvs = []map[string]string{
+		{headerPropagationStyleExtract: "b3"},
+		{headerPropagationStyleExtractDeprecated: "b3"},
+		{headerPropagationStyle: "b3,none" /* none should have no affect */},
+		{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
 		var tests = []struct {
 			in  TextMapCarrier
 			out []uint64 // contains [<trace_id>, <span_id>]
@@ -438,10 +461,10 @@ func testB3(t *testing.T, b3Header string) {
 				[]uint64{11681107445354718197, 11667520360719770894},
 			},
 		}
-
 		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
+			t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer()
+				defer tracer.Stop()
 				assert := assert.New(t)
 				ctx, err := tracer.Extract(test.in)
 				assert.Nil(err)
@@ -452,61 +475,19 @@ func testB3(t *testing.T, b3Header string) {
 				assert.Equal(sctx.spanID, test.out[1])
 			})
 		}
-	})
+	}
 
-	t.Run("multiple", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", fmt.Sprintf("Datadog,%s", b3Header))
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
-
-		b3Headers := TextMapCarrier(map[string]string{
-			b3TraceIDHeader: "1",
-			b3SpanIDHeader:  "1",
-			b3SampledHeader: "1",
-		})
-
-		tracer := newTracer()
-		assert := assert.New(t)
-
-		ctx, err := tracer.Extract(b3Headers)
-		assert.Nil(err)
-		sctx, ok := ctx.(*spanContext)
-		assert.True(ok)
-
-		assert.Equal(sctx.traceID, uint64(1))
-		assert.Equal(sctx.spanID, uint64(1))
-		p, ok := sctx.samplingPriority()
-		assert.True(ok)
-		assert.Equal(1, p)
-
-		ddHeaders := TextMapCarrier(map[string]string{
-			DefaultTraceIDHeader:  "2",
-			DefaultParentIDHeader: "2",
-			DefaultPriorityHeader: "2",
-		})
-
-		ctx, err = tracer.Extract(ddHeaders)
-		assert.Nil(err)
-		sctx, ok = ctx.(*spanContext)
-		assert.True(ok)
-
-		assert.Equal(sctx.traceID, uint64(2))
-		assert.Equal(sctx.spanID, uint64(2))
-		p, ok = sctx.samplingPriority()
-		assert.True(ok)
-		assert.Equal(2, p)
-	})
-
-}
-
-func TestB3(t *testing.T) {
-	testB3(t, "b3")
-	testB3(t, "b3multi")
-	testB3(t, "none,b3multi")
-
-	t.Run("config", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
-
+	testEnvs = []map[string]string{
+		{headerPropagationStyleInject: "datadog"},
+		{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
+		{headerPropagationStyle: "datadog"},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
 		var tests = []struct {
 			in  []uint64
 			out map[string]string
@@ -533,13 +514,11 @@ func TestB3(t *testing.T) {
 				},
 			},
 		}
-
 		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
+			t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})))
+				defer tracer.Stop()
 				root := tracer.StartSpan("web.request").(*span)
-				root.SetTag(ext.SamplingPriority, -1)
-				root.SetBaggageItem("item", "x")
 				ctx, ok := root.Context().(*spanContext)
 				ctx.traceID = test.in[0]
 				ctx.spanID = test.in[1]
@@ -553,13 +532,131 @@ func TestB3(t *testing.T) {
 				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
 			})
 		}
-	})
+	}
+
+	testEnvs = []map[string]string{
+		{headerPropagationStyleExtract: "Datadog,b3"},
+		{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
+		{headerPropagationStyle: "Datadog,b3"},
+		{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []struct {
+			in  TextMapCarrier
+			out uint64
+		}{
+			{
+				TextMapCarrier{
+					b3TraceIDHeader: "1",
+					b3SpanIDHeader:  "1",
+					b3SampledHeader: "1",
+				},
+				1,
+			},
+			{
+				TextMapCarrier{
+					DefaultTraceIDHeader:  "2",
+					DefaultParentIDHeader: "2",
+					DefaultPriorityHeader: "2",
+				},
+				2,
+			},
+		}
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+				tracer := newTracer()
+				defer tracer.Stop()
+				assert := assert.New(t)
+
+				ctx, err := tracer.Extract(test.in)
+				assert.Nil(err)
+				sctx, ok := ctx.(*spanContext)
+				assert.True(ok)
+
+				assert.Equal(sctx.traceID, test.out)
+				assert.Equal(sctx.spanID, test.out)
+				p, ok := sctx.samplingPriority()
+				assert.True(ok)
+				assert.Equal(int(test.out), p)
+			})
+		}
+	}
+
+	testEnvs = []map[string]string{
+		{headerPropagationStyleInject: "datadog", headerPropagationStyleExtract: "datadog"},
+		{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
+		{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
+		{headerPropagationStyle: "datadog"},
+	}
+	for _, testEnv := range testEnvs {
+		for k, v := range testEnv {
+			t.Setenv(k, v)
+		}
+		var tests = []struct {
+			in  []uint64
+			out map[string]string
+		}{
+			{
+				[]uint64{1412508178991881, 1842642739201064},
+				map[string]string{
+					b3TraceIDHeader: "000504ab30404b09",
+					b3SpanIDHeader:  "00068bdfb1eb0428",
+				},
+			},
+			{
+				[]uint64{9530669991610245, 9455715668862222},
+				map[string]string{
+					b3TraceIDHeader: "0021dc1807524785",
+					b3SpanIDHeader:  "002197ec5d8a250e",
+				},
+			},
+			{
+				[]uint64{1, 1},
+				map[string]string{
+					b3TraceIDHeader: "0000000000000001",
+					b3SpanIDHeader:  "0000000000000001",
+				},
+			},
+		}
+		for _, test := range tests {
+			t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
+				tracer := newTracer()
+				defer tracer.Stop()
+				root := tracer.StartSpan("web.request").(*span)
+				root.SetTag(ext.SamplingPriority, -1)
+				root.SetBaggageItem("item", "x")
+				ctx, ok := root.Context().(*spanContext)
+				ctx.traceID = test.in[0]
+				ctx.spanID = test.in[1]
+				headers := TextMapCarrier(map[string]string{})
+				err := tracer.Inject(ctx, headers)
+
+				assert := assert.New(t)
+				assert.True(ok)
+				assert.Nil(err)
+
+				sctx, err := tracer.Extract(headers)
+				assert.Nil(err)
+
+				xctx, ok := sctx.(*spanContext)
+				assert.True(ok)
+				assert.Equal(ctx.traceID, xctx.traceID)
+				assert.Equal(ctx.spanID, xctx.spanID)
+				assert.Equal(ctx.baggage, xctx.baggage)
+				assert.Equal(ctx.trace.priority, xctx.trace.priority)
+			})
+		}
+	}
 }
 
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
+		t.Setenv(headerPropagationStyleInject, "none")
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -576,9 +673,10 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject/none,b3", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none,b3")
+		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(testLogger)
 		tracer := newTracer(WithLogger(tp))
+		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
 		root := tracer.StartSpan("web.request").(*span)
@@ -596,13 +694,14 @@ func TestNonePropagator(t *testing.T) {
 		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
 		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
 		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
-			"To disable the propagator, set `DD_PROPAGATION_STYLE_INJECT=none`")
+			"To disable the propagator, set to `none`")
 	})
 
 	t.Run("extract/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		t.Setenv(headerPropagationStyleExtract, "none")
 		assert := assert.New(t)
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -615,9 +714,9 @@ func TestNonePropagator(t *testing.T) {
 	})
 
 	t.Run("inject,extract/none", func(t *testing.T) {
-		t.Setenv("DD_PROPAGATION_STYLE_INJECT", "none")
-		t.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "none")
+		t.Setenv(headerPropagationStyle, "none")
 		tracer := newTracer()
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
