@@ -58,12 +58,6 @@ func getTagsFromEnv() map[string]string {
 	}
 }
 
-func checkField(i interface{}, filedName string) bool {
-	metaValue := reflect.ValueOf(i).Elem()
-	field := metaValue.FieldByName(filedName)
-	return field != reflect.Value{}
-}
-
 // getTagsFrom binalry extracts git metadata from binary metadata:
 func getTagsFromBinary() map[string]string {
 	res := make(map[string]string)
@@ -73,7 +67,9 @@ func getTagsFromBinary() map[string]string {
 		return res
 	}
 
-	if !checkField(info, "Settings") {
+	r := reflect.ValueOf(info).Elem()
+	settings := r.FieldByName("Settings")
+	if settings == (reflect.Value{}) {
 		log.Warn("BuildInfo has no Settings filed (go < 1.18), skip source code metadata extracting")
 		return res
 	}
@@ -81,11 +77,15 @@ func getTagsFromBinary() map[string]string {
 	repositoryURL := info.Path
 	vcs := ""
 	commitSha := ""
-	for _, s := range info.Settings {
-		if s.Key == "vcs" {
-			vcs = s.Value
-		} else if s.Key == "vcs.revision" {
-			commitSha = s.Value
+	for i := 0; i < settings.Len(); i++ {
+		s := settings.Index(i)
+		k := s.FieldByName("Key").String()
+		v := s.FieldByName("Value").String()
+
+		if k == "vcs" {
+			vcs = v
+		} else if k == "vcs.revision" {
+			commitSha = v
 		}
 	}
 	if vcs != "git" {
