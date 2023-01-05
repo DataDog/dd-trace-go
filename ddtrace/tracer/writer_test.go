@@ -371,6 +371,15 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
 	}
 
+	sentCounts := map[string]int64{
+		"datadog.tracer.decode_error": 1,
+		"datadog.tracer.flush_bytes":  172,
+		"datadog.tracer.flush_traces": 1,
+	}
+	droppedCounts := map[string]int64{
+		"datadog.tracer.traces_dropped": 1,
+	}
+
 	ss := []*span{makeSpan(0)}
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
@@ -384,10 +393,9 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 			})
-			statsd, err := newStatsdClient(c)
-			assert.Nil(err)
+			var statsd testStatsdClient
 
-			h := newAgentTraceWriter(c, nil, statsd)
+			h := newAgentTraceWriter(c, nil, &statsd)
 			h.add(ss)
 
 			h.flush()
@@ -395,6 +403,13 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 			assert.Equal(test.expAttempts, p.sendAttempts)
 			assert.Equal(test.tracesSent, p.tracesSent)
+			assert.Equal(1, len(statsd.timingCalls))
+
+			if test.tracesSent {
+				assert.Equal(sentCounts, statsd.counts)
+			} else {
+				assert.Equal(droppedCounts, statsd.counts)
+			}
 		})
 	}
 }
