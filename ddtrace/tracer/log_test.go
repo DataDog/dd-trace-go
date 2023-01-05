@@ -6,8 +6,15 @@
 package tracer
 
 import (
+	"fmt"
 	"math"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -113,6 +120,35 @@ func TestStartupLog(t *testing.T) {
 		logStartup(tracer)
 		assert.Len(tp.Lines(), 1)
 		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Lines()[0])
+	})
+
+	t.Run("socket", func(t *testing.T) {
+		if strings.HasPrefix(runtime.GOOS, "windows") {
+			t.Skip("Unix only")
+		}
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// no-op
+		}))
+		td := t.TempDir()
+		socket := filepath.Join(td, "apm.socket")
+
+		addr, err := net.ResolveUnixAddr("unix", socket)
+		assert.NoError(t, err)
+		ln, err := net.ListenUnix("unix", addr)
+		assert.NoError(t, err)
+		server.Listener = ln
+		server.Start()
+		defer server.Close()
+
+		t.Setenv("DD_TRACE_AGENT_URL", fmt.Sprintf("unix://%s", socket))
+		tp := new(testLogger)
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		defer stop()
+		logStartup(tracer)
+		t.Log(tp.lines)
+		for _, l := range tp.lines {
+			assert.NotRegexp(t, "Unable to reach agent intake", l)
+		}
 	})
 }
 
