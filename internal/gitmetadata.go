@@ -24,10 +24,8 @@ const (
 	tagRepositoryURL = "git.repository_url"
 	tagCommitSha     = "git.commit.sha"
 
-	//traceTagRepositoryURL = "_dd.git.repository_url"
-	//traceTagCommitSha     = "_dd.git.commit.sha"
-	traceTagRepositoryURL = "git.repository_url"
-	traceTagCommitSha     = "git.commit.sha"
+	traceTagRepositoryURL = "_dd.git.repository_url"
+	traceTagCommitSha     = "_dd.git.commit.sha"
 )
 
 var (
