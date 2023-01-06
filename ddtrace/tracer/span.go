@@ -170,9 +170,16 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
-// Return the root span of the span's trace.
+// LocalRootSpan returns the root span of the span's trace.
+func (s *span) LocalRootSpan() Span {
+	return s.localRootSpan()
+}
+
+// localRootSpan returns the root span of the span's trace. As opposed to the public LocalRootSpan method, this once
+// returns the actual span type when internal usage requires it (to avoid type assertions from LocalRootSpan's return
+// value).
 func (s *span) localRootSpan() *span {
-	if s.context == nil {
+	if s == nil || s.context == nil {
 		return nil
 	}
 	if s.context.trace == nil {

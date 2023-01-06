@@ -189,18 +189,6 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 	sp.SetUser(id, opts...)
 }
 
-// LocalRootSpan returns the local root span of the given span's trace.
-func LocalRootSpan(s Span) Span {
-	if s == nil {
-		return nil
-	}
-	sp, ok := s.(*span)
-	if !ok {
-		return nil
-	}
-	return sp.localRootSpan()
-}
-
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 

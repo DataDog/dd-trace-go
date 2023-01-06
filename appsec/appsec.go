@@ -14,6 +14,8 @@ package appsec
 import (
 	"context"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
@@ -29,4 +31,62 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 		httpsec.MonitorParsedBody(ctx, body)
 	}
 	// bonus: use sync.Once to log a debug message once if AppSec is disabled
+}
+
+// TrackUserLoginEvent logs a user login event with the given user id, uniquely
+// identifying them, and whether the login attempt was successful or not.
+// This event is set as service entry span tags of the given span.
+// The options can be used to add extra information to the event.
+// Note that in case of a successful login event, this function calls
+// tracer.SetUser() in order to also set the current user to the service entry
+// span too.
+func TrackUserLoginEvent(span tracer.Span, uid string, successful bool, opts ...tracer.UserMonitoringOption) {
+	span = getLocalRootSpan(span)
+	if span == nil {
+		return
+	}
+
+	var tagPrefix string
+	if successful {
+		tagPrefix = "appsec.events.users.login.success."
+		tracer.SetUser(span, uid, opts...)
+	} else {
+		tagPrefix = "appsec.events.users.login.failure."
+		span.SetTag(tagPrefix+"usr.id", uid)
+	}
+
+	span.SetTag(tagPrefix+"track", "true")
+	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+}
+
+// TrackCustomEvent logs a custom event with the given name and metadata.
+// This event is set as service entry span tags of the given span.
+// The options can be used to add extra information to the event.
+// Note that in case of a successful login event, this function calls
+// tracer.SetUser() in order to also set the current user to the service entry
+// span too.
+func TrackCustomEvent(span tracer.Span, name string, md map[string]string) {
+	span = getLocalRootSpan(span)
+	if span == nil {
+		return
+	}
+
+	tagPrefix := "appsec.events." + name + "."
+	span.SetTag(tagPrefix+"track", "true")
+	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	for k, v := range md {
+		span.SetTag(tagPrefix+k, v)
+	}
+}
+
+// Return the local root span if the given span implements the LocalRootSpan
+// method. It returns the given span otherwise.
+func getLocalRootSpan(s tracer.Span) tracer.Span {
+	type localRootSpanner interface {
+		LocalRootSpan() tracer.Span
+	}
+	if lrs, ok := s.(localRootSpanner); ok {
+		s = lrs.LocalRootSpan()
+	}
+	return s
 }
