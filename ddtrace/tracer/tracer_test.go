@@ -2150,19 +2150,20 @@ func TestLocalRootSpan(t *testing.T) {
 	defer stop()
 
 	t.Run("nil-span", func(t *testing.T) {
-		require.Nil(t, LocalRootSpan(nil))
+		var s *span = nil
+		require.Nil(t, s.LocalRootSpan())
 	})
 
 	t.Run("single-span", func(t *testing.T) {
 		sp := tracer.StartSpan("root")
-		require.Equal(t, sp, LocalRootSpan(sp))
+		require.Equal(t, sp, sp.(*span).LocalRootSpan())
 		sp.Finish()
 	})
 
 	t.Run("single-span-finished", func(t *testing.T) {
 		sp := tracer.StartSpan("root")
 		sp.Finish()
-		require.Equal(t, sp, LocalRootSpan(sp))
+		require.Equal(t, sp, sp.(*span).LocalRootSpan())
 	})
 
 	t.Run("root-with-children", func(t *testing.T) {
@@ -2177,11 +2178,11 @@ func TestLocalRootSpan(t *testing.T) {
 		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
 		defer child211.Finish()
 
-		require.Equal(t, root, LocalRootSpan(root))
-		require.Equal(t, root, LocalRootSpan(child1))
-		require.Equal(t, root, LocalRootSpan(child2))
-		require.Equal(t, root, LocalRootSpan(child21))
-		require.Equal(t, root, LocalRootSpan(child211))
+		require.Equal(t, root, root.(*span).LocalRootSpan())
+		require.Equal(t, root, child1.(*span).LocalRootSpan())
+		require.Equal(t, root, child2.(*span).LocalRootSpan())
+		require.Equal(t, root, child21.(*span).LocalRootSpan())
+		require.Equal(t, root, child211.(*span).LocalRootSpan())
 	})
 
 	t.Run("root-finished-with-children", func(t *testing.T) {
@@ -2196,10 +2197,10 @@ func TestLocalRootSpan(t *testing.T) {
 		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
 		defer child211.Finish()
 
-		require.Equal(t, root, LocalRootSpan(root))
-		require.Equal(t, root, LocalRootSpan(child1))
-		require.Equal(t, root, LocalRootSpan(child2))
-		require.Equal(t, root, LocalRootSpan(child21))
-		require.Equal(t, root, LocalRootSpan(child211))
+		require.Equal(t, root, root.(*span).LocalRootSpan())
+		require.Equal(t, root, child1.(*span).LocalRootSpan())
+		require.Equal(t, root, child2.(*span).LocalRootSpan())
+		require.Equal(t, root, child21.(*span).LocalRootSpan())
+		require.Equal(t, root, child211.(*span).LocalRootSpan())
 	})
 }
