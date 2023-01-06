@@ -199,7 +199,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	}
 	if ps == "" {
 		if prop := os.Getenv(headerPropagationStyle); prop != "" {
-			ps = strings.ToLower(prop) // use the generic DD_TRACE_PROPAGATION_STYLE if set
+			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
 			return defaultPs // no env set, so use default from configuration
 		}
@@ -570,23 +570,13 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	return nil
 }
 
-// composeTracestate creates a tracestateHeader from the spancontext.
-// The Datadog tracing library is only responsible for managing the list member with key dd,
-// which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
-// and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
-// All tag keys in the list must have all invalid characters replaced with the underscore.
-// Invalid key characters include characters outside the ASCII range 0x20 to 0x7E, space, comma and equal sign.
-// All tag values in the list must have all invalid characters replaced with the underscore.
-// Invalid value characters include characters outside the ASCII range 0x20 to 0x7E, space,
-// comma(reserved for tracestate list-member separator), semi-colon(reserved for separator between entries),
-// and tilde sign(reserved to represent equals sign).
-func composeTracestate(ctx *spanContext, priority int, oldState string) string {
+var (
 	// keyRgx is used to sanitize the keys of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx := regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	keyRgx = regexp.MustCompile(",|=|[^\\x21-\\x7E]+")
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -595,15 +585,22 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx := regexp.MustCompile(",|;|:|[^\\x20-\\x7E]+")
+	valueRgx = regexp.MustCompile(",|;|~|[^\\x21-\\x7E]+")
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
 	// semi-colon (reserved for separator between entries in the dd list-member),
-	// equals (reserved for list-member key-value separator).
+	// equals (reserved for list-member key-value separator),
+	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	originRgx := regexp.MustCompile(",|=|;|[^\\x20-\\x7E]+")
+	originRgx = regexp.MustCompile(",|=|;|[^\\x21-\\x7E]+")
+)
 
+// composeTracestate creates a tracestateHeader from the spancontext.
+// The Datadog tracing library is only responsible for managing the list member with key dd,
+// which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
+func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
@@ -682,10 +679,6 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	if err := parseTracestate(&ctx, stateHeader); err != nil {
 		return nil, err
 	}
-	// ctx.traceID might be nil due to higher order bits, eg. 1....00000000
-	if ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
-	}
 	return &ctx, nil
 }
 
@@ -696,7 +689,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // where:
 // - version - represents the version of the W3C Tracecontext Propagation format in hex format.
 // - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
-// - spanID - represents the propagated spanID in the format of 16 hex-encoded digits.
+// - spanID - represents the propagated spanID (parentID) in the format of 16 hex-encoded digits.
 // - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
 // Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
 // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
@@ -748,7 +741,10 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if ok, err := regexp.MatchString("[a-f0-9]+", spanID); !ok || err != nil {
 		return ErrSpanContextCorrupted
 	}
-	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil || ctx.spanID == 0 {
+	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
+		return ErrSpanContextCorrupted
+	}
+	if ctx.spanID == 0 {
 		return ErrSpanContextNotFound
 	}
 	// parsing flags
@@ -764,7 +760,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 }
 
 // parseTracestate attempts to parse tracestateHeader which is a list
-// with zero or more comma-separated (,) list-members.
+// with up to 32 comma-separated (,) list-members.
 // An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
 // Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
 // The keys to the “dd“ values have been shortened as follows to save space:
