@@ -7,11 +7,7 @@ package internal
 
 import (
 	"os"
-	"reflect"
-	"runtime/debug"
 	"sync"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -54,45 +50,6 @@ func getTagsFromEnv() map[string]string {
 		tagRepositoryURL: repositoryURL,
 		tagCommitSha:     commitSha,
 	}
-}
-
-// getTagsFrom binalry extracts git metadata from binary metadata:
-func getTagsFromBinary() map[string]string {
-	res := make(map[string]string)
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		log.Warn("ReadBuildInfo failed, skip source code metadata extracting")
-		return res
-	}
-
-	r := reflect.ValueOf(info).Elem()
-	settings := r.FieldByName("Settings")
-	if settings == (reflect.Value{}) {
-		log.Warn("BuildInfo has no Settings filed (go < 1.18), skip source code metadata extracting")
-		return res
-	}
-
-	repositoryURL := info.Path
-	vcs := ""
-	commitSha := ""
-	for i := 0; i < settings.Len(); i++ {
-		s := settings.Index(i)
-		k := s.FieldByName("Key").String()
-		v := s.FieldByName("Value").String()
-
-		if k == "vcs" {
-			vcs = v
-		} else if k == "vcs.revision" {
-			commitSha = v
-		}
-	}
-	if vcs != "git" {
-		log.Warn("Unknown VCS: '%s', skip source code metadata extracting", vcs)
-		return res
-	}
-	res[tagCommitSha] = commitSha
-	res[tagRepositoryURL] = repositoryURL
-	return res
 }
 
 // GetGitMetadataTags returns git metadata tags
