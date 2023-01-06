@@ -170,6 +170,17 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
+// Return the root span of the span's trace.
+func (s *span) localRootSpan() *span {
+	if s.context == nil {
+		return nil
+	}
+	if s.context.trace == nil {
+		return nil
+	}
+	return s.context.trace.root
+}
+
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
 // bit of information gets monitored. In case of distributed traces,
@@ -180,7 +191,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	root := s.context.trace.root
+	root := s.localRootSpan()
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
