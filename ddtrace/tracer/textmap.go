@@ -696,7 +696,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *spanContext, header string) error {
-	nonWordRegex := "\\W_"
+	nonWordCutset := "_-\t \n"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
 	if len(header) == 0 {
 		return ErrSpanContextNotFound
@@ -708,7 +708,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if len(parts) != 4 {
 		return ErrSpanContextCorrupted
 	}
-	version := strings.Trim(parts[0], nonWordRegex)
+	version := strings.Trim(parts[0], nonWordCutset)
 	if len(version) != 2 {
 		return ErrSpanContextCorrupted
 	}
@@ -716,7 +716,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// parsing traceID
-	fullTraceID := strings.Trim(parts[1], nonWordRegex)
+	fullTraceID := strings.Trim(parts[1], nonWordCutset)
 	if len(fullTraceID) != 32 {
 		return ErrSpanContextCorrupted
 	}
@@ -734,7 +734,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		}
 	}
 	// parsing spanID
-	spanID := strings.Trim(parts[2], nonWordRegex)
+	spanID := strings.Trim(parts[2], nonWordCutset)
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
