@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/trace"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -50,6 +51,11 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+
+	// executionTrace is the runtime/trace execution tracer.
+	// This is private, as this trace requires special explicit configuration and
+	// shouldn't just be added to WithProfileTypes
+	executionTrace
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -175,6 +181,28 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), err
 		},
 	},
+	executionTrace: {
+		Name:     "execution-trace",
+		Filename: "trace.gotrace", // TODO: pick a good name
+		Collect: func(p *profiler) ([]byte, error) {
+			if !p.shouldTrace() {
+				return nil, errors.New("execution trace collection is disabled")
+			}
+			defer func() {
+				// TODO: this updates the last trace time
+				// regardless of whether tracing suceeds or not.
+				// Should we only update it if tracing succeeds?
+				p.lastTrace = time.Now()
+			}()
+			buf := new(bytes.Buffer)
+			if err := trace.Start(buf); err != nil {
+				return nil, err
+			}
+			p.interruptibleSleep(p.cfg.traceConfig.Duration)
+			trace.Stop()
+			return buf.Bytes(), nil
+		},
+	},
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
@@ -236,6 +264,7 @@ func (t ProfileType) Tag() string {
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
 	name string
+	pt   ProfileType
 	data []byte
 }
 
@@ -267,7 +296,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
-	return []*profile{{name: filename, data: data}}, nil
+	return []*profile{{name: filename, pt: pt, data: data}}, nil
 }
 
 type deltaProfiler interface {

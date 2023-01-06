@@ -107,6 +107,8 @@ type config struct {
 	deltaProfiles     bool
 	deltaMethod       string
 	logStartup        bool
+	traceEnabled      bool
+	traceConfig       executionTraceConfig
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -291,6 +293,26 @@ func defaultConfig() (*config, error) {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
+	}
+	if ok, err := strconv.ParseBool(os.Getenv("DD_PROFILING_EXECUTION_TRACE_ENABLED")); err == nil && ok {
+		durationFromEnv := func(key string) (d time.Duration, err error) {
+			if v, ok := os.LookupEnv(key); ok {
+				return time.ParseDuration(v)
+			}
+			return
+		}
+		freq, err := durationFromEnv("DD_PROFILING_EXECUTION_TRACE_FREQUENCY")
+		if err != nil {
+			return nil, fmt.Errorf("parsing execution trace frequency: %s", err)
+		}
+		duration, err := durationFromEnv("DD_PROFILING_EXECUTION_TRACE_DURATION")
+		if err != nil {
+			return nil, fmt.Errorf("parsing execution trace duration: %s", err)
+		}
+		withExecutionTrace(executionTraceConfig{
+			Duration:  duration,
+			Frequency: freq,
+		})(&c)
 	}
 	return &c, nil
 }
@@ -513,5 +535,30 @@ func WithLogStartup(enabled bool) Option {
 func WithHostname(hostname string) Option {
 	return func(cfg *config) {
 		cfg.hostname = hostname
+	}
+}
+
+// executionTraceConfig controls how often, and for how long, runtime
+// execution traces are collected.
+type executionTraceConfig struct {
+	// Duration is how long the execution trace will run. If 0,
+	// defaults to 1 second
+	Duration time.Duration
+	// Frequency is the amount of time between traces. If 0,
+	// defaults to 5000 seconds.
+	Frequency time.Duration
+}
+
+// withExecutionTrace enables runtime execution trace collection.
+func withExecutionTrace(c executionTraceConfig) Option {
+	return func(cfg *config) {
+		if c.Duration == 0 {
+			c.Duration = 1 * time.Second
+		}
+		if c.Frequency == 0 {
+			c.Frequency = 5000 * time.Second
+		}
+		cfg.traceEnabled = true
+		cfg.traceConfig = c
 	}
 }
