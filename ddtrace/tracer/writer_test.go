@@ -403,13 +403,15 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 			assert.Equal(test.expAttempts, p.sendAttempts)
 			assert.Equal(test.tracesSent, p.tracesSent)
-			assert.Equal(1, len(statsd.timingCalls))
 
+			statsd.mu.Lock()
+			assert.Equal(1, len(statsd.timingCalls))
 			if test.tracesSent {
 				assert.Equal(sentCounts, statsd.counts)
 			} else {
 				assert.Equal(droppedCounts, statsd.counts)
 			}
+			statsd.mu.Unlock()
 		})
 	}
 }
