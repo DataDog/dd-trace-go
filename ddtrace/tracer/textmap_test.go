@@ -187,7 +187,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 		DefaultPriorityHeader: "1",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
-		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
+		traceTagsHeader:       "hello=world=,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -198,7 +198,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	child := tracer.StartSpan("test", ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
 	assert.Equal(t, map[string]string{
-		"hello":    "world",
+		"hello":    "world=",
 		"_dd.p.dm": "934086a6-4",
 	}, sctx.trace.propagatingTags)
 	dst := map[string]string{}
@@ -208,7 +208,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, "1", dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "hello=world,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
+	assertTraceTags(t, "hello=world=,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
 }
 
 func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
