@@ -1012,7 +1012,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					out: TextMapCarrier{
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
-						tracestateHeader:  "dd=s:2;o:rum;t.usr.id:_baz64_~~,othervendor=t61rcWkgMzE",
+						tracestateHeader:  "dd=s:2;o:rum;t.usr.id: baz64 ~~,othervendor=t61rcWkgMzE",
 					},
 					traceID:  1229782938247303441,
 					spanID:   2459565876494606882,
@@ -1102,7 +1102,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					out: TextMapCarrier{
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
-						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~_,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~ ,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
 					},
 					traceID: 1229782938247303442,
 					spanID:  2459565876494606882,

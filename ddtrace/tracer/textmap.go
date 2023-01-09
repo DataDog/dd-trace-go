@@ -576,7 +576,7 @@ var (
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx = regexp.MustCompile(",|=|[^\\x21-\\x7E]+")
+	keyRgx = regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -585,7 +585,7 @@ var (
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx = regexp.MustCompile(",|;|~|[^\\x21-\\x7E]+")
+	valueRgx = regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -733,6 +733,8 @@ func parseTraceparent(ctx *spanContext, header string) error {
 			return ErrSpanContextNotFound
 		}
 	}
+	// setting trace-id to be used for span context propagation
+	setPropagatingTag(ctx, w3cTraceIDTag, fullTraceID)
 	// parsing spanID
 	spanID := strings.Trim(parts[2], nonWordCutset)
 	if len(spanID) != 16 {
@@ -753,8 +755,6 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
-	// setting trace-id to be used for span context propagation
-	setPropagatingTag(ctx, w3cTraceIDTag, fullTraceID)
 	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
 	return nil
 }
