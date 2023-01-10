@@ -6,7 +6,6 @@
 # tracing
 /contrib                        @DataDog/tracing-go
 /ddtrace                        @DataDog/tracing-go
-/internal                       @DataDog/tracing-go
 
 # profiling
 /profiler                       @DataDog/profiling-go
