@@ -36,7 +36,7 @@ func getTagsFromBinary() map[string]string {
 		log.Warn("Unknown VCS: '%s', skip source code metadata extracting", vcs)
 		return res
 	}
-	res[tagCommitSha] = commitSha
-	res[tagRepositoryURL] = repositoryURL
+	res[TagCommitSha] = commitSha
+	res[TagRepositoryURL] = repositoryURL
 	return res
 }

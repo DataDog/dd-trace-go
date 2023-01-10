@@ -11,17 +11,16 @@ import (
 )
 
 const (
-	envEnabledFlag   = "DD_TRACE_GIT_METADATA_ENABLED"
-	envRepositoryURL = "DD_GIT_REPOSITORY_URL"
-	envCommitSha     = "DD_GIT_COMMIT_SHA"
-	envMainPackage   = "DD_MAIN_PACKAGE"
-	envGlobalTags    = "DD_TAGS"
+	EnvGitMetadataEnabledFlag = "DD_TRACE_GIT_METADATA_ENABLED"
+	EnvGitRepositoryURL       = "DD_GIT_REPOSITORY_URL"
+	EnvGitCommitSha           = "DD_GIT_COMMIT_SHA"
+	EnvDDTags                 = "DD_TAGS"
 
-	tagRepositoryURL = "git.repository_url"
-	tagCommitSha     = "git.commit.sha"
+	TagRepositoryURL = "git.repository_url"
+	TagCommitSha     = "git.commit.sha"
 
-	traceTagRepositoryURL = "_dd.git.repository_url"
-	traceTagCommitSha     = "_dd.git.commit.sha"
+	TraceTagRepositoryURL = "_dd.git.repository_url"
+	TraceTagCommitSha     = "_dd.git.commit.sha"
 )
 
 var (
@@ -32,14 +31,14 @@ var (
 
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
-	repositoryURL := os.Getenv(envRepositoryURL)
-	commitSha := os.Getenv(envCommitSha)
+	repositoryURL := os.Getenv(EnvGitRepositoryURL)
+	commitSha := os.Getenv(EnvGitCommitSha)
 
 	if repositoryURL == "" || commitSha == "" {
-		tags := ParseTagString(os.Getenv(envGlobalTags))
+		tags := ParseTagString(os.Getenv(EnvDDTags))
 
-		repositoryURL = tags[tagRepositoryURL]
-		commitSha = tags[tagCommitSha]
+		repositoryURL = tags[TagRepositoryURL]
+		commitSha = tags[TagCommitSha]
 	}
 
 	if repositoryURL == "" || commitSha == "" {
@@ -47,8 +46,8 @@ func getTagsFromEnv() map[string]string {
 	}
 
 	return map[string]string{
-		tagRepositoryURL: repositoryURL,
-		tagCommitSha:     commitSha,
+		TagRepositoryURL: repositoryURL,
+		TagCommitSha:     commitSha,
 	}
 }
 
@@ -62,7 +61,7 @@ func GetGitMetadataTags() map[string]string {
 	if gitMetadataTags != nil {
 		return gitMetadataTags
 	}
-	if BoolEnv(envEnabledFlag, true) {
+	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
 		tags := getTagsFromEnv()
 		if tags == nil {
 			tags = getTagsFromBinary()
@@ -74,10 +73,15 @@ func GetGitMetadataTags() map[string]string {
 	return gitMetadataTags
 }
 
+// ResetGitMetadataTags reset cashed metadata tags
+func ResetGitMetadataTags() {
+	gitMetadataTags = nil
+}
+
 // CleanGitMetadataTags cleans up tags from git metadata
 func CleanGitMetadataTags(tags map[string]string) {
-	delete(tags, tagRepositoryURL)
-	delete(tags, tagCommitSha)
+	delete(tags, TagRepositoryURL)
+	delete(tags, TagCommitSha)
 }
 
 // GetTracerGitMetadataTags returns git metadata tags for tracer
@@ -88,14 +92,14 @@ func GetTracerGitMetadataTags() map[string]string {
 	res := make(map[string]string)
 	tags := GetGitMetadataTags()
 
-	repositoryURL := tags[tagRepositoryURL]
-	commitSha := tags[tagCommitSha]
+	repositoryURL := tags[TagRepositoryURL]
+	commitSha := tags[TagCommitSha]
 
 	if repositoryURL == "" || commitSha == "" {
 		return res
 	}
 
-	res[traceTagCommitSha] = commitSha
-	res[traceTagRepositoryURL] = repositoryURL
+	res[TraceTagCommitSha] = commitSha
+	res[TraceTagRepositoryURL] = repositoryURL
 	return res
 }

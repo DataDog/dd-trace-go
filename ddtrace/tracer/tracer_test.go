@@ -1675,6 +1675,69 @@ func TestEnvironment(t *testing.T) {
 	})
 }
 
+func TestGitMetadata(t *testing.T) {
+	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		defer os.Unsetenv(maininternal.EnvDDTags)
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env", func(t *testing.T) {
+		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		defer os.Unsetenv(maininternal.EnvDDTags)
+
+		// git metadata env has priority under DD_TAGS
+		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
+		os.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		defer os.Unsetenv(maininternal.EnvGitCommitSha)
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-disabled", func(t *testing.T) {
+		os.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
+		defer os.Unsetenv(maininternal.EnvGitMetadataEnabledFlag)
+
+		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		defer os.Unsetenv(maininternal.EnvDDTags)
+		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
+		os.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+		defer os.Unsetenv(maininternal.EnvGitCommitSha)
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
