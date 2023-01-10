@@ -183,10 +183,10 @@ var profileTypes = map[ProfileType]profileType{
 	},
 	executionTrace: {
 		Name:     "execution-trace",
-		Filename: "trace.gotrace", // TODO: pick a good name
+		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
 			if !p.shouldTrace() {
-				return nil, errors.New("execution trace collection is disabled")
+				return nil, errors.New("started tracing erroneously. This is a bug, please report it!")
 			}
 			defer func() {
 				// TODO: this updates the last trace time
@@ -198,6 +198,9 @@ var profileTypes = map[ProfileType]profileType{
 			if err := trace.Start(buf); err != nil {
 				return nil, err
 			}
+			// TODO: randomize where we collect within the current
+			// profile collection cycle, so we're not biased toward
+			// stuff that happens at the start of the cycle.
 			p.interruptibleSleep(p.cfg.traceConfig.Duration)
 			trace.Stop()
 			return buf.Bytes(), nil

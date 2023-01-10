@@ -297,9 +297,9 @@ func defaultConfig() (*config, error) {
 
 	// Experimental feature: Go execution trace (runtime/trace) recording.
 	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
-	c.traceConfig.Frequency = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_FREQUENCY", 5000*time.Second)
+	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
 	c.traceConfig.Duration = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_DURATION", 1*time.Second)
-	if c.traceEnabled && (c.traceConfig.Frequency == 0 || c.traceConfig.Duration == 0) {
+	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Duration == 0) {
 		log.Warn("Invalid execution trace config, enabled is true but duration or frequency is 0. Disabling execution trace.")
 		c.traceEnabled = false
 	}
@@ -532,6 +532,6 @@ func WithHostname(hostname string) Option {
 type executionTraceConfig struct {
 	// Duration is how long the execution trace will run.
 	Duration time.Duration
-	// Frequency is the amount of time between traces.
-	Frequency time.Duration
+	// Period is the amount of time between traces.
+	Period time.Duration
 }

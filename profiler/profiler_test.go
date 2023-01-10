@@ -528,7 +528,7 @@ func TestExecutionTrace(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_FREQUENCY", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "50ms")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
@@ -550,7 +550,7 @@ func TestExecutionTrace(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "trace.gotrace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
 			seenTraces++
 		}
 	}
