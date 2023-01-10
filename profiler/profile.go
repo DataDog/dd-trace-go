@@ -186,7 +186,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
 			if !p.shouldTrace() {
-				return nil, errors.New("started tracing erroneously. This is a bug, please report it!")
+				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
 			}
 			defer func() {
 				// TODO: this updates the last trace time
