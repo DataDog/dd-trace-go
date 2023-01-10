@@ -189,9 +189,6 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
 			}
 			defer func() {
-				// TODO: this updates the last trace time
-				// regardless of whether tracing suceeds or not.
-				// Should we only update it if tracing succeeds?
 				p.lastTrace = time.Now()
 			}()
 			buf := new(bytes.Buffer)
