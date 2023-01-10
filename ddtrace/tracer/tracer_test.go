@@ -1676,6 +1676,8 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		defer os.Unsetenv(maininternal.EnvDDTags)

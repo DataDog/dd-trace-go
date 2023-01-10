@@ -11,16 +11,24 @@ import (
 )
 
 const (
+	// EnvGitMetadataEnabledFlag specifies the environment variable name for enable/disable
 	EnvGitMetadataEnabledFlag = "DD_TRACE_GIT_METADATA_ENABLED"
-	EnvGitRepositoryURL       = "DD_GIT_REPOSITORY_URL"
-	EnvGitCommitSha           = "DD_GIT_COMMIT_SHA"
-	EnvDDTags                 = "DD_TAGS"
+	// EnvGitRepositoryURL specifies the environment variable name for git repository URL
+	EnvGitRepositoryURL = "DD_GIT_REPOSITORY_URL"
+	// EnvGitCommitSha specifies the environment variable name git commit sha
+	EnvGitCommitSha = "DD_GIT_COMMIT_SHA"
+	// EnvDDTags specifies the environment variable name global tags
+	EnvDDTags = "DD_TAGS"
 
+	// TagRepositoryURL specifies the tag name for git repository URL
 	TagRepositoryURL = "git.repository_url"
-	TagCommitSha     = "git.commit.sha"
+	// TagCommitSha specifies the tag name for git commit sha
+	TagCommitSha = "git.commit.sha"
 
+	// TraceTagRepositoryURL specifies the trace tag name for git repository URL
 	TraceTagRepositoryURL = "_dd.git.repository_url"
-	TraceTagCommitSha     = "_dd.git.commit.sha"
+	// TraceTagCommitSha specifies the trace tag name for git commit sha
+	TraceTagCommitSha = "_dd.git.commit.sha"
 )
 
 var (
