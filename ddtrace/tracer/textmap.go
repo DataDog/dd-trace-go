@@ -560,23 +560,20 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 				if err != nil {
 					return ErrSpanContextCorrupted
 				}
-
 				ctx.spanID, err = strconv.ParseUint(b3Parts[1], 16, 64)
 				if err != nil {
 					return ErrSpanContextCorrupted
 				}
 				if len(b3Parts) >= 3 {
-					if b3Parts[2] != "" {
-						switch b3Parts[2] {
-						case "1":
-							ctx.setSamplingPriority(1, samplernames.Unknown)
-						case "0":
-							ctx.setSamplingPriority(0, samplernames.Unknown)
-						case "d": // Treat 'debug' traces as priority 1
-							ctx.setSamplingPriority(1, samplernames.Unknown)
-						default:
-							return ErrSpanContextCorrupted
-						}
+					switch b3Parts[2] {
+					case "":
+						break
+					case "1", "d": // Treat 'debug' traces as priority 1
+						ctx.setSamplingPriority(1, samplernames.Unknown)
+					case "0":
+						ctx.setSamplingPriority(0, samplernames.Unknown)
+					default:
+						return ErrSpanContextCorrupted
 					}
 				}
 			} else {
