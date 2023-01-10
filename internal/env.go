@@ -8,6 +8,7 @@ package internal
 import (
 	"os"
 	"strconv"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -37,6 +38,21 @@ func IntEnv(key string, def int) int {
 	v, err := strconv.Atoi(vv)
 	if err != nil {
 		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		return def
+	}
+	return v
+}
+
+// DurationEnv returns the parsed duration value of an environment variable, or
+// def otherwise.
+func DurationEnv(key string, def time.Duration) time.Duration {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	v, err := time.ParseDuration(vv)
+	if err != nil {
+		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
 		return def
 	}
 	return v
