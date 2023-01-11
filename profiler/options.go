@@ -261,6 +261,7 @@ func defaultConfig() (*config, error) {
 	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags = internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
 	}
 	for key, val := range internal.GetGitMetadataTags() {
 		tags[key] = val
