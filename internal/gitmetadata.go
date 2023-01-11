@@ -32,7 +32,7 @@ const (
 )
 
 var (
-	lock = &sync.Mutex{}
+	lock = sync.Mutex{}
 
 	gitMetadataTags map[string]string
 )
@@ -61,14 +61,13 @@ func getTagsFromEnv() map[string]string {
 
 // GetGitMetadataTags returns git metadata tags
 func GetGitMetadataTags() map[string]string {
-	if gitMetadataTags != nil {
-		return gitMetadataTags
-	}
 	lock.Lock()
 	defer lock.Unlock()
+
 	if gitMetadataTags != nil {
 		return gitMetadataTags
 	}
+
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
 		tags := getTagsFromEnv()
 		if tags == nil {
@@ -78,11 +77,15 @@ func GetGitMetadataTags() map[string]string {
 	} else {
 		gitMetadataTags = make(map[string]string)
 	}
+
 	return gitMetadataTags
 }
 
 // ResetGitMetadataTags reset cashed metadata tags
 func ResetGitMetadataTags() {
+	lock.Lock()
+	defer lock.Unlock()
+
 	gitMetadataTags = nil
 }
 
