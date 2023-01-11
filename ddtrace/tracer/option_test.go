@@ -945,6 +945,7 @@ func TestWithTraceEnabled(t *testing.T) {
 }
 
 func TestWithLogStartup(t *testing.T) {
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "1")
 	c := newConfig()
 	assert.True(t, c.logStartup)
 	WithLogStartup(false)(c)
