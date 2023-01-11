@@ -327,8 +327,6 @@ func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 			cfg,
 			&pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}},
 			newFastDeltaProfiler(v...))
-	case "fastdelta":
-		fallthrough
 	default:
 		return newFastDeltaProfiler(v...)
 	}
