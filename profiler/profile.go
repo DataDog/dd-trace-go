@@ -319,7 +319,7 @@ type pprofileDeltaProfiler struct {
 // Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	switch cfg.deltaMethod {
-	// TODO: slowdelta and comparing implementation can be removed after 2022-04-11.
+	// TODO: slowdelta and comparing implementation can be removed after 2023-04-11.
 	case "slowdelta":
 		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
 	case "comparing":
