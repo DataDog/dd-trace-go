@@ -266,7 +266,11 @@ func defaultConfig() (*config, error) {
 		tags[key] = val
 	}
 	for key, val := range tags {
-		WithTags(key + ":" + val)(&c)
+		if val != "" {
+			WithTags(key + ":" + val)(&c)
+		} else {
+			WithTags(key)(&c)
+		}
 	}
 
 	WithTags(
