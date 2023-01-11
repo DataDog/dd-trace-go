@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,11 +24,9 @@ import (
 // This test should be removed When the DD_PROFILING_DELTA_METHOD env var is removed
 // This is to exercise delta profiles using the alternate delta computation methods
 func TestRunDeltaProfileAlternateImpls(t *testing.T) {
-	old := os.Getenv("DD_PROFILING_DELTA_METHOD")
-	defer os.Setenv("DD_PROFILING_DELTA_METHOD", old)
-	for _, deltaMethod := range []string{"fastdelta", "comparing"} {
+	for _, deltaMethod := range []string{"slowdelta", "comparing"} {
 		// nb: we are not running under t.Parallel(); this would yield inconsistent results otherwise
-		os.Setenv("DD_PROFILING_DELTA_METHOD", deltaMethod)
+		t.Setenv("DD_PROFILING_DELTA_METHOD", deltaMethod)
 		t.Run(deltaMethod, func(t *testing.T) {
 			testRunDeltaProfile(t)
 		})
