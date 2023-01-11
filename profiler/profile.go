@@ -321,7 +321,7 @@ func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	switch cfg.deltaMethod {
 	// TODO: slowdelta and comparing implementation can be removed after 2022-04-11.
 	case "slowdelta":
-		return newFastDeltaProfiler(v...)
+		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
 	case "comparing":
 		return newComparingDeltaProfiler(
 			cfg,
@@ -330,7 +330,7 @@ func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	case "fastdelta":
 		fallthrough
 	default:
-		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
+		return newFastDeltaProfiler(v...)
 	}
 }
 
