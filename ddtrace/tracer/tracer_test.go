@@ -63,6 +63,7 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	os.Exit(m.Run())
 }
 
