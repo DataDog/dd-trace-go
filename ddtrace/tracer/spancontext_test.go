@@ -277,6 +277,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
 		_, _, _, stop := startTestTracer(t)
 		defer stop()
 		assert := assert.New(t)
