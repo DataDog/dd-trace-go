@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,8 +64,21 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
-	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	os.Exit(m.Run())
+	f, err := os.Create("testing.pprof")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		panic(err)
+	}
+	var code int
+	do := func() {
+		defer pprof.StopCPUProfile()
+		code = m.Run()
+	}
+	do()
+	os.Exit(code)
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
