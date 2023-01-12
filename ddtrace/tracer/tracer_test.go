@@ -708,6 +708,8 @@ func TestTracerBaggagePropagation(t *testing.T) {
 }
 
 func TestStartSpanOrigin(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer := newTracer()
@@ -737,6 +739,8 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestPropagationDefaults(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer := newTracer()
