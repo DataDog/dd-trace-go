@@ -470,14 +470,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 	// add 128 bit trace id, if enabled.
 	if os.Getenv("DD_TRACE_128_BIT_TRACEID_ENABLED") == "true" {
-		var traceIdHigh64 uint64
+		var idHigh uint64
 		if opts.TraceIDHigh128 != 0 {
-			traceIdHigh64 = opts.TraceIDHigh128
+			idHigh = opts.TraceIDHigh128
 		} else {
-			traceIdHigh64 = generateSpanID(startTime)
+			idHigh = generateSpanID(startTime)
 		}
 		buf := make([]byte, 16)
-		binary.BigEndian.PutUint64(buf[:8], traceIdHigh64)
+		binary.BigEndian.PutUint64(buf[:8], idHigh)
 		binary.BigEndian.PutUint64(buf[8:], id)
 		span.setMeta(keyTraceId128, hex.EncodeToString(buf))
 	}
