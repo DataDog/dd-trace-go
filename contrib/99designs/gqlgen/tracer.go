@@ -118,7 +118,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		}
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
-	var span ddtrace.SpanW3C
+	var span ddtrace.Span
 	span, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
 	defer func() {
 		var errs []string
@@ -139,7 +139,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			childOpts = append(childOpts, tracer.StartTime(start))
 			childOpts = append(childOpts, tracer.ResourceName(name))
 			childOpts = append(childOpts, tracer.Tag(ext.Component, "99designs/gqlgen"))
-			var childSpan ddtrace.SpanW3C
+			var childSpan ddtrace.Span
 			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))
 		}

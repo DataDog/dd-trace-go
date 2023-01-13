@@ -31,13 +31,13 @@ type Query struct {
 // Iter inherits from gocql.Iter and contains a span.
 type Iter struct {
 	*gocql.Iter
-	span ddtrace.SpanW3C
+	span ddtrace.Span
 }
 
 // Scanner inherits from a gocql.Scanner derived from an Iter
 type Scanner struct {
 	gocql.Scanner
-	span ddtrace.SpanW3C
+	span ddtrace.Span
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
@@ -94,7 +94,7 @@ func (tq *Query) PageState(state []byte) *Query {
 }
 
 // NewChildSpan creates a new span from the params and the context.
-func (tq *Query) newChildSpan(ctx context.Context) ddtrace.SpanW3C {
+func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tq.params
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
@@ -112,7 +112,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.SpanW3C {
 	return span
 }
 
-func (tq *Query) finishSpan(span ddtrace.SpanW3C, err error) {
+func (tq *Query) finishSpan(span ddtrace.Span, err error) {
 	if err != nil && tq.params.config.shouldIgnoreError(err) {
 		err = nil
 	}
@@ -247,7 +247,7 @@ func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
 }
 
 // newChildSpan creates a new span from the params and the context.
-func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.SpanW3C {
+func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tb.params
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
@@ -265,7 +265,7 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.SpanW3C {
 	return span
 }
 
-func (tb *Batch) finishSpan(span ddtrace.SpanW3C, err error) {
+func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
 	if err != nil && tb.params.config.shouldIgnoreError(err) {
 		err = nil
 	}

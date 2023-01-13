@@ -32,7 +32,7 @@ type spanKey struct {
 
 type monitor struct {
 	sync.Mutex
-	spans map[spanKey]ddtrace.SpanW3C
+	spans map[spanKey]ddtrace.Span
 	cfg   *config
 }
 
@@ -98,7 +98,7 @@ func NewMonitor(opts ...Option) *event.CommandMonitor {
 	}
 	log.Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
 	m := &monitor{
-		spans: make(map[spanKey]ddtrace.SpanW3C),
+		spans: make(map[spanKey]ddtrace.Span),
 		cfg:   cfg,
 	}
 	return &event.CommandMonitor{

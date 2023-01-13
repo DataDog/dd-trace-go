@@ -115,11 +115,11 @@ func NoDebugStack() Option {
 
 // A RoundTripperBeforeFunc can be used to modify a span before an http
 // RoundTrip is made.
-type RoundTripperBeforeFunc func(*http.Request, ddtrace.SpanW3C)
+type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 
 // A RoundTripperAfterFunc can be used to modify a span after an http
 // RoundTrip is made. It is possible for the http Response to be nil.
-type RoundTripperAfterFunc func(*http.Response, ddtrace.SpanW3C)
+type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 
 type roundTripperConfig struct {
 	before        RoundTripperBeforeFunc

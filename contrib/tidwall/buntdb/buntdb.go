@@ -93,7 +93,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	}
 }
 
-func (tx *Tx) startSpan(name string) ddtrace.SpanW3C {
+func (tx *Tx) startSpan(name string) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),

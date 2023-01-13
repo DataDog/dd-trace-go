@@ -98,7 +98,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 }
 
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
-func (tc Conn) newChildSpan(ctx context.Context) ddtrace.SpanW3C {
+func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	p := tc.params
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
