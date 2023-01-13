@@ -126,7 +126,7 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 func (tg *testStatsdClient) Flush() error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
-	tg.flushed += 1
+	tg.flushed++
 	return nil
 }
 
