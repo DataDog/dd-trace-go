@@ -1934,6 +1934,8 @@ func TestFlush(t *testing.T) {
 	tr, _, _, stop := startTestTracer(t)
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
+	ts := &testStatsdClient{}
+	tr.statsd = ts
 	defer stop()
 	tr.StartSpan("op").Finish()
 	timeout := time.After(time.Second)
@@ -1951,8 +1953,10 @@ loop:
 		}
 	}
 	assert.Len(t, tw.Flushed(), 0)
+	assert.Equal(t, ts.flushed, 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
+	assert.Equal(t, ts.flushed, 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {
