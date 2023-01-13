@@ -45,9 +45,9 @@ type (
 )
 
 var (
-	_ ddtrace.SpanW3C = (*span)(nil)
-	_ msgp.Encodable  = (*spanList)(nil)
-	_ msgp.Decodable  = (*spanLists)(nil)
+	_ ddtrace.Span   = (*span)(nil)
+	_ msgp.Encodable = (*spanList)(nil)
+	_ msgp.Decodable = (*spanLists)(nil)
 )
 
 // errorConfig holds customization options for setting error tags.

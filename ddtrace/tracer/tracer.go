@@ -148,8 +148,8 @@ func Stop() {
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
 // ddtrace.Span. It is recommended and is considered more correct to refer to this type as
-// ddtrace.SpanW3C instead.
-type Span = ddtrace.SpanW3C
+// ddtrace.Span instead.
+type Span = ddtrace.Span
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.

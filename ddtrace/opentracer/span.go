@@ -20,7 +20,7 @@ var _ opentracing.Span = (*span)(nil)
 
 // span implements opentracing.Span on top of ddtrace.Span.
 type span struct {
-	Span ddtrace.SpanW3C
+	Span ddtrace.Span
 	*opentracer
 }
 

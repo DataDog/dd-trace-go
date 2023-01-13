@@ -45,7 +45,7 @@ var _ ddtrace.TracerW3C = (*NoopTracer)(nil)
 type NoopTracer struct{}
 
 // StartSpan implements ddtrace.Tracer.
-func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.SpanW3C {
+func (NoopTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
 	return NoopSpan{}
 }
 
@@ -63,9 +63,9 @@ func (NoopTracer) Inject(context ddtrace.SpanContextW3C, carrier interface{}) er
 // Stop implements ddtrace.Tracer.
 func (NoopTracer) Stop() {}
 
-var _ ddtrace.SpanW3C = (*NoopSpan)(nil)
+var _ ddtrace.Span = (*NoopSpan)(nil)
 
-// NoopSpan is an implementation of ddtrace.SpanW3C that is a no-op.
+// NoopSpan is an implementation of ddtrace.Span that is a no-op.
 type NoopSpan struct{}
 
 // SetTag implements ddtrace.Span.

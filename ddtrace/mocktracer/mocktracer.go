@@ -72,7 +72,7 @@ func (*mocktracer) Stop() {
 	internal.Testing = false
 }
 
-func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.SpanW3C {
+func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
 	var cfg ddtrace.StartSpanConfig
 	for _, fn := range opts {
 		fn(&cfg)

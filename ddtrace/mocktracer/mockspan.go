@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var _ ddtrace.SpanW3C = (*mockspan)(nil)
+var _ ddtrace.Span = (*mockspan)(nil)
 var _ Span = (*mockspan)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
