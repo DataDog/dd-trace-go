@@ -85,9 +85,12 @@ func (c *connPool) Close() error {
 	return nil
 }
 
-// Addr returns nil. This is not used, but is needed to satisfy the net.Listener
-// interface.
+type inMemoryAddr struct{}
+
+func (inMemoryAddr) Network() string { return "in-memory" }
+func (inMemoryAddr) String() string  { return "in-memory" }
+
+// Addr returns a placeholder address to satisfy the net.Listener interface.
 func (c *connPool) Addr() net.Addr {
-	// TODO: safe? Does the http server or client use this?
-	return nil
+	return &inMemoryAddr{}
 }
