@@ -104,8 +104,10 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 
 		// Get values out of the request.
 		if req, ok := in.Request.(*smithyhttp.Request); ok {
+			url := *req.URL
+			url.User = nil
 			span.SetTag(ext.HTTPMethod, req.Method)
-			span.SetTag(ext.HTTPURL, req.URL.String())
+			span.SetTag(ext.HTTPURL, url.String())
 			span.SetTag(tagAWSAgent, req.Header.Get("User-Agent"))
 		}
 

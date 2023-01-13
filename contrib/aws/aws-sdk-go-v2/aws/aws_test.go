@@ -7,8 +7,11 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -17,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAppendMiddleware(t *testing.T) {
@@ -198,4 +202,55 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			assert.Equal(t, tt.expectedRate, s.Tag(ext.EventSampleRate))
 		})
 	}
+}
+
+func TestHTTPCredentials(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var auth string
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if enc, ok := r.Header["Authorization"]; ok {
+				encoded := strings.TrimPrefix(enc[0], "Basic ")
+				if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+					auth = string(b64)
+				}
+			}
+
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("myuser", "mypassword")
+
+	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           u.String(),
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+	spans := mt.FinishedSpans()
+
+	s := spans[0]
+	assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+	assert.Equal(t, auth, "myuser:mypassword")
 }

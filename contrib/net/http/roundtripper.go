@@ -27,11 +27,13 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		return rt.base.RoundTrip(req)
 	}
 	resourceName := rt.cfg.resourceNamer(req)
+	url := *req.URL
+	url.User = nil
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, req.URL.String()),
+		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, "net/http"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}

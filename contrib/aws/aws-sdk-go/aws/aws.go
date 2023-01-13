@@ -60,6 +60,8 @@ func (h *handlers) Send(req *request.Request) {
 	if req.RetryCount != 0 {
 		return
 	}
+	url := *req.HTTPRequest.URL
+	url.User = nil
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
@@ -68,7 +70,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
-		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
+		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
