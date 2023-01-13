@@ -50,10 +50,9 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID:        span.TraceID,
-		traceIDHigh128: span.TraceIDHigh128,
-		spanID:         span.SpanID,
-		span:           span,
+		traceID: span.TraceID,
+		spanID:  span.SpanID,
+		span:    span,
 	}
 	if parent != nil {
 		context.trace = parent.trace
