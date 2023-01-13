@@ -16,7 +16,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
-	"runtime/trace"
+	exectrace "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,13 +78,13 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	defer g.Close()
-	if err := trace.Start(g); err != nil {
+	if err := exectrace.Start(g); err != nil {
 		panic(err)
 	}
 	var code int
 	do := func() {
 		defer pprof.StopCPUProfile()
-		defer trace.Stop()
+		defer exectrace.Stop()
 		code = m.Run()
 	}
 	do()
