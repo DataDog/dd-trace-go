@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-// httpmem provides an in-memory HTTP server and client, for testing
+// Package httpmem provides an in-memory HTTP server and client, for testing
 package httpmem
 
 import (
