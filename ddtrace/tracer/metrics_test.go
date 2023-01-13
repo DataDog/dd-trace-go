@@ -122,6 +122,10 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 	return nil
 }
 
+func (tg *testStatsdClient) Flush() error {
+	return nil
+}
+
 func (tg *testStatsdClient) Close() error {
 	tg.closed = true
 	return nil
