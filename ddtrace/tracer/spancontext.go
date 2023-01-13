@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -33,8 +35,9 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
-	spanID  uint64
+	traceID        uint64
+	traceIDHigh128 uint64
+	spanID         uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
@@ -49,9 +52,10 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		traceID:        span.TraceID,
+		traceIDHigh128: span.TraceIDHigh128,
+		spanID:         span.SpanID,
+		span:           span,
 	}
 	if parent != nil {
 		context.trace = parent.trace
@@ -83,6 +87,19 @@ func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
 func (c *spanContext) TraceID() uint64 { return c.traceID }
+
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128() string {
+	if c.traceIDHigh128 == 0 {
+		return "" // using 64-bit trace ids
+	}
+	// TODO: maybe store this somewhere so we don't have
+	// to make an allocation and encode it every time?
+	buf := make([]byte, 16)
+	binary.BigEndian.PutUint64(buf[:8], c.traceIDHigh128)
+	binary.BigEndian.PutUint64(buf[8:], c.traceID)
+	return hex.EncodeToString(buf)
+}
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {

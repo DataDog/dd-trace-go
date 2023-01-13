@@ -20,6 +20,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+type SpanContextW3C interface {
+	SpanContext
+
+	// TraceID128 returns the hex-encoded 128-bit trace ID that this context is carrying.
+	TraceID128() string
+}
+
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
 // within the "tracer" package.
@@ -124,9 +131,15 @@ type StartSpanConfig struct {
 	// new span.
 	Tags map[string]interface{}
 
-	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
-	// then this will also set the TraceID to the same value.
+	// SpanID will be the SpanID of the Span, overriding the random number that would
+	// be generated. If no Parent SpanContext is present, then this will also set the
+	// TraceID to the same value.
 	SpanID uint64
+
+	// TraceIDHigh128 will be the TraceIDHigh128 of the Span (the higher-order 64 bits of
+	// a 128-bit trace id) if no Parent SpanContext is present, overring the random number
+	// that would be generated.
+	TraceIDHigh128 uint64
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
