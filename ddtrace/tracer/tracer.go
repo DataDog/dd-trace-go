@@ -7,6 +7,8 @@ package tracer
 
 import (
 	gocontext "context"
+	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -439,11 +441,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
-	if opts.TraceIDHigh128 != 0 {
-		span.TraceIDHigh128 = opts.TraceIDHigh128
-	} else if os.Getenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED") == "true" {
-		span.TraceIDHigh128 = generateSpanID(startTime)
-	}
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
@@ -470,6 +467,20 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
+
+	// add 128 bit trace id, if enabled.
+	if os.Getenv("DD_TRACE_128_BIT_TRACEID_ENABLED") == "true" {
+		var traceIdHigh64 uint64
+		if opts.TraceIDHigh128 != 0 {
+			traceIdHigh64 = opts.TraceIDHigh128
+		} else {
+			traceIdHigh64 = generateSpanID(startTime)
+		}
+		buf := make([]byte, 16)
+		binary.BigEndian.PutUint64(buf[:8], traceIdHigh64)
+		binary.BigEndian.PutUint64(buf[8:], id)
+		span.setMeta(keyTraceId128, hex.EncodeToString(buf))
+	}
 
 	// add tags from options
 	for k, v := range opts.Tags {

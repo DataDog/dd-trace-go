@@ -6,8 +6,6 @@
 package tracer
 
 import (
-	"encoding/binary"
-	"encoding/hex"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -90,15 +88,7 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
-	if c.traceIDHigh128 == 0 {
-		return "" // using 64-bit trace ids
-	}
-	// TODO: maybe store this somewhere so we don't have
-	// to make an allocation and encode it every time?
-	buf := make([]byte, 16)
-	binary.BigEndian.PutUint64(buf[:8], c.traceIDHigh128)
-	binary.BigEndian.PutUint64(buf[8:], c.traceID)
-	return hex.EncodeToString(buf)
+	return c.span.Meta[keyTraceId128]
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
