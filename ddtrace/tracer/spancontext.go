@@ -23,6 +23,8 @@ var _ ddtrace.SpanContext = (*spanContext)(nil)
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
+	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
+
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
