@@ -112,6 +112,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
+			tracer.Tag(ext.HTTPReferer, r.Referer()),
 			tracer.Tag(ext.Component, "twitchtv/twirp"),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Measured(),

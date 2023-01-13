@@ -399,8 +399,12 @@ func TestHaberdash(t *testing.T) {
 		assert.FailNow("server not started", err)
 	}
 
+	referer := "test-referer"
+	headerContext, err := twirp.WithHTTPRequestHeaders(context.Background(), map[string][]string{"Referer": {referer}})
+	assert.NoError(err)
+
 	client := example.NewHaberdasherJSONClient("http://"+nl.Addr().String(), WrapClient(&http.Client{}))
-	hat, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
+	hat, err := client.MakeHat(headerContext, &example.Size{Inches: 6})
 	assert.NoError(err)
 	assert.Equal("purple", hat.Color)
 
@@ -409,4 +413,12 @@ func TestHaberdash(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
+
+	serverSpan := spans[1]
+	assert.Equal(http.MethodPost, serverSpan.Tag(ext.HTTPMethod))
+	assert.Equal("/twirp/twitch.twirp.example.Haberdasher/MakeHat", serverSpan.Tag(ext.HTTPURL))
+	assert.Equal(referer, serverSpan.Tag(ext.HTTPReferer))
+	assert.Equal("twitchtv/twirp", serverSpan.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, serverSpan.Tag(ext.SpanKind))
+	assert.Equal("twirp-server", serverSpan.Tag(ext.ServiceName))
 }
