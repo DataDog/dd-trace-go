@@ -33,9 +33,8 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID        uint64
-	traceIDHigh128 uint64
-	spanID         uint64
+	traceID uint64
+	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
