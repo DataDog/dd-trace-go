@@ -437,6 +437,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
+	if opts.TraceIDHigh128 != 0 {
+		span.TraceIDHigh128 = opts.TraceIDHigh128
+	} else if os.Getenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED") == "true" {
+		span.TraceIDHigh128 = generateSpanID(startTime)
+	}
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}

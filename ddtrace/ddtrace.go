@@ -20,33 +20,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type TracerW3C interface {
-	// StartSpan starts a span with the given operation name and options.
-	StartSpan(operationName string, opts ...StartSpanOption) SpanW3C
-
-	// Extract extracts a span context from a given carrier. Note that baggage item
-	// keys will always be lower-cased to maintain consistency. It is impossible to
-	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (SpanContextW3C, error)
-
-	// Inject injects a span context into the given carrier.
-	Inject(context SpanContextW3C, carrier interface{}) error
-
-	// Stop stops the tracer. Calls to Stop should be idempotent.
-	Stop()
-}
-
-type SpanW3C interface {
-	SpanCommon
-
-	// Context returns the SpanContextW3C of this Span.
-	Context() SpanContextW3C
-}
-
 type SpanContextW3C interface {
 	SpanContext
 
-	// TraceID128 returns the full 128-bit trace ID that this context is carrying.
+	// TraceID128 returns the hex-encoded 128-bit trace ID that this context is carrying.
 	TraceID128() string
 }
 
@@ -158,9 +135,15 @@ type StartSpanConfig struct {
 	// new span.
 	Tags map[string]interface{}
 
-	// Force-set the SpanID, rather than use a random number. If no Parent SpanContext is present,
-	// then this will also set the TraceID to the same value.
+	// SpanID will be the SpanID of the Span, overriding the random number that would
+	// be generated. If no Parent SpanContext is present, then this will also set the
+	// TraceID to the same value.
 	SpanID uint64
+
+	// TraceIDHigh128 will be the TraceIDHigh128 of the Span (the higher-order 64 bits of
+	// a 128-bit trace id) if no Parent SpanContext is present, overring the random number
+	// that would be generated.
+	TraceIDHigh128 uint64
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
