@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -2142,65 +2141,5 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 			}
 			span.Finish()
 		}
-	})
-}
-
-func TestLocalRootSpan(t *testing.T) {
-	tracer, _, _, stop := startTestTracer(t)
-	defer stop()
-
-	t.Run("nil-span", func(t *testing.T) {
-		var s *span = nil
-		require.Nil(t, s.LocalRootSpan())
-	})
-
-	t.Run("single-span", func(t *testing.T) {
-		sp := tracer.StartSpan("root")
-		require.Equal(t, sp, sp.(*span).LocalRootSpan())
-		sp.Finish()
-	})
-
-	t.Run("single-span-finished", func(t *testing.T) {
-		sp := tracer.StartSpan("root")
-		sp.Finish()
-		require.Equal(t, sp, sp.(*span).LocalRootSpan())
-	})
-
-	t.Run("root-with-children", func(t *testing.T) {
-		root := tracer.StartSpan("root")
-		defer root.Finish()
-		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
-		defer child1.Finish()
-		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
-		defer child2.Finish()
-		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
-		defer child21.Finish()
-		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
-		defer child211.Finish()
-
-		require.Equal(t, root, root.(*span).LocalRootSpan())
-		require.Equal(t, root, child1.(*span).LocalRootSpan())
-		require.Equal(t, root, child2.(*span).LocalRootSpan())
-		require.Equal(t, root, child21.(*span).LocalRootSpan())
-		require.Equal(t, root, child211.(*span).LocalRootSpan())
-	})
-
-	t.Run("root-finished-with-children", func(t *testing.T) {
-		root := tracer.StartSpan("root")
-		root.Finish()
-		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
-		defer child1.Finish()
-		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
-		defer child2.Finish()
-		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
-		defer child21.Finish()
-		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
-		defer child211.Finish()
-
-		require.Equal(t, root, root.(*span).LocalRootSpan())
-		require.Equal(t, root, child1.(*span).LocalRootSpan())
-		require.Equal(t, root, child2.(*span).LocalRootSpan())
-		require.Equal(t, root, child21.(*span).LocalRootSpan())
-		require.Equal(t, root, child211.(*span).LocalRootSpan())
 	})
 }

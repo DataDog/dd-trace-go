@@ -41,7 +41,7 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 // tracer.SetUser() in order to also set the current user to the service entry
 // span too.
 func TrackUserLoginEvent(span tracer.Span, uid string, successful bool, opts ...tracer.UserMonitoringOption) {
-	span = getLocalRootSpan(span)
+	span = getRootSpan(span)
 	if span == nil {
 		return
 	}
@@ -66,7 +66,8 @@ func TrackUserLoginEvent(span tracer.Span, uid string, successful bool, opts ...
 // tracer.SetUser() in order to also set the current user to the service entry
 // span too.
 func TrackCustomEvent(span tracer.Span, name string, md map[string]string) {
-	if span = getLocalRootSpan(span); span == nil {
+	span = getRootSpan(span)
+	if span == nil {
 		return
 	}
 
@@ -78,14 +79,14 @@ func TrackCustomEvent(span tracer.Span, name string, md map[string]string) {
 	}
 }
 
-// Return the local root span if the given span implements the LocalRootSpan
-// method. It returns the given span otherwise.
-func getLocalRootSpan(s tracer.Span) tracer.Span {
-	type localRootSpanner interface {
-		LocalRootSpan() tracer.Span
+// Return the root span if the given span implements the Root method. It returns
+// the given span otherwise.
+func getRootSpan(s tracer.Span) tracer.Span {
+	type rooter interface {
+		Root() tracer.Span
 	}
-	if lrs, ok := s.(localRootSpanner); ok {
-		s = lrs.LocalRootSpan()
+	if lrs, ok := s.(rooter); ok {
+		s = lrs.Root()
 	}
 	return s
 }
