@@ -57,6 +57,11 @@ func (p *profiler) upload(bat batch) error {
 			}
 			statsd.Count("datadog.profiling.go.uploaded_profile_bytes", b, nil, 1)
 		}
+		// If the error isn't retriable, we're done with the byte buffers and
+		// they can be reused.
+		for _, p := range bat.profiles {
+			bufPool.Put(p.data[:0])
+		}
 		return err
 	}
 	return fmt.Errorf("failed after %d retries, last error was: %v", maxRetries, err)

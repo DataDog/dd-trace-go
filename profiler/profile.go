@@ -13,6 +13,7 @@ import (
 	"io"
 	"runtime"
 	"runtime/trace"
+	"sync"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -88,7 +89,8 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
-			var buf bytes.Buffer
+			b := bufPool.Get().([]byte)
+			buf := bytes.NewBuffer(b)
 			// Start the CPU profiler at the end of the profiling
 			// period so that we're sure to capture the CPU usage of
 			// this library, which mostly happens at the end
@@ -100,7 +102,7 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
-			if err := p.startCPUProfile(&buf); err != nil {
+			if err := p.startCPUProfile(buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -175,9 +177,10 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "metrics",
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
-			var buf bytes.Buffer
+			b := bufPool.Get().([]byte)
+			buf := bytes.NewBuffer(b)
 			p.interruptibleSleep(p.cfg.period)
-			err := p.met.report(now(), &buf)
+			err := p.met.report(now(), buf)
 			return buf.Bytes(), err
 		},
 	},
@@ -191,7 +194,8 @@ var profileTypes = map[ProfileType]profileType{
 			defer func() {
 				p.lastTrace = time.Now()
 			}()
-			buf := new(bytes.Buffer)
+			b := bufPool.Get().([]byte)
+			buf := bytes.NewBuffer(b)
 			if err := trace.Start(buf); err != nil {
 				return nil, err
 			}
@@ -209,8 +213,9 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 	return func(p *profiler) ([]byte, error) {
 		p.interruptibleSleep(p.cfg.period)
 
-		var buf bytes.Buffer
-		err := p.lookupProfile(name, &buf, 0)
+		b := bufPool.Get().([]byte)
+		buf := bytes.NewBuffer(b)
+		err := p.lookupProfile(name, buf, 0)
 		data := buf.Bytes()
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
@@ -374,7 +379,6 @@ func (d *pprofileDeltaProfiler) Delta(curData []byte) ([]byte, error) {
 
 type fastDeltaProfiler struct {
 	dc  *fastdelta.DeltaComputer
-	buf bytes.Buffer
 	gzr gzip.Reader
 	gzw *gzip.Writer
 }
@@ -383,12 +387,18 @@ func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
 	fd := &fastDeltaProfiler{
 		dc: fastdelta.NewDeltaComputer(v...),
 	}
-	fd.gzw = gzip.NewWriter(&fd.buf)
+	fd.gzw = gzip.NewWriter(&bytes.Buffer{})
 	return fd
 }
 
 func isGzipData(data []byte) bool {
 	return bytes.HasPrefix(data, []byte{0x1f, 0x8b})
+}
+
+var bufPool = &sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, 1024)
+	},
 }
 
 func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
@@ -402,8 +412,9 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 		}
 	}
 
-	fdp.buf.Reset()
-	fdp.gzw.Reset(&fdp.buf)
+	b = bufPool.Get().([]byte)
+	buf := bytes.NewBuffer(b)
+	fdp.gzw.Reset(buf)
 
 	if err = fdp.dc.Delta(data, fdp.gzw); err != nil {
 		return nil, fmt.Errorf("error computing delta: %v", err)
@@ -411,7 +422,7 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if err = fdp.gzw.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
-	return fdp.buf.Bytes(), nil
+	return buf.Bytes(), nil
 }
 
 type comparingDeltaProfiler struct {
