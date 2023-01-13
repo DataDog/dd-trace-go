@@ -50,6 +50,7 @@ jobs:
           name: ${{ inputs.runs-on }}-profile
           path: |
             **/testing.pprof
+            **/testing.trace
           retention-days: 1
 
       - name: Upload the results to Datadog CI App
