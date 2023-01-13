@@ -66,8 +66,7 @@ func TrackUserLoginEvent(span tracer.Span, uid string, successful bool, opts ...
 // tracer.SetUser() in order to also set the current user to the service entry
 // span too.
 func TrackCustomEvent(span tracer.Span, name string, md map[string]string) {
-	span = getLocalRootSpan(span)
-	if span == nil {
+	if span = getLocalRootSpan(span); span == nil {
 		return
 	}
 

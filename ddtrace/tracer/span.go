@@ -175,7 +175,7 @@ func (s *span) LocalRootSpan() Span {
 	return s.localRootSpan()
 }
 
-// localRootSpan returns the root span of the span's trace. As opposed to the public LocalRootSpan method, this once
+// localRootSpan returns the root span of the span's trace. As opposed to the public LocalRootSpan method, this
 // returns the actual span type when internal usage requires it (to avoid type assertions from LocalRootSpan's return
 // value).
 func (s *span) localRootSpan() *span {
