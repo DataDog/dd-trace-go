@@ -411,7 +411,12 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if err = fdp.gzw.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
-	return fdp.buf.Bytes(), nil
+	// The returned slice will be retained in case the profile upload fails,
+	// so we need to return a copy of the buffer's bytes to avoid a data
+	// race.
+	b = make([]byte, len(fdp.buf.Bytes()))
+	copy(b, fdp.buf.Bytes())
+	return b, nil
 }
 
 type comparingDeltaProfiler struct {
