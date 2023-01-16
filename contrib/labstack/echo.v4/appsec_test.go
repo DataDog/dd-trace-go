@@ -168,7 +168,6 @@ func TestAppSec(t *testing.T) {
 }
 
 func TestControlFlow(t *testing.T) {
-
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
 	handlerResponseBody := "Hello Handler"
