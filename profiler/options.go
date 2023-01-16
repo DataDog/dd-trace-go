@@ -136,6 +136,9 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		TraceEnabled         bool     `json:"execution_trace_enabled"`
+		TracePeriod          string   `json:"execution_trace_period"`
+		TraceDuration        string   `json:"execution_trace_duration"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -158,6 +161,9 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		TraceEnabled:         c.traceEnabled,
+		TracePeriod:          c.traceConfig.Period.String(),
+		TraceDuration:        c.traceConfig.Duration.String(),
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
