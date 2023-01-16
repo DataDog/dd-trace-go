@@ -7,7 +7,7 @@
 package traceprof
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/atomic" // polyfill for sync/atomic
+	"sync"
 )
 
 // pprof labels applied by the tracer to show up in the profiler's profiles.
@@ -33,69 +33,32 @@ func GlobalEndpointCounter() *EndpointCounter {
 
 // NewEndpointCounter returns a new NewEndpointCounter.
 func NewEndpointCounter() *EndpointCounter {
-	counts := map[string]*atomic.Int64{}
-	ec := &EndpointCounter{}
-	ec.counts.Store(&counts)
-	return ec
+	return &EndpointCounter{counts: map[string]int64{}}
 }
 
-// EndpointCounter is an optimized map[string]int64 data structure that assumes
-// that new keys are rarely added, but existing values are frequently
-// incremented. This is motivated by the fact that it sits in the hot path of
-// tracer span creation. The implementation uses optimistic concurrency control
-// and seems to perform well compared to other approaches that were attempted:
+// EndpointCounter counts hits per endpoint.
 //
-// - atomic.Value (optimistic): 13.5ns/op
-// - atomic.Value: 15.7ns/op (buggy!)
-// - sync.RWMutex: 46.7ns/op (buggy!)
-// - sync.Map: 46.5ns/op (buggy!)
-// - sync.Mutex: 77.2ns/op
-//
-// Please run BenchmarkEndpointCounter if you think about changing the
-// implementation. It's much easier to make this slow and/or broken than fast
-// and correct.
-//
-// See https://github.com/DataDog/dd-trace-go/pull/1552 for full details.
+// TODO: This is a naive implementation with poor performance. We can do 10-20x
+// better with something more complicated. This will be done in a follow-up PR
+// if we decide to enable this by default.
 type EndpointCounter struct {
-	counts atomic.Value
+	mu     sync.Mutex
+	counts map[string]int64
 }
 
 // Inc increments the hit counter for the given endpoint by 1.
 func (e *EndpointCounter) Inc(endpoint string) {
-	for {
-		oldCounts := e.counts.Load().(*map[string]*atomic.Int64)
-		val, ok := (*oldCounts)[endpoint]
-		if ok {
-			val.Add(1)
-			return
-		}
-
-		newCounts := make(map[string]*atomic.Int64)
-		for k, v := range *oldCounts {
-			newCounts[k] = v
-		}
-		val = &atomic.Int64{}
-		val.Add(1)
-		newCounts[endpoint] = val
-		if e.counts.CompareAndSwap(oldCounts, &newCounts) {
-			return
-		}
-	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.counts[endpoint]++
 }
 
 // GetAndReset returns the hit counts for all endpoints and resets their counts
 // back to 0.
 func (e *EndpointCounter) GetAndReset() map[string]int64 {
-	for {
-		oldCounts := e.counts.Load().(*map[string]*atomic.Int64)
-		retCounts := map[string]int64{}
-		for k, v := range *oldCounts {
-			retCounts[k] = v.Load()
-		}
-
-		newCounts := map[string]*atomic.Int64{}
-		if e.counts.CompareAndSwap(oldCounts, &newCounts) {
-			return retCounts
-		}
-	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	counts := e.counts
+	e.counts = make(map[string]int64)
+	return counts
 }
