@@ -75,6 +75,13 @@ type profiler struct {
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
 	testHooks testHooks
+
+	// lastTrace is the last time an execution trace was collected
+	lastTrace time.Time
+}
+
+func (p *profiler) shouldTrace() bool {
+	return p.cfg.traceEnabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
 }
 
 // testHooks are functions that are replaced during testing which would normally
@@ -315,12 +322,16 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// finished (because p.pendingProfiles will have been
 		// incremented to count every non-CPU profile before CPU
 		// profiling starts)
-		for _, t := range p.enabledProfileTypes() {
+		profileTypes := p.enabledProfileTypes()
+		if p.shouldTrace() {
+			profileTypes = append(profileTypes, executionTrace)
+		}
+		for _, t := range profileTypes {
 			if t != CPUProfile {
 				p.pendingProfiles.Add(1)
 			}
 		}
-		for _, t := range p.enabledProfileTypes() {
+		for _, t := range profileTypes {
 			wg.Add(1)
 			go func(t ProfileType) {
 				defer wg.Done()
@@ -365,6 +376,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		GoroutineProfile,
 		expGoroutineWaitProfile,
 		MetricsProfile,
+		executionTrace,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {

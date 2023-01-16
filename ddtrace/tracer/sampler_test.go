@@ -643,6 +643,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 		NameRule("notweb.request", 1.0),
 	}
 	tracer := newTracer(WithSamplingRules(rules))
+	defer tracer.Stop()
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()

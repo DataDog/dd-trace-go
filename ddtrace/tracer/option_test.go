@@ -41,9 +41,11 @@ func withTickChan(ch <-chan time.Time) StartOption {
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
-	client := cfg.statsd
+	client, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer client.Close()
 	require.Equal(t, addr, cfg.dogstatsdAddr)
-	_, err := net.ResolveUDPAddr("udp", addr)
+	_, err = net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 
 	client.Count("name", 1, []string{"tag"}, 1)
@@ -57,7 +59,9 @@ func TestStatsdUDPConnect(t *testing.T) {
 	cfg := newConfig()
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
-	client := cfg.statsd
+	client, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer client.Close()
 	require.Equal(t, addr, cfg.dogstatsdAddr)
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
@@ -118,8 +122,11 @@ func TestAutoDetectStatsd(t *testing.T) {
 		conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
-		cfg.statsd.Count("name", 1, []string{"tag"}, 1)
+		statsd.Count("name", 1, []string{"tag"}, 1)
 
 		buf := make([]byte, 17)
 		n, err := conn.Read(buf)
@@ -246,11 +253,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(math.NaN())
 			assert := assert.New(t)
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalyticsRate(0.5))
+			tracer := newTracer(WithAnalyticsRate(0.5))
+			defer tracer.Stop()
 			assert.Equal(0.5, globalconfig.AnalyticsRate())
-			newTracer(WithAnalytics(false))
+			tracer = newTracer(WithAnalytics(false))
+			defer tracer.Stop()
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalytics(true))
+			tracer = newTracer(WithAnalytics(true))
+			defer tracer.Stop()
 			assert.Equal(1., globalconfig.AnalyticsRate())
 		})
 
@@ -274,6 +284,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("dogstatsd", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
 		})
@@ -282,6 +293,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_AGENT_HOST", "my-host")
 			defer os.Unsetenv("DD_AGENT_HOST")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
 		})
@@ -290,6 +302,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_DOGSTATSD_PORT", "123")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
 		})
@@ -300,6 +313,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_AGENT_HOST")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
@@ -308,12 +322,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_ENV", "testEnv")
 			defer os.Unsetenv("DD_ENV")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "testEnv", c.env)
 		})
 
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
@@ -323,6 +339,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		os.Setenv("DD_AGENT_HOST", "trace-agent")
 		defer os.Unsetenv("DD_AGENT_HOST")
 		tracer := newTracer()
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(t, "http://trace-agent:8126", c.agentURL)
 	})
@@ -331,6 +348,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
@@ -340,6 +358,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "https://custom:1234", c.agentURL)
 		})
@@ -347,6 +366,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("code-override", func(t *testing.T) {
 			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
 			tracer := newTracer(WithAgentAddr("testhost:3333"))
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "http://testhost:3333", c.agentURL)
 		})
@@ -358,6 +378,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		env := "production"
 		tracer := newTracer(WithEnv(env))
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(env, c.env)
 	})
@@ -365,6 +386,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace_enabled", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.enabled)
 		})
@@ -373,6 +395,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_TRACE_ENABLED", "false")
 			defer os.Unsetenv("DD_TRACE_ENABLED")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.False(t, c.enabled)
 		})
@@ -387,6 +410,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithDebugMode(true),
 			WithEnv("testEnv"),
 		)
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 		assert.Equal("http://ddagent.consul.local:58126", c.agentURL)
@@ -460,14 +484,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -476,7 +500,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -485,7 +509,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
