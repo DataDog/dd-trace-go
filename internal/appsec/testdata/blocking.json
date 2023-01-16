@@ -1,0 +1,42 @@
+{
+    "version": "2.2",
+    "metadata": {
+        "rules_version": "1.4.2"
+    },
+    "rules": [
+        {
+            "id": "blk-001-001",
+            "name": "Block IP Addresses",
+            "tags": {
+                "type": "block_ip",
+                "category": "security_response"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "http.client_ip"
+                            }
+                        ],
+                        "data": "blocked_ips"
+                    },
+                    "operator": "ip_match"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "block"
+            ]
+        }
+    ],
+    "rules_data": [
+        {
+            "id": "blocked_ips",
+            "type": "ip_with_expiration",
+            "data": [
+                { "value": "1.2.3.4" }
+            ]
+        }
+    ]
+}

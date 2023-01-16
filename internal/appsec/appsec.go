@@ -100,17 +100,17 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) *appsec {
-	var rc *remoteconfig.Client
+	var client *remoteconfig.Client
 	var err error
 	if cfg.rc != nil {
-		rc, err = remoteconfig.NewClient(*cfg.rc)
+		client, err = remoteconfig.NewClient(*cfg.rc)
 	}
 	if err != nil {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
 		cfg: cfg,
-		rc:  rc,
+		rc:  client,
 	}
 }
 
@@ -119,7 +119,7 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
+	unregisterWAF, err := a.registerWAF()
 	if err != nil {
 		return err
 	}

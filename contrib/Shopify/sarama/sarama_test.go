@@ -77,6 +77,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 	}
 	{
 		s := spans[1]
@@ -91,6 +93,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 	}
 }
 
@@ -140,6 +144,8 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag("partition"))
 		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 	}
 }
 
@@ -191,6 +197,8 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
 		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 	}
 }
 
@@ -231,6 +239,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "kafka.produce", s.OperationName())
 			assert.Equal(t, int32(0), s.Tag("partition"))
 			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		}
 	})
 
@@ -269,6 +279,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "kafka.produce", s.OperationName())
 			assert.Equal(t, int32(0), s.Tag("partition"))
 			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		}
 	})
 }

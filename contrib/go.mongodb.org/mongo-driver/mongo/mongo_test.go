@@ -76,6 +76,8 @@ func Test(t *testing.T) {
 	assert.Contains(t, s.Tag("mongodb.query"), `"test-item":"test-value"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
+	assert.Equal(t, "go.mongodb.org/mongo-driver/mongo", s.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

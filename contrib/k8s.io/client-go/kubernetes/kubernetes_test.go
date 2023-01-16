@@ -87,6 +87,8 @@ func TestKubernetes(t *testing.T) {
 		auditID, ok := span.Tag("kubernetes.audit_id").(string)
 		assert.True(t, ok)
 		assert.True(t, len(auditID) > 0)
+		assert.Equal(t, "k8s.io/client-go/kubernetes", span.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 	}
 }
 

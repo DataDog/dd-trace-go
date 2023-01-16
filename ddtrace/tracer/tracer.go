@@ -67,7 +67,7 @@ type tracer struct {
 	prioritySampling *prioritySampler
 
 	// pid of the process
-	pid string
+	pid int
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
@@ -88,6 +88,9 @@ type tracer struct {
 	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd statsdClient
 }
 
 const (
@@ -192,11 +195,15 @@ const payloadQueueSize = 1000
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
+	statsd, err := newStatsdClient(c)
+	if err != nil {
+		log.Warn("Runtime and health metrics disabled: %v", err)
+	}
 	var writer traceWriter
 	if c.logToStdout {
-		writer = newLogTraceWriter(c)
+		writer = newLogTraceWriter(c, statsd)
 	} else {
-		writer = newAgentTraceWriter(c, sampler)
+		writer = newAgentTraceWriter(c, sampler, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -216,7 +223,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
-		pid:              strconv.Itoa(os.Getpid()),
+		pid:              os.Getpid(),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -227,6 +234,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
+		statsd: statsd,
 	}
 	return t
 }
@@ -234,7 +242,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
+	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
@@ -297,11 +305,11 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				t.traceWriter.add(trace.spans)
 			}
 		case <-tick:
-			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
-			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionnality is used
@@ -453,15 +461,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 	}
 	span.context = newSpanContext(span, context)
-	if context == nil || context.span == nil {
-		// this is either a root span or it has a remote parent, we should add the PID.
-		span.setMeta(ext.Pid, t.pid)
-		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
-			// this is a root span in the global service; runtime metrics should
-			// be linked to it:
-			span.setMeta("language", "go")
-		}
-	}
+	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMeta("language", "go")
+
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -557,12 +559,12 @@ func spanResourcePIISafe(s *span) bool {
 func (t *tracer) Stop() {
 	t.stopOnce.Do(func() {
 		close(t.stop)
-		t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
+		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
-	t.config.statsd.Close()
+	t.statsd.Close()
 	appsec.Stop()
 }
 

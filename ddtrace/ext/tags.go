@@ -68,7 +68,7 @@ const (
 	Error = "error"
 
 	// ErrorMsg specifies the error message.
-	ErrorMsg = "error.msg"
+	ErrorMsg = "error.message"
 
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
@@ -100,4 +100,10 @@ const (
 
 	// RuntimeID is a tag that contains a unique id for this process.
 	RuntimeID = "runtime-id"
+
+	// Component defines library integration the span originated from.
+	Component = "component"
+
+	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
+	SpanKind = "span.kind"
 )

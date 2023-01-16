@@ -134,6 +134,8 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
+		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 
 	t.Run("write", func(t *testing.T) {
@@ -160,6 +162,8 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
+		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 
 	t.Run("read", func(t *testing.T) {
@@ -193,6 +197,8 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
+		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 }
 
@@ -229,6 +235,8 @@ func TestReadError(t *testing.T) {
 	assert.Equal(true, span.Tag(ext.Error))
 	assert.NotNil(span.Tag(ext.ErrorMsg))
 	assert.Nil(span.Tag("vault.namespace"))
+	assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 }
 
 func TestNamespace(t *testing.T) {
@@ -269,6 +277,8 @@ func TestNamespace(t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
+		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 
 	t.Run("read", func(t *testing.T) {
@@ -300,6 +310,8 @@ func TestNamespace(t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
+		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	})
 }
 

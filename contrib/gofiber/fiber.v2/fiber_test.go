@@ -64,6 +64,8 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/user/123", span.Tag(ext.HTTPURL))
+		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+		assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 	}
 
 	t.Run("response", func(t *testing.T) {
@@ -156,6 +158,8 @@ func TestCustomError(t *testing.T) {
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("400", span.Tag(ext.HTTPCode))
 	assert.Equal(fiber.ErrBadRequest, span.Tag(ext.Error).(*fiber.Error))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 }
 
 func TestUserContext(t *testing.T) {
@@ -202,19 +206,30 @@ func TestPropagation(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	r := httptest.NewRequest("GET", "/user/123", nil)
-
+	requestWithSpan := httptest.NewRequest("GET", "/span/exists/true", nil)
 	pspan := tracer.StartSpan("test")
-	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
+	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(requestWithSpan.Header))
+
+	requestWithoutSpan := httptest.NewRequest("GET", "/span/exists/false", nil)
 
 	router := fiber.New()
 	router.Use(Middleware(WithServiceName("foobar")))
-	router.Get("/user/:id", func(c *fiber.Ctx) error {
-		return c.SendString(c.Params("id"))
+	router.Get("/span/exists/true", func(c *fiber.Ctx) error {
+		s, _ := tracer.SpanFromContext(c.UserContext())
+		assert.Equal(s.Context().TraceID() == pspan.Context().TraceID(), true)
+		return c.SendString(c.Params("span exists"))
+	})
+	router.Get("/span/exists/false", func(c *fiber.Ctx) error {
+		s, _ := tracer.SpanFromContext(c.UserContext())
+		assert.Equal(s.Context().TraceID() == pspan.Context().TraceID(), false)
+		return c.SendString(c.Params("span does not exist"))
 	})
 
-	_, err := router.Test(r)
-	assert.Equal(nil, err)
+	_, withoutErr := router.Test(requestWithoutSpan)
+	assert.Equal(nil, withoutErr)
+
+	_, withErr := router.Test(requestWithSpan)
+	assert.Equal(nil, withErr)
 }
 
 func TestAnalyticsSettings(t *testing.T) {

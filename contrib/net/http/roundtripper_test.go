@@ -79,6 +79,8 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
 
 func TestRoundTripperServerError(t *testing.T) {
@@ -129,6 +131,8 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
 
 func TestRoundTripperNetworkError(t *testing.T) {
@@ -171,6 +175,8 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.NotNil(t, s0.Tag(ext.Error))
 	assert.Equal(t, true, s0.Tag("CalledBefore"))
 	assert.Equal(t, true, s0.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 }
 
 func TestWrapClient(t *testing.T) {
