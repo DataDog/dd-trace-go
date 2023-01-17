@@ -188,21 +188,6 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	if c.agentURL == nil {
-		c.agentURL = resolveAgentAddr()
-		if url := internal.AgentURLFromEnv(); url != nil {
-			c.agentURL = url
-		}
-	}
-	if c.agentURL.Scheme == "unix" {
-		c.httpClient = udsClient(c.agentURL.Path)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.ReplaceAll(c.agentURL.Path, "/", "_")),
-		}
-	} else {
-		c.httpClient = defaultClient
-	}
 
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
@@ -252,6 +237,21 @@ func newConfig(opts ...StartOption) *config {
 
 	for _, fn := range opts {
 		fn(c)
+	}
+	if c.agentURL == nil {
+		c.agentURL = resolveAgentAddr()
+		if url := internal.AgentURLFromEnv(); url != nil {
+			c.agentURL = url
+		}
+	}
+	if c.agentURL.Scheme == "unix" {
+		c.httpClient = udsClient(c.agentURL.Path)
+		c.agentURL = &url.URL{
+			Scheme: "http",
+			Host:   fmt.Sprintf("UDS_%s", strings.ReplaceAll(c.agentURL.Path, "/", "_")),
+		}
+	} else if c.httpClient == nil {
+		c.httpClient = defaultClient
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	if c.env == "" {
@@ -641,7 +641,12 @@ func WithHTTPClient(client *http.Client) StartOption {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return WithHTTPClient(udsClient(socketPath))
+	return func(c *config) {
+		c.agentURL = &url.URL{
+			Scheme: "unix",
+			Path:   socketPath,
+		}
+	}
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
