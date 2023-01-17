@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 func TestMain(m *testing.M) {
@@ -559,5 +561,48 @@ func TestExecutionTrace(t *testing.T) {
 	// the start, and one 3 seconds later.
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
+	}
+}
+
+// TestEndpointCounts verfies that the unit of work feature works end to end.
+func TestEndpointCounts(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		name := fmt.Sprintf("enabled=%v", enabled)
+		t.Run(name, func(t *testing.T) {
+			// Spin up mock backend
+			got := make(chan profileMeta)
+			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			// Configure endpoint counting
+			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
+
+			// Start profiler
+			err := Start(
+				WithAgentAddr(server.Listener.Addr().String()),
+				WithProfileTypes(), // we don't need any real profiles for this test
+				WithPeriod(100*time.Millisecond),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			// Start the tracer
+			tracer.Start()
+			defer tracer.Stop()
+
+			// Create 3 spans
+			for i := 0; i < 3; i++ {
+				span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
+				span.Finish()
+			}
+
+			// Check that the first uploaded profile matches our expectations
+			m := <-got
+			if enabled {
+				require.Equal(t, map[string]int64{"/foo/bar": 3}, m.event.EndpointCounts)
+			} else {
+				require.Empty(t, m.event.EndpointCounts)
+			}
+		})
 	}
 }
