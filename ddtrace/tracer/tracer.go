@@ -536,7 +536,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
 			if span == localRootSpan {
-				// count endpoint hits for profiler unit-of-work feature
+				// Count how many times each endpoint was invoked for unit of work
+				// feature in profiling. Can't use APM stats for this since the stats
+				// don't have enough cardinality (e.g. runtime-id or other tags).
 				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
 			}
 		}
