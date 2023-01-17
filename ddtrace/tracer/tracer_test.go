@@ -1976,7 +1976,7 @@ loop:
 	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
-	assert.Equal(t, ts.flushed, 1)
+	assert.Equal(t, 1, ts.flushed)
 	assert.Len(t, transport.Stats(), 1)
 }
 
