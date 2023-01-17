@@ -173,6 +173,10 @@ func TestAppSec(t *testing.T) {
 func TestControlFlow(t *testing.T) {
 	appsec.Start()
 	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
 	handlerResponseBody := "Hello Handler"
