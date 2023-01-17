@@ -37,6 +37,7 @@ var (
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
+
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -235,6 +236,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			p.telemetry.Disabled = true
 		}
 	}
+
+	if cfg.endpointCountEnabled {
+		// Enable endpoint counting (unit of work). It's disabled by default to
+		// avoid performance overhead for customers not using profiling.
+		traceprof.GlobalEndpointCounter().SetEnabled(true)
+	}
 	return &p, nil
 }
 
@@ -355,8 +362,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat.addProfile(prof)
 		}
 
-		// Finish counting endpoint hits. See CPUProfile.Collect() for the start.
-		bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
+		if p.cfg.endpointCountEnabled {
+			// Finish counting endpoint hits. See CPUProfile.Collect() for the start.
+			bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
+		}
+
 		p.enqueueUpload(bat)
 		select {
 		case <-ticker:

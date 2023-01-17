@@ -145,7 +145,7 @@ type uploadEvent struct {
 	Tags           string           `json:"tags_profiler"`
 	Family         string           `json:"family"`
 	Version        string           `json:"version"`
-	EndpointCounts map[string]int64 `json:"endpoint_counts"`
+	EndpointCounts map[string]int64 `json:"endpoint_counts,omitempty"`
 }
 
 // encode encodes the profile as a multipart mime request.
