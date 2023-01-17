@@ -6,9 +6,11 @@
 package grpc
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
@@ -37,6 +39,11 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.NoError(err)
 
 	spans := mt.FinishedSpans()
+	if len(spans) == 0 {
+		// we fetched finished spans too soon
+		spans, err = waitOnSpans(mt.FinishedSpans, 1*time.Second)
+		assert.NoError(err)
+	}
 	assert.Len(spans, 1)
 
 	span := spans[0]
@@ -77,4 +84,21 @@ func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
 		conn:          conn,
 		client:        NewFixtureClient(conn),
 	}, nil
+}
+
+func waitOnSpans(fetch func() []mocktracer.Span, timeout time.Duration) ([]mocktracer.Span, error) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, errors.New("couldn't get spans in time")
+		case <-ticker.C:
+			if spans := fetch(); len(spans) > 0 {
+				return spans, nil
+			}
+		}
+	}
 }
