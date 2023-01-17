@@ -281,7 +281,7 @@ type batch struct {
 	start, end     time.Time
 	host           string
 	profiles       []*profile
-	endpointCounts map[string]int64
+	endpointCounts map[string]uint64
 }
 
 func (b *batch) addProfile(p *profile) {

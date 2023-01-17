@@ -27,7 +27,7 @@ const (
 
 // globalEndpointCounter is disabled by default. It gets enabled the first time
 // a customers application calls profiler.Start().
-var globalEndpointCounter = &EndpointCounter{enabled: 0, counts: map[string]int64{}}
+var globalEndpointCounter = &EndpointCounter{enabled: 0, counts: map[string]uint64{}}
 
 // GlobalEndpointCounter returns the hitpoint endcounter that is shared between
 // tracing and profiling to support the profiling unit-of-work feature.
@@ -37,7 +37,7 @@ func GlobalEndpointCounter() *EndpointCounter {
 
 // NewEndpointCounter returns a new NewEndpointCounter.
 func NewEndpointCounter() *EndpointCounter {
-	return &EndpointCounter{enabled: 1, counts: map[string]int64{}}
+	return &EndpointCounter{enabled: 1, counts: map[string]uint64{}}
 }
 
 // EndpointCounter counts hits per endpoint.
@@ -50,7 +50,7 @@ func NewEndpointCounter() *EndpointCounter {
 type EndpointCounter struct {
 	enabled uint64
 	mu      sync.Mutex
-	counts  map[string]int64
+	counts  map[string]uint64
 }
 
 // SetEnabled changes if endpoint counting is enabled or not. The previous
@@ -74,11 +74,11 @@ func (e *EndpointCounter) Inc(endpoint string) {
 
 // GetAndReset returns the hit counts for all endpoints and resets their counts
 // back to 0.
-func (e *EndpointCounter) GetAndReset() map[string]int64 {
+func (e *EndpointCounter) GetAndReset() map[string]uint64 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	counts := e.counts
-	e.counts = make(map[string]int64)
+	e.counts = make(map[string]uint64)
 	return counts
 }
 

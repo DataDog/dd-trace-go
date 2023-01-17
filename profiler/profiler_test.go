@@ -599,7 +599,7 @@ func TestEndpointCounts(t *testing.T) {
 			// Check that the first uploaded profile matches our expectations
 			m := <-got
 			if enabled {
-				require.Equal(t, map[string]int64{"/foo/bar": 3}, m.event.EndpointCounts)
+				require.Equal(t, map[string]uint64{"/foo/bar": 3}, m.event.EndpointCounts)
 			} else {
 				require.Empty(t, m.event.EndpointCounts)
 			}
