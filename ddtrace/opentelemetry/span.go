@@ -42,13 +42,13 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 
 func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.Span.Context()
-	var traceId oteltrace.TraceID
-	var spanId oteltrace.SpanID
-	uint64ToByte(ctx.TraceID(), traceId[:])
-	uint64ToByte(ctx.SpanID(), spanId[:])
+	var traceID oteltrace.TraceID
+	var spanID oteltrace.SpanID
+	uint64ToByte(ctx.TraceID(), traceID[:])
+	uint64ToByte(ctx.SpanID(), spanID[:])
 	return oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
-		TraceID:    traceId,
-		SpanID:     spanId,
+		TraceID:    traceID,
+		SpanID:     spanID,
 		TraceFlags: 0,
 		TraceState: oteltrace.TraceState{},
 		Remote:     false,
@@ -71,7 +71,8 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 	//	// description, provided the status hasn't already been set to a higher
 	//	// value before (OK > Error > Unset). The description is only included in a
 	//	// status when the code is for an error.
-	// TODO: implement me
+	// TODO: implement me - can'tlook into tags and see if the span already has this flag set.
+	// in that case, some implementation might have to be inside the tracer
 }
 
 // todo: check if there are specific keys that should be handled differently or map to our tags
