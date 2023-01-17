@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/trace"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -50,6 +51,11 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+
+	// executionTrace is the runtime/trace execution tracer.
+	// This is private, as this trace requires special explicit configuration and
+	// shouldn't just be added to WithProfileTypes
+	executionTrace
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -175,6 +181,28 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), err
 		},
 	},
+	executionTrace: {
+		Name:     "execution-trace",
+		Filename: "go.trace",
+		Collect: func(p *profiler) ([]byte, error) {
+			if !p.shouldTrace() {
+				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
+			}
+			defer func() {
+				p.lastTrace = time.Now()
+			}()
+			buf := new(bytes.Buffer)
+			if err := trace.Start(buf); err != nil {
+				return nil, err
+			}
+			// TODO: randomize where we collect within the current
+			// profile collection cycle, so we're not biased toward
+			// stuff that happens at the start of the cycle.
+			p.interruptibleSleep(p.cfg.traceConfig.Duration)
+			trace.Stop()
+			return buf.Bytes(), nil
+		},
+	},
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
@@ -236,6 +264,7 @@ func (t ProfileType) Tag() string {
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
 	name string
+	pt   ProfileType
 	data []byte
 }
 
@@ -267,7 +296,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
-	return []*profile{{name: filename, data: data}}, nil
+	return []*profile{{name: filename, pt: pt, data: data}}, nil
 }
 
 type deltaProfiler interface {
@@ -290,15 +319,16 @@ type pprofileDeltaProfiler struct {
 // Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	switch cfg.deltaMethod {
-	case "fastdelta":
-		return newFastDeltaProfiler(v...)
+	// TODO: slowdelta and comparing implementation can be removed after 2023-04-11.
+	case "slowdelta":
+		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
 	case "comparing":
 		return newComparingDeltaProfiler(
 			cfg,
 			&pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}},
 			newFastDeltaProfiler(v...))
 	default:
-		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
+		return newFastDeltaProfiler(v...)
 	}
 }
 
@@ -381,7 +411,12 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if err = fdp.gzw.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
-	return fdp.buf.Bytes(), nil
+	// The returned slice will be retained in case the profile upload fails,
+	// so we need to return a copy of the buffer's bytes to avoid a data
+	// race.
+	b = make([]byte, len(fdp.buf.Bytes()))
+	copy(b, fdp.buf.Bytes())
+	return b, nil
 }
 
 type comparingDeltaProfiler struct {

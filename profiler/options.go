@@ -107,6 +107,8 @@ type config struct {
 	deltaProfiles     bool
 	deltaMethod       string
 	logStartup        bool
+	traceEnabled      bool
+	traceConfig       executionTraceConfig
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -134,6 +136,9 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		TraceEnabled         bool     `json:"execution_trace_enabled"`
+		TracePeriod          string   `json:"execution_trace_period"`
+		TraceDuration        string   `json:"execution_trace_duration"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -156,6 +161,9 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		TraceEnabled:         c.traceEnabled,
+		TracePeriod:          c.traceConfig.Period.String(),
+		TraceDuration:        c.traceConfig.Duration.String(),
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -291,6 +299,15 @@ func defaultConfig() (*config, error) {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
+	}
+
+	// Experimental feature: Go execution trace (runtime/trace) recording.
+	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
+	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
+	c.traceConfig.Duration = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_DURATION", 1*time.Second)
+	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Duration == 0) {
+		log.Warn("Invalid execution trace config, enabled is true but duration or frequency is 0. Disabling execution trace.")
+		c.traceEnabled = false
 	}
 	return &c, nil
 }
@@ -514,4 +531,13 @@ func WithHostname(hostname string) Option {
 	return func(cfg *config) {
 		cfg.hostname = hostname
 	}
+}
+
+// executionTraceConfig controls how often, and for how long, runtime execution
+// traces are collected, see defaultConfig() for more details.
+type executionTraceConfig struct {
+	// Duration is how long the execution trace will run.
+	Duration time.Duration
+	// Period is the amount of time between traces.
+	Period time.Duration
 }
