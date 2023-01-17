@@ -245,5 +245,9 @@ func TestHTTPCredentials(t *testing.T) {
 
 	s := spans[0]
 	assert.Equal(t, server.URL+"/BUCKET/KEY", s.Tag(ext.HTTPURL))
+	assert.NotContains(t, s.Tag(ext.HTTPURL), "mypassword")
+	assert.NotContains(t, s.Tag(ext.HTTPURL), "myuser")
+	// Make sure we haven't modified the outgoing request, and the server still
+	// receives the auth request.
 	assert.Equal(t, auth, "myuser:mypassword")
 }

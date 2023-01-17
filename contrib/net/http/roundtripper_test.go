@@ -223,6 +223,10 @@ func TestRoundTripperCredentials(t *testing.T) {
 	s1 := spans[0]
 
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
+	assert.NotContains(t, s1.Tag(ext.HTTPURL), "mypassword")
+	assert.NotContains(t, s1.Tag(ext.HTTPURL), "myuser")
+	// Make sure we haven't modified the outgoing request, and the server still
+	// receives the auth request.
 	assert.Equal(t, auth, "myuser:mypassword")
 }
 
