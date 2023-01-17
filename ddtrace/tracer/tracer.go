@@ -535,10 +535,10 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
-			if span == localRootSpan {
-				// count endpoint hits for profiler unit-of-work feature
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
-			}
+			// if span == localRootSpan {
+			// 	// count endpoint hits for profiler unit-of-work feature
+			// 	traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+			// }
 		}
 	}
 	if len(labels) > 0 {
