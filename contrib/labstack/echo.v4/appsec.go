@@ -54,7 +54,11 @@ func (w *statusResponseWriter) WriteHeader(statusCode int) {
 }
 
 // WriteHeader wraps the underlying echo response writer Write() call
-func (w *statusResponseWriter) Write(b []byte) (n int, err error) { return w.r.Write(b) }
+func (w *statusResponseWriter) Write(b []byte) (n int, err error) {
+	n, err = w.r.Write(b)
+	w.status = w.r.Status
+	return n, err
+}
 
 // Header wraps the underlying echo response writer Header() call
 func (w *statusResponseWriter) Header() http.Header { return w.r.Header() }

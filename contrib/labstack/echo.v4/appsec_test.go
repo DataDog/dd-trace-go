@@ -6,7 +6,7 @@
 package echo
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
@@ -167,7 +168,11 @@ func TestAppSec(t *testing.T) {
 	})
 }
 
+// TestControlFlow ensures that the AppSec middleware behaves correctly in various execution flows and wrapping
+// scenarios.
 func TestControlFlow(t *testing.T) {
+	appsec.Start()
+	defer appsec.Stop()
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
 	handlerResponseBody := "Hello Handler"
@@ -177,16 +182,18 @@ func TestControlFlow(t *testing.T) {
 		name        string
 		middlewares []echo.MiddlewareFunc
 		handler     func(echo.Context) error
-		test        func(t *testing.T, rec *httptest.ResponseRecorder, err error)
+		test        func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error)
 	}{
 		{
+			// In this case the middleware we wrap aborts before the handler gets called.
+			// We must check that the status code we retrieve is the one set by the middleware when erroring out.
 			name: "middleware-first/middleware-aborts-before-handler",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
 				func(next echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
 						c.String(middlewareResponseStatus, middlewareResponseBody)
-						return errors.New("middleware abort")
+						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
 					}
 				},
 			},
@@ -194,14 +201,23 @@ func TestControlFlow(t *testing.T) {
 				panic("unexpected control flow")
 				return nil
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "middleware abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "middleware abort", e.Message)
+				require.Equal(t, middlewareResponseStatus, e.Code)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag(ext.HTTPCode).(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 		{
+			// In this case the handler errors out.
+			// We check that the status code read is the one set by said handler.
 			name: "middleware-first/handler-aborts",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
@@ -215,16 +231,24 @@ func TestControlFlow(t *testing.T) {
 			},
 			handler: func(c echo.Context) error {
 				c.String(handlerResponseStatus, handlerResponseBody)
-				return errors.New("handler abort")
+				return echo.NewHTTPError(handlerResponseStatus, "handler abort")
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "handler abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "handler abort", e.Message)
+				require.Equal(t, handlerResponseStatus, e.Code)
 				require.Equal(t, handlerResponseStatus, rec.Code)
 				require.Equal(t, handlerResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag("http.status_code").(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 		{
+			// In this case no errors occur, and we check that the retrieved status code is correct.
 			name: "middleware-first/no-aborts",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
@@ -243,13 +267,20 @@ func TestControlFlow(t *testing.T) {
 			handler: func(c echo.Context) error {
 				return c.String(handlerResponseStatus, handlerResponseBody)
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.NoError(t, err)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody+handlerResponseBody+middlewareResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag(ext.HTTPCode).(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 		{
+			// In this case the middleware we wrap errors out after calling the handler.
+			// We check that the status code we read is the one set by the middleware when erroring out.
 			name: "middleware-first/middleware-aborts-after-handler",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
@@ -259,21 +290,30 @@ func TestControlFlow(t *testing.T) {
 						require.NoError(t, err)
 						err = c.String(middlewareResponseStatus, middlewareResponseBody)
 						require.NoError(t, err)
-						return errors.New("middleware abort")
+						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
 					}
 				},
 			},
 			handler: func(c echo.Context) error {
 				return nil
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "middleware abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "middleware abort", e.Message)
+				require.Equal(t, middlewareResponseStatus, e.Code)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag(ext.HTTPCode).(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 		{
+			// This is the corner case where another middleware wraps ours meaning we can't control the status code
+			// because it can be overwritten after our middleware.
 			name: "middleware-after/middleware-aborts-after-next-handler",
 			middlewares: []echo.MiddlewareFunc{
 				func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -282,7 +322,7 @@ func TestControlFlow(t *testing.T) {
 						require.NoError(t, err)
 						err = c.String(middlewareResponseStatus, middlewareResponseBody)
 						require.NoError(t, err)
-						return errors.New("middleware abort")
+						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
 					}
 				},
 				Middleware(),
@@ -291,21 +331,28 @@ func TestControlFlow(t *testing.T) {
 				// Do nothing so that the calling middleware can handle the response.
 				return nil
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "middleware abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "middleware abort", e.Message)
+				require.Equal(t, middlewareResponseStatus, e.Code)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
 			},
 		},
 		{
+			// In this case the middleware that wraps ours errors out before calling it.
+			// Check that no span is generated.
 			name: "middleware-after/middleware-aborts-before-next-handler",
 			middlewares: []echo.MiddlewareFunc{
 				func(echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
 						err := c.String(middlewareResponseStatus, middlewareResponseBody)
 						require.NoError(t, err)
-						return errors.New("middleware abort")
+						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
 					}
 				},
 				func(echo.HandlerFunc) echo.HandlerFunc {
@@ -322,14 +369,22 @@ func TestControlFlow(t *testing.T) {
 				// previous middlewares return an error.
 				panic("unexpected control flow")
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "middleware abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "middleware abort", e.Message)
+				require.Equal(t, middlewareResponseStatus, e.Code)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody, rec.Body.String())
+
+				// The middleware doesn't get executed, no span expected
+				spans := mt.FinishedSpans()
+				require.Equal(t, 0, len(spans))
 			},
 		},
 		{
+			// This is a special case where our middleware is wrapped but the error happens in the
+			// handler and the status code doesn't change past our execution.
 			name: "middleware-after/handler-aborts",
 			middlewares: []echo.MiddlewareFunc{
 				func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -344,16 +399,25 @@ func TestControlFlow(t *testing.T) {
 			handler: func(c echo.Context) error {
 				err := c.String(handlerResponseStatus, handlerResponseBody)
 				require.NoError(t, err)
-				return errors.New("handler abort")
+				return echo.NewHTTPError(handlerResponseStatus, "handler abort")
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
-				require.Equal(t, "handler abort", err.Error())
+				e := err.(*echo.HTTPError)
+				require.Equal(t, "handler abort", e.Message)
+				require.Equal(t, handlerResponseStatus, e.Code)
 				require.Equal(t, handlerResponseStatus, rec.Code)
 				require.Equal(t, handlerResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag(ext.HTTPCode).(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 		{
+			// This is a special case where our middleware is wrapped but no error occurs
+			// and the status code doesn't change past our execution.
 			name: "middleware-after/no-aborts",
 			middlewares: []echo.MiddlewareFunc{
 				func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -374,15 +438,22 @@ func TestControlFlow(t *testing.T) {
 				require.NoError(t, err)
 				return nil
 			},
-			test: func(t *testing.T, rec *httptest.ResponseRecorder, err error) {
+			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.NoError(t, err)
 				require.Equal(t, middlewareResponseStatus, rec.Code)
 				require.Equal(t, middlewareResponseBody+handlerResponseBody+middlewareResponseBody, rec.Body.String())
+
+				spans := mt.FinishedSpans()
+				require.Equal(t, 1, len(spans))
+				status := spans[0].Tag(ext.HTTPCode).(string)
+				require.Equal(t, status, fmt.Sprint(rec.Code))
 			},
 		},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 			// Create a echo router
 			router := echo.New()
 			// Setup the middleware
@@ -398,9 +469,8 @@ func TestControlFlow(t *testing.T) {
 				err = e
 			}
 			router.ServeHTTP(rec, req)
-
 			// Check the request was performed as expected
-			tc.test(t, rec, err)
+			tc.test(t, rec, mt, err)
 		})
 	}
 }
