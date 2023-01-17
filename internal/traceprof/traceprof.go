@@ -29,8 +29,8 @@ const (
 // a customers application calls profiler.Start().
 var globalEndpointCounter = &EndpointCounter{enabled: 0, counts: map[string]uint64{}}
 
-// GlobalEndpointCounter returns the hitpoint endcounter that is shared between
-// tracing and profiling to support the profiling unit-of-work feature.
+// GlobalEndpointCounter returns the endpoint counter that is shared between
+// tracing and profiling to support the unit of work feature.
 func GlobalEndpointCounter() *EndpointCounter {
 	return globalEndpointCounter
 }
@@ -44,8 +44,7 @@ func NewEndpointCounter() *EndpointCounter {
 //
 // TODO: This is a naive implementation with poor performance, e.g. 125ns/op in
 // BenchmarkEndpointCounter on M1. We can do 10-20x better with something more
-// complicated [1]. This will be done in a follow-up PR if we decide to enable this
-// by default.
+// complicated [1]. This will be done in a follow-up PR.
 // [1] https://github.com/felixge/countermap/blob/main/xsync_map_counter_map.go
 type EndpointCounter struct {
 	enabled uint64
