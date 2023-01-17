@@ -13,18 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// BenchmarkEndpointCounter tests the lock contention overhead of the
+// EndpointCounter. It also verifies that the implementation producing
+// the right results under high load.
 func BenchmarkEndpointCounter(b *testing.B) {
+	// Create 10 endpoint names
 	endpoints := make([]string, 10)
 	for i := range endpoints {
 		endpoints[i] = fmt.Sprintf("endpoint-%d", i)
 	}
 
+	// Benchmark with endpoint counting enabled and disabled.
 	for _, enabled := range []bool{true, false} {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		b.Run(name, func(b *testing.B) {
+			// Create a new endpoint counter and enable/disable it
 			ec := NewEndpointCounter()
 			ec.SetEnabled(enabled)
 
+			// Run GOMAXPROCS goroutines that loop over the endpoints and increment
+			// their count by one.
 			b.RunParallel(func(p *testing.PB) {
 				i := 0
 				for p.Next() {
@@ -33,20 +41,20 @@ func BenchmarkEndpointCounter(b *testing.B) {
 				}
 			})
 
-			if enabled {
-				// The benchmark above is constructed so that endpoints should exhibit
-				// monotonically decreasing hit counts. If this invariant is violated
-				// the implementation is buggy and we fail the benchmark.
-				counts := ec.GetAndReset()
-				for i := 1; i < len(endpoints); i++ {
-					endpoint := endpoints[i]
-					prevEndpoint := endpoints[i-1]
-					if counts[endpoint] > counts[prevEndpoint] {
-						b.Fatalf("%q: %d > %q:%d", endpoint, counts[endpoint], prevEndpoint, counts[prevEndpoint])
-					}
-				}
-			} else {
+			// If we're endpoint counting is disabled, we expect an empty result.
+			if !enabled {
 				require.Empty(b, ec.GetAndReset())
+				return
+			}
+
+			// Verify that the endpoint counts are plausible. Based on the
+			// RunParallel block above, we know that the each endpoint should have
+			// received a higher or equal count than the endpoint after it.
+			counts := ec.GetAndReset()
+			for i := 0; i < len(endpoints)-1; i++ {
+				endpoint := endpoints[i]
+				nextEndpoint := endpoints[i+1]
+				require.GreaterOrEqual(b, counts[endpoint], counts[nextEndpoint], "endpoint=%s nextEndpoint=%s", endpoint, nextEndpoint)
 			}
 		})
 	}
