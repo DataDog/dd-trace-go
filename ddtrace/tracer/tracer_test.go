@@ -1932,11 +1932,20 @@ func (w *testTraceWriter) Flushed() []*span {
 
 func TestFlush(t *testing.T) {
 	tr, _, _, stop := startTestTracer(t)
+	defer stop()
+
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
+
 	ts := &testStatsdClient{}
 	tr.statsd = ts
-	defer stop()
+
+	transport := newDummyTransport()
+	c := newConcentrator(&config{transport: transport}, 500000)
+	tr.stats = c
+	c.Start()
+	defer c.Stop()
+
 	tr.StartSpan("op").Finish()
 	timeout := time.After(time.Second)
 loop:
@@ -1952,11 +1961,23 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
+	as := &aggregableSpan{
+		key: aggregation{
+			Name: "http.request",
+		},
+		// Start must be older than latest bucket to get flushed
+		Start:    time.Now().UnixNano() - 3*500000,
+		Duration: 1,
+	}
+	c.add(as)
+
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Equal(t, ts.flushed, 0)
+	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
 	assert.Equal(t, ts.flushed, 1)
+	assert.NotZero(t, transport.Stats())
 }
 
 func TestTakeStackTrace(t *testing.T) {
