@@ -40,6 +40,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	s.finished = true
 }
 
+// todo : change this ctx.TraceID() to extract 128 traceID
+// do a test with 128 bits
 func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.Span.Context()
 	var traceID oteltrace.TraceID
@@ -71,12 +73,11 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 	//	// description, provided the status hasn't already been set to a higher
 	//	// value before (OK > Error > Unset). The description is only included in a
 	//	// status when the code is for an error.
-	// TODO: implement me - can'tlook into tags and see if the span already has this flag set.
+	// TODO: implement me - can't look into tags and see if the span already has this flag set.
 	// in that case, some implementation might have to be inside the tracer
 }
 
 // todo: check if there are specific keys that should be handled differently or map to our tags
-
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 	for _, attr := range kv {
 		s.SetTag(string(attr.Key), attr.Value.AsInterface())

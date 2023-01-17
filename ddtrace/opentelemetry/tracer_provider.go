@@ -13,22 +13,35 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var _ oteltrace.TracerProvider = (*tracerProvider)(nil)
+var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 
-type tracerProvider struct {
+type TracerProvider struct {
 	tracer *oteltracer
 }
 
 const defaultName = "otel_datadog"
 
-func (t *tracerProvider) Tracer(name string, options ...oteltrace.TracerOption) oteltrace.Tracer {
+// todo find a way to map Datadog options to Otel Options
+// - for tracer Start
+// - for span Start
+// - for span Finish
+func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) oteltrace.Tracer {
+	// name is to no avail, emit a warning
 	if len(name) == 0 {
 		log.Warn("provided tracer name is invalid: `%s`, using default value: %s", name, defaultName)
 	}
-	tracer.Start()
+	var opts []oteltrace.TracerOption
+	for _, option := range options {
+		if option != nil {
+			opts = append(opts, option)
+		}
+	}
+	cfg := oteltrace.NewTracerConfig(opts...)
+	tracer.Start(locOpts...)
 	return &oteltracer{
-		name:   name,
-		cfg:    oteltrace.NewTracerConfig(options...),
-		Tracer: internal.GetGlobalTracer(),
+		name:     name,
+		cfg:      cfg,
+		provider: p, // verify that
+		Tracer:   internal.GetGlobalTracer(),
 	}
 }

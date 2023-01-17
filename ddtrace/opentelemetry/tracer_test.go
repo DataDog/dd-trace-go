@@ -20,7 +20,7 @@ import (
 
 func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
-	tp := tracerProvider{}
+	tp := TracerProvider{}
 	tr := tp.Tracer("ot")
 	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
 	assert.True(ok)
@@ -31,7 +31,7 @@ func TestGetTracer(t *testing.T) {
 
 func TestSpanWithContext(t *testing.T) {
 	assert := assert.New(t)
-	tp := &tracerProvider{}
+	tp := &TracerProvider{}
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("ot", oteltrace.WithInstrumentationVersion("0.1"))
 	ctx, sp := tr.Start(context.Background(), "otel.test")
@@ -42,7 +42,7 @@ func TestSpanWithContext(t *testing.T) {
 
 func TestSpanWithNewRoot(t *testing.T) {
 	assert := assert.New(t)
-	otel.SetTracerProvider(&tracerProvider{})
+	otel.SetTracerProvider(&TracerProvider{})
 	tr := otel.Tracer("", oteltrace.WithInstrumentationVersion("0.1"))
 
 	noopParent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
@@ -59,22 +59,25 @@ func TestSpanWithNewRoot(t *testing.T) {
 
 func TestSpanWithoutNewRoot(t *testing.T) {
 	assert := assert.New(t)
-	otel.SetTracerProvider(&tracerProvider{})
+	otel.SetTracerProvider(&TracerProvider{})
 	tr := otel.Tracer("", oteltrace.WithInstrumentationVersion("0.1"))
 
-	noopParent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
+	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
 	var parentBytes oteltrace.TraceID
-	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
+	uint64ToByte(parent.Context().TraceID(), parentBytes[:])
 	assert.Equal(parentBytes, child.SpanContext().TraceID())
 }
 
-func TestSpanMethods(t *testing.T) {
+func TestWithOpts(t *testing.T) {
 	assert := assert.New(t)
-	otel.SetTracerProvider(&tracerProvider{})
-	tr := otel.Tracer("ot", oteltrace.WithInstrumentationVersion("0.1"))
+	otel.SetTracerProvider(&TracerProvider{})
+	tr := otel.Tracer("ot",
+		WithOpts(tracer.WithEnv("wrapper_env")),
+		oteltrace.WithInstrumentationVersion("0.1"))
 	ctx, sp := tr.Start(context.Background(), "otel.test")
 	got, ok := tracer.SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
+	//	todo assert that span Env is wrapper_env
 }

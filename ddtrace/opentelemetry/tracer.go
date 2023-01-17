@@ -19,7 +19,7 @@ var _ oteltrace.Tracer = (*oteltracer)(nil)
 type oteltracer struct {
 	name     string
 	cfg      oteltrace.TracerConfig
-	provider *tracerProvider
+	provider *TracerProvider
 	ddtrace.Tracer
 }
 
