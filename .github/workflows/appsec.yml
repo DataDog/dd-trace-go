@@ -9,6 +9,8 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+  push:
+    branches: release-v*
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   GODEBUG: cgocheck=2

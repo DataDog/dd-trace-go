@@ -153,7 +153,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
 		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
 		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.config.statsd; stats != nil {
+		if stats := t.statsd; stats != nil {
 			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
 				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
 			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
