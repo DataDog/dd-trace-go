@@ -1941,7 +1941,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport}, 500000)
+	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
