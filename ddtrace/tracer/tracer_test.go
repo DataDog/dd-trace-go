@@ -1966,7 +1966,7 @@ loop:
 			Name: "http.request",
 		},
 		// Start must be older than latest bucket to get flushed
-		Start:    time.Now().UnixNano() - 3*500000,
+		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
 		Duration: 1,
 	}
 	c.add(as)
@@ -1977,7 +1977,7 @@ loop:
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
 	assert.Equal(t, ts.flushed, 1)
-	assert.NotZero(t, transport.Stats())
+	assert.Len(t, transport.Stats(), 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {
