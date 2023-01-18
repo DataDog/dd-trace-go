@@ -5,9 +5,15 @@ import (
 	"sync/atomic"
 )
 
-// globalEndpointCounter is disabled by default. It gets enabled the first time
-// a customers application calls profiler.Start().
-var globalEndpointCounter = &EndpointCounter{enabled: 0, counts: map[string]uint64{}}
+// globalEndpointCounter is shared between the profiler and the tracer.
+var globalEndpointCounter = (func() *EndpointCounter {
+	// Limit 1000 reduces the chance of memory leaks.
+	ec := NewEndpointCounter(1000)
+	// Disabled by default ensures almost-zero overhead for tracing users that
+	// don't have the profiler turned on.
+	ec.SetEnabled(false)
+	return ec
+})()
 
 // GlobalEndpointCounter returns the endpoint counter that is shared between
 // tracing and profiling to support the unit of work feature.
@@ -55,7 +61,7 @@ func (e *EndpointCounter) Inc(endpoint string) {
 
 	// Don't add another endpoint to the map if the limit is reached
 	count, ok := e.counts[endpoint]
-	if !ok && len(e.counts) >= e.limit {
+	if !ok && e.limit > 0 && len(e.counts) >= e.limit {
 		return
 	}
 	// Increment the endpoint count

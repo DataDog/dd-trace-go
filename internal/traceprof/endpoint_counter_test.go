@@ -16,7 +16,7 @@ import (
 // TestEndpointCounter verifies the basic behavior of the EndpointCounter
 // without concurrency, see BenchmarkEndpointCounter.
 func TestEndpointCounter(t *testing.T) {
-	t.Run("enabled", func(t *testing.T) {
+	t.Run("fixed limit", func(t *testing.T) {
 		ec := NewEndpointCounter(2)
 		ec.Inc("foo")
 		ec.Inc("foo")
@@ -26,6 +26,14 @@ func TestEndpointCounter(t *testing.T) {
 		ec.Inc("foobar")
 		require.Equal(t, map[string]uint64{"foobar": 1}, ec.GetAndReset())
 		require.Equal(t, map[string]uint64{}, ec.GetAndReset())
+	})
+
+	t.Run("no limit", func(t *testing.T) {
+		ec := NewEndpointCounter(-1)
+		for i := 0; i < 100; i++ {
+			ec.Inc(fmt.Sprint(i))
+		}
+		require.Equal(t, 100, len(ec.GetAndReset()))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
