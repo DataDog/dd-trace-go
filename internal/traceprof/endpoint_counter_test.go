@@ -20,7 +20,7 @@ func TestEndpointCounter(t *testing.T) {
 		ec.Inc("foo")
 		ec.Inc("foo")
 		ec.Inc("bar")
-		ec.Inc("baz")
+		ec.Inc("baz") // Exceeds limit, should be ignore.d
 		require.Equal(t, map[string]uint64{"foo": 2, "bar": 1}, ec.GetAndReset())
 		ec.Inc("foobar")
 		require.Equal(t, map[string]uint64{"foobar": 1}, ec.GetAndReset())
