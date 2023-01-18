@@ -102,7 +102,7 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			// Enable and reset endpoint counters.
+			// Enable endpoint counting (if configured) and reset counts
 			endpointCounter := traceprof.GlobalEndpointCounter()
 			endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
 			endpointCounter.GetAndReset()
