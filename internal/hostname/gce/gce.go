@@ -1,0 +1,67 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016-present Datadog, Inc.
+
+package gce
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/cachedfetch"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/httputils"
+)
+
+// declare these as vars not const to ease testing
+var (
+	metadataURL = "http://169.254.169.254/computeMetadata/v1"
+
+	// CloudProviderName contains the inventory name of the cloud
+	CloudProviderName = "GCP"
+)
+
+var hostnameFetcher = cachedfetch.Fetcher{
+	Name: "GCP Hostname",
+	Attempt: func(ctx context.Context) (interface{}, error) {
+		hostname, err := getResponseWithMaxLength(ctx, metadataURL+"/instance/hostname",
+			255)
+		if err != nil {
+			return "", fmt.Errorf("unable to retrieve hostname from GCE: %s", err)
+		}
+		return hostname, nil
+	},
+}
+
+// GetHostname returns the hostname querying GCE Metadata api
+func GetHostname(ctx context.Context) (string, error) {
+	return hostnameFetcher.FetchString(ctx)
+}
+
+func getResponseWithMaxLength(ctx context.Context, endpoint string, maxLength int) (string, error) {
+	result, err := getResponse(ctx, endpoint)
+	if err != nil {
+		return result, err
+	}
+	if len(result) > maxLength {
+		return "", fmt.Errorf("%v gave a response with length > to %v", endpoint, maxLength)
+	}
+	return result, err
+}
+
+func getResponse(ctx context.Context, url string) (string, error) {
+	// TODO: Assume gce is enabled
+
+	res, err := httputils.Get(ctx, url, map[string]string{"Metadata-Flavor": "Google"}, 1000*time.Millisecond)
+	if err != nil {
+		return "", fmt.Errorf("GCE metadata API error: %s", err)
+	}
+
+	// Some cloud platforms will respond with an empty body, causing the agent to assume a faulty hostname
+	if len(res) <= 0 {
+		return "", fmt.Errorf("empty response body")
+	}
+
+	return res, nil
+}
