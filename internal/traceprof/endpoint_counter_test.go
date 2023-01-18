@@ -17,10 +17,11 @@ import (
 // without concurrency, see BenchmarkEndpointCounter.
 func TestEndpointCounter(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		ec := NewEndpointCounter()
+		ec := NewEndpointCounter(2)
 		ec.Inc("foo")
 		ec.Inc("foo")
 		ec.Inc("bar")
+		ec.Inc("baz")
 		require.Equal(t, map[string]uint64{"foo": 2, "bar": 1}, ec.GetAndReset())
 		ec.Inc("foobar")
 		require.Equal(t, map[string]uint64{"foobar": 1}, ec.GetAndReset())
@@ -28,7 +29,7 @@ func TestEndpointCounter(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		ec := NewEndpointCounter()
+		ec := NewEndpointCounter(-1)
 		ec.SetEnabled(false)
 		ec.Inc("foo")
 		ec.Inc("foo")
@@ -55,7 +56,7 @@ func BenchmarkEndpointCounter(b *testing.B) {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		b.Run(name, func(b *testing.B) {
 			// Create a new endpoint counter and enable or disable it
-			ec := NewEndpointCounter()
+			ec := NewEndpointCounter(len(endpoints))
 			ec.SetEnabled(enabled)
 
 			// Run GOMAXPROCS goroutines that loop over the endpoints and increment

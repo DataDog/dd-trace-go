@@ -15,9 +15,10 @@ func GlobalEndpointCounter() *EndpointCounter {
 	return globalEndpointCounter
 }
 
-// NewEndpointCounter returns a new NewEndpointCounter.
-func NewEndpointCounter() *EndpointCounter {
-	return &EndpointCounter{enabled: 1, counts: map[string]uint64{}}
+// NewEndpointCounter returns a new NewEndpointCounter that will track hit
+// counts for up to limit endpoints. A limit of <= indicates no limit.
+func NewEndpointCounter(limit int) *EndpointCounter {
+	return &EndpointCounter{enabled: 1, limit: limit, counts: map[string]uint64{}}
 }
 
 // EndpointCounter counts hits per endpoint.
@@ -30,6 +31,7 @@ type EndpointCounter struct {
 	enabled uint64
 	mu      sync.Mutex
 	counts  map[string]uint64
+	limit   int
 }
 
 // SetEnabled changes if endpoint counting is enabled or not. The previous
@@ -42,20 +44,32 @@ func (e *EndpointCounter) SetEnabled(enabled bool) bool {
 // Inc increments the hit counter for the given endpoint by 1. If endpoint
 // counting is disabled, this method does nothing and is almost zero-cost.
 func (e *EndpointCounter) Inc(endpoint string) {
+	// Fast-path return if endpoint counter is disabled.
 	if atomic.LoadUint64(&e.enabled) == 0 {
 		return
 	}
 
+	// Acquire lock until func returns
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.counts[endpoint]++
+
+	// Don't add another endpoint to the map if the limit is reached
+	count, ok := e.counts[endpoint]
+	if !ok && len(e.counts) >= e.limit {
+		return
+	}
+	// Increment the endpoint count
+	e.counts[endpoint] = count + 1
 }
 
 // GetAndReset returns the hit counts for all endpoints and resets their counts
 // back to 0.
 func (e *EndpointCounter) GetAndReset() map[string]uint64 {
+	// Acquire lock until func returns
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	// Return current counts and reset internal map.
 	counts := e.counts
 	e.counts = make(map[string]uint64)
 	return counts
