@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -434,7 +435,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
-		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
@@ -497,6 +497,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
+	span.taskEnd = startExecutionTracerTask(pprofContext, operationName)
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
@@ -597,10 +598,14 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(name string) func() {
+func startExecutionTracerTask(ctx context.Context, name string) func() {
 	if !rt.IsEnabled() {
 		return func() {}
 	}
-	_, task := rt.NewTask(gocontext.TODO(), name)
+	ctx, task := rt.NewTask(ctx, name)
+	pprof.ForLabels(ctx, func(key, value string) bool {
+		rt.Log(ctx, key, value)
+		return true
+	})
 	return task.End
 }
