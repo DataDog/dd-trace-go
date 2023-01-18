@@ -7,16 +7,23 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -57,6 +64,8 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
 		assert.Equal(t, "PUT", s.Tag(ext.HTTPMethod))
 		assert.Equal(t, "http://s3.us-west-2.amazonaws.com/BUCKET", s.Tag(ext.HTTPURL))
+		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		assert.NotNil(t, s.Tag(tagAWSRequestID))
 	})
 
@@ -83,6 +92,8 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
 		assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 		assert.Equal(t, "http://ec2.us-west-2.amazonaws.com/", s.Tag(ext.HTTPURL))
+		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	})
 }
 
@@ -177,4 +188,66 @@ func TestRetries(t *testing.T) {
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
 	assert.Equal(t, mt.FinishedSpans()[0].Tag(tagAWSRetryCount), 3)
+}
+
+func TestHTTPCredentials(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var auth string
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if enc, ok := r.Header["Authorization"]; ok {
+				encoded := strings.TrimPrefix(enc[0], "Basic ")
+				if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+					auth = string(b64)
+				}
+			}
+
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("myuser", "mypassword")
+
+	resolver := endpoints.ResolverFunc(func(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+		return endpoints.ResolvedEndpoint{
+			PartitionID:   "aws",
+			URL:           u.String(),
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	region := "eu-west-1"
+	awsCfg := aws.Config{
+		Region:           &region,
+		Credentials:      credentials.AnonymousCredentials,
+		EndpointResolver: resolver,
+	}
+	session := WrapSession(session.Must(session.NewSession(&awsCfg)))
+
+	ctx := context.Background()
+	s3api := s3.New(session)
+	req, _ := s3api.GetObjectRequest(&s3.GetObjectInput{
+		Bucket: aws.String("BUCKET"),
+		Key:    aws.String("KEY"),
+	})
+	req.SetContext(ctx)
+	err = req.Send()
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+
+	s := spans[0]
+	assert.Equal(t, server.URL+"/BUCKET/KEY", s.Tag(ext.HTTPURL))
+	assert.NotContains(t, s.Tag(ext.HTTPURL), "mypassword")
+	assert.NotContains(t, s.Tag(ext.HTTPURL), "myuser")
+	// Make sure we haven't modified the outgoing request, and the server still
+	// receives the auth request.
+	assert.Equal(t, auth, "myuser:mypassword")
 }

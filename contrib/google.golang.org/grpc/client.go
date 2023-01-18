@@ -41,6 +41,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.cfg.clientServiceName(),
 			cs.cfg.startSpanOptions()...,
 		)
+		span.SetTag(ext.Component, "google.golang.org/grpc")
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -59,6 +60,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.cfg.clientServiceName(),
 			cs.cfg.startSpanOptions()...,
 		)
+		span.SetTag(ext.Component, "google.golang.org/grpc")
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -173,7 +175,9 @@ func doClientRequest(
 		method,
 		"grpc.client",
 		cfg.clientServiceName(),
-		cfg.startSpanOptions()...,
+		cfg.startSpanOptions(
+			tracer.Tag(ext.Component, "google.golang.org/grpc"),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
 	)
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)

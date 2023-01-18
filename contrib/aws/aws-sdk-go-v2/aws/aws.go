@@ -78,6 +78,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(tagAWSOperation, operation),
 			tracer.Tag(tagAWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
+			tracer.Tag(ext.Component, "aws/aws-sdk-go-v2/aws"),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -102,8 +104,11 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 
 		// Get values out of the request.
 		if req, ok := in.Request.(*smithyhttp.Request); ok {
+			// Make a copy of the URL so we don't modify the outgoing request
+			url := *req.URL
+			url.User = nil // Do not include userinfo in the HTTPURL tag.
 			span.SetTag(ext.HTTPMethod, req.Method)
-			span.SetTag(ext.HTTPURL, req.URL.String())
+			span.SetTag(ext.HTTPURL, url.String())
 			span.SetTag(tagAWSAgent, req.Header.Get("User-Agent"))
 		}
 

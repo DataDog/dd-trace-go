@@ -10,12 +10,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gorilla/mux"
+
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/gorilla/mux"
 )
 
 // Router registers routes to be matched and dispatches a handler.
@@ -99,6 +100,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
+
 	if r.config.headerTags {
 		spanopts = append(spanopts, headerTagsFromRequest(req))
 	}
@@ -118,6 +120,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg := newConfig(opts)
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "gorilla/mux"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
 		Router: router,

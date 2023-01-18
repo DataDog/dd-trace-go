@@ -156,6 +156,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.create", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(queryText, span.Tag(ext.ResourceName))
+		assert.Equal("jinzhu/gorm", span.Tag(ext.Component))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -181,6 +182,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.query", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(queryText, span.Tag(ext.ResourceName))
+		assert.Equal("jinzhu/gorm", span.Tag(ext.Component))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -207,6 +209,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.update", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(queryText, span.Tag(ext.ResourceName))
+		assert.Equal("jinzhu/gorm", span.Tag(ext.Component))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -233,6 +236,7 @@ func TestCallbacks(t *testing.T) {
 		assert.Equal("gorm.delete", span.OperationName())
 		assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		assert.Equal(queryText, span.Tag(ext.ResourceName))
+		assert.Equal("jinzhu/gorm", span.Tag(ext.Component))
 	})
 }
 
@@ -380,6 +384,7 @@ func TestCustomTags(t *testing.T) {
 	assert.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 	assert.Equal("L1212", span.Tag("custom_tag"))
 	assert.Equal(queryText, span.Tag(ext.ResourceName))
+	assert.Equal("jinzhu/gorm", span.Tag(ext.Component))
 }
 
 func TestError(t *testing.T) {

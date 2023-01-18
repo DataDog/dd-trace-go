@@ -115,6 +115,7 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(db.Statement.SQL.String()),
+		tracer.Tag(ext.Component, "gorm.io/gorm.v1"),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

@@ -64,9 +64,13 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 	assert.Equal(clientSpan.Tag(tagCode), codes.OK.String())
 	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
+	assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
+	assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 	assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
+	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
+	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 }
 
 func TestChild(t *testing.T) {
@@ -111,6 +115,8 @@ func TestChild(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 	assert.True(serverSpan.FinishTime().Sub(serverSpan.StartTime()) > 0)
+	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
+	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 }
 
 func TestPass(t *testing.T) {
@@ -139,6 +145,8 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 	assert.Equal(s.Tag(ext.SpanType), ext.AppTypeRPC)
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
+	assert.Equal(s.Tag(ext.Component), "google.golang.org/grpc.v12")
+	assert.Equal(s.Tag(ext.SpanKind), ext.SpanKindServer)
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
