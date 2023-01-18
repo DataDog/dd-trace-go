@@ -7,10 +7,13 @@ package tracer
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -105,6 +108,34 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	}
 	assert.Len(t, outputs, numContexts)
 	assert.ElementsMatch(t, outputs, expectedTraceIDs)
+}
+
+func Test128Bit(t *testing.T) {
+	_, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	span, _ := StartSpanFromContext(context.Background(), "http.request")
+	assert.NotZero(t, span.Context().TraceID())
+	if w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C); ok {
+		assert.Empty(t, w3cCtx.TraceID128())
+	} else {
+		assert.Fail(t, "should be castable to SpanContextW3C")
+	}
+
+	// Enable 128 bit trace ids
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_ENABLED", "true")
+	span128, _ := StartSpanFromContext(context.Background(), "http.request")
+	assert.NotZero(t, span128.Context().TraceID())
+	if w3cCtx, ok := span128.Context().(ddtrace.SpanContextW3C); ok {
+		// Ensure that the lower order bits match the span's 64-bit trace id
+		id128bit := w3cCtx.TraceID128()
+		assert.NotEmpty(t, id128bit)
+		b, err := hex.DecodeString(id128bit)
+		assert.NoError(t, err)
+		assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+	} else {
+		assert.Fail(t, "should be castable to SpanContextW3C")
+	}
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
