@@ -102,11 +102,19 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			traceprof.GlobalEndpointCounter().GetAndReset() // reset endpoint hit counter
+			// Enable and reset endpoint counters.
+			endpointCounter := traceprof.GlobalEndpointCounter()
+			endpointCounter.SetEnabled(true)
+			endpointCounter.GetAndReset()
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+			// Disable endpoint counting. cfg.cpuDuration can be < cfg.period, and in
+			// this case we only want to count the endpoint hits captured in the cpu
+			// profile. See profiler.collect method.
+			endpointCounter.SetEnabled(false)
+
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types

@@ -566,11 +566,11 @@ func TestExecutionTrace(t *testing.T) {
 
 // TestEndpointCounts verfies that the unit of work feature works end to end.
 func TestEndpointCounts(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
+	for _, enabled := range []bool{true, false} {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		t.Run(name, func(t *testing.T) {
 			// Spin up mock backend
-			got := make(chan profileMeta)
+			got := make(chan profileMeta, 1)
 			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
 			defer server.Close()
 
@@ -580,7 +580,7 @@ func TestEndpointCounts(t *testing.T) {
 			// Start profiler
 			err := Start(
 				WithAgentAddr(server.Listener.Addr().String()),
-				WithProfileTypes(), // we don't need any real profiles for this test
+				WithProfileTypes(CPUProfile),
 				WithPeriod(100*time.Millisecond),
 			)
 			require.NoError(t, err)
@@ -590,16 +590,21 @@ func TestEndpointCounts(t *testing.T) {
 			tracer.Start()
 			defer tracer.Stop()
 
-			// Create 3 spans
-			for i := 0; i < 3; i++ {
-				span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
-				span.Finish()
+			// Create spans until the first profile is finished
+			var m profileMeta
+			for m.attachments == nil {
+				select {
+				case m = <-got:
+				default:
+					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
+					span.Finish()
+				}
 			}
 
 			// Check that the first uploaded profile matches our expectations
-			m := <-got
 			if enabled {
-				require.Equal(t, map[string]uint64{"/foo/bar": 3}, m.event.EndpointCounts)
+				require.Equal(t, 1, len(m.event.EndpointCounts))
+				require.Greater(t, m.event.EndpointCounts["/foo/bar"], uint64(0))
 			} else {
 				require.Empty(t, m.event.EndpointCounts)
 			}

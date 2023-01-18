@@ -237,11 +237,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 	}
 
-	if cfg.endpointCountEnabled {
-		// Enable endpoint counting (unit of work). It's disabled by default to
-		// avoid performance overhead for customers not using profiling.
-		traceprof.GlobalEndpointCounter().SetEnabled(true)
-	}
 	return &p, nil
 }
 
@@ -362,8 +357,9 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat.addProfile(prof)
 		}
 
+		// End counting
 		if p.cfg.endpointCountEnabled {
-			// Finish counting endpoint hits. See CPUProfile.Collect() for the start.
+			// Record endpoint hits during CPU profile. See CPUProfile.Collect().
 			bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
 		}
 
