@@ -24,8 +24,23 @@ import (
 // payload implements io.Reader and can be used with the decoder directly. To create
 // a new payload use the newPayload method.
 //
-// payload is not safe for concurrent use, is meant to be used only once and eventually
-// dismissed.
+// payload is not safe for concurrent use.
+//
+// payload is meant to be used only once and eventually dismissed with the
+// single exception of retrying failed flush attempts.
+//
+// ⚠️  Warning!
+//
+// The payload should not be reused for multiple sets of traces.  Resetting the
+// payload for re-use requires the transport to wait for the HTTP package to
+// Close the request body before attempting to re-use it again! This requires
+// additional logic to be in place. See:
+//
+// • https://github.com/golang/go/blob/go1.16/src/net/http/client.go#L136-L138
+// • https://github.com/DataDog/dd-trace-go/pull/475
+// • https://github.com/DataDog/dd-trace-go/pull/549
+// • https://github.com/DataDog/dd-trace-go/pull/976
+//
 type payload struct {
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
@@ -78,23 +93,19 @@ func (p *payload) size() int {
 }
 
 // reset sets up the payload to be read a second time. It maintains the
-// underlying byte contents of the buffer.
+// underlying byte contents of the buffer. reset should not be used in order to
+// reuse the payload for another set of traces.
 func (p *payload) reset() {
-	// ⚠️  Warning!
-	//
-	// Resetting the payload for re-use requires the transport to wait for the
-	// HTTP package to Close the request body before attempting to re-use it
-	// again! This requires additional logic to be in place. See:
-	//
-	// • https://github.com/golang/go/blob/go1.16/src/net/http/client.go#L136-L138
-	// • https://github.com/DataDog/dd-trace-go/pull/475
-	// • https://github.com/DataDog/dd-trace-go/pull/549
-	// • https://github.com/DataDog/dd-trace-go/pull/976
-	//
 	p.updateHeader()
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
 	}
+}
+
+// clear empties the payload buffers.
+func (p *payload) clear() {
+	p.buf = bytes.Buffer{}
+	p.reader = nil
 }
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family

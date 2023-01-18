@@ -549,7 +549,9 @@ func WithLambdaMode(enabled bool) StartOption {
 	}
 }
 
-// WithSendRetries enables
+// WithSendRetries enables re-sending payloads that are not successfully
+// submitted to the agent.  This will cause the tracer to retry the send at
+// most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.sendRetries = retries

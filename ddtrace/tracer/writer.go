@@ -89,19 +89,21 @@ func (h *agentTraceWriter) flush() {
 	h.payload = newPayload()
 	go func(p *payload) {
 		defer func(start time.Time) {
-			// Once the payload has been read, clear the buffer for garbage collection to avoid
-			// a memory leak when references to this object may still be kept by faulty transport
-			// implementations or the standard library. See dd-trace-go#976
-			p.buf = bytes.Buffer{}
-			p.reader = nil
+			// Once the payload has been used, clear the buffer for garbage
+			// collection to avoid a memory leak when references to this object
+			// may still be kept by faulty transport implementations or the
+			// standard library. See dd-trace-go#976
+			p.clear()
 
 			<-h.climit
 			h.wg.Done()
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
 		}(time.Now())
 
+		var count, size int
+		var err error
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
-			size, count := p.size(), p.itemCount()
+			size, count = p.size(), p.itemCount()
 			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
 			rc, err := h.config.transport.send(p)
 			if err == nil {
@@ -113,15 +115,12 @@ func (h *agentTraceWriter) flush() {
 				}
 				return
 			}
-			if attempt == h.config.sendRetries {
-				h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
-				log.Error("lost %d traces: %v", count, err)
-				return
-			}
 			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
 			p.reset()
 			time.Sleep(time.Millisecond)
 		}
+		h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
+		log.Error("lost %d traces: %v", count, err)
 	}(oldp)
 }
 
