@@ -110,9 +110,8 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
-			// Disable endpoint counting. cfg.cpuDuration can be < cfg.period, and in
-			// this case we only want to count the endpoint hits captured in the cpu
-			// profile. See profiler.collect method.
+			// Disable endpoint counting to avoid counting hits that happen outside of the
+			// profiling period. Also see profiler.collect method.
 			endpointCounter.SetEnabled(false)
 
 			// We want the CPU profiler to finish last so that it can
