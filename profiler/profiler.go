@@ -357,11 +357,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat.addProfile(prof)
 		}
 
-		// End counting
-		if p.cfg.endpointCountEnabled {
-			// Record endpoint hits during CPU profile. See CPUProfile.Collect().
-			bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
-		}
+		// Record endpoint hits during CPU profile. See CPUProfile.Collect().
+		bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
 
 		p.enqueueUpload(bat)
 		select {

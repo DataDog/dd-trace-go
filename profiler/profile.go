@@ -104,7 +104,7 @@ var profileTypes = map[ProfileType]profileType{
 
 			// Enable and reset endpoint counters.
 			endpointCounter := traceprof.GlobalEndpointCounter()
-			endpointCounter.SetEnabled(true)
+			endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
 			endpointCounter.GetAndReset()
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
