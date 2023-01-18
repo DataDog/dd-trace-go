@@ -119,9 +119,6 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
-			// TODO(fg) ideally we'd return the value of
-			// traceprof.GlobalEndpointCounter().GetAndReset() here, but this would
-			// require some refactoring, so we handle this in profiler.collect().
 			return buf.Bytes(), nil
 		},
 	},
