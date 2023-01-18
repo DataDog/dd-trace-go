@@ -84,6 +84,13 @@ func (p *profiler) doRequest(bat batch) error {
 	if p.cfg.env != "" {
 		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
 	}
+	// If the profile batch includes a runtime execution trace, add a tag so
+	// that the uploads are more easily discoverable in the UI.
+	for _, b := range bat.profiles {
+		if b.pt == executionTrace {
+			tags = append(tags, "profile_has_go_execution_trace:yes")
+		}
+	}
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
 		return err
