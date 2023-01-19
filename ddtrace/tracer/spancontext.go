@@ -89,7 +89,7 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
-	hiBits := c.span.Meta[keyTraceId128]
+	hiBits := c.span.Meta[keyTraceID128]
 	if hiBits == "" {
 		return "" // 128 bit trace ids not enabled
 	}

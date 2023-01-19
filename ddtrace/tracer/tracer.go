@@ -472,7 +472,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if id128 == 0 {
 			id128 = generateSpanID(startTime)
 		}
-		span.setMeta(keyTraceId128, strconv.FormatUint(id128, 16))
+		span.setMeta(keyTraceID128, strconv.FormatUint(id128, 16))
 	}
 
 	// add tags from options
