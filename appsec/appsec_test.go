@@ -12,7 +12,7 @@ import (
 )
 
 func TestTrackUserLoginSuccessEvent(t *testing.T) {
-	t.Run("nominal", func(t *testing.T) {
+	t.Run("nominal-with-metadata", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -30,7 +30,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Equal(t, "username", finished.Tag("usr.name"))
 	})
 
-	t.Run("nominal", func(t *testing.T) {
+	t.Run("nominal-nil-metadata", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 

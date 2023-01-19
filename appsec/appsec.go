@@ -36,11 +36,11 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
 // user id and optional metadata, as service entry span tags. It also calls
-// tracer.SetUser() to set the currently identified user, along the given
+// tracer.SetUser() to set the currently identified user, along with the given
 // tracer.UserMonitoringOption options.
 // The service entry span is obtained through the given Go context which should
 // contain the currently running span. This function does nothing when no span
-// is found in the given Go context, along with an error message.
+// is found in the given Go context and logs an error message instead.
 // Such events trigger the backend-side events monitoring, such as the Account
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
@@ -65,7 +65,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 // not.
 // The service entry span is obtained through the given Go context which should
 // contain the currently running span. This function does nothing when no span
-// is found in the given Go context, along with an error message.
+// is found in the given Go context and logs an error message instead.
 // Such events trigger the backend-side events monitoring, such as the Account
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
