@@ -93,7 +93,7 @@ func fromFargate(ctx context.Context, _ string) (string, error) {
 }
 
 func fromGce(ctx context.Context, _ string) (string, error) {
-	return gce.GetHostname(ctx)
+	return gce.GetCanonicalHostname(ctx)
 }
 
 func fromAzure(ctx context.Context, _ string) (string, error) {

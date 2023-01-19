@@ -8,6 +8,7 @@ package gce
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/cachedfetch"
@@ -32,6 +33,63 @@ var hostnameFetcher = cachedfetch.Fetcher{
 		}
 		return hostname, nil
 	},
+}
+
+var projectIDFetcher = cachedfetch.Fetcher{
+	Name: "GCP Project ID",
+	Attempt: func(ctx context.Context) (interface{}, error) {
+		projectID, err := getResponseWithMaxLength(ctx,
+			metadataURL+"/project/project-id",
+			255)
+		if err != nil {
+			return "", fmt.Errorf("unable to retrieve project ID from GCE: %s", err)
+		}
+		return projectID, err
+	},
+}
+
+var nameFetcher = cachedfetch.Fetcher{
+	Name: "GCP Instance Name",
+	Attempt: func(ctx context.Context) (interface{}, error) {
+		return getResponseWithMaxLength(ctx,
+			metadataURL+"/instance/name",
+			255)
+	},
+}
+
+// GetCanonicalHostname returns the DD canonical hostname (prefer: <instance-name>.<project-id>, otherwise <hostname>)
+func GetCanonicalHostname(ctx context.Context) (string, error) {
+	hostname, err := GetHostname(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	instanceAlias, err := getInstanceAlias(ctx, hostname)
+	if err != nil {
+		return hostname, nil
+	}
+	return instanceAlias, nil
+}
+
+func getInstanceAlias(ctx context.Context, hostname string) (string, error) {
+	instanceName, err := nameFetcher.FetchString(ctx)
+	if err != nil {
+		// If the endpoint is not reachable, fallback on the old way to get the alias.
+		// For instance, it happens in GKE, where the metadata server is only a subset
+		// of the Compute Engine metadata server.
+		// See https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity#gke_mds
+		if hostname == "" {
+			return "", fmt.Errorf("unable to retrieve instance name and hostname from GCE: %s", err)
+		}
+		instanceName = strings.SplitN(hostname, ".", 2)[0]
+	}
+
+	projectID, err := projectIDFetcher.FetchString(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s.%s", instanceName, projectID), nil
 }
 
 // GetHostname returns the hostname querying GCE Metadata api
