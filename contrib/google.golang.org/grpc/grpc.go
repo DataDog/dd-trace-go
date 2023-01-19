@@ -10,13 +10,11 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 
 import (
 	"errors"
-	"io"
-	"math"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"io"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -28,13 +26,15 @@ import (
 var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)
 
 func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
-	if len(cfg.tags) == 0 && math.IsNaN(cfg.analyticsRate) {
+	if len(cfg.tags) == 0 && len(cfg.spanOpts) == 0 {
 		return opts
 	}
 
 	ret := make([]tracer.StartSpanOption, 0, 1+len(cfg.tags)+len(opts))
-	ret = append(ret, tracer.AnalyticsRate(cfg.analyticsRate))
 	for _, opt := range opts {
+		ret = append(ret, opt)
+	}
+	for _, opt := range cfg.spanOpts {
 		ret = append(ret, opt)
 	}
 	for key, tag := range cfg.tags {

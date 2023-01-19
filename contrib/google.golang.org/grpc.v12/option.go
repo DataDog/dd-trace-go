@@ -6,8 +6,6 @@
 package grpc
 
 import (
-	"math"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -27,8 +25,6 @@ func defaults(cfg *interceptorConfig) {
 	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
 	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
-	} else {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(math.NaN()))
 	}
 }
 
@@ -44,8 +40,6 @@ func WithAnalytics(on bool) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		if on {
 			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
-		} else {
-			WithSpanOptions(tracer.AnalyticsRate(math.NaN()))(cfg)
 		}
 	}
 }
@@ -56,8 +50,6 @@ func WithAnalyticsRate(rate float64) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
-		} else {
-			WithSpanOptions(tracer.AnalyticsRate(math.NaN()))(cfg)
 		}
 	}
 }
