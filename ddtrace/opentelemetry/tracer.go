@@ -44,3 +44,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		oteltracer: t,
 	})
 }
+
+var _ oteltrace.Tracer = (*noopOteltracer)(nil)
+
+type noopOteltracer struct{}
+
+func (n *noopOteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+	return nil, nil
+}
