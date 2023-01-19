@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"))
+	client := getClient(addr, WithServiceName("test-memcache"))
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
@@ -118,7 +119,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
-		client := WrapClient(memcache.New(addr), opts...)
+		client := getClient(addr, opts...)
 		defer client.DeleteAll()
 		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
 		assert.NoError(t, err)
@@ -214,4 +215,10 @@ func makeFakeServer(t *testing.T) net.Listener {
 	}()
 
 	return li
+}
+
+func getClient(addr string, opts ...ClientOption) *Client {
+	client := WrapClient(memcache.New(addr), opts...)
+	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
+	return client
 }
