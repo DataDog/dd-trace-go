@@ -27,7 +27,7 @@ func GlobalEndpointCounter() *EndpointCounter {
 }
 
 // NewEndpointCounter returns a new NewEndpointCounter that will track hit
-// counts for up to limit endpoints. A limit of <= indicates no limit.
+// counts for up to limit endpoints. A limit of <= 0 indicates no limit.
 func NewEndpointCounter(limit int) *EndpointCounter {
 	return &EndpointCounter{enabled: 1, limit: limit, counts: map[string]uint64{}}
 }
