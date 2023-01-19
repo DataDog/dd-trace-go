@@ -495,7 +495,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		t.sample(span)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofContext, span)
+		pprofContext = t.applyPPROFLabels(pprofContext, span)
 	}
 	span.taskEnd = startExecutionTracerTask(pprofContext, operationName)
 	if t.config.serviceMappings != nil {
@@ -521,7 +521,7 @@ func generateSpanID(startTime int64) uint64 {
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
 	var labels []string
 	if t.config.profilerHotspots {
 		// allocate the max-length slice to avoid growing it later
@@ -542,7 +542,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.pprofCtxActive)
+		return span.pprofCtxActive
 	}
+	return ctx
 }
 
 // spanResourcePIISafe returns true if s.Resource can be considered to not
@@ -603,9 +605,11 @@ func startExecutionTracerTask(ctx context.Context, name string) func() {
 		return func() {}
 	}
 	ctx, task := rt.NewTask(ctx, name)
-	pprof.ForLabels(ctx, func(key, value string) bool {
-		rt.Log(ctx, key, value)
-		return true
-	})
+	if v, ok := pprof.Label(ctx, traceprof.SpanID); ok {
+		rt.Log(ctx, traceprof.SpanID, v)
+	}
+	if v, ok := pprof.Label(ctx, traceprof.LocalRootSpanID); ok {
+		rt.Log(ctx, traceprof.LocalRootSpanID, v)
+	}
 	return task.End
 }
