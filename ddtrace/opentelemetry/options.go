@@ -2,6 +2,7 @@ package opentelemetry
 
 import (
 	oteltrace "go.opentelemetry.io/otel/trace"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
