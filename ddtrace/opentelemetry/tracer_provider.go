@@ -18,6 +18,9 @@ import (
 
 var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 
+// TracerProvider provides implementation of OpenTelemetry TracerProvider interface.
+// TracerProvider provides Tracers that are used by instrumentation code to
+// trace computational workflows.
 type TracerProvider struct {
 	tracer *oteltracer
 	sync.Once
@@ -30,6 +33,8 @@ const defaultName = "otel_datadog"
 // - for tracer Start
 // - for span Start
 // - for span Finish
+
+// Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
 func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) oteltrace.Tracer {
 	if p.stopped.Load() {
 		return &noopOteltracer{}
