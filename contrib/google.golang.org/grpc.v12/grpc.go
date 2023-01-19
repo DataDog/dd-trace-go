@@ -89,7 +89,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
-			tracer.Tag(ext.SpanKind, ext.SpanKindClient)
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)
 		md, ok := metadata.FromContext(ctx)
