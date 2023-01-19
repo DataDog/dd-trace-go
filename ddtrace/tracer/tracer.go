@@ -467,7 +467,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.setMeta("language", "go")
 
 	// add 128 bit trace id, if enabled.
-	if os.Getenv("DD_TRACE_128_BIT_TRACEID_ENABLED") == "true" {
+	if os.Getenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED") == "true" {
 		id128 := opts.TraceID128High
 		if id128 == 0 {
 			id128 = generateSpanID(startTime)

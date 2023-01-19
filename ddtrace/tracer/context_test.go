@@ -123,7 +123,7 @@ func Test128(t *testing.T) {
 	}
 
 	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_ENABLED", "true")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
 	if w3cCtx, ok := span128.Context().(ddtrace.SpanContextW3C); ok {

@@ -675,7 +675,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	}
 
 	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_ENABLED", "true")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 	opts128 := []StartSpanOption{
 		WithSpanID(420),
 		WithTraceID128High(123), // 123420 hex encoded
