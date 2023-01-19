@@ -6,7 +6,10 @@
 package tracer
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -86,7 +89,19 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
-	return c.span.Meta[keyTraceId128]
+	hiBits := c.span.Meta[keyTraceId128]
+	if hiBits == "" {
+		return "" // 128 bit trace ids not enabled
+	}
+	hi, err := hex.DecodeString(hiBits)
+	if err != nil {
+		return ""
+	}
+	buf := make([]byte, 16)
+	copy(buf[:8], hi)
+	binary.BigEndian.PutUint64(buf[8:], c.traceID)
+	id := hex.EncodeToString(buf)
+	return strings.TrimLeft(id, "0") // trim any leading zeros
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.

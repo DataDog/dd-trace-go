@@ -7,8 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"encoding/binary"
-	"encoding/hex"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -470,14 +468,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 	// add 128 bit trace id, if enabled.
 	if os.Getenv("DD_TRACE_128_BIT_TRACEID_ENABLED") == "true" {
-		id128 := opts.TraceID128
-		if id128 == "" { // must generate the high 64 bits
-			buf := make([]byte, 16)
-			binary.BigEndian.PutUint64(buf[:8], generateSpanID(startTime))
-			binary.BigEndian.PutUint64(buf[8:], id)
-			id128 = hex.EncodeToString(buf)
+		id128 := opts.TraceID128High
+		if id128 == 0 {
+			id128 = generateSpanID(startTime)
 		}
-		span.setMeta(keyTraceId128, id128)
+		span.setMeta(keyTraceId128, strconv.FormatUint(id128, 16))
 	}
 
 	// add tags from options

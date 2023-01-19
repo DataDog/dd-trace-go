@@ -110,7 +110,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	assert.ElementsMatch(t, outputs, expectedTraceIDs)
 }
 
-func Test128Bit(t *testing.T) {
+func Test128(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 

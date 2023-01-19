@@ -654,7 +654,7 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
-	// keyTraceId128 is the 128-bit trace id, if applicable.
+	// keyTraceId128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceId128 = "_dd.p.tid"
 )
 

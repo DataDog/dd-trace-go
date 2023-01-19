@@ -662,7 +662,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer tracer.Stop()
 	opts := []StartSpanOption{
 		WithSpanID(420),
-		WithTraceID128("1E21C"), // 123420 hex encoded
+		WithTraceID128High(123), // 123 hex encoded
 	}
 	s := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
@@ -678,13 +678,13 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_ENABLED", "true")
 	opts128 := []StartSpanOption{
 		WithSpanID(420),
-		WithTraceID128("1E21C"), // 123420 hex encoded
+		WithTraceID128High(123), // 123420 hex encoded
 	}
 	s128 := tracer.StartSpan("web.request", opts128...).(*span)
 	assert.Equal(uint64(420), s128.SpanID)
 	assert.Equal(uint64(420), s128.TraceID)
 	if w3cCtx, ok := s128.Context().(ddtrace.SpanContextW3C); ok {
-		assert.Equal("1E21C", w3cCtx.TraceID128())
+		assert.Equal("7b0000000000000000000000000001a4", w3cCtx.TraceID128())
 	} else {
 		assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
 	}

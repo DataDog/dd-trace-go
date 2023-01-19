@@ -136,10 +136,9 @@ type StartSpanConfig struct {
 	// TraceID to the same value.
 	SpanID uint64
 
-	// TraceID128 will be the 128-bit trace id of the span if no Parent SpanContext is
-	// present, overriding the random number that would be generated, or any trace id
-	// that would be taken from a provided SpanID.
-	TraceID128 string
+	// TraceID128High will be the upper 64 bits of a 128-bit trace id of the span if no
+	// Parent SpanContext is present, overriding the random number that would be generated.
+	TraceID128High uint64
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
