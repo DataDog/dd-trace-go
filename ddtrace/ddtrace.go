@@ -20,6 +20,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// SpanContextW3C represents a SpanContext with an additional method to allow
+// access of the 128-bit trace id of the span, if present.
 type SpanContextW3C interface {
 	SpanContext
 
