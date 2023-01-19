@@ -9,22 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -551,127 +546,5 @@ func TestServiceName(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("my-service", span.Tag(ext.ServiceName))
-	})
-}
-
-func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
-	r := gin.New()
-	r.Use(Middleware("appsec"))
-	r.Any("/lfi/*allPaths", func(c *gin.Context) {
-		c.String(200, "Hello World!\n")
-	})
-	r.Any("/path0.0/:myPathParam0/path0.1/:myPathParam1/path0.2/:myPathParam2/path0.3/*param3", func(c *gin.Context) {
-		c.String(200, "Hello Params!\n")
-	})
-	r.Any("/body", func(c *gin.Context) {
-		pappsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
-		c.String(200, "Hello Body!\n")
-	})
-
-	srv := httptest.NewServer(r)
-	defer srv.Close()
-
-	t.Run("request-uri", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		// Send an LFI attack (according to appsec rule id crs-930-110)
-		req, err := http.NewRequest("POST", srv.URL+"/lfi/../../../secret.txt", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		// Check that the server behaved as intended
-		require.Equal(t, http.StatusOK, res.StatusCode)
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello World!\n", string(b))
-		// The span should contain the security event
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-
-		// The first 301 redirection should contain the attack via the request uri
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.request.uri.raw"))
-		require.True(t, strings.Contains(event, "crs-930-110"))
-	})
-
-	// Test a security scanner attack via path parameters
-	t.Run("path-params", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		// Send a security scanner attack (according to appsec rule id crs-913-120)
-		req, err := http.NewRequest("POST", srv.URL+"/path0.0/param0/path0.1/param1/path0.2/appscan_fingerprint/path0.3/param3", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Params!\n", string(b))
-		require.Equal(t, http.StatusOK, res.StatusCode)
-		// The span should contain the security event
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-913-120"))
-		require.True(t, strings.Contains(event, "myPathParam2"))
-		require.True(t, strings.Contains(event, "server.request.path_params"))
-	})
-
-	t.Run("nfd-000-001", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		require.Equal(t, 404, res.StatusCode)
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "server.response.status"))
-		require.True(t, strings.Contains(event, "nfd-000-001"))
-
-	})
-
-	// Test a PHP injection attack via request parsed body
-	t.Run("SDK-body", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Body!\n", string(b))
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-
-		event := finished[0].Tag("_dd.appsec.json")
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
 }

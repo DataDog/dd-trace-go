@@ -210,9 +210,13 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		delete(root.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+		s.context.updated = true
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 		trace.unsetPropagatingTag(keyPropagatedUserID)
+		if _, ok := trace.propagatingTags[keyPropagatedUserID]; ok {
+			s.context.updated = true
+		}
 		delete(root.Meta, keyPropagatedUserID)
 		// setMeta is used since the span is already locked
 		root.setMeta(keyUserID, id)
