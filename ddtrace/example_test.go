@@ -37,7 +37,7 @@ func Example_datadog() {
 
 	// If you are using 128 bit trace ids and want to generate the high
 	// order bits, cast the span's context to ddtrace.SpanContextW3C.
-	// See #XXXX (TODO: link to GH issue for v2 API change)
+	// See Issue #1677
 	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok {
 		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128())
 	}
