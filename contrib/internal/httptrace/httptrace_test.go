@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 func TestStartRequestSpan(t *testing.T) {
@@ -24,9 +26,55 @@ func TestStartRequestSpan(t *testing.T) {
 	s, _ := StartRequestSpan(r)
 	s.Finish()
 	spans := mt.FinishedSpans()
-
 	require.Len(t, spans, 1)
 	assert.Equal(t, "example.com", spans[0].Tag("http.host"))
+}
+
+func TestClientIP(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	type ipTestCase struct {
+		name          string
+		remoteAddr    string
+		expectedIP    instrumentation.NetaddrIP
+		enableTraceIP string
+	}
+	ipAddr := "0.0.0.0"
+
+	for _, tc := range []ipTestCase{
+		{
+			name:          "enable-ip",
+			remoteAddr:    ipAddr,
+			expectedIP:    instrumentation.NetaddrMustParseIP(ipAddr),
+			enableTraceIP: "true",
+		},
+		{
+			name:          "disable-ip",
+			remoteAddr:    ipAddr,
+			expectedIP:    instrumentation.NetaddrMustParseIP(ipAddr),
+			enableTraceIP: "false",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.enableTraceIP == "true" {
+				t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", tc.enableTraceIP)
+			}
+			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+			r.RemoteAddr = tc.remoteAddr
+			s, _ := StartRequestSpan(r)
+			s.Finish()
+			spans := mt.FinishedSpans()
+			targetSpan := spans[len(spans)-1]
+			if tc.enableTraceIP == "true" {
+				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
+				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
+			} else {
+				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
+				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
+			}
+		})
+	}
 }
 
 func TestURLTag(t *testing.T) {

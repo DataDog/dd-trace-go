@@ -11,12 +11,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
 var cfg = newConfig()
@@ -40,6 +43,12 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+	if os.Getenv("DD_TRACE_CLIENT_IP_ENABLED") == "true" {
+		ipTags, _ := httpsec.ClientIPTags(r.Header, r.RemoteAddr)
+		for k, v := range ipTags {
+			opts = append(opts, tracer.Tag(k, v))
+		}
 	}
 	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 }
