@@ -29,9 +29,10 @@ var (
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
 )
 
+// collectClientIP checks if the DD_TRACE_CLIENT_IP_ENABLED environment variable is set to true.
+// returns false when DD_TRACE_CLIENT_IP_ENABLED is unset, set to false, or cannot be parsed to a boolean value
 func collectClientIP() (enabled bool, err error) {
-	enabledStr, set := os.LookupEnv(envTraceClientIPEnabled)
-	if !set {
+	if enabledStr, set := os.LookupEnv(envTraceClientIPEnabled); !set {
 		return false, nil
 	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
 		return false, fmt.Errorf("could not parse %s value `%s` as a boolean value", envTraceClientIPEnabled, enabledStr)
@@ -61,7 +62,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	if enabled, err := collectClientIP(); err != nil {
-		log.Error("tracer: error while checking if client ip collection is enabled: %v", err)
+		log.Warn("tracer: error while checking if client ip collection is enabled: %v", err)
 	} else if enabled {
 		ipTags, _ := httpsec.ClientIPTags(r.Header, r.RemoteAddr)
 		for k, v := range ipTags {

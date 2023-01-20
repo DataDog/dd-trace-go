@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestStartRequestSpan(t *testing.T) {
@@ -31,9 +34,47 @@ func TestStartRequestSpan(t *testing.T) {
 	assert.Equal(t, "example.com", spans[0].Tag("http.host"))
 }
 
-func TestClientIP(t *testing.T) {
+// a test logger for TestClientIP
+type testLogger struct {
+	mu    sync.RWMutex
+	lines []string
+}
+
+func (tp *testLogger) Log(msg string) {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	tp.lines = append(tp.lines, msg)
+}
+
+func (tp *testLogger) Error(msg string) {
+	tp.Log(msg)
+}
+
+func (tp *testLogger) Lines() []string {
+	tp.mu.RLock()
+	defer tp.mu.RUnlock()
+	return tp.lines
+}
+
+func (tp *testLogger) Reset() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+	tp.lines = tp.lines[:0]
+}
+
+// TestClientIP tests behavior of StartRequestSpan based on
+// the DD_TRACE_CLIENT_IP_ENABLED environment variable
+func TestTraceClientIPFlag(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
+
+	tp := new(testLogger)
+	defer log.UseLogger(tp)()
+
+	// use 0.0.0.0 as ip address of all test cases
+	// more comprehensive ip address testing is done in testing
+	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	validIPAddr := "0.0.0.0"
 
 	type ipTestCase struct {
 		name                string
@@ -42,36 +83,42 @@ func TestClientIP(t *testing.T) {
 		expectTrace         bool
 		expectedIP          instrumentation.NetaddrIP
 	}
-	ipAddr := "0.0.0.0"
 
 	for _, tc := range []ipTestCase{
 		{
 			name:                "Trace client IP set to true",
-			remoteAddr:          ipAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
 			traceClientIPEnvVal: "true",
 			expectTrace:         true,
 		},
 		{
 			name:                "Trace client IP set to false",
-			remoteAddr:          ipAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
 			traceClientIPEnvVal: "false",
 			expectTrace:         false,
 		},
 		{
 			name:                "Trace client IP unset",
-			remoteAddr:          ipAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
 			traceClientIPEnvVal: "",
 			expectTrace:         false,
 		},
 		{
 			name:                "Trace client IP set to non-boolean value",
-			remoteAddr:          ipAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
 			traceClientIPEnvVal: "asdadsasd",
 			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP set to true v2",
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			traceClientIPEnvVal: "true",
+			expectTrace:         true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,6 +138,10 @@ func TestClientIP(t *testing.T) {
 			} else {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
 				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
+				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
+					assert.Contains(t, tp.Lines()[0], "tracer: error while checking if client ip collection is enabled:")
+					tp.Reset()
+				}
 			}
 			mt.Reset()
 		})
