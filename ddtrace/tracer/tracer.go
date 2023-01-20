@@ -530,8 +530,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
-	if span.context.trace != nil && span.context.trace.root != nil {
-		localRootSpan := span.context.trace.root
+	if localRootSpan := span.root(); localRootSpan != nil {
 		if t.config.profilerHotspots {
 			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
 		}

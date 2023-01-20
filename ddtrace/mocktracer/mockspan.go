@@ -238,23 +238,8 @@ func (s *mockspan) Context() ddtrace.SpanContext { return s.context }
 // bit of information gets monitored. This mockup only sets the user
 // information as span tags of the root span of the current trace.
 func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
-	// Walk the span up to the root parent span
-	openSpans := s.tracer.openSpans
-	var current Span = s
-	for {
-		pid := current.ParentID()
-		if pid == 0 {
-			break
-		}
-		parent, ok := openSpans[pid]
-		if !ok {
-			break
-		}
-		current = parent
-	}
-
-	root, ok := current.(*mockspan)
-	if !ok {
+	root := s.Root()
+	if root == nil {
 		return
 	}
 
@@ -269,4 +254,24 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 	root.SetTag("usr.role", cfg.Role)
 	root.SetTag("usr.scope", cfg.Scope)
 	root.SetTag("usr.session_id", cfg.SessionID)
+}
+
+// Root walks the span up to the root parent span and returns it.
+// This method is required by some internal packages such as appsec.
+func (s *mockspan) Root() tracer.Span {
+	openSpans := s.tracer.openSpans
+	var current Span = s
+	for {
+		pid := current.ParentID()
+		if pid == 0 {
+			break
+		}
+		parent, ok := openSpans[pid]
+		if !ok {
+			break
+		}
+		current = parent
+	}
+	root, _ := current.(*mockspan)
+	return root
 }

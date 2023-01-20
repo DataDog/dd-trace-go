@@ -170,6 +170,27 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
+// Root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+func (s *span) Root() Span {
+	return s.root()
+}
+
+// root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+// As opposed to the public Root method, this one returns the actual span type
+// when internal usage requires it (to avoid type assertions from Root's return
+// value).
+func (s *span) root() *span {
+	if s == nil || s.context == nil {
+		return nil
+	}
+	if s.context.trace == nil {
+		return nil
+	}
+	return s.context.trace.root
+}
+
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
 // bit of information gets monitored. In case of distributed traces,
@@ -180,7 +201,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	root := s.context.trace.root
+	root := s.root()
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
