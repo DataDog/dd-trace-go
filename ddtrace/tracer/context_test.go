@@ -116,32 +116,32 @@ func Test128(t *testing.T) {
 
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
-	if w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C); ok {
-		id128 := w3cCtx.TraceID128()
-		assert.Len(t, id128, 32) // ensure there are enough leading zeros
-		idBytes, err := hex.DecodeString(id128)
-		assert.NoError(t, err)
-		assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-		assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
-	} else {
-		assert.Fail(t, "should be castable to SpanContextW3C")
+	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
+	if !ok {
+		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
 	}
+	id128 := w3cCtx.TraceID128()
+	assert.Len(t, id128, 32) // ensure there are enough leading zeros
+	idBytes, err := hex.DecodeString(id128)
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
+	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 
 	// Enable 128 bit trace ids
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
-	if w3cCtx, ok := span128.Context().(ddtrace.SpanContextW3C); ok {
-		id128bit := w3cCtx.TraceID128()
-		assert.NotEmpty(t, id128bit)
-		assert.Len(t, id128bit, 32)
-		// Ensure that the lower order bits match the span's 64-bit trace id
-		b, err := hex.DecodeString(id128bit)
-		assert.NoError(t, err)
-		assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
-	} else {
-		assert.Fail(t, "should be castable to SpanContextW3C")
+	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)
+	if !ok {
+		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
 	}
+	id128bit := w3cCtx.TraceID128()
+	assert.NotEmpty(t, id128bit)
+	assert.Len(t, id128bit, 32)
+	// Ensure that the lower order bits match the span's 64-bit trace id
+	b, err := hex.DecodeString(id128bit)
+	assert.NoError(t, err)
+	assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
