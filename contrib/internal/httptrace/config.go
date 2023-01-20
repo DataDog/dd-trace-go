@@ -20,6 +20,8 @@ const (
 	envQueryStringDisabled = "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED"
 	// envQueryStringRegexp is the name of the env var used to specify the regexp to use for query string obfuscation.
 	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
+	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
+	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if `envQueryStringRegexp` is empty.

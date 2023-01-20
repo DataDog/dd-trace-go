@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,30 +36,48 @@ func TestClientIP(t *testing.T) {
 	defer mt.Stop()
 
 	type ipTestCase struct {
-		name          string
-		remoteAddr    string
-		expectedIP    instrumentation.NetaddrIP
-		enableTraceIP string
+		name                string
+		remoteAddr          string
+		traceClientIPEnvVal string
+		expectTrace         bool
+		expectedIP          instrumentation.NetaddrIP
 	}
 	ipAddr := "0.0.0.0"
 
 	for _, tc := range []ipTestCase{
 		{
-			name:          "enable-ip",
-			remoteAddr:    ipAddr,
-			expectedIP:    instrumentation.NetaddrMustParseIP(ipAddr),
-			enableTraceIP: "true",
+			name:                "Trace client IP set to true",
+			remoteAddr:          ipAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			traceClientIPEnvVal: "true",
+			expectTrace:         true,
 		},
 		{
-			name:          "disable-ip",
-			remoteAddr:    ipAddr,
-			expectedIP:    instrumentation.NetaddrMustParseIP(ipAddr),
-			enableTraceIP: "false",
+			name:                "Trace client IP set to false",
+			remoteAddr:          ipAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			traceClientIPEnvVal: "false",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP unset",
+			remoteAddr:          ipAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			traceClientIPEnvVal: "",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP set to non-boolean value",
+			remoteAddr:          ipAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(ipAddr),
+			traceClientIPEnvVal: "asdadsasd",
+			expectTrace:         false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.enableTraceIP == "true" {
-				t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", tc.enableTraceIP)
+			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
+			if tc.traceClientIPEnvVal == "" {
+				os.Unsetenv(envTraceClientIPEnabled)
 			}
 			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 			r.RemoteAddr = tc.remoteAddr
@@ -66,7 +85,7 @@ func TestClientIP(t *testing.T) {
 			s.Finish()
 			spans := mt.FinishedSpans()
 			targetSpan := spans[len(spans)-1]
-			if tc.enableTraceIP == "true" {
+			if tc.expectTrace {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
 			} else {
