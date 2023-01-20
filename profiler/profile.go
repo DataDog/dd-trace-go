@@ -19,7 +19,6 @@ import (
 	pprofile "github.com/google/pprof/profile"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
@@ -102,17 +101,10 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			// Enable endpoint counting (if configured) and reset counts
-			endpointCounter := traceprof.GlobalEndpointCounter()
-			endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
-			endpointCounter.GetAndReset()
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
-			// Disable endpoint counting to avoid counting hits that happen outside of the
-			// profiling period. Also see profiler.collect method.
-			endpointCounter.SetEnabled(false)
 
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for

@@ -304,17 +304,23 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		completed []*profile
 		wg        sync.WaitGroup
 	)
+
+	// Enable endpoint counting (if configured). This causes some minimal
+	// overhead to the tracer, see BenchmarkEndpointCounter.
+	endpointCounter := traceprof.GlobalEndpointCounter()
+	endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
+	// Disable and reset when func returns (profiler stopped) to remove tracer
+	// overhead, free up the counter map, and avoid it from growing again.
+	defer func() {
+		endpointCounter.SetEnabled(false)
+		endpointCounter.GetAndReset()
+	}()
+
 	for {
-		now := now()
 		bat := batch{
 			seq:   p.seq,
 			host:  p.cfg.hostname,
-			start: now,
-			// NB: while this is technically wrong in that it does not
-			// record the actual start and end timestamps for the batch,
-			// it is how the backend understands the client-side
-			// configured CPU profile duration: (start-end).
-			end: now.Add(p.cfg.cpuDuration),
+			start: now(),
 		}
 		p.seq++
 
@@ -357,12 +363,29 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat.addProfile(prof)
 		}
 
-		// Record endpoint hits during CPU profile. See CPUProfile.Collect().
-		bat.endpointCounts = traceprof.GlobalEndpointCounter().GetAndReset()
-
+		// Include endpoint hits from tracer in profile upload batch.
+		// Also reset the counters for the next profile period.
+		bat.endpointCounts = endpointCounter.GetAndReset()
+		// Record the end time of the profile.
+		// This is used by the backend to upscale the endpoint counts if the cpu
+		// duration is less than the profile duration. The formula is:
+		//
+		// factor = (end - start) / cpuDuration
+		// counts = counts * factor
+		//
+		// Edge case: If only the CPU profile is enabled, and the cpu duration is
+		// is less than the configured profiling period, (end - start) will be the
+		// same as cpuDuration, resulting in a scale factor of 1. The ticker case
+		// below will cause the loop to wait until the next period starts.
+		bat.end = time.Now()
+		// Upload profiling data.
 		p.enqueueUpload(bat)
+
+		// Wait until the next profiling period starts or the profiler is stopped.
 		select {
 		case <-ticker:
+			// Usually triggers right away because the non-CPU profiles cause the
+			// wg.Wait above to sleep until the end of the profiling period.
 		case <-p.exit:
 			return
 		}
