@@ -363,6 +363,18 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			bat.addProfile(prof)
 		}
 
+		// Wait until the next profiling period starts or the profiler is stopped.
+		select {
+		case <-ticker:
+			// Usually ticker triggers right away because the non-CPU profiles cause
+			// the wg.Wait above to sleep until the end of the profiling period.
+			// Edge case: If only the CPU profile is enabled, and the cpu duration is
+			// is less than the configured profiling period, the ticker will block
+			// until the end of the profiling period.
+		case <-p.exit:
+			return
+		}
+
 		// Include endpoint hits from tracer in profile upload batch.
 		// Also reset the counters for the next profile period.
 		bat.endpointCounts = endpointCounter.GetAndReset()
@@ -373,22 +385,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// factor = (end - start) / cpuDuration
 		// counts = counts * factor
 		//
-		// Edge case: If only the CPU profile is enabled, and the cpu duration is
-		// is less than the configured profiling period, (end - start) will be the
-		// same as cpuDuration, resulting in a scale factor of 1. The ticker case
-		// below will cause the loop to wait until the next period starts.
+		// The default configuration of the profiler (cpuDuration =
+		// profilingPeriod) results in a factor of 1.
 		bat.end = time.Now()
 		// Upload profiling data.
 		p.enqueueUpload(bat)
-
-		// Wait until the next profiling period starts or the profiler is stopped.
-		select {
-		case <-ticker:
-			// Usually triggers right away because the non-CPU profiles cause the
-			// wg.Wait above to sleep until the end of the profiling period.
-		case <-p.exit:
-			return
-		}
 	}
 }
 
