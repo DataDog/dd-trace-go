@@ -23,7 +23,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var cfg = newConfig()
+var (
+	cfg = newConfig()
+	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
+	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
+)
 
 func collectClientIP() (enabled bool, err error) {
 	enabledStr, set := os.LookupEnv(envTraceClientIPEnabled)

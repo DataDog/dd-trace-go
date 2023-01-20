@@ -84,7 +84,7 @@ func TestClientIP(t *testing.T) {
 			s, _ := StartRequestSpan(r)
 			s.Finish()
 			spans := mt.FinishedSpans()
-			targetSpan := spans[len(spans)-1]
+			targetSpan := spans[0]
 			if tc.expectTrace {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
@@ -92,6 +92,7 @@ func TestClientIP(t *testing.T) {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
 				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
 			}
+			mt.Reset()
 		})
 	}
 }
