@@ -375,7 +375,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			return
 		}
 
-		// Include endpoint hits from tracer in profile upload batch.
+		// Include endpoint hits from tracer in profile `event.json`.
 		// Also reset the counters for the next profile period.
 		bat.endpointCounts = endpointCounter.GetAndReset()
 		// Record the end time of the profile.
