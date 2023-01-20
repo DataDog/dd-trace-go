@@ -6,11 +6,13 @@
 package ddtrace_test
 
 import (
+	"fmt"
 	"log"
 	"os"
 
 	opentracing "github.com/opentracing/opentracing-go"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
@@ -32,6 +34,13 @@ func Example_datadog() {
 	// Create a child of it, computing the time needed to read a file.
 	child := tracer.StartSpan("read.file", tracer.ChildOf(span.Context()))
 	child.SetTag(ext.ResourceName, "test.json")
+
+	// If you are using 128 bit trace ids and want to generate the high
+	// order bits, cast the span's context to ddtrace.SpanContextW3C.
+	// See Issue #1677
+	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok {
+		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128())
+	}
 
 	// Perform an operation.
 	_, err := os.ReadFile("~/test.json")
