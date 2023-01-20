@@ -49,6 +49,21 @@ var providerCatalog = []provider{
 		stopIfSuccessful: false,
 		pf:               fromFQDN,
 	},
+	{
+		name:             "container",
+		stopIfSuccessful: false,
+		pf:               fromContainer,
+	},
+	{
+		name:             "os",
+		stopIfSuccessful: false,
+		pf:               fromOS,
+	},
+	{
+		name:             "aws",
+		stopIfSuccessful: false,
+		pf:               fromEC2,
+	},
 }
 
 // Get returns the hostname for the tracer
@@ -101,19 +116,29 @@ func fromAzure(ctx context.Context, _ string) (string, error) {
 }
 
 func fromFQDN(ctx context.Context, _ string) (string, error) {
-	// TODO: implement
-	//if !osHostnameUsable(ctx) {
-	//	return "", fmt.Errorf("FQDN hostname is not usable")
-	//}
-	//
-	//if config.Datadog.GetBool("hostname_fqdn") {
-	//	fqdn, err := fqdnHostname()
-	//	if err == nil {
-	//		return fqdn, nil
-	//	}
-	//	return "", fmt.Errorf("Unable to get FQDN from system: %s", err)
-	//}
-	return "", fmt.Errorf("'hostname_fqdn' configuration is not enabled")
+	//TODO: test this on windows
+	fqdn, err := getSystemFQDN()
+	if err != nil {
+		return "", fmt.Errorf("unable to get FQDN from system: %s", err)
+	}
+	return fqdn, nil
+}
+
+func fromOS(_ context.Context, currentHostname string) (string, error) {
+	if currentHostname == "" {
+		return os.Hostname()
+	}
+	return "", fmt.Errorf("skipping OS hostname as a previous provider found a valid hostname")
+}
+
+func fromContainer(_ context.Context, _ string) (string, error) {
+	//TODO: Impl me
+	return "", fmt.Errorf("container hostname detection not implemented")
+}
+
+func fromEC2(_ context.Context, _ string) (string, error) {
+	//TODO: Impl me
+	return "", fmt.Errorf("EC2 hostname detection not implemented")
 }
 
 var cachedHostname string
