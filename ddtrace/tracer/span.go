@@ -71,7 +71,7 @@ type span struct {
 	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
 	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
 	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
+	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
@@ -654,6 +654,8 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
+	keyTraceID128 = "_dd.p.tid"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
