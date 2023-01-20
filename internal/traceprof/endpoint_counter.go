@@ -12,7 +12,16 @@ import (
 
 // globalEndpointCounter is shared between the profiler and the tracer.
 var globalEndpointCounter = (func() *EndpointCounter {
-	// Limit 1000 reduces the chance of memory leaks.
+	// Create endpoint counter with arbitrary limit.
+	// The pathological edge case would be a service with a high rate (e.g.
+	// 10k/s) of short (e.g. 100ms) spans with unique endpoints (resource names).
+	// Over a 60s period this would grow the map to 600k items which may cause
+	// noticable memory, GC overhead and lock contention overhead. The pprof
+	// endpoints labels are less problematic since there will only be 1000 spans
+	// in-flight on average. Using a limit of 1000 will result in a similar
+	// overhead of this features compared to the pprof labels. It also seems like
+	// a reasonable upper bound for the number of endpoints a normal application
+	// may service in a 60s period.
 	ec := NewEndpointCounter(1000)
 	// Disabled by default ensures almost-zero overhead for tracing users that
 	// don't have the profiler turned on.
@@ -64,7 +73,8 @@ func (e *EndpointCounter) Inc(endpoint string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Don't add another endpoint to the map if the limit is reached
+	// Don't add another endpoint to the map if the limit is reached. See
+	// globalEndpointCounter comment.
 	count, ok := e.counts[endpoint]
 	if !ok && e.limit > 0 && len(e.counts) >= e.limit {
 		return
