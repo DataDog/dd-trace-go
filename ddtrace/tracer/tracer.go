@@ -7,6 +7,8 @@ package tracer
 
 import (
 	gocontext "context"
+	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -472,7 +474,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if id128 == 0 {
 			id128 = generateSpanID(startTime)
 		}
-		span.setMeta(keyTraceID128, strconv.FormatUint(id128, 16))
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, id128)
+		span.setMeta(keyTraceID128, hex.EncodeToString(buf))
 	}
 
 	// add tags from options

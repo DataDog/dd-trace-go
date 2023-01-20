@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -89,19 +88,24 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
-	hiBits := c.span.Meta[keyTraceID128]
-	if hiBits == "" {
-		return "" // 128 bit trace ids not enabled
-	}
-	hi, err := hex.DecodeString(hiBits)
-	if err != nil {
-		return ""
+	var hi []byte
+	if hiStr := c.span.Meta[keyTraceID128]; hiStr != "" {
+		// 128 bit trace ids is enabled, so fill the higher order bits
+		var err error
+		hi, err = hex.DecodeString(hiStr)
+		if err != nil {
+			log.Debug("failed to decode upper 64 bits of 128-bit trace id %q", hiStr)
+			return "" // this would be our fault, and means we have a bug
+		}
+		if len(hi) > 8 {
+			log.Debug("%q tag contains invalid trace id segment %b", keyTraceID128, hi)
+			return "" // this would be our fault, and means we have a bug
+		}
 	}
 	buf := make([]byte, 16)
-	copy(buf[:8], hi)
+	copy(buf[8-len(hi):], hi)
 	binary.BigEndian.PutUint64(buf[8:], c.traceID)
-	id := hex.EncodeToString(buf)
-	return strings.TrimLeft(id, "0") // trim any leading zeros
+	return hex.EncodeToString(buf)
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
