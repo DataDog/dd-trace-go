@@ -385,8 +385,8 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// factor = (end - start) / cpuDuration
 		// counts = counts * factor
 		//
-		// The default configuration of the profiler (cpuDuration =
-		// profilingPeriod) results in a factor of 1.
+		// The default configuration of the profiler (cpu duration = profiling
+		// period) results in a factor of 1.
 		bat.end = time.Now()
 		// Upload profiling data.
 		p.enqueueUpload(bat)
