@@ -494,10 +494,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, operationName, span.SpanID)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		pprofContext = t.applyPPROFLabels(pprofContext, span)
+		t.applyPPROFLabels(pprofContext, span)
 	}
-	span.taskEnd = startExecutionTracerTask(pprofContext, operationName)
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
@@ -521,7 +521,7 @@ func generateSpanID(startTime int64) uint64 {
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Context {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
 		// allocate the max-length slice to avoid growing it later
@@ -542,9 +542,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) context.Con
 		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
 		pprof.SetGoroutineLabels(span.pprofCtxActive)
-		return span.pprofCtxActive
 	}
-	return ctx
 }
 
 // spanResourcePIISafe returns true if s.Resource can be considered to not
@@ -600,16 +598,11 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(ctx context.Context, name string) func() {
+func startExecutionTracerTask(ctx context.Context, name string, spanID uint64) (context.Context, func()) {
 	if !rt.IsEnabled() {
-		return func() {}
+		return ctx, func() {}
 	}
 	ctx, task := rt.NewTask(ctx, name)
-	if v, ok := pprof.Label(ctx, traceprof.SpanID); ok {
-		rt.Log(ctx, traceprof.SpanID, v)
-	}
-	if v, ok := pprof.Label(ctx, traceprof.LocalRootSpanID); ok {
-		rt.Log(ctx, traceprof.LocalRootSpanID, v)
-	}
-	return task.End
+	rt.Log(ctx, "span id", strconv.FormatUint(spanID, 10))
+	return ctx, task.End
 }
