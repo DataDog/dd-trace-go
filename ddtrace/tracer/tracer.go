@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -598,7 +597,7 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(ctx context.Context, name string, spanID uint64) (context.Context, func()) {
+func startExecutionTracerTask(ctx gocontext.Context, name string, spanID uint64) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
