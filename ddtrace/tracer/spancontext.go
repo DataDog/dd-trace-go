@@ -71,6 +71,10 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// setting context.updated to false here is necessary to distinguish
+	// between initializing properties of the span (priority)
+	// and updating them after extracting context through propagators
+	context.updated = false
 	return context
 }
 
@@ -97,6 +101,9 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
+	}
+	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
 }
