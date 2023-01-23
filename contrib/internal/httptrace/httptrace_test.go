@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,41 +33,13 @@ func TestStartRequestSpan(t *testing.T) {
 	assert.Equal(t, "example.com", spans[0].Tag("http.host"))
 }
 
-// a test logger for TestClientIP
-type testLogger struct {
-	mu    sync.RWMutex
-	lines []string
-}
-
-func (tp *testLogger) Log(msg string) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-	tp.lines = append(tp.lines, msg)
-}
-
-func (tp *testLogger) Error(msg string) {
-	tp.Log(msg)
-}
-
-func (tp *testLogger) Lines() []string {
-	tp.mu.RLock()
-	defer tp.mu.RUnlock()
-	return tp.lines
-}
-
-func (tp *testLogger) Reset() {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-	tp.lines = tp.lines[:0]
-}
-
 // TestClientIP tests behavior of StartRequestSpan based on
 // the DD_TRACE_CLIENT_IP_ENABLED environment variable
 func TestTraceClientIPFlag(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
 	defer log.UseLogger(tp)()
 
 	// use 0.0.0.0 as ip address of all test cases
@@ -83,6 +54,9 @@ func TestTraceClientIPFlag(t *testing.T) {
 		expectTrace         bool
 		expectedIP          instrumentation.NetaddrIP
 	}
+
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
 
 	for _, tc := range []ipTestCase{
 		{
@@ -126,12 +100,17 @@ func TestTraceClientIPFlag(t *testing.T) {
 			if tc.traceClientIPEnvVal == "" {
 				os.Unsetenv(envTraceClientIPEnabled)
 			}
+
+			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
+			cfg = newConfig()
+
 			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 			r.RemoteAddr = tc.remoteAddr
 			s, _ := StartRequestSpan(r)
 			s.Finish()
 			spans := mt.FinishedSpans()
 			targetSpan := spans[0]
+
 			if tc.expectTrace {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
@@ -139,7 +118,8 @@ func TestTraceClientIPFlag(t *testing.T) {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
 				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
 				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
-					assert.Contains(t, tp.Lines()[0], "tracer: error while checking if client ip collection is enabled:")
+					logs := tp.Logs()
+					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
 					tp.Reset()
 				}
 			}

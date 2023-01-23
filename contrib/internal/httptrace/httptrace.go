@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -20,26 +19,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var (
-	cfg = newConfig()
-	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
-	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
-)
-
-// collectClientIP checks if the DD_TRACE_CLIENT_IP_ENABLED environment variable is set to true.
-// returns false when DD_TRACE_CLIENT_IP_ENABLED is unset, set to false, or cannot be parsed to a boolean value
-func collectClientIP() (enabled bool, err error) {
-	if enabledStr, set := os.LookupEnv(envTraceClientIPEnabled); !set {
-		return false, nil
-	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, fmt.Errorf("could not parse %s value `%s` as a boolean value", envTraceClientIPEnabled, enabledStr)
-	} else {
-		return enabled, nil
-	}
-}
+var cfg = newConfig()
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -61,9 +43,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	if enabled, err := collectClientIP(); err != nil {
-		log.Warn("tracer: error while checking if client ip collection is enabled: %v", err)
-	} else if enabled {
+	if cfg.traceClientIP {
 		ipTags, _ := httpsec.ClientIPTags(r.Header, r.RemoteAddr)
 		for k, v := range ipTags {
 			opts = append(opts, tracer.Tag(k, v))
