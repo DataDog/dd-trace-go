@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -625,7 +626,7 @@ func (s *span) Format(f fmt.State, c rune) {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
-		if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "true" {
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) {
 			fmt.Fprintf(f, `dd.trace_id="0x%s" `, strings.TrimLeft(s.context.TraceID128(), "0"))
 		} else {
 			fmt.Fprintf(f, `dd.trace_id="%d" `, s.TraceID)
