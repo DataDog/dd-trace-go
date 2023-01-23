@@ -208,7 +208,6 @@ var profileTypes = map[ProfileType]profileType{
 			}
 			p.interruptibleSleep(p.cfg.traceConfig.Duration)
 			trace.Stop()
-
 			return buf.Bytes(), nil
 		},
 	},
