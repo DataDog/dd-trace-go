@@ -193,12 +193,14 @@ var profileTypes = map[ProfileType]profileType{
 				p.lastTrace = time.Now()
 			}()
 
-			// Trace at some random point within the current
-			// profiling cycle, rather than always right at the
-			// beginning, to avoid biasing toward events that occur
-			// around the same time profiling starts.
-			startWait := rand.Intn(int(p.cfg.period - p.cfg.traceConfig.Duration))
-			p.interruptibleSleep(time.Duration(startWait))
+			if p.cfg.traceConfig.Duration < p.cfg.cpuDuration {
+				// Trace at some random point within the current
+				// profiling cycle, rather than always right at the
+				// beginning, to avoid biasing toward events that occur
+				// around the same time profiling starts.
+				startWait := rand.Int63n(int64(p.cfg.period - p.cfg.traceConfig.Duration))
+				p.interruptibleSleep(time.Duration(startWait))
+			}
 
 			buf := new(bytes.Buffer)
 			if err := trace.Start(buf); err != nil {
