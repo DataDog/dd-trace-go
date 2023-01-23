@@ -4,13 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/gce"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+var cachedHostname string
+
+// getCached returns the cached hostname if it is still valid, empty string otherwise
+func getCached() string {
+	return cachedHostname
+}
 
 type provider struct {
 	name string
@@ -68,11 +74,18 @@ var providerCatalog = []provider{
 
 // Get returns the hostname for the tracer
 func Get(ctx context.Context) (string, error) {
-	now := time.Now()
-	if ch := getCached(now); ch != "" {
+	if ch := getCached(); ch != "" {
 		return ch, nil
 	}
+	err := LoadHostname(ctx)
+	if err != nil {
+		return "", fmt.Errorf("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
+	}
+	return cachedHostname, nil
+}
 
+// LoadHostname attempts to look up and cache the hostname for this application.
+func LoadHostname(ctx context.Context) error {
 	var hostname string
 
 	for _, p := range providerCatalog {
@@ -84,12 +97,10 @@ func Get(ctx context.Context) (string, error) {
 		hostname = detectedHostname
 		if p.stopIfSuccessful {
 			cachedHostname = hostname
-			cachedAt = now
-			return hostname, nil
+			return nil
 		}
 	}
-
-	return "", fmt.Errorf("unable to reliably determine hostname. You can define one ")
+	return fmt.Errorf("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
 }
 
 func fromConfig(ctx context.Context, _ string) (string, error) {
@@ -139,16 +150,4 @@ func fromContainer(_ context.Context, _ string) (string, error) {
 func fromEC2(_ context.Context, _ string) (string, error) {
 	//TODO: Impl me
 	return "", fmt.Errorf("EC2 hostname detection not implemented")
-}
-
-var cachedHostname string
-var cachedAt time.Time
-var cacheExpiration = 5 * time.Minute //TODO: the agent never expires the hostname once it's been found. should we do the same?
-
-// getCached returns the cached hostname if it is still valid, empty string otherwise
-func getCached(now time.Time) string {
-	if now.Sub(cachedAt) > cacheExpiration {
-		cachedHostname = ""
-	}
-	return cachedHostname
 }
