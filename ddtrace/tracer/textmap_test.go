@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1616,46 +1617,108 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	tracer := newTracer()
 	defer tracer.Stop()
 
-	root := tracer.StartSpan("test").(*span)
+	root := tracer.StartSpan("test")
+	defer root.Finish()
 
 	for i := 0; i < 5; i++ {
-		root.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
+		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
 	}
 
 	dst := map[string]string{}
 
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
 
-func BenchmarkInjectDatadog2(b *testing.B) {
-	b.Setenv(headerPropagationStyleInject, "datadog")
-	sCtx := new(spanContext)
-	sCtx.trace = new(trace)
-	propagator := NewPropagator(nil)
-	for i := 0; i < 5; i++ {
-		sCtx.trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
-	}
-	dst := map[string]string{}
+func BenchmarkInjectW3C(b *testing.B) {
 
-	for i := 0; i < b.N; i++ {
-		propagator.Inject(sCtx, TextMapCarrier(dst))
-	}
+	//also maybe compare like w3c and datadog and b3 etc.
 }
 
 func BenchmarkExtractDatadog(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	b.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 
 	carrier := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1123123132131312313123123",
 		DefaultParentIDHeader: "1212321131231312312312312",
-		DefaultPriorityHeader: "0",
+		DefaultPriorityHeader: "-1",
 		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		propagator.Extract(carrier)
 	}
+}
+
+func FuzzMarshalPropagatingTags(f *testing.F) {
+	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
+	f.Fuzz(func(t *testing.T, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		pConfig := PropagatorConfig{MaxTagsHeaderLen: 128}
+		propagator := propagator{&pConfig}
+
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		for key, val := range tags {
+			sendCtx.trace.setPropagatingTag(key, val)
+		}
+		marshal := propagator.marshalPropagatingTags(sendCtx)
+		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
+			t.Skipf("Skipping invalid tags")
+		}
+		unmarshalPropagatingTags(recvCtx, marshal)
+		marshaled := sendCtx.trace.propagatingTags
+		unmarshaled := recvCtx.trace.propagatingTags
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf("inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
+		}
+	})
+}
+
+func FuzzComposeTracestate(f *testing.F) {
+	// helpful to give it a couple really good seed values
+	// for this one
+
+	oldState1 := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
+	f.Add(1, "key1", "val1", "key2", "val2", "key3", "val3", oldState1)
+
+	f.Fuzz(func(t *testing.T, priority int, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string, oldState string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		for key, val := range tags {
+			sendCtx.trace.setPropagatingTag("_dd.p."+key, "_dd.p."+val)
+		}
+		traceState := composeTracestate(sendCtx, priority, oldState)
+		if _, ok := sendCtx.trace.tags["LengthExceededWarnW3C"]; ok {
+			t.Skipf("Skipping invalid tags")
+		}
+		parseTracestate(recvCtx, traceState)
+		preCompose := sendCtx.trace.propagatingTags
+		preCompose[tracestateHeader] = traceState
+		parsed := recvCtx.trace.propagatingTags
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf("inconsistent composing/parsing: \npre compose: (%q)\n\tis different from \nparsed: (%q)\nfor tracestate of: (%s)", preCompose, parsed, traceState)
+		}
+	})
+}
+
+func FuzzParseTraceparent(f *testing.F) {
+
 }
