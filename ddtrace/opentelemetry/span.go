@@ -15,6 +15,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -37,7 +38,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var localOpts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		s.SetTag("error.msg", s.statusInfo.description)
+		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
 		localOpts = append(localOpts, tracer.FinishTime(t))

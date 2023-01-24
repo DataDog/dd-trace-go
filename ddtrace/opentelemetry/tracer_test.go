@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -79,4 +81,65 @@ func TestTracerOptions(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
+}
+
+func BenchmarkApiWithNoTags(b *testing.B) {
+	testData := struct {
+		env, srv, op string
+	}{"test_env", "test_srv", "op_name"}
+
+	tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	b.Run("otel_api", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, sp := tr.Start(context.Background(), testData.op)
+			sp.End()
+		}
+	})
+
+	tracer.Start(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tracer.Stop()
+	b.ResetTimer()
+	b.Run("datadog_otel_api", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.op)
+			sp.Finish()
+		}
+	})
+}
+func BenchmarkApiWithCustomTags(b *testing.B) {
+	testData := struct {
+		env, srv, oldOp, newOp, tagKey, tagValue string
+	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
+
+	tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	b.Run("otel_api", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, sp := tr.Start(context.Background(), testData.oldOp)
+			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
+			sp.SetName(testData.newOp)
+			sp.End()
+		}
+	})
+
+	tracer.Start(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tracer.Stop()
+	b.ResetTimer()
+	b.Run("datadog_otel_api", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
+			sp.SetTag(testData.tagKey, testData.tagValue)
+			sp.SetOperationName(testData.newOp)
+			sp.Finish()
+		}
+	})
 }
