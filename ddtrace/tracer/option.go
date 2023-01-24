@@ -821,15 +821,6 @@ func WithSpanID(id uint64) StartSpanOption {
 	}
 }
 
-// WithTraceID128High sets the higher-order 64 bits of a 128-bit trace id
-// of the started span if no Parent SpanContext is present,
-// overriding the random number that would be generated.
-func WithTraceID128High(id uint64) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.TraceID128High = id
-	}
-}
-
 // ChildOf tells StartSpan to use the given span context as a parent for the
 // created span.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
