@@ -727,8 +727,7 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		traceID := strings.TrimLeft(span.context.TraceID128(), "0") // should be no leading zeroes
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="0x%s" dd.span_id="%d"`, traceID, span.SpanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="0x%s" dd.span_id="%d"`, span.context.TraceID128(), span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 }
