@@ -521,7 +521,8 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored.
+// found in ctx are restored. Additionally this func informs the profiler how
+// many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
@@ -536,6 +537,12 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+			if span == localRootSpan {
+				// Inform the profiler of endpoint hits. This is used for the unit of
+				// work feature. We can't use APM stats for this since the stats don't
+				// have enough cardinality (e.g. runtime-id tags are missing).
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+			}
 		}
 	}
 	if len(labels) > 0 {
