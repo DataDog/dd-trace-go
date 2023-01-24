@@ -1609,3 +1609,53 @@ func TestNonePropagator(t *testing.T) {
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
 }
+
+func BenchmarkInjectDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "datadog")
+
+	tracer := newTracer()
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("test").(*span)
+
+	for i := 0; i < 5; i++ {
+		root.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
+	}
+
+	dst := map[string]string{}
+
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkInjectDatadog2(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "datadog")
+	sCtx := new(spanContext)
+	sCtx.trace = new(trace)
+	propagator := NewPropagator(nil)
+	for i := 0; i < 5; i++ {
+		sCtx.trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
+	}
+	dst := map[string]string{}
+
+	for i := 0; i < b.N; i++ {
+		propagator.Inject(sCtx, TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkExtractDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+
+	carrier := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1123123132131312313123123",
+		DefaultParentIDHeader: "1212321131231312312312312",
+		DefaultPriorityHeader: "0",
+		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
+								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
+	})
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
