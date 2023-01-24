@@ -35,6 +35,7 @@ type testStatsdClient struct {
 	waitCh      chan struct{}
 	n           int
 	closed      bool
+	flushed     int
 }
 
 type testStatsdCall struct {
@@ -119,6 +120,13 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 			close(tg.waitCh)
 		}
 	}
+	return nil
+}
+
+func (tg *testStatsdClient) Flush() error {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.flushed++
 	return nil
 }
 
