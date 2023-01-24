@@ -63,7 +63,6 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	return oteltrace.NewSpanContext(config)
 }
 
-// todo : check out propagation.traceContext.Extract method? benchmark it
 func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	headers := tracer.TextMapCarrier{}
 	if err := tracer.Inject(s.Context(), headers); err != nil {
