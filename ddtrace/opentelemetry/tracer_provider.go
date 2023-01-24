@@ -30,6 +30,8 @@ type TracerProvider struct {
 	sync.Once
 }
 
+// NewTracerProvider returns an instance of OpenTelemetry TracerProvider with Datadog Tracer start options.
+// This allows to propagate parameters to tracer.Start function.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	return &TracerProvider{ddopts: opts}
 }
