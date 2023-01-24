@@ -577,6 +577,10 @@ func TestEndpointCounts(t *testing.T) {
 			// Configure endpoint counting
 			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
 
+			// Start the tracer (before profiler to avoid race in case of slow tracer start)
+			tracer.Start()
+			defer tracer.Stop()
+
 			// Start profiler
 			err := Start(
 				WithAgentAddr(server.Listener.Addr().String()),
@@ -585,10 +589,6 @@ func TestEndpointCounts(t *testing.T) {
 			)
 			require.NoError(t, err)
 			defer Stop()
-
-			// Start the tracer
-			tracer.Start()
-			defer tracer.Stop()
 
 			// Create spans until the first profile is finished
 			var m profileMeta
