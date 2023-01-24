@@ -193,7 +193,7 @@ var profileTypes = map[ProfileType]profileType{
 				p.lastTrace = time.Now()
 			}()
 
-			if p.cfg.traceConfig.Duration < p.cfg.cpuDuration {
+			if p.cfg.traceConfig.Duration < p.cfg.period {
 				// Trace at some random point within the current
 				// profiling cycle, rather than always right at the
 				// beginning, to avoid biasing toward events that occur
