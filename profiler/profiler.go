@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -36,6 +37,7 @@ var (
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
+
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -234,6 +236,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			p.telemetry.Disabled = true
 		}
 	}
+
 	return &p, nil
 }
 
@@ -301,17 +304,23 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		completed []*profile
 		wg        sync.WaitGroup
 	)
+
+	// Enable endpoint counting (if configured). This causes some minimal
+	// overhead to the tracer, see BenchmarkEndpointCounter.
+	endpointCounter := traceprof.GlobalEndpointCounter()
+	endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
+	// Disable and reset when func returns (profiler stopped) to remove tracer
+	// overhead, free up the counter map, and avoid it from growing again.
+	defer func() {
+		endpointCounter.SetEnabled(false)
+		endpointCounter.GetAndReset()
+	}()
+
 	for {
-		now := now()
 		bat := batch{
 			seq:   p.seq,
 			host:  p.cfg.hostname,
-			start: now,
-			// NB: while this is technically wrong in that it does not
-			// record the actual start and end timestamps for the batch,
-			// it is how the backend understands the client-side
-			// configured CPU profile duration: (start-end).
-			end: now.Add(p.cfg.cpuDuration),
+			start: now(),
 		}
 		p.seq++
 
@@ -353,12 +362,34 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		for _, prof := range completed {
 			bat.addProfile(prof)
 		}
-		p.enqueueUpload(bat)
+
+		// Wait until the next profiling period starts or the profiler is stopped.
 		select {
 		case <-ticker:
+			// Usually ticker triggers right away because the non-CPU profiles cause
+			// the wg.Wait above to sleep until the end of the profiling period.
+			// Edge case: If only the CPU profile is enabled, and the cpu duration is
+			// is less than the configured profiling period, the ticker will block
+			// until the end of the profiling period.
 		case <-p.exit:
 			return
 		}
+
+		// Include endpoint hits from tracer in profile `event.json`.
+		// Also reset the counters for the next profile period.
+		bat.endpointCounts = endpointCounter.GetAndReset()
+		// Record the end time of the profile.
+		// This is used by the backend to upscale the endpoint counts if the cpu
+		// duration is less than the profile duration. The formula is:
+		//
+		// factor = (end - start) / cpuDuration
+		// counts = counts * factor
+		//
+		// The default configuration of the profiler (cpu duration = profiling
+		// period) results in a factor of 1.
+		bat.end = time.Now()
+		// Upload profiling data.
+		p.enqueueUpload(bat)
 	}
 }
 
