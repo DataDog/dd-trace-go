@@ -436,7 +436,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
-		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
@@ -496,6 +495,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, operationName, span.SpanID)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
@@ -605,10 +605,11 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(name string) func() {
+func startExecutionTracerTask(ctx gocontext.Context, name string, spanID uint64) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
-		return func() {}
+		return ctx, func() {}
 	}
-	_, task := rt.NewTask(gocontext.TODO(), name)
-	return task.End
+	ctx, task := rt.NewTask(ctx, name)
+	rt.Log(ctx, "span id", strconv.FormatUint(spanID, 10))
+	return ctx, task.End
 }
