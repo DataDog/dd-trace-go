@@ -662,39 +662,45 @@ func TestTracerStartSpanOptions(t *testing.T) {
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
-	opts := []StartSpanOption{
-		WithSpanID(987654),
-		WithTraceID128High(123456),
-	}
-	s := tracer.StartSpan("web.request", opts...).(*span)
 	assert := assert.New(t)
-	assert.Equal(uint64(987654), s.SpanID)
-	assert.Equal(uint64(987654), s.TraceID)
-	w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-	}
-	id128 := w3cCtx.TraceID128()
-	assert.Len(id128, 32) // ensure there are enough leading zeros
-	idBytes, err := hex.DecodeString(id128)
-	assert.NoError(err)
-	assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-	assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
-
-	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
-	opts128 := []StartSpanOption{
-		WithSpanID(987654),
-		WithTraceID128High(123456),
-	}
-	s128 := tracer.StartSpan("web.request", opts128...).(*span)
-	assert.Equal(uint64(987654), s128.SpanID)
-	assert.Equal(uint64(987654), s128.TraceID)
-	w3cCtx, ok = s128.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-	}
-	assert.Equal("000000000001e24000000000000f1206", w3cCtx.TraceID128()) // raw bytes = [0 0 0 0 0 0 123 42 0 0 0 0 0 0 3 219]
+	t.Run("64-bit-trace-id", func(t *testing.T) {
+		opts := []StartSpanOption{
+			WithSpanID(987654),
+		}
+		s := tracer.StartSpan("web.request", opts...).(*span)
+		assert.Equal(uint64(987654), s.SpanID)
+		assert.Equal(uint64(987654), s.TraceID)
+		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
+		if !ok {
+			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
+		}
+		id128 := w3cCtx.TraceID128()
+		assert.Len(id128, 32) // ensure there are enough leading zeros
+		idBytes, err := hex.DecodeString(id128)
+		assert.NoError(err)
+		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
+		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+	})
+	t.Run("128-bit-trace-id", func(t *testing.T) {
+		// Enable 128 bit trace ids
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		opts128 := []StartSpanOption{
+			WithSpanID(987654),
+		}
+		s := tracer.StartSpan("web.request", opts128...).(*span)
+		assert.Equal(uint64(987654), s.SpanID)
+		assert.Equal(uint64(987654), s.TraceID)
+		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
+		if !ok {
+			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
+		}
+		id := w3cCtx.TraceID128()
+		assert.Len(id, 32) // ensure there are enough leading zeros
+		idBytes, err := hex.DecodeString(id)
+		assert.NoError(err)
+		assert.NotEqual(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should not be 0
+		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+	})
 }
 
 func TestTracerStartChildSpan(t *testing.T) {
