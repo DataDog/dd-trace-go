@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strconv"
 	"testing"
 
@@ -87,19 +86,9 @@ func TestTraceClientIPFlag(t *testing.T) {
 			traceClientIPEnvVal: "asdadsasd",
 			expectTrace:         false,
 		},
-		{
-			name:                "Trace client IP set to true v2",
-			remoteAddr:          validIPAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
-			traceClientIPEnvVal: "true",
-			expectTrace:         true,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
-			if tc.traceClientIPEnvVal == "" {
-				os.Unsetenv(envTraceClientIPEnabled)
-			}
 
 			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
 			cfg = newConfig()
