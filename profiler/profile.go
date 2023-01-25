@@ -100,10 +100,12 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
+
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types
@@ -271,10 +273,11 @@ type profile struct {
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
-	seq        uint64 // seq is the value of the profile_seq tag
-	start, end time.Time
-	host       string
-	profiles   []*profile
+	seq            uint64 // seq is the value of the profile_seq tag
+	start, end     time.Time
+	host           string
+	profiles       []*profile
+	endpointCounts map[string]uint64
 }
 
 func (b *batch) addProfile(p *profile) {
