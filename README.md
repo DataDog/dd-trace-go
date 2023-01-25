@@ -97,11 +97,6 @@ we vendor this version of the library inside the integration. Under normal circu
 might be running versions different from the vendored one, creating hard to debug conflicts.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
-idea about the versions and the set-up take a look at our [CI config](./.circleci/config.yml).
+idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
-The best way to run the entire test suite is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-cli/). In order to run
-jobs locally, you'll first need to convert the Circle CI configuration to a format accepted by the `circleci` cli tool:
-  * `circleci config process .circleci/config.yml > process.yml` (from the repository root)
-
-Once you have a converted `process.yml`, simply run `circleci local execute -c process.yml --job <job-name>`. 
-Note that you might have to increase the resources dedicated to Docker to around 4GB.
+The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
