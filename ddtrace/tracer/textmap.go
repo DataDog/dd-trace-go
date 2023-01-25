@@ -697,8 +697,9 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	listLength := 1
 
 	if ctx.origin != "" {
+		oWithSub := strings.ReplaceAll(ctx.origin, "=", "~")
 		b.WriteString(fmt.Sprintf(";o:%s",
-			originRgx.ReplaceAllString(ctx.origin, "_")))
+			originRgx.ReplaceAllString(oWithSub, "_")))
 	}
 
 	for k, v := range ctx.trace.propagatingTags {

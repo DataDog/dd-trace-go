@@ -1318,7 +1318,7 @@ func TestEnvVars(t *testing.T) {
 				{
 					outHeaders: TextMapCarrier{
 						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
-						tracestateHeader:  "dd=s:-2;o:synthetics___web",
+						tracestateHeader:  "dd=s:-2;o:synthetics__~web",
 					},
 					inHeaders: TextMapCarrier{
 						DefaultTraceIDHeader:  "123456789",
