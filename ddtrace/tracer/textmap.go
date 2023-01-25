@@ -711,6 +711,10 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
 		if b.Len()+len(tag) > 256 {
+			if ctx.trace.tags == nil {
+				ctx.trace.tags = map[string]string{}
+			}
+			//
 			ctx.trace.tags["LengthExceededWarnW3C"] = "true"
 			break
 		}
@@ -729,7 +733,6 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		// if the resulting tracestateHeader exceeds 32 list-members,
 		// remove the rightmost list-member(s)
 		if listLength > 32 {
-			ctx.trace.tags["LengthExceededWarnW3C"] = "true"
 			break
 		}
 		b.WriteString("," + strings.Trim(s, " \t"))

@@ -1612,7 +1612,7 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 }
 
 func BenchmarkInjectDatadog(b *testing.B) {
-	b.Setenv(headerPropagationStyleInject, "datadog")
+	//b.Setenv(headerPropagationStyleInject, "datadog")
 
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -1638,7 +1638,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 }
 
 func BenchmarkExtractDatadog(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "datadog")
+	//b.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 
 	carrier := TextMapCarrier(map[string]string{
