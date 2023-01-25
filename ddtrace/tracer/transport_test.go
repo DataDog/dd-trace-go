@@ -199,7 +199,7 @@ func TestTraceCountHeader(t *testing.T) {
 
 type recordingRoundTripper struct {
 	reqs []*http.Request
-	rt http.RoundTripper
+	rt   http.RoundTripper
 }
 
 // wrapRecordingRoundTripper wraps the client Transport with one that records all
