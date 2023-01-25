@@ -162,8 +162,8 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	event := &uploadEvent{
 		Version:        "4",
 		Family:         "go",
-		Start:          bat.start.Format(time.RFC3339),
-		End:            bat.end.Format(time.RFC3339),
+		Start:          bat.start.Format(time.RFC3339Nano),
+		End:            bat.end.Format(time.RFC3339Nano),
 		Tags:           strings.Join(tags, ","),
 		EndpointCounts: bat.endpointCounts,
 	}
