@@ -707,6 +707,29 @@ func TestSpanLog(t *testing.T) {
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
+
+	t.Run("128-bit-generation", func(t *testing.T) {
+		// Generate 128 bit trace ids, but don't log them. So only the lower
+		// 64 bits should be logged in decimal form.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("128-bit-generation-and-logging", func(t *testing.T) {
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="0x%s" dd.span_id="%d"`, span.context.TraceID128(), span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
 }
 
 func TestRootSpanAccessor(t *testing.T) {
