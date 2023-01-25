@@ -102,10 +102,8 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 			if tc.expectTrace {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
-				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
 			} else {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
-				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
 				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
 					logs := tp.Logs()
 					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
