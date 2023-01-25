@@ -52,5 +52,5 @@ func main() {
 	} else {
 		exit(errors.New("Could not resolve milestone. checkmilestone.go likely needs to be updated."))
 	}
-	fmt.Printf("Milestone check passed for [%v].", data.Milestone)
+	fmt.Println("Milestone check passed.")
 }
