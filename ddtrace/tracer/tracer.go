@@ -495,7 +495,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
-	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, operationName, span.SpanID)
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
@@ -605,11 +605,20 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(ctx gocontext.Context, name string, spanID uint64) (gocontext.Context, func()) {
+func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
-	ctx, task := rt.NewTask(ctx, name)
-	rt.Log(ctx, "span id", strconv.FormatUint(spanID, 10))
+	// Task name is the resource (operationName) of the span, e.g.
+	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
+	taskName := span.Resource
+	// If the resource could contain PII (e.g. SQL query that's not using bind
+	// arguments), play it safe and just use the span type as the taskName,
+	// e.g. "sql".
+	if !spanResourcePIISafe(span) {
+		taskName = span.Type
+	}
+	ctx, task := rt.NewTask(ctx, taskName)
+	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
 	return ctx, task.End
 }
