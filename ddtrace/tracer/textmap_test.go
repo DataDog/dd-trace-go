@@ -1612,7 +1612,7 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 }
 
 func BenchmarkInjectDatadog(b *testing.B) {
-	//b.Setenv(headerPropagationStyleInject, "datadog")
+	b.Setenv(headerPropagationStyleInject, "datadog")
 
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -1633,12 +1633,39 @@ func BenchmarkInjectDatadog(b *testing.B) {
 }
 
 func BenchmarkInjectW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "tracecontext")
 
-	//also maybe compare like w3c and datadog and b3 etc.
+	tracer := newTracer()
+	defer tracer.Stop()
+
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+
+	ctx := root.Context().(*spanContext)
+
+	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+	oldTraceState := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
+
+	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
+	setPropagatingTag(ctx, tracestateHeader, oldTraceState)
+
+	for i := 0; i < 5; i++ {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.someKey%d", i)
+		v := fmt.Sprintf("someVal%d", i)
+		setPropagatingTag(ctx, k, v)
+	}
+
+	dst := map[string]string{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
 }
 
 func BenchmarkExtractDatadog(b *testing.B) {
-	//b.Setenv(headerPropagationStyleExtract, "datadog")
+	b.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 
 	carrier := TextMapCarrier(map[string]string{
@@ -1686,11 +1713,9 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 }
 
 func FuzzComposeTracestate(f *testing.F) {
-	// helpful to give it a couple really good seed values
-	// for this one
 
-	oldState1 := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
-	f.Add(1, "key1", "val1", "key2", "val2", "key3", "val3", oldState1)
+	oldState := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
+	f.Add(1, "key1", "val1", "key2", "val2", "key3", "val3", oldState)
 
 	f.Fuzz(func(t *testing.T, priority int, key1 string, val1 string,
 		key2 string, val2 string, key3 string, val3 string, oldState string) {
@@ -1706,7 +1731,7 @@ func FuzzComposeTracestate(f *testing.F) {
 			sendCtx.trace.setPropagatingTag("_dd.p."+key, "_dd.p."+val)
 		}
 		traceState := composeTracestate(sendCtx, priority, oldState)
-		if _, ok := sendCtx.trace.tags["LengthExceededWarnW3C"]; ok {
+		if _, ok := sendCtx.trace.tags[W3CKeyPropagationError]; ok {
 			t.Skipf("Skipping invalid tags")
 		}
 		parseTracestate(recvCtx, traceState)
@@ -1720,5 +1745,48 @@ func FuzzComposeTracestate(f *testing.F) {
 }
 
 func FuzzParseTraceparent(f *testing.F) {
+	testCases := []struct {
+		version, traceID, spanID, flags string
+	}{
+		{"00", "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.version, tc.traceID, tc.spanID, tc.flags)
+	}
+	f.Fuzz(func(t *testing.T, version string, traceID string,
+		spanID string, flags string) {
 
+		ctx := new(spanContext)
+		ctx.trace = newTrace()
+
+		header := strings.Join([]string{version, traceID, spanID, flags}, "-")
+
+		if parseTraceparent(ctx, header) != nil {
+			t.Skipf("Error parsing parent")
+		}
+		parsedTraceID := ctx.trace.propagatingTags[w3cTraceIDTag]
+		parsedSpanID := ctx.spanID
+		parsedFlag, ok := ctx.samplingPriority()
+		if !ok {
+			t.Skipf("Error retrieving sampling priority")
+		}
+		expectedSpanID, err := strconv.ParseUint(spanID, 16, 64)
+		if err != nil {
+			t.Skipf("Error parsing span ID")
+		}
+		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		if err != nil {
+			t.Skipf("Error parsing flag")
+		}
+		// parseTraceparent always returns lower case trace id - expected behavior?
+		if parsedTraceID != strings.ToLower(traceID) {
+			t.Fatalf("inconsitent traceID parsing: \ngot: %s\nwanted: %s\nfor header of: %s", parsedTraceID, traceID, header)
+		}
+		if parsedSpanID != expectedSpanID {
+			t.Fatalf("inconsitent spanID parsing: \ngot: %d\nwanted: %d\nfor header of: %s", parsedSpanID, expectedSpanID, header)
+		}
+		if parsedFlag != int(expectedFlag)&0x1 {
+			t.Fatalf("inconsitent flag parsing: \ngot: %d\nwanted: %d\nfor header of: %s", parsedFlag, int(expectedFlag)&0x1, header)
+		}
+	})
 }

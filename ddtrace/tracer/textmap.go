@@ -26,6 +26,8 @@ type HTTPHeadersCarrier http.Header
 var _ TextMapWriter = (*HTTPHeadersCarrier)(nil)
 var _ TextMapReader = (*HTTPHeadersCarrier)(nil)
 
+const W3CKeyPropagationError = "W3CKeyPropagationError"
+
 // Set implements TextMapWriter.
 func (c HTTPHeadersCarrier) Set(key, val string) {
 	http.Header(c).Set(key, val)
@@ -711,11 +713,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
 		if b.Len()+len(tag) > 256 {
-			if ctx.trace.tags == nil {
-				ctx.trace.tags = map[string]string{}
-			}
-			//
-			ctx.trace.tags["LengthExceededWarnW3C"] = "true"
+			ctx.trace.setPropagatingTag(W3CKeyPropagationError, "tracestate len exceeded")
 			break
 		}
 		b.WriteString(";")
@@ -733,6 +731,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		// if the resulting tracestateHeader exceeds 32 list-members,
 		// remove the rightmost list-member(s)
 		if listLength > 32 {
+			ctx.trace.setPropagatingTag(W3CKeyPropagationError, "tracestate len exceeded")
 			break
 		}
 		b.WriteString("," + strings.Trim(s, " \t"))
