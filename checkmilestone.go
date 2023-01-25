@@ -43,5 +43,5 @@ func main() {
 	} else if data.Milestone == "Triage" {
 		exit(errors.New("Cannot merge PR's in 'Triage' milestone."))
 	}
-	fmt.Println("Milestone check passed.")
+	fmt.Println("Milestone check passed for [%s].", data.Milestone)
 }
