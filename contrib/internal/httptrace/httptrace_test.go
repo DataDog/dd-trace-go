@@ -97,9 +97,6 @@ func TestTraceClientIPFlag(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
-			if tc.traceClientIPEnvVal == "" {
-				os.Unsetenv(envTraceClientIPEnabled)
-			}
 
 			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
 			cfg = newConfig()
