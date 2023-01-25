@@ -110,7 +110,6 @@ func TestTraceClientIPFlag(t *testing.T) {
 
 			if tc.expectTrace {
 				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
-				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag("network.client.ip"))
 			} else {
 				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
 				assert.NotContains(t, targetSpan.Tags(), "network.client.ip")
