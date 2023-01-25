@@ -40,6 +40,8 @@ func main() {
 	resp.Body.Close()
 	if data.Milestone == nil {
 		exit(errors.New("Milestone not set."))
+	} else if data.Milestone == "Triage" {
+		exit(errors.New("Cannot merge PR's in 'Triage' milestone."))
 	}
 	fmt.Println("Milestone check passed.")
 }
