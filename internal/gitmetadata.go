@@ -79,8 +79,8 @@ func GetGitMetadataTags() map[string]string {
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
 		tags := make(map[string]string)
 
-		updateAllTags(tags, getTagsFromBinary())
 		updateAllTags(tags, getTagsFromEnv())
+		updateAllTags(tags, getTagsFromBinary())
 
 		gitMetadataTags = tags
 	} else {
