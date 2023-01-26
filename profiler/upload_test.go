@@ -212,7 +212,7 @@ func TestGitMetadata(t *testing.T) {
 
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
-		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 		defer os.Unsetenv(maininternal.EnvDDTags)
 
 		profiles := make(chan profileMeta, 1)
@@ -229,6 +229,7 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
 		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo")
+		assert.Contains(profile.tags, "go_path:somepath")
 	})
 	t.Run("git-metadata-from-env", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()

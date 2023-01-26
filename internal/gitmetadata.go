@@ -70,6 +70,7 @@ func getTagsFromDDTags() map[string]string {
 	return map[string]string{
 		TagRepositoryURL: etags[TagRepositoryURL],
 		TagCommitSha:     etags[TagCommitSha],
+		TagGoPath:        etags[TagGoPath],
 	}
 }
 
