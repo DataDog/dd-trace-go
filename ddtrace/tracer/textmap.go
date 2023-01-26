@@ -683,8 +683,9 @@ var (
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|=|;|[^\\x21-\\x7E]+")
+	// Disallowed characters must be replaced with the underscore,
+	// except for equals which will be replaced with a tilde
+	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
@@ -697,9 +698,9 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	listLength := 1
 
 	if ctx.origin != "" {
-		oWithSub := strings.ReplaceAll(ctx.origin, "=", "~")
+		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
 		b.WriteString(fmt.Sprintf(";o:%s",
-			originRgx.ReplaceAllString(oWithSub, "_")))
+			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
 	for k, v := range ctx.trace.propagatingTags {
