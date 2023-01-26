@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -142,4 +143,32 @@ func BenchmarkApiWithCustomTags(b *testing.B) {
 			sp.Finish()
 		}
 	})
+}
+
+func BenchmarkOtelConcurrentTracing(b *testing.B) {
+	tp := NewTracerProvider()
+	defer tp.Shutdown()
+	otel.SetTracerProvider(NewTracerProvider())
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		wg := sync.WaitGroup{}
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx := context.Background()
+				newCtx, parent := tr.Start(ctx, "parent")
+				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
+					attribute.String("ResourceName", "/"))
+				defer parent.End()
+
+				for i := 0; i < 10; i++ {
+					_, child := tr.Start(newCtx, "child")
+					child.End()
+				}
+			}()
+		}
+	}
 }
