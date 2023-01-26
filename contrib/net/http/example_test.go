@@ -40,6 +40,7 @@ func Index(w http.ResponseWriter, r *http.Request) {
 // ExampleWrapClient provides an example of how to connect an incoming request span to an outgoing http call.
 func ExampleWrapClient() {
 	mux := httptrace.NewServeMux()
+	// Note that `WrapClient` modifies the passed in Client, so all other users of DefaultClient in this example will have a traced http Client
 	c := httptrace.WrapClient(http.DefaultClient)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://test.test", nil)
