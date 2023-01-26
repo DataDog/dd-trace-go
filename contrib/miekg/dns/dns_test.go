@@ -3,16 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package dns
+package dns_test
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	dnstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
@@ -25,12 +28,12 @@ func (th *testHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func TestDNS(t *testing.T) {
+func startTracedServer(t *testing.T) (*dns.Server, func()) {
 	addr := getFreeAddr(t).String()
-	server := dns.Server{
+	server := &dns.Server{
 		Addr:    addr,
 		Net:     "udp",
-		Handler: WrapHandler(&testHandler{}),
+		Handler: dnstrace.WrapHandler(&testHandler{}),
 	}
 
 	// start the server
@@ -40,30 +43,125 @@ func TestDNS(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	waitTillUDPReady(t, addr)
+	waitTillUDPReady(addr)
+
+	cleanup := func() {
+		err := server.Shutdown()
+		assert.NoError(t, err)
+	}
+
+	return server, cleanup
+}
+
+func TestExchange(t *testing.T) {
+	server, cleanup := startTracedServer(t)
+	defer cleanup()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	m := new(dns.Msg)
-	m.SetQuestion("miek.nl.", dns.TypeMX)
+	m := newMessage()
 
-	_, err := Exchange(m, addr)
-	assert.NoError(t, err)
-
-	err = server.Shutdown() // Shutdown server so span is closed after DNS request
+	_, err := dnstrace.Exchange(m, server.Addr)
 	assert.NoError(t, err)
 
 	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
+	require.Len(t, spans, 2)
+
+	assertSpans(t, mt.FinishedSpans())
+}
+
+func TestExchangeContext(t *testing.T) {
+	server, cleanup := startTracedServer(t)
+	defer cleanup()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := newMessage()
+
+	_, err := dnstrace.ExchangeContext(context.Background(), m, server.Addr)
+	assert.NoError(t, err)
+
+	assertSpans(t, mt.FinishedSpans())
+}
+
+func TestExchangeConn(t *testing.T) {
+	server, cleanup := startTracedServer(t)
+	defer cleanup()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := newMessage()
+
+	conn, err := net.Dial("udp", server.Addr)
+	require.NoError(t, err)
+
+	_, err = dnstrace.ExchangeConn(conn, m)
+	assert.NoError(t, err)
+
+	assertSpans(t, mt.FinishedSpans())
+}
+
+func TestClient_Exchange(t *testing.T) {
+	server, cleanup := startTracedServer(t)
+	defer cleanup()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := newMessage()
+
+	client := newTracedClient()
+
+	_, _, err := client.Exchange(m, server.Addr)
+	assert.NoError(t, err)
+
+	assertSpans(t, mt.FinishedSpans())
+}
+
+func TestClient_ExchangeContext(t *testing.T) {
+	server, cleanup := startTracedServer(t)
+	defer cleanup()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := newMessage()
+
+	client := newTracedClient()
+
+	_, _, err := client.ExchangeContext(context.Background(), m, server.Addr)
+	assert.NoError(t, err)
+
+	assertSpans(t, mt.FinishedSpans())
+}
+
+func newMessage() *dns.Msg {
+	m := new(dns.Msg)
+	m.SetQuestion("miek.nl.", dns.TypeMX)
+	return m
+}
+
+func newTracedClient() *dnstrace.Client {
+	return &dnstrace.Client{Client: &dns.Client{Net: "udp"}}
+}
+
+func assertSpans(t *testing.T, spans []mocktracer.Span) {
+	require.Len(t, spans, 2)
+
 	for _, s := range spans {
 		assert.Equal(t, "dns.request", s.OperationName())
 		assert.Equal(t, "dns", s.Tag(ext.SpanType))
 		assert.Equal(t, "dns", s.Tag(ext.ServiceName))
 		assert.Equal(t, "QUERY", s.Tag(ext.ResourceName))
 		assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
-		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	}
+
+	// the server span should be the first one
+	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
+	assert.Equal(t, ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
 }
 
 func getFreeAddr(t *testing.T) net.Addr {
@@ -76,7 +174,7 @@ func getFreeAddr(t *testing.T) net.Addr {
 	return addr
 }
 
-func waitTillUDPReady(t *testing.T, addr string) {
+func waitTillUDPReady(addr string) {
 	deadline := time.Now().Add(time.Second * 10)
 	for time.Now().Before(deadline) {
 		m := new(dns.Msg)
