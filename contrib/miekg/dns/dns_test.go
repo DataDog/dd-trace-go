@@ -28,12 +28,16 @@ func (th *testHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func startTracedServer(t *testing.T) (*dns.Server, func()) {
+func startServer(t *testing.T, traced bool) (*dns.Server, func()) {
+	var h dns.Handler = &testHandler{}
+	if traced {
+		h = dnstrace.WrapHandler(h)
+	}
 	addr := getFreeAddr(t).String()
 	server := &dns.Server{
 		Addr:    addr,
 		Net:     "udp",
-		Handler: dnstrace.WrapHandler(&testHandler{}),
+		Handler: h,
 	}
 
 	// start the server
@@ -44,18 +48,16 @@ func startTracedServer(t *testing.T) (*dns.Server, func()) {
 		}
 	}()
 	waitTillUDPReady(addr)
-
-	cleanup := func() {
+	stopServer := func() {
 		err := server.Shutdown()
 		assert.NoError(t, err)
 	}
-
-	return server, cleanup
+	return server, stopServer
 }
 
 func TestExchange(t *testing.T) {
-	server, cleanup := startTracedServer(t)
-	defer cleanup()
+	server, stopServer := startServer(t, false)
+	defer stopServer()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -66,14 +68,13 @@ func TestExchange(t *testing.T) {
 	assert.NoError(t, err)
 
 	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
-
-	assertSpans(t, mt.FinishedSpans())
+	require.Len(t, spans, 1)
+	assertClientSpan(t, spans[0])
 }
 
 func TestExchangeContext(t *testing.T) {
-	server, cleanup := startTracedServer(t)
-	defer cleanup()
+	server, stopServer := startServer(t, false)
+	defer stopServer()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -83,12 +84,14 @@ func TestExchangeContext(t *testing.T) {
 	_, err := dnstrace.ExchangeContext(context.Background(), m, server.Addr)
 	assert.NoError(t, err)
 
-	assertSpans(t, mt.FinishedSpans())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assertClientSpan(t, spans[0])
 }
 
 func TestExchangeConn(t *testing.T) {
-	server, cleanup := startTracedServer(t)
-	defer cleanup()
+	server, stopServer := startServer(t, false)
+	defer stopServer()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -101,12 +104,14 @@ func TestExchangeConn(t *testing.T) {
 	_, err = dnstrace.ExchangeConn(conn, m)
 	assert.NoError(t, err)
 
-	assertSpans(t, mt.FinishedSpans())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assertClientSpan(t, spans[0])
 }
 
 func TestClient_Exchange(t *testing.T) {
-	server, cleanup := startTracedServer(t)
-	defer cleanup()
+	server, stopServer := startServer(t, false)
+	defer stopServer()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -118,12 +123,14 @@ func TestClient_Exchange(t *testing.T) {
 	_, _, err := client.Exchange(m, server.Addr)
 	assert.NoError(t, err)
 
-	assertSpans(t, mt.FinishedSpans())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assertClientSpan(t, spans[0])
 }
 
 func TestClient_ExchangeContext(t *testing.T) {
-	server, cleanup := startTracedServer(t)
-	defer cleanup()
+	server, stopServer := startServer(t, false)
+	defer stopServer()
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -135,7 +142,33 @@ func TestClient_ExchangeContext(t *testing.T) {
 	_, _, err := client.ExchangeContext(context.Background(), m, server.Addr)
 	assert.NoError(t, err)
 
-	assertSpans(t, mt.FinishedSpans())
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assertClientSpan(t, spans[0])
+}
+
+func TestWrapHandler(t *testing.T) {
+	server, stopServer := startServer(t, true)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	m := newMessage()
+	_, err := dns.Exchange(m, server.Addr)
+	assert.NoError(t, err)
+
+	stopServer() // Shutdown server so span is closed after DNS request
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+
+	assert.Equal(t, "dns.request", span.OperationName())
+	assert.Equal(t, "dns", span.Tag(ext.SpanType))
+	assert.Equal(t, "dns", span.Tag(ext.ServiceName))
+	assert.Equal(t, "QUERY", span.Tag(ext.ResourceName))
+	assert.Equal(t, "miekg/dns", span.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func newMessage() *dns.Msg {
@@ -148,20 +181,13 @@ func newTracedClient() *dnstrace.Client {
 	return &dnstrace.Client{Client: &dns.Client{Net: "udp"}}
 }
 
-func assertSpans(t *testing.T, spans []mocktracer.Span) {
-	require.Len(t, spans, 2)
-
-	for _, s := range spans {
-		assert.Equal(t, "dns.request", s.OperationName())
-		assert.Equal(t, "dns", s.Tag(ext.SpanType))
-		assert.Equal(t, "dns", s.Tag(ext.ServiceName))
-		assert.Equal(t, "QUERY", s.Tag(ext.ResourceName))
-		assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
-	}
-
-	// the server span should be the first one
-	assert.Equal(t, ext.SpanKindServer, spans[0].Tag(ext.SpanKind))
-	assert.Equal(t, ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
+func assertClientSpan(t *testing.T, s mocktracer.Span) {
+	assert.Equal(t, "dns.request", s.OperationName())
+	assert.Equal(t, "dns", s.Tag(ext.SpanType))
+	assert.Equal(t, "dns", s.Tag(ext.ServiceName))
+	assert.Equal(t, "QUERY", s.Tag(ext.ResourceName))
+	assert.Equal(t, "miekg/dns", s.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
 
 func getFreeAddr(t *testing.T) net.Addr {
