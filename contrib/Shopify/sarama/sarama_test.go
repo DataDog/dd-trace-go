@@ -79,7 +79,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
-		assert.Equal(t, "kaka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 	{
 		s := spans[1]
