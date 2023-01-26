@@ -876,7 +876,7 @@ func parseTracestate(ctx *spanContext, header string) error {
 			}
 			k, v := x[0], x[1]
 			if k == "o" {
-				ctx.origin = v
+				ctx.origin = strings.ReplaceAll(v, "~", "=")
 			} else if k == "s" {
 				p, err := strconv.Atoi(v)
 				if err != nil {
