@@ -24,11 +24,15 @@ const (
 	TagRepositoryURL = "git.repository_url"
 	// TagCommitSha specifies the tag name for git commit sha
 	TagCommitSha = "git.commit.sha"
+	// TagCommitSha specifies the tag name for go path
+	TagGoPath = "go_path"
 
 	// TraceTagRepositoryURL specifies the trace tag name for git repository URL
 	TraceTagRepositoryURL = "_dd.git.repository_url"
 	// TraceTagCommitSha specifies the trace tag name for git commit sha
 	TraceTagCommitSha = "_dd.git.commit.sha"
+	// TraceTagRepositoryURL specifies the trace tag name for go path
+	TraceTagGoPath = "_dd.go_path"
 )
 
 var (
@@ -37,26 +41,26 @@ var (
 	gitMetadataTags map[string]string
 )
 
+func updateTags(tags map[string]string, key string, value string) {
+	if _, ok := tags[key]; !ok {
+		if value != "" {
+			tags[key] = value
+		}
+	}
+}
+
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
-	repositoryURL := os.Getenv(EnvGitRepositoryURL)
-	commitSha := os.Getenv(EnvGitCommitSha)
+	res := make(map[string]string)
 
-	if repositoryURL == "" || commitSha == "" {
-		tags := ParseTagString(os.Getenv(EnvDDTags))
+	updateTags(res, TagRepositoryURL, os.Getenv(EnvGitRepositoryURL))
+	updateTags(res, TagCommitSha, os.Getenv(EnvGitCommitSha))
 
-		repositoryURL = tags[TagRepositoryURL]
-		commitSha = tags[TagCommitSha]
-	}
+	tags := ParseTagString(os.Getenv(EnvDDTags))
+	updateTags(res, TagRepositoryURL, tags[TagRepositoryURL])
+	updateTags(res, TagCommitSha, tags[TagCommitSha])
 
-	if repositoryURL == "" || commitSha == "" {
-		return nil
-	}
-
-	return map[string]string{
-		TagRepositoryURL: repositoryURL,
-		TagCommitSha:     commitSha,
-	}
+	return res
 }
 
 // GetGitMetadataTags returns git metadata tags
@@ -69,10 +73,16 @@ func GetGitMetadataTags() map[string]string {
 	}
 
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
-		tags := getTagsFromEnv()
-		if tags == nil {
-			tags = getTagsFromBinary()
-		}
+		tags := make(map[string]string)
+
+		btags := getTagsFromBinary()
+		updateTags(tags, TagGoPath, btags[TagGoPath])
+		updateTags(tags, TagCommitSha, btags[TagCommitSha])
+
+		etags := getTagsFromEnv()
+		updateTags(tags, TagRepositoryURL, etags[TagRepositoryURL])
+		updateTags(tags, TagCommitSha, etags[TagCommitSha])
+
 		gitMetadataTags = tags
 	} else {
 		gitMetadataTags = make(map[string]string)
@@ -103,14 +113,9 @@ func GetTracerGitMetadataTags() map[string]string {
 	res := make(map[string]string)
 	tags := GetGitMetadataTags()
 
-	repositoryURL := tags[TagRepositoryURL]
-	commitSha := tags[TagCommitSha]
+	updateTags(res, TraceTagRepositoryURL, tags[TagRepositoryURL])
+	updateTags(res, TraceTagCommitSha, tags[TagCommitSha])
+	updateTags(res, TraceTagGoPath, tags[TagGoPath])
 
-	if repositoryURL == "" || commitSha == "" {
-		return res
-	}
-
-	res[TraceTagCommitSha] = commitSha
-	res[TraceTagRepositoryURL] = repositoryURL
 	return res
 }

@@ -1716,6 +1716,24 @@ func TestGitMetadata(t *testing.T) {
 		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
 	})
 
+	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
+		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
+		defer os.Unsetenv(maininternal.EnvDDTags)
+		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
 	t.Run("git-metadata-disabled", func(t *testing.T) {
 		os.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
 		defer os.Unsetenv(maininternal.EnvGitMetadataEnabledFlag)
