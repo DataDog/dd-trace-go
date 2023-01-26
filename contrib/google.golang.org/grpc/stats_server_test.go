@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
@@ -36,6 +37,7 @@ func TestServerStatsHandler(t *testing.T) {
 	_, err = server.client.Ping(context.Background(), &FixtureRequest{Name: "name"})
 	assert.NoError(err)
 
+	waitForSpans(mt, 1, 1*time.Second)
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 

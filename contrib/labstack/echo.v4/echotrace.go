@@ -71,8 +71,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			c.SetRequest(request.WithContext(ctx))
 
 			if appsecEnabled {
-				afterMiddleware := useAppSec(c, span)
-				defer afterMiddleware()
+				next = withAppSec(next, span)
 			}
 			// serve the request to the next middleware
 			err := next(c)
