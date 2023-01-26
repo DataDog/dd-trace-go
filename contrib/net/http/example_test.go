@@ -37,6 +37,18 @@ func Index(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello World!\n"))
 }
 
+// ExampleWrapClient provides an example of how to connect an incoming request span to an outgoing http call.
+func ExampleWrapClient() {
+	mux := httptrace.NewServeMux()
+	c := httptrace.WrapClient(http.DefaultClient)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://test.test", nil)
+		resp, _ := c.Do(req)
+		w.Write([]byte(resp.Status))
+	})
+	http.ListenAndServe(":8080", mux)
+}
+
 func traceMiddleware(mux *http.ServeMux, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, route := mux.Handler(r)
