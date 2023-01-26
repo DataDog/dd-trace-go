@@ -82,3 +82,23 @@ func TestSpanMethods(t *testing.T) {
 		assert.Contains(payload, tag[1])
 	}
 }
+
+func TestSpanEnd(t *testing.T) {
+	//TODO
+}
+
+func TestSpanFinish(t *testing.T) {
+	//TODO
+}
+
+func TestSpanSetName(t *testing.T) {
+	//TODO
+}
+
+func TestSpanSetStatus(t *testing.T) {
+	//TODO
+}
+
+func TestSpanSetAttributes(t *testing.T) {
+	//TODO
+}

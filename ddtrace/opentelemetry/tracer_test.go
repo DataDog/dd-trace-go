@@ -84,6 +84,14 @@ func TestTracerOptions(t *testing.T) {
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
+func TestForceFlush(t *testing.T) {
+	//TODO
+}
+
+func TestShutdown(t *testing.T) {
+	//TODO
+}
+
 func BenchmarkApiWithNoTags(b *testing.B) {
 	testData := struct {
 		env, srv, op string
