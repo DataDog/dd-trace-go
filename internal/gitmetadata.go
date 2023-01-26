@@ -24,14 +24,14 @@ const (
 	TagRepositoryURL = "git.repository_url"
 	// TagCommitSha specifies the tag name for git commit sha
 	TagCommitSha = "git.commit.sha"
-	// TagCommitSha specifies the tag name for go path
+	// TagGoPath specifies the tag name for go module path
 	TagGoPath = "go_path"
 
 	// TraceTagRepositoryURL specifies the trace tag name for git repository URL
 	TraceTagRepositoryURL = "_dd.git.repository_url"
 	// TraceTagCommitSha specifies the trace tag name for git commit sha
 	TraceTagCommitSha = "_dd.git.commit.sha"
-	// TraceTagRepositoryURL specifies the trace tag name for go path
+	// TraceTagGoPath specifies the trace tag name for go module path
 	TraceTagGoPath = "_dd.go_path"
 )
 
