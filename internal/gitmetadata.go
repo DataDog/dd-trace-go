@@ -110,6 +110,7 @@ func ResetGitMetadataTags() {
 func CleanGitMetadataTags(tags map[string]string) {
 	delete(tags, TagRepositoryURL)
 	delete(tags, TagCommitSha)
+	delete(tags, TagGoPath)
 }
 
 // GetTracerGitMetadataTags returns git metadata tags for tracer
