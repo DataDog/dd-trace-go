@@ -54,6 +54,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.Tag("offset", msg.Offset),
 				tracer.Tag(ext.Component, "Shopify/sarama"),
 				tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+				tracer.Tag(ext.MessagingSystem, "kafka"),
 				tracer.Measured(),
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
@@ -262,6 +263,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, "Shopify/sarama"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, "kafka"),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

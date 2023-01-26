@@ -87,6 +87,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
 		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -202,6 +203,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, int32(0), s0.Tag("partition"))
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -212,6 +214,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, int32(0), s1.Tag("partition"))
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 		})
 	}
 }
