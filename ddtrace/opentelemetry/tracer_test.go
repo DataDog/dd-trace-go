@@ -110,16 +110,11 @@ func TestForceFlush(t *testing.T) {
 		tp.ForceFlush(tc.timeOut, setFlushFail)
 		assert.Equal(t, tc.flushFail, flushFail)
 		if !tc.flushFail {
-			//somehow test things were flushed??
+			// somehow test things were flushed??
+			// or do we just need to vlerify tracer.Flush() is being called
 		}
 		reset()
 	}
-}
-
-// tracer is started and stopped in parrelel with spans
-// being created
-func TestCleanShutdown(t *testing.T) {
-
 }
 
 func TestShutdown(t *testing.T) {
@@ -131,8 +126,8 @@ func TestShutdown(t *testing.T) {
 
 	tp.Shutdown()
 	tp.ForceFlush(5*time.Second, func(ok bool) {})
-
-	assert.Contains(t, testLog.Logs(), "tracer stopped")
+	logs := testLog.Logs()
+	assert.Contains(t, logs[len(logs)-1], "tracer stopped")
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
