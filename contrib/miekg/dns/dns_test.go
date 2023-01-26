@@ -160,7 +160,7 @@ func assertSpans(t *testing.T, spans []mocktracer.Span) {
 	}
 
 	// the server span should be the first one
-	assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
+	assert.Equal(t, ext.SpanKindServer, spans[0].Tag(ext.SpanKind))
 	assert.Equal(t, ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
 }
 
