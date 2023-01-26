@@ -57,14 +57,20 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
-	res := make(map[string]string)
+	return map[string]string{
+		TagRepositoryURL: os.Getenv(EnvGitRepositoryURL),
+		TagCommitSha:     os.Getenv(EnvGitCommitSha),
+	}
+}
 
-	updateTags(res, TagRepositoryURL, os.Getenv(EnvGitRepositoryURL))
-	updateTags(res, TagCommitSha, os.Getenv(EnvGitCommitSha))
+// Get git metadata from DD_TAGS
+func getTagsFromDDTags() map[string]string {
+	etags := ParseTagString(os.Getenv(EnvDDTags))
 
-	updateAllTags(res, ParseTagString(os.Getenv(EnvDDTags)))
-
-	return res
+	return map[string]string{
+		TagRepositoryURL: etags[TagRepositoryURL],
+		TagCommitSha:     etags[TagCommitSha],
+	}
 }
 
 // GetGitMetadataTags returns git metadata tags
@@ -80,6 +86,7 @@ func GetGitMetadataTags() map[string]string {
 		tags := make(map[string]string)
 
 		updateAllTags(tags, getTagsFromEnv())
+		updateAllTags(tags, getTagsFromDDTags())
 		updateAllTags(tags, getTagsFromBinary())
 
 		gitMetadataTags = tags
