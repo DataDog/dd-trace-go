@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -20,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -85,11 +87,52 @@ func TestTracerOptions(t *testing.T) {
 }
 
 func TestForceFlush(t *testing.T) {
-	//TODO
+	testData := []struct {
+		timeOut   time.Duration
+		flushFail bool
+	}{
+		{timeOut: 0 * time.Second, flushFail: true},
+		{timeOut: 300 * time.Second, flushFail: false},
+	}
+
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	flushFail := false
+	setFlushFail := func(ok bool) {
+		flushFail = !ok
+	}
+	reset := func() { flushFail = false }
+
+	for _, tc := range testData {
+		tr.Start(context.Background(), "test")
+		tp.ForceFlush(tc.timeOut, setFlushFail)
+		assert.Equal(t, tc.flushFail, flushFail)
+		if !tc.flushFail {
+			//somehow test things were flushed??
+		}
+		reset()
+	}
+}
+
+// tracer is started and stopped in parrelel with spans
+// being created
+func TestCleanShutdown(t *testing.T) {
+
 }
 
 func TestShutdown(t *testing.T) {
-	//TODO
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+
+	testLog := new(log.RecordLogger)
+	defer log.UseLogger(testLog)()
+
+	tp.Shutdown()
+	tp.ForceFlush(5*time.Second, func(ok bool) {})
+
+	assert.Contains(t, testLog.Logs(), "tracer stopped")
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
@@ -120,6 +163,7 @@ func BenchmarkApiWithNoTags(b *testing.B) {
 		}
 	})
 }
+
 func BenchmarkApiWithCustomTags(b *testing.B) {
 	testData := struct {
 		env, srv, oldOp, newOp, tagKey, tagValue string

@@ -84,21 +84,21 @@ func TestSpanMethods(t *testing.T) {
 }
 
 func TestSpanEnd(t *testing.T) {
-	//TODO
+	// need?
 }
 
 func TestSpanFinish(t *testing.T) {
-	//TODO
+	// need?
 }
 
 func TestSpanSetName(t *testing.T) {
-	//TODO
+	// need?
 }
 
 func TestSpanSetStatus(t *testing.T) {
-	//TODO
+	// need?
 }
 
 func TestSpanSetAttributes(t *testing.T) {
-	//TODO
+	// need?
 }
