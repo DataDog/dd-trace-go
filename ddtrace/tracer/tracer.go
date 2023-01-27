@@ -280,9 +280,9 @@ func newTracer(opts ...StartOption) *tracer {
 // use case described below.
 //
 // Flush is of use in Lambda environments, where starting and stopping
-// the tracer on each invokation may create too much latency. In this
+// the tracer on each invocation may create too much latency. In this
 // scenario, a tracer may be started and stopped by the parent process
-// whereas the invokation can make use of Flush to ensure any created spans
+// whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
