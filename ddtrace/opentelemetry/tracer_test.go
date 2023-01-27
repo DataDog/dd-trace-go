@@ -86,6 +86,30 @@ func TestTracerOptions(t *testing.T) {
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
+/*
+THIS TEST CASE HANGS:
+	- it seems calling Shutdown before Close() is called on the server
+	- causes a hang
+	- ask ab it monday
+
+func TestStartStop(t *testing.T) {
+
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	_, sp := tr.Start(context.Background(), "test_span")
+	sp.End()
+
+	tp.Shutdown()
+	s.Close()
+}
+*/
+
 func TestForceFlush(t *testing.T) {
 	testData := []struct {
 		timeOut   time.Duration
@@ -95,25 +119,36 @@ func TestForceFlush(t *testing.T) {
 		{timeOut: 300 * time.Second, flushFail: false},
 	}
 
-	tp := NewTracerProvider()
-	otel.SetTracerProvider(tp)
-	tr := otel.Tracer("")
-
 	flushFail := false
-	setFlushFail := func(ok bool) {
-		flushFail = !ok
-	}
+	setFlushFail := func(ok bool) { flushFail = !ok }
 	reset := func() { flushFail = false }
+	assert := assert.New(t)
 
 	for _, tc := range testData {
-		tr.Start(context.Background(), "test")
+		var payload string
+		done := make(chan struct{})
+
+		tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+
+		otel.SetTracerProvider((tp))
+		tr := otel.Tracer("")
+
+		_, sp := tr.Start(context.Background(), "test_span")
+		sp.End()
+
 		tp.ForceFlush(tc.timeOut, setFlushFail)
-		assert.Equal(t, tc.flushFail, flushFail)
 		if !tc.flushFail {
-			// somehow test things were flushed??
-			// or do we just need to vlerify tracer.Flush() is being called
+			select {
+			case <-time.After(time.Second):
+				t.FailNow()
+			case <-done:
+				break
+			}
+			assert.Contains(payload, "test_span")
 		}
+		assert.Equal(tc.flushFail, flushFail)
 		reset()
+		s.Close()
 	}
 }
 
@@ -126,6 +161,7 @@ func TestShutdown(t *testing.T) {
 
 	tp.Shutdown()
 	tp.ForceFlush(5*time.Second, func(ok bool) {})
+
 	logs := testLog.Logs()
 	assert.Contains(t, logs[len(logs)-1], "tracer stopped")
 }

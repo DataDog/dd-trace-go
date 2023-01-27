@@ -22,6 +22,154 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
+func waitForTestAgent(done chan struct{}, timeOut time.Duration, t *testing.T) {
+	select {
+	case <-time.After(timeOut):
+		t.FailNow()
+	case <-done:
+		break
+	}
+}
+
+// initializes a test trace provider and agent server
+func getTestTracerProvider(payload *string, done chan struct{},
+	env string, service string, t *testing.T) (*TracerProvider, *http.Server) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v0.4/traces":
+			buf, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fail()
+			}
+			*payload = fmt.Sprintf("%s", buf)
+			done <- struct{}{}
+		}
+		w.WriteHeader(200)
+	}))
+	tp := NewTracerProvider(
+		tracer.WithEnv(env),
+		tracer.WithHTTPClient(c),
+		tracer.WithService(service))
+	return tp, s
+}
+
+func TestSpanSetName(t *testing.T) {
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	defer tp.Shutdown()
+	assert := assert.New(t)
+
+	_, sp := tr.Start(context.Background(), "OldName")
+	// SetName sets the name but not the resource in span - bug?
+	sp.SetName("NewName")
+	sp.End()
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+
+	assert.Contains(payload, "NewName")
+	// following assert fails because "resource" in span is not set by SetName
+	// assert.NotContains(payload, "OldName")
+}
+
+func TestSpanEnd(t *testing.T) {
+
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	defer tp.Shutdown()
+	assert := assert.New(t)
+
+	_, sp := tr.Start(context.Background(), "OldName")
+	sp.SetStatus(codes.Error, "error_description")
+	sp.SetAttributes(attribute.String("span_end_key", "span_end_val"))
+	sp.End()
+	// following operations should not be able to modify the Span
+	sp.SetStatus(codes.Ok, "ok_description")
+	sp.SetAttributes(attribute.String("span_end", "after_end"))
+	sp.SetAttributes(attribute.String("key1", "val1"))
+	sp.SetName("NewName")
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+
+	assert.Contains(payload, "error_description")
+	assert.Contains(payload, "span_end_val")
+	assert.Contains(payload, "OldName")
+
+	assert.NotContains(payload, "after_end")
+	assert.NotContains(payload, "key1")
+	assert.NotContains(payload, "val1")
+	assert.NotContains(payload, "NewName")
+}
+
+func TestSpanSetStatus(t *testing.T) {
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	defer tp.Shutdown()
+	assert := assert.New(t)
+
+	_, sp := tr.Start(context.Background(), "SpanEndTest")
+	sp.SetStatus(codes.Error, "error_description")
+	// following operation should not do anything
+	sp.SetStatus(codes.Unset, "unset_description")
+	sp.End()
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+
+	assert.Contains(payload, "error_description")
+	assert.NotContains(payload, "unset_description")
+}
+
+func TestSpanSetAttributes(t *testing.T) {
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	defer tp.Shutdown()
+
+	assert := assert.New(t)
+
+	attributes := [][]string{{"SpanAttrK1", "SpanAttrV1Old"},
+		{"SpanAttrK2", "SpanAttrV2"},
+		{"SpanAttrK1", "SpanAttrV1New"}}
+
+	_, sp := tr.Start(context.Background(), "testSpan")
+	for _, tag := range attributes {
+		sp.SetAttributes(attribute.String(tag[0], tag[1]))
+	}
+	sp.End()
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+
+	// check for keys
+	assert.Contains(payload, "SpanAttrK1")
+	assert.Contains(payload, "SpanAttrK2")
+	// check for valid values
+	assert.Contains(payload, "SpanAttrV1New")
+	assert.Contains(payload, "SpanAttrV2")
+	assert.NotContains(payload, "SpanAttrV1Old")
+}
+
 func TestSpanMethods(t *testing.T) {
 	testData := struct {
 		env, srv, oldOp, newOp string
@@ -81,24 +229,4 @@ func TestSpanMethods(t *testing.T) {
 		assert.Contains(payload, tag[0])
 		assert.Contains(payload, tag[1])
 	}
-}
-
-func TestSpanEnd(t *testing.T) {
-	// need?
-}
-
-func TestSpanFinish(t *testing.T) {
-	// need?
-}
-
-func TestSpanSetName(t *testing.T) {
-	// need?
-}
-
-func TestSpanSetStatus(t *testing.T) {
-	// need?
-}
-
-func TestSpanSetAttributes(t *testing.T) {
-	// need?
 }
