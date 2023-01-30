@@ -170,7 +170,6 @@ func BenchmarkApiWithNoTags(b *testing.B) {
 		}
 	})
 }
-
 func BenchmarkApiWithCustomTags(b *testing.B) {
 	testData := struct {
 		env, srv, oldOp, newOp, tagKey, tagValue string
