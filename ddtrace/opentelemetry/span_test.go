@@ -120,7 +120,6 @@ func TestSpanSetStatus(t *testing.T) {
 	defer s.Close()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
-	defer tp.Shutdown()
 	assert := assert.New(t)
 
 	_, sp := tr.Start(context.Background(), "SpanEndTest")

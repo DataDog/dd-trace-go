@@ -86,30 +86,6 @@ func TestTracerOptions(t *testing.T) {
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
-/*
-THIS TEST CASE HANGS:
-	- it seems calling Shutdown before Close() is called on the server
-	- causes a hang
-	- ask ab it monday
-
-func TestStartStop(t *testing.T) {
-
-	var payload string
-	done := make(chan struct{})
-
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-
-	otel.SetTracerProvider(tp)
-	tr := otel.Tracer("")
-
-	_, sp := tr.Start(context.Background(), "test_span")
-	sp.End()
-
-	tp.Shutdown()
-	s.Close()
-}
-*/
-
 func TestForceFlush(t *testing.T) {
 	testData := []struct {
 		timeOut   time.Duration
