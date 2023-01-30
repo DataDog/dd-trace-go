@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/aws"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/gce"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
@@ -114,7 +115,17 @@ func fromConfig(ctx context.Context, _ string) (string, error) {
 }
 
 func fromFargate(ctx context.Context, _ string) (string, error) {
-	// TODO: how can we tell if we're in fargate without asking the user to set an env-var
+	if _, ok := os.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
+		return "", fmt.Errorf("not running in fargate")
+	}
+	launchType, err := aws.GetLaunchType(ctx)
+	if err != nil {
+		return "", err
+	}
+	if launchType == "FARGATE" {
+		// If we're running on fargate we strip the hostname
+		return "", nil
+	}
 	return "", fmt.Errorf("not running in fargate")
 }
 
