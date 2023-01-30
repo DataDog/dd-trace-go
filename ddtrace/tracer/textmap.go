@@ -26,7 +26,7 @@ type HTTPHeadersCarrier http.Header
 var _ TextMapWriter = (*HTTPHeadersCarrier)(nil)
 var _ TextMapReader = (*HTTPHeadersCarrier)(nil)
 
-const W3CKeyPropagationError = "W3CKeyPropagationError"
+const keyPropagationErrorW3C = "keyPropagationErrorW3C"
 
 // Set implements TextMapWriter.
 func (c HTTPHeadersCarrier) Set(key, val string) {
@@ -711,14 +711,14 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		kWithSub := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
 		vWithSub := valueRgx.ReplaceAllString(v, "_")
 		if kWithSub != k || vWithSub != v {
-			ctx.trace.setTag(W3CKeyPropagationError, "invalid_tag_characters")
+			ctx.trace.setTag(keyPropagationErrorW3C, "invalid_tag_characters")
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		tag := fmt.Sprintf("t.%s:%s", kWithSub,
 			strings.ReplaceAll(vWithSub, "=", "~"))
 		if b.Len()+len(tag) > 256 {
-			ctx.trace.setTag(W3CKeyPropagationError, "tracestate_length_exceeded")
+			ctx.trace.setTag(keyPropagationErrorW3C, "tracestate_length_exceeded")
 			break
 		}
 		b.WriteString(";")
@@ -736,7 +736,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		// if the resulting tracestateHeader exceeds 32 list-members,
 		// remove the rightmost list-member(s)
 		if listLength > 32 {
-			ctx.trace.setTag(W3CKeyPropagationError, "tracestate_length_exceeded")
+			ctx.trace.setTag(keyPropagationErrorW3C, "tracestate_length_exceeded")
 			break
 		}
 		b.WriteString("," + strings.Trim(s, " \t"))

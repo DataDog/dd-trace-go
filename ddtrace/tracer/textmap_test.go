@@ -1745,7 +1745,7 @@ func FuzzComposeTracestate(f *testing.F) {
 			sendCtx.trace.setPropagatingTag("_dd.p."+key, "_dd.p."+val)
 		}
 		traceState := composeTracestate(sendCtx, priority, oldState)
-		if _, ok := sendCtx.trace.tags[W3CKeyPropagationError]; ok {
+		if _, ok := sendCtx.trace.tags[keyPropagationErrorW3C]; ok {
 			t.Skipf("Skipping invalid tags")
 		}
 		parseTracestate(recvCtx, traceState)
