@@ -708,15 +708,15 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			continue
 		}
-		sanitizedK := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
-		sanitizedV := valueRgx.ReplaceAllString(v, "_")
-		if sanitizedK != k || sanitizedV != v {
-			ctx.trace.setTag(W3CKeyPropagationError, "invalid_tag_chars")
+		kWithSub := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
+		vWithSub := valueRgx.ReplaceAllString(v, "_")
+		if kWithSub != k || vWithSub != v {
+			ctx.trace.setTag(W3CKeyPropagationError, "invalid_tag_characters")
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		tag := fmt.Sprintf("t.%s:%s", sanitizedK,
-			strings.ReplaceAll(sanitizedV, "=", "~"))
+		tag := fmt.Sprintf("t.%s:%s", kWithSub,
+			strings.ReplaceAll(vWithSub, "=", "~"))
 		if b.Len()+len(tag) > 256 {
 			ctx.trace.setTag(W3CKeyPropagationError, "tracestate_length_exceeded")
 			break
@@ -736,7 +736,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		// if the resulting tracestateHeader exceeds 32 list-members,
 		// remove the rightmost list-member(s)
 		if listLength > 32 {
-			ctx.trace.setPropagatingTag(W3CKeyPropagationError, "tracestate len exceeded")
+			ctx.trace.setTag(W3CKeyPropagationError, "tracestate_length_exceeded")
 			break
 		}
 		b.WriteString("," + strings.Trim(s, " \t"))

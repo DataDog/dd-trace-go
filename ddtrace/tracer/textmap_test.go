@@ -1707,33 +1707,9 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 		marshaled := sendCtx.trace.propagatingTags
 		unmarshaled := recvCtx.trace.propagatingTags
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
-			t.Fatalf("inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
+			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
 		}
 	})
-}
-
-func TestTraceState(t *testing.T) {
-	tags := map[string]string{"_dd.p.,": "_dd.p.0", "_dd.p.0": "_dd.p.0"}
-	sendCtx := new(spanContext)
-	sendCtx.trace = newTrace()
-
-	recvCtx := new(spanContext)
-	recvCtx.trace = newTrace()
-
-	for key, val := range tags {
-		sendCtx.trace.setPropagatingTag(key, val)
-	}
-	traceState := composeTracestate(sendCtx, 0, "")
-	if _, ok := sendCtx.trace.tags[W3CKeyPropagationError]; ok {
-		t.Skipf("Skipping invalid tags")
-	}
-	parseTracestate(recvCtx, traceState)
-	preCompose := sendCtx.trace.propagatingTags
-	preCompose[tracestateHeader] = traceState
-	parsed := recvCtx.trace.propagatingTags
-
-	fmt.Println(preCompose)
-	fmt.Println(parsed)
 }
 
 func FuzzComposeTracestate(f *testing.F) {
@@ -1777,9 +1753,11 @@ func FuzzComposeTracestate(f *testing.F) {
 		preCompose[tracestateHeader] = traceState
 		parsed := recvCtx.trace.propagatingTags
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
-			t.Fatalf(`inconsistent composing/parsing: \npre compose: (%q)
-					\n\tis different from \nparsed: (%q)
-					\nfor tracestate of: (%s)`, preCompose, parsed, traceState)
+			t.Fatalf(`Inconsistentt composing/parsing:
+			pre compose: (%q)
+			is different from
+			parsed: (%q)
+			for tracestate of: (%s)`, preCompose, parsed, traceState)
 		}
 	})
 }
@@ -1789,6 +1767,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		version, traceID, spanID, flags string
 	}{
 		{"00", "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+		{"01", "00000000000000001111111111111111", "9565876494606882", "02"},
 	}
 	for _, tc := range testCases {
 		f.Add(tc.version, tc.traceID, tc.spanID, tc.flags)
@@ -1818,15 +1797,23 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
-		// parseTraceparent always returns lower case trace id - expected behavior?
 		if parsedTraceID != strings.ToLower(traceID) {
-			t.Fatalf("inconsitent traceID parsing: \ngot: %s\nwanted: %s\nfor header of: %s", parsedTraceID, traceID, header)
+			t.Fatalf(`Inconsistent trace id parsing:
+				got: %s
+				wanted: %s
+				for header of: %s`, parsedTraceID, traceID, header)
 		}
 		if parsedSpanID != expectedSpanID {
-			t.Fatalf("inconsitent spanID parsing: \ngot: %d\nwanted: %d\nfor header of: %s", parsedSpanID, expectedSpanID, header)
+			t.Fatalf(`Inconsistent span id parsing:
+				got: %d
+				wanted: %d
+				for header of: %s`, parsedSpanID, expectedSpanID, header)
 		}
 		if parsedFlag != int(expectedFlag)&0x1 {
-			t.Fatalf("inconsitent flag parsing: \ngot: %d\nwanted: %d\nfor header of: %s", parsedFlag, int(expectedFlag)&0x1, header)
+			t.Fatalf(`Inconsistent flag parsing:
+					got: %d
+					wanted: %d
+					for header of: %s`, parsedFlag, int(expectedFlag)&0x1, header)
 		}
 	})
 }
