@@ -42,10 +42,8 @@ var (
 )
 
 func updateTags(tags map[string]string, key string, value string) {
-	if _, ok := tags[key]; !ok {
-		if value != "" {
-			tags[key] = value
-		}
+	if _, ok := tags[key]; !ok && value != "" {
+		tags[key] = value
 	}
 }
 
@@ -83,16 +81,12 @@ func GetGitMetadataTags() map[string]string {
 		return gitMetadataTags
 	}
 
+	gitMetadataTags = make(map[string]string)
+
 	if BoolEnv(EnvGitMetadataEnabledFlag, true) {
-		tags := make(map[string]string)
-
-		updateAllTags(tags, getTagsFromEnv())
-		updateAllTags(tags, getTagsFromDDTags())
-		updateAllTags(tags, getTagsFromBinary())
-
-		gitMetadataTags = tags
-	} else {
-		gitMetadataTags = make(map[string]string)
+		updateAllTags(gitMetadataTags, getTagsFromEnv())
+		updateAllTags(gitMetadataTags, getTagsFromDDTags())
+		updateAllTags(gitMetadataTags, getTagsFromBinary())
 	}
 
 	return gitMetadataTags

@@ -23,8 +23,7 @@ func getTagsFromBinary() map[string]string {
 		return res
 	}
 	goPath := info.Path
-	vcs := ""
-	commitSha := ""
+	var vcs, commitSha string
 	for _, s := range info.Settings {
 		if s.Key == "vcs" {
 			vcs = s.Value
