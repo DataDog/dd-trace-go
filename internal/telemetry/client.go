@@ -314,7 +314,7 @@ func (c *Client) flush() {
 		r := c.newRequest(RequestTypeGenerateMetrics)
 		payload := &Metrics{
 			Namespace:   c.Namespace,
-			LibLanguage: "golang",
+			LibLanguage: "go",
 			LibVersion:  version.Tag,
 		}
 		for _, m := range c.metrics {
@@ -385,7 +385,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 			Env:             c.Env,
 			ServiceVersion:  c.Version,
 			TracerVersion:   version.Tag,
-			LanguageName:    "golang",
+			LanguageName:    "go",
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{
