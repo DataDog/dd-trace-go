@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
+// helper method to wait until timeout for test agent to receive traces
 func waitForTestAgent(done chan struct{}, timeOut time.Duration, t *testing.T) {
 	select {
 	case <-time.After(timeOut):
