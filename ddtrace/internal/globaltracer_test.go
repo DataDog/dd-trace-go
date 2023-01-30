@@ -33,11 +33,11 @@ func TestGlobalTracer(t *testing.T) {
 	if GetGlobalTracer() == nil {
 		t.Fatal("GetGlobalTracer() must never return nil")
 	}
-	SetGlobalTracer(&raceTestTracer{})
-	SetGlobalTracer(&NoopTracer{})
+	SetGlobalTracer(&raceTestTracer{}, false)
+	SetGlobalTracer(&NoopTracer{}, false)
 
 	// ensure the test resets the global tracer back to nothing
-	defer SetGlobalTracer(&raceTestTracer{})
+	defer SetGlobalTracer(&raceTestTracer{}, false)
 
 	const numGoroutines = 10
 
@@ -52,7 +52,7 @@ func TestGlobalTracer(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			var tracer ddtrace.Tracer = tracers[index]
-			SetGlobalTracer(tracer)
+			SetGlobalTracer(tracer, false)
 
 			// get the global tracer: it must be any raceTestTracer
 			tracer = GetGlobalTracer()
@@ -63,7 +63,7 @@ func TestGlobalTracer(t *testing.T) {
 	}
 	wg.Wait()
 
-	SetGlobalTracer(&raceTestTracer{})
+	SetGlobalTracer(&raceTestTracer{}, false)
 
 	// all tracers must be stopped
 	for i, tracer := range tracers {

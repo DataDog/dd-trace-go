@@ -49,8 +49,7 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	t := newMockTracer()
-	internal.SetGlobalTracer(t)
-	internal.Testing = true
+	internal.SetGlobalTracer(t, true)
 	return t
 }
 
@@ -68,8 +67,7 @@ func newMockTracer() *mocktracer {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (*mocktracer) Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
-	internal.Testing = false
+	internal.SetGlobalTracer(&internal.NoopTracer{}, false)
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {

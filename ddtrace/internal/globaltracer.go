@@ -11,33 +11,49 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
+type tracerCfg struct {
+	tracer  ddtrace.Tracer
+	testing bool
+}
+
 var (
 	// globalTracer stores the current tracer as *ddtrace.Tracer (pointer to interface). The
 	// atomic.Value type requires types to be consistent, which requires using *ddtrace.Tracer.
-	globalTracer atomic.Value
+	globalTracer atomic.Value //atomic.Value[*tracerCfg]
 )
 
 func init() {
 	var tracer ddtrace.Tracer = &NoopTracer{}
-	globalTracer.Store(&tracer)
+	globalTracer.Store(&tracerCfg{tracer: tracer})
 }
 
-// SetGlobalTracer sets the global tracer to t.
-func SetGlobalTracer(t ddtrace.Tracer) {
-	old := *globalTracer.Swap(&t).(*ddtrace.Tracer)
-	if !Testing {
-		old.Stop()
+// SetGlobalTracer sets the global tracer to t. testing is set to true when the mock tracer is
+// active. It usually signifies that we are in a test environment. This value is used by
+// tracer.Start to prevent overriding the GlobalTracer in tests.
+func SetGlobalTracer(t ddtrace.Tracer, testing bool) {
+	old := *globalTracer.Swap(&tracerCfg{tracer: t, testing: testing}).(*tracerCfg)
+	if !old.testing {
+		old.tracer.Stop()
 	}
 }
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
-	return *globalTracer.Load().(*ddtrace.Tracer)
+	gt := globalTracer.Load().(*tracerCfg)
+	if gt != nil {
+		return gt.tracer
+	}
+	return nil
 }
 
-// Testing is set to true when the mock tracer is active. It usually signifies that we are in a test
-// environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.
-var Testing = false
+// Testing returns if there is a currently running tracer in testing mode.
+func Testing() bool {
+	gt := globalTracer.Load().(*tracerCfg)
+	if gt != nil {
+		return gt.testing
+	}
+	return false
+}
 
 var _ ddtrace.Tracer = (*NoopTracer)(nil)
 

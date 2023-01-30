@@ -335,7 +335,7 @@ func TestTextMapPropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		tracer := newTracer()
 		defer tracer.Stop()
-		internal.SetGlobalTracer(tracer)
+		internal.SetGlobalTracer(tracer, false)
 		child := tracer.StartSpan("test")
 		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
 		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello2", "world,") // invalid value

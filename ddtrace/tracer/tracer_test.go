@@ -167,7 +167,7 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("testing", func(t *testing.T) {
-		internal.Testing = true
+		internal.SetGlobalTracer(&internal.NoopTracer{}, true)
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -176,7 +176,6 @@ func TestTracerStart(t *testing.T) {
 		if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
 			t.Fail()
 		}
-		internal.Testing = false
 	})
 
 	t.Run("tracing_not_enabled", func(t *testing.T) {
@@ -1745,7 +1744,7 @@ func startTestTracer(t interface {
 		withTickChan(tick),
 	}, opts...)
 	tracer := newTracer(o...)
-	internal.SetGlobalTracer(tracer)
+	internal.SetGlobalTracer(tracer, false)
 	flushFunc := func(n int) {
 		if n < 0 {
 			tick <- time.Now()
@@ -1768,7 +1767,7 @@ func startTestTracer(t interface {
 		}
 	}
 	return tracer, transport, flushFunc, func() {
-		internal.SetGlobalTracer(&internal.NoopTracer{})
+		internal.SetGlobalTracer(&internal.NoopTracer{}, false)
 		tracer.Stop()
 	}
 }

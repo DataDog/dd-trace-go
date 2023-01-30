@@ -776,9 +776,9 @@ func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
 
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
-		internal.SetGlobalTracer(t)
+		internal.SetGlobalTracer(t, false)
 		defer func() {
-			internal.SetGlobalTracer(&internal.NoopTracer{})
+			internal.SetGlobalTracer(&internal.NoopTracer{}, false)
 		}()
 		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{

@@ -119,14 +119,14 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) {
-	if internal.Testing {
+	if internal.Testing() {
 		return // mock tracer active
 	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		return
 	}
-	internal.SetGlobalTracer(t)
+	internal.SetGlobalTracer(t, false)
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -142,7 +142,7 @@ func Start(opts ...StartOption) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
+	internal.SetGlobalTracer(&internal.NoopTracer{}, false)
 	log.Flush()
 }
 
