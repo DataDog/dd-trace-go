@@ -1679,8 +1679,7 @@ func TestGitMetadata(t *testing.T) {
 	maininternal.ResetGitMetadataTags()
 
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
-		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-		defer os.Unsetenv(maininternal.EnvDDTags)
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -1696,14 +1695,11 @@ func TestGitMetadata(t *testing.T) {
 	})
 
 	t.Run("git-metadata-from-env", func(t *testing.T) {
-		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
-		defer os.Unsetenv(maininternal.EnvDDTags)
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
 		// git metadata env has priority under DD_TAGS
-		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
-		os.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		defer os.Unsetenv(maininternal.EnvGitCommitSha)
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -1718,10 +1714,8 @@ func TestGitMetadata(t *testing.T) {
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
-		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
-		defer os.Unsetenv(maininternal.EnvDDTags)
-		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
-		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -1736,15 +1730,11 @@ func TestGitMetadata(t *testing.T) {
 	})
 
 	t.Run("git-metadata-disabled", func(t *testing.T) {
-		os.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
-		defer os.Unsetenv(maininternal.EnvGitMetadataEnabledFlag)
+		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
 
-		os.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
-		defer os.Unsetenv(maininternal.EnvDDTags)
-		os.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		defer os.Unsetenv(maininternal.EnvGitRepositoryURL)
-		os.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-		defer os.Unsetenv(maininternal.EnvGitCommitSha)
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
