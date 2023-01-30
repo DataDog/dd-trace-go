@@ -1620,8 +1620,8 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	root := tracer.StartSpan("test")
 	defer root.Finish()
 
-	for i := 0; i < 5; i++ {
-		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("someKey%d", i), fmt.Sprintf("someVal%d", i))
+	for i := 0; i < 100; i++ {
+		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 
 	dst := map[string]string{}
@@ -1649,10 +1649,10 @@ func BenchmarkInjectW3C(b *testing.B) {
 	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
 	setPropagatingTag(ctx, tracestateHeader, oldTraceState)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 100; i++ {
 		// _dd.p. prefix is needed for w3c
-		k := fmt.Sprintf("_dd.p.someKey%d", i)
-		v := fmt.Sprintf("someVal%d", i)
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
 		setPropagatingTag(ctx, k, v)
 	}
 

@@ -695,6 +695,7 @@ var (
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
+	b.Grow(128)
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
@@ -710,7 +711,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		sanitizedK := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
 		sanitizedV := valueRgx.ReplaceAllString(v, "_")
 		if sanitizedK != k || sanitizedV != v {
-			ctx.trace.setTag(W3CKeyPropagationError, "invald_tag_chars")
+			ctx.trace.setTag(W3CKeyPropagationError, "invalid_tag_chars")
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
