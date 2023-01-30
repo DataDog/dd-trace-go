@@ -1712,11 +1712,49 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 	})
 }
 
+func TestTraceState(t *testing.T) {
+	tags := map[string]string{"_dd.p.,": "_dd.p.0", "_dd.p.0": "_dd.p.0"}
+	sendCtx := new(spanContext)
+	sendCtx.trace = newTrace()
+
+	recvCtx := new(spanContext)
+	recvCtx.trace = newTrace()
+
+	for key, val := range tags {
+		sendCtx.trace.setPropagatingTag(key, val)
+	}
+	traceState := composeTracestate(sendCtx, 0, "")
+	if _, ok := sendCtx.trace.tags[W3CKeyPropagationError]; ok {
+		t.Skipf("Skipping invalid tags")
+	}
+	parseTracestate(recvCtx, traceState)
+	preCompose := sendCtx.trace.propagatingTags
+	preCompose[tracestateHeader] = traceState
+	parsed := recvCtx.trace.propagatingTags
+
+	fmt.Println(preCompose)
+	fmt.Println(parsed)
+}
+
 func FuzzComposeTracestate(f *testing.F) {
-
-	oldState := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
-	f.Add(1, "key1", "val1", "key2", "val2", "key3", "val3", oldState)
-
+	testCases := []struct {
+		priority                         int
+		k1, v1, k2, v2, k3, v3, oldState string
+	}{
+		{priority: 1,
+			k1: "key1", v1: "val1",
+			k2: "key2", v2: "val2",
+			k3: "key3", v3: "val3",
+			oldState: "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"},
+		{priority: 1,
+			k1: "keyOne", v1: "json",
+			k2: "KeyTwo", v2: "123123",
+			k3: "table", v3: "chair",
+			oldState: "dd=s:-2;o:synthetics___web"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
+	}
 	f.Fuzz(func(t *testing.T, priority int, key1 string, val1 string,
 		key2 string, val2 string, key3 string, val3 string, oldState string) {
 
@@ -1739,7 +1777,9 @@ func FuzzComposeTracestate(f *testing.F) {
 		preCompose[tracestateHeader] = traceState
 		parsed := recvCtx.trace.propagatingTags
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
-			t.Fatalf("inconsistent composing/parsing: \npre compose: (%q)\n\tis different from \nparsed: (%q)\nfor tracestate of: (%s)", preCompose, parsed, traceState)
+			t.Fatalf(`inconsistent composing/parsing: \npre compose: (%q)
+					\n\tis different from \nparsed: (%q)
+					\nfor tracestate of: (%s)`, preCompose, parsed, traceState)
 		}
 	})
 }

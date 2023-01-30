@@ -707,13 +707,17 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			continue
 		}
+		sanitizedK := keyRgx.ReplaceAllString(k[len("_dd.p."):], "_")
+		sanitizedV := valueRgx.ReplaceAllString(v, "_")
+		if sanitizedK != k || sanitizedV != v {
+			ctx.trace.setTag(W3CKeyPropagationError, "invald_tag_chars")
+		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		tag := fmt.Sprintf("t.%s:%s",
-			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
-			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
+		tag := fmt.Sprintf("t.%s:%s", sanitizedK,
+			strings.ReplaceAll(sanitizedV, "=", "~"))
 		if b.Len()+len(tag) > 256 {
-			ctx.trace.setPropagatingTag(W3CKeyPropagationError, "tracestate len exceeded")
+			ctx.trace.setTag(W3CKeyPropagationError, "tracestate_length_exceeded")
 			break
 		}
 		b.WriteString(";")
