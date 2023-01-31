@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -138,6 +139,7 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
+	go hostname.Get(gocontext.Background()) // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -301,6 +303,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleFinishedTrace(trace)
+			t.addHostname(trace)
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}

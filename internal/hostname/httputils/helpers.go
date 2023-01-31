@@ -1,7 +1,6 @@
 package httputils
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -26,36 +25,6 @@ func createTransport() *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-}
-
-// Put is a high level helper to query a URL using the PUT method and return its body as a string
-func Put(ctx context.Context, URL string, headers map[string]string, body []byte, timeout time.Duration) (string, error) {
-	// Most of the following timeouts are a copy of Golang http.DefaultTransport
-	// They are mostly used to act as safeguards in case we forget to add a general
-	// timeout to our http clients.  Setting DialContext and TLSClientConfig has the
-	// desirable side-effect of disabling http/2; if removing those fields then
-	// consider the implication of the protocol switch for intakes and other http
-	// servers. See ForceAttemptHTTP2 in https://pkg.go.dev/net/http#Transport.
-	client := http.Client{
-		Transport: createTransport(),
-		Timeout:   timeout,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, URL, bytes.NewBuffer(body))
-	if err != nil {
-		return "", err
-	}
-
-	for header, value := range headers {
-		req.Header.Add(header, value)
-	}
-
-	res, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-
-	return parseResponse(res, "PUT", URL)
 }
 
 // Get is a high level helper to query a URL and return its body as a string

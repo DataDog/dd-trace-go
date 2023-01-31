@@ -4,19 +4,42 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/aws"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ec2"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ecs"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/gce"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-var cachedHostname string
+var (
+	cachedHostname  string
+	cachedAt        time.Time
+	cacheExpiration = 5 * time.Minute
+	m               sync.RWMutex
+	isRefreshing    *atomic.Value
+)
 
-// getCached returns the cached hostname if it is still valid, empty string otherwise
-func getCached() string {
-	return cachedHostname
+// getCached returns the cached hostname and a bool indicating if the hostname should be refreshed
+func getCached(now time.Time) (string, bool) {
+	m.RLock()
+	defer m.RUnlock()
+	if now.Sub(cachedAt) > cacheExpiration {
+		return cachedHostname, true
+	}
+	return cachedHostname, false
+}
+
+// setCached caches the newHostname
+func setCached(now time.Time, newHostname string) {
+	m.Lock()
+	m.Unlock()
+	cachedHostname = newHostname
+	cachedAt = now
 }
 
 type provider struct {
@@ -73,38 +96,45 @@ var providerCatalog = []provider{
 	},
 }
 
-// Get returns the hostname for the tracer
-func Get(ctx context.Context) (string, error) {
-	if ch := getCached(); ch != "" {
-		return ch, nil
+// Get returns the cached hostname for the tracer, empty if we haven't found one yet.
+// Spawning a go routine to update the hostname if it is empty or out of date
+func Get(ctx context.Context) string {
+	now := time.Now()
+	var (
+		ch            string
+		shouldRefresh bool
+	)
+	if ch, shouldRefresh = getCached(now); !shouldRefresh && ch != "" {
+		return ch
 	}
-	err := LoadHostname(ctx)
-	if err != nil {
-		return "", fmt.Errorf("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
+	// Use CAS to avoid spawning more than one go-routine trying to update the cached hostname
+	ir := isRefreshing.CompareAndSwap(false, true)
+	if ir == true {
+		go func() {
+			defer isRefreshing.Store(false)
+			var hostname string
+
+			for _, p := range providerCatalog {
+				detectedHostname, err := p.pf(ctx, hostname)
+				if err != nil {
+					log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
+					continue
+				}
+				hostname = detectedHostname
+				if p.stopIfSuccessful {
+					setCached(now, hostname)
+				}
+			}
+			if hostname != "" {
+				setCached(now, hostname)
+			}
+			log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
+		}()
 	}
-	return cachedHostname, nil
+	return ch
 }
 
-// LoadHostname attempts to look up and cache the hostname for this application.
-func LoadHostname(ctx context.Context) error {
-	var hostname string
-
-	for _, p := range providerCatalog {
-		detectedHostname, err := p.pf(ctx, hostname)
-		if err != nil {
-			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
-			continue
-		}
-		hostname = detectedHostname
-		if p.stopIfSuccessful {
-			cachedHostname = hostname
-			return nil
-		}
-	}
-	return fmt.Errorf("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
-}
-
-func fromConfig(ctx context.Context, _ string) (string, error) {
+func fromConfig(_ context.Context, _ string) (string, error) {
 	hn := os.Getenv("DD_HOSTNAME")
 	err := validate.ValidHostname(hn)
 	if err != nil {
@@ -118,7 +148,7 @@ func fromFargate(ctx context.Context, _ string) (string, error) {
 	if _, ok := os.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
 		return "", fmt.Errorf("not running in fargate")
 	}
-	launchType, err := aws.GetLaunchType(ctx)
+	launchType, err := ecs.GetLaunchType(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -137,7 +167,7 @@ func fromAzure(ctx context.Context, _ string) (string, error) {
 	return azure.GetHostname(ctx)
 }
 
-func fromFQDN(ctx context.Context, _ string) (string, error) {
+func fromFQDN(_ context.Context, _ string) (string, error) {
 	//TODO: test this on windows
 	fqdn, err := getSystemFQDN()
 	if err != nil {
@@ -159,7 +189,18 @@ func fromContainer(_ context.Context, _ string) (string, error) {
 	return "", fmt.Errorf("container hostname detection not implemented")
 }
 
-func fromEC2(_ context.Context, _ string) (string, error) {
-	//TODO: Impl me
-	return "", fmt.Errorf("EC2 hostname detection not implemented")
+func fromEC2(ctx context.Context, currentHostname string) (string, error) {
+	if ec2.IsDefaultHostname(currentHostname) {
+		// If the current hostname is a default one we try to get the instance id
+		instanceID, err := ec2.GetInstanceID(ctx)
+		if err != nil {
+			return "", fmt.Errorf("unable to determine hostname from EC2: %s", err)
+		}
+		err = validate.ValidHostname(instanceID)
+		if err != nil {
+			return "", fmt.Errorf("EC2 instance id is not a valid hostname: %s", err)
+		}
+		return instanceID, nil
+	}
+	return "", fmt.Errorf("not retrieving hostname from AWS: the host is not an ECS instance and other providers already retrieve non-default hostnames")
 }
