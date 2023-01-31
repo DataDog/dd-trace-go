@@ -218,3 +218,10 @@ func (r *RecordLogger) Logs() []string {
 	copy(copied, r.logs)
 	return copied
 }
+
+// Reset resets the logger's internal logs
+func (r *RecordLogger) Reset() {
+	r.m.Lock()
+	defer r.m.Unlock()
+	r.logs = r.logs[:0]
+}

@@ -708,6 +708,8 @@ func TestTracerBaggagePropagation(t *testing.T) {
 }
 
 func TestStartSpanOrigin(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer := newTracer()
@@ -737,6 +739,8 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestPropagationDefaults(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer := newTracer()
@@ -2002,9 +2006,20 @@ func (w *testTraceWriter) Flushed() []*span {
 
 func TestFlush(t *testing.T) {
 	tr, _, _, stop := startTestTracer(t)
+	defer stop()
+
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
-	defer stop()
+
+	ts := &testStatsdClient{}
+	tr.statsd = ts
+
+	transport := newDummyTransport()
+	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	tr.stats = c
+	c.Start()
+	defer c.Stop()
+
 	tr.StartSpan("op").Finish()
 	timeout := time.After(time.Second)
 loop:
@@ -2020,9 +2035,23 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
+	as := &aggregableSpan{
+		key: aggregation{
+			Name: "http.request",
+		},
+		// Start must be older than latest bucket to get flushed
+		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
+		Duration: 1,
+	}
+	c.add(as)
+
 	assert.Len(t, tw.Flushed(), 0)
+	assert.Zero(t, ts.flushed)
+	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
+	assert.Equal(t, 1, ts.flushed)
+	assert.Len(t, transport.Stats(), 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {
@@ -2099,8 +2128,7 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id, WithPropagation())
 		s.Finish()
-		_, ok := s.Meta[keyUserID]
-		assert.False(t, ok)
+		assert.Equal(t, id, s.Meta[keyUserID])
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
 		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
