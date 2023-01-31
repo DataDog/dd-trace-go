@@ -337,6 +337,7 @@ const (
 	serverRequestBodyAddr             = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
 	httpClientIPAddr                  = "http.client_ip"
+	userID                            = "usr.id"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -349,6 +350,7 @@ var httpAddresses = []string{
 	serverRequestBodyAddr,
 	serverResponseStatusAddr,
 	httpClientIPAddr,
+	userID,
 }
 
 // gRPC rule addresses currently supported by the WAF
@@ -362,6 +364,7 @@ var grpcAddresses = []string{
 	grpcServerRequestMessage,
 	grpcServerRequestMetadata,
 	httpClientIPAddr,
+	userID,
 }
 
 func init() {
