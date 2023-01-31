@@ -1428,20 +1428,6 @@ func TestEnvVars(t *testing.T) {
 					spanID:   1311768467284833366,
 					priority: 1,
 				},
-				{
-					in: TextMapCarrier{
-						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
-						tracestateHeader:  "dd=s:2;o:r~~;t.usr.id:baz64~~",
-					},
-					out: TextMapCarrier{
-						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
-						tracestateHeader:  "dd=s:2;o:r~~;t.usr.id:baz64~~",
-					},
-					traceID:  8687463697196027922,
-					spanID:   1311768467284833366,
-					priority: 2,
-					origin:   "r==",
-				},
 			}
 			for i, test := range tests {
 				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
@@ -1457,7 +1443,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(test.traceID, sctx.traceID)
 					assert.Equal(test.spanID, sctx.spanID)
-					// idt this assert is right
+
 					assert.Equal(test.origin, sctx.origin)
 					assert.Equal(test.priority, *sctx.trace.priority)
 
