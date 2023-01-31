@@ -154,7 +154,8 @@ func fromOS(_ context.Context, currentHostname string) (string, error) {
 }
 
 func fromContainer(_ context.Context, _ string) (string, error) {
-	//TODO: Impl me
+	// This provider is not implemented as most customers do not provide access to kube-api server, kubelet, or docker socket
+	// on their application containers. Providing this access is almost always a not-good idea and could be burdensome for customers.
 	return "", fmt.Errorf("container hostname detection not implemented")
 }
 
