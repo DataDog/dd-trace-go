@@ -683,8 +683,8 @@ var (
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Disallowed characters must be replaced with the underscore,
-	// except for equals which will be replaced with a tilde
+	// Equals character must be encoded with a tilde.
+	// Other disallowed characters must be replaced with the underscore.
 	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 )
 
