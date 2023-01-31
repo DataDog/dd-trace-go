@@ -110,7 +110,6 @@ func getResponseWithMaxLength(ctx context.Context, endpoint string, maxLength in
 
 func getResponse(ctx context.Context, url string) (string, error) {
 	// TODO: Assume gce is enabled
-
 	res, err := httputils.Get(ctx, url, map[string]string{"Metadata-Flavor": "Google"}, 1000*time.Millisecond)
 	if err != nil {
 		return "", fmt.Errorf("GCE metadata API error: %s", err)
