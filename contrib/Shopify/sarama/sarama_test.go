@@ -79,6 +79,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 	{
 		s := spans[1]
@@ -95,6 +96,7 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, "kafka.consume", s.OperationName())
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -146,6 +148,7 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, int64(0), s.Tag("offset"))
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -199,6 +202,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -241,6 +245,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, int64(0), s.Tag("offset"))
 			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 		}
 	})
 
@@ -281,6 +286,7 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, int64(0), s.Tag("offset"))
 			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 		}
 	})
 }
