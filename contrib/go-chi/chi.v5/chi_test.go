@@ -106,6 +106,32 @@ func TestTrace200(t *testing.T) {
 	})
 }
 
+func TestWithModifyResourceName(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware(WithModifyResourceName(func(r string) string { return strings.TrimSuffix(r, "/") })))
+	router.Get("/user/{id}/", func(w http.ResponseWriter, r *http.Request) {})
+
+	r := httptest.NewRequest("GET", "/user/123/", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(t, response.StatusCode, 200)
+
+	// verify traces look good
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	if len(spans) < 1 {
+		t.Fatalf("no spans")
+	}
+	span := spans[0]
+	assert.Equal(t, "GET /user/{id}", span.Tag(ext.ResourceName))
+}
+
 func TestError(t *testing.T) {
 	assertSpan := func(assert *assert.Assertions, spans []mocktracer.Span, code int) {
 		assert.Len(spans, 1)
