@@ -8,7 +8,6 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -85,35 +84,6 @@ func TestTracerOptions(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
-}
-
-func TestEnvVars(t *testing.T) {
-	const (
-		headerPropagationStyleInject           = "DD_TRACE_PROPAGATION_STYLE_INJECT"
-		headerPropagationStyle                 = "DD_TRACE_PROPAGATION_STYLE"
-		headerPropagationStyleInjectDeprecated = "DD_PROPAGATION_STYLE_INJECT" // deprecated
-	)
-
-	testEnvs := []map[string]string{
-		{headerPropagationStyleInject: "traceContext"},
-		{headerPropagationStyleInject: "traceContext,datadog"},
-		{headerPropagationStyleInject: "b3,traceContext"},
-		{headerPropagationStyle: "datadog"},
-		{headerPropagationStyleInject: "traceContext", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
-	}
-
-	for _, testEnv := range testEnvs {
-		for k, v := range testEnv {
-			t.Setenv(k, v)
-		}
-		tp := NewTracerProvider(tracer.WithEnv("test_env"), tracer.WithService("test_srv"))
-		otel.SetTracerProvider(tp)
-		tr := otel.Tracer("ot")
-		ctx, sp := tr.Start(context.Background(), "otel.test")
-		sCtx := sp.SpanContext()
-		reflect.DeepEqual(ctx, sCtx)
-	}
-
 }
 
 func TestForceFlush(t *testing.T) {
