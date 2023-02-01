@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -224,7 +225,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.True(t, cfg.agent.DropP0s)
 		assert.True(t, cfg.agent.Stats)
-		assert.Equal(t, cfg.agent.StatsdPort, 8999)
+		assert.Equal(t, 8999, cfg.agent.StatsdPort)
 	})
 }
 
@@ -234,7 +235,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := newConfig()
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
-		assert.Equal("http://localhost:8126", c.agentURL)
+		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.agentURL)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
 		assert.Equal(defaultClient, c.httpClient)
@@ -341,7 +342,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		tracer := newTracer()
 		defer tracer.Stop()
 		c := tracer.config
-		assert.Equal(t, "http://trace-agent:8126", c.agentURL)
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "trace-agent:8126"}, c.agentURL)
 	})
 
 	t.Run("env-agentURL", func(t *testing.T) {
@@ -350,7 +351,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "https://custom:1234", c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
 		})
 
 		t.Run("override-env", func(t *testing.T) {
@@ -360,7 +361,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "https://custom:1234", c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
 		})
 
 		t.Run("code-override", func(t *testing.T) {
@@ -368,7 +369,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer(WithAgentAddr("testhost:3333"))
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "http://testhost:3333", c.agentURL)
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
 		})
 	})
 
@@ -413,7 +414,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
-		assert.Equal("http://ddagent.consul.local:58126", c.agentURL)
+		assert.Equal(&url.URL{Scheme: "http", Host: "ddagent.consul.local:58126"}, c.agentURL)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.Equal("testEnv", c.env)
