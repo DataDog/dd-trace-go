@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka
+package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka.go.v0"
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.ServiceName(r.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag("partition", msg.Partition),
+		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 		tracer.Tag("offset", msg.Offset),
 		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
@@ -151,7 +151,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 }
 
 func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
-	span.SetTag("partition", partition)
+	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
 }

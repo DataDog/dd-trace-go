@@ -110,3 +110,9 @@ const (
 	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
 	MessagingSystem = "messaging.system"
 )
+
+// Messaging tags.
+const (
+	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
+	MessagingKafkaPartition = "messaging.kafka.partition"
+)
