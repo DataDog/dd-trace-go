@@ -106,4 +106,16 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+<<<<<<< Updated upstream
+=======
+
+	// RPCSystem identifies which rpc system created this span (gRPC, java_rmi, dotnet_wcf, apache_dubbo...)
+	RPCSystem = "rpc.system"
+
+	// RPCService is the full logical name of the service being called
+	RPCService = "rpc.service"
+
+	// RPCMethod is the logical name of the method from the RPC interface perspective
+	RPCMethod = "rpc.method"
+>>>>>>> Stashed changes
 )

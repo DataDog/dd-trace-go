@@ -50,6 +50,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, "google.golang.org/grpc")
+		span.SetTag(ext.RPCService, ss.cfg.serverServiceName())
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.RecvMsg(m)
@@ -68,6 +69,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, "google.golang.org/grpc")
+		span.SetTag(ext.RPCService, ss.cfg.serverServiceName())
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
@@ -96,7 +98,8 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				cfg.serverServiceName(),
 				cfg.startSpanOptions(tracer.Measured(),
 					tracer.Tag(ext.Component, "google.golang.org/grpc"),
-					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
+					tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+					tracer.Tag(ext.RPCService, cfg.serverServiceName()))...,
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
@@ -144,7 +147,8 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			cfg.serverServiceName(),
 			cfg.startSpanOptions(tracer.Measured(),
 				tracer.Tag(ext.Component, "google.golang.org/grpc"),
-				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
+				tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+				tracer.Tag(ext.RPCService, cfg.serverServiceName()))...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
 		if cfg.withMetadataTags {
