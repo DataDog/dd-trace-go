@@ -98,7 +98,7 @@ var providerCatalog = []provider{
 
 // Get returns the cached hostname for the tracer, empty if we haven't found one yet.
 // Spawning a go routine to update the hostname if it is empty or out of date
-func Get(ctx context.Context) string {
+func Get() string {
 	now := time.Now()
 	var (
 		ch            string
@@ -112,6 +112,8 @@ func Get(ctx context.Context) string {
 	if ir == true {
 		go func() {
 			defer isRefreshing.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
 			var hostname string
 
 			for _, p := range providerCatalog {

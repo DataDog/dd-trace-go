@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"net/url"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -92,6 +93,10 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// isUDSEnv is used to identify if the tracer is connecting to the agent over UDS.
+	// If this is true then the tracer will not attempt to do hostname detection.
+	isUDSEnv bool
 }
 
 const (
@@ -139,7 +144,8 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
-	go hostname.Get(gocontext.Background()) // Prime the hostname cache
+	go hostname.Get() // Prime the hostname cache
+	url.Parse(cfg.AgentURL)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -598,6 +604,16 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
+}
+
+func (t *tracer) addHostname(trace *finishedTrace) {
+	if url.Parse(t.config.agentURL)
+	hn := hostname.Get()
+	if hn == "" {
+		return
+	}
+	// TODO: do this for every span?
+	trace.spans[0].Meta["_dd.tracer_hostname"] = hn
 }
 
 func startExecutionTracerTask(name string) func() {

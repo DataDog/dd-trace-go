@@ -1679,6 +1679,10 @@ func TestEnvironment(t *testing.T) {
 	})
 }
 
+func TestStartSetsIsUDSEnv(t *testing.T) {
+
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
