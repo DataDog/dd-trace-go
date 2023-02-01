@@ -59,6 +59,10 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
+	// sendRetries is the number of times a trace payload send is retried upon
+	// failure.
+	sendRetries int
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -514,9 +518,20 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+// This option is only required if the the Datadog Lambda Extension is not
+// running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.logToStdout = enabled
+	}
+}
+
+// WithSendRetries enables re-sending payloads that are not successfully
+// submitted to the agent.  This will cause the tracer to retry the send at
+// most `retries` times.
+func WithSendRetries(retries int) StartOption {
+	return func(c *config) {
+		c.sendRetries = retries
 	}
 }
 
