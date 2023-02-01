@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
@@ -176,4 +177,51 @@ func genUpdateResponse(payload []byte, cfgPath string) *clientGetConfigsResponse
 		TargetFiles:   []*file{{Path: cfgPath, Raw: payload}},
 		ClientConfigs: []string{cfgPath},
 	}
+}
+
+func TestConfig(t *testing.T) {
+	t.Run("poll-interval", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			env      string
+			expected time.Duration
+		}{
+			{
+				name:     "default",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "1s",
+				env:      "1",
+				expected: 1 * time.Second,
+			},
+			{
+				name:     "1min",
+				env:      "60",
+				expected: 60 * time.Second,
+			},
+			{
+				name:     "-1s",
+				env:      "-1",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "invalid-1",
+				env:      "10s",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "invalid-2",
+				env:      "1b2",
+				expected: 5 * time.Second,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv(envPollIntervalSec, tc.env)
+				duration := pollIntervalFromEnv()
+				require.Equal(t, tc.expected, duration)
+
+			})
+		}
+	})
 }

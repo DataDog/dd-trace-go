@@ -107,3 +107,9 @@ const (
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
 )
+
+// Messaging tags.
+const (
+	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
+	MessagingKafkaPartition = "messaging.kafka.partition"
+)
