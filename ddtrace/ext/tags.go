@@ -116,3 +116,9 @@ const (
 	// RPCMethod is the logical name of the method from the RPC interface perspective
 	RPCMethod = "rpc.method"
 )
+
+// Messaging tags.
+const (
+	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
+	MessagingKafkaPartition = "messaging.kafka.partition"
+)

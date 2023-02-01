@@ -81,7 +81,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, 0, s0.Tag("partition"))
+	assert.Equal(t, 0, s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 
@@ -91,7 +91,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, 0, s1.Tag("partition"))
+	assert.Equal(t, 0, s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 }
@@ -147,7 +147,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
 	assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-	assert.Equal(t, 0, s0.Tag("partition"))
+	assert.Equal(t, 0, s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 
@@ -157,7 +157,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
 	assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-	assert.Equal(t, 0, s1.Tag("partition"))
+	assert.Equal(t, 0, s1.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 }
