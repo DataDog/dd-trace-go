@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
+// This file is pulled from datadog-agent/pkg/util/http (Only removing agent SSL config and unused funcs)
+
 package httputils
 
 import (
