@@ -230,7 +230,7 @@ func newConfig(opts ...StartOption) *config {
 		c.httpClient = udsClient(c.agentURL.Path)
 		c.agentURL = &url.URL{
 			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.ReplaceAll(c.agentURL.Path, "/", "_")),
+			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 		}
 	} else if c.httpClient == nil {
 		c.httpClient = defaultClient
