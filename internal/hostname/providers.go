@@ -24,6 +24,10 @@ var (
 	isRefreshing    atomic.Value
 )
 
+func init() {
+	isRefreshing.Store(false)
+}
+
 // getCached returns the cached hostname and a bool indicating if the hostname should be refreshed
 func getCached(now time.Time) (string, bool) {
 	m.RLock()
@@ -124,13 +128,16 @@ func Get() string {
 				}
 				hostname = detectedHostname
 				if p.stopIfSuccessful {
+					log.Debug("Found hostname %s, from provider %s", hostname, p.name)
 					setCached(now, hostname)
 				}
 			}
 			if hostname != "" {
+				log.Debug("Found hostname %s", hostname)
 				setCached(now, hostname)
+			} else {
+				log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
 			}
-			log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
 		}()
 	}
 	return ch
