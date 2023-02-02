@@ -1637,11 +1637,12 @@ func BenchmarkInjectW3C(b *testing.B) {
 	defer root.Finish()
 
 	ctx := root.Context().(*spanContext)
-	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
-	oldTraceState := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
 
-	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
-	setPropagatingTag(ctx, tracestateHeader, oldTraceState)
+	setPropagatingTag(ctx, w3cTraceIDTag,
+		"4bf92f3577b34da6a3ce929d0e0e4736")
+	setPropagatingTag(ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
 	for i := 0; i < 100; i++ {
 		// _dd.p. prefix is needed for w3c
 		k := fmt.Sprintf("_dd.p.k%d", i)
@@ -1706,11 +1707,11 @@ func FuzzComposeTracestate(f *testing.F) {
 		priority                         int
 		k1, v1, k2, v2, k3, v3, oldState string
 	}{
-		{priority: 1,
-			k1: "key1", v1: "val1",
-			k2: "key2", v2: "val2",
-			k3: "key3", v3: "val3",
-			oldState: "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"},
+		{priority: 49,
+			k1: "0", v1: "0",
+			k2: "0", v2: "================================================================================================================================",
+			k3: "", v3: "0",
+			oldState: "0"},
 		{priority: 1,
 			k1: "keyOne", v1: "json",
 			k2: "KeyTwo", v2: "123123",
@@ -1729,23 +1730,30 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx.trace = newTrace()
 
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		totalLen := 0
 		for key, val := range tags {
-			sendCtx.trace.setPropagatingTag("_dd.p."+key, "_dd.p."+val)
+			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
+			v := valueRgx.ReplaceAllString(val, "_")
+			totalLen += (len(k) + len(v))
+			if totalLen > 128 {
+				break
+			}
+			sendCtx.trace.setPropagatingTag(k, v)
 		}
-		traceState := composeTracestate(sendCtx, priority, oldState)
-		if _, ok := sendCtx.trace.tags[keyPropagationErrorW3C]; ok {
+		if len(strings.Split(strings.Trim(oldState, " \t"), ",")) > 31 {
 			t.Skipf("Skipping invalid tags")
 		}
+		traceState := composeTracestate(sendCtx, priority, oldState)
 		parseTracestate(recvCtx, traceState)
-		preCompose := sendCtx.trace.propagatingTags
-		preCompose[tracestateHeader] = traceState
-		parsed := recvCtx.trace.propagatingTags
+		setPropagatingTag(sendCtx, tracestateHeader, traceState)
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
-			t.Fatalf(`Inconsistentt composing/parsing:
+			t.Fatalf(`Inconsistent composing/parsing:
 			pre compose: (%q)
 			is different from
 			parsed: (%q)
-			for tracestate of: (%s)`, preCompose, parsed, traceState)
+			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
+				recvCtx.trace.propagatingTags,
+				traceState)
 		}
 	})
 }
