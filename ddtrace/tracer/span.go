@@ -218,10 +218,9 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 			s.context.updated = true
 		}
 		delete(root.Meta, keyPropagatedUserID)
-		// setMeta is used since the span is already locked
-		root.setMeta(keyUserID, id)
 	}
 	for k, v := range map[string]string{
+		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -229,6 +228,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	} {
 		if v != "" {
+			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
 		}
 	}
