@@ -114,6 +114,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		op.On(httpsec.OnUserIDOperationStart(func(operation *httpsec.UserIDOperation, args httpsec.UserIDOperationArgs) {
+			values := map[string]interface{}{}
 			for _, addr := range addresses {
 				if addr == userIDAddr {
 					values[userIDAddr] = args.UserID

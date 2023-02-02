@@ -7,6 +7,7 @@ package appsec_test
 
 import (
 	"context"
+	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -132,6 +133,34 @@ func TestCustomEvent(t *testing.T) {
 		require.NotPanics(t, func() {
 			appsec.TrackCustomEvent(context.Background(), "my-custom-event", nil)
 		})
+	})
+}
+
+func TestSetUser(t *testing.T) {
+	t.Run("error/appsec-disabled", func(t *testing.T) {
+		err := appsec.SetUser(nil, "usr.id")
+		require.NotNil(t, err)
+		require.False(t, err.ShouldBlock())
+		require.Equal(t, "AppSec is not enabled", err.Error())
+	})
+
+	privateAppsec.Start()
+	defer privateAppsec.Stop()
+
+	t.Run("error/nil-ctx", func(t *testing.T) {
+		err := appsec.SetUser(nil, "usr.id")
+		require.NotNil(t, err)
+		require.False(t, err.ShouldBlock())
+		require.Equal(t, "Could not retrieve span from context", err.Error())
+	})
+
+	t.Run("no-error", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetUser(ctx, "usr.id")
+		require.Nil(t, err)
 	})
 }
 

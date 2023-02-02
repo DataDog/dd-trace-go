@@ -13,6 +13,7 @@ package appsec
 
 import (
 	"context"
+	"errors"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -32,6 +33,46 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 		httpsec.MonitorParsedBody(ctx, body)
 	}
 	// bonus: use sync.Once to log a debug message once if AppSec is disabled
+}
+
+type userMonitoringError struct {
+	shouldBlock bool
+	err         error
+}
+
+func (err *userMonitoringError) ShouldBlock() bool {
+	return err.shouldBlock
+}
+func (err *userMonitoringError) Error() string {
+	return err.err.Error()
+}
+
+// SetUser associates user information to the current trace which the
+// provided context belongs to. The options can be used to tune which user
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
+// A nil returned error means everything went well. A not nil error can be used to know whether the user should be blocked or not.
+func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) *userMonitoringError {
+	if !appsec.Enabled() {
+		return &userMonitoringError{
+			err: errors.New("AppSec is not enabled"),
+		}
+	}
+	s, ok := tracer.SpanFromContext(ctx)
+	if !ok {
+		return &userMonitoringError{
+			err: errors.New("Could not retrieve span from context"),
+		}
+	}
+	tracer.SetUser(s, id, opts...)
+	if httpsec.MonitorUser(ctx, id) {
+		return &userMonitoringError{
+			shouldBlock: true,
+			err:         errors.New("Suspicious user detected. Associated requests should be blocked."),
+		}
+	}
+	return nil
 }
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given

@@ -60,3 +60,21 @@ func ExampleMonitorParsedHTTPBody_customContext() {
 
 	r.Start(":8080")
 }
+
+func userIDFromRequest(r *http.Request) string {
+	return r.Header.Get("user-id")
+}
+
+// Monitor and block requests depending on user ID
+func ExampleSetUser() {
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+		// Check for error on SetUser() to know if the request should be blocked or not.
+		// If it should, early exit from the handler.
+		if err := appsec.SetUser(r.Context(), userIDFromRequest(r)); err != nil && err.ShouldBlock() {
+			return
+		}
+
+		w.Write([]byte("User monitored using AppSec SetUser SDK\n"))
+	})
+}
