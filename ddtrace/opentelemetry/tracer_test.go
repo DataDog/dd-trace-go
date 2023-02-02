@@ -86,6 +86,26 @@ func TestTracerOptions(t *testing.T) {
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
+func TestSpanContext(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	pCtx, parent := tr.Start(context.Background(), "parent")
+	pSpanCtx := parent.SpanContext()
+
+	_, child := tr.Start(pCtx, "child")
+	cSpanCtx := child.SpanContext()
+
+	assert.Equal(cSpanCtx.TraceFlags(), pSpanCtx.TraceFlags())
+	assert.Equal(cSpanCtx.TraceID(), pSpanCtx.TraceID())
+	assert.Equal(cSpanCtx.IsRemote(), pSpanCtx.IsRemote())
+	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
+
+}
+
 func TestForceFlush(t *testing.T) {
 	testData := []struct {
 		timeOut   time.Duration

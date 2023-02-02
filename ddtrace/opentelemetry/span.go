@@ -70,8 +70,9 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
 	if err != nil {
-		c.TraceState = state
+		return
 	}
+	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) != 0 {
 		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
