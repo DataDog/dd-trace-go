@@ -309,7 +309,6 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleFinishedTrace(trace)
-			t.addHostname(trace)
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}
@@ -612,15 +611,6 @@ func (t *tracer) sample(span *span) {
 		return
 	}
 	t.prioritySampling.apply(span)
-}
-
-func (t *tracer) addHostname(trace *finishedTrace) {
-	hn := hostname.Get()
-	if hn == "" {
-		return
-	}
-	// TODO: do this for every span?
-	trace.spans[0].Meta["_dd.tracer_hostname"] = hn
 }
 
 func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Context, func()) {

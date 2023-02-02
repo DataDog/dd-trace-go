@@ -350,6 +350,7 @@ func (t *trace) finishedOne(s *span) {
 	if !ok {
 		return
 	}
+	s.setHostname(tr.config)
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{

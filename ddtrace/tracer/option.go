@@ -147,6 +147,9 @@ type config struct {
 
 	// enabled reports whether tracing is enabled.
 	enabled bool
+
+	// agentUnixConnection reports if the connection to the agent is over UDS
+	agentUnixConnection bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -227,6 +230,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.agentURL.Scheme == "unix" {
+		c.agentUnixConnection = true
 		c.httpClient = udsClient(c.agentURL.Path)
 		c.agentURL = &url.URL{
 			Scheme: "http",
