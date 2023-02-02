@@ -268,20 +268,23 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
+
+	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			WithTags(tag)(&c)
+		tags = internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+	}
+	for key, val := range internal.GetGitMetadataTags() {
+		tags[key] = val
+	}
+	for key, val := range tags {
+		if val != "" {
+			WithTags(key + ":" + val)(&c)
+		} else {
+			WithTags(key)(&c)
 		}
 	}
+
 	WithTags(
 		"profiler_version:"+version.Tag,
 		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
