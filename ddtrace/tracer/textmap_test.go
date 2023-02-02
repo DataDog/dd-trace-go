@@ -1616,16 +1616,12 @@ func BenchmarkInjectDatadog(b *testing.B) {
 
 	tracer := newTracer()
 	defer tracer.Stop()
-
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-
 	for i := 0; i < 100; i++ {
 		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
-
 	dst := map[string]string{}
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
@@ -1637,25 +1633,21 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 	tracer := newTracer()
 	defer tracer.Stop()
-
 	root := tracer.StartSpan("test")
 	defer root.Finish()
 
 	ctx := root.Context().(*spanContext)
-
 	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
 	oldTraceState := "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~"
 
 	setPropagatingTag(ctx, w3cTraceIDTag, traceID)
 	setPropagatingTag(ctx, tracestateHeader, oldTraceState)
-
 	for i := 0; i < 100; i++ {
 		// _dd.p. prefix is needed for w3c
 		k := fmt.Sprintf("_dd.p.k%d", i)
 		v := fmt.Sprintf("v%d", i)
 		setPropagatingTag(ctx, k, v)
 	}
-
 	dst := map[string]string{}
 
 	b.ResetTimer()
@@ -1667,7 +1659,6 @@ func BenchmarkInjectW3C(b *testing.B) {
 func BenchmarkExtractDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
-
 	carrier := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1123123132131312313123123",
 		DefaultParentIDHeader: "1212321131231312312312312",
@@ -1688,13 +1679,11 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 
 		sendCtx := new(spanContext)
 		sendCtx.trace = newTrace()
-
 		recvCtx := new(spanContext)
 		recvCtx.trace = newTrace()
 
 		pConfig := PropagatorConfig{MaxTagsHeaderLen: 128}
 		propagator := propagator{&pConfig}
-
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		for key, val := range tags {
 			sendCtx.trace.setPropagatingTag(key, val)
@@ -1736,7 +1725,6 @@ func FuzzComposeTracestate(f *testing.F) {
 
 		sendCtx := new(spanContext)
 		sendCtx.trace = newTrace()
-
 		recvCtx := new(spanContext)
 		recvCtx.trace = newTrace()
 
