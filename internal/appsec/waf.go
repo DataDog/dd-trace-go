@@ -103,16 +103,38 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		var body interface{}
+		values := map[string]interface{}{}
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
 		}
 
-		values := map[string]interface{}{}
+		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
+		// see if the associated user should be blocked. Since we don't control the execution flow in this case
+		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
+		op.On(httpsec.OnUserIDOperationStart(func(operation *httpsec.UserIDOperation, args httpsec.UserIDOperationArgs) {
+			for _, addr := range addresses {
+				if addr == userIDAddr {
+					values[userIDAddr] = args.UserID
+				}
+			}
+			matches, actionIds := runWAF(wafCtx, values, timeout)
+			if len(matches) > 0 {
+				for _, id := range actionIds {
+					operation.Block = actionHandler.Apply(id, op) || operation.Block
+				}
+				op.AddSecurityEvents(matches)
+				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
+			}
+		}))
+
 		for _, addr := range addresses {
-			if addr == httpClientIPAddr && args.ClientIP.IsValid() {
-				values[httpClientIPAddr] = args.ClientIP.String()
+			switch addr {
+			case httpClientIPAddr:
+				if args.ClientIP.IsValid() {
+					values[httpClientIPAddr] = args.ClientIP.String()
+				}
 			}
 		}
 		// TODO: suspicious request blocking by moving here all the addresses available when the request begins
@@ -337,7 +359,7 @@ const (
 	serverRequestBodyAddr             = "server.request.body"
 	serverResponseStatusAddr          = "server.response.status"
 	httpClientIPAddr                  = "http.client_ip"
-	userID                            = "usr.id"
+	userIDAddr                        = "usr.id"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -350,7 +372,7 @@ var httpAddresses = []string{
 	serverRequestBodyAddr,
 	serverResponseStatusAddr,
 	httpClientIPAddr,
-	userID,
+	userIDAddr,
 }
 
 // gRPC rule addresses currently supported by the WAF
@@ -364,7 +386,7 @@ var grpcAddresses = []string{
 	grpcServerRequestMessage,
 	grpcServerRequestMetadata,
 	httpClientIPAddr,
-	userID,
+	userIDAddr,
 }
 
 func init() {
