@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
+// This file is exactly pulled from datadog-agent/pkg/util/hostname
+
 package hostname
 
 import (

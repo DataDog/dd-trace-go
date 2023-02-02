@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
+// This file is exactly pulled from datadog-agent/pkg/util/cachedfetch only changing the logger
+
 // Package cachedfetch provides a read-through cache for fetched values.
 package cachedfetch
 
