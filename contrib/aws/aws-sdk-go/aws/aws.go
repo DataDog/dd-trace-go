@@ -60,6 +60,9 @@ func (h *handlers) Send(req *request.Request) {
 	if req.RetryCount != 0 {
 		return
 	}
+	// Make a copy of the URL so we don't modify the outgoing request
+	url := *req.HTTPRequest.URL
+	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
@@ -68,7 +71,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
-		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
+		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}

@@ -21,7 +21,7 @@ var (
 	cachedAt        time.Time
 	cacheExpiration = 5 * time.Minute
 	m               sync.RWMutex
-	isRefreshing    *atomic.Value
+	isRefreshing    atomic.Value
 )
 
 // getCached returns the cached hostname and a bool indicating if the hostname should be refreshed

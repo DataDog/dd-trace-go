@@ -59,6 +59,10 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
+	// sendRetries is the number of times a trace payload send is retried upon
+	// failure.
+	sendRetries int
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -153,33 +157,6 @@ func (c *config) HasFeature(f string) bool {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
-// forEachStringTag runs fn on every key:val pair encountered in str.
-// str may contain multiple key:val pairs separated by either space
-// or comma (but not a mixture of both).
-func forEachStringTag(str string, fn func(key string, val string)) {
-	sep := " "
-	if strings.Index(str, ",") > -1 {
-		// falling back to comma as separator
-		sep = ","
-	}
-	for _, tag := range strings.Split(str, sep) {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			continue
-		}
-		kv := strings.SplitN(tag, ":", 2)
-		key := strings.TrimSpace(kv[0])
-		if key == "" {
-			continue
-		}
-		var val string
-		if len(kv) == 2 {
-			val = strings.TrimSpace(kv[1])
-		}
-		fn(key, val)
-	}
-}
-
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
 
@@ -226,10 +203,14 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		forEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
+		tags := internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+		for key, val := range tags {
+			WithGlobalTag(key, val)(c)
+		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -537,9 +518,20 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+// This option is only required if the the Datadog Lambda Extension is not
+// running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.logToStdout = enabled
+	}
+}
+
+// WithSendRetries enables re-sending payloads that are not successfully
+// submitted to the agent.  This will cause the tracer to retry the send at
+// most `retries` times.
+func WithSendRetries(retries int) StartOption {
+	return func(c *config) {
+		c.sendRetries = retries
 	}
 }
 
