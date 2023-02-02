@@ -46,7 +46,7 @@ func getCached(now time.Time) (string, bool) {
 // setCached caches the newHostname
 func setCached(now time.Time, newHostname string) {
 	m.Lock()
-	m.Unlock()
+	defer m.Unlock()
 	cachedHostname = newHostname
 	cachedAt = now
 }
