@@ -61,6 +61,7 @@ func doHTTPRequest(ctx context.Context, url string) (string, error) {
 	return httputils.Get(ctx, url, headers, 300*time.Millisecond)
 }
 
+// IsDefaultHostname checks if a hostname is an EC2 default
 func IsDefaultHostname(hostname string) bool {
 	hostname = strings.ToLower(hostname)
 	isDefault := false
