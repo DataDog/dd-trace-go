@@ -469,7 +469,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
 
-	// add 128 bit trace id, if enabled, formatted as:
+	// add 128 bit trace id, if enabled, formatted as big-endian:
 	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 	if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		id128 := startTime.Unix()
