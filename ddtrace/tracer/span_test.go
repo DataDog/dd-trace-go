@@ -497,7 +497,7 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
 
-	// '+2' is `_dd.p.dm` and `"_dd.p.tid"`
+	// '+2' is `_dd.p.dm` and `_dd.p.tid`
 	assert.Equal(nMeta+2, len(span.Meta))
 	assert.Equal("", span.Meta[ext.ErrorMsg])
 	assert.Equal("", span.Meta[ext.ErrorType])
