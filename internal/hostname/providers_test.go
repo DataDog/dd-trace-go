@@ -59,6 +59,8 @@ func TestGet(t *testing.T) {
 		}
 		updateHostname(time.Time{})
 		result := Get()
+		for isRefreshing.Load() == true {
+		} //Wait for extra go routine to finish
 		assert.Empty(t, result)
 	})
 }
