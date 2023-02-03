@@ -446,7 +446,12 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); !ok {
+		return ErrInvalidSpanContext
+	} else {
+		fmt.Printf("%q\n", w3Cctx.TraceID128())
+		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
+	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.samplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
@@ -474,10 +479,19 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		key := strings.ToLower(k)
 		switch key {
 		case b3TraceIDHeader:
-			if len(v) > 16 {
-				v = v[len(v)-16:]
+			if len(v) > 32 {
+				v = v[len(v)-32:]
 			}
-			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
+			var err error
+			if len(v) > 16 { // 128 bit trace id
+				ctx.traceID128 = v[:len(v)-16]
+				if ctx.span != nil {
+					ctx.span.setMeta(keyTraceID128, v[:len(v)-16])
+				}
+				ctx.traceID, err = strconv.ParseUint(v[:16], 16, 64)
+			} else { // 64 bit trace id
+				ctx.traceID, err = strconv.ParseUint(v, 16, 64)
+			}
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}

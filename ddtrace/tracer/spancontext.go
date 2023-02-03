@@ -35,8 +35,9 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
-	spanID  uint64
+	traceID    uint64
+	traceID128 string // high order 64 bits of a 128 bit trace id, hex encoded into 16 bytes
+	spanID     uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
@@ -54,6 +55,9 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		traceID: span.TraceID,
 		spanID:  span.SpanID,
 		span:    span,
+	}
+	if span.Meta != nil {
+		context.traceID128 = span.Meta[keyTraceID128]
 	}
 	if parent != nil {
 		context.trace = parent.trace
@@ -89,7 +93,7 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
 	var hi []byte
-	if hiStr := c.span.Meta[keyTraceID128]; hiStr != "" {
+	if hiStr := c.traceID128; hiStr != "" {
 		// 128 bit trace ids is enabled, so fill the higher order bits
 		var err error
 		hi, err = hex.DecodeString(hiStr)
@@ -98,7 +102,7 @@ func (c *spanContext) TraceID128() string {
 			return "" // this would be our fault, and means we have a bug
 		}
 		if len(hi) > 8 {
-			log.Debug("%q tag contains invalid trace id segment %b", keyTraceID128, hi)
+			log.Debug("invalid 128-bit trace id %q", hiStr)
 			return "" // this would be our fault, and means we have a bug
 		}
 	}

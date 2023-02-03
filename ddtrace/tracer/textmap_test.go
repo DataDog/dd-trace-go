@@ -404,27 +404,42 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  []uint64
-				out map[string]string
+				traceID, traceID128High, spanID uint64
+				out                             map[string]string
 			}{
 				{
-					[]uint64{1412508178991881, 1842642739201064},
-					map[string]string{
-						b3TraceIDHeader: "000504ab30404b09",
+					traceID:        1412508178991881,
+					traceID128High: 9863134987902842,
+					spanID:         1842642739201064,
+					out: map[string]string{
+						b3TraceIDHeader: "00230a7811535f7a000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
 				{
-					[]uint64{9530669991610245, 9455715668862222},
-					map[string]string{
-						b3TraceIDHeader: "0021dc1807524785",
+					traceID:        1412508178991881,
+					traceID128High: 0,
+					spanID:         1842642739201064,
+					out: map[string]string{
+						b3TraceIDHeader: "0000000000000000000504ab30404b09",
+						b3SpanIDHeader:  "00068bdfb1eb0428",
+					},
+				},
+				{
+					traceID:        9530669991610245,
+					traceID128High: 0,
+					spanID:         9455715668862222,
+					out: map[string]string{
+						b3TraceIDHeader: "00000000000000000021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
 				},
 				{
-					[]uint64{1, 1},
-					map[string]string{
-						b3TraceIDHeader: "0000000000000001",
+					traceID:        1,
+					traceID128High: 1,
+					spanID:         1,
+					out: map[string]string{
+						b3TraceIDHeader: "00000000000000010000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
 					},
 				},
@@ -435,8 +450,11 @@ func TestEnvVars(t *testing.T) {
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID = test.in[0]
-					ctx.spanID = test.in[1]
+					ctx.traceID = test.traceID
+					if test.traceID128High != 0 {
+						ctx.traceID128 = fmt.Sprintf("%016x", test.traceID128High)
+					}
+					ctx.spanID = test.spanID
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
 
