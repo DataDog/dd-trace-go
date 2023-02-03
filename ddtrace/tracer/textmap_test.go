@@ -493,10 +493,10 @@ func TestEnvVars(t *testing.T) {
 				},
 				{
 					TextMapCarrier{
-						b3TraceIDHeader: "10000000000000001",
+						b3TraceIDHeader: "20000000000000001",
 						b3SpanIDHeader:  "1",
 					},
-					"0000000000000001",
+					"0000000000000002",
 					[]uint64{1, 1},
 				},
 				{

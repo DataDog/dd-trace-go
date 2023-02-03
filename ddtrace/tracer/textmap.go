@@ -350,6 +350,7 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -566,6 +567,7 @@ func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanCon
 }
 
 func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -765,6 +767,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 }
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var parentHeader string
 	var stateHeader string
 	// to avoid parsing tracestate header(s) if traceparent is invalid
