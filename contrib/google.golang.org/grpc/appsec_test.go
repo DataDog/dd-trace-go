@@ -221,6 +221,17 @@ func TestUserBlocking(t *testing.T) {
 		require.True(t, strings.Contains(event, "blk-001-002"))
 	})
 
+	t.Run("unary-no-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "legit user"))
+		reply, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
+
+		require.Equal(t, "passed", reply.Message)
+		require.Equal(t, codes.OK, status.Code(err))
+	})
+
 	t.Run("stream-block", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -239,6 +250,25 @@ func TestUserBlocking(t *testing.T) {
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "blk-001-002"))
+	})
+
+	t.Run("stream-no-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "legit user"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+
+		// Send a XSS attack
+		err = stream.Send(&FixtureRequest{Name: "<script>alert('xss');</script>"})
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+		require.Equal(t, codes.OK, status.Code(err))
+		require.Equal(t, "passed", reply.Message)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
 	})
 }
 
