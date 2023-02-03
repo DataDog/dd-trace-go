@@ -465,7 +465,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				span.setMeta(keyOrigin, context.origin)
 			}
 		}
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+	}
+	if span.Meta[keyTraceID128] != "" && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		id128 := startTime.Unix()
 		b := make([]byte, 8)
 		// casting from int64 -> uint32 should be safe since the start time won't be
