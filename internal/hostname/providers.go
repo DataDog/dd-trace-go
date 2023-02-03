@@ -21,6 +21,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// For testing purposes
+var (
+	fargatePf = fargate
+)
+
 var (
 	cachedHostname  string
 	cachedAt        time.Time
@@ -108,44 +113,54 @@ var providerCatalog = []provider{
 // Get returns the cached hostname for the tracer, empty if we haven't found one yet.
 // Spawning a go routine to update the hostname if it is empty or out of date
 func Get() string {
+	log.Debug("CACHED HOSTNAME CALLED")
 	now := time.Now()
 	var (
 		ch            string
 		shouldRefresh bool
 	)
 	if ch, shouldRefresh = getCached(now); !shouldRefresh && ch != "" {
+		log.Debug("Using cached hostname %s", ch)
 		return ch
 	}
 	// Use CAS to avoid spawning more than one go-routine trying to update the cached hostname
 	ir := isRefreshing.CompareAndSwap(false, true)
 	if ir == true {
+		log.Debug("Let's try to get a new one")
 		go func() {
-			defer isRefreshing.Store(false)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			defer cancel()
-			var hostname string
-
-			for _, p := range providerCatalog {
-				detectedHostname, err := p.pf(ctx, hostname)
-				if err != nil {
-					log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
-					continue
-				}
-				hostname = detectedHostname
-				if p.stopIfSuccessful {
-					log.Debug("Found hostname %s, from provider %s", hostname, p.name)
-					setCached(now, hostname)
-				}
-			}
-			if hostname != "" {
-				log.Debug("Found hostname %s", hostname)
-				setCached(now, hostname)
-			} else {
-				log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
-			}
+			// TODO: if we're in fargate we should never update again
+			updateHostname(now)
 		}()
 	}
 	return ch
+}
+
+func updateHostname(now time.Time) {
+	defer isRefreshing.Store(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	var hostname string
+
+	for _, p := range providerCatalog {
+		log.Debug("Trying to detect hostname from provider %s", p.name)
+		detectedHostname, err := p.pf(ctx, hostname)
+		if err != nil {
+			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
+			continue
+		}
+		hostname = detectedHostname
+		if p.stopIfSuccessful {
+			log.Debug("Found hostname %s, from provider %s", hostname, p.name)
+			setCached(now, hostname)
+			return
+		}
+	}
+	if hostname != "" {
+		log.Debug("Found hostname %s", hostname)
+		setCached(now, hostname)
+	} else {
+		log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
+	}
 }
 
 func fromConfig(_ context.Context, _ string) (string, error) {
@@ -159,6 +174,10 @@ func fromConfig(_ context.Context, _ string) (string, error) {
 }
 
 func fromFargate(ctx context.Context, _ string) (string, error) {
+	return fargatePf(ctx)
+}
+
+func fargate(ctx context.Context) (string, error) {
 	if _, ok := os.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
 		return "", fmt.Errorf("not running in fargate")
 	}

@@ -6,6 +6,7 @@
 package hostname
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -43,4 +44,21 @@ func TestGetCached(t *testing.T) {
 			assert.Equal(tt, test.expected, shouldRefresh)
 		})
 	}
+}
+
+func resetVars() {
+	fargatePf = fargate
+}
+
+func TestGet(t *testing.T) {
+	t.Cleanup(resetVars)
+
+	t.Run("FargateEmptyOK", func(t *testing.T) {
+		fargatePf = func(_ context.Context) (string, error) {
+			return "", nil
+		}
+		updateHostname(time.Time{})
+		result := Get()
+		assert.Empty(t, result)
+	})
 }
