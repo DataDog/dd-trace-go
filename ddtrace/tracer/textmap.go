@@ -485,17 +485,18 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if len(v) > 32 {
 				v = v[len(v)-32:]
 			}
+			v = strings.TrimLeft(v, "0")
 			var err error
-			if len(v) < 32 { // 64-bit trace id
+			if len(v) <= 16 { // 64-bit trace id
 				ctx.traceID, err = strconv.ParseUint(v, 16, 64)
-			} else if len(v) == 32 { // 128-bit trace id
-				ctx.traceID128 = v[:16]
+			} else { // 128-bit trace id
+				id128 := v[:len(v)-16]
+				// pad ctx.traceID128 with zeroes to ensure length of 16
+				ctx.traceID128 = fmt.Sprintf("%0*s", 16, id128)
 				if ctx.span != nil {
 					ctx.span.setMeta(keyTraceID128, ctx.traceID128)
 				}
-				ctx.traceID, err = strconv.ParseUint(v[16:], 16, 64)
-			} else { // invalid trace id length
-				return ErrSpanContextCorrupted
+				ctx.traceID, err = strconv.ParseUint(v[len(id128):], 16, 64)
 			}
 			if err != nil {
 				return ErrSpanContextCorrupted

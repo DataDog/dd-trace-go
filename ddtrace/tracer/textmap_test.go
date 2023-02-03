@@ -451,9 +451,7 @@ func TestEnvVars(t *testing.T) {
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.traceID = test.traceID
-					if test.traceID128High != 0 {
-						ctx.traceID128 = fmt.Sprintf("%016x", test.traceID128High)
-					}
+					ctx.traceID128 = fmt.Sprintf("%016x", test.traceID128High)
 					ctx.spanID = test.spanID
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
@@ -481,14 +479,24 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  TextMapCarrier
-				out []uint64 // contains [<trace_id>, <span_id>]
+				in        TextMapCarrier
+				traceID18 string
+				out       []uint64 // contains [<trace_id>, <trace_id_128>, <span_id>]
 			}{
 				{
 					TextMapCarrier{
 						b3TraceIDHeader: "1",
 						b3SpanIDHeader:  "1",
 					},
+					"",
+					[]uint64{1, 1},
+				},
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "10000000000000001",
+						b3SpanIDHeader:  "1",
+					},
+					"0000000000000001",
 					[]uint64{1, 1},
 				},
 				{
@@ -496,13 +504,15 @@ func TestEnvVars(t *testing.T) {
 						b3TraceIDHeader: "feeb0599801f4700",
 						b3SpanIDHeader:  "f8f5c76089ad8da5",
 					},
+					"",
 					[]uint64{18368781661998368512, 17939463908140879269},
 				},
 				{
 					TextMapCarrier{
-						b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
+						b3TraceIDHeader: "feeb0599801f4700a21ba1551789e3f5",
 						b3SpanIDHeader:  "a1eb5bf36e56e50e",
 					},
+					"feeb0599801f4700",
 					[]uint64{11681107445354718197, 11667520360719770894},
 				},
 			}
@@ -516,8 +526,9 @@ func TestEnvVars(t *testing.T) {
 					sctx, ok := ctx.(*spanContext)
 					assert.True(ok)
 
-					assert.Equal(sctx.traceID, test.out[0])
-					assert.Equal(sctx.spanID, test.out[1])
+					assert.Equal(test.traceID18, sctx.traceID128)
+					assert.Equal(test.out[0], sctx.traceID)
+					assert.Equal(test.out[1], sctx.spanID)
 				})
 			}
 		}
