@@ -449,6 +449,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a child span
 		span.TraceID = context.traceID
 		span.ParentID = context.spanID
+		span.setMeta(keyTraceID128, context.traceID128)
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
 		}
@@ -465,10 +466,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 	}
-	span.context = newSpanContext(span, context)
-	span.setMetric(ext.Pid, float64(t.pid))
-	span.setMeta("language", "go")
-
 	// add 128 bit trace id, if enabled, formatted as big-endian:
 	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 	if span.context.traceID128 == "" && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
@@ -479,6 +476,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		binary.BigEndian.PutUint32(b, uint32(id128))
 		span.context.traceID128 = hex.EncodeToString(b)
 	}
+	span.context = newSpanContext(span, context)
+	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMeta("language", "go")
 
 	// add tags from options
 	for k, v := range opts.Tags {
