@@ -30,6 +30,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, "gin-gonic/gin"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(c *gin.Context) {
 		if cfg.ignoreRequest(c) {
@@ -40,6 +42,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())
@@ -50,8 +53,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// Use AppSec if enabled by user
 		if appsecEnabled {
-			afterMiddleware := useAppSec(c, span)
-			defer afterMiddleware()
+			useAppSec(c, span)
 		}
 
 		// serve the request to the next middleware
@@ -67,6 +69,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
 	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html")
 	span.SetTag("go.template", name)
+	span.SetTag(ext.Component, "gin-gonic/gin")
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)

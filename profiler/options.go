@@ -24,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 
@@ -87,26 +88,29 @@ type config struct {
 	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
 	// based on the other options.
-	targetURL         string
-	apiURL            string // apiURL is the Datadog intake API URL
-	agentURL          string // agentURL is the Datadog agent profiling URL
-	service, env      string
-	hostname          string
-	statsd            StatsdClient
-	httpClient        *http.Client
-	tags              immutable.StringSlice
-	types             map[ProfileType]struct{}
-	period            time.Duration
-	cpuDuration       time.Duration
-	cpuProfileRate    int
-	uploadTimeout     time.Duration
-	maxGoroutinesWait int
-	mutexFraction     int
-	blockRate         int
-	outputDir         string
-	deltaProfiles     bool
-	deltaMethod       string
-	logStartup        bool
+	targetURL            string
+	apiURL               string // apiURL is the Datadog intake API URL
+	agentURL             string // agentURL is the Datadog agent profiling URL
+	service, env         string
+	hostname             string
+	statsd               StatsdClient
+	httpClient           *http.Client
+	tags                 immutable.StringSlice
+	types                map[ProfileType]struct{}
+	period               time.Duration
+	cpuDuration          time.Duration
+	cpuProfileRate       int
+	uploadTimeout        time.Duration
+	maxGoroutinesWait    int
+	mutexFraction        int
+	blockRate            int
+	outputDir            string
+	deltaProfiles        bool
+	deltaMethod          string
+	logStartup           bool
+	traceEnabled         bool
+	traceConfig          executionTraceConfig
+	endpointCountEnabled bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -134,6 +138,10 @@ func logStartup(c *config) {
 		MutexProfileFraction int      `json:"mutex_profile_fraction"`
 		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
 		UploadTimeout        string   `json:"upload_timeout"`
+		TraceEnabled         bool     `json:"execution_trace_enabled"`
+		TracePeriod          string   `json:"execution_trace_period"`
+		TraceDuration        string   `json:"execution_trace_duration"`
+		EndpointCountEnabled bool     `json:"endpoint_count_enabled"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -156,6 +164,10 @@ func logStartup(c *config) {
 		MutexProfileFraction: c.mutexFraction,
 		MaxGoroutinesWait:    c.maxGoroutinesWait,
 		UploadTimeout:        c.uploadTimeout.String(),
+		TraceEnabled:         c.traceEnabled,
+		TracePeriod:          c.traceConfig.Period.String(),
+		TraceDuration:        c.traceConfig.Duration.String(),
+		EndpointCountEnabled: c.endpointCountEnabled,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -196,19 +208,20 @@ func (c *config) addProfileType(t ProfileType) {
 
 func defaultConfig() (*config, error) {
 	c := config{
-		apiURL:            defaultAPIURL,
-		service:           filepath.Base(os.Args[0]),
-		statsd:            &statsd.NoOpClient{},
-		httpClient:        defaultClient,
-		period:            DefaultPeriod,
-		cpuDuration:       DefaultDuration,
-		blockRate:         DefaultBlockRate,
-		mutexFraction:     DefaultMutexFraction,
-		uploadTimeout:     DefaultUploadTimeout,
-		maxGoroutinesWait: 1000, // arbitrary value, should limit STW to ~30ms
-		deltaProfiles:     internal.BoolEnv("DD_PROFILING_DELTA", true),
-		deltaMethod:       os.Getenv("DD_PROFILING_DELTA_METHOD"),
-		logStartup:        internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
+		apiURL:               defaultAPIURL,
+		service:              filepath.Base(os.Args[0]),
+		statsd:               &statsd.NoOpClient{},
+		httpClient:           defaultClient,
+		period:               DefaultPeriod,
+		cpuDuration:          DefaultDuration,
+		blockRate:            DefaultBlockRate,
+		mutexFraction:        DefaultMutexFraction,
+		uploadTimeout:        DefaultUploadTimeout,
+		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
+		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
+		deltaMethod:          os.Getenv("DD_PROFILING_DELTA_METHOD"),
+		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
+		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
@@ -255,20 +268,23 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
+
+	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			WithTags(tag)(&c)
+		tags = internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+	}
+	for key, val := range internal.GetGitMetadataTags() {
+		tags[key] = val
+	}
+	for key, val := range tags {
+		if val != "" {
+			WithTags(key + ":" + val)(&c)
+		} else {
+			WithTags(key)(&c)
 		}
 	}
+
 	WithTags(
 		"profiler_version:"+version.Tag,
 		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
@@ -291,6 +307,15 @@ func defaultConfig() (*config, error) {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
+	}
+
+	// Experimental feature: Go execution trace (runtime/trace) recording.
+	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
+	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
+	c.traceConfig.Duration = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_DURATION", 1*time.Second)
+	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Duration == 0) {
+		log.Warn("Invalid execution trace config, enabled is true but duration or frequency is 0. Disabling execution trace.")
+		c.traceEnabled = false
 	}
 	return &c, nil
 }
@@ -514,4 +539,13 @@ func WithHostname(hostname string) Option {
 	return func(cfg *config) {
 		cfg.hostname = hostname
 	}
+}
+
+// executionTraceConfig controls how often, and for how long, runtime execution
+// traces are collected, see defaultConfig() for more details.
+type executionTraceConfig struct {
+	// Duration is how long the execution trace will run.
+	Duration time.Duration
+	// Period is the amount of time between traces.
+	Period time.Duration
 }

@@ -6,13 +6,17 @@
 package http
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -79,6 +83,8 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
 
 func TestRoundTripperServerError(t *testing.T) {
@@ -129,6 +135,8 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
 	assert.Equal(t, true, s1.Tag("CalledBefore"))
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
 
 func TestRoundTripperNetworkError(t *testing.T) {
@@ -171,6 +179,55 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.NotNil(t, s0.Tag(ext.Error))
 	assert.Equal(t, true, s0.Tag("CalledBefore"))
 	assert.Equal(t, true, s0.Tag("CalledAfter"))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s0.Tag(ext.Component))
+}
+
+func TestRoundTripperCredentials(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var auth string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if enc, ok := r.Header["Authorization"]; ok {
+			encoded := strings.TrimPrefix(enc[0], "Basic ")
+			if b64, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+				auth = string(b64)
+			}
+		}
+
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport,
+		WithBefore(func(req *http.Request, span ddtrace.Span) {
+			span.SetTag("CalledBefore", true)
+		}),
+		WithAfter(func(res *http.Response, span ddtrace.Span) {
+			span.SetTag("CalledAfter", true)
+		}))
+
+	client := &http.Client{
+		Transport: rt,
+	}
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("myuser", "mypassword")
+
+	client.Get(u.String() + "/hello/world")
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s1 := spans[0]
+
+	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
+	assert.NotContains(t, s1.Tag(ext.HTTPURL), "mypassword")
+	assert.NotContains(t, s1.Tag(ext.HTTPURL), "myuser")
+	// Make sure we haven't modified the outgoing request, and the server still
+	// receives the auth request.
+	assert.Equal(t, auth, "myuser:mypassword")
 }
 
 func TestWrapClient(t *testing.T) {

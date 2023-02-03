@@ -1,7 +1,7 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.4.2"
+    "rules_version": "1.5.0"
   },
   "rules": [
     {
@@ -30,12 +30,38 @@
       ]
     },
     {
+      "id": "blk-001-002",
+      "name": "Block User Addresses",
+      "tags": {
+        "type": "block_user",
+        "category": "security_response"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "usr.id"
+              }
+            ],
+            "data": "blocked_users"
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "block"
+      ]
+    },
+    {
       "id": "crs-913-110",
       "name": "Acunetix",
       "tags": {
         "type": "security_scanner",
         "crs_id": "913110",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -66,7 +92,8 @@
       "tags": {
         "type": "security_scanner",
         "crs_id": "913120",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -115,7 +142,8 @@
       "tags": {
         "type": "http_protocol_violation",
         "crs_id": "920260",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -236,7 +264,8 @@
       "tags": {
         "type": "lfi",
         "crs_id": "930100",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -267,7 +296,8 @@
       "tags": {
         "type": "lfi",
         "crs_id": "930110",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -299,7 +329,8 @@
       "tags": {
         "type": "lfi",
         "crs_id": "930120",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -1760,7 +1791,8 @@
       "tags": {
         "type": "rfi",
         "crs_id": "931110",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -1802,7 +1834,7 @@
                 "address": "server.request.path_params"
               }
             ],
-            "regex": "^(?i:file|ftps?|https?).*?\\?+$",
+            "regex": "^(?i:file|ftps?|http)://.*?\\?+$",
             "options": {
               "case_sensitive": true,
               "min_length": 4
@@ -1819,7 +1851,8 @@
       "tags": {
         "type": "command_injection",
         "crs_id": "932160",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2322,7 +2355,8 @@
       "tags": {
         "type": "command_injection",
         "crs_id": "932171",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2361,7 +2395,8 @@
       "tags": {
         "type": "command_injection",
         "crs_id": "932180",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2419,7 +2454,8 @@
       "tags": {
         "type": "unrestricted_file_upload",
         "crs_id": "933111",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2469,7 +2505,8 @@
       "tags": {
         "type": "php_code_injection",
         "crs_id": "933130",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2561,7 +2598,8 @@
       "tags": {
         "type": "php_code_injection",
         "crs_id": "933140",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2596,7 +2634,8 @@
       "tags": {
         "type": "php_code_injection",
         "crs_id": "933150",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2694,8 +2733,9 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "\\b(?:s(?:e(?:t(?:_(?:e(?:xception|rror)_handler|magic_quotes_runtime|include_path)|defaultstub)|ssion_s(?:et_save_handler|tart))|qlite_(?:(?:(?:unbuffered|single|array)_)?query|create_(?:aggregate|function)|p?open|exec)|tr(?:eam_(?:context_create|socket_client)|ipc?slashes|rev)|implexml_load_(?:string|file)|ocket_c(?:onnect|reate)|h(?:ow_sourc|a1_fil)e|pl_autoload_register|ystem)|p(?:r(?:eg_(?:replace(?:_callback(?:_array)?)?|match(?:_all)?|split)|oc_(?:(?:terminat|clos|nic)e|get_status|open)|int_r)|o(?:six_(?:get(?:(?:e[gu]|g)id|login|pwnam)|mk(?:fifo|nod)|ttyname|kill)|pen)|hp(?:_(?:strip_whitespac|unam)e|version|info)|g_(?:(?:execut|prepar)e|connect|query)|a(?:rse_(?:ini_file|str)|ssthru)|utenv)|r(?:unkit_(?:function_(?:re(?:defin|nam)e|copy|add)|method_(?:re(?:defin|nam)e|copy|add)|constant_(?:redefine|add))|e(?:(?:gister_(?:shutdown|tick)|name)_function|ad(?:(?:gz)?file|_exif_data|dir))|awurl(?:de|en)code)|i(?:mage(?:createfrom(?:(?:jpe|pn)g|x[bp]m|wbmp|gif)|(?:jpe|pn)g|g(?:d2?|if)|2?wbmp|xbm)|s_(?:(?:(?:execut|write?|read)ab|fi)le|dir)|ni_(?:get(?:_all)?|set)|terator_apply|ptcembed)|g(?:et(?:_(?:c(?:urrent_use|fg_va)r|meta_tags)|my(?:[gpu]id|inode)|(?:lastmo|cw)d|imagesize|env)|z(?:(?:(?:defla|wri)t|encod|fil)e|compress|open|read)|lob)|a(?:rray_(?:u(?:intersect(?:_u?assoc)?|diff(?:_u?assoc)?)|intersect_u(?:assoc|key)|diff_u(?:assoc|key)|filter|reduce|map)|ssert(?:_options)?|lert|tob)|h(?:tml(?:specialchars(?:_decode)?|_entity_decode|entities)|(?:ash(?:_(?:update|hmac))?|ighlight)_file|e(?:ader_register_callback|x2bin))|f(?:i(?:le(?:(?:[acm]tim|inod)e|(?:_exist|perm)s|group)?|nfo_open)|tp_(?:nb_(?:ge|pu)|connec|ge|pu)t|(?:unction_exis|pu)ts|write|open)|o(?:b_(?:get_(?:c(?:ontents|lean)|flush)|end_(?:clean|flush)|clean|flush|start)|dbc_(?:result(?:_all)?|exec(?:ute)?|connect)|pendir)|m(?:b_(?:ereg(?:_(?:replace(?:_callback)?|match)|i(?:_replace)?)?|parse_str)|(?:ove_uploaded|d5)_file|ethod_exists|ysql_query|kdir)|e(?:x(?:if_(?:t(?:humbnail|agname)|imagetype|read_data)|ec)|scapeshell(?:arg|cmd)|rror_reporting|val)|c(?:url_(?:file_create|exec|init)|onvert_uuencode|reate_function|hr)|u(?:n(?:serialize|pack)|rl(?:de|en)code|[ak]?sort)|b(?:(?:son_(?:de|en)|ase64_en)code|zopen|toa)|(?:json_(?:de|en)cod|debug_backtrac|tmpfil)e|var_dump)(?:\\s|/\\*.*\\*/|//.*|#.*|\\\")*\\(.*\\)",
+            "regex": "\\b(?:s(?:e(?:t(?:_(?:e(?:xception|rror)_handler|magic_quotes_runtime|include_path)|defaultstub)|ssion_s(?:et_save_handler|tart))|qlite_(?:(?:(?:unbuffered|single|array)_)?query|create_(?:aggregate|function)|p?open|exec)|tr(?:eam_(?:context_create|socket_client)|ipc?slashes|rev)|implexml_load_(?:string|file)|ocket_c(?:onnect|reate)|h(?:ow_sourc|a1_fil)e|pl_autoload_register|ystem)|p(?:r(?:eg_(?:replace(?:_callback(?:_array)?)?|match(?:_all)?|split)|oc_(?:(?:terminat|clos|nic)e|get_status|open)|int_r)|o(?:six_(?:get(?:(?:e[gu]|g)id|login|pwnam)|mk(?:fifo|nod)|ttyname|kill)|pen)|hp(?:_(?:strip_whitespac|unam)e|version|info)|g_(?:(?:execut|prepar)e|connect|query)|a(?:rse_(?:ini_file|str)|ssthru)|utenv)|r(?:unkit_(?:function_(?:re(?:defin|nam)e|copy|add)|method_(?:re(?:defin|nam)e|copy|add)|constant_(?:redefine|add))|e(?:(?:gister_(?:shutdown|tick)|name)_function|ad(?:(?:gz)?file|_exif_data|dir))|awurl(?:de|en)code)|i(?:mage(?:createfrom(?:(?:jpe|pn)g|x[bp]m|wbmp|gif)|(?:jpe|pn)g|g(?:d2?|if)|2?wbmp|xbm)|s_(?:(?:(?:execut|write?|read)ab|fi)le|dir)|ni_(?:get(?:_all)?|set)|terator_apply|ptcembed)|g(?:et(?:_(?:c(?:urrent_use|fg_va)r|meta_tags)|my(?:[gpu]id|inode)|(?:lastmo|cw)d|imagesize|env)|z(?:(?:(?:defla|wri)t|encod|fil)e|compress|open|read)|lob)|a(?:rray_(?:u(?:intersect(?:_u?assoc)?|diff(?:_u?assoc)?)|intersect_u(?:assoc|key)|diff_u(?:assoc|key)|filter|reduce|map)|ssert(?:_options)?|lert|tob)|h(?:tml(?:specialchars(?:_decode)?|_entity_decode|entities)|(?:ash(?:_(?:update|hmac))?|ighlight)_file|e(?:ader_register_callback|x2bin))|f(?:i(?:le(?:(?:[acm]tim|inod)e|(?:_exist|perm)s|group)?|nfo_open)|tp_(?:nb_(?:ge|pu)|connec|ge|pu)t|(?:unction_exis|pu)ts|write|open)|o(?:b_(?:get_(?:c(?:ontents|lean)|flush)|end_(?:clean|flush)|clean|flush|start)|dbc_(?:result(?:_all)?|exec(?:ute)?|connect)|pendir)|m(?:b_(?:ereg(?:_(?:replace(?:_callback)?|match)|i(?:_replace)?)?|parse_str)|(?:ove_uploaded|d5)_file|ethod_exists|ysql_query|kdir)|e(?:x(?:if_(?:t(?:humbnail|agname)|imagetype|read_data)|ec)|scapeshell(?:arg|cmd)|rror_reporting|val)|c(?:url_(?:file_create|exec|init)|onvert_uuencode|reate_function|hr)|u(?:n(?:serialize|pack)|rl(?:de|en)code|[ak]?sort)|b(?:(?:son_(?:de|en)|ase64_en)code|zopen|toa)|(?:json_(?:de|en)cod|debug_backtrac|tmpfil)e|var_dump)(?:\\s|/\\*.*\\*/|//.*|#.*|\\\"|')*\\((?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?,)*(?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?)?\\)",
             "options": {
+              "case_sensitive": true,
               "min_length": 5
             }
           },
@@ -2710,7 +2750,8 @@
       "tags": {
         "type": "php_code_injection",
         "crs_id": "933170",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2823,7 +2864,8 @@
       "tags": {
         "type": "js_code_injection",
         "crs_id": "934101",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2859,7 +2901,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941110",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2908,7 +2951,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941120",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -2957,7 +3001,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941140",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3006,7 +3051,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941170",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3095,7 +3141,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941200",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3133,7 +3180,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941210",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3171,7 +3219,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941220",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3209,7 +3258,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941230",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3246,7 +3296,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941240",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3322,7 +3373,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941280",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3359,7 +3411,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941290",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3396,7 +3449,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941300",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3433,7 +3487,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941350",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3505,7 +3560,8 @@
       "tags": {
         "type": "xss",
         "crs_id": "941390",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3524,7 +3580,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "\\b(?i:eval|settimeout|setinterval|new\\s+Function)\\s*\\(",
+            "regex": "\\b(?i:eval|settimeout|setinterval|new\\s+Function|alert|prompt)\\s*\\([^\\)]",
             "options": {
               "case_sensitive": true,
               "min_length": 5
@@ -3574,7 +3630,8 @@
       "tags": {
         "type": "sql_injection",
         "crs_id": "942160",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3610,7 +3667,8 @@
       "tags": {
         "type": "sql_injection",
         "crs_id": "942240",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3716,7 +3774,8 @@
       "tags": {
         "type": "sql_injection",
         "crs_id": "942280",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3770,7 +3829,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "(?i:(?:\\[?\\$(?:(?:s(?:lic|iz)|wher)e|e(?:lemMatch|xists|q)|n(?:o[rt]|in?|e)|l(?:ike|te?)|t(?:ext|ype)|a(?:ll|nd)|jsonSchema|between|regex|x?or|div|mod)\\]?))",
+            "regex": "(?i:(?:\\[?\\$(?:(?:s(?:lic|iz)|wher)e|e(?:lemMatch|xists|q)|n(?:o[rt]|in?|e)|l(?:ike|te?)|t(?:ext|ype)|a(?:ll|nd)|jsonSchema|between|regex|x?or|div|mod)\\]?)\\b)",
             "options": {
               "case_sensitive": true,
               "min_length": 3
@@ -3808,7 +3867,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "(?:^[\\W\\d]+\\s*?(?:alter\\s*(?:a(?:(?:pplication\\s*rol|ggregat)e|s(?:ymmetric\\s*ke|sembl)y|u(?:thorization|dit)|vailability\\s*group)|c(?:r(?:yptographic\\s*provider|edential)|o(?:l(?:latio|um)|nversio)n|ertificate|luster)|s(?:e(?:rv(?:ice|er)|curity|quence|ssion|arch)|y(?:mmetric\\s*key|nonym)|togroup|chema)|m(?:a(?:s(?:ter\\s*key|k)|terialized)|e(?:ssage\\s*type|thod)|odule)|l(?:o(?:g(?:file\\s*group|in)|ckdown)|a(?:ngua|r)ge|ibrary)|t(?:(?:abl(?:espac)?|yp)e|r(?:igger|usted)|hreshold|ext)|p(?:a(?:rtition|ckage)|ro(?:cedur|fil)e|ermission)|d(?:i(?:mension|skgroup)|atabase|efault|omain)|r(?:o(?:l(?:lback|e)|ute)|e(?:sourc|mot)e)|f(?:u(?:lltext|nction)|lashback|oreign)|e(?:xte(?:nsion|rnal)|(?:ndpoi|ve)nt)|in(?:dex(?:type)?|memory|stance)|b(?:roker\\s*priority|ufferpool)|x(?:ml\\s*schema|srobject)|w(?:ork(?:load)?|rapper)|hi(?:erarchy|stogram)|o(?:perator|utline)|(?:nicknam|queu)e|us(?:age|er)|group|java|view)\\b|(?:(?:(?:trunc|cre)at|renam)e|d(?:e(?:lete|sc)|rop)|(?:inser|selec)t|load)\\s+\\w+|u(?:nion\\s*(?:(?:distin|sele)ct|all)\\b|pdate\\s+\\w+))|\\b(?:(?:(?:(?:trunc|cre|upd)at|renam)e|(?:inser|selec)t|de(?:lete|sc)|alter|load)\\s+(?:group_concat|load_file|char)\\b\\s*\\(?|end\\s*?\\);)|[\\\"'`\\w]\\s+as\\b\\s*[\\\"'`\\w]+\\s*\\bfrom|[\\s(?:]load_file\\s*?\\(|[\\\"'`]\\s+regexp\\W)",
+            "regex": "(?:^[\\W\\d]+\\s*?(?:alter\\s*(?:a(?:(?:pplication\\s*rol|ggregat)e|s(?:ymmetric\\s*ke|sembl)y|u(?:thorization|dit)|vailability\\s*group)|c(?:r(?:yptographic\\s*provider|edential)|o(?:l(?:latio|um)|nversio)n|ertificate|luster)|s(?:e(?:rv(?:ice|er)|curity|quence|ssion|arch)|y(?:mmetric\\s*key|nonym)|togroup|chema)|m(?:a(?:s(?:ter\\s*key|k)|terialized)|e(?:ssage\\s*type|thod)|odule)|l(?:o(?:g(?:file\\s*group|in)|ckdown)|a(?:ngua|r)ge|ibrary)|t(?:(?:abl(?:espac)?|yp)e|r(?:igger|usted)|hreshold|ext)|p(?:a(?:rtition|ckage)|ro(?:cedur|fil)e|ermission)|d(?:i(?:mension|skgroup)|atabase|efault|omain)|r(?:o(?:l(?:lback|e)|ute)|e(?:sourc|mot)e)|f(?:u(?:lltext|nction)|lashback|oreign)|e(?:xte(?:nsion|rnal)|(?:ndpoi|ve)nt)|in(?:dex(?:type)?|memory|stance)|b(?:roker\\s*priority|ufferpool)|x(?:ml\\s*schema|srobject)|w(?:ork(?:load)?|rapper)|hi(?:erarchy|stogram)|o(?:perator|utline)|(?:nicknam|queu)e|us(?:age|er)|group|java|view)|union\\s*(?:(?:distin|sele)ct|all))\\b|\\b(?:(?:(?:trunc|cre|upd)at|renam)e|(?:inser|selec)t|de(?:lete|sc)|alter|load)\\s+(?:group_concat|load_file|char)\\b\\s*\\(?|[\\s(]load_file\\s*?\\(|[\\\"'`]\\s+regexp\\W)",
             "options": {
               "min_length": 5
             }
@@ -3860,7 +3919,8 @@
       "tags": {
         "type": "http_protocol_violation",
         "crs_id": "943100",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -3893,7 +3953,8 @@
       "tags": {
         "type": "java_code_injection",
         "crs_id": "944100",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4083,7 +4144,8 @@
       "tags": {
         "type": "java_code_injection",
         "crs_id": "944260",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4177,7 +4239,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "[#%$]{[^}]+[^\\w\\s][^}]+}",
+            "regex": "[#%$]{(?:[^}]+[^\\w\\s}\\-_][^}]+|\\d+-\\d+)}",
             "options": {
               "case_sensitive": true
             }
@@ -4191,7 +4253,8 @@
       "name": "OGNL - Detect OGNL exploitation primitives",
       "tags": {
         "type": "java_code_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4228,7 +4291,8 @@
       "name": "Spring4Shell - Attempts to exploit the Spring4shell vulnerability",
       "tags": {
         "type": "exploit_detection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4255,7 +4319,8 @@
       "name": "Node.js: Prototype pollution through __proto__",
       "tags": {
         "type": "js_code_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4282,7 +4347,8 @@
       "name": "Node.js: Prototype pollution through constructor.prototype",
       "tags": {
         "type": "js_code_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4323,7 +4389,8 @@
       "name": "Server side template injection: Velocity & Freemarker",
       "tags": {
         "type": "java_code_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4353,11 +4420,45 @@
       "transformers": []
     },
     {
+      "id": "dog-931-001",
+      "name": "RFI: URL Payload to well known RFI target",
+      "tags": {
+        "type": "rfi",
+        "category": "attack_attempt",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              }
+            ],
+            "regex": "^(?i:file|ftps?|https?).*/rfiinc\\.txt\\?+$",
+            "options": {
+              "case_sensitive": true,
+              "min_length": 17
+            }
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
       "id": "nfd-000-001",
       "name": "Detect common directory discovery scans",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4591,7 +4692,8 @@
       "name": "Detect failed attempt to fetch readme files",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4630,7 +4732,8 @@
       "name": "Detect failed attempt to fetch Java EE resource files",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4669,7 +4772,8 @@
       "name": "Detect failed attempt to fetch code files",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4708,7 +4812,8 @@
       "name": "Detect failed attempt to fetch source code archives",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4747,7 +4852,8 @@
       "name": "Detect failed attempt to fetch sensitive files",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4786,7 +4892,8 @@
       "name": "Detect failed attempt to fetch archives",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4825,7 +4932,8 @@
       "name": "Detect failed attempt to trigger incorrect application behavior",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4864,7 +4972,8 @@
       "name": "Detect failed attempt to leak the structure of the application",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -4903,7 +5012,8 @@
       "name": "SSRF: Try to access the credential manager of the main cloud services",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5005,7 +5115,8 @@
       "name": "Windows: Detect attempts to exfiltrate .ini files",
       "tags": {
         "type": "command_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5039,7 +5150,8 @@
       "name": "Linux: Detect attempts to exfiltrate passwd files",
       "tags": {
         "type": "command_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5073,7 +5185,8 @@
       "name": "Windows: Detect attempts to timeout a shell",
       "tags": {
         "type": "command_injection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5107,7 +5220,8 @@
       "name": "SSRF: Try to access internal OMI service (CVE-2021-38647)",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5141,7 +5255,8 @@
       "name": "SSRF: Detect SSRF attempt on internal service",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -5160,7 +5275,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "^(jar:)?(http|https):\\/\\/([0-9oq]{1,5}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}|[0-9]{1,10}|localhost)(:[0-9]{1,5})?(\\/.*|)$"
+            "regex": "^(jar:)?(http|https):\\/\\/([0-9oq]{1,5}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}|[0-9]{1,10})(:[0-9]{1,5})?(\\/.*|)$"
           },
           "operator": "match_regex"
         }
@@ -5174,7 +5289,8 @@
       "name": "SSRF: Detect SSRF attempts using IPv6 or octal/hexdecimal obfuscation",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -5207,7 +5323,8 @@
       "name": "SSRF: Detect SSRF domain redirection bypass",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5243,7 +5360,8 @@
       "name": "SSRF: Detect SSRF attempt using non HTTP protocol",
       "tags": {
         "type": "ssrf",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -5279,7 +5397,8 @@
       "name": "Log4shell: Attempt to exploit log4j CVE-2021-44228",
       "tags": {
         "type": "exploit_detection",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5316,7 +5435,8 @@
       "name": "Joomla exploitation tool",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5341,7 +5461,8 @@
       "name": "Nessus",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5366,7 +5487,8 @@
       "name": "Arachni",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5391,7 +5513,8 @@
       "name": "Jorgee",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5416,7 +5539,8 @@
       "name": "Probely",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5441,7 +5565,8 @@
       "name": "Metis",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5466,7 +5591,8 @@
       "name": "SQL power injector",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5491,7 +5617,8 @@
       "name": "N-Stealth",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5516,7 +5643,8 @@
       "name": "Brutus",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5541,7 +5669,8 @@
       "name": "Shellshock exploitation tool",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5566,7 +5695,8 @@
       "name": "Netsparker",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5591,7 +5721,8 @@
       "name": "JAASCois",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5616,7 +5747,8 @@
       "name": "PMAFind",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5641,7 +5773,8 @@
       "name": "Webtrends",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5666,7 +5799,8 @@
       "name": "Nsauditor",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5691,7 +5825,8 @@
       "name": "Paros",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5716,7 +5851,8 @@
       "name": "DirBuster",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5741,7 +5877,8 @@
       "name": "Pangolin",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5766,7 +5903,8 @@
       "name": "Qualys",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5791,7 +5929,8 @@
       "name": "SQLNinja",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5816,7 +5955,8 @@
       "name": "Nikto",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5841,7 +5981,8 @@
       "name": "WebInspect",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5866,7 +6007,8 @@
       "name": "BlackWidow",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5891,7 +6033,8 @@
       "name": "Grendel-Scan",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5916,7 +6059,8 @@
       "name": "Havij",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5941,7 +6085,8 @@
       "name": "w3af",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5966,7 +6111,8 @@
       "name": "Nmap",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -5991,7 +6137,8 @@
       "name": "Nessus Scripted",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6016,7 +6163,8 @@
       "name": "Evil Scanner",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6041,7 +6189,8 @@
       "name": "WebFuck",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6066,7 +6215,8 @@
       "name": "OpenVAS",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6091,7 +6241,8 @@
       "name": "Spider-Pig",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6116,7 +6267,8 @@
       "name": "Zgrab",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6141,7 +6293,8 @@
       "name": "Zmeu",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6166,7 +6319,8 @@
       "name": "Crowdstrike",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6191,7 +6345,8 @@
       "name": "GoogleSecurityScanner",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6216,7 +6371,8 @@
       "name": "Commix",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6241,7 +6397,8 @@
       "name": "Gobuster",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6266,7 +6423,8 @@
       "name": "CGIchk",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6291,7 +6449,8 @@
       "name": "FFUF",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6316,7 +6475,8 @@
       "name": "Nuclei",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6341,7 +6501,8 @@
       "name": "Tsunami",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6366,7 +6527,8 @@
       "name": "Nimbostratus",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6391,7 +6553,8 @@
       "name": "Datadog test scanner: user-agent",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6418,11 +6581,47 @@
       "transformers": []
     },
     {
+      "id": "ua0-600-56x",
+      "name": "Datadog test scanner - blocking version: user-agent",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              },
+              {
+                "address": "grpc.server.request.metadata",
+                "key_path": [
+                  "dd-canary"
+                ]
+              }
+            ],
+            "regex": "^dd-test-scanner-log-block$"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "block"
+      ]
+    },
+    {
       "id": "ua0-600-5xx",
       "name": "Blind SQL Injection Brute Forcer",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6447,7 +6646,8 @@
       "name": "Suspicious user agent",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6472,7 +6672,8 @@
       "name": "SQLmap",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {
@@ -6497,7 +6698,8 @@
       "name": "Skipfish",
       "tags": {
         "type": "security_scanner",
-        "category": "attack_attempt"
+        "category": "attack_attempt",
+        "confidence": "1"
       },
       "conditions": [
         {

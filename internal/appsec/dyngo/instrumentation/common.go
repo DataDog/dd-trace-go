@@ -49,7 +49,7 @@ func (m *TagsHolder) Tags() map[string]interface{} {
 // See httpsec/http.go and grpcsec/grpc.go.
 type SecurityEventsHolder struct {
 	events []json.RawMessage
-	mu     sync.Mutex
+	mu     sync.RWMutex
 }
 
 // AddSecurityEvents adds the security events to the collected events list.
@@ -62,11 +62,28 @@ func (s *SecurityEventsHolder) AddSecurityEvents(events ...json.RawMessage) {
 
 // Events returns the list of stored events.
 func (s *SecurityEventsHolder) Events() []json.RawMessage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.events
+}
+
+// ClearEvents clears the list of stored events
+func (s *SecurityEventsHolder) ClearEvents() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = s.events[0:0]
 }
 
 // SetTags fills the span tags using the key/value pairs found in `tags`
 func SetTags(span TagSetter, tags map[string]interface{}) {
+	for k, v := range tags {
+		span.SetTag(k, v)
+	}
+}
+
+// SetStringTags fills the span tags using the key/value pairs of strings found
+// in `tags`
+func SetStringTags(span TagSetter, tags map[string]string) {
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
@@ -102,9 +119,11 @@ func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
 
 // Create the value of the security event tag.
 // TODO(Julio-Guerra): a future libddwaf version should return something
-//   avoiding us the following events concatenation logic which currently
-//   involves unserializing the top-level JSON arrays to concatenate them
-//   together.
+//
+//	avoiding us the following events concatenation logic which currently
+//	involves unserializing the top-level JSON arrays to concatenate them
+//	together.
+//
 // TODO(Julio-Guerra): avoid serializing the json in the request hot path
 func makeEventTagValue(events []json.RawMessage) (json.RawMessage, error) {
 	var v interface{}

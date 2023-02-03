@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/gofiber/fiber/v2"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -47,6 +49,8 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
+		opts = append(opts, tracer.Tag(ext.Component, "gofiber/fiber.v2"))
+		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 		span, ctx := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
 
 		defer span.Finish()

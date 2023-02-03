@@ -94,8 +94,11 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ServiceName(c.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag("partition", msg.TopicPartition.Partition),
+		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
+		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
 	}
 	if c.cfg.tagFns != nil {
@@ -205,7 +208,10 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag("partition", msg.TopicPartition.Partition),
+		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))

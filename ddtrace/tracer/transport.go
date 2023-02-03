@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -152,7 +153,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
 		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
 		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.config.statsd; stats != nil {
+		if stats := t.statsd; stats != nil {
 			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
 				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
 			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
@@ -186,7 +187,7 @@ func (t *httpTransport) endpoint() string {
 // resolveAgentAddr resolves the given agent address and fills in any missing host
 // and port using the defaults. Some environment variable settings will
 // take precedence over configuration.
-func resolveAgentAddr() string {
+func resolveAgentAddr() *url.URL {
 	var host, port string
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
 		host = v
@@ -194,11 +195,20 @@ func resolveAgentAddr() string {
 	if v := os.Getenv("DD_TRACE_AGENT_PORT"); v != "" {
 		port = v
 	}
+	if _, err := os.Stat(defaultSocketAPM); host == "" && port == "" && err == nil {
+		return &url.URL{
+			Scheme: "unix",
+			Path:   defaultSocketAPM,
+		}
+	}
 	if host == "" {
 		host = defaultHostname
 	}
 	if port == "" {
 		port = defaultPort
 	}
-	return fmt.Sprintf("%s:%s", host, port)
+	return &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s:%s", host, port),
+	}
 }

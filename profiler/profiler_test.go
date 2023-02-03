@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 func TestMain(m *testing.M) {
@@ -48,8 +50,8 @@ func TestStart(t *testing.T) {
 		// that we log some default configuration, e.g. enabled profiles
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
 		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "cpu")
-		assert.Contains(t, startupLog, "heap")
+		assert.Contains(t, startupLog, "\"cpu\"")
+		assert.Contains(t, startupLog, "\"heap\"")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
@@ -519,5 +521,93 @@ func TestImmediateProfile(t *testing.T) {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
 	case <-received:
+	}
+}
+
+func TestExecutionTrace(t *testing.T) {
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "50ms")
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(CPUProfile),
+		WithPeriod(1*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	contains := func(haystack []string, needle string) bool {
+		for _, s := range haystack {
+			if s == needle {
+				return true
+			}
+		}
+		return false
+	}
+	seenTraces := 0
+	for i := 0; i < 5; i++ {
+		m := <-got
+		t.Log(m.event.Attachments, m.tags)
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
+			seenTraces++
+		}
+	}
+	// With a trace frequency of 3 seconds and a profiling period of 1
+	// second, we should see 2 traces after 5 profile collections: one at
+	// the start, and one 3 seconds later.
+	if seenTraces != 2 {
+		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
+	}
+}
+
+// TestEndpointCounts verfies that the unit of work feature works end to end.
+func TestEndpointCounts(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		name := fmt.Sprintf("enabled=%v", enabled)
+		t.Run(name, func(t *testing.T) {
+			// Spin up mock backend
+			got := make(chan profileMeta, 1)
+			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			// Configure endpoint counting
+			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
+
+			// Start the tracer (before profiler to avoid race in case of slow tracer start)
+			tracer.Start()
+			defer tracer.Stop()
+
+			// Start profiler
+			err := Start(
+				WithAgentAddr(server.Listener.Addr().String()),
+				WithProfileTypes(CPUProfile),
+				WithPeriod(100*time.Millisecond),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			// Create spans until the first profile is finished
+			var m profileMeta
+			for m.attachments == nil {
+				select {
+				case m = <-got:
+				default:
+					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
+					span.Finish()
+				}
+			}
+
+			// Check that the first uploaded profile matches our expectations
+			if enabled {
+				require.Equal(t, 1, len(m.event.EndpointCounts))
+				require.Greater(t, m.event.EndpointCounts["/foo/bar"], uint64(0))
+			} else {
+				require.Empty(t, m.event.EndpointCounts)
+			}
+		})
 	}
 }
