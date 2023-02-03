@@ -56,8 +56,8 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID:  span.SpanID,
 		span:    span,
 	}
-	if span.Meta != nil {
-		context.traceID128 = span.Meta[keyTraceID128]
+	if span.context != nil {
+		context.traceID128 = span.context.traceID128
 	}
 	if parent != nil {
 		context.trace = parent.trace
@@ -362,6 +362,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
+	}
+	if s.context != nil {
+		s.setMeta(keyTraceID128, s.context.traceID128)
 	}
 	if len(t.spans) != t.finished {
 		return

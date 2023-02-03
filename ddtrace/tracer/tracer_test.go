@@ -698,10 +698,11 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
 		id := id128FromSpan(assert, s)
-		assert.Equal(id[:16], s.Meta[keyTraceID128])
 		// hex_encoded(<32-bit unix seconds> <32 bits of zero> <64 random bits>)
 		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
 		assert.Equal("0001e2400000000000000000000f1206", id)
+		s.Finish()
+		assert.Equal(id[:16], s.Meta[keyTraceID128])
 	})
 }
 
@@ -1016,14 +1017,16 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 		assert.Equal(parent.TraceID, child.TraceID)
 		id := id128FromSpan(assert, child)
 		assert.Equal(id128FromSpan(assert, parent), id)
+		assert.Equal(parent.Service, child.Service)
+		// the resource is not inherited and defaults to the name
+		assert.Equal("redis.command", child.Resource)
+
+		child.Finish() // Meta[keyTraceID128] gets set upon Finish
 		if is128 {
 			assert.Equal(id[:16], child.Meta[keyTraceID128])
 		} else {
 			assert.Empty(child.Meta[keyTraceID128])
 		}
-		assert.Equal(parent.Service, child.Service)
-		// the resource is not inherited and defaults to the name
-		assert.Equal("redis.command", child.Resource)
 	})
 }
 
