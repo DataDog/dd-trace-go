@@ -421,7 +421,7 @@ func TestEnvVars(t *testing.T) {
 					traceID128High: 0,
 					spanID:         1842642739201064,
 					out: map[string]string{
-						b3TraceIDHeader: "0000000000000000000504ab30404b09",
+						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
@@ -430,7 +430,7 @@ func TestEnvVars(t *testing.T) {
 					traceID128High: 0,
 					spanID:         9455715668862222,
 					out: map[string]string{
-						b3TraceIDHeader: "00000000000000000021dc1807524785",
+						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
 				},
