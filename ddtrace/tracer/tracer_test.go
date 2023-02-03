@@ -49,6 +49,16 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
 }
 
+func id128FromSpan(assert *assert.Assertions, span *span) string {
+	var w3Cctx ddtrace.SpanContextW3C
+	var ok bool
+	w3Cctx, ok = span.Context().(ddtrace.SpanContextW3C)
+	assert.True(ok)
+	id := w3Cctx.TraceID128()
+	assert.Len(id, 32)
+	return id
+}
+
 var (
 	// timeMultiplicator specifies by how long to extend waiting times.
 	// It may be altered in some environments (like AppSec) where things
@@ -670,12 +680,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-		}
-		id128 := w3cCtx.TraceID128()
-		assert.Len(id128, 32) // ensure there are enough leading zeros
+		id128 := id128FromSpan(assert, s)
 		idBytes, err := hex.DecodeString(id128)
 		assert.NoError(err)
 		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
@@ -691,13 +696,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts128...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-		}
 		// hex_encoded(<32-bit unix seconds> <32 bits of zero> <64 random bits>)
 		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
-		assert.Equal("0001e2400000000000000000000f1206", w3cCtx.TraceID128())
+		assert.Equal("0001e2400000000000000000000f1206", id128FromSpan(assert, s))
 	})
 }
 
@@ -991,6 +992,12 @@ func TestNewSpan(t *testing.T) {
 }
 
 func TestNewSpanChild(t *testing.T) {
+	testNewSpanChild(t)
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+	testNewSpanChild(t)
+}
+
+func testNewSpanChild(t *testing.T) {
 	assert := assert.New(t)
 
 	// the tracer must create child spans
@@ -1001,6 +1008,7 @@ func TestNewSpanChild(t *testing.T) {
 	// ids and services are inherited
 	assert.Equal(parent.SpanID, child.ParentID)
 	assert.Equal(parent.TraceID, child.TraceID)
+	assert.Equal(id128FromSpan(assert, parent), id128FromSpan(assert, child))
 	assert.Equal(parent.Service, child.Service)
 	// the resource is not inherited and defaults to the name
 	assert.Equal("redis.command", child.Resource)

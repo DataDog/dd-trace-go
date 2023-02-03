@@ -493,7 +493,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			} else { // 128-bit trace id
 				id128 := v[:len(v)-16]
 				// pad ctx.traceID128 with zeroes to ensure length of 16
-				ctx.traceID128 = fmt.Sprintf("%0*s", 16, id128)
+				ctx.traceID128 = fmt.Sprintf("%016s", id128)
 				if ctx.span != nil {
 					ctx.span.setMeta(keyTraceID128, ctx.traceID128)
 				}
