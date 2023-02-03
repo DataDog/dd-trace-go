@@ -466,6 +466,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			}
 		}
 	}
+	// add 128 bit trace id, if enabled, formatted as big-endian:
+	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 	if span.Meta[keyTraceID128] != "" && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		id128 := startTime.Unix()
 		b := make([]byte, 8)
