@@ -398,11 +398,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for _, fn := range options {
 		fn(&opts)
 	}
-	var startTime int64
+	var startTime time.Time
 	if opts.StartTime.IsZero() {
-		startTime = now()
+		startTime = nowTime()
 	} else {
-		startTime = opts.StartTime.UnixNano()
+		startTime = opts.StartTime
 	}
 	var context *spanContext
 	// The default pprof context is taken from the start options and is
@@ -431,7 +431,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = generateSpanID(startTime)
+		id = generateSpanID(startTime.UnixNano())
 	}
 	// span defaults
 	span := &span{
@@ -440,7 +440,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Resource:     operationName,
 		SpanID:       id,
 		TraceID:      id,
-		Start:        startTime,
+		Start:        startTime.UnixNano(),
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
@@ -470,12 +470,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
 
-	// add 128 bit trace id, if enabled.
+	// add 128 bit trace id, if enabled, formatted as big-endian:
+	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 	if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
-		id128 := generateSpanID(startTime)
-		buf := make([]byte, 8)
-		binary.BigEndian.PutUint64(buf, id128)
-		span.setMeta(keyTraceID128, hex.EncodeToString(buf))
+		id128 := startTime.Unix()
+		b := make([]byte, 8)
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the forseeable future.
+		binary.BigEndian.PutUint32(b, uint32(id128))
+		span.setMeta(keyTraceID128, hex.EncodeToString(b))
 	}
 
 	// add tags from options
