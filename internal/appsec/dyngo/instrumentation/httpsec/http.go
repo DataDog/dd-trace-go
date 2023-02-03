@@ -60,38 +60,19 @@ type (
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
 
-	// UserIDOperationArgs is the user ID operation arguments.
-	UserIDOperationArgs struct {
-		UserID string
-	}
-
-	// UserIDOperationRes is the user ID operation results.
-	UserIDOperationRes struct{}
+	contextKey struct{}
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body interface{}) {
-	if parent := fromContext(ctx); parent != nil {
+	if parent := FromContext(ctx); parent != nil {
 		op := StartSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
 		op.Finish()
 	} else {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 	}
-}
-
-// MonitorUser starts and finishes a UserID operation.
-// A call to the WAF is made to check the user ID and the returned value
-// indicates whether the user should be blocked or not.
-func MonitorUser(ctx context.Context, userID string) bool {
-	if parent := fromContext(ctx); parent != nil {
-		op := StartUserIDOperation(parent, UserIDOperationArgs{UserID: userID})
-		op.Finish()
-		return op.Block
-	}
-	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
-	return false
 }
 
 // applyActions executes the operation's actions and returns the resulting http handler
@@ -204,14 +185,6 @@ type (
 	SDKBodyOperation struct {
 		dyngo.Operation
 	}
-
-	// UserIDOperation type representing a call to appsec.SetUser(). It must be created with
-	// StartUserIDOperation() and finished with its Finish() method.
-	UserIDOperation struct {
-		dyngo.Operation
-		Block bool
-	}
-	contextKey struct{}
 )
 
 // StartOperation starts an HTTP handler operation, along with the given
@@ -228,7 +201,8 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Con
 	return newCtx, op
 }
 
-func fromContext(ctx context.Context) *Operation {
+// FromContext returns the Operation object stored in the context, if any
+func FromContext(ctx context.Context) *Operation {
 	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
 	op, _ := ctx.Value(contextKey{}).(*Operation)
 	return op
@@ -274,16 +248,6 @@ func (op *SDKBodyOperation) Finish() {
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
 }
 
-func StartUserIDOperation(parent *Operation, args UserIDOperationArgs) *UserIDOperation {
-	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.StartOperation(op, args)
-	return op
-}
-
-func (op *UserIDOperation) Finish() {
-	dyngo.FinishOperation(op, UserIDOperationRes{})
-}
-
 // HTTP handler operation's start and finish event callback function types.
 type (
 	// OnHandlerOperationStart function type, called when an HTTP handler
@@ -298,9 +262,6 @@ type (
 	// OnSDKBodyOperationFinish function type, called when an SDK body
 	// operation finishes.
 	OnSDKBodyOperationFinish func(*SDKBodyOperation, SDKBodyOperationRes)
-	// OnUserIDOperationStart function type, called when a user ID
-	// operation starts.
-	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
 )
 
 var (
@@ -308,7 +269,6 @@ var (
 	handlerOperationResType  = reflect.TypeOf((*HandlerOperationRes)(nil)).Elem()
 	sdkBodyOperationArgsType = reflect.TypeOf((*SDKBodyOperationArgs)(nil)).Elem()
 	sdkBodyOperationResType  = reflect.TypeOf((*SDKBodyOperationRes)(nil)).Elem()
-	userIDOperationArgsType  = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 )
 
 // ListenedType returns the type a OnHandlerOperationStart event listener
@@ -349,13 +309,6 @@ func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOper
 // type-assertion on v whose type is the one returned by ListenedType().
 func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
-}
-
-// ListenedType returns the type a OnUserIDOperationStart event listener
-// listens to, which is the UserIDOperationStartArgs type.
-func (OnUserIDOperationStart) ListenedType() reflect.Type { return userIDOperationArgsType }
-func (f OnUserIDOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*UserIDOperation), v.(UserIDOperationArgs))
 }
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests

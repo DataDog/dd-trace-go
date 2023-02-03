@@ -32,7 +32,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -64,7 +64,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(stream.Context(), grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		stream = appsecServerStream{
+			ServerStream:     stream,
+			handlerOperation: op,
+			ctx:              ctx,
+		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -79,13 +84,14 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			return status.Error(*op.BlockedCode, "Request blocked")
 		}
 
-		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
+		return handler(srv, stream)
 	}
 }
 
 type appsecServerStream struct {
 	grpc.ServerStream
 	handlerOperation *grpcsec.HandlerOperation
+	ctx              context.Context
 }
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
@@ -96,6 +102,10 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 		op.Finish(grpcsec.ReceiveOperationRes{Message: m})
 	}()
 	return ss.ServerStream.RecvMsg(m)
+}
+
+func (ss appsecServerStream) Context() context.Context {
+	return ss.ctx
 }
 
 // Set the AppSec tags when security events were found.

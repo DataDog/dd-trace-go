@@ -21,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -113,7 +114,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		op.On(httpsec.OnUserIDOperationStart(func(operation *httpsec.UserIDOperation, args httpsec.UserIDOperationArgs) {
+		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]interface{}{}
 			for _, addr := range addresses {
 				if addr == userIDAddr {
@@ -245,7 +246,26 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			// The WAF event listener got concurrently released
 			return
 		}
-		defer wafCtx.Close()
+
+		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
+		// see if the associated user should be blocked. Since we don't control the execution flow in this case
+		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
+		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+			values := map[string]interface{}{}
+			for _, addr := range addresses {
+				if addr == userIDAddr {
+					values[userIDAddr] = args.UserID
+				}
+			}
+			matches, actionIds := runWAF(wafCtx, values, timeout)
+			if len(matches) > 0 {
+				for _, id := range actionIds {
+					operation.Block = actionHandler.Apply(id, op) || operation.Block
+				}
+				op.AddSecurityEvents(matches)
+				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
+			}
+		}))
 
 		// The same address is used for gRPC and http when it comes to client ip
 		values := map[string]interface{}{}
@@ -264,6 +284,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			op.AddSecurityEvents(matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
+				wafCtx.Close()
 				return
 			}
 		}
@@ -320,6 +341,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		}))
 
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
+			defer wafCtx.Close()
 			rInfo := handle.RulesetInfo()
 			addWAFMonitoringTags(op, rInfo.Version, overallRuntimeNs.Load(), internalRuntimeNs.Load(), nbTimeouts.Load())
 

@@ -19,7 +19,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
@@ -36,12 +40,24 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 }
 
 type userMonitoringError struct {
-	shouldBlock bool
-	err         error
+	err    error
+	status struct {
+		grpc codes.Code
+		http int
+	}
 }
 
 func (err *userMonitoringError) ShouldBlock() bool {
-	return err.shouldBlock
+	return err.status.grpc == codes.Aborted || err.status.http == 403
+}
+func (err *userMonitoringError) GRPCStatus() *status.Status {
+	return status.New(err.status.grpc, err.Error())
+}
+func (err *userMonitoringError) GRPCCode() codes.Code {
+	return err.status.grpc
+}
+func (err *userMonitoringError) HTTPCode() int {
+	return err.status.http
 }
 func (err *userMonitoringError) Error() string {
 	return err.err.Error()
@@ -66,10 +82,13 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		}
 	}
 	tracer.SetUser(s, id, opts...)
-	if httpsec.MonitorUser(ctx, id) {
+	if sharedsec.MonitorUser(ctx, id) {
 		return &userMonitoringError{
-			shouldBlock: true,
-			err:         errors.New("Suspicious user detected. Associated requests should be blocked."),
+			err: errors.New("Suspicious user detected. Associated requests should be blocked."),
+			status: struct {
+				grpc codes.Code
+				http int
+			}{grpc: codes.Aborted, http: 403},
 		}
 	}
 	return nil

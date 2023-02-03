@@ -50,8 +50,8 @@ func (op *UserIDOperation) Finish() {
 // listens to, which is the UserIDOperationStartArgs type.
 func (OnUserIDOperationStart) ListenedType() reflect.Type { return userIDOperationArgsType }
 
-// OnUserIDOperationStart function type, called when a user ID
-// operation starts.
+// Call the underlying event listener function by performing the type-assertion
+// on v whose type is the one returned by ListenedType().
 func (f OnUserIDOperationStart) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*UserIDOperation), v.(UserIDOperationArgs))
 }

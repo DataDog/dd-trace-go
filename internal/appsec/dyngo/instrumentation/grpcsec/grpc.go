@@ -10,6 +10,7 @@
 package grpcsec
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 
@@ -68,6 +69,7 @@ type (
 		// Corresponds to the address `grpc.server.request.message`.
 		Message interface{}
 	}
+	contextKey struct{}
 )
 
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
@@ -76,13 +78,14 @@ type (
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(args HandlerOperationArgs, parent dyngo.Operation) *HandlerOperation {
+func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, parent dyngo.Operation) (context.Context, *HandlerOperation) {
 	op := &HandlerOperation{
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
+	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)
-	return op
+	return newCtx, op
 }
 
 // Finish the gRPC handler operation, along with the given results, and emit a
@@ -176,4 +179,10 @@ func (OnReceiveOperationFinish) ListenedType() reflect.Type { return receiveOper
 // on v whose type is the one returned by ListenedType().
 func (f OnReceiveOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(ReceiveOperation), v.(ReceiveOperationRes))
+}
+
+// FromContext returns the HandlerOperation object stored in the context, if any
+func FromContext(ctx context.Context) *HandlerOperation {
+	op, _ := ctx.Value(contextKey{}).(*HandlerOperation)
+	return op
 }
