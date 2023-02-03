@@ -93,16 +93,16 @@ func (c *spanContext) TraceID() uint64 { return c.traceID }
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
 	var hi []byte
-	if hiStr := c.traceID128; hiStr != "" {
+	if c.traceID128 != "" {
 		// 128 bit trace ids is enabled, so fill the higher order bits
 		var err error
-		hi, err = hex.DecodeString(hiStr)
+		hi, err = hex.DecodeString(c.traceID128)
 		if err != nil {
-			log.Debug("failed to decode upper 64 bits of 128-bit trace id %q", hiStr)
+			log.Debug("failed to decode upper 64 bits of 128-bit trace id %q", c.traceID128)
 			return "" // this would be our fault, and means we have a bug
 		}
 		if len(hi) > 8 {
-			log.Debug("invalid 128-bit trace id %q", hiStr)
+			log.Debug("invalid 128-bit trace id %q", c.traceID128)
 			return "" // this would be our fault, and means we have a bug
 		}
 	}
