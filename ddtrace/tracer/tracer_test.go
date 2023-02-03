@@ -696,7 +696,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
 		}
 		// hex_encoded(<32-bit unix seconds> <32 bits of zero> <64 random bits>)
-		// 0001e240 (123456 hex encoded) + 00000000 (zeros) + 00000000000f1206 (987654 hex encoded)
+		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
 		assert.Equal("0001e2400000000000000000000f1206", w3cCtx.TraceID128())
 	})
 }
