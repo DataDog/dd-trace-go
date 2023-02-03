@@ -680,8 +680,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		id128 := id128FromSpan(assert, s)
-		idBytes, err := hex.DecodeString(id128)
+		id := id128FromSpan(assert, s)
+		assert.Empty(s.Meta[keyTraceID128])
+		idBytes, err := hex.DecodeString(id)
 		assert.NoError(err)
 		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
@@ -696,9 +697,11 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts128...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
+		id := id128FromSpan(assert, s)
+		assert.Equal(id[:16], s.Meta[keyTraceID128])
 		// hex_encoded(<32-bit unix seconds> <32 bits of zero> <64 random bits>)
 		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
-		assert.Equal("0001e2400000000000000000000f1206", id128FromSpan(assert, s))
+		assert.Equal("0001e2400000000000000000000f1206", id)
 	})
 }
 
@@ -992,26 +995,36 @@ func TestNewSpan(t *testing.T) {
 }
 
 func TestNewSpanChild(t *testing.T) {
-	testNewSpanChild(t)
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
-	testNewSpanChild(t)
+	testNewSpanChild(t, false)
+	testNewSpanChild(t, true)
 }
 
-func testNewSpanChild(t *testing.T) {
-	assert := assert.New(t)
+func testNewSpanChild(t *testing.T, is128 bool) {
+	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
+		if is128 {
+			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		}
+		assert := assert.New(t)
 
-	// the tracer must create child spans
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
-	child := tracer.newChildSpan("redis.command", parent)
-	// ids and services are inherited
-	assert.Equal(parent.SpanID, child.ParentID)
-	assert.Equal(parent.TraceID, child.TraceID)
-	assert.Equal(id128FromSpan(assert, parent), id128FromSpan(assert, child))
-	assert.Equal(parent.Service, child.Service)
-	// the resource is not inherited and defaults to the name
-	assert.Equal("redis.command", child.Resource)
+		// the tracer must create child spans
+		tracer := newTracer(withTransport(newDefaultTransport()))
+		defer tracer.Stop()
+		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
+		child := tracer.newChildSpan("redis.command", parent)
+		// ids and services are inherited
+		assert.Equal(parent.SpanID, child.ParentID)
+		assert.Equal(parent.TraceID, child.TraceID)
+		id := id128FromSpan(assert, child)
+		assert.Equal(id128FromSpan(assert, parent), id)
+		if is128 {
+			assert.Equal(id[:16], child.Meta[keyTraceID128])
+		} else {
+			assert.Empty(child.Meta[keyTraceID128])
+		}
+		assert.Equal(parent.Service, child.Service)
+		// the resource is not inherited and defaults to the name
+		assert.Equal("redis.command", child.Resource)
+	})
 }
 
 func TestNewRootSpanHasPid(t *testing.T) {
