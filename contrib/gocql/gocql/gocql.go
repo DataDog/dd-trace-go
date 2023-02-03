@@ -104,6 +104,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
 		tracer.Tag(ext.Component, "gocql/gocql"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -257,6 +258,7 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.Tag(ext.CassandraKeyspace, tb.Keyspace()),
 		tracer.Tag(ext.Component, "gocql/gocql"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

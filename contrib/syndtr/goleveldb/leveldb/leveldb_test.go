@@ -150,6 +150,7 @@ func testAction(t *testing.T, name string, f func(mt mocktracer.Tracer, db *DB))
 		assert.Equal(t, name, spans[0].Tag(ext.ResourceName))
 		assert.Equal(t, "syndtr/goleveldb/leveldb", spans[0].Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
+		assert.Equal(t, "leveldb", spans[0].Tag(ext.DBSystem))
 	})
 }
 
