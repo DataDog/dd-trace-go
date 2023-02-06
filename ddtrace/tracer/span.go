@@ -637,11 +637,9 @@ func (s *span) setHostname(c *config) {
 		// Note that we can't use the t.config.agentURL scheme since it's set to `http` so we can use the golang http client
 		return
 	}
-	hn := hostname.Get()
-	if hn == "" {
-		return
+	if hn := hostname.Get(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
 	}
-	s.setMeta(keyTracerHostname, hn)
 }
 
 const (
