@@ -50,14 +50,13 @@ func getMetadataItemWithMaxLength(ctx context.Context, endpoint string, maxLengt
 }
 
 func getMetadataItem(ctx context.Context, endpoint string) (string, error) {
-	// TODO: we assume aws is enabled
 	return doHTTPRequest(ctx, metadataURL+endpoint)
 }
 
 func doHTTPRequest(ctx context.Context, url string) (string, error) {
 	headers := map[string]string{}
-	// Note: This assumes IMDS v1
-	// IMDS v2 won't work in a containerized app and requires an API Token
+	// Note: This assumes IMDS v1. IMDS v2 won't work in a containerized app and requires an API Token
+	// Users who have disabled IMDS v1 in favor of v2 will get a fallback hostname from a different provider (likely OS).
 	return httputils.Get(ctx, url, headers, 300*time.Millisecond)
 }
 
