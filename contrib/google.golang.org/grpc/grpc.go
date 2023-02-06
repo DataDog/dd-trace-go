@@ -52,7 +52,7 @@ func startSpanFromContext(
 		tracer.Tag(tagMethodName, method), //REMOVE THIS???
 		tracer.Tag(ext.RPCMethod, method),
 		tracer.Tag(ext.RPCSystem, "gRPC"),
-		spanTypeRPC,
+		tracer.Tag(ext.RPCService, service),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
