@@ -29,31 +29,35 @@ var (
 var (
 	cachedHostname  string
 	cachedAt        time.Time
+	cachedProvider  string
 	cacheExpiration = 5 * time.Minute
 	m               sync.RWMutex
 	isRefreshing    atomic.Value
 )
 
+const fargateName = "fargate"
+
 func init() {
 	isRefreshing.Store(false)
 }
 
-// getCached returns the cached hostname and a bool indicating if the hostname should be refreshed
-func getCached(now time.Time) (string, bool) {
+// getCached returns the cached hostname, cached provider and a bool indicating if the hostname has expired
+func getCached(now time.Time) (string, string, bool) {
 	m.RLock()
 	defer m.RUnlock()
 	if now.Sub(cachedAt) > cacheExpiration {
-		return cachedHostname, true
+		return cachedHostname, cachedProvider, true
 	}
-	return cachedHostname, false
+	return cachedHostname, cachedProvider, false
 }
 
 // setCached caches the newHostname
-func setCached(now time.Time, newHostname string) {
+func setCached(now time.Time, newHostname string, newProvider string) {
 	m.Lock()
 	defer m.Unlock()
 	cachedHostname = newHostname
 	cachedAt = now
+	cachedProvider = newProvider
 }
 
 type provider struct {
@@ -72,7 +76,7 @@ var providerCatalog = []provider{
 		pf:               fromConfig,
 	},
 	{
-		name:             "fargate",
+		name:             fargateName,
 		stopIfSuccessful: true,
 		pf:               fromFargate,
 	},
@@ -113,22 +117,21 @@ var providerCatalog = []provider{
 // Get returns the cached hostname for the tracer, empty if we haven't found one yet.
 // Spawning a go routine to update the hostname if it is empty or out of date
 func Get() string {
-	log.Debug("CACHED HOSTNAME CALLED")
 	now := time.Now()
 	var (
-		ch            string
-		shouldRefresh bool
+		ch      string
+		expired bool
+		pv      string
 	)
-	if ch, shouldRefresh = getCached(now); !shouldRefresh && ch != "" {
-		log.Debug("Using cached hostname %s", ch)
+	// if provider is fargate never refresh
+	// Otherwise, refresh on expiration or if hostname hasn't been found.
+	if ch, pv, expired = getCached(now); pv == fargateName || (!expired && ch != "") {
 		return ch
 	}
 	// Use CAS to avoid spawning more than one go-routine trying to update the cached hostname
 	ir := isRefreshing.CompareAndSwap(false, true)
-	if ir == true {
-		log.Debug("Let's try to get a new one")
+	if ir {
 		go func() {
-			// TODO: if we're in fargate we should never update again
 			updateHostname(now)
 		}()
 	}
@@ -140,26 +143,28 @@ func updateHostname(now time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	var hostname string
+	var hnProvider string
 
 	for _, p := range providerCatalog {
-		log.Debug("Trying to detect hostname from provider %s", p.name)
 		detectedHostname, err := p.pf(ctx, hostname)
 		if err != nil {
 			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
 			continue
 		}
 		hostname = detectedHostname
+		hnProvider = p.name
+		log.Debug("Found hostname %s, from provider %s", hostname, p.name)
 		if p.stopIfSuccessful {
-			log.Debug("Found hostname %s, from provider %s", hostname, p.name)
-			setCached(now, hostname)
+			log.Debug("Hostname detection stopping early")
+			setCached(now, hostname, p.name)
 			return
 		}
 	}
 	if hostname != "" {
-		log.Debug("Found hostname %s", hostname)
-		setCached(now, hostname)
+		log.Debug("Winning hostname %s from provider %s", hostname, hnProvider)
+		setCached(now, hostname, hnProvider)
 	} else {
-		log.Debug("unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
+		log.Debug("Unable to reliably determine hostname. You can define one via env var DD_HOSTNAME")
 	}
 }
 

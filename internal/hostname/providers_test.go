@@ -39,7 +39,7 @@ func TestGetCached(t *testing.T) {
 		t.Run(test.name, func(tt *testing.T) {
 			cachedHostname = "oldName"
 			cachedAt = test.cachedAt
-			result, shouldRefresh := getCached(test.now)
+			result, _, shouldRefresh := getCached(test.now)
 			assert.Equal(tt, "oldName", result)
 			assert.Equal(tt, test.expected, shouldRefresh)
 		})
