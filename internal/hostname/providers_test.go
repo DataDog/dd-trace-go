@@ -63,4 +63,13 @@ func TestGet(t *testing.T) {
 		} //Wait for extra go routine to finish
 		assert.Empty(t, result)
 	})
+
+	t.Run("ConfigOK", func(t *testing.T) {
+		t.Setenv("DD_HOSTNAME", "myConfigHost")
+		updateHostname(time.Time{})
+		result := Get()
+		for isRefreshing.Load() == true {
+		} //Wait for extra go routine to finish
+		assert.Equal(t, "myConfigHost", result)
+	})
 }

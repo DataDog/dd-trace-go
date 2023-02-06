@@ -174,8 +174,7 @@ func fromConfig(_ context.Context, _ string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	return "", nil
+	return hn, nil
 }
 
 func fromFargate(ctx context.Context, _ string) (string, error) {
