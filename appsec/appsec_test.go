@@ -140,7 +140,6 @@ func TestSetUser(t *testing.T) {
 	t.Run("error/appsec-disabled", func(t *testing.T) {
 		err := appsec.SetUser(nil, "usr.id")
 		require.NotNil(t, err)
-		require.False(t, err.ShouldBlock())
 		require.Equal(t, "AppSec is not enabled", err.Error())
 	})
 
@@ -153,7 +152,6 @@ func TestSetUser(t *testing.T) {
 	t.Run("error/nil-ctx", func(t *testing.T) {
 		err := appsec.SetUser(nil, "usr.id")
 		require.NotNil(t, err)
-		require.False(t, err.ShouldBlock())
 		require.Equal(t, "Could not retrieve span from context", err.Error())
 	})
 

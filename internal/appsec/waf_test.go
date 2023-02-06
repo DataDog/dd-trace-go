@@ -188,7 +188,7 @@ func TestBlocking(t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil && err.ShouldBlock() {
+		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil {
 			return
 		}
 		w.Write([]byte("Hello World!\n"))
