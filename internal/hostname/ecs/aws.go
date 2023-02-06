@@ -20,9 +20,6 @@ import (
 var (
 	metadataURL = os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
 	timeout     = 300 * time.Millisecond
-
-	// CloudProviderName contains the inventory name of for EC2
-	CloudProviderName = "AWS ECS"
 )
 
 var taskFetcher = cachedfetch.Fetcher{
