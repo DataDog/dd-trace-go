@@ -93,10 +93,6 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
-
-	// isUDSEnv is used to identify if the tracer is connecting to the agent over UDS.
-	// If this is true then the tracer will not attempt to do hostname detection.
-	isUDSEnv bool
 }
 
 const (
