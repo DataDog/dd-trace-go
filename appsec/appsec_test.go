@@ -7,7 +7,6 @@ package appsec_test
 
 import (
 	"context"
-	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestTrackUserLoginSuccessEvent(t *testing.T) {
@@ -146,6 +146,9 @@ func TestSetUser(t *testing.T) {
 
 	privateAppsec.Start()
 	defer privateAppsec.Stop()
+	if !privateAppsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
 
 	t.Run("error/nil-ctx", func(t *testing.T) {
 		err := appsec.SetUser(nil, "usr.id")
