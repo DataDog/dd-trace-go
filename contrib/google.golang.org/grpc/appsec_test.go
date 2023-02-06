@@ -215,10 +215,11 @@ func TestUserBlocking(t *testing.T) {
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		// The request should have the attack attempts
+		// The request should have the XSS and user ID attack attempts
 		event, _ := finished[0].Tag("_dd.appsec.json").(string)
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event, "blk-001-002"))
+		require.True(t, strings.Contains(event, "crs-941-110"))
 	})
 
 	t.Run("unary-no-block", func(t *testing.T) {
@@ -336,7 +337,7 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 	ctx := stream.Context()
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil && err.ShouldBlock() {
+	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
 		return err
 	}
 	return s.s.StreamPing(stream)
@@ -344,8 +345,8 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureReply, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
-	if err := pappsec.SetUser(ctx, ids[0]); err != nil && err.ShouldBlock() {
-		return nil, err.GRPCStatus().Err()
+	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+		return nil, err
 	}
 
 	return s.s.Ping(ctx, in)

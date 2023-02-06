@@ -69,8 +69,9 @@ func userIDFromRequest(r *http.Request) string {
 func ExampleSetUser() {
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
-		// Check for error on SetUser() to know if the request should be blocked or not.
-		// If it should, early exit from the handler.
+		// We use SetUser() here to associate the user ID to the request's span. The return value
+		// can then be checked to decide whether to block the request or not.
+		// If it should be blocked, early exit from the handler.
 		if err := appsec.SetUser(r.Context(), userIDFromRequest(r)); err != nil {
 			return
 		}

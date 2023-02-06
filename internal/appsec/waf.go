@@ -104,7 +104,6 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		var body interface{}
-		values := map[string]interface{}{}
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
@@ -131,6 +130,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			}
 		}))
 
+		values := map[string]interface{}{}
 		for _, addr := range addresses {
 			switch addr {
 			case httpClientIPAddr:
@@ -263,7 +263,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 					operation.Block = actionHandler.Apply(id, op) || operation.Block
 				}
 				op.AddSecurityEvents(matches)
-				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
+				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		}))
 
