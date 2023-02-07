@@ -1765,6 +1765,12 @@ func FuzzComposeTracestate(f *testing.F) {
 		for key, val := range tags {
 			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
 			v := valueRgx.ReplaceAllString(val, "_")
+			if strings.Contains(k, ":") || strings.Contains(k, ";") {
+				t.Skipf("Skipping invalid tags")
+			}
+			if strings.HasSuffix(v, " ") {
+				t.Skipf("Skipping invalid tags")
+			}
 			totalLen += (len(k) + len(v))
 			if totalLen > 128 {
 				break
