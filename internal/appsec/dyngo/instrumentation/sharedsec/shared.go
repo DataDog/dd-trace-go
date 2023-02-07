@@ -36,12 +36,14 @@ type (
 
 var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 
+// StartUserIDOperation starts the UserID operation and emits a dyngo start event
 func StartUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) *UserIDOperation {
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
 	dyngo.StartOperation(op, args)
 	return op
 }
 
+// Finish finishes the UserID operation and emits a dyngo finish event
 func (op *UserIDOperation) Finish() {
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 }
