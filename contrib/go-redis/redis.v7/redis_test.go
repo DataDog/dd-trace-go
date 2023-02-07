@@ -61,6 +61,7 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestClient(t *testing.T) {
@@ -85,6 +86,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("3", span.Tag("redis.args_length"))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestWrapClient(t *testing.T) {
@@ -144,6 +146,7 @@ func TestWrapClient(t *testing.T) {
 			assert.Equal("3", span.Tag("redis.args_length"))
 			assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal("redis", span.Tag(ext.DBSystem))
 		})
 	}
 }
@@ -233,6 +236,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -252,6 +256,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -335,6 +340,7 @@ func TestError(t *testing.T) {
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -358,6 +364,7 @@ func TestError(t *testing.T) {
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {
