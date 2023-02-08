@@ -49,6 +49,16 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
 }
 
+func id128FromSpan(assert *assert.Assertions, span *span) string {
+	var w3Cctx ddtrace.SpanContextW3C
+	var ok bool
+	w3Cctx, ok = span.Context().(ddtrace.SpanContextW3C)
+	assert.True(ok)
+	id := w3Cctx.TraceID128()
+	assert.Len(id, 32)
+	return id
+}
+
 var (
 	// timeMultiplicator specifies by how long to extend waiting times.
 	// It may be altered in some environments (like AppSec) where things
@@ -670,13 +680,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-		}
-		id128 := w3cCtx.TraceID128()
-		assert.Len(id128, 32) // ensure there are enough leading zeros
-		idBytes, err := hex.DecodeString(id128)
+		id := id128FromSpan(assert, s)
+		assert.Empty(s.Meta[keyTraceID128])
+		idBytes, err := hex.DecodeString(id)
 		assert.NoError(err)
 		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
@@ -691,13 +697,12 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts128...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		w3cCtx, ok := s.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail("couldn't cast to ddtrace.SpanContextW3C")
-		}
+		id := id128FromSpan(assert, s)
 		// hex_encoded(<32-bit unix seconds> <32 bits of zero> <64 random bits>)
 		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
-		assert.Equal("0001e2400000000000000000000f1206", w3cCtx.TraceID128())
+		assert.Equal("0001e2400000000000000000000f1206", id)
+		s.Finish()
+		assert.Equal(id[:16], s.Meta[keyTraceID128])
 	})
 }
 
@@ -991,19 +996,38 @@ func TestNewSpan(t *testing.T) {
 }
 
 func TestNewSpanChild(t *testing.T) {
-	assert := assert.New(t)
+	testNewSpanChild(t, false)
+	testNewSpanChild(t, true)
+}
 
-	// the tracer must create child spans
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	parent := tracer.newRootSpan("pylons.request", "pylons", "/")
-	child := tracer.newChildSpan("redis.command", parent)
-	// ids and services are inherited
-	assert.Equal(parent.SpanID, child.ParentID)
-	assert.Equal(parent.TraceID, child.TraceID)
-	assert.Equal(parent.Service, child.Service)
-	// the resource is not inherited and defaults to the name
-	assert.Equal("redis.command", child.Resource)
+func testNewSpanChild(t *testing.T, is128 bool) {
+	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
+		if is128 {
+			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		}
+		assert := assert.New(t)
+
+		// the tracer must create child spans
+		tracer := newTracer(withTransport(newDefaultTransport()))
+		defer tracer.Stop()
+		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
+		child := tracer.newChildSpan("redis.command", parent)
+		// ids and services are inherited
+		assert.Equal(parent.SpanID, child.ParentID)
+		assert.Equal(parent.TraceID, child.TraceID)
+		id := id128FromSpan(assert, child)
+		assert.Equal(id128FromSpan(assert, parent), id)
+		assert.Equal(parent.Service, child.Service)
+		// the resource is not inherited and defaults to the name
+		assert.Equal("redis.command", child.Resource)
+
+		child.Finish() // Meta[keyTraceID128] gets set upon Finish
+		if is128 {
+			assert.Equal(id[:16], child.Meta[keyTraceID128])
+		} else {
+			assert.Empty(child.Meta[keyTraceID128])
+		}
+	})
 }
 
 func TestNewRootSpanHasPid(t *testing.T) {

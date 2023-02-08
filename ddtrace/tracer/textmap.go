@@ -350,6 +350,7 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -446,7 +447,15 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	if strings.Trim(ctx.traceID128, "0") == "" { // 64-bit trace id
+		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	} else { // 128-bit trace id
+		var w3Cctx ddtrace.SpanContextW3C
+		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
+			return ErrInvalidSpanContext
+		}
+		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
+	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
 	if p, ok := ctx.samplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
@@ -474,10 +483,19 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		key := strings.ToLower(k)
 		switch key {
 		case b3TraceIDHeader:
-			if len(v) > 16 {
-				v = v[len(v)-16:]
+			if len(v) > 32 {
+				v = v[len(v)-32:]
 			}
-			ctx.traceID, err = strconv.ParseUint(v, 16, 64)
+			v = strings.TrimLeft(v, "0")
+			var err error
+			if len(v) <= 16 { // 64-bit trace id
+				ctx.traceID, err = strconv.ParseUint(v, 16, 64)
+			} else { // 128-bit trace id
+				id128 := v[:len(v)-16]
+				// pad ctx.traceID128 with zeroes to ensure length of 16
+				ctx.traceID128 = fmt.Sprintf("%016s", id128)
+				ctx.traceID, err = strconv.ParseUint(v[len(id128):], 16, 64)
+			}
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
@@ -546,6 +564,7 @@ func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanCon
 }
 
 func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -745,6 +764,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 }
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	// TODO: support 128-bit propagation
 	var parentHeader string
 	var stateHeader string
 	// to avoid parsing tracestate header(s) if traceparent is invalid
