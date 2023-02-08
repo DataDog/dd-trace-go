@@ -55,119 +55,179 @@ func getTestTracerProvider(payload *string, done chan struct{},
 }
 
 func TestSpanSetName(t *testing.T) {
+	assert := assert.New(t)
 	var payload string
 	done := make(chan struct{})
 
 	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
 	defer s.Close()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
-	defer tp.Shutdown()
-	assert := assert.New(t)
 
 	_, sp := tr.Start(context.Background(), "OldName")
-	// SetName sets the name but not the resource in span - bug?
 	sp.SetName("NewName")
 	sp.End()
 
 	tracer.Flush()
 	waitForTestAgent(done, time.Second, t)
-
 	assert.Contains(payload, "NewName")
-	// following assert fails because "resource" in span is not set by SetName
-	// assert.NotContains(payload, "OldName")
 }
 
 func TestSpanEnd(t *testing.T) {
-
+	assert := assert.New(t)
+	testData := []struct {
+		trueName        string
+		falseName       string
+		trueError       codes.Code
+		trueErrorMsg    string
+		falseError      codes.Code
+		falseErrorMsg   string
+		trueAttributes  map[string]string
+		falseAttributes map[string]string
+	}{
+		{
+			trueName:        "trueName",
+			falseName:       "invalidName",
+			trueError:       codes.Error,
+			trueErrorMsg:    "error_description",
+			falseError:      codes.Ok,
+			falseErrorMsg:   "ok_description",
+			trueAttributes:  map[string]string{"trueKey": "trueVal"},
+			falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
+		},
+	}
 	var payload string
 	done := make(chan struct{})
 
 	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
 	defer s.Close()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
-	defer tp.Shutdown()
-	assert := assert.New(t)
 
-	_, sp := tr.Start(context.Background(), "OldName")
-	sp.SetStatus(codes.Error, "error_description")
-	sp.SetAttributes(attribute.String("span_end_key", "span_end_val"))
-	sp.End()
-	// following operations should not be able to modify the Span
-	sp.SetStatus(codes.Ok, "ok_description")
-	sp.SetAttributes(attribute.String("span_end", "after_end"))
-	sp.SetAttributes(attribute.String("key1", "val1"))
-	sp.SetName("NewName")
+	for _, test := range testData {
+		_, sp := tr.Start(context.Background(), test.trueName)
+		sp.SetStatus(codes.Error, test.trueErrorMsg)
+		for k, v := range test.trueAttributes {
+			sp.SetAttributes(attribute.String(k, v))
+		}
+		sp.End()
+		// following operations should not be able to modify the Span
+		sp.SetName(test.trueName)
+		sp.SetStatus(test.falseError, test.falseErrorMsg)
+		for k, v := range test.trueAttributes {
+			sp.SetAttributes(attribute.String(k, v))
+			sp.SetAttributes(attribute.String(k, v))
+		}
 
-	tracer.Flush()
-	waitForTestAgent(done, time.Second, t)
+		tracer.Flush()
+		waitForTestAgent(done, time.Second, t)
 
-	assert.Contains(payload, "error_description")
-	assert.Contains(payload, "span_end_val")
-	assert.Contains(payload, "OldName")
-
-	assert.NotContains(payload, "after_end")
-	assert.NotContains(payload, "key1")
-	assert.NotContains(payload, "val1")
-	assert.NotContains(payload, "NewName")
+		assert.Contains(payload, test.trueErrorMsg)
+		assert.NotContains(payload, test.falseErrorMsg)
+		assert.Contains(payload, test.trueName)
+		assert.NotContains(payload, test.falseName)
+		for k, v := range test.trueAttributes {
+			assert.Contains(payload, k+"\xa7"+v)
+		}
+		for k, v := range test.falseAttributes {
+			assert.NotContains(payload, k+"\xa7"+v)
+		}
+	}
 }
 
 func TestSpanSetStatus(t *testing.T) {
+	assert := assert.New(t)
+	testData := []struct {
+		higherCode     codes.Code
+		higherCodeDesc string
+		lowerCode      codes.Code
+		lowerCodeDesc  string
+	}{
+		{
+			higherCode:     codes.Ok,
+			higherCodeDesc: "ok_description",
+			lowerCode:      codes.Error,
+			lowerCodeDesc:  "error_description",
+		},
+		{
+			higherCode:     codes.Error,
+			higherCodeDesc: "error_description",
+			lowerCode:      codes.Unset,
+			lowerCodeDesc:  "unset_description",
+		},
+	}
 	var payload string
 	done := make(chan struct{})
 
 	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
 	defer s.Close()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
-	assert := assert.New(t)
 
-	_, sp := tr.Start(context.Background(), "SpanEndTest")
-	sp.SetStatus(codes.Error, "error_description")
-	// following operation should not do anything
-	sp.SetStatus(codes.Unset, "unset_description")
-	sp.End()
+	for _, test := range testData {
+		_, sp := tr.Start(context.Background(), "test")
+		sp.SetStatus(test.higherCode, test.higherCodeDesc)
+		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
+		sp.End()
 
-	tracer.Flush()
-	waitForTestAgent(done, time.Second, t)
+		tracer.Flush()
+		waitForTestAgent(done, time.Second, t)
 
-	assert.Contains(payload, "error_description")
-	assert.NotContains(payload, "unset_description")
+		if test.higherCode == codes.Error {
+			assert.Contains(payload, test.higherCodeDesc)
+		} else {
+			assert.NotContains(payload, test.higherCodeDesc)
+		}
+		assert.NotContains(payload, test.lowerCodeDesc)
+
+		_, sp = tr.Start(context.Background(), "test")
+		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
+		sp.SetStatus(test.higherCode, test.higherCodeDesc)
+		sp.End()
+
+		tracer.Flush()
+		waitForTestAgent(done, time.Second, t)
+
+		if test.higherCode == codes.Error {
+			assert.Contains(payload, test.higherCodeDesc)
+		} else {
+			assert.NotContains(payload, test.higherCodeDesc)
+		}
+		assert.NotContains(payload, test.lowerCodeDesc)
+	}
 }
 
 func TestSpanSetAttributes(t *testing.T) {
+	assert := assert.New(t)
 	var payload string
 	done := make(chan struct{})
 
 	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
 	defer s.Close()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
-	defer tp.Shutdown()
 
-	assert := assert.New(t)
+	attributes := [][]string{{"k1", "v1_old"},
+		{"k2", "v2"},
+		{"k1", "v1_new"}}
 
-	attributes := [][]string{{"SpanAttrK1", "SpanAttrV1Old"},
-		{"SpanAttrK2", "SpanAttrV2"},
-		{"SpanAttrK1", "SpanAttrV1New"}}
-
-	_, sp := tr.Start(context.Background(), "testSpan")
+	_, sp := tr.Start(context.Background(), "test")
 	for _, tag := range attributes {
 		sp.SetAttributes(attribute.String(tag[0], tag[1]))
 	}
 	sp.End()
-
 	tracer.Flush()
 	waitForTestAgent(done, time.Second, t)
 
-	// check for keys
-	assert.Contains(payload, "SpanAttrK1")
-	assert.Contains(payload, "SpanAttrK2")
-	// check for valid values
-	assert.Contains(payload, "SpanAttrV1New")
-	assert.Contains(payload, "SpanAttrV2")
-	assert.NotContains(payload, "SpanAttrV1Old")
+	assert.Contains(payload, "k1")
+	assert.Contains(payload, "k2")
+	assert.Contains(payload, "v1_new")
+	assert.Contains(payload, "v2")
+	assert.NotContains(payload, "v1_old")
 }
 
 func TestSpanMethods(t *testing.T) {
