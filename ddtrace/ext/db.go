@@ -19,3 +19,22 @@ const (
 	// DBStatement records a database statement for the given database type.
 	DBStatement = "db.statement"
 )
+
+// DBSystem indicates the database management system (DBMS) product being used.
+// The following list includes the tag name and all the available values for it.
+const (
+	DBSystem                   = "db.system"
+	DBSystemMemcached          = "memcached"
+	DBSystemMySQL              = "mysql"
+	DBSystemPostgreSQL         = "postgresql"
+	DBSystemMicrosoftSQLServer = "mssql"
+	// DBSystemOtherSQL is used for other SQL databases not listed above.
+	DBSystemOtherSQL      = "other_sql"
+	DBSystemElasticsearch = "elasticsearch"
+	DBSystemRedis         = "redis"
+	DBSystemMongoDB       = "mongodb"
+	DBSystemCassandra     = "cassandra"
+	DBSystemConsulKV      = "consul"
+	DBSystemLevelDB       = "leveldb"
+	DBSystemBuntDB        = "buntdb"
+)

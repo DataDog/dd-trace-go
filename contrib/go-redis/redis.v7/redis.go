@@ -110,6 +110,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.Component, "go-redis/redis.v7"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
@@ -146,6 +147,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 		tracer.Tag(ext.Component, "go-redis/redis.v7"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
