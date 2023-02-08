@@ -78,7 +78,6 @@ func TestSpanSetName(t *testing.T) {
 }
 
 func TestSpanEnd(t *testing.T) {
-
 	var payload string
 	done := make(chan struct{})
 
