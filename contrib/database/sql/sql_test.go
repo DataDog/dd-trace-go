@@ -62,6 +62,7 @@ func TestSqlServer(t *testing.T) {
 			ext.DBUser:          "sa",
 			ext.DBName:          "master",
 			ext.EventSampleRate: nil,
+			ext.DBSystem:        "mssql",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -88,6 +89,7 @@ func TestMySQL(t *testing.T) {
 			ext.DBUser:          "test",
 			ext.DBName:          "test",
 			ext.EventSampleRate: nil,
+			ext.DBSystem:        "mysql",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -114,6 +116,7 @@ func TestPostgres(t *testing.T) {
 			ext.DBUser:          "postgres",
 			ext.DBName:          "postgres",
 			ext.EventSampleRate: 0.2,
+			ext.DBSystem:        "postgresql",
 		},
 	}
 	sqltest.RunAll(t, testConfig)
@@ -145,6 +148,7 @@ func TestOpenOptions(t *testing.T) {
 				ext.DBUser:          "postgres",
 				ext.DBName:          "postgres",
 				ext.EventSampleRate: 1.0,
+				ext.DBSystem:        "postgresql",
 			},
 		}
 		sqltest.RunAll(t, testConfig)
@@ -171,6 +175,7 @@ func TestOpenOptions(t *testing.T) {
 				ext.DBUser:          nil,
 				ext.DBName:          nil,
 				ext.EventSampleRate: 0.2,
+				ext.DBSystem:        "other_sql",
 			},
 		}
 		sqltest.RunAll(t, testConfig)
@@ -198,6 +203,7 @@ func TestOpenOptions(t *testing.T) {
 				ext.DBUser:          "postgres",
 				ext.DBName:          "postgres",
 				ext.EventSampleRate: 0.2,
+				ext.DBSystem:        "postgresql",
 			},
 		}
 		sqltest.RunAll(t, testConfig)

@@ -665,9 +665,3 @@ const (
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
 )
-
-const (
-	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	samplingMechanismSingleSpan = 8
-)
