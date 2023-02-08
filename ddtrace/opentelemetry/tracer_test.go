@@ -103,10 +103,10 @@ func TestSpanContext(t *testing.T) {
 	assert.Equal(cSpanCtx.TraceID(), pSpanCtx.TraceID())
 	assert.Equal(cSpanCtx.IsRemote(), pSpanCtx.IsRemote())
 	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
-
 }
 
 func TestForceFlush(t *testing.T) {
+	assert := assert.New(t)
 	testData := []struct {
 		timeOut   time.Duration
 		flushFail bool
@@ -114,21 +114,17 @@ func TestForceFlush(t *testing.T) {
 		{timeOut: 0 * time.Second, flushFail: true},
 		{timeOut: 300 * time.Second, flushFail: false},
 	}
-
 	flushFail := false
 	setFlushFail := func(ok bool) { flushFail = !ok }
 	reset := func() { flushFail = false }
-	assert := assert.New(t)
 
 	for _, tc := range testData {
 		var payload string
 		done := make(chan struct{})
 
 		tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-
 		otel.SetTracerProvider((tp))
 		tr := otel.Tracer("")
-
 		_, sp := tr.Start(context.Background(), "test_span")
 		sp.End()
 
@@ -149,6 +145,7 @@ func TestForceFlush(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
+	assert := assert.New(t)
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
 
@@ -159,7 +156,7 @@ func TestShutdown(t *testing.T) {
 	tp.ForceFlush(5*time.Second, func(ok bool) {})
 
 	logs := testLog.Logs()
-	assert.Contains(t, logs[len(logs)-1], "tracer stopped")
+	assert.Contains(logs[len(logs)-1], "tracer stopped")
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
