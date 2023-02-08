@@ -47,11 +47,10 @@ func getTestTracerProvider(payload *string, done chan struct{},
 		}
 		w.WriteHeader(200)
 	}))
-	tp := NewTracerProvider(
+	return NewTracerProvider(
 		tracer.WithEnv(env),
 		tracer.WithHTTPClient(c),
-		tracer.WithService(service))
-	return tp, s
+		tracer.WithService(service)), s
 }
 
 func TestSpanSetName(t *testing.T) {
