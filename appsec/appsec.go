@@ -96,18 +96,19 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
 // user id and optional metadata, as service entry span tags. It also calls
-// tracer.SetUser() to set the currently identified user, along with the given
-// tracer.UserMonitoringOption options.
+// appsec.SetUser() to set the currently identified user, along with the given
+// tracer.UserMonitoringOption options. If `uid` is detected by the WAF as a suspicious
+// user, an error is returned and further requests for the same user should be blocked.
 // The service entry span is obtained through the given Go context which should
 // contain the currently running span. This function does nothing when no span
 // is found in the given Go context and logs an error message instead.
 // Such events trigger the backend-side events monitoring, such as the Account
 // Take-Over (ATO) monitoring, ultimately blocking the IP address and/or user id
 // associated to them.
-func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) {
+func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]string, opts ...tracer.UserMonitoringOption) error {
 	span := getRootSpan(ctx)
 	if span == nil {
-		return
+		return nil
 	}
 
 	const tagPrefix = "appsec.events.users.login.success."
@@ -116,7 +117,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 		span.SetTag(tagPrefix+k, v)
 	}
 	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
-	tracer.SetUser(span, uid, opts...)
+	return SetUser(ctx, uid, opts...)
 }
 
 // TrackUserLoginFailureEvent sets a failed user login event, with the given
