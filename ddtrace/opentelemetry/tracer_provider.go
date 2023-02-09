@@ -26,7 +26,7 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 type TracerProvider struct {
 	tracer  *oteltracer
 	ddopts  []tracer.StartOption
-	stopped atomic.Bool
+	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
 }
 
@@ -38,7 +38,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 
 // Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
 func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) oteltrace.Tracer {
-	if p.stopped.Load() {
+	if atomic.LoadUint32(&p.stopped) != 0 {
 		return &noopOteltracer{}
 	}
 	tracer.Start(p.ddopts...)
@@ -54,7 +54,7 @@ func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) 
 func (p *TracerProvider) Shutdown() error {
 	p.Once.Do(func() {
 		tracer.Stop()
-		p.stopped.Store(true)
+		atomic.StoreUint32(&p.stopped, 1)
 	})
 	return nil
 }
@@ -62,8 +62,8 @@ func (p *TracerProvider) Shutdown() error {
 // ForceFlush flushes any buffered traces. Flush is in effect only if a tracer
 // is started.
 func (p *TracerProvider) ForceFlush(timeout time.Duration, callback func(ok bool)) {
-	if p.stopped.Load() {
-		log.Warn("tracer stopped")
+	if atomic.LoadUint32(&p.stopped) != 0 {
+		log.Warn("Cannot perform (*TracerProvider).Flush since the tracer is already stopped.")
 		return
 	}
 	done := make(chan struct{})
