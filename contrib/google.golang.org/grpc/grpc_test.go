@@ -99,26 +99,29 @@ func TestUnary(t *testing.T) {
 
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
-			assert.Equal(clientSpan.Tag(ext.GRPCStatus), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
-			assert.Equal(clientSpan.Tag(ext.GRPCKind), methodKindUnary)
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal(clientSpan.Tag(ext.RPCSystem), "grpc")
-			//assert.Equal(clientSpan.Tag(ext.RPCService), "grpc.Fixture")
-			//assert.Equal(clientSpan.Tag(ext.RPCMethod), "Ping")
+			assert.Equal(clientSpan.Tag(ext.RPCService), "grpc.Fixture")
+			assert.Equal(clientSpan.Tag(ext.RPCMethod), "Ping")
+			assert.Equal(clientSpan.Tag(ext.GRPCStatus), tt.wantCode.String())
+			assert.Equal(clientSpan.Tag(ext.GRPCPackage), "grpc")
+			assert.Equal(clientSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+			assert.Equal(clientSpan.Tag(ext.GRPCKind), methodKindUnary)
 
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-			assert.Equal(serverSpan.Tag(ext.GRPCStatus), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
-			assert.Equal(serverSpan.Tag(ext.GRPCKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-			assert.Equal(serverSpan.Tag(ext.RPCSystem), "grpc")
-			//assert.Equal(serverSpan.Tag(ext.RPCService), "grpc.Fixture")
-			//assert.Equal(serverSpan.Tag(ext.RPCMethod), "Ping")
+			assert.Equal(serverSpan.Tag(ext.RPCService), "grpc.Fixture")
+			assert.Equal(serverSpan.Tag(ext.RPCMethod), "Ping")
+			assert.Equal(serverSpan.Tag(ext.GRPCStatus), tt.wantCode.String())
+			assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
+			assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+			assert.Equal(serverSpan.Tag(ext.GRPCKind), methodKindUnary)
 		})
 	}
 }
@@ -181,16 +184,22 @@ func TestStreaming(t *testing.T) {
 						wantCode = status.Convert(err).Code()
 					}
 				}
-				assert.Equal(t, wantCode.String(), span.Tag(ext.GRPCStatus),
-					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
+				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem),
+					"expected rpc system as grpc to be set in span: %v", span)
+				assert.Equal(t, "grpc.Fixture", span.Tag(ext.RPCService),
+					"expected package plus service to be set in span: %v", span)
+				assert.Equal(t, "StreamPing", span.Tag(ext.RPCMethod),
+					"expected rpc method to be set in span: %v", span)
+				assert.Equal(t, wantCode.String(), span.Tag(ext.GRPCStatus),
+					"expected grpc response code to be set in span: %v", span)
+				assert.Equal(t, "grpc", span.Tag(ext.GRPCPackage),
+					"expected package to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCPath),
 					"expected full grpc path to be set in span: %v", span)
-				//assert.Equal(t, "StreamPing", span.Tag(ext.RPCMethod),
-				//	"expected grpc method name to be set in span: %v", span)
 			}
 
 			switch span.OperationName() { //checks spankind and component without fallthrough

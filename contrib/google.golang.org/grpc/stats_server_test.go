@@ -52,6 +52,7 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
+	assert.Equal("Ping", tags[ext.RPCMethod])
 	assert.Equal(1, tags["_dd.measured"])
 }
 

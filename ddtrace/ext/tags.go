@@ -134,6 +134,9 @@ const (
 	// GRPCPath is the numeric status code of the gRPC request
 	GRPCPath = "rpc.grpc.path"
 
+	// GRPCPackage is the numeric status code of the gRPC request
+	GRPCPackage = "rpc.grpc.package"
+
 	// GRPCKind is the numeric status code of the gRPC request
 	GRPCKind = "rpc.grpc.kind"
 )
