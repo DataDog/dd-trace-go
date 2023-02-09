@@ -379,10 +379,10 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// Also reset the counters for the next profile period.
 		bat.endpointCounts = endpointCounter.GetAndReset()
 		// Record the end time of the profile.
-		// This is used by the backend to upscale the endpoint counts if the cpu
+		// This is used by the backend to downscale the endpoint counts if the cpu
 		// duration is less than the profile duration. The formula is:
 		//
-		// factor = (end - start) / cpuDuration
+		// factor = cpuDuration / (end - start)
 		// counts = counts * factor
 		//
 		// The default configuration of the profiler (cpu duration = profiling
