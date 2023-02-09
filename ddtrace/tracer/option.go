@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -59,6 +60,10 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
+	// sendRetries is the number of times a trace payload send is retried upon
+	// failure.
+	sendRetries int
+
 	// logStartup, when true, causes various startup info to be written
 	// when the tracer starts.
 	logStartup bool
@@ -80,7 +85,7 @@ type config struct {
 	sampler Sampler
 
 	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL string
+	agentURL *url.URL
 
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
@@ -153,33 +158,6 @@ func (c *config) HasFeature(f string) bool {
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
-// forEachStringTag runs fn on every key:val pair encountered in str.
-// str may contain multiple key:val pairs separated by either space
-// or comma (but not a mixture of both).
-func forEachStringTag(str string, fn func(key string, val string)) {
-	sep := " "
-	if strings.Index(str, ",") > -1 {
-		// falling back to comma as separator
-		sep = ","
-	}
-	for _, tag := range strings.Split(str, sep) {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			continue
-		}
-		kv := strings.SplitN(tag, ":", 2)
-		key := strings.TrimSpace(kv[0])
-		if key == "" {
-			continue
-		}
-		var val string
-		if len(kv) == 2 {
-			val = strings.TrimSpace(kv[1])
-		}
-		fn(key, val)
-	}
-}
-
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
 
@@ -188,15 +166,7 @@ const maxPropagatedTagsLength = 512
 func newConfig(opts ...StartOption) *config {
 	c := new(config)
 	c.sampler = NewAllSampler()
-	c.agentURL = "http://" + resolveAgentAddr()
-	c.httpClient = defaultHTTPClient()
-	if url := internal.AgentURLFromEnv(); url != nil {
-		if url.Scheme == "unix" {
-			c.httpClient = udsClient(url.Path)
-		} else {
-			c.agentURL = url.String()
-		}
-	}
+
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
@@ -226,10 +196,14 @@ func newConfig(opts ...StartOption) *config {
 		c.version = ver
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		forEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		forEachStringTag(v, func(key, val string) { WithGlobalTag(key, val)(c) })
+		tags := internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+		for key, val := range tags {
+			WithGlobalTag(key, val)(c)
+		}
 	}
 	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -245,6 +219,21 @@ func newConfig(opts ...StartOption) *config {
 
 	for _, fn := range opts {
 		fn(c)
+	}
+	if c.agentURL == nil {
+		c.agentURL = resolveAgentAddr()
+		if url := internal.AgentURLFromEnv(); url != nil {
+			c.agentURL = url
+		}
+	}
+	if c.agentURL.Scheme == "unix" {
+		c.httpClient = udsClient(c.agentURL.Path)
+		c.agentURL = &url.URL{
+			Scheme: "http",
+			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+		}
+	} else if c.httpClient == nil {
+		c.httpClient = defaultClient
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	if c.env == "" {
@@ -272,7 +261,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL, c.httpClient)
+		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -537,9 +526,20 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
+// This option is only required if the the Datadog Lambda Extension is not
+// running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.logToStdout = enabled
+	}
+}
+
+// WithSendRetries enables re-sending payloads that are not successfully
+// submitted to the agent.  This will cause the tracer to retry the send at
+// most `retries` times.
+func WithSendRetries(retries int) StartOption {
+	return func(c *config) {
+		c.sendRetries = retries
 	}
 }
 
@@ -577,7 +577,10 @@ func WithService(name string) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
-		c.agentURL = "http://" + addr
+		c.agentURL = &url.URL{
+			Scheme: "http",
+			Host:   addr,
+		}
 	}
 }
 
@@ -637,7 +640,12 @@ func WithHTTPClient(client *http.Client) StartOption {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return WithHTTPClient(udsClient(socketPath))
+	return func(c *config) {
+		c.agentURL = &url.URL{
+			Scheme: "unix",
+			Path:   socketPath,
+		}
+	}
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
