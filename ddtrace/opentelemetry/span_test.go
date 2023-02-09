@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +44,11 @@ func getTestTracerProvider(payload *string, done chan struct{},
 				t.Fail()
 			}
 			*payload = fmt.Sprintf("%s", buf)
-			done <- struct{}{}
+			if strings.Contains(*payload, "name") {
+				// tracer.Start() also sends a request to /v0.4/traces
+				// but does not call waitForTestAgent causing this to block
+				done <- struct{}{}
+			}
 		}
 		w.WriteHeader(200)
 	}))
@@ -239,28 +244,15 @@ func TestSpanMethods(t *testing.T) {
 		oldOp: "old_op",
 		newOp: "new_op",
 		tags:  [][]string{{"tag_1", "tag_1_val"}, {"opt_tag_1", "opt_tag_1_val"}}}
-	done := make(chan struct{})
-	var payload string
-	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v0.4/traces":
-			buf, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fail()
-			}
-			payload = fmt.Sprintf("%s", buf)
-			done <- struct{}{}
-		}
-		w.WriteHeader(200)
-	}))
-	defer s.Close()
-
-	otel.SetTracerProvider(NewTracerProvider(
-		tracer.WithEnv(testData.env),
-		tracer.WithHTTPClient(c),
-		tracer.WithService(testData.srv)))
-	tr := otel.Tracer("")
 	assert := assert.New(t)
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
 
 	_, sp := tr.Start(context.Background(), testData.oldOp)
 	for _, tag := range testData.tags {

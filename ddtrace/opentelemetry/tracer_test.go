@@ -156,7 +156,7 @@ func TestShutdown(t *testing.T) {
 	tp.ForceFlush(5*time.Second, func(ok bool) {})
 
 	logs := testLog.Logs()
-	assert.Contains(logs[len(logs)-1], "tracer stopped")
+	assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
