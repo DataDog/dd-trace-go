@@ -100,11 +100,11 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
-				span.SetTag(tagMethodKind, methodKindBidiStream)
+				span.SetTag(ext.GRPCKind, methodKindBidiStream)
 			case info.IsServerStream:
-				span.SetTag(tagMethodKind, methodKindServerStream)
+				span.SetTag(ext.GRPCKind, methodKindServerStream)
 			case info.IsClientStream:
-				span.SetTag(tagMethodKind, methodKindClientStream)
+				span.SetTag(ext.GRPCKind, methodKindClientStream)
 			}
 			defer func() { finishWithError(span, err, cfg) }()
 			if appsec.Enabled() {
@@ -146,7 +146,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 				tracer.Tag(ext.Component, "google.golang.org/grpc"),
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 		)
-		span.SetTag(tagMethodKind, methodKindUnary)
+		span.SetTag(ext.GRPCKind, methodKindUnary)
 		if cfg.withMetadataTags {
 			md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 			for k, v := range md {

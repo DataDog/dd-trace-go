@@ -106,10 +106,19 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+)
 
+// Messaging tags.
+const (
 	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
 	MessagingSystem = "messaging.system"
 
+	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
+	MessagingKafkaPartition = "messaging.kafka.partition"
+)
+
+// RPC tags
+const (
 	// RPCSystem identifies which rpc system created this span (gRPC, java_rmi, dotnet_wcf, apache_dubbo...)
 	RPCSystem = "rpc.system"
 
@@ -118,10 +127,13 @@ const (
 
 	// RPCMethod is the logical name of the method from the RPC interface perspective
 	RPCMethod = "rpc.method"
-)
 
-// Messaging tags.
-const (
-	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
-	MessagingKafkaPartition = "messaging.kafka.partition"
+	// GRPCStatus is the numeric status code of the gRPC request
+	GRPCStatus = "rpc.grpc.status_code"
+
+	// GRPCPath is the numeric status code of the gRPC request
+	GRPCPath = "rpc.grpc.path"
+
+	// GRPCKind is the numeric status code of the gRPC request
+	GRPCKind = "rpc.grpc.kind"
 )

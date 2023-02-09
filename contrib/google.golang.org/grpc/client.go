@@ -180,7 +180,7 @@ func doClientRequest(
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
 	)
 	if methodKind != "" {
-		span.SetTag(tagMethodKind, methodKind)
+		span.SetTag(ext.GRPCKind, methodKind)
 	}
 
 	// fill in the peer so we can add it to the tags
