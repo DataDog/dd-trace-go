@@ -3,30 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-// This file is exactly pulled from datadog-agent/pkg/util/hostname
-
 package hostname
 
 import (
-	"os"
-	"unsafe"
-
-	"C"
-
-	"golang.org/x/sys/windows"
+	"fmt"
 )
 
 func getSystemFQDN() (string, error) {
-	hn, err := os.Hostname()
-	if err != nil {
-		return "", err
-	}
-
-	he, err := windows.GetHostByName(hn)
-	if err != nil {
-		return "", err
-	}
-	namestring := C.GoString((*C.char)(unsafe.Pointer(he.Name)))
-
-	return namestring, nil
+	return "", fmt.Errorf("SystemFQDN provider not implemented for windows")
 }
