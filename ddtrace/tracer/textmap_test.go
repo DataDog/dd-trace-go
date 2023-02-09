@@ -479,9 +479,9 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in        TextMapCarrier
-				traceID18 string
-				out       []uint64 // contains [<trace_id>, <span_id>]
+				in         TextMapCarrier
+				traceID128 string
+				out        []uint64 // contains [<trace_id>, <span_id>]
 			}{
 				{
 					TextMapCarrier{
