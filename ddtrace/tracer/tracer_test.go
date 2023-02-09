@@ -49,10 +49,10 @@ func (t *tracer) newChildSpan(name string, parent *span) *span {
 	return t.StartSpan(name, ChildOf(parent.Context())).(*span)
 }
 
-func id128FromSpan(assert *assert.Assertions, span *span) string {
+func id128FromSpan(assert *assert.Assertions, ctx ddtrace.SpanContext) string {
 	var w3Cctx ddtrace.SpanContextW3C
 	var ok bool
-	w3Cctx, ok = span.Context().(ddtrace.SpanContextW3C)
+	w3Cctx, ok = ctx.(ddtrace.SpanContextW3C)
 	assert.True(ok)
 	id := w3Cctx.TraceID128()
 	assert.Len(id, 32)
@@ -680,7 +680,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		s := tracer.StartSpan("web.request", opts...).(*span)
 		assert.Equal(uint64(987654), s.SpanID)
 		assert.Equal(uint64(987654), s.TraceID)
-		id := id128FromSpan(assert, s)
+		id := id128FromSpan(assert, s.Context())
 		assert.Empty(s.Meta[keyTraceID128])
 		idBytes, err := hex.DecodeString(id)
 		assert.NoError(err)
