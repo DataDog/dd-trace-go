@@ -31,12 +31,13 @@ type TracerProvider struct {
 }
 
 // NewTracerProvider returns an instance of OpenTelemetry TracerProvider with Datadog Tracer start options.
-// This allows to propagate parameters to tracer.Start function.
+// This allows propagation of the parameters to tracer.Start.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	return &TracerProvider{ddopts: opts}
 }
 
 // Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
+// If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
 		return &noopOteltracer{}
@@ -50,7 +51,6 @@ func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) 
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
-// Triggering Shutdown is async.
 func (p *TracerProvider) Shutdown() error {
 	p.Once.Do(func() {
 		tracer.Stop()
