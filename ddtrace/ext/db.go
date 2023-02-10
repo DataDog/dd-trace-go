@@ -44,4 +44,3 @@ const (
 	// MicrosoftSQLServerInstanceName indicates the Microsoft SQL Server instance name connecting to.
 	MicrosoftSQLServerInstanceName = "db.mssql.instance_name"
 )
-
