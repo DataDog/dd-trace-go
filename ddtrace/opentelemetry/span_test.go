@@ -70,7 +70,7 @@ func TestSpanMethods(t *testing.T) {
 
 	select {
 	case <-time.After(time.Second):
-		t.FailNow()
+		t.Fatal("test server didn't compile within 1 second")
 	case <-done:
 		break
 	}
