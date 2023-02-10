@@ -1765,7 +1765,7 @@ func FuzzComposeTracestate(f *testing.F) {
 		for key, val := range tags {
 			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
 			v := valueRgx.ReplaceAllString(val, "_")
-			if strings.Contains(k, ":") || strings.Contains(k, ";") {
+			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
 			if strings.HasSuffix(v, " ") {
@@ -1818,7 +1818,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		}
 		parsedTraceID := ctx.trace.propagatingTags[w3cTraceIDTag]
 		parsedSpanID := ctx.spanID
-		parsedFlag, ok := ctx.samplingPriority()
+		parsedSamplingPriority, ok := ctx.samplingPriority()
 		if !ok {
 			t.Skipf("Error retrieving sampling priority")
 		}
@@ -1842,11 +1842,11 @@ func FuzzParseTraceparent(f *testing.F) {
 				wanted: %d
 				for header of: %s`, parsedSpanID, expectedSpanID, header)
 		}
-		if parsedFlag != int(expectedFlag)&0x1 {
+		if parsedSamplingPriority != int(expectedFlag)&0x1 {
 			t.Fatalf(`Inconsistent flag parsing:
 					got: %d
 					wanted: %d
-					for header of: %s`, parsedFlag, int(expectedFlag)&0x1, header)
+					for header of: %s`, parsedSamplingPriority, int(expectedFlag)&0x1, header)
 		}
 	})
 }
