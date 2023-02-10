@@ -21,7 +21,7 @@ var (
 	metadataURL = "http://169.254.169.254"
 	timeout     = 300 * time.Millisecond
 
-	// CloudProviderName contains the inventory name of for EC2
+	// CloudProviderName contains the inventory name of for Azure
 	CloudProviderName = "Azure"
 )
 
