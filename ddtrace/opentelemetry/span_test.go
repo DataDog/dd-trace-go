@@ -47,7 +47,9 @@ func getTestTracerProvider(payload *string, done chan struct{},
 				t.Log("Test agent: Error receiving traces")
 				t.Fail()
 			}
-			*payload = fmt.Sprintf("%s", buf)
+			var js bytes.Buffer
+			msgp.UnmarshalAsJSON(&js, buf)
+			*payload = fmt.Sprintf("%s", js.String())
 			done <- struct{}{}
 		}
 		w.WriteHeader(200)
