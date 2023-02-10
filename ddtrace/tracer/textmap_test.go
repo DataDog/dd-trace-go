@@ -1294,9 +1294,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:~~_;t.usr.id:baz:64__,foo=bar",
 					},
-					traceID: 1229782938247303442,
-					spanID:  2459565876494606882,
-					origin:  "==~",
+					in:     []uint64{1229782938247303442, 2459565876494606882},
+					origin: "==~",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64~~",
 						"tracestate":   "\tfoo=bar\t",
