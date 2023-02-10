@@ -7,7 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"net/url"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -141,7 +140,6 @@ func Start(opts ...StartOption) {
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
 	go hostname.Get() // Prime the hostname cache
-	url.Parse(cfg.AgentURL)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -625,4 +623,11 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	ctx, task := rt.NewTask(ctx, taskName)
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
 	return ctx, task.End
+}
+
+func (t *tracer) hostname() string {
+	if t.config.disableHostnameDetection {
+		return hostname.Get()
+	}
+	return ""
 }

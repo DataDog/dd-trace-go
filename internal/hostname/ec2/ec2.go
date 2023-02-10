@@ -25,7 +25,7 @@ var (
 
 var instanceIDFetcher = cachedfetch.Fetcher{
 	Name: "EC2 InstanceID",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		return getMetadataItemWithMaxLength(ctx,
 			"/instance-id",
 			MaxHostnameSize,
@@ -35,7 +35,7 @@ var instanceIDFetcher = cachedfetch.Fetcher{
 
 // GetInstanceID fetches the instance id for current host from the EC2 metadata API
 func GetInstanceID(ctx context.Context) (string, error) {
-	return instanceIDFetcher.FetchString(ctx)
+	return instanceIDFetcher.Fetch(ctx)
 }
 
 func getMetadataItemWithMaxLength(ctx context.Context, endpoint string, maxLength int) (string, error) {

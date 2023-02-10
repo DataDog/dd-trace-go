@@ -148,8 +148,8 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled bool
 
-	// agentUnixConnection reports if the connection to the agent is over UDS
-	agentUnixConnection bool
+	// disableHostnameDetection specifies whether the tracer should disable hostname detection.
+	disableHostnameDetection bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -230,7 +230,8 @@ func newConfig(opts ...StartOption) *config {
 		}
 	}
 	if c.agentURL.Scheme == "unix" {
-		c.agentUnixConnection = true
+		// If we're connecting over UDS we can just rely on the agent to provide the hostname
+		c.disableHostnameDetection = true
 		c.httpClient = udsClient(c.agentURL.Path)
 		c.agentURL = &url.URL{
 			Scheme: "http",

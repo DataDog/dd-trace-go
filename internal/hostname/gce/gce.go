@@ -22,7 +22,7 @@ var (
 
 var hostnameFetcher = cachedfetch.Fetcher{
 	Name: "GCP Hostname",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		hostname, err := getResponseWithMaxLength(ctx, metadataURL+"/instance/hostname",
 			255)
 		if err != nil {
@@ -34,7 +34,7 @@ var hostnameFetcher = cachedfetch.Fetcher{
 
 var projectIDFetcher = cachedfetch.Fetcher{
 	Name: "GCP Project ID",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		projectID, err := getResponseWithMaxLength(ctx,
 			metadataURL+"/project/project-id",
 			255)
@@ -47,7 +47,7 @@ var projectIDFetcher = cachedfetch.Fetcher{
 
 var nameFetcher = cachedfetch.Fetcher{
 	Name: "GCP Instance Name",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		return getResponseWithMaxLength(ctx,
 			metadataURL+"/instance/name",
 			255)
@@ -69,7 +69,7 @@ func GetCanonicalHostname(ctx context.Context) (string, error) {
 }
 
 func getInstanceAlias(ctx context.Context, hostname string) (string, error) {
-	instanceName, err := nameFetcher.FetchString(ctx)
+	instanceName, err := nameFetcher.Fetch(ctx)
 	if err != nil {
 		// If the endpoint is not reachable, fallback on the old way to get the alias.
 		// For instance, it happens in GKE, where the metadata server is only a subset
@@ -81,7 +81,7 @@ func getInstanceAlias(ctx context.Context, hostname string) (string, error) {
 		instanceName = strings.SplitN(hostname, ".", 2)[0]
 	}
 
-	projectID, err := projectIDFetcher.FetchString(ctx)
+	projectID, err := projectIDFetcher.Fetch(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +91,7 @@ func getInstanceAlias(ctx context.Context, hostname string) (string, error) {
 
 // GetHostname returns the hostname querying GCE Metadata api
 func GetHostname(ctx context.Context) (string, error) {
-	return hostnameFetcher.FetchString(ctx)
+	return hostnameFetcher.Fetch(ctx)
 }
 
 func getResponseWithMaxLength(ctx context.Context, endpoint string, maxLength int) (string, error) {

@@ -31,7 +31,7 @@ func getResponse(ctx context.Context, url string) (string, error) {
 
 // GetHostname returns hostname based on Azure instance metadata.
 func GetHostname(ctx context.Context) (string, error) {
-	metadataJSON, err := instanceMetaFetcher.FetchString(ctx)
+	metadataJSON, err := instanceMetaFetcher.Fetch(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +52,7 @@ func GetHostname(ctx context.Context) (string, error) {
 
 var instanceMetaFetcher = cachedfetch.Fetcher{
 	Name: "Azure Instance Metadata",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		metadataJSON, err := getResponse(ctx,
 			metadataURL+"/metadata/instance/compute?api-version=2017-08-01")
 		if err != nil {

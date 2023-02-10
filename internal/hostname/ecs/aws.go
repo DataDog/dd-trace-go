@@ -24,7 +24,7 @@ var (
 
 var taskFetcher = cachedfetch.Fetcher{
 	Name: "ECS LaunchType",
-	Attempt: func(ctx context.Context) (interface{}, error) {
+	Attempt: func(ctx context.Context) (string, error) {
 		taskJSON, err := getResponse(ctx, metadataURL+"/task")
 		if err != nil {
 			return "", fmt.Errorf("failed to get ECS task metadata: %s", err)
@@ -39,7 +39,7 @@ func getResponse(ctx context.Context, url string) (string, error) {
 
 // GetLaunchType gets the launch-type based on the ECS Task metadata endpoint
 func GetLaunchType(ctx context.Context) (string, error) {
-	taskJSON, err := taskFetcher.FetchString(ctx)
+	taskJSON, err := taskFetcher.Fetch(ctx)
 	if err != nil {
 		return "", err
 	}

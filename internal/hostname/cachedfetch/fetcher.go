@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-// This file is exactly pulled from datadog-agent/pkg/util/cachedfetch only changing the logger
+// This file is pulled from datadog-agent/pkg/util/cachedfetch changing the logger and using strings only
 
 // Package cachedfetch provides a read-through cache for fetched values.
 package cachedfetch
@@ -25,7 +25,7 @@ import (
 // Callers should instantiate one fetcher per piece of data required.
 type Fetcher struct {
 	// function that attempts to fetch the value
-	Attempt func(context.Context) (interface{}, error)
+	Attempt func(context.Context) (string, error)
 
 	// the name of the thing being fetched, used in the default log message.  At
 	// least one of Name and LogFailure must be non-nil.
@@ -51,7 +51,7 @@ type Fetcher struct {
 //
 // This can be called from multiple goroutines, in which case it will call Attempt
 // concurrently.
-func (f *Fetcher) Fetch(ctx context.Context) (interface{}, error) {
+func (f *Fetcher) Fetch(ctx context.Context) (string, error) {
 	value, err := f.Attempt(ctx)
 	if err == nil {
 		f.Lock()
@@ -75,25 +75,7 @@ func (f *Fetcher) Fetch(ctx context.Context) (interface{}, error) {
 		f.LogFailure(err, lastValue)
 	}
 
-	return lastValue, nil
-}
-
-// FetchString is a convenience wrapper around Fetch that returns a string
-func (f *Fetcher) FetchString(ctx context.Context) (string, error) {
-	v, err := f.Fetch(ctx)
-	if err != nil {
-		return "", err
-	}
-	return v.(string), nil
-}
-
-// FetchStringSlice is a convenience wrapper around Fetch that returns a string
-func (f *Fetcher) FetchStringSlice(ctx context.Context) ([]string, error) {
-	v, err := f.Fetch(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return v.([]string), nil
+	return lastValue.(string), nil
 }
 
 // Reset resets the cached value (used for testing)

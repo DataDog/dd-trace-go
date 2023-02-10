@@ -26,7 +26,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -628,17 +627,6 @@ func (s *span) Format(f fmt.State, c rune) {
 		fmt.Fprintf(f, `dd.trace_id="%d" dd.span_id="%d"`, s.TraceID, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
-	}
-}
-
-func (s *span) setHostname(c *config) {
-	if c.agentUnixConnection {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		// Note that we can't use the t.config.agentURL scheme since it's set to `http` so we can use the golang http client
-		return
-	}
-	if hn := hostname.Get(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
 	}
 }
 
