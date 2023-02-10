@@ -44,7 +44,7 @@ func getTestTracerProvider(payload *string, done chan struct{},
 			}
 			buf, err := io.ReadAll(r.Body)
 			if err != nil || len(buf) == 0 {
-				t.Log("Test agent: Error recieving traces")
+				t.Log("Test agent: Error receiving traces")
 				t.Fail()
 			}
 			*payload = fmt.Sprintf("%s", buf)
