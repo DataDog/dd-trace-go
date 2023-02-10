@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -39,16 +39,17 @@ func getTestTracerProvider(payload *string, done chan struct{},
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v0.4/traces":
+			// tracer.Start() also sends a request to /v0.4/traces with empty payload
+			// but does not call waitForTestAgent causing this to block
+			if h := r.Header.Get("X-Datadog-Trace-Count"); h == "0" {
+				return
+			}
 			buf, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fail()
 			}
 			*payload = fmt.Sprintf("%s", buf)
-			if strings.Contains(*payload, "name") {
-				// tracer.Start() also sends a request to /v0.4/traces
-				// but does not call waitForTestAgent causing this to block
-				done <- struct{}{}
-			}
+			done <- struct{}{}
 		}
 		w.WriteHeader(200)
 	}))
@@ -76,6 +77,29 @@ func TestSpanSetName(t *testing.T) {
 	tracer.Flush()
 	waitForTestAgent(done, time.Second, t)
 	assert.Contains(payload, "NewName")
+}
+
+func TestSpanAttributeOptions(t *testing.T) {
+	assert := assert.New(t)
+	var payload string
+	done := make(chan struct{})
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	_, sp := tr.Start(context.Background(), "old_op",
+		trace.WithAttributes(ServiceName("srv_opt"), ResourceName("rsc_opt")))
+	sp.SetName("new_op")
+	sp.End()
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+	assert.Contains(payload, "new_op")
+	assert.NotContains(payload, "test_srv")
+	assert.Contains(payload, "srv_opt")
+	assert.Contains(payload, "rsc_opt")
 }
 
 func TestSpanEnd(t *testing.T) {
