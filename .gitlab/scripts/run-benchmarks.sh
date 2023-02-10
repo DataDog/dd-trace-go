@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -x
+
 ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
 mkdir -p "${ARTIFACTS_DIR}"
 
