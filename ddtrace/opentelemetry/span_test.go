@@ -6,6 +6,7 @@
 package opentelemetry
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -49,7 +51,7 @@ func getTestTracerProvider(payload *string, done chan struct{},
 			}
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
-			*payload = fmt.Sprintf("%s", js.String())
+			*payload = js.String()
 			done <- struct{}{}
 		}
 		w.WriteHeader(200)
@@ -135,10 +137,10 @@ func TestSpanEnd(t *testing.T) {
 		assert.Contains(payload, test.trueName)
 		assert.NotContains(payload, test.falseName)
 		for k, v := range test.trueAttributes {
-			assert.Contains(payload, k+"\xa7"+v)
+			assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 		}
 		for k, v := range test.falseAttributes {
-			assert.NotContains(payload, k+"\xa7"+v)
+			assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 		}
 	}
 }
