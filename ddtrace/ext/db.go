@@ -38,3 +38,10 @@ const (
 	DBSystemLevelDB       = "leveldb"
 	DBSystemBuntDB        = "buntdb"
 )
+
+// MicrosoftSQLServer specific tags.
+const (
+	// MicrosoftSQLServerInstanceName indicates the Microsoft SQL Server instance name connecting to.
+	MicrosoftSQLServerInstanceName = "db.mssql.instance_name"
+)
+
