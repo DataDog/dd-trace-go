@@ -6,8 +6,10 @@
 package opentelemetry
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"github.com/tinylib/msgp/msgp"
 	"io"
 	"net/http"
 	"testing"
@@ -47,7 +49,9 @@ func getTestTracerProvider(payload *string, done chan struct{},
 				t.Log("Test agent: Error receiving traces")
 				t.Fail()
 			}
-			*payload = fmt.Sprintf("%s", buf)
+			var js bytes.Buffer
+			msgp.UnmarshalAsJSON(&js, buf)
+			*payload = fmt.Sprintf("%s", js.String())
 			done <- struct{}{}
 		}
 		w.WriteHeader(200)
@@ -202,6 +206,36 @@ func TestSpanSetStatus(t *testing.T) {
 		}
 		assert.NotContains(payload, test.lowerCodeDesc)
 	}
+}
+
+func TestSpanContextWithStartOptions(t *testing.T) {
+	assert := assert.New(t)
+	var payload string
+	done := make(chan struct{})
+
+	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
+	defer tp.Shutdown()
+	defer s.Close()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	_, sp := tr.Start(
+		tracer.ContextWithStartOptions(context.Background(),
+			tracer.ResourceName("ctx_rsc"),
+			tracer.ServiceName("ctx_srv"),
+			tracer.Measured(),
+			tracer.WithSpanID(1234567890),
+		),
+		"old_name")
+	sp.SetName("new_name")
+	sp.End()
+
+	tracer.Flush()
+	waitForTestAgent(done, time.Second, t)
+	assert.Contains(payload, "new_name")
+	assert.Contains(payload, "ctx_srv")
+	assert.Contains(payload, "ctx_rsc")
+	assert.Contains(payload, "1234567890")
 }
 
 func TestSpanSetAttributes(t *testing.T) {

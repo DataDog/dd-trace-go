@@ -21,6 +21,18 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, activeSpanKey, s)
 }
 
+type contextOptionsKey struct{}
+
+var startOptsKey = contextOptionsKey{}
+
+// ContextWithStartOptions returns a copy of the given context which includes the span s.
+func ContextWithStartOptions(ctx context.Context, opts ...StartSpanOption) context.Context {
+	if len(opts) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, startOptsKey, opts)
+}
+
 // SpanFromContext returns the span contained in the given context. A second return
 // value indicates if a span was found in the context. If no span is found, a no-op
 // span is returned.
@@ -33,6 +45,19 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 		return s, true
 	}
 	return &internal.NoopSpan{}, false
+}
+
+// spanConfigFromContext returns the span start configuration contained in the given context.
+// If no configuration is found, nil is returned.
+func spanConfigFromContext(ctx context.Context) ([]ddtrace.StartSpanOption, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v := ctx.Value(startOptsKey)
+	if s, ok := v.([]ddtrace.StartSpanOption); ok {
+		return s, true
+	}
+	return nil, false
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
@@ -51,6 +76,9 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 		optsLocal = append(optsLocal, ChildOf(s.Context()))
 	}
 	optsLocal = append(optsLocal, withContext(ctx))
+	if opts, ok := spanConfigFromContext(ctx); ok {
+		optsLocal = append(optsLocal, withInnerConfig(opts...))
+	}
 	s := StartSpan(operationName, optsLocal...)
 	if span, ok := s.(*span); ok && span.pprofCtxActive != nil {
 		// If pprof labels were applied for this span, use the derived ctx that
