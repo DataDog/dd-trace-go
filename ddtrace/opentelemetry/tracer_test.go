@@ -39,8 +39,10 @@ func TestSpanWithContext(t *testing.T) {
 	tr := otel.Tracer("ot", oteltrace.WithInstrumentationVersion("0.1"))
 	ctx, sp := tr.Start(context.Background(), "otel.test")
 	got, ok := tracer.SpanFromContext(ctx)
+
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
 func TestSpanWithNewRoot(t *testing.T) {
