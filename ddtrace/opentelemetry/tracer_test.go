@@ -127,7 +127,7 @@ func TestForceFlush(t *testing.T) {
 		sp.End()
 		tp.ForceFlush(tc.timeOut, setFlushFail)
 		if !tc.flushFail {
-			payload := waitForPayload(t, ctx, payloads)
+			payload := waitForPayload(ctx, t, payloads)
 			assert.Contains(payload, "test_span")
 		}
 		assert.Equal(tc.flushFail, !success)

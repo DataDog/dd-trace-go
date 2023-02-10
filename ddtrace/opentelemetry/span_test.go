@@ -58,7 +58,7 @@ func mockTracerProvider(t *testing.T) (tp *TracerProvider, payloads chan string,
 	}
 }
 
-func waitForPayload(t *testing.T, ctx context.Context, payloads chan string) string {
+func waitForPayload(ctx context.Context, t *testing.T, payloads chan string) string {
 	var p string
 	select {
 	case <-ctx.Done():
@@ -83,7 +83,7 @@ func TestSpanSetName(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	p := waitForPayload(t, ctx, payloads)
+	p := waitForPayload(ctx, t, payloads)
 	assert.Contains(p, "NewName")
 }
 
@@ -135,7 +135,7 @@ func TestSpanEnd(t *testing.T) {
 		}
 
 		tracer.Flush()
-		payload := waitForPayload(t, ctx, payloads)
+		payload := waitForPayload(ctx, t, payloads)
 
 		assert.Contains(payload, test.trueErrorMsg)
 		assert.NotContains(payload, test.falseErrorMsg)
@@ -185,7 +185,7 @@ func TestSpanSetStatus(t *testing.T) {
 		sp.End()
 
 		tracer.Flush()
-		payload := waitForPayload(t, ctx, payloads)
+		payload := waitForPayload(ctx, t, payloads)
 
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
@@ -200,7 +200,7 @@ func TestSpanSetStatus(t *testing.T) {
 		sp.End()
 
 		tracer.Flush()
-		payload = waitForPayload(t, ctx, payloads)
+		payload = waitForPayload(ctx, t, payloads)
 
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
@@ -230,7 +230,7 @@ func TestSpanSetAttributes(t *testing.T) {
 	}
 	sp.End()
 	tracer.Flush()
-	payload := waitForPayload(t, ctx, payloads)
+	payload := waitForPayload(ctx, t, payloads)
 
 	assert.Contains(payload, "k1")
 	assert.Contains(payload, "k2")
