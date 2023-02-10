@@ -8,5 +8,8 @@ git clone --branch ${CI_COMMIT_REF_NAME} https://github.com/DataDog/dd-trace-go
 cd dd-trace-go/ddtrace/tracer/
 go test -run=XXX -bench "BenchmarkConcurrentTracing|BenchmarkStartSpan" -benchmem -count 10 -benchtime 2s ./... | tee ${ARTIFACTS_DIR}/pr_bench.txt
 
-git checkout main
+BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$UPSTREAM_PROJECT_NAME" --for-pr="$UPSTREAM_BRANCH" || :)
+BASELINE_COMMIT_SHA=$(git merge-base "origin/$BASELINE_BRANCH" "origin/$UPSTREAM_BRANCH")
+
+git checkout "$BASELINE_COMMIT_SHA"
 go test -run=XXX -bench "BenchmarkConcurrentTracing|BenchmarkStartSpan" -benchmem -count 10 -benchtime 2s ./... | tee ${ARTIFACTS_DIR}/main_bench.txt
