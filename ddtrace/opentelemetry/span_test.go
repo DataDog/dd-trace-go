@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +26,7 @@ import (
 func waitForTestAgent(done chan struct{}, timeOut time.Duration, t *testing.T) {
 	select {
 	case <-time.After(timeOut):
+		t.Log("Test agent: timed out waiting for traces")
 		t.FailNow()
 	case <-done:
 		break
@@ -39,16 +39,16 @@ func getTestTracerProvider(payload *string, done chan struct{},
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v0.4/traces":
+			if h := r.Header.Get("X-Datadog-Trace-Count"); h == "0" {
+				return
+			}
 			buf, err := io.ReadAll(r.Body)
-			if err != nil {
+			if err != nil || len(buf) == 0 {
+				t.Log("Test agent: Error recieving traces")
 				t.Fail()
 			}
 			*payload = fmt.Sprintf("%s", buf)
-			if strings.Contains(*payload, "name") {
-				// tracer.Start() also sends a request to /v0.4/traces
-				// but does not call waitForTestAgent causing this to block
-				done <- struct{}{}
-			}
+			done <- struct{}{}
 		}
 		w.WriteHeader(200)
 	}))
