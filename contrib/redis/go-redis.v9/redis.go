@@ -3,14 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package redis provides tracing functions for tracing the go-redis/redis package (https://github.com/go-redis/redis).
-// This package supports versions up to go-redis 6.15.
+// Package redis provides functions to trace the redis/go-redis package (https://github.com/redis/go-redis).
 package redis
 
 import (
 	"bytes"
 	"context"
-
 	"math"
 	"net"
 	"strconv"
@@ -20,7 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 type datadogHook struct {
@@ -98,81 +96,82 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 	return additionalTags
 }
 
-func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	raw := cmd.String()
-	length := strings.Count(raw, " ")
-	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
-	opts = append(opts,
-		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-	)
-	if !p.config.skipRaw {
-		opts = append(opts, tracer.Tag("redis.raw_command", raw))
+func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := hook(ctx, network, addr)
+		return conn, err
 	}
-	opts = append(opts, ddh.additionalTags...)
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
-	return ctx, nil
 }
 
-func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
-	var span tracer.Span
-	span, _ = tracer.SpanFromContext(ctx)
-	var finishOpts []ddtrace.FinishOption
-	errRedis := cmd.Err()
-	if errRedis != redis.Nil {
-		finishOpts = append(finishOpts, tracer.WithError(errRedis))
-	}
-	span.Finish(finishOpts...)
-	return nil
-}
-
-func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-	raw := commandsToString(cmds)
-	length := strings.Count(raw, " ")
-	p := ddh.params
-	opts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
-	opts = append(opts,
-		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
-	)
-	if !p.config.skipRaw {
-		opts = append(opts, tracer.Tag("redis.raw_command", raw))
-	}
-	opts = append(opts, ddh.additionalTags...)
-	if !math.IsNaN(p.config.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
-	return ctx, nil
-}
-
-func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
-	var span tracer.Span
-	span, _ = tracer.SpanFromContext(ctx)
-	var finishOpts []ddtrace.FinishOption
-	for _, cmd := range cmds {
-		errCmd := cmd.Err()
-		if errCmd != redis.Nil {
-			finishOpts = append(finishOpts, tracer.WithError(errCmd))
+func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		raw := cmd.String()
+		length := strings.Count(raw, " ")
+		p := ddh.params
+		startOpts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts = append(startOpts,
+			tracer.SpanType(ext.SpanTypeRedis),
+			tracer.ServiceName(p.config.serviceName),
+			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+			tracer.Tag("redis.args_length", strconv.Itoa(length)),
+			tracer.Tag(ext.Component, "redis/go-redis.v9"),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		)
+		if !p.config.skipRaw {
+			startOpts = append(startOpts, tracer.Tag("redis.raw_command", raw))
 		}
+		startOpts = append(startOpts, ddh.additionalTags...)
+		if !math.IsNaN(p.config.analyticsRate) {
+			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+		}
+		span, ctx := tracer.StartSpanFromContext(ctx, "redis.command", startOpts...)
+
+		err := hook(ctx, cmd)
+
+		var finishOpts []ddtrace.FinishOption
+		if err != nil && err != redis.Nil {
+			finishOpts = append(finishOpts, tracer.WithError(err))
+		}
+		span.Finish(finishOpts...)
+		return err
 	}
-	span.Finish(finishOpts...)
-	return nil
+}
+
+func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return func(ctx context.Context, cmds []redis.Cmder) error {
+		raw := commandsToString(cmds)
+		length := strings.Count(raw, " ")
+		p := ddh.params
+		startOpts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts = append(startOpts,
+			tracer.SpanType(ext.SpanTypeRedis),
+			tracer.ServiceName(p.config.serviceName),
+			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+			tracer.Tag("redis.args_length", strconv.Itoa(length)),
+			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
+			tracer.Tag(ext.Component, "redis/go-redis.v9"),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		)
+		if !p.config.skipRaw {
+			startOpts = append(startOpts, tracer.Tag("redis.raw_command", raw))
+		}
+		startOpts = append(startOpts, ddh.additionalTags...)
+		if !math.IsNaN(p.config.analyticsRate) {
+			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+		}
+		span, ctx := tracer.StartSpanFromContext(ctx, "redis.command", startOpts...)
+
+		err := hook(ctx, cmds)
+
+		var finishOpts []ddtrace.FinishOption
+		if err != nil && err != redis.Nil {
+			finishOpts = append(finishOpts, tracer.WithError(err))
+		}
+		span.Finish(finishOpts...)
+		return err
+	}
 }
 
 // commandsToString returns a string representation of a slice of redis Commands, separated by newlines.

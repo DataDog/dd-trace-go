@@ -18,7 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -105,7 +105,7 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
-	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
@@ -131,7 +131,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
-	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
@@ -192,7 +192,7 @@ func TestWrapClient(t *testing.T) {
 			assert.Equal("my-redis", span.Tag(ext.ServiceName))
 			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 			assert.Equal("3", span.Tag("redis.args_length"))
-			assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+			assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal("redis", span.Tag(ext.DBSystem))
 		})
@@ -283,7 +283,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
-	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 
@@ -303,7 +303,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("expire", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
-	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
@@ -391,7 +391,7 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
-		assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+		assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 	})
@@ -416,7 +416,39 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
-		assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+		assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
+	})
+
+	t.Run("pipeline wrong-port", func(t *testing.T) {
+		ctx := context.Background()
+		opts := &redis.Options{Addr: "127.0.0.1:6378"} // wrong port
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := NewClient(opts, WithServiceName("my-redis"))
+		pipeline := client.Pipeline()
+		pipeline.Get(ctx, "key")
+
+		// Exec with context test
+		_, err := pipeline.Exec(ctx)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+
+		assert.Equal("redis.command", span.OperationName())
+		assert.NotNil(err)
+		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+		assert.Equal("my-redis", span.Tag(ext.ServiceName))
+		assert.Equal("get", span.Tag(ext.ResourceName))
+		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+		assert.Equal("6378", span.Tag(ext.TargetPort))
+		assert.Equal("1", span.Tag("redis.pipeline_length"))
+		assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 	})
