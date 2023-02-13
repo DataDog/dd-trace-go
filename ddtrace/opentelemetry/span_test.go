@@ -39,11 +39,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			}
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
-			select {
-			case payloads <- js.String():
-			default:
-				t.Log("Test agent: no one to recieve payloads")
-			}
+			payloads <- js.String()
 		}
 		w.WriteHeader(200)
 	}))
@@ -56,15 +52,15 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 	}
 }
 
-func waitForPayload(ctx context.Context, t *testing.T, payloads chan string) string {
+func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 	var p string
 	select {
 	case <-ctx.Done():
-		t.Fatal("timed out waiting for traces")
+		return "", fmt.Errorf("Timed out waiting for traces")
 	case p = <-payloads:
 		break
 	}
-	return p
+	return p, nil
 }
 
 func TestSpanSetName(t *testing.T) {
@@ -81,7 +77,11 @@ func TestSpanSetName(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	p := waitForPayload(ctx, t, payloads)
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Log(err)
+		t.Fail()
+	}
 	assert.Contains(p, "NewName")
 }
 
@@ -131,8 +131,11 @@ func TestSpanEnd(t *testing.T) {
 		}
 
 		tracer.Flush()
-		payload := waitForPayload(ctx, t, payloads)
-
+		payload, err := waitForPayload(ctx, payloads)
+		if err != nil {
+			t.Log(err)
+			t.Fail()
+		}
 		assert.Contains(payload, test.trueErrorMsg)
 		assert.NotContains(payload, test.falseErrorMsg)
 		assert.Contains(payload, test.trueName)
@@ -168,22 +171,25 @@ func TestSpanSetStatus(t *testing.T) {
 			lowerCodeDesc:  "unset_description",
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	for _, test := range testData {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
 		_, sp := tr.Start(context.Background(), "test")
 		sp.SetStatus(test.higherCode, test.higherCodeDesc)
 		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
 		sp.End()
 
 		tracer.Flush()
-		payload := waitForPayload(ctx, t, payloads)
-
+		payload, err := waitForPayload(ctx, payloads)
+		if err != nil {
+			t.Log(err)
+			t.Fail()
+		}
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
 		} else {
@@ -197,14 +203,18 @@ func TestSpanSetStatus(t *testing.T) {
 		sp.End()
 
 		tracer.Flush()
-		payload = waitForPayload(ctx, t, payloads)
-
+		payload, err = waitForPayload(ctx, payloads)
+		if err != nil {
+			t.Log(err)
+			t.Fail()
+		}
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
 		} else {
 			assert.NotContains(payload, test.higherCodeDesc)
 		}
 		assert.NotContains(payload, test.lowerCodeDesc)
+		cancel()
 	}
 }
 
@@ -227,8 +237,11 @@ func TestSpanSetAttributes(t *testing.T) {
 	}
 	sp.End()
 	tracer.Flush()
-	payload := waitForPayload(ctx, t, payloads)
-
+	payload, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Log(err)
+		t.Fail()
+	}
 	assert.Contains(payload, "k1")
 	assert.Contains(payload, "k2")
 	assert.Contains(payload, "v1_new")
@@ -248,7 +261,11 @@ func TestTracerStartOptions(t *testing.T) {
 	_, sp := tr.Start(context.Background(), "test")
 	sp.End()
 	tracer.Flush()
-	payload := waitForPayload(ctx, t, payloads)
+	payload, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Log(err)
+		t.Fail()
+	}
 	assert.Contains(payload, "\"service\":\"test_serv\"")
 	assert.Contains(payload, "\"env\":\"test_env\"")
 }
