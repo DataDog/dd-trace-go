@@ -9,16 +9,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
