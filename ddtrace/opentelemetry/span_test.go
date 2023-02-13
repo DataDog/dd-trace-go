@@ -108,14 +108,12 @@ func TestSpanEnd(t *testing.T) {
 			falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	for _, test := range testData {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, sp := tr.Start(context.Background(), test.trueName)
 		sp.SetStatus(codes.Error, test.trueErrorMsg)
 		for k, v := range test.trueAttributes {
@@ -145,6 +143,7 @@ func TestSpanEnd(t *testing.T) {
 		for k, v := range test.falseAttributes {
 			assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 		}
+		cancel()
 	}
 }
 
