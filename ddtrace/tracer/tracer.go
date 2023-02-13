@@ -626,7 +626,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 }
 
 func (t *tracer) hostname() string {
-	if t.config.disableHostnameDetection {
+	if !t.config.disableHostnameDetection {
 		return hostname.Get()
 	}
 	return ""

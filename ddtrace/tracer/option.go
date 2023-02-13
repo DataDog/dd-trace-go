@@ -231,6 +231,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
+		log.Debug("connecting to agent over unix, do not set hostname on any traces")
 		c.disableHostnameDetection = true
 		c.httpClient = udsClient(c.agentURL.Path)
 		c.agentURL = &url.URL{
