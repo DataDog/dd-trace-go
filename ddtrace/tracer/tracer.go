@@ -139,7 +139,7 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
-	go hostname.Get() // Prime the hostname cache
+	hostname.Get() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
