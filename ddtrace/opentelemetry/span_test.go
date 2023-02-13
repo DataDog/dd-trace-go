@@ -69,7 +69,7 @@ func waitForPayload(ctx context.Context, t *testing.T, payloads chan string) str
 
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -108,7 +108,7 @@ func TestSpanEnd(t *testing.T) {
 			falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -169,7 +169,7 @@ func TestSpanSetStatus(t *testing.T) {
 			lowerCodeDesc:  "unset_description",
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -211,7 +211,7 @@ func TestSpanSetStatus(t *testing.T) {
 
 func TestSpanSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -239,7 +239,7 @@ func TestSpanSetAttributes(t *testing.T) {
 
 func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))

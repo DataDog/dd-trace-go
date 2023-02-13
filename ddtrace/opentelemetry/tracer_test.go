@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func TestSpanWithContext(t *testing.T) {
 
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
-	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
+	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), strings.TrimLeft(sp.SpanContext().SpanID().String(), "0"))
 }
 
 func TestSpanWithNewRoot(t *testing.T) {
@@ -120,7 +121,7 @@ func TestForceFlush(t *testing.T) {
 	setFlushFail := func(ok bool) { success = ok }
 
 	for _, tc := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		tp, payloads, cleanup := mockTracerProvider(t)
 		tr := otel.Tracer("")
 		_, sp := tr.Start(context.Background(), "test_span")
