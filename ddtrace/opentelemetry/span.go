@@ -14,7 +14,6 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -23,9 +22,9 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	ddtrace.Span
+	tracer.Span
 	finished   bool
-	finishOpts []ddtrace.FinishOption
+	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
 }
@@ -52,7 +51,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	s.Finish(opts...)
 }
 
-func EndOptions(sp oteltrace.Span, options ...ddtrace.FinishOption) {
+// EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
+func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 	s, ok := sp.(*span)
 	if !ok || !s.IsRecording() {
 		return
