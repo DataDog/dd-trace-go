@@ -42,8 +42,10 @@ func TestSpanWithContext(t *testing.T) {
 	tr := otel.Tracer("ot", oteltrace.WithInstrumentationVersion("0.1"))
 	ctx, sp := tr.Start(context.Background(), "otel.test")
 	got, ok := tracer.SpanFromContext(ctx)
+
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
 func TestSpanWithNewRoot(t *testing.T) {
@@ -114,33 +116,24 @@ func TestForceFlush(t *testing.T) {
 		{timeOut: 0 * time.Second, flushFail: true},
 		{timeOut: 300 * time.Second, flushFail: false},
 	}
-	flushFail := false
-	setFlushFail := func(ok bool) { flushFail = !ok }
-	reset := func() { flushFail = false }
+	success := false
+	setFlushFail := func(ok bool) { success = ok }
 
 	for _, tc := range testData {
-		var payload string
-		done := make(chan struct{})
-
-		tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-		otel.SetTracerProvider((tp))
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		tp, payloads, cleanup := mockTracerProvider(t)
 		tr := otel.Tracer("")
 		_, sp := tr.Start(context.Background(), "test_span")
 		sp.End()
-
 		tp.ForceFlush(tc.timeOut, setFlushFail)
 		if !tc.flushFail {
-			select {
-			case <-time.After(time.Second):
-				t.FailNow()
-			case <-done:
-				break
-			}
+			payload := waitForPayload(ctx, t, payloads)
 			assert.Contains(payload, "test_span")
 		}
-		assert.Equal(tc.flushFail, flushFail)
-		reset()
-		s.Close()
+		assert.Equal(tc.flushFail, !success)
+		success = false
+		cleanup()
+		cancel()
 	}
 }
 

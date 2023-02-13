@@ -9,35 +9,22 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/tinylib/msgp/msgp"
+	"go.opentelemetry.io/otel/attribute"
 	"io"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
-// helper method to wait until timeout for test agent to receive traces
-func waitForTestAgent(done chan struct{}, timeOut time.Duration, t *testing.T) {
-	select {
-	case <-time.After(timeOut):
-		t.Log("Test agent: timed out waiting for traces")
-		t.FailNow()
-	case <-done:
-		break
-	}
-}
-
-// initializes a test trace provider and agent server
-func getTestTracerProvider(payload *string, done chan struct{},
-	env string, service string, t *testing.T) (*TracerProvider, *http.Server) {
+func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {
+	payloads = make(chan string)
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v0.4/traces":
@@ -51,35 +38,50 @@ func getTestTracerProvider(payload *string, done chan struct{},
 			}
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
-			*payload = fmt.Sprintf("%s", js.String())
-			done <- struct{}{}
+			select {
+			case payloads <- js.String():
+			default:
+				t.Log("Test agent: no one to recieve payloads")
+			}
 		}
 		w.WriteHeader(200)
 	}))
-	return NewTracerProvider(
-		tracer.WithEnv(env),
-		tracer.WithHTTPClient(c),
-		tracer.WithService(service)), s
+	opts = append(opts, tracer.WithHTTPClient(c))
+	tp = NewTracerProvider(opts...)
+	otel.SetTracerProvider(tp)
+	return tp, payloads, func() {
+		tp.Shutdown()
+		s.Close()
+	}
+}
+
+func waitForPayload(ctx context.Context, t *testing.T, payloads chan string) string {
+	var p string
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for traces")
+	case p = <-payloads:
+		break
+	}
+	return p
 }
 
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
-	var payload string
-	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
+	defer cleanup()
 
-	_, sp := tr.Start(context.Background(), "OldName")
+	_, sp := tr.Start(ctx, "OldName")
 	sp.SetName("NewName")
 	sp.End()
 
 	tracer.Flush()
-	waitForTestAgent(done, time.Second, t)
-	assert.Contains(payload, "NewName")
+	p := waitForPayload(ctx, t, payloads)
+	assert.Contains(p, "NewName")
 }
 
 func TestSpanEnd(t *testing.T) {
@@ -105,14 +107,12 @@ func TestSpanEnd(t *testing.T) {
 			falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
 		},
 	}
-	var payload string
-	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
+	defer cleanup()
 
 	for _, test := range testData {
 		_, sp := tr.Start(context.Background(), test.trueName)
@@ -120,7 +120,9 @@ func TestSpanEnd(t *testing.T) {
 		for k, v := range test.trueAttributes {
 			sp.SetAttributes(attribute.String(k, v))
 		}
+		assert.True(sp.IsRecording())
 		sp.End()
+		assert.False(sp.IsRecording())
 		// following operations should not be able to modify the Span
 		sp.SetName(test.trueName)
 		sp.SetStatus(test.falseError, test.falseErrorMsg)
@@ -130,19 +132,48 @@ func TestSpanEnd(t *testing.T) {
 		}
 
 		tracer.Flush()
-		waitForTestAgent(done, time.Second, t)
+		payload := waitForPayload(ctx, t, payloads)
 
 		assert.Contains(payload, test.trueErrorMsg)
 		assert.NotContains(payload, test.falseErrorMsg)
 		assert.Contains(payload, test.trueName)
 		assert.NotContains(payload, test.falseName)
 		for k, v := range test.trueAttributes {
-			assert.Contains(payload, k+"\xa7"+v)
+			assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 		}
 		for k, v := range test.falseAttributes {
-			assert.NotContains(payload, k+"\xa7"+v)
+			assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 		}
 	}
+}
+
+func TestSpanEndOptions(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	startTime := time.Now()
+	duration := time.Second * 5
+	_, sp := tr.Start(
+		ContextWithStartOptions(context.Background(),
+			tracer.ResourceName("ctx_rsc"),
+			tracer.ServiceName("ctx_srv"),
+			tracer.StartTime(startTime),
+			tracer.WithSpanID(1234567890),
+		), "op_name")
+	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
+	sp.End()
+
+	tracer.Flush()
+	p := waitForPayload(ctx, t, payloads)
+	assert.Contains(p, "ctx_srv")
+	assert.Contains(p, "ctx_rsc")
+	assert.Contains(p, "1234567890")
+	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
+	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
 }
 
 func TestSpanSetStatus(t *testing.T) {
@@ -166,14 +197,12 @@ func TestSpanSetStatus(t *testing.T) {
 			lowerCodeDesc:  "unset_description",
 		},
 	}
-	var payload string
-	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
+	defer cleanup()
 
 	for _, test := range testData {
 		_, sp := tr.Start(context.Background(), "test")
@@ -182,7 +211,7 @@ func TestSpanSetStatus(t *testing.T) {
 		sp.End()
 
 		tracer.Flush()
-		waitForTestAgent(done, time.Second, t)
+		payload := waitForPayload(ctx, t, payloads)
 
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
@@ -197,7 +226,7 @@ func TestSpanSetStatus(t *testing.T) {
 		sp.End()
 
 		tracer.Flush()
-		waitForTestAgent(done, time.Second, t)
+		payload = waitForPayload(ctx, t, payloads)
 
 		if test.higherCode == codes.Error {
 			assert.Contains(payload, test.higherCodeDesc)
@@ -210,44 +239,38 @@ func TestSpanSetStatus(t *testing.T) {
 
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	var payload string
-	done := make(chan struct{})
-
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
+	defer cleanup()
 
+	startTime := time.Now()
 	_, sp := tr.Start(
-		tracer.ContextWithStartOptions(context.Background(),
+		ContextWithStartOptions(context.Background(),
 			tracer.ResourceName("ctx_rsc"),
 			tracer.ServiceName("ctx_srv"),
-			tracer.Measured(),
+			tracer.StartTime(startTime),
 			tracer.WithSpanID(1234567890),
-		),
-		"old_name")
-	sp.SetName("new_name")
+		), "op_name")
 	sp.End()
 
 	tracer.Flush()
-	waitForTestAgent(done, time.Second, t)
-	assert.Contains(payload, "new_name")
-	assert.Contains(payload, "ctx_srv")
-	assert.Contains(payload, "ctx_rsc")
-	assert.Contains(payload, "1234567890")
+	p := waitForPayload(ctx, t, payloads)
+	assert.Contains(p, "ctx_srv")
+	assert.Contains(p, "ctx_rsc")
+	assert.Contains(p, "1234567890")
+	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 }
 
 func TestSpanSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	var payload string
-	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
+	defer cleanup()
 
 	attributes := [][]string{{"k1", "v1_old"},
 		{"k2", "v2"},
@@ -259,7 +282,7 @@ func TestSpanSetAttributes(t *testing.T) {
 	}
 	sp.End()
 	tracer.Flush()
-	waitForTestAgent(done, time.Second, t)
+	payload := waitForPayload(ctx, t, payloads)
 
 	assert.Contains(payload, "k1")
 	assert.Contains(payload, "k2")
@@ -268,50 +291,19 @@ func TestSpanSetAttributes(t *testing.T) {
 	assert.NotContains(payload, "v1_old")
 }
 
-func TestSpanMethods(t *testing.T) {
-	testData := struct {
-		env, srv, oldOp, newOp string
-		tags                   [][]string // key - tags[0][0], value - tags[0][1]
-	}{
-		env:   "test_env",
-		srv:   "test_srv",
-		oldOp: "old_op",
-		newOp: "new_op",
-		tags:  [][]string{{"tag_1", "tag_1_val"}, {"opt_tag_1", "opt_tag_1_val"}}}
+func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	var payload string
-	done := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	tp, s := getTestTracerProvider(&payload, done, "test_env", "test_srv", t)
-	defer tp.Shutdown()
-	defer s.Close()
-	otel.SetTracerProvider(tp)
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
+	defer cleanup()
 
-	_, sp := tr.Start(context.Background(), testData.oldOp)
-	for _, tag := range testData.tags {
-		sp.SetAttributes(attribute.String(tag[0], tag[1]))
-	}
-	sp.SetName(testData.newOp)
-	// Should return true as long as span is not finished
-	assert.True(sp.IsRecording())
-	sp.SetStatus(codes.Error, "error_description")
+	_, sp := tr.Start(context.Background(), "test")
 	sp.End()
-	// Should return false once the span is finished / ended
-	assert.False(sp.IsRecording())
 	tracer.Flush()
-
-	select {
-	case <-time.After(time.Second):
-		t.FailNow()
-	case <-done:
-		break
-	}
-	assert.Contains(payload, testData.env)
-	assert.Contains(payload, testData.newOp)
-	assert.Contains(payload, testData.srv)
-	for _, tag := range testData.tags {
-		assert.Contains(payload, tag[0])
-		assert.Contains(payload, tag[1])
-	}
+	payload := waitForPayload(ctx, t, payloads)
+	assert.Contains(payload, "\"service\":\"test_serv\"")
+	assert.Contains(payload, "\"env\":\"test_env\"")
 }

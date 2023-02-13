@@ -17,13 +17,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
 	ddtrace.Span
-	finished bool
+	finished   bool
+	finishOpts []ddtrace.FinishOption
 	statusInfo
 	*oteltracer
 }
@@ -35,16 +37,27 @@ func (s *span) RecordError(err error, options ...oteltrace.EventOption) { /*	no-
 func (s *span) SetName(name string) { s.SetOperationName(name) }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
+	s.finished = true
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
-	var localOpts []tracer.FinishOption
+	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
 		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
-		localOpts = append(localOpts, tracer.FinishTime(t))
+		opts = append(opts, tracer.FinishTime(t))
 	}
-	s.Finish(localOpts...)
-	s.finished = true
+	if len(s.finishOpts) != 0 {
+		opts = append(opts, s.finishOpts...)
+	}
+	s.Finish(opts...)
+}
+
+func EndOptions(sp oteltrace.Span, options ...ddtrace.FinishOption) {
+	s, ok := sp.(*span)
+	if !ok || !s.IsRecording() {
+		return
+	}
+	s.finishOpts = options
 }
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
@@ -70,29 +83,31 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
 	if err != nil {
+		log.Debug("Couldn't parse tracestate: %v", err)
 		return
 	}
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
-	if len(parent) != 0 {
+	if len(parent) > 3 {
+		// checking the length to avoid panic when parsing
 		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
 			c.TraceFlags = oteltrace.TraceFlags(f)
+		} else {
+			log.Debug("Couldn't parse traceparent: %v", err)
 		}
 	}
+	// Remote indicates a remotely-created Span
 	c.Remote = true
 }
 
 func uint64ToByte(n uint64, b []byte) {
-	binary.LittleEndian.PutUint64(b, n)
+	binary.BigEndian.PutUint64(b, n)
 }
 
 // IsRecording returns the recording state of the Span. It will return
 // true if the Span is active and events can be recorded.
 func (s *span) IsRecording() bool {
-	if s.finished {
-		return false
-	}
-	return true
+	return !s.finished
 }
 
 type statusInfo struct {
@@ -100,10 +115,11 @@ type statusInfo struct {
 	description string
 }
 
-// SetStatus saves state of code and description which will further be used to
-// determine whether the span has recorded errors. This will be done by setting
+// SetStatus saves state of code and description indicating
+// whether the span has recorded errors. This will be done by setting
 // `error.msg` tag on the span. If the code has been set to a higher
 // value before (OK > Error > Unset), the code will not be changed.
+// The code and description are set once when the span is finished.
 func (s *span) SetStatus(code otelcodes.Code, description string) {
 	if code >= s.statusInfo.code {
 		s.statusInfo = statusInfo{code, description}
