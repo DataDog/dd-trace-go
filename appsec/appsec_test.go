@@ -137,10 +137,13 @@ func TestCustomEvent(t *testing.T) {
 }
 
 func TestSetUser(t *testing.T) {
-	t.Run("error/appsec-disabled", func(t *testing.T) {
-		err := appsec.SetUser(nil, "usr.id")
-		require.NotNil(t, err)
-		require.Equal(t, "AppSec is not enabled", err.Error())
+	t.Run("early-return/appsec-disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetUser(ctx, "usr.id")
+		require.NoError(t, err)
 	})
 
 	privateAppsec.Start()
@@ -149,13 +152,12 @@ func TestSetUser(t *testing.T) {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
 
-	t.Run("error/nil-ctx", func(t *testing.T) {
+	t.Run("early-return/nil-ctx", func(t *testing.T) {
 		err := appsec.SetUser(nil, "usr.id")
-		require.NotNil(t, err)
-		require.Equal(t, "Could not retrieve span from context", err.Error())
+		require.NoError(t, err)
 	})
 
-	t.Run("no-error", func(t *testing.T) {
+	t.Run("no-early-return", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")

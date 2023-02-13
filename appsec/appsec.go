@@ -70,18 +70,16 @@ func (err *userMonitoringError) Error() string {
 // authenticated user requests and block that request's execution in case this function
 // returns an error. See the examples for more information.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
-	if !appsec.Enabled() {
-		return &userMonitoringError{
-			err: errors.New("AppSec is not enabled"),
-		}
-	}
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
-		return &userMonitoringError{
-			err: errors.New("Could not retrieve span from context"),
-		}
+		log.Debug("appsec: could not retrieve span from context. User ID tag won't be set")
+		return nil
 	}
 	tracer.SetUser(s, id, opts...)
+	if !appsec.Enabled() {
+		log.Debug("appsec: not enabled. User blocking checks won't be performed.")
+		return nil
+	}
 	if sharedsec.MonitorUser(ctx, id) {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			s.SetTag("appsec.blocked", true)
