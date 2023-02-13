@@ -43,7 +43,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			select {
 			case payloads <- js.String():
 			default:
-				t.Log("Test agent: no one to recieve payloads")
+				t.Log("Test agent: no one to receive payloads")
 			}
 		}
 		w.WriteHeader(200)
@@ -199,14 +199,12 @@ func TestSpanSetStatus(t *testing.T) {
 			lowerCodeDesc:  "unset_description",
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	for _, test := range testData {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		_, sp := tr.Start(context.Background(), "test")
 		sp.SetStatus(test.higherCode, test.higherCodeDesc)
 		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
@@ -236,6 +234,7 @@ func TestSpanSetStatus(t *testing.T) {
 			assert.NotContains(payload, test.higherCodeDesc)
 		}
 		assert.NotContains(payload, test.lowerCodeDesc)
+		cancel()
 	}
 }
 
