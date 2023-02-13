@@ -59,15 +59,13 @@ type (
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
-
-	contextKey struct{}
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
 func MonitorParsedBody(ctx context.Context, body interface{}) {
-	if parent := FromContext(ctx); parent != nil {
+	if parent := fromContext(ctx); parent != nil {
 		op := StartSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
 		op.Finish()
 	} else {
@@ -196,15 +194,15 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Con
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
 
-// FromContext returns the Operation object stored in the context, if any
-func FromContext(ctx context.Context) *Operation {
+// fromContext returns the Operation object stored in the context, if any
+func fromContext(ctx context.Context) *Operation {
 	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(contextKey{}).(*Operation)
+	op, _ := ctx.Value(instrumentation.ContextKey{}).(*Operation)
 	return op
 }
 

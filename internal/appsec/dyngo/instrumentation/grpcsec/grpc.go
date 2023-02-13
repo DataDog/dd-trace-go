@@ -69,7 +69,6 @@ type (
 		// Corresponds to the address `grpc.server.request.message`.
 		Message interface{}
 	}
-	contextKey struct{}
 )
 
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
@@ -83,7 +82,7 @@ func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, paren
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
@@ -179,10 +178,4 @@ func (OnReceiveOperationFinish) ListenedType() reflect.Type { return receiveOper
 // on v whose type is the one returned by ListenedType().
 func (f OnReceiveOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(ReceiveOperation), v.(ReceiveOperationRes))
-}
-
-// FromContext returns the HandlerOperation object stored in the context, if any
-func FromContext(ctx context.Context) *HandlerOperation {
-	op, _ := ctx.Value(contextKey{}).(*HandlerOperation)
-	return op
 }
