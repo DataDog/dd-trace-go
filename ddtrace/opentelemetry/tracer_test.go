@@ -111,11 +111,11 @@ func TestSpanContext(t *testing.T) {
 func TestForceFlush(t *testing.T) {
 	assert := assert.New(t)
 	testData := []struct {
-		timeOut   time.Duration
-		flushFail bool
+		timeOut time.Duration
+		flushed bool
 	}{
-		{timeOut: 0 * time.Second, flushFail: true},
-		{timeOut: 300 * time.Second, flushFail: false},
+		{timeOut: 0 * time.Second, flushed: false},
+		{timeOut: 300 * time.Second, flushed: true},
 	}
 	success := false
 	setFlushFail := func(ok bool) { success = ok }
@@ -128,14 +128,14 @@ func TestForceFlush(t *testing.T) {
 		sp.End()
 		tp.ForceFlush(tc.timeOut, setFlushFail)
 		payload, err := waitForPayload(ctx, payloads)
-		if !tc.flushFail {
+		if tc.flushed {
 			if err != nil {
 				t.Log(err)
 				t.Fail()
 			}
 			assert.Contains(payload, "test_span")
 		}
-		assert.Equal(tc.flushFail, !success)
+		assert.Equal(tc.flushed, success)
 		success = false
 		cleanup()
 		cancel()
