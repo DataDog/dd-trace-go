@@ -24,7 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
-func mockTracerProvider(t *testing.T) (tp *TracerProvider, payloads chan string, cleanup func()) {
+func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {
 	payloads = make(chan string)
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -47,10 +47,8 @@ func mockTracerProvider(t *testing.T) (tp *TracerProvider, payloads chan string,
 		}
 		w.WriteHeader(200)
 	}))
-	tp = NewTracerProvider(
-		tracer.WithEnv("test_env"),
-		tracer.WithHTTPClient(c),
-		tracer.WithService("test_srv"))
+	opts = append(opts, tracer.WithHTTPClient(c))
+	tp = NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	return tp, payloads, func() {
 		tp.Shutdown()
@@ -237,4 +235,21 @@ func TestSpanSetAttributes(t *testing.T) {
 	assert.Contains(payload, "v1_new")
 	assert.Contains(payload, "v2")
 	assert.NotContains(payload, "v1_old")
+}
+
+func TestTracerStartOptions(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "test")
+	sp.End()
+	tracer.Flush()
+	payload := waitForPayload(ctx, t, payloads)
+	assert.Contains(payload, "\"service\":\"test_serv\"")
+	assert.Contains(payload, "\"env\":\"test_env\"")
 }
