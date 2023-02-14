@@ -11,6 +11,7 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 import (
 	"math"
 	"net"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -50,6 +51,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startSpanFromContext(ctx context.Context, method, service string, rate float64) (ddtrace.Span, context.Context) {
+	rpcTags := extractRPCTags(method)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
@@ -59,11 +61,11 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.Tag(ext.RPCSystem, "grpc"),
-		tracer.Tag(ext.RPCService, cfg.serviceName),
-		tracer.Tag(ext.RPCMethod, method),
-		tracer.Tag(ext.GRPCPackage, method),
+		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
+		tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
+		tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
 		tracer.Tag(ext.GRPCPath, method),
-		tracer.Tag(ext.GRPCKind, methodKindUnary),
+		tracer.Tag(ext.GRPCKind, "unary"),
 	}
 	if !math.IsNaN(rate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rate))
@@ -91,15 +93,16 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			span ddtrace.Span
 			p    peer.Peer
 		)
+		rpcTags := extractRPCTags(method)
 		spanopts := []ddtrace.StartSpanOption{
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.RPCSystem, "grpc"),
-			tracer.Tag(ext.RPCService, cfg.serviceName),
-			tracer.Tag(ext.RPCMethod, method),
-			tracer.Tag(ext.GRPCPackage, method),
+			tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
+			tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
+			tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
 			tracer.Tag(ext.GRPCPath, method),
-			tracer.Tag(ext.GRPCKind, methodKindUnary),
+			tracer.Tag(ext.GRPCKind, "unary"),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanopts = append(spanopts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -130,4 +133,34 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		span.Finish(tracer.WithError(err))
 		return err
 	}
+}
+
+// extractRPCTags will assign the proper tag values for method, service, package according to otel given a full method
+func extractRPCTags(fullMethod string) map[string]string {
+
+	//Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
+
+	tags := map[string]string{
+		ext.RPCMethod:   "",
+		ext.RPCService:  "",
+		ext.GRPCPackage: "",
+	}
+
+	//Always remove leading slash
+	fullMethod = strings.TrimPrefix(fullMethod, "/")
+
+	//Split by slash and get everything after last slash as method
+	slashSplit := strings.SplitAfter(fullMethod, "/")
+	tags[ext.RPCMethod] = slashSplit[len(slashSplit)-1]
+
+	//Join everything before last slash and remove last slash as service
+	tags[ext.RPCService] = strings.TrimSuffix(strings.Join(slashSplit[:len(slashSplit)-1], ""), "/")
+
+	//Split by period and see if package exists if period is found
+	if strings.Contains(tags[ext.RPCService], ".") {
+		dotSplit := strings.SplitAfter(tags[ext.RPCService], ".")
+		tags[ext.GRPCPackage] = strings.TrimSuffix(strings.Join(dotSplit[:len(dotSplit)-1], ""), ".")
+	}
+
+	return tags
 }

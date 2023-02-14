@@ -71,7 +71,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(clientSpan.Tag(ext.GRPCPackage), "grpc")
 	assert.Equal(clientSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
-	assert.Equal(clientSpan.Tag(ext.GRPCKind), methodKindUnary)
+	assert.Equal(clientSpan.Tag(ext.GRPCKind), "unary")
 
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
@@ -84,7 +84,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
 	assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
-	assert.Equal(serverSpan.Tag(ext.GRPCKind), methodKindUnary)
+	assert.Equal(serverSpan.Tag(ext.GRPCKind), "unary")
 }
 
 func TestChild(t *testing.T) {
@@ -137,7 +137,7 @@ func TestChild(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
 	assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
-	assert.Equal(serverSpan.Tag(ext.GRPCKind), methodKindUnary)
+	assert.Equal(serverSpan.Tag(ext.GRPCKind), "unary")
 }
 
 func TestPass(t *testing.T) {
@@ -168,13 +168,13 @@ func TestPass(t *testing.T) {
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 	assert.Equal(s.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(s.Tag(ext.SpanKind), ext.SpanKindServer)
-	assert.Equal(serverSpan.Tag(ext.RPCSystem), "grpc")
-	assert.Equal(serverSpan.Tag(ext.RPCService), "grpc.Fixture")
-	assert.Equal(serverSpan.Tag(ext.RPCMethod), "Ping")
-	assert.Equal(serverSpan.Tag(ext.GRPCStatus), codes.OK.String())
-	assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
-	assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
-	assert.Equal(serverSpan.Tag(ext.GRPCKind), methodKindUnary)
+	assert.Equal(s.Tag(ext.RPCSystem), "grpc")
+	assert.Equal(s.Tag(ext.RPCService), "grpc.Fixture")
+	assert.Equal(s.Tag(ext.RPCMethod), "Ping")
+	assert.Equal(s.Tag(ext.GRPCStatus), codes.OK.String())
+	assert.Equal(s.Tag(ext.GRPCPackage), "grpc")
+	assert.Equal(s.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+	assert.Equal(s.Tag(ext.GRPCKind), "unary")
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
@@ -323,4 +323,55 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestExtractTags(t *testing.T) {
+	testCases := []struct {
+		Name    string
+		Path    string
+		Service string
+		Method  string
+		Package string
+	}{
+		{"empty test",
+			"",
+			"",
+			"",
+			"",
+		},
+		{"basic test",
+			"/mypackage.myservice/mymethod",
+			"mypackage.myservice",
+			"mymethod",
+			"mypackage",
+		},
+		{"obscure test",
+			"/my/p/a/c.k.a.ge.my/se/r/v/ice/myme.t.h.od",
+			"my/p/a/c.k.a.ge.my/se/r/v/ice",
+			"myme.t.h.od",
+			"my/p/a/c.k.a.ge",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			tags := extractRPCTags(tc.Path)
+			if tags[ext.RPCService] != tc.Service {
+				t.Errorf("Service %s != %s", tags[ext.RPCService], tc.Service)
+			} else {
+				t.Logf("Service %s == %s", tags[ext.RPCService], tc.Service)
+			}
+
+			if tags[ext.RPCMethod] != tc.Method {
+				t.Errorf("Method %s != %s", tags[ext.RPCMethod], tc.Method)
+			} else {
+				t.Logf("Method %s == %s", tags[ext.RPCMethod], tc.Method)
+			}
+
+			if tags[ext.GRPCPackage] != tc.Package {
+				t.Errorf("Package %s != %s", tags[ext.RPCService], tc.Package)
+			} else {
+				t.Logf("Package %s == %s", tags[ext.RPCService], tc.Package)
+			}
+		})
+	}
 }
