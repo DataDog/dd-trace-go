@@ -129,10 +129,7 @@ func TestForceFlush(t *testing.T) {
 		tp.ForceFlush(tc.timeOut, setFlushFail)
 		payload, err := waitForPayload(ctx, payloads)
 		if tc.flushed {
-			if err != nil {
-				t.Log(err)
-				t.Fail()
-			}
+			assert.NoError(err)
 			assert.Contains(payload, "test_span")
 		}
 		assert.Equal(tc.flushed, success)
