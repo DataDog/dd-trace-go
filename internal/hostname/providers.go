@@ -131,6 +131,8 @@ func Get() string {
 	// Use CAS to avoid spawning more than one go-routine trying to update the cached hostname
 	ir := isRefreshing.CompareAndSwap(false, true)
 	if ir {
+		// TODO: One optimization we could do here is hook into the tracer shutdown signal to gracefully disconnect here
+		// For now, we think the added complexity isn't worth it for this single go routine that only runs every 5 minutes.
 		go func() {
 			updateHostname(now)
 		}()
