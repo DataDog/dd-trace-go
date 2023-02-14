@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"net/url"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -15,12 +16,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	helper "gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -91,6 +95,9 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// telemetry is used to send information regarding the tracer to the telemetry backend
+	telemetry *telemetry.Client
 }
 
 const (
@@ -235,6 +242,22 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			},
 		}),
 		statsd: statsd,
+		telemetry: &telemetry.Client{
+			Service: c.serviceName,
+			Env:     c.env,
+			Client:  c.httpClient,
+		},
+	}
+	if !helper.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
+		t.telemetry.Disabled = true
+	}
+	u, err := url.Parse(c.agentURL.String())
+	if err == nil {
+		u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
+		t.telemetry.URL = u.String()
+	} else {
+		log.Warn("Agent URL %s is invalid, not starting telemetry", c.agentURL.String())
+		t.telemetry.Disabled = true
 	}
 	return t
 }
@@ -268,6 +291,42 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	// Start collecting telemetry data
+	go func() {
+		t.telemetry.Start(
+			[]telemetry.Integration{},
+			[]telemetry.Configuration{
+				{Name: "debug", Value: c.debug},
+				{Name: "agent_feature_DropP0s", Value: c.agent.DropP0s},
+				{Name: "agent_feature_Stats", Value: c.agent.Stats},
+				{Name: "agent_feature_StatsdPort", Value: c.agent.StatsdPort},
+				{Name: "feature_flags", Value: c.featureFlags},
+				{Name: "log_to_stdout", Value: c.logToStdout},
+				{Name: "send_retries", Value: c.logToStdout},
+				{Name: "log_startup", Value: c.logStartup},
+				{Name: "service_name", Value: c.serviceName},
+				{Name: "universal_version", Value: c.universalVersion},
+				{Name: "app_version", Value: c.version},
+				{Name: "app_env", Value: c.env},
+				{Name: "sampler", Value: c.sampler},
+				{Name: "agent_url", Value: c.agentURL},
+				{Name: "service_mappings", Value: c.serviceMappings},
+				{Name: "global_tags", Value: c.globalTags},
+				{Name: "transport", Value: c.transport},
+				{Name: "propagator", Value: c.propagator},
+				//{Name: "http_client", Value: c.httpClient},
+				{Name: "hostname", Value: c.hostname},
+				{Name: "runtime_metrics", Value: c.runtimeMetrics},
+				{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
+				{Name: "span_rules", Value: c.spanRules},
+				{Name: "trace_rules", Value: c.traceRules},
+				{Name: "no_debug_stack", Value: c.noDebugStack},
+				{Name: "profiler_hotspots", Value: c.profilerHotspots},
+				{Name: "profiler_endpoints", Value: c.profilerEndpoints},
+				{Name: "tracing_enabled", Value: c.enabled},
+			},
+		)
+	}()
 	return t
 }
 

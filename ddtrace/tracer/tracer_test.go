@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,7 +30,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -2163,6 +2166,50 @@ func TestUserMonitoring(t *testing.T) {
 		}()
 		root.Finish()
 	})
+}
+
+func TestTelemetryEnabled(t *testing.T) {
+	received := make(chan *telemetry.AppStarted, 1)
+	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(r.URL.Path)
+		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
+			return
+		}
+		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
+			return
+		}
+
+		var body telemetry.Request
+		body.Payload = new(telemetry.AppStarted)
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err != nil {
+			t.Errorf("bad body: %s", err)
+		}
+		select {
+		case received <- body.Payload.(*telemetry.AppStarted):
+		default:
+		}
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+
+	Start(WithHTTPClient(client))
+
+	defer Stop()
+
+	payload := <-received
+
+	for _, kv := range payload.Integrations {
+		fmt.Println(kv)
+	}
+	// for _, kv := range payload.Configuration {
+	// 	fmt.Println(kv)
+	// }
+	for _, kv := range payload.Dependencies {
+		fmt.Println(kv)
+	}
+
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
