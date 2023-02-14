@@ -13,7 +13,6 @@ package appsec
 
 import (
 	"context"
-	"errors"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -21,9 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
@@ -37,30 +33,6 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 		httpsec.MonitorParsedBody(ctx, body)
 	}
 	// bonus: use sync.Once to log a debug message once if AppSec is disabled
-}
-
-type userMonitoringError struct {
-	err    error
-	status struct {
-		grpc codes.Code
-		http int
-	}
-}
-
-func (err *userMonitoringError) ShouldBlock() bool {
-	return err.status.grpc == codes.Aborted || err.status.http == 403
-}
-func (err *userMonitoringError) GRPCStatus() *status.Status {
-	return status.New(err.status.grpc, err.Error())
-}
-func (err *userMonitoringError) GRPCCode() codes.Code {
-	return err.status.grpc
-}
-func (err *userMonitoringError) HTTPCode() int {
-	return err.status.http
-}
-func (err *userMonitoringError) Error() string {
-	return err.err.Error()
 }
 
 // SetUser wraps tracer.SetUser().
@@ -80,16 +52,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		log.Debug("appsec: not enabled. User blocking checks won't be performed.")
 		return nil
 	}
-	if sharedsec.MonitorUser(ctx, id) {
-		return &userMonitoringError{
-			err: errors.New("Suspicious user detected. Associated requests should be blocked"),
-			status: struct {
-				grpc codes.Code
-				http int
-			}{grpc: codes.Aborted, http: 403},
-		}
-	}
-	return nil
+	return sharedsec.MonitorUser(ctx, id)
 }
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given

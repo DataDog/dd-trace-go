@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
-	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
@@ -42,8 +41,8 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			setAppSecEventsTags(ctx, span, events)
 		}()
 
-		if op.BlockedCode != nil {
-			return nil, status.Errorf(*op.BlockedCode, "Request blocked")
+		if op.Error != nil {
+			return nil, op.Error
 		}
 
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
@@ -78,8 +77,8 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			setAppSecEventsTags(stream.Context(), span, events)
 		}()
 
-		if op.BlockedCode != nil {
-			return status.Error(*op.BlockedCode, "Request blocked")
+		if op.Error != nil {
+			return op.Error
 		}
 
 		return handler(srv, stream)

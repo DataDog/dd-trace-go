@@ -123,7 +123,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			matches, actionIds := runWAF(wafCtx, values, timeout)
 			if len(matches) > 0 {
 				for _, id := range actionIds {
-					operation.Block = actionHandler.Apply(id, op) || operation.Block
+					if actionHandler.Apply(id, op) {
+						operation.Error = errors.New("Request blocked")
+					}
 				}
 				op.AddSecurityEvents(matches)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
@@ -260,8 +262,9 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			matches, actionIds := runWAF(wafCtx, values, timeout)
 			if len(matches) > 0 {
 				for _, id := range actionIds {
-					operation.Block = actionHandler.Apply(id, op) || operation.Block
+					actionHandler.Apply(id, op)
 				}
+				operation.Error = op.Error
 				op.AddSecurityEvents(matches)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}

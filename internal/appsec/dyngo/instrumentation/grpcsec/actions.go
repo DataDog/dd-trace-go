@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
@@ -56,7 +57,7 @@ func (h *ActionsHandler) Apply(id string, op *HandlerOperation) bool {
 	}
 	// Currently, only the "block_request" type is supported, so we only need to check for blockRequestParams
 	if p, ok := a.(*BlockRequestAction); ok {
-		op.BlockedCode = &p.Status
+		op.Error = status.Error(p.Status, "Request blocked")
 		op.AddTag(instrumentation.BlockedRequestTag, true)
 		return true
 	}
