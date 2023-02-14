@@ -7,10 +7,11 @@ package internal
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"net"
 	nurl "net/url"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func parseSQLServerURL(url string) (map[string]string, error) {
