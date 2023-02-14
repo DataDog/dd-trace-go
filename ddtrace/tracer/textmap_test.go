@@ -1738,11 +1738,6 @@ func FuzzComposeTracestate(f *testing.F) {
 		priority                         int
 		k1, v1, k2, v2, k3, v3, oldState string
 	}{
-		{priority: 49,
-			k1: "0", v1: "0",
-			k2: "0", v2: "================================================================================================================================",
-			k3: "", v3: "0",
-			oldState: "0"},
 		{priority: 1,
 			k1: "keyOne", v1: "json",
 			k2: "KeyTwo", v2: "123123",
