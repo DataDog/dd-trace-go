@@ -50,7 +50,7 @@ func TestClientStatsHandler(t *testing.T) {
 	assert.Equal("grpc.client", span.OperationName())
 	tags := span.Tags()
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])
-	assert.Equal(codes.OK.String(), tags["grpc.code"])
+	assert.Equal(codes.OK.String(), tags["rpc.grpc.status_code"])
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])

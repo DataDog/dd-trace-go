@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -46,15 +47,16 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 func startSpanFromContext(
 	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
+	rpcTags := extractRPCTags(method)
 	opts = append(opts,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
 		tracer.Tag(ext.RPCSystem, "grpc"),
-		tracer.Tag(ext.RPCService, service),
-		tracer.Tag(ext.RPCMethod, method),
-		tracer.Tag(ext.GRPCPackage, method),
+		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
+		tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
+		tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
 		tracer.Tag(ext.GRPCPath, method),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
@@ -85,4 +87,33 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 		}
 	}
 	span.Finish(finishOptions...)
+}
+
+func extractRPCTags(fullMethod string) map[string]string {
+
+	//Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
+
+	tags := map[string]string{
+		ext.RPCMethod:   "",
+		ext.RPCService:  "",
+		ext.GRPCPackage: "",
+	}
+
+	//Always remove leading slash
+	fullMethod = strings.TrimPrefix(fullMethod, "/")
+
+	//Split by slash and get everything after last slash as method
+	slashSplit := strings.SplitAfter(fullMethod, "/")
+	tags[ext.RPCMethod] = slashSplit[len(slashSplit)-1]
+
+	//Join everything before last slash and remove last slash as service
+	tags[ext.RPCService] = strings.TrimSuffix(strings.Join(slashSplit[:len(slashSplit)-1], ""), "/")
+
+	//Split by period and see if package exists if period is found
+	if strings.Contains(tags[ext.RPCService], ".") {
+		dotSplit := strings.SplitAfter(tags[ext.RPCService], ".")
+		tags[ext.GRPCPackage] = strings.TrimSuffix(strings.Join(dotSplit[:len(dotSplit)-1], ""), ".")
+	}
+
+	return tags
 }
