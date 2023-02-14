@@ -43,7 +43,6 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		}()
 
 		if op.BlockedCode != nil {
-			op.AddTag(httpsec.BlockedRequestTag, true)
 			return nil, status.Errorf(*op.BlockedCode, "Request blocked")
 		}
 
@@ -80,7 +79,6 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		}()
 
 		if op.BlockedCode != nil {
-			op.AddTag(httpsec.BlockedRequestTag, true)
 			return status.Error(*op.BlockedCode, "Request blocked")
 		}
 

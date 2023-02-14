@@ -15,6 +15,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
+// BlockedRequestTag used to convey whether a request is blocked
+const BlockedRequestTag = "appsec.blocked"
+
 type (
 	// TagSetter is the interface needed to set a span tag.
 	TagSetter interface {

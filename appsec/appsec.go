@@ -81,9 +81,6 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 		return nil
 	}
 	if sharedsec.MonitorUser(ctx, id) {
-		if s, ok := tracer.SpanFromContext(ctx); ok {
-			s.SetTag("appsec.blocked", true)
-		}
 		return &userMonitoringError{
 			err: errors.New("Suspicious user detected. Associated requests should be blocked"),
 			status: struct {

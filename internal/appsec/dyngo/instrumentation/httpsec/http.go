@@ -79,7 +79,7 @@ func applyActions(op *Operation) http.Handler {
 	for _, action := range op.Actions() {
 		switch a := action.(type) {
 		case *BlockRequestAction:
-			op.AddTag(BlockedRequestTag, true)
+			op.AddTag(instrumentation.BlockedRequestTag, true)
 			return a.handler
 		default:
 			log.Error("appsec: ignoring security action: unexpected action type %T", a)
@@ -110,13 +110,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			events := op.Finish(HandlerOperationRes{Status: status})
+			if h := applyActions(op); h != nil {
+				h.ServeHTTP(w, r)
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
-			}
-
-			if h := applyActions(op); h != nil {
-				h.ServeHTTP(w, r)
 			}
 			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
