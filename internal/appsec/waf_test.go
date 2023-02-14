@@ -182,6 +182,11 @@ func TestBlocking(t *testing.T) {
 		t.Skip("AppSec needs to be enabled for this test")
 	}
 
+	const (
+		ipBlockingRule   = "blk-001-001"
+		userBlockingRule = "blk-001-002"
+	)
+
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
@@ -197,10 +202,11 @@ func TestBlocking(t *testing.T) {
 	defer srv.Close()
 
 	for _, tc := range []struct {
-		name     string
-		headers  map[string]string
-		endpoint string
-		status   int
+		name      string
+		headers   map[string]string
+		endpoint  string
+		status    int
+		ruleMatch string
 	}{
 		{
 			name:     "ip/no-block/no-ip",
@@ -214,10 +220,11 @@ func TestBlocking(t *testing.T) {
 			status:   200,
 		},
 		{
-			name:     "ip/block",
-			headers:  map[string]string{"x-forwarded-for": "1.2.3.4"},
-			endpoint: "/ip",
-			status:   403,
+			name:      "ip/block",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4"},
+			endpoint:  "/ip",
+			status:    403,
+			ruleMatch: ipBlockingRule,
 		},
 		{
 			name:     "user/no-block/no-user",
@@ -231,10 +238,20 @@ func TestBlocking(t *testing.T) {
 			status:   200,
 		},
 		{
-			name:     "user/block",
-			headers:  map[string]string{"test-usr": "blocked-user-1"},
-			endpoint: "/user",
-			status:   403,
+			name:      "user/block",
+			headers:   map[string]string{"test-usr": "blocked-user-1"},
+			endpoint:  "/user",
+			status:    403,
+			ruleMatch: userBlockingRule,
+		},
+		// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
+		// to be invoked while IP blocking doesn't
+		{
+			name:      "user/ip-block",
+			headers:   map[string]string{"test-usr": "blocked-user-1", "x-forwarded-for": "1.2.3.4"},
+			endpoint:  "/user",
+			status:    403,
+			ruleMatch: ipBlockingRule,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -256,6 +273,11 @@ func TestBlocking(t *testing.T) {
 				require.Equal(t, "Hello World!\n", string(b))
 			} else {
 				require.NotEqual(t, "Hello World!\n", string(b))
+			}
+			if tc.ruleMatch != "" {
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 			}
 
 		})

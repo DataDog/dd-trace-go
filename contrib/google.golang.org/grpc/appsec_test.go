@@ -233,6 +233,25 @@ func TestUserBlocking(t *testing.T) {
 		require.Equal(t, codes.OK, status.Code(err))
 	})
 
+	// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
+	// to be invoked while IP blocking doesn't
+	t.Run("unary-mixed-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1", "x-forwarded-for", "1.2.3.4"))
+		reply, err := client.Ping(ctx, &FixtureRequest{})
+
+		require.Nil(t, reply)
+		require.Equal(t, codes.Aborted, status.Code(err))
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
+	})
+
 	t.Run("stream-block", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -270,6 +289,27 @@ func TestUserBlocking(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
+	})
+	// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
+	// to be invoked while IP blocking doesn't
+	t.Run("stream-mixed-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "blocked-user-1", "x-forwarded-for", "1.2.3.4"))
+		stream, err := client.StreamPing(ctx)
+		require.NoError(t, err)
+		reply, err := stream.Recv()
+
+		require.Equal(t, codes.Aborted, status.Code(err))
+		require.Nil(t, reply)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		// The request should have IP related the attack attempts
+		event, _ := finished[0].Tag("_dd.appsec.json").(string)
+		require.NotNil(t, event)
+		require.True(t, strings.Contains(event, "blk-001-001"))
 	})
 }
 
