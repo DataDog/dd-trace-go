@@ -89,6 +89,7 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 	span.Finish(finishOptions...)
 }
 
+// extractRPCTags will assign the proper tag values for method, service, package according to otel given a full method
 func extractRPCTags(fullMethod string) map[string]string {
 
 	//Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
