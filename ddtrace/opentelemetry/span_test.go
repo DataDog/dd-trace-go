@@ -53,14 +53,13 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 }
 
 func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
-	var p string
 	select {
 	case <-ctx.Done():
 		return "", fmt.Errorf("Timed out waiting for traces")
-	case p = <-payloads:
-		break
+	case p := <-payloads:
+		return p, nil
 	}
-	return p, nil
+	return "", nil
 }
 
 func TestSpanSetName(t *testing.T) {
