@@ -62,13 +62,17 @@ func (p *TracerProvider) Shutdown() error {
 // ForceFlush flushes any buffered traces. Flush is in effect only if a tracer
 // is started.
 func (p *TracerProvider) ForceFlush(timeout time.Duration, callback func(ok bool)) {
+	p.forceFlush(timeout, callback, tracer.Flush)
+}
+
+func (p *TracerProvider) forceFlush(timeout time.Duration, callback func(ok bool), flush func()) {
 	if atomic.LoadUint32(&p.stopped) != 0 {
 		log.Warn("Cannot perform (*TracerProvider).Flush since the tracer is already stopped.")
 		return
 	}
 	done := make(chan struct{})
 	go func() {
-		tracer.Flush()
+		flush()
 		done <- struct{}{}
 	}()
 	for {

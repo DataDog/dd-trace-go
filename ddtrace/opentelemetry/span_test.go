@@ -47,8 +47,8 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 	tp = NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	return tp, payloads, func() {
-		tp.Shutdown()
 		s.Close()
+		tp.Shutdown()
 	}
 }
 

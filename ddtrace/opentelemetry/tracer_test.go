@@ -114,11 +114,14 @@ func TestForceFlush(t *testing.T) {
 		OK
 	)
 	testData := []struct {
-		timeOut time.Duration
-		flushed bool
+		timeOut   time.Duration
+		flushed   bool
+		flushFunc func()
 	}{
-		{timeOut: 0 * time.Second, flushed: false},
-		{timeOut: 300 * time.Second, flushed: true},
+		{timeOut: 30 * time.Second, flushed: true, flushFunc: tracer.Flush},
+		{timeOut: 0 * time.Second, flushed: false, flushFunc: func() {
+			time.Sleep(300 * time.Second)
+		}},
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
@@ -138,7 +141,7 @@ func TestForceFlush(t *testing.T) {
 			tr := otel.Tracer("")
 			_, sp := tr.Start(context.Background(), "test_span")
 			sp.End()
-			tp.ForceFlush(tc.timeOut, setFlushStatus)
+			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
 			payload, err := waitForPayload(ctx, payloads)
 			if tc.flushed {
 				assert.NoError(err)
