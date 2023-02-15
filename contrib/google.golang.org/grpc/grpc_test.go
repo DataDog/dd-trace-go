@@ -186,8 +186,6 @@ func TestStreaming(t *testing.T) {
 				}
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
-					"expected grpc method name to be set in span: %v", span)
 				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem),
 					"expected rpc system as grpc to be set in span: %v", span)
 				assert.Equal(t, "grpc.Fixture", span.Tag(ext.RPCService),

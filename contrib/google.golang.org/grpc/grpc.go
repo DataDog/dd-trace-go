@@ -51,7 +51,6 @@ func startSpanFromContext(
 	opts = append(opts,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
-		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
 		tracer.Tag(ext.RPCSystem, "grpc"),
 		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),

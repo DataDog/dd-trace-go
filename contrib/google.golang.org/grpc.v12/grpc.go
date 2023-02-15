@@ -55,7 +55,6 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
-		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 		tracer.Measured(),
 		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
@@ -95,7 +94,6 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		)
 		rpcTags := extractRPCTags(method)
 		spanopts := []ddtrace.StartSpanOption{
-			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.RPCSystem, "grpc"),
 			tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
