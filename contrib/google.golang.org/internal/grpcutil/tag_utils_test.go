@@ -35,6 +35,12 @@ func TestExtractTags(t *testing.T) {
 			"myme.t.h.od",
 			"/my/p/a/c.k.a.ge",
 		},
+		{"no package test",
+			"/myservice/mymethod",
+			"/myservice",
+			"mymethod",
+			"",
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
