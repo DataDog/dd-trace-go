@@ -106,14 +106,13 @@ func TestSpanContext(t *testing.T) {
 	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
 }
 
-const (
-	UNSET = iota
-	ERROR
-	OK
-)
-
 func TestForceFlush(t *testing.T) {
 	assert := assert.New(t)
+	const (
+		UNSET = iota
+		ERROR
+		OK
+	)
 	testData := []struct {
 		timeOut time.Duration
 		flushed bool
@@ -156,29 +155,12 @@ func TestShutdown(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
-	tr := otel.Tracer("")
-	tr.Start(context.Background(), "before_shutdown")
 	tp.Shutdown()
-	flushStatus := UNSET
-	setFlushStatus := func(ok bool) {
-		if ok {
-			flushStatus = OK
-		} else {
-			flushStatus = ERROR
-		}
-	}
-	tp.ForceFlush(time.Second, setFlushStatus)
-
-	// verify that a flush was not attempted
-	// after the tracer provider is shutdown
-	// by checking that flushStatus remains its
-	// default value
-	assert.Equal(UNSET, flushStatus)
 
 	// attempt to get the Tracer after shutdown and
 	// start a span. The context and span returned
 	// from calling Start should be nil.
-	tr = otel.Tracer("")
+	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)

@@ -59,7 +59,6 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 	case p := <-payloads:
 		return p, nil
 	}
-	return "", nil
 }
 
 func TestSpanSetName(t *testing.T) {
@@ -85,43 +84,32 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
-	testData := struct {
-		trueName        string
-		falseName       string
-		trueError       codes.Code
-		trueErrorMsg    string
-		falseError      codes.Code
-		falseErrorMsg   string
-		trueAttributes  map[string]string
-		falseAttributes map[string]string
-	}{
-		trueName:        "trueName",
-		falseName:       "invalidName",
-		trueError:       codes.Error,
-		trueErrorMsg:    "error_description",
-		falseError:      codes.Ok,
-		falseErrorMsg:   "ok_description",
-		trueAttributes:  map[string]string{"trueKey": "trueVal"},
-		falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	_, sp := tr.Start(context.Background(), testData.trueName)
-	sp.SetStatus(codes.Error, testData.trueErrorMsg)
-	for k, v := range testData.trueAttributes {
+	name, ignoredName := "trueName", "invalidName"
+	code, codeMsg := codes.Error, "error_desc"
+	ignoredCode, ignoredMsg := codes.Ok, "ok_desc"
+	attributes := map[string]string{"trueKey": "trueVal"}
+	ignoredAttributes := map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"}
+
+	_, sp := tr.Start(context.Background(), name)
+	sp.SetStatus(code, codeMsg)
+	for k, v := range attributes {
 		sp.SetAttributes(attribute.String(k, v))
 	}
 	assert.True(sp.IsRecording())
+
 	sp.End()
 	assert.False(sp.IsRecording())
+
 	// following operations should not be able to modify the Span since the span has finished
-	sp.SetName(testData.trueName)
-	sp.SetStatus(testData.falseError, testData.falseErrorMsg)
-	for k, v := range testData.trueAttributes {
+	sp.SetName(ignoredName)
+	sp.SetStatus(ignoredCode, ignoredMsg)
+	for k, v := range ignoredAttributes {
 		sp.SetAttributes(attribute.String(k, v))
 		sp.SetAttributes(attribute.String(k, v))
 	}
@@ -131,23 +119,24 @@ func TestSpanEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(payload, testData.trueErrorMsg)
-	assert.NotContains(payload, testData.falseErrorMsg)
-	assert.Contains(payload, testData.trueName)
-	assert.NotContains(payload, testData.falseName)
-	for k, v := range testData.trueAttributes {
+
+	assert.Contains(payload, name)
+	assert.NotContains(payload, ignoredName)
+	assert.Contains(payload, codeMsg)
+	assert.NotContains(payload, ignoredMsg)
+
+	for k, v := range attributes {
 		assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 	}
-	for k, v := range testData.falseAttributes {
+	for k, v := range ignoredAttributes {
 		assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
 	}
-
 }
 
 // This test verifies that setting the status of a span
 // behaves accordingly to the Otel API spec
 // (https://opentelemetry.io/docs/reference/specification/trace/api/#set-status)
-// By checking the following:
+// by checking the following:
 //  1. attempts to set the value of `Unset` are ignored
 //  2. description must only be used with `Error` value
 //  3. setting the status to `Ok` is final and will override any
