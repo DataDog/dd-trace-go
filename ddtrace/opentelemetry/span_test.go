@@ -91,13 +91,13 @@ func TestSpanEnd(t *testing.T) {
 	defer cleanup()
 
 	name, ignoredName := "trueName", "invalidName"
-	code, codeMsg := codes.Error, "error_desc"
-	ignoredCode, ignoredMsg := codes.Ok, "ok_desc"
+	code, ignoredCode := codes.Error, codes.Ok
+	msg, ignoredMsg := "error_desc", "ok_desc"
 	attributes := map[string]string{"trueKey": "trueVal"}
 	ignoredAttributes := map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"}
 
 	_, sp := tr.Start(context.Background(), name)
-	sp.SetStatus(code, codeMsg)
+	sp.SetStatus(code, msg)
 	for k, v := range attributes {
 		sp.SetAttributes(attribute.String(k, v))
 	}
@@ -122,7 +122,7 @@ func TestSpanEnd(t *testing.T) {
 
 	assert.Contains(payload, name)
 	assert.NotContains(payload, ignoredName)
-	assert.Contains(payload, codeMsg)
+	assert.Contains(payload, msg)
 	assert.NotContains(payload, ignoredMsg)
 
 	for k, v := range attributes {
