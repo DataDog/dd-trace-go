@@ -806,7 +806,6 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *spanContext, header string) error {
-	var err error
 	nonWordCutset := "_-\t \n"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
 	if len(header) == 0 {
@@ -849,6 +848,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if ok, err := regexp.MatchString("[a-f0-9]+", spanID); !ok || err != nil {
 		return ErrSpanContextCorrupted
 	}
+	var err error
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
 		return ErrSpanContextCorrupted
 	}
