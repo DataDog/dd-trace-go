@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -34,8 +35,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			}
 			buf, err := io.ReadAll(r.Body)
 			if err != nil || len(buf) == 0 {
-				t.Log("Test agent: Error receiving traces")
-				t.Fail()
+				t.Fatalf("Test agent: Error receiving traces")
 			}
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
@@ -64,7 +64,7 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -78,15 +78,14 @@ func TestSpanSetName(t *testing.T) {
 	tracer.Flush()
 	p, err := waitForPayload(ctx, payloads)
 	if err != nil {
-		t.Log(err)
-		t.Fail()
+		t.Fatalf(err.Error())
 	}
 	assert.Contains(p, "NewName")
 }
 
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
-	testData := []struct {
+	testData := struct {
 		trueName        string
 		falseName       string
 		trueError       codes.Code
@@ -96,78 +95,82 @@ func TestSpanEnd(t *testing.T) {
 		trueAttributes  map[string]string
 		falseAttributes map[string]string
 	}{
-		{
-			trueName:        "trueName",
-			falseName:       "invalidName",
-			trueError:       codes.Error,
-			trueErrorMsg:    "error_description",
-			falseError:      codes.Ok,
-			falseErrorMsg:   "ok_description",
-			trueAttributes:  map[string]string{"trueKey": "trueVal"},
-			falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
-		},
+		trueName:        "trueName",
+		falseName:       "invalidName",
+		trueError:       codes.Error,
+		trueErrorMsg:    "error_description",
+		falseError:      codes.Ok,
+		falseErrorMsg:   "ok_description",
+		trueAttributes:  map[string]string{"trueKey": "trueVal"},
+		falseAttributes: map[string]string{"trueKey": "fakeVal", "invalidKey": "invalidVal"},
 	}
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
-	for _, test := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, sp := tr.Start(context.Background(), test.trueName)
-		sp.SetStatus(codes.Error, test.trueErrorMsg)
-		for k, v := range test.trueAttributes {
-			sp.SetAttributes(attribute.String(k, v))
-		}
-		assert.True(sp.IsRecording())
-		sp.End()
-		assert.False(sp.IsRecording())
-		// following operations should not be able to modify the Span
-		sp.SetName(test.trueName)
-		sp.SetStatus(test.falseError, test.falseErrorMsg)
-		for k, v := range test.trueAttributes {
-			sp.SetAttributes(attribute.String(k, v))
-			sp.SetAttributes(attribute.String(k, v))
-		}
-
-		tracer.Flush()
-		payload, err := waitForPayload(ctx, payloads)
-		if err != nil {
-			t.Log(err)
-			t.Fail()
-		}
-		assert.Contains(payload, test.trueErrorMsg)
-		assert.NotContains(payload, test.falseErrorMsg)
-		assert.Contains(payload, test.trueName)
-		assert.NotContains(payload, test.falseName)
-		for k, v := range test.trueAttributes {
-			assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
-		}
-		for k, v := range test.falseAttributes {
-			assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
-		}
-		cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, sp := tr.Start(context.Background(), testData.trueName)
+	sp.SetStatus(codes.Error, testData.trueErrorMsg)
+	for k, v := range testData.trueAttributes {
+		sp.SetAttributes(attribute.String(k, v))
 	}
+	assert.True(sp.IsRecording())
+	sp.End()
+	assert.False(sp.IsRecording())
+	// following operations should not be able to modify the Span since the span has finished
+	sp.SetName(testData.trueName)
+	sp.SetStatus(testData.falseError, testData.falseErrorMsg)
+	for k, v := range testData.trueAttributes {
+		sp.SetAttributes(attribute.String(k, v))
+		sp.SetAttributes(attribute.String(k, v))
+	}
+
+	tracer.Flush()
+	payload, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(payload, testData.trueErrorMsg)
+	assert.NotContains(payload, testData.falseErrorMsg)
+	assert.Contains(payload, testData.trueName)
+	assert.NotContains(payload, testData.falseName)
+	for k, v := range testData.trueAttributes {
+		assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
+	}
+	for k, v := range testData.falseAttributes {
+		assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
+	}
+
 }
 
+// This test verifies that setting the status of a span
+// behaves accordingly to the Otel API spec:
+// https://opentelemetry.io/docs/reference/specification/trace/api/#set-
+//  1. the status code of a span defaults to `Unset`.
+//  2. attempts to set the value of `Unset` is ignored
+//  3. description must only be used with an `Error` value
+//  4. setting the status to `Ok` is final and will override any
+//     any prior or future status values
 func TestSpanSetStatus(t *testing.T) {
 	assert := assert.New(t)
 	testData := []struct {
-		higherCode     codes.Code
-		higherCodeDesc string
-		lowerCode      codes.Code
-		lowerCodeDesc  string
+		code        codes.Code
+		msg         string
+		ignoredCode codes.Code
+		ignoredMsg  string
 	}{
 		{
-			higherCode:     codes.Ok,
-			higherCodeDesc: "ok_description",
-			lowerCode:      codes.Error,
-			lowerCodeDesc:  "error_description",
+			code:        codes.Ok,
+			msg:         "ok_description",
+			ignoredCode: codes.Error,
+			ignoredMsg:  "error_description",
 		},
 		{
-			higherCode:     codes.Error,
-			higherCodeDesc: "error_description",
-			lowerCode:      codes.Unset,
-			lowerCodeDesc:  "unset_description",
+			code:        codes.Error,
+			msg:         "error_description",
+			ignoredCode: codes.Unset,
+			ignoredMsg:  "unset_description",
 		},
 	}
 
@@ -176,50 +179,44 @@ func TestSpanSetStatus(t *testing.T) {
 	defer cleanup()
 
 	for _, test := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 
-		_, sp := tr.Start(context.Background(), "test")
-		sp.SetStatus(test.higherCode, test.higherCodeDesc)
-		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
-		sp.End()
+		var sp oteltrace.Span
+		testStatus := func() {
+			sp.End()
 
-		tracer.Flush()
-		payload, err := waitForPayload(ctx, payloads)
-		if err != nil {
-			t.Log(err)
-			t.Fail()
+			tracer.Flush()
+			payload, err := waitForPayload(ctx, payloads)
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+			// An error description is set IFF the span has an error
+			// status code value. Description related to any other code
+			// is ignored.
+			if test.code == codes.Error {
+				assert.Contains(payload, test.msg)
+			} else {
+				assert.NotContains(payload, test.msg)
+			}
+			assert.NotContains(payload, test.ignoredCode)
 		}
-		if test.higherCode == codes.Error {
-			assert.Contains(payload, test.higherCodeDesc)
-		} else {
-			assert.NotContains(payload, test.higherCodeDesc)
-		}
-		assert.NotContains(payload, test.lowerCodeDesc)
+		_, sp = tr.Start(context.Background(), "test")
+		sp.SetStatus(test.code, test.msg)
+		sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+		testStatus()
 
 		_, sp = tr.Start(context.Background(), "test")
-		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
-		sp.SetStatus(test.higherCode, test.higherCodeDesc)
-		sp.End()
+		sp.SetStatus(test.code, test.msg)
+		sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+		testStatus()
 
-		tracer.Flush()
-		payload, err = waitForPayload(ctx, payloads)
-		if err != nil {
-			t.Log(err)
-			t.Fail()
-		}
-		if test.higherCode == codes.Error {
-			assert.Contains(payload, test.higherCodeDesc)
-		} else {
-			assert.NotContains(payload, test.higherCodeDesc)
-		}
-		assert.NotContains(payload, test.lowerCodeDesc)
 		cancel()
 	}
 }
 
 func TestSpanSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -238,8 +235,7 @@ func TestSpanSetAttributes(t *testing.T) {
 	tracer.Flush()
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
-		t.Log(err)
-		t.Fail()
+		t.Fatalf(err.Error())
 	}
 	assert.Contains(payload, "k1")
 	assert.Contains(payload, "k2")
@@ -250,7 +246,7 @@ func TestSpanSetAttributes(t *testing.T) {
 
 func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
@@ -262,8 +258,7 @@ func TestTracerStartOptions(t *testing.T) {
 	tracer.Flush()
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
-		t.Log(err)
-		t.Fail()
+		t.Fatalf(err.Error())
 	}
 	assert.Contains(payload, "\"service\":\"test_serv\"")
 	assert.Contains(payload, "\"env\":\"test_env\"")
