@@ -39,9 +39,8 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.SpanType(k.String()))
 	}
-
 	if opts, ok := spanOptionsFromContext(ctx); ok {
-		ddopts = append(ddopts, withInnerOptions(opts...))
+		ddopts = append(ddopts, opts...)
 	}
 	s := tracer.StartSpan(spanName, ddopts...)
 	return tracer.ContextWithSpan(ctx, s), oteltrace.Span(&span{

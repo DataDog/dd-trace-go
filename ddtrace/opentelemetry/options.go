@@ -8,7 +8,7 @@ package opentelemetry
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type contextOptionsKey struct{}
@@ -16,7 +16,8 @@ type contextOptionsKey struct{}
 var startOptsKey = contextOptionsKey{}
 
 // ContextWithStartOptions returns a copy of the given context which includes the span s.
-func ContextWithStartOptions(ctx context.Context, opts ...ddtrace.StartSpanOption) context.Context {
+// This can be used to pass a context with Datadog start options to the Start function on the OTel tracer to propagate the options.
+func ContextWithStartOptions(ctx context.Context, opts ...tracer.StartSpanOption) context.Context {
 	if len(opts) == 0 {
 		return ctx
 	}
@@ -25,22 +26,13 @@ func ContextWithStartOptions(ctx context.Context, opts ...ddtrace.StartSpanOptio
 
 // spanOptionsFromContext returns the span start configuration options contained in the given context.
 // If no configuration is found, nil is returned.
-func spanOptionsFromContext(ctx context.Context) ([]ddtrace.StartSpanOption, bool) {
+func spanOptionsFromContext(ctx context.Context) ([]tracer.StartSpanOption, bool) {
 	if ctx == nil {
 		return nil, false
 	}
 	v := ctx.Value(startOptsKey)
-	if s, ok := v.([]ddtrace.StartSpanOption); ok {
+	if s, ok := v.([]tracer.StartSpanOption); ok {
 		return s, true
 	}
 	return nil, false
-}
-
-// withContext associates the ctx with the span.
-func withInnerOptions(opts ...ddtrace.StartSpanOption) ddtrace.StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		for _, fn := range opts {
-			fn(cfg)
-		}
-	}
 }
