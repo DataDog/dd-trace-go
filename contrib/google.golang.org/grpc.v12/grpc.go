@@ -59,9 +59,9 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.Tag(ext.RPCSystem, "grpc"),
-		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
-		tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
-		tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
+		tracer.Tag(ext.RPCService, rpcTags.Service),
+		tracer.Tag(ext.RPCMethod, rpcTags.Method),
+		tracer.Tag(ext.GRPCPackage, rpcTags.Package),
 		tracer.Tag(ext.GRPCFullMethod, method),
 		tracer.Tag(ext.GRPCKind, "unary"),
 	}
@@ -95,9 +95,9 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		spanopts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.RPCSystem, "grpc"),
-			tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
-			tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
-			tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
+			tracer.Tag(ext.RPCService, rpcTags.Service),
+			tracer.Tag(ext.RPCMethod, rpcTags.Method),
+			tracer.Tag(ext.GRPCPackage, rpcTags.Package),
 			tracer.Tag(ext.GRPCFullMethod, method),
 			tracer.Tag(ext.GRPCKind, "unary"),
 		}

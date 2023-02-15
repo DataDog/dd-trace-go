@@ -7,8 +7,6 @@ package grpcutil
 
 import (
 	"testing"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func TestExtractTags(t *testing.T) {
@@ -41,22 +39,22 @@ func TestExtractTags(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			tags := ExtractRPCTags(tc.Path)
-			if tags[ext.RPCService] != tc.Service {
-				t.Errorf("Service %s != %s", tags[ext.RPCService], tc.Service)
+			if tags.Service != tc.Service {
+				t.Errorf("Service %s != %s", tags.Service, tc.Service)
 			} else {
-				t.Logf("Service %s == %s", tags[ext.RPCService], tc.Service)
+				t.Logf("Service %s == %s", tags.Service, tc.Service)
 			}
 
-			if tags[ext.RPCMethod] != tc.Method {
-				t.Errorf("Method %s != %s", tags[ext.RPCMethod], tc.Method)
+			if tags.Method != tc.Method {
+				t.Errorf("Method %s != %s", tags.Method, tc.Method)
 			} else {
-				t.Logf("Method %s == %s", tags[ext.RPCMethod], tc.Method)
+				t.Logf("Method %s == %s", tags.Method, tc.Method)
 			}
 
-			if tags[ext.GRPCPackage] != tc.Package {
-				t.Errorf("Package %s != %s", tags[ext.RPCService], tc.Package)
+			if tags.Package != tc.Package {
+				t.Errorf("Package %s != %s", tags.Package, tc.Package)
 			} else {
-				t.Logf("Package %s == %s", tags[ext.RPCService], tc.Package)
+				t.Logf("Package %s == %s", tags.Package, tc.Package)
 			}
 		})
 	}
