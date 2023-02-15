@@ -7,7 +7,6 @@ package grpc
 
 // Tags used for gRPC
 const (
-	tagMethodName     = "grpc.method.name"
 	tagMetadataPrefix = "grpc.metadata."
 	tagRequest        = "grpc.request"
 )
