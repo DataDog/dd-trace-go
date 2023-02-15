@@ -6,8 +6,9 @@
 package grpcutil
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func TestExtractTags(t *testing.T) {

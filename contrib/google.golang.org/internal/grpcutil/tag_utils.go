@@ -5,8 +5,9 @@
 
 package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 // ExtractRPCTags will assign the proper tag values for method, service, package according to otel given a full method
