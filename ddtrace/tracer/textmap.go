@@ -694,6 +694,7 @@ var (
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
+	b.Grow(128)
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
