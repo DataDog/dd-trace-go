@@ -51,7 +51,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startSpanFromContext(ctx context.Context, method, service string, rate float64) (ddtrace.Span, context.Context) {
-	rpcTags := extractRPCTags(method)
+	rpcTags := grpcutil.ExtractRPCTags(method)
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
@@ -92,7 +92,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			span ddtrace.Span
 			p    peer.Peer
 		)
-		rpcTags := extractRPCTags(method)
+		rpcTags := grpcutil.ExtractRPCTags(method)
 		spanopts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.AppTypeRPC),
 			tracer.Tag(ext.RPCSystem, "grpc"),
@@ -131,34 +131,4 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		span.Finish(tracer.WithError(err))
 		return err
 	}
-}
-
-// extractRPCTags will assign the proper tag values for method, service, package according to otel given a full method
-func extractRPCTags(fullMethod string) map[string]string {
-
-	//Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
-
-	tags := map[string]string{
-		ext.RPCMethod:   "",
-		ext.RPCService:  "",
-		ext.GRPCPackage: "",
-	}
-
-	//Always remove leading slash
-	fullMethod = strings.TrimPrefix(fullMethod, "/")
-
-	//Split by slash and get everything after last slash as method
-	slashSplit := strings.SplitAfter(fullMethod, "/")
-	tags[ext.RPCMethod] = slashSplit[len(slashSplit)-1]
-
-	//Join everything before last slash and remove last slash as service
-	tags[ext.RPCService] = strings.TrimSuffix(strings.Join(slashSplit[:len(slashSplit)-1], ""), "/")
-
-	//Split by period and see if package exists if period is found
-	if strings.Contains(tags[ext.RPCService], ".") {
-		dotSplit := strings.SplitAfter(tags[ext.RPCService], ".")
-		tags[ext.GRPCPackage] = strings.TrimSuffix(strings.Join(dotSplit[:len(dotSplit)-1], ""), ".")
-	}
-
-	return tags
 }
