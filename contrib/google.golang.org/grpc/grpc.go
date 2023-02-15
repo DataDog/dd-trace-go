@@ -56,7 +56,7 @@ func startSpanFromContext(
 		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
 		tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
 		tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
-		tracer.Tag(ext.GRPCPath, method),
+		tracer.Tag(ext.GRPCFullMethod, method),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

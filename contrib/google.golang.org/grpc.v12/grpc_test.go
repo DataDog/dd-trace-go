@@ -70,7 +70,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag(ext.RPCMethod), "Ping")
 	assert.Equal(clientSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(clientSpan.Tag(ext.GRPCPackage), "grpc")
-	assert.Equal(clientSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+	assert.Equal(clientSpan.Tag(ext.GRPCFullMethod), "/grpc.Fixture/Ping")
 	assert.Equal(clientSpan.Tag(ext.GRPCKind), "unary")
 
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -83,7 +83,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.RPCMethod), "Ping")
 	assert.Equal(serverSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
-	assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+	assert.Equal(serverSpan.Tag(ext.GRPCFullMethod), "/grpc.Fixture/Ping")
 	assert.Equal(serverSpan.Tag(ext.GRPCKind), "unary")
 }
 
@@ -136,7 +136,7 @@ func TestChild(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.RPCMethod), "Ping")
 	assert.Equal(serverSpan.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(serverSpan.Tag(ext.GRPCPackage), "grpc")
-	assert.Equal(serverSpan.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+	assert.Equal(serverSpan.Tag(ext.GRPCFullMethod), "/grpc.Fixture/Ping")
 	assert.Equal(serverSpan.Tag(ext.GRPCKind), "unary")
 }
 
@@ -173,7 +173,7 @@ func TestPass(t *testing.T) {
 	assert.Equal(s.Tag(ext.RPCMethod), "Ping")
 	assert.Equal(s.Tag(ext.GRPCStatus), codes.OK.String())
 	assert.Equal(s.Tag(ext.GRPCPackage), "grpc")
-	assert.Equal(s.Tag(ext.GRPCPath), "/grpc.Fixture/Ping")
+	assert.Equal(s.Tag(ext.GRPCFullMethod), "/grpc.Fixture/Ping")
 	assert.Equal(s.Tag(ext.GRPCKind), "unary")
 }
 

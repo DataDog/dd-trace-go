@@ -131,8 +131,8 @@ const (
 	// GRPCStatus is the numeric status code of the gRPC request
 	GRPCStatus = "rpc.grpc.status_code"
 
-	// GRPCPath is the numeric status code of the gRPC request
-	GRPCPath = "rpc.grpc.path"
+	// GRPCFullMethod is the numeric status code of the gRPC request
+	GRPCFullMethod = "rpc.grpc.full_method"
 
 	// GRPCPackage is the numeric status code of the gRPC request
 	GRPCPackage = "rpc.grpc.package"

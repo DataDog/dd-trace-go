@@ -63,7 +63,7 @@ func startSpanFromContext(ctx context.Context, method, service string, rate floa
 		tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
 		tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
 		tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
-		tracer.Tag(ext.GRPCPath, method),
+		tracer.Tag(ext.GRPCFullMethod, method),
 		tracer.Tag(ext.GRPCKind, "unary"),
 	}
 	if !math.IsNaN(rate) {
@@ -99,7 +99,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(ext.RPCService, rpcTags[ext.RPCService]),
 			tracer.Tag(ext.RPCMethod, rpcTags[ext.RPCMethod]),
 			tracer.Tag(ext.GRPCPackage, rpcTags[ext.GRPCPackage]),
-			tracer.Tag(ext.GRPCPath, method),
+			tracer.Tag(ext.GRPCFullMethod, method),
 			tracer.Tag(ext.GRPCKind, "unary"),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
