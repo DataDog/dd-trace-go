@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// RPCTags holds the values for various RPC tags to be set in other instances
 type RPCTags struct {
 	Method  string
 	Service string
