@@ -147,10 +147,9 @@ func TestSpanEnd(t *testing.T) {
 // This test verifies that setting the status of a span
 // behaves accordingly to the Otel API spec:
 // https://opentelemetry.io/docs/reference/specification/trace/api/#set-
-//  1. the status code of a span defaults to `Unset`.
-//  2. attempts to set the value of `Unset` is ignored
-//  3. description must only be used with an `Error` value
-//  4. setting the status to `Ok` is final and will override any
+//  1. attempts to set the value of `Unset` is ignored
+//  2. description must only be used with an `Error` value
+//  3. setting the status to `Ok` is final and will override any
 //     any prior or future status values
 func TestSpanSetStatus(t *testing.T) {
 	assert := assert.New(t)
@@ -173,44 +172,43 @@ func TestSpanSetStatus(t *testing.T) {
 			ignoredMsg:  "unset_description",
 		},
 	}
-
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	for _, test := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		t.Run(fmt.Sprintf("Setting Code: %d", test.code), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 
-		var sp oteltrace.Span
-		testStatus := func() {
-			sp.End()
-
-			tracer.Flush()
-			payload, err := waitForPayload(ctx, payloads)
-			if err != nil {
-				t.Fatalf(err.Error())
+			var sp oteltrace.Span
+			testStatus := func() {
+				sp.End()
+				tracer.Flush()
+				payload, err := waitForPayload(ctx, payloads)
+				if err != nil {
+					t.Fatalf(err.Error())
+				}
+				// An error description is set IFF the span has an error
+				// status code value. Description related to any other code
+				// is ignored.
+				if test.code == codes.Error {
+					assert.Contains(payload, test.msg)
+				} else {
+					assert.NotContains(payload, test.msg)
+				}
+				assert.NotContains(payload, test.ignoredCode)
 			}
-			// An error description is set IFF the span has an error
-			// status code value. Description related to any other code
-			// is ignored.
-			if test.code == codes.Error {
-				assert.Contains(payload, test.msg)
-			} else {
-				assert.NotContains(payload, test.msg)
-			}
-			assert.NotContains(payload, test.ignoredCode)
-		}
-		_, sp = tr.Start(context.Background(), "test")
-		sp.SetStatus(test.code, test.msg)
-		sp.SetStatus(test.ignoredCode, test.ignoredMsg)
-		testStatus()
+			_, sp = tr.Start(context.Background(), "test")
+			sp.SetStatus(test.code, test.msg)
+			sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+			testStatus()
 
-		_, sp = tr.Start(context.Background(), "test")
-		sp.SetStatus(test.code, test.msg)
-		sp.SetStatus(test.ignoredCode, test.ignoredMsg)
-		testStatus()
-
-		cancel()
+			_, sp = tr.Start(context.Background(), "test")
+			sp.SetStatus(test.code, test.msg)
+			sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+			testStatus()
+		})
 	}
 }
 
