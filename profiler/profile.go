@@ -13,6 +13,7 @@ import (
 	"io"
 	"runtime"
 	"runtime/trace"
+	"sync"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -194,17 +195,61 @@ var profileTypes = map[ProfileType]profileType{
 				p.lastTrace = time.Now()
 			}()
 			buf := new(bytes.Buffer)
-			if err := trace.Start(buf); err != nil {
+			lt := &limitedTraceCollector{
+				w:     buf,
+				limit: p.cfg.traceConfig.Limit,
+			}
+			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
 			// TODO: randomize where we collect within the current
 			// profile collection cycle, so we're not biased toward
 			// stuff that happens at the start of the cycle.
 			p.interruptibleSleep(p.cfg.traceConfig.Duration)
-			trace.Stop()
+			lt.Stop()
 			return buf.Bytes(), nil
 		},
 	},
+}
+
+// defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
+// of an executiont trace.
+//
+// TODO: Pick something reasonable
+const defaultExecutionTraceSizeLimit = 10 << 20
+
+type limitedTraceCollector struct {
+	w       io.Writer
+	limit   int
+	written int
+	// stopped is true if we have already stopped tracing. Since stopping
+	// tracing incurs a STW pause, we'd like to only do it once.
+	stop sync.Once
+}
+
+// Write calls the underlying writer's Write method, and stops tracing if the
+// limit has been reached.
+func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
+	n, err = l.w.Write(p)
+	if err != nil {
+		// TODO: still count n against the limit?
+		return
+	}
+	l.written += n
+	if l.limit > 0 && l.written >= l.limit {
+		// We can't stop tracing within this method, because trace.Stop
+		// won't return until all pending events are written, which
+		// requires calling this function, meaning we'll deadlock.
+		go l.Stop()
+	}
+	return
+}
+
+// Stop stops tracing
+func (l *limitedTraceCollector) Stop() {
+	l.stop.Do(func() {
+		trace.Stop()
+	})
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {

@@ -313,6 +313,7 @@ func defaultConfig() (*config, error) {
 	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
 	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
 	c.traceConfig.Duration = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_DURATION", 1*time.Second)
+	c.traceConfig.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
 	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Duration == 0) {
 		log.Warn("Invalid execution trace config, enabled is true but duration or frequency is 0. Disabling execution trace.")
 		c.traceEnabled = false
@@ -548,4 +549,8 @@ type executionTraceConfig struct {
 	Duration time.Duration
 	// Period is the amount of time between traces.
 	Period time.Duration
+	// Limit is the desired upper bound, in bytes, of a collected trace. If
+	// zero, there is no size limit. Traces may be slightly larger than this
+	// limit due to flushing pending buffers at the end of tracing.
+	Limit int
 }
