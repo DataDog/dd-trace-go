@@ -145,10 +145,11 @@ func TestSpanEnd(t *testing.T) {
 }
 
 // This test verifies that setting the status of a span
-// behaves accordingly to the Otel API spec:
-// https://opentelemetry.io/docs/reference/specification/trace/api/#set-
-//  1. attempts to set the value of `Unset` is ignored
-//  2. description must only be used with an `Error` value
+// behaves accordingly to the Otel API spec
+// (https://opentelemetry.io/docs/reference/specification/trace/api/#set-status)
+// By checking the following:
+//  1. attempts to set the value of `Unset` are ignored
+//  2. description must only be used with `Error` value
 //  3. setting the status to `Ok` is final and will override any
 //     any prior or future status values
 func TestSpanSetStatus(t *testing.T) {
@@ -190,8 +191,8 @@ func TestSpanSetStatus(t *testing.T) {
 					t.Fatalf(err.Error())
 				}
 				// An error description is set IFF the span has an error
-				// status code value. Description related to any other code
-				// is ignored.
+				// status code value. Messages related to any other status code
+				// are ignored.
 				if test.code == codes.Error {
 					assert.Contains(payload, test.msg)
 				} else {
