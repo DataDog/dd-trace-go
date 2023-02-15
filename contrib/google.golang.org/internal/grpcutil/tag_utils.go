@@ -4,6 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
+
 import (
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 // ExtractRPCTags will assign the proper tag values for method, service, package according to otel given a full method
 func ExtractRPCTags(fullMethod string) map[string]string {
 
-	//Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
+	// Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
 
 	tags := map[string]string{
 		ext.RPCMethod:   "",
