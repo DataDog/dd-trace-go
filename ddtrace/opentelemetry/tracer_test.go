@@ -106,9 +106,11 @@ func TestSpanContext(t *testing.T) {
 	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
 }
 
-const UNSET = 0
-const ERROR = 1
-const OK = 2
+const (
+	UNSET = iota
+	ERROR
+	OK
+)
 
 func TestForceFlush(t *testing.T) {
 	assert := assert.New(t)
@@ -121,6 +123,11 @@ func TestForceFlush(t *testing.T) {
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			tp, payloads, cleanup := mockTracerProvider(t)
+			defer cleanup()
+
 			flushStatus := UNSET
 			setFlushStatus := func(ok bool) {
 				if ok {
@@ -129,12 +136,6 @@ func TestForceFlush(t *testing.T) {
 					flushStatus = ERROR
 				}
 			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			tp, payloads, cleanup := mockTracerProvider(t)
-			defer cleanup()
-
 			tr := otel.Tracer("")
 			_, sp := tr.Start(context.Background(), "test_span")
 			sp.End()
@@ -158,7 +159,6 @@ func TestShutdown(t *testing.T) {
 	tr := otel.Tracer("")
 	tr.Start(context.Background(), "before_shutdown")
 	tp.Shutdown()
-
 	flushStatus := UNSET
 	setFlushStatus := func(ok bool) {
 		if ok {
