@@ -35,12 +35,14 @@ func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
 	// bonus: use sync.Once to log a debug message once if AppSec is disabled
 }
 
-// SetUser wraps tracer.SetUser().
-// On top of associating user information to spans, it performs a WAF check
-// and returns an error in case `id` matches a blocked user ID in the AppSec
-// WAF security rules. It is recommended to use this SDK whenever dealing with
-// authenticated user requests and block that request's execution in case this function
-// returns an error. See the examples for more information.
+// SetUser wraps tracer.SetUser() and extends it with user blocking.
+// On top of associating the authenticated user information to the service entry span,
+// it checks whether the given user ID is blocked or not by returning an error when it is.
+// A user ID is blocked when it is present in your denylist of users to block at https://app.datadoghq.com/security/appsec/denylist
+// When an error is returned, the caller must immediately abort its execution and the
+// request handler's. The blocking response will be automatically sent by the
+// APM tracer middleware on use according to your blocking configuration.
+// This function always returns nil when appsec is disabled and doesn't block users.
 func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption) error {
 	s, ok := tracer.SpanFromContext(ctx)
 	if !ok {
@@ -57,9 +59,10 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 
 // TrackUserLoginSuccessEvent sets a successful user login event, with the given
 // user id and optional metadata, as service entry span tags. It also calls
-// appsec.SetUser() to set the currently identified user, along with the given
-// tracer.UserMonitoringOption options. If `uid` is detected by the WAF as a suspicious
-// user, an error is returned and further requests for the same user should be blocked.
+// SetUser() to set the currently authenticated user, along with the given
+// tracer.UserMonitoringOption options. As documented in SetUser(), an
+// error is returned when the given user ID is blocked by your denylist. Cf.
+// SetUser()'s documentation for more details.
 // The service entry span is obtained through the given Go context which should
 // contain the currently running span. This function does nothing when no span
 // is found in the given Go context and logs an error message instead.
