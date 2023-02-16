@@ -20,6 +20,7 @@ type RPCTags struct {
 func ExtractRPCTags(fullMethod string) RPCTags {
 
 	// Otel definition: https://opentelemetry.io/docs/reference/specification/trace/semantic_conventions/rpc/#span-name
+	// Expected fullmethod format => $package.$service/$method
 
 	tags := RPCTags{
 		Method:  "",
@@ -27,16 +28,24 @@ func ExtractRPCTags(fullMethod string) RPCTags {
 		Package: "",
 	}
 
-	//Split by slash and get everything after last slash as method
-	slashSplit := strings.SplitAfter(fullMethod, "/")
-	tags.Method = slashSplit[len(slashSplit)-1]
+	elems := strings.Split(strings.TrimPrefix(fullMethod, "/"), "/")
+	if len(elems) < 2 { //Empty string check
+		tags.Method = ""
+		tags.Service = ""
+		tags.Package = ""
+		return tags
+	} else if len(elems) > 2 { //Improper grpc fullmethod check
+		tags.Method = "unknown"
+		tags.Service = "unknown"
+		tags.Package = "unknown"
+		return tags
+	}
 
-	//Join everything before last slash and remove last slash as service
-	tags.Service = strings.TrimSuffix(strings.Join(slashSplit[:len(slashSplit)-1], ""), "/")
+	tags.Service = elems[0]
+	tags.Method = elems[1]
 
-	//Split by period and see if package exists assuming period is found
-	if strings.Contains(tags.Service, ".") {
-		dotSplit := strings.SplitAfter(tags.Service, ".")
+	dotSplit := strings.SplitAfter(tags.Service, ".")
+	if len(dotSplit) >= 2 { //Package existence check
 		tags.Package = strings.TrimSuffix(strings.Join(dotSplit[:len(dotSplit)-1], ""), ".")
 	}
 

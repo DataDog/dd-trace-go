@@ -7,61 +7,45 @@ package grpcutil
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractTags(t *testing.T) {
 	testCases := []struct {
-		Name    string
-		Path    string
-		Service string
-		Method  string
-		Package string
+		Name       string
+		FullMethod string
+		Expected   RPCTags
 	}{
-		{"empty test",
-			"",
-			"",
-			"",
-			"",
-		},
-		{"basic test",
-			"/mypackage.myservice/mymethod",
-			"/mypackage.myservice",
-			"mymethod",
-			"/mypackage",
-		},
-		{"obscure test",
-			"/my/p/a/c.k.a.ge.my/se/r/v/ice/myme.t.h.od",
-			"/my/p/a/c.k.a.ge.my/se/r/v/ice",
-			"myme.t.h.od",
-			"/my/p/a/c.k.a.ge",
-		},
-		{"no package test",
-			"/myservice/mymethod",
-			"/myservice",
-			"mymethod",
-			"",
-		},
+		{"empty test", "",
+			RPCTags{
+				Method:  "",
+				Service: "",
+				Package: "",
+			}},
+		{"basic test", "/mypackage.myservice/mymethod",
+			RPCTags{
+				Method:  "mymethod",
+				Service: "mypackage.myservice",
+				Package: "mypackage",
+			}},
+		{"obscure test", "/my/p/a/ckage.my/se/r/v/ice/myme.t.h.od",
+			RPCTags{
+				Method:  "unknown",
+				Service: "unknown",
+				Package: "unknown",
+			}},
+		{"no package test", "/myservice/mymethod",
+			RPCTags{
+				Method:  "mymethod",
+				Service: "myservice",
+				Package: "",
+			}},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
-			tags := ExtractRPCTags(tc.Path)
-			if tags.Service != tc.Service {
-				t.Errorf("Service %s != %s", tags.Service, tc.Service)
-			} else {
-				t.Logf("Service %s == %s", tags.Service, tc.Service)
-			}
-
-			if tags.Method != tc.Method {
-				t.Errorf("Method %s != %s", tags.Method, tc.Method)
-			} else {
-				t.Logf("Method %s == %s", tags.Method, tc.Method)
-			}
-
-			if tags.Package != tc.Package {
-				t.Errorf("Package %s != %s", tags.Package, tc.Package)
-			} else {
-				t.Logf("Package %s == %s", tags.Package, tc.Package)
-			}
+			tags := ExtractRPCTags(tc.FullMethod)
+			assert.Equal(t, tc.Expected, tags)
 		})
 	}
 }
