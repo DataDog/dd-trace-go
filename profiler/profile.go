@@ -202,10 +202,7 @@ var profileTypes = map[ProfileType]profileType{
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
-			// TODO: randomize where we collect within the current
-			// profile collection cycle, so we're not biased toward
-			// stuff that happens at the start of the cycle.
-			p.interruptibleSleep(p.cfg.traceConfig.Duration)
+			p.interruptibleSleep(p.cfg.period)
 			lt.Stop()
 			return buf.Bytes(), nil
 		},
@@ -215,15 +212,20 @@ var profileTypes = map[ProfileType]profileType{
 // defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
 // of an executiont trace.
 //
-// TODO: Pick something reasonable
-const defaultExecutionTraceSizeLimit = 10 << 20
+// 5MB was selected to give reasonable latency for processing, both online and
+// using offline tools. This is a conservative estimate--we could possibly get
+// away with 10MB and still have a tolerable experience.
+const defaultExecutionTraceSizeLimit = 5 << 20
 
 type limitedTraceCollector struct {
 	w       io.Writer
 	limit   int
 	written int
-	// stopped is true if we have already stopped tracing. Since stopping
-	// tracing incurs a STW pause, we'd like to only do it once.
+	// stop is used to control stopping the execution tracer. Since stopping
+	// tracing incurs a STW pause to even attempt(*), we'd like to only do
+	// it once.
+	//
+	// *: see https://cs.opensource.google/go/go/+/refs/tags/go1.20.1:src/runtime/trace.go;l=330;drc=40ed3591829f67e7a116180aec543dd15bfcf5f9
 	stop sync.Once
 }
 
@@ -236,7 +238,7 @@ func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
 		return
 	}
 	l.written += n
-	if l.limit > 0 && l.written >= l.limit {
+	if l.written >= l.limit {
 		// We can't stop tracing within this method, because trace.Stop
 		// won't return until all pending events are written, which
 		// requires calling this function, meaning we'll deadlock.
