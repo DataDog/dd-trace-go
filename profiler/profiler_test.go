@@ -623,7 +623,7 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	done := make(chan struct{})
 	// bigMessage just forces a bunch of data to be written to the trace buffer.
 	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
-	// a trace duration of 1 second, so we should stop early.
+	// a trace duration of 2 seconds, so we should stop early.
 	bigMessage := string(make([]byte, 1024))
 	tick := time.NewTicker(3 * time.Millisecond)
 	defer tick.Stop()
@@ -646,12 +646,12 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	err := Start(
 		WithHTTPClient(client),
 		WithProfileTypes(), // just want the execution trace
-		WithPeriod(1*time.Second),
+		WithPeriod(2*time.Second),
 	)
 	require.NoError(t, err)
 	defer Stop()
 
-	const expectedSize = 200 * 1024
+	const expectedSize = 300 * 1024
 	for i := 0; i < 5; i++ {
 		m := <-got
 		if p, ok := m.attachments["go.trace"]; ok {
