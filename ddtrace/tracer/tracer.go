@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	helper "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	ddInternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -243,12 +243,17 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		}),
 		statsd: statsd,
 		telemetry: &telemetry.Client{
-			Service: c.serviceName,
-			Env:     c.env,
-			Client:  c.httpClient,
+			Namespace: telemetry.NamespaceTracers,
+			Service:   c.serviceName,
+			Env:       c.env,
+			Version:   c.version,
+			Client:    c.httpClient,
+			// TO DO (lievan) APIKey : using os.Getenv("DD_API_KEY") + error checking?
 		},
 	}
-	if !helper.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
+	// TO DO (lievan): support agentless by speccing API_KEY and setting telemetry.URL
+	// to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
+	if !ddInternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
 		t.telemetry.Disabled = true
 	}
 	u, err := url.Parse(c.agentURL.String())
@@ -292,41 +297,41 @@ func newTracer(opts ...StartOption) *tracer {
 	}()
 	t.stats.Start()
 	// Start collecting telemetry data
-	go func() {
-		t.telemetry.Start(
-			[]telemetry.Integration{},
-			[]telemetry.Configuration{
-				{Name: "debug", Value: c.debug},
-				{Name: "agent_feature_DropP0s", Value: c.agent.DropP0s},
-				{Name: "agent_feature_Stats", Value: c.agent.Stats},
-				{Name: "agent_feature_StatsdPort", Value: c.agent.StatsdPort},
-				{Name: "feature_flags", Value: c.featureFlags},
-				{Name: "log_to_stdout", Value: c.logToStdout},
-				{Name: "send_retries", Value: c.logToStdout},
-				{Name: "log_startup", Value: c.logStartup},
-				{Name: "service_name", Value: c.serviceName},
-				{Name: "universal_version", Value: c.universalVersion},
-				{Name: "app_version", Value: c.version},
-				{Name: "app_env", Value: c.env},
-				{Name: "sampler", Value: c.sampler},
-				{Name: "agent_url", Value: c.agentURL},
-				{Name: "service_mappings", Value: c.serviceMappings},
-				{Name: "global_tags", Value: c.globalTags},
-				{Name: "transport", Value: c.transport},
-				{Name: "propagator", Value: c.propagator},
-				//{Name: "http_client", Value: c.httpClient},
-				{Name: "hostname", Value: c.hostname},
-				{Name: "runtime_metrics", Value: c.runtimeMetrics},
-				{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-				{Name: "span_rules", Value: c.spanRules},
-				{Name: "trace_rules", Value: c.traceRules},
-				{Name: "no_debug_stack", Value: c.noDebugStack},
-				{Name: "profiler_hotspots", Value: c.profilerHotspots},
-				{Name: "profiler_endpoints", Value: c.profilerEndpoints},
-				{Name: "tracing_enabled", Value: c.enabled},
-			},
-		)
-	}()
+	t.telemetry.Start(
+		[]telemetry.Integration{},
+		[]telemetry.Configuration{
+			// TO DO (lievan): which fields are unnecessary / how to clean this up?
+			{Name: "debug", Value: c.debug},
+			{Name: "agent_feature_DropP0s", Value: c.agent.DropP0s},
+			{Name: "agent_feature_Stats", Value: c.agent.Stats},
+			{Name: "agent_feature_StatsdPort", Value: c.agent.StatsdPort},
+			{Name: "feature_flags", Value: c.featureFlags},
+			{Name: "lambda_mode", Value: c.logToStdout},
+			{Name: "send_retries", Value: c.sendRetries},
+			{Name: "log_startup", Value: c.logStartup},
+			{Name: "service_name", Value: c.serviceName},
+			{Name: "universal_version", Value: c.universalVersion},
+			{Name: "app_version", Value: c.version},
+			{Name: "app_env", Value: c.env},
+			{Name: "sampler", Value: c.sampler},
+			{Name: "agent_url", Value: c.agentURL},
+			{Name: "service_mappings", Value: c.serviceMappings},
+			{Name: "global_tags", Value: c.globalTags},
+			{Name: "transport", Value: c.transport},
+			{Name: "propagator", Value: c.propagator},
+			//{Name: "http_client", Value: c.httpClient},
+			{Name: "hostname", Value: c.hostname},
+			{Name: "runtime_metrics", Value: c.runtimeMetrics},
+			{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
+			{Name: "span_rules", Value: c.spanRules},
+			{Name: "trace_rules", Value: c.traceRules},
+			{Name: "no_debug_stack", Value: c.noDebugStack},
+			{Name: "profiler_hotspots", Value: c.profilerHotspots},
+			{Name: "profiler_endpoints", Value: c.profilerEndpoints},
+			{Name: "tracing_enabled", Value: c.enabled},
+		},
+	)
+
 	return t
 }
 
@@ -629,6 +634,7 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
+	t.telemetry.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

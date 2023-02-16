@@ -2169,16 +2169,20 @@ func TestUserMonitoring(t *testing.T) {
 }
 
 func TestTelemetryEnabled(t *testing.T) {
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+
+	// TO DO (lievan): most of this code is copied and repeated from
+	// profiler/profiler_test.go how to refactor and put the
+	// testing code in one place?
 	received := make(chan *telemetry.AppStarted, 1)
 	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(r.URL.Path)
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
 		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
 			return
 		}
-
 		var body telemetry.Request
 		body.Payload = new(telemetry.AppStarted)
 		err := json.NewDecoder(r.Body).Decode(&body)
@@ -2192,24 +2196,33 @@ func TestTelemetryEnabled(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer server.Close()
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
 
-	Start(WithHTTPClient(client))
-
+	Start(
+		WithHTTPClient(client),
+		WithDebugStack(false),
+		WithService("test-serv"),
+		WithEnv("test-env"),
+		WithRuntimeMetrics(),
+	)
 	defer Stop()
 
 	payload := <-received
-
-	for _, kv := range payload.Integrations {
-		fmt.Println(kv)
+	check := func(key string, expected interface{}) {
+		for _, kv := range payload.Configuration {
+			if kv.Name == key {
+				if kv.Value != expected {
+					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
+				}
+				return
+			}
+		}
+		t.Errorf("missing configuration %s", key)
 	}
-	// for _, kv := range payload.Configuration {
-	// 	fmt.Println(kv)
-	// }
-	for _, kv := range payload.Dependencies {
-		fmt.Println(kv)
-	}
 
+	check("no_debug_stack", true)
+	check("service_name", "test-serv")
+	check("app_env", "test-env")
+	check("runtime_metrics", true)
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
