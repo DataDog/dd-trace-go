@@ -554,7 +554,7 @@ func TestExecutionTrace(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
 		}
 	}
