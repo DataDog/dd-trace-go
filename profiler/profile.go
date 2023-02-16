@@ -215,7 +215,7 @@ var profileTypes = map[ProfileType]profileType{
 // 5MB was selected to give reasonable latency for processing, both online and
 // using offline tools. This is a conservative estimate--we could possibly get
 // away with 10MB and still have a tolerable experience.
-const defaultExecutionTraceSizeLimit = 5 << 20
+const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
 
 type limitedTraceCollector struct {
 	w       io.Writer
