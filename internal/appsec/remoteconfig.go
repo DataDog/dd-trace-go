@@ -238,6 +238,7 @@ func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
 	}
 	a.registerRCProduct(rc.ProductASMData)
 	a.registerRCCapability(remoteconfig.ASMIPBlocking)
+	a.registerRCCapability(remoteconfig.ASMUserBlocking)
 	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
 	return nil
 }
