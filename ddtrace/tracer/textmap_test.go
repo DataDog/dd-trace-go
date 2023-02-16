@@ -1835,8 +1835,6 @@ func FuzzParseTraceparent(f *testing.F) {
 		if parseTraceparent(ctx, header) != nil {
 			t.Skipf("Error parsing parent")
 		}
-		parsedTraceID := ctx.trace.propagatingTags[w3cTraceIDTag]
-		parsedSpanID := ctx.spanID
 		parsedSamplingPriority, ok := ctx.samplingPriority()
 		if !ok {
 			t.Skipf("Error retrieving sampling priority")
@@ -1849,17 +1847,17 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
-		if parsedTraceID != strings.ToLower(traceID) {
+		if gotTraceId := ctx.TraceID128(); gotTraceId != strings.ToLower(traceID) {
 			t.Fatalf(`Inconsistent trace id parsing:
-				got: %s
-				wanted: %s
-				for header of: %s`, parsedTraceID, traceID, header)
+					got: %s
+					wanted: %s
+					for header of: %s`, gotTraceId, traceID, header)
 		}
-		if parsedSpanID != expectedSpanID {
+		if ctx.spanID != expectedSpanID {
 			t.Fatalf(`Inconsistent span id parsing:
 				got: %d
 				wanted: %d
-				for header of: %s`, parsedSpanID, expectedSpanID, header)
+				for header of: %s`, ctx.spanID, expectedSpanID, header)
 		}
 		if parsedSamplingPriority != int(expectedFlag)&0x1 {
 			t.Fatalf(`Inconsistent flag parsing:
