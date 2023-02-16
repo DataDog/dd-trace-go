@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -2244,4 +2245,31 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 			span.Finish()
 		}
 	})
+}
+
+func TestExecutionTraceSpanTagged(t *testing.T) {
+	if rt.IsEnabled() {
+		t.Skip("runtime execution tracing is already enabled")
+	}
+
+	if err := rt.Start(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure we unconditionally stop tracing. It's safe to call this
+	// multiple times.
+	defer rt.Stop()
+
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	tracedSpan := tracer.StartSpan("traced").(*span)
+	tracedSpan.Finish()
+
+	rt.Stop()
+
+	untracedSpan := tracer.StartSpan("untraced").(*span)
+	untracedSpan.Finish()
+
+	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
+	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }

@@ -609,6 +609,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
+	span.SetTag("go_execution_traced", "yes")
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
 	taskName := span.Resource

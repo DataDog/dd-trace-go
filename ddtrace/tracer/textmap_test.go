@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1639,4 +1640,208 @@ func TestNonePropagator(t *testing.T) {
 
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
+}
+
+func BenchmarkInjectDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "datadog")
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+	for i := 0; i < 100; i++ {
+		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
+	}
+	dst := map[string]string{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkInjectW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "tracecontext")
+
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+
+	ctx := root.Context().(*spanContext)
+
+	setPropagatingTag(ctx, w3cTraceIDTag,
+		"4bf92f3577b34da6a3ce929d0e0e4736")
+	setPropagatingTag(ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
+	for i := 0; i < 100; i++ {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
+		setPropagatingTag(ctx, k, v)
+	}
+	dst := map[string]string{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkExtractDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1123123132131312313123123",
+		DefaultParentIDHeader: "1212321131231312312312312",
+		DefaultPriorityHeader: "-1",
+		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
+								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
+func FuzzMarshalPropagatingTags(f *testing.F) {
+	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
+	f.Fuzz(func(t *testing.T, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		pConfig := PropagatorConfig{MaxTagsHeaderLen: 128}
+		propagator := propagator{&pConfig}
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		for key, val := range tags {
+			sendCtx.trace.setPropagatingTag(key, val)
+		}
+		marshal := propagator.marshalPropagatingTags(sendCtx)
+		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
+			t.Skipf("Skipping invalid tags")
+		}
+		unmarshalPropagatingTags(recvCtx, marshal)
+		marshaled := sendCtx.trace.propagatingTags
+		unmarshaled := recvCtx.trace.propagatingTags
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
+		}
+	})
+}
+
+func FuzzComposeTracestate(f *testing.F) {
+	testCases := []struct {
+		priority                         int
+		k1, v1, k2, v2, k3, v3, oldState string
+	}{
+		{priority: 1,
+			k1: "keyOne", v1: "json",
+			k2: "KeyTwo", v2: "123123",
+			k3: "table", v3: "chair",
+			oldState: "dd=s:-2;o:synthetics___web"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
+	}
+	f.Fuzz(func(t *testing.T, priority int, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string, oldState string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		totalLen := 0
+		for key, val := range tags {
+			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
+			v := valueRgx.ReplaceAllString(val, "_")
+			if strings.ContainsAny(k, ":;") {
+				t.Skipf("Skipping invalid tags")
+			}
+			if strings.HasSuffix(v, " ") {
+				t.Skipf("Skipping invalid tags")
+			}
+			totalLen += (len(k) + len(v))
+			if totalLen > 128 {
+				break
+			}
+			sendCtx.trace.setPropagatingTag(k, v)
+		}
+		if len(strings.Split(strings.Trim(oldState, " \t"), ",")) > 31 {
+			t.Skipf("Skipping invalid tags")
+		}
+		traceState := composeTracestate(sendCtx, priority, oldState)
+		parseTracestate(recvCtx, traceState)
+		setPropagatingTag(sendCtx, tracestateHeader, traceState)
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf(`Inconsistent composing/parsing:
+			pre compose: (%q)
+			is different from
+			parsed: (%q)
+			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
+				recvCtx.trace.propagatingTags,
+				traceState)
+		}
+	})
+}
+
+func FuzzParseTraceparent(f *testing.F) {
+	testCases := []struct {
+		version, traceID, spanID, flags string
+	}{
+		{"00", "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+		{"01", "00000000000000001111111111111111", "9565876494606882", "02"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.version, tc.traceID, tc.spanID, tc.flags)
+	}
+	f.Fuzz(func(t *testing.T, version string, traceID string,
+		spanID string, flags string) {
+
+		ctx := new(spanContext)
+		ctx.trace = newTrace()
+
+		header := strings.Join([]string{version, traceID, spanID, flags}, "-")
+
+		if parseTraceparent(ctx, header) != nil {
+			t.Skipf("Error parsing parent")
+		}
+		parsedTraceID := ctx.trace.propagatingTags[w3cTraceIDTag]
+		parsedSpanID := ctx.spanID
+		parsedSamplingPriority, ok := ctx.samplingPriority()
+		if !ok {
+			t.Skipf("Error retrieving sampling priority")
+		}
+		expectedSpanID, err := strconv.ParseUint(spanID, 16, 64)
+		if err != nil {
+			t.Skipf("Error parsing span ID")
+		}
+		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		if err != nil {
+			t.Skipf("Error parsing flag")
+		}
+		if parsedTraceID != strings.ToLower(traceID) {
+			t.Fatalf(`Inconsistent trace id parsing:
+				got: %s
+				wanted: %s
+				for header of: %s`, parsedTraceID, traceID, header)
+		}
+		if parsedSpanID != expectedSpanID {
+			t.Fatalf(`Inconsistent span id parsing:
+				got: %d
+				wanted: %d
+				for header of: %s`, parsedSpanID, expectedSpanID, header)
+		}
+		if parsedSamplingPriority != int(expectedFlag)&0x1 {
+			t.Fatalf(`Inconsistent flag parsing:
+					got: %d
+					wanted: %d
+					for header of: %s`, parsedSamplingPriority, int(expectedFlag)&0x1, header)
+		}
+	})
 }
