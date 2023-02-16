@@ -534,7 +534,6 @@ func TestExecutionTrace(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "50ms")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(CPUProfile),
@@ -641,7 +640,6 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "1s")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
 	err := Start(
 		WithHTTPClient(client),
