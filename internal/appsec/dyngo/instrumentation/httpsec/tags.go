@@ -24,9 +24,6 @@ const (
 	// multipleIPHeadersTag sets the multiple ip header tag used internally to tell the backend an error occurred when
 	// retrieving an HTTP request client IP.
 	multipleIPHeadersTag = "_dd.multiple-ip-headers"
-
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
 )
 
 var (
