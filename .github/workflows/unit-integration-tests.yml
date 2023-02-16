@@ -8,19 +8,6 @@ on:
         type: string
 
 jobs:
-  milestone:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - name: Milestone
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          go run checkmilestone.go
   copyright:
     runs-on: ubuntu-latest
     steps:
