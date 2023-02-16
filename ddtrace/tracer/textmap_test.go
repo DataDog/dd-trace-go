@@ -989,14 +989,10 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
 					},
-					fullTraceID: "00000000000000001111111111111111",
-					traceID:     1229782938247303441,
-					spanID:      2459565876494606882,
-					priority:    1,
-					origin:      "=_=",
+					out:    []uint64{1229782938247303441, 2459565876494606882, 1}, // tracestate priority takes precedence
+					origin: "=_=",
 					propagatingTags: map[string]string{
 						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
-						"w3cTraceID":   "00000000000000001111111111111111",
 						"_dd.p.dm":     "-4",
 						"_dd.p.usr.id": "baz64==",
 					},
@@ -1358,15 +1354,15 @@ func TestEnvVars(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "tracecontext,datadog")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		var tests = []struct {
-			outMap TextMapCarrier
-			inMap  TextMapCarrier
+			outHeaders TextMapCarrier
+			inHeaders  TextMapCarrier
 		}{
 			{
-				outMap: TextMapCarrier{
+				outHeaders: TextMapCarrier{
 					traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
 					tracestateHeader:  "dd=s:-2;o:test.origin",
 				},
-				inMap: TextMapCarrier{
+				inHeaders: TextMapCarrier{
 					DefaultTraceIDHeader:  "123456789",
 					DefaultParentIDHeader: "987654321",
 					DefaultPriorityHeader: "-2",
@@ -1374,58 +1370,25 @@ func TestEnvVars(t *testing.T) {
 				},
 			},
 			{
-				outMap: TextMapCarrier{
+				outHeaders: TextMapCarrier{
 					traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
 					tracestateHeader:  "dd=s:-2;o:synthetics___web",
 				},
-				inMap: TextMapCarrier{
+				inHeaders: TextMapCarrier{
 					DefaultTraceIDHeader:  "123456789",
 					DefaultParentIDHeader: "987654321",
 					DefaultPriorityHeader: "-2",
-					originHeader:          "synthetics;,=web",
+					originHeader:          "synthetics;,~web",
 				},
 			},
 		}
-		for _, testEnv := range testEnvs {
-			for k, v := range testEnv {
-				t.Setenv(k, v)
-			}
-			var tests = []struct {
-				outHeaders TextMapCarrier
-				inHeaders  TextMapCarrier
-			}{
-				{
-					outHeaders: TextMapCarrier{
-						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
-						tracestateHeader:  "dd=s:-2;o:test.origin",
-					},
-					inHeaders: TextMapCarrier{
-						DefaultTraceIDHeader:  "123456789",
-						DefaultParentIDHeader: "987654321",
-						DefaultPriorityHeader: "-2",
-						originHeader:          "test.origin",
-					},
-				},
-				{
-					outHeaders: TextMapCarrier{
-						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
-						tracestateHeader:  "dd=s:-2;o:synthetics___web",
-					},
-					inHeaders: TextMapCarrier{
-						DefaultTraceIDHeader:  "123456789",
-						DefaultParentIDHeader: "987654321",
-						DefaultPriorityHeader: "-2",
-						originHeader:          "synthetics;,~web",
-					},
-				},
-			}
-			for i, test := range tests {
-				t.Run(fmt.Sprintf("#%d with env=%q", i, testEnv), func(t *testing.T) {
-					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
-					defer tracer.Stop()
-					assert := assert.New(t)
-					ctx, err := tracer.Extract(test.inHeaders)
-					assert.Nil(err)
+		for i, tc := range tests {
+			t.Run(fmt.Sprintf("#%d", i), func(t *testing.T) {
+				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				defer tracer.Stop()
+				assert := assert.New(t)
+				ctx, err := tracer.Extract(tc.inHeaders)
+				assert.Nil(err)
 
 				root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
 				defer root.Finish()
@@ -1435,8 +1398,8 @@ func TestEnvVars(t *testing.T) {
 
 				assert.True(ok)
 				assert.Nil(err)
-				checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
-				checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
+				checkSameElements(assert, tc.outHeaders[traceparentHeader], headers[traceparentHeader])
+				checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
 				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 				assert.LessOrEqual(len(ddTag), 256)
 			})
