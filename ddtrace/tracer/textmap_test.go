@@ -1867,3 +1867,10 @@ func FuzzParseTraceparent(f *testing.F) {
 		}
 	})
 }
+
+func FuzzExtractTraceID128(f *testing.F) {
+	f.Fuzz(func(t *testing.T, v string) {
+		ctx := new(spanContext)
+		extractTraceID128(ctx, v) // make sure it doesn't panic
+	})
+}
