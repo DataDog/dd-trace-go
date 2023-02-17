@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -250,19 +251,25 @@ func TestCustomTransport(t *testing.T) {
 // hitCounter is used to reduce flakiness of (TestWithHTTPClient, TestWithUDS) by clearly defining and waiting
 // for an expected number of requests the tracer client will receive, and failing the test if this goal is
 // not reached.
-func hitCounter(ctx context.Context, t *testing.T, expectedHits int) (counter http.HandlerFunc, waiter func()) {
-	received := make(chan struct{})
+func hitCounter(ctx context.Context, expectedHits int) (counter http.HandlerFunc, waiter func() ([]string, error)) {
+	received := make(chan []string)
+	requestPaths := []string{}
 	var hits int
+	var mu sync.Mutex
 	return func(_ http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			defer mu.Unlock()
+			requestPaths = append(requestPaths, r.URL.Path)
 			hits++
 			if hits == expectedHits {
-				received <- struct{}{}
+				received <- requestPaths
 			}
-		}, func() {
+		}, func() (requestPaths []string, err error) {
 			select {
 			case <-ctx.Done():
-				t.Fatalf("Time out: waiting on test server to receive (%d) hits", expectedHits)
-			case <-received:
+				return nil, fmt.Errorf("Time out: waiting on test server to receive (%d) hits", expectedHits)
+			case requestPaths := <-received:
+				return requestPaths, nil
 			}
 		}
 }
@@ -275,7 +282,7 @@ func TestWithHTTPClient(t *testing.T) {
 	defer cancel()
 
 	expectedReqs := 3
-	countReqs, waitForReqs := hitCounter(ctx, t, expectedReqs)
+	countReqs, waitForReqs := hitCounter(ctx, expectedReqs)
 
 	srv := httptest.NewServer(countReqs)
 	defer srv.Close()
@@ -283,7 +290,6 @@ func TestWithHTTPClient(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	c := &http.Client{}
-	rt := wrapRecordingRoundTripper(c)
 	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
 	defer trc.Stop()
 
@@ -291,13 +297,14 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
-
-	waitForReqs()
-
-	assert.Len(rt.reqs, 3)
-	assert.Contains(rt.reqs[0].URL.Path, "/info")
-	assert.Contains(rt.reqs[1].URL.Path, "/traces")
-	assert.Contains(rt.reqs[2].URL.Path, "/apmtelemetry")
+	reqs, err := waitForReqs()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Len(reqs, expectedReqs)
+	assert.Contains(reqs[0], "/info")
+	assert.Contains(reqs[1], "/traces")
+	assert.Contains(reqs[2], "/apmtelemetry")
 }
 
 func TestWithUDS(t *testing.T) {
@@ -319,14 +326,13 @@ func TestWithUDS(t *testing.T) {
 	}
 
 	expectedReqs := 3
-	countHits, waitForReqs := hitCounter(ctx, t, expectedReqs)
+	countHits, waitForReqs := hitCounter(ctx, expectedReqs)
 
 	srv := http.Server{Handler: countHits}
 	go srv.Serve(unixListener)
 	defer srv.Close()
 
 	trc := newTracer(WithUDS(udsPath))
-	rt := wrapRecordingRoundTripper(trc.config.httpClient)
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))
@@ -334,10 +340,9 @@ func TestWithUDS(t *testing.T) {
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
 
-	waitForReqs()
-
-	// There are 3 requests, but one happens on tracer startup before we wrap the round tripper.
-	// This is OK for this test, since we just want to check that WithUDS allows communication
-	// between a server and client over UDS. waitForReqs() tells us that there were 3 requests received.
-	assert.Len(rt.reqs, expectedReqs-1)
+	reqs, err := waitForReqs()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Len(reqs, expectedReqs)
 }

@@ -2171,8 +2171,9 @@ func TestUserMonitoring(t *testing.T) {
 func TestTelemetryEnabled(t *testing.T) {
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-
-	// TO DO (lievan): most of this code is copied and repeated from
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	// TO DO (lievan): majority of this code is copied and repeated from
 	// profiler/profiler_test.go how to refactor and put the
 	// testing code in one place?
 	received := make(chan *telemetry.AppStarted, 1)
@@ -2206,7 +2207,13 @@ func TestTelemetryEnabled(t *testing.T) {
 	)
 	defer Stop()
 
-	payload := <-received
+	var payload *telemetry.AppStarted
+	select {
+	case <-ctx.Done():
+		t.Fatalf("Time out: waiting for telemetry payload")
+	case payload = <-received:
+	}
+
 	check := func(key string, expected interface{}) {
 		for _, kv := range payload.Configuration {
 			if kv.Name == key {
