@@ -1847,11 +1847,11 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
-		if gotTraceId := ctx.TraceID128(); gotTraceId != strings.ToLower(traceID) {
+		if gotTraceID := ctx.TraceID128(); gotTraceID != strings.ToLower(traceID) {
 			t.Fatalf(`Inconsistent trace id parsing:
 					got: %s
 					wanted: %s
-					for header of: %s`, gotTraceId, traceID, header)
+					for header of: %s`, gotTraceID, traceID, header)
 		}
 		if ctx.spanID != expectedSpanID {
 			t.Fatalf(`Inconsistent span id parsing:
