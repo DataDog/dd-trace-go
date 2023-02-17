@@ -57,10 +57,8 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID:  span.SpanID,
 		span:    span,
 	}
-	if span.context != nil {
-		context.traceID128 = span.context.traceID128
-	}
 	if parent != nil {
+		context.traceID128 = parent.traceID128
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
