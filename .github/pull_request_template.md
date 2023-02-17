@@ -34,6 +34,5 @@
   during the review but the signing off is to be done by the reviewer(s).
 -->
 
-- [ ] If known, an appropriate milestone has been selected; otherwise the `Triage` milestone is set.
 - [ ] Changed code has unit tests for its functionality.
 - [ ] If this interacts with the agent in a new way, a system test has been added.
