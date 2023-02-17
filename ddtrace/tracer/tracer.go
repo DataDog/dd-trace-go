@@ -7,7 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"net/url"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -15,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	ddInternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -242,27 +239,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			},
 		}),
 		statsd: statsd,
-		telemetry: &telemetry.Client{
-			Namespace: telemetry.NamespaceTracers,
-			Service:   c.serviceName,
-			Env:       c.env,
-			Version:   c.version,
-			Client:    c.httpClient,
-			// TO DO (lievan) APIKey : using os.Getenv("DD_API_KEY") + error checking?
-		},
-	}
-	// TO DO (lievan): support agentless by speccing API_KEY and setting telemetry.URL
-	// to https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
-	if !ddInternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
-		t.telemetry.Disabled = true
-	}
-	u, err := url.Parse(c.agentURL.String())
-	if err == nil {
-		u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
-		t.telemetry.URL = u.String()
-	} else {
-		log.Warn("Agent URL %s is invalid, not starting telemetry", c.agentURL.String())
-		t.telemetry.Disabled = true
+		telemetry: telemetry.NewClient(
+			telemetry.WithNamespace(telemetry.NamespaceTracers),
+			telemetry.WithService(c.serviceName),
+			telemetry.WithEnv(c.env),
+			telemetry.WithHTTPClient(c.httpClient),
+			telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+			telemetry.WithVersion(c.version),
+		),
 	}
 	return t
 }

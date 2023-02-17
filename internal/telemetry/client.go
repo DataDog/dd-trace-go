@@ -29,7 +29,7 @@ import (
 
 var (
 	// copied from dd-trace-go/profiler
-	defaultClient = &http.Client{
+	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
 		// augmented with tracing and we don't want these calls to be recorded.
 		// See https://golang.org/pkg/net/http/#DefaultTransport .
@@ -133,6 +133,16 @@ type Client struct {
 	newMetrics bool
 }
 
+func NewClient(opts ...Option) (client *Client) {
+	client = defaultClient()
+	for _, opt := range opts {
+		opt(client)
+	}
+	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
+		client.Disabled = true
+	}
+	return client
+}
 func (c *Client) log(msg string, args ...interface{}) {
 	if c.Logger == nil {
 		return
@@ -420,7 +430,7 @@ func (c *Client) submit(r *Request) error {
 
 	client := c.Client
 	if client == nil {
-		client = defaultClient
+		client = defaultHTTPClient
 	}
 	resp, err := client.Do(req)
 	if err != nil {
