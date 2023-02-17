@@ -27,11 +27,18 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			c.SetRequest(r)
 			err = next(c)
 			srw.status = c.Response().Status
-			if e, ok := err.(*echo.HTTPError); ok && e != nil {
+			if e, ok := err.(*echo.HTTPError); ok {
 				srw.status = e.Code
 			}
 		})
 		httpsec.WrapHandler(handler, span, params).ServeHTTP(srw, c.Request())
+		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
+		// the response code tag with 500 in case it doesn't recognize the error type.
+		if _, ok := err.(*echo.HTTPError); !ok && err != nil {
+			// Response was written by our custom response writer past this point so it's safe to use the response status
+			// code since we know it won't change
+			err = echo.NewHTTPError(c.Response().Status, err.Error())
+		}
 		return err
 	}
 
