@@ -3,6 +3,21 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
+// Package opentelemetry provides a wrapper on top of the Datadog tracer that can be used with OpenTelemetry.
+// It also provides a wrapper around TracerProvider to propagate a list of tracer.StartOption
+// that are specific to Datadog's APM product. To use it, simply call "NewTracerProvider".
+//
+//	provider := opentelemetry.NewTracerProvider(tracer.WithService("opentelemetry_service"))
+//
+// When using Datadog, the OpenTelemetry span name is what is called operation name in Datadog's terms.
+// To start the span with Datadog OpenTelemetry package, onw would do:
+//
+//	otel.SetTracerProvider(opentelemetry.NewTracerProvider())
+//	tracer := otel.Tracer("")
+//	ctx, sp := tracer.Start(context.Background(), "span_name")
+//
+// Note that there are currently some small incompatibilities between the OpenTelemetry spec and the Datadog
+// APM product, which we are in the process of addressing on the long term.
 package opentelemetry
 
 import (
