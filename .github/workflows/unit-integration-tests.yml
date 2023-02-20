@@ -60,6 +60,17 @@ jobs:
           curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
 
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - name: version
+        run: |
+          go test -v ./internal/version
+
   test-core:
     runs-on: ubuntu-latest
     env:
