@@ -21,22 +21,20 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			params[n] = c.Param(n)
 		}
 		var err error
-		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
-		srw := &statusResponseWriter{r: c.Response()}
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
-			srw.status = c.Response().Status
-			if e, ok := err.(*echo.HTTPError); ok {
-				srw.status = e.Code
+			if err != nil {
+				c.Error(err)
 			}
 		})
-		httpsec.WrapHandler(handler, span, params).ServeHTTP(srw, c.Request())
+		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
+		httpsec.WrapHandler(handler, span, params).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
 		// the response code tag with 500 in case it doesn't recognize the error type.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {
-			// Response was written by our custom response writer past this point so it's safe to use the response status
-			// code since we know it won't change
+			// We call the echo error handlers in our wrapper when an error occurs, so we know that the response
+			// status won't change anymore at this point in the execution
 			err = echo.NewHTTPError(c.Response().Status, err.Error())
 		}
 		return err
@@ -47,25 +45,10 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 // statusResponseWriter wraps an echo response to allow tracking/retrieving its status code through a Status() method
 // without having to rely on the echo error handlers
 type statusResponseWriter struct {
-	r      *echo.Response
-	status int
+	*echo.Response
 }
 
 // Status returns the status code of the response
-func (w *statusResponseWriter) Status() int { return w.status }
-
-// WriteHeader wraps the underlying echo response writer WriteHeader() call
-func (w *statusResponseWriter) WriteHeader(statusCode int) {
-	w.r.WriteHeader(statusCode)
-	w.status = statusCode
+func (w *statusResponseWriter) Status() int {
+	return w.Response.Status
 }
-
-// WriteHeader wraps the underlying echo response writer Write() call
-func (w *statusResponseWriter) Write(b []byte) (n int, err error) {
-	n, err = w.r.Write(b)
-	w.status = w.r.Status
-	return n, err
-}
-
-// Header wraps the underlying echo response writer Header() call
-func (w *statusResponseWriter) Header() http.Header { return w.r.Header() }
