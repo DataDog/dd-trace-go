@@ -21,9 +21,8 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, activeSpanKey, s)
 }
 
-// SpanFromContext returns the span contained in the given context. A second return
-// value indicates if a span was found in the context. If no span is found, a no-op
-// span is returned.
+// SpanFromContext returns the span contained in the given context. A second return value indicates
+// if a span was found in the context. If no span is found, a no-op span is returned.
 func SpanFromContext(ctx context.Context) (Span, bool) {
 	if ctx == nil {
 		return &internal.NoopSpan{}, false
