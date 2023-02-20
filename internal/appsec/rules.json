@@ -1,7 +1,7 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.5.0"
+    "rules_version": "1.5.1"
   },
   "rules": [
     {
@@ -200,33 +200,6 @@
       ]
     },
     {
-      "id": "crs-921-140",
-      "name": "HTTP Header Injection Attack via headers",
-      "tags": {
-        "type": "http_protocol_violation",
-        "crs_id": "921140",
-        "category": "attack_attempt"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies"
-              }
-            ],
-            "regex": "[\\n\\r]",
-            "options": {
-              "case_sensitive": true,
-              "min_length": 1
-            }
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": []
-    },
-    {
       "id": "crs-921-160",
       "name": "HTTP Header Injection Attack via payload (CR/LF and header-name detected)",
       "tags": {
@@ -245,7 +218,7 @@
                 "address": "server.request.path_params"
               }
             ],
-            "regex": "[\\n\\r]+(?:\\s|location|refresh|(?:set-)?cookie|(?:x-)?(?:forwarded-(?:for|host|server)|host|via|remote-ip|remote-addr|originating-IP))\\s*:",
+            "regex": "[\\n\\r]+(?:refresh|(?:set-)?cookie|(?:x-)?(?:forwarded-(?:for|host|server)|via|remote-ip|remote-addr|originating-IP))\\s*:",
             "options": {
               "case_sensitive": true,
               "min_length": 3
@@ -278,7 +251,7 @@
                 "address": "server.request.headers.no_cookies"
               }
             ],
-            "regex": "(?:%(?:c(?:0%(?:[2aq]f|5c|9v)|1%(?:[19p]c|8s|af))|2(?:5(?:c(?:0%25af|1%259c)|2f|5c)|%46|f)|(?:(?:f(?:8%8)?0%8|e)0%80%a|bg%q)f|%3(?:2(?:%(?:%6|4)6|F)|5%%63)|u(?:221[56]|002f|EFC8|F025)|1u|5c)|0x(?:2f|5c)|\\/|\\x5c)(?:%(?:(?:f(?:(?:c%80|8)%8)?0%8|e)0%80%ae|2(?:(?:5(?:c0%25a|2))?e|%45)|u(?:(?:002|ff0)e|2024)|%32(?:%(?:%6|4)5|E)|c0(?:%[256aef]e|\\.))|\\.(?:%0[01]|\\?)?|\\?\\.?|0x2e){2,3}(?:%(?:c(?:0%(?:[2aq]f|5c|9v)|1%(?:[19p]c|8s|af))|2(?:5(?:c(?:0%25af|1%259c)|2f|5c)|%46|f)|(?:(?:f(?:8%8)?0%8|e)0%80%a|bg%q)f|%3(?:2(?:%(?:%6|4)6|F)|5%%63)|u(?:221[56]|002f|EFC8|F025)|1u|5c)|0x(?:2f|5c)|\\/|\\x5c)",
+            "regex": "(?:%(?:c(?:0%(?:[2aq]f|5c|9v)|1%(?:[19p]c|8s|af))|2(?:5(?:c(?:0%25af|1%259c)|2f|5c)|%46|f)|(?:(?:f(?:8%8)?0%8|e)0%80%a|bg%q)f|%3(?:2(?:%(?:%6|4)6|F)|5%%63)|u(?:221[56]|002f|EFC8|F025)|1u|5c)|0x(?:2f|5c)|\\/|\\x5c)(?:%(?:(?:f(?:(?:c%80|8)%8)?0%8|e)0%80%ae|2(?:(?:5(?:c0%25a|2))?e|%45)|u(?:(?:002|ff0)e|2024)|%32(?:%(?:%6|4)5|E)|c0(?:%[256aef]e|\\.))|\\.(?:%0[01])?|0x2e){2,3}(?:%(?:c(?:0%(?:[2aq]f|5c|9v)|1%(?:[19p]c|8s|af))|2(?:5(?:c(?:0%25af|1%259c)|2f|5c)|%46|f)|(?:(?:f(?:8%8)?0%8|e)0%80%a|bg%q)f|%3(?:2(?:%(?:%6|4)6|F)|5%%63)|u(?:221[56]|002f|EFC8|F025)|1u|5c)|0x(?:2f|5c)|\\/|\\x5c)",
             "options": {
               "min_length": 4
             }
@@ -1834,7 +1807,7 @@
                 "address": "server.request.path_params"
               }
             ],
-            "regex": "^(?i:file|ftps?|http)://.*?\\?+$",
+            "regex": "^(?i:file|ftps?)://.*?\\?+$",
             "options": {
               "case_sensitive": true,
               "min_length": 4
@@ -4453,6 +4426,36 @@
       "transformers": []
     },
     {
+      "id": "dog-934-001",
+      "name": "XXE - XML file loads external entity",
+      "tags": {
+        "type": "xxe",
+        "category": "attack_attempt",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "(?:<\\?xml[^>]*>.*)<!ENTITY[^>]+SYSTEM\\s+[^>]+>",
+            "options": {
+              "case_sensitive": false,
+              "min_length": 24
+            }
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
       "id": "nfd-000-001",
       "name": "Detect common directory discovery scans",
       "tags": {
@@ -5275,7 +5278,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "^(jar:)?(http|https):\\/\\/([0-9oq]{1,5}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}|[0-9]{1,10})(:[0-9]{1,5})?(\\/.*|)$"
+            "regex": "^(jar:)?(http|https):\\/\\/([0-9oq]{1,5}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}|[0-9]{1,10})(:[0-9]{1,5})?(\\/[^:@]*)?$"
           },
           "operator": "match_regex"
         }
