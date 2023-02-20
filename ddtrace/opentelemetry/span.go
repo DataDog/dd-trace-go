@@ -36,6 +36,9 @@ func (s *span) RecordError(err error, options ...oteltrace.EventOption) { /*	no-
 func (s *span) SetName(name string) { s.SetOperationName(name) }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
+	if s.finished {
+		return
+	}
 	s.finished = true
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -117,7 +120,7 @@ type statusInfo struct {
 
 // SetStatus saves state of code and description indicating
 // whether the span has recorded errors. This will be done by setting
-// `error.msg` tag on the span. If the code has been set to a higher
+// `error.message` tag on the span. If the code has been set to a higher
 // value before (OK > Error > Unset), the code will not be changed.
 // The code and description are set once when the span is finished.
 func (s *span) SetStatus(code otelcodes.Code, description string) {
