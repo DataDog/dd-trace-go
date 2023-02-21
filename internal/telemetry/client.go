@@ -131,7 +131,7 @@ type Client struct {
 	newMetrics bool
 }
 
-// logger for submission-related events
+// Logger for submission-related events
 type Logger interface {
 	Log(msg string)
 }
