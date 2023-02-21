@@ -1,0 +1,31 @@
+name: Test And Demo Apps
+on:
+  workflow_dispatch: {} # manually
+  schedule: # nightly
+    - cron: "0 0 * * *"
+  pull_request: # on pull requests touching profiler files
+    paths:
+      - 'profiler/**'
+env:
+  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}"
+  TestUnitOfWork: "true"
+jobs:
+  unit-of-work:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - uses: datadog/agent-github-action@v1.3
+        with:
+            api_key: ${{ secrets.DD_TEST_AND_DEMO_API_KEY }}
+            datadog_site: datad0g.com
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: true
+      - name: Run unit of work app
+        run: |
+          cd ./profiler/internal/apps/unit-of-work && go test -v
