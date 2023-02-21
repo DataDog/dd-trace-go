@@ -626,11 +626,13 @@ func (s *span) Format(f fmt.State, c rune) {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) {
-			fmt.Fprintf(f, `dd.trace_id="0x%s" `, strings.TrimLeft(s.context.TraceID128(), "0"))
+		var traceID string
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && strings.TrimLeft(s.context.traceID128, "0") != "" {
+			traceID = s.context.TraceID128()
 		} else {
-			fmt.Fprintf(f, `dd.trace_id="%d" `, s.TraceID)
+			traceID = fmt.Sprintf("%d", s.TraceID)
 		}
+		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
 		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
