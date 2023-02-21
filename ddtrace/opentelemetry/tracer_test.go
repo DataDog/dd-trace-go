@@ -95,16 +95,21 @@ func TestSpanContext(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 
-	pCtx, parent := tr.Start(context.Background(), "parent")
-	pSpanCtx := parent.SpanContext()
+	ctx, err := tracer.Extract(tracer.TextMapCarrier{
+		"traceparent": "00-000000000000000000000000075bcd15-1234567890123456-01",
+		"tracestate":  "dd=s:2;o:rum;t.usr.id:baz64~~",
+	})
+	if err != nil {
+		t.Fatalf("couldn't propagate headers")
+	}
+	_, s := tr.Start(ContextWithStartOptions(context.Background(), tracer.ChildOf(ctx), tracer.WithSpanID(16)), "parent")
+	sctx := s.SpanContext()
 
-	_, child := tr.Start(pCtx, "child")
-	cSpanCtx := child.SpanContext()
-
-	assert.Equal(cSpanCtx.TraceFlags(), pSpanCtx.TraceFlags())
-	assert.Equal(cSpanCtx.TraceID(), pSpanCtx.TraceID())
-	assert.Equal(cSpanCtx.IsRemote(), pSpanCtx.IsRemote())
-	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
+	assert.Equal(oteltrace.FlagsSampled, sctx.TraceFlags())
+	assert.Equal("000000000000000000000000075bcd15", sctx.TraceID().String())
+	assert.Equal("0000000000000010", sctx.SpanID().String())
+	assert.Equal("dd=s:2;o:rum;t.usr.id:baz64~~", sctx.TraceState().String())
+	assert.Equal(true, sctx.IsRemote())
 }
 
 func TestForceFlush(t *testing.T) {

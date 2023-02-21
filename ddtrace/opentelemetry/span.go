@@ -93,10 +93,10 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
 		// checking the length to avoid panic when parsing
-		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
-			c.TraceFlags = oteltrace.TraceFlags(f)
-		} else {
+		if f, err := strconv.ParseUint(parent[len(parent)-2:], 16, 8); err != nil {
 			log.Debug("Couldn't parse traceparent: %v", err)
+		} else {
+			c.TraceFlags = oteltrace.TraceFlags(f)
 		}
 	}
 	// Remote indicates a remotely-created Span
