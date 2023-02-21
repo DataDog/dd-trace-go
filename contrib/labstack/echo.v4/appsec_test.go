@@ -6,6 +6,7 @@
 package echo
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,6 +46,14 @@ func TestAppSec(t *testing.T) {
 		pappsec.MonitorParsedHTTPBody(c.Request().Context(), "$globals")
 		return c.String(200, "Hello Body!\n")
 	})
+
+	e.Any("/error", func(_ echo.Context) error {
+		return errors.New("what status code will I yield")
+	})
+	e.Any("/nil", func(_ echo.Context) error {
+		return nil
+	})
+
 	srv := httptest.NewServer(e)
 	defer srv.Close()
 
@@ -166,6 +175,59 @@ func TestAppSec(t *testing.T) {
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
+
+	for _, tc := range []struct {
+		name     string
+		endpoint string
+		status   int
+		headers  map[string]string
+	}{
+		{
+			name:     "nil",
+			endpoint: "/nil",
+			status:   http.StatusOK,
+		},
+		{
+			name:     "nil-with-attack",
+			endpoint: "/nil",
+			headers:  map[string]string{"user-agent": "arachni/v1"},
+			status:   http.StatusOK,
+		},
+		{
+			name:     "custom-error",
+			endpoint: "/error",
+			status:   http.StatusInternalServerError,
+		},
+		{
+			name:     "custom-error-with-attack",
+			endpoint: "/error",
+			headers:  map[string]string{"user-agent": "arachni/v1"},
+			status:   http.StatusInternalServerError,
+		},
+	} {
+		t.Run("error-handler/"+tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			require.NoError(t, err)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.status, res.StatusCode)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			require.Equal(t, spans[0].Tag("http.status_code"), fmt.Sprintf("%d", tc.status))
+			// Just make sure an attack was detected in case we meant for one to happen. We don't care what the attack
+			// is, just that the status code reporting behaviour is accurate
+			if tc.headers != nil {
+				require.Contains(t, spans[0].Tags(), "_dd.appsec.json")
+			}
+		})
+	}
 }
 
 // TestControlFlow ensures that the AppSec middleware behaves correctly in various execution flows and wrapping

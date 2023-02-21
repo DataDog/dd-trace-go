@@ -30,6 +30,7 @@ func (q *Query) Iter() *Iter {
 	return &Iter{
 		Iter: iter,
 		cfg:  q.cfg,
+		tags: q.tags,
 	}
 }
 
