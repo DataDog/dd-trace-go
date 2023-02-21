@@ -44,12 +44,13 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 // map containing only the keys relevant as tracing tags, if any.
 func reduceKeys(meta map[string]string) map[string]string {
 	var keysOfInterest = map[string]string{
-		"user":             ext.DBUser,
-		"application_name": ext.DBApplication,
-		"dbname":           ext.DBName,
-		"host":             ext.TargetHost,
-		"port":             ext.TargetPort,
-		ext.DBSystem:       ext.DBSystem,
+		"user":                             ext.DBUser,
+		"application_name":                 ext.DBApplication,
+		"dbname":                           ext.DBName,
+		"host":                             ext.TargetHost,
+		"port":                             ext.TargetPort,
+		ext.DBSystem:                       ext.DBSystem,
+		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)
 	for k, v := range meta {
