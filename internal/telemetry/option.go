@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+// An Option is used to configure the telemetry client's settings
 type Option func(*Client)
 
 // WithNamespace sets name as the telemetry client's namespace (tracer, profiler, appsec)

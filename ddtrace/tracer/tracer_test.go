@@ -30,7 +30,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -2167,15 +2166,11 @@ func TestUserMonitoring(t *testing.T) {
 }
 
 func TestTelemetryEnabled(t *testing.T) {
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	// TO DO (lievan): majority of this code is copied and repeated from
-	// profiler/profiler_test.go how to refactor and put the
-	// testing code in one place?
 	received := make(chan *telemetry.AppStarted, 1)
-	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
@@ -2192,12 +2187,11 @@ func TestTelemetryEnabled(t *testing.T) {
 		case received <- body.Payload.(*telemetry.AppStarted):
 		default:
 		}
-		w.WriteHeader(200)
 	}))
 	defer server.Close()
 
 	Start(
-		WithHTTPClient(client),
+		WithAgentAddr(server.Listener.Addr().String()),
 		WithDebugStack(false),
 		WithService("test-serv"),
 		WithEnv("test-env"),

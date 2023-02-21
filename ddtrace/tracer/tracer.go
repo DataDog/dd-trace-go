@@ -286,9 +286,9 @@ func newTracer(opts ...StartOption) *tracer {
 		[]telemetry.Configuration{
 			// TO DO (lievan): which fields are unnecessary / how to clean this up?
 			{Name: "debug", Value: c.debug},
-			{Name: "agent_feature_DropP0s", Value: c.agent.DropP0s},
-			{Name: "agent_feature_Stats", Value: c.agent.Stats},
-			{Name: "agent_feature_StatsdPort", Value: c.agent.StatsdPort},
+			{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
+			{Name: "agent_feature_stats", Value: c.agent.Stats},
+			{Name: "agent_feature_statsdport", Value: c.agent.StatsdPort},
 			{Name: "feature_flags", Value: c.featureFlags},
 			{Name: "lambda_mode", Value: c.logToStdout},
 			{Name: "send_retries", Value: c.sendRetries},
@@ -303,7 +303,6 @@ func newTracer(opts ...StartOption) *tracer {
 			{Name: "global_tags", Value: c.globalTags},
 			{Name: "transport", Value: c.transport},
 			{Name: "propagator", Value: c.propagator},
-			//{Name: "http_client", Value: c.httpClient},
 			{Name: "hostname", Value: c.hostname},
 			{Name: "runtime_metrics", Value: c.runtimeMetrics},
 			{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},

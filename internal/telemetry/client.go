@@ -131,10 +131,13 @@ type Client struct {
 	newMetrics bool
 }
 
+// logger for submission-related events
 type Logger interface {
 	Log(msg string)
 }
 
+// NewClient returns a telemetry client based on the
+// specified options
 func NewClient(opts ...Option) (client *Client) {
 	client = defaultClient()
 	for _, opt := range opts {
