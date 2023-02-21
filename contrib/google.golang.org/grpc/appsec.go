@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
-	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
@@ -32,7 +31,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -42,9 +41,8 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			setAppSecEventsTags(ctx, span, events)
 		}()
 
-		if op.BlockedCode != nil {
-			op.AddTag(httpsec.BlockedRequestTag, true)
-			return nil, status.Errorf(*op.BlockedCode, "Request blocked")
+		if op.Error != nil {
+			return nil, op.Error
 		}
 
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
@@ -64,7 +62,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(stream.Context(), grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		stream = appsecServerStream{
+			ServerStream:     stream,
+			handlerOperation: op,
+			ctx:              ctx,
+		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -74,18 +77,18 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			setAppSecEventsTags(stream.Context(), span, events)
 		}()
 
-		if op.BlockedCode != nil {
-			op.AddTag(httpsec.BlockedRequestTag, true)
-			return status.Error(*op.BlockedCode, "Request blocked")
+		if op.Error != nil {
+			return op.Error
 		}
 
-		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
+		return handler(srv, stream)
 	}
 }
 
 type appsecServerStream struct {
 	grpc.ServerStream
 	handlerOperation *grpcsec.HandlerOperation
+	ctx              context.Context
 }
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
@@ -96,6 +99,10 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 		op.Finish(grpcsec.ReceiveOperationRes{Message: m})
 	}()
 	return ss.ServerStream.RecvMsg(m)
+}
+
+func (ss appsecServerStream) Context() context.Context {
+	return ss.ctx
 }
 
 // Set the AppSec tags when security events were found.

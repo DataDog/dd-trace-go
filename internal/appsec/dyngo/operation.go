@@ -101,23 +101,24 @@ type operation struct {
 // and finish functions. The following example shows how to wrap an operation
 // so that its functions are statically typed (instead of dyngo's interface{}
 // values):
-//   package mypackage
-//   import "dyngo"
-//   type (
-//     MyOperation struct {
-//       dyngo.Operation
-//     }
-//     MyOperationArgs { /* ... */ }
-//     MyOperationRes { /* ... */ }
-//   )
-//   func StartOperation(args MyOperationArgs, parent dyngo.Operation) MyOperation {
-//     op := MyOperation{Operation: dyngo.NewOperation(parent)}
-//     dyngo.StartOperation(op, args)
-//     return op
-//   }
-//   func (op MyOperation) Finish(res MyOperationRes) {
-//       dyngo.FinishOperation(op, res)
-//     }
+//
+//	package mypackage
+//	import "dyngo"
+//	type (
+//	  MyOperation struct {
+//	    dyngo.Operation
+//	  }
+//	  MyOperationArgs { /* ... */ }
+//	  MyOperationRes { /* ... */ }
+//	)
+//	func StartOperation(args MyOperationArgs, parent dyngo.Operation) MyOperation {
+//	  op := MyOperation{Operation: dyngo.NewOperation(parent)}
+//	  dyngo.StartOperation(op, args)
+//	  return op
+//	}
+//	func (op MyOperation) Finish(res MyOperationRes) {
+//	    dyngo.FinishOperation(op, res)
+//	  }
 func NewOperation(parent Operation) Operation {
 	if parent == nil {
 		parent = rootOperation
@@ -213,9 +214,10 @@ func (o *operation) register(l ...EventListener) UnregisterFunc {
 // On registers the event listener. The difference with the Register() is that
 // it doesn't return a function closure, which avoids unnecessary allocations
 // For example:
-//     op.On(MyOperationStart(func (op MyOperation, args MyOperationArgs) {
-//         // ...
-//     }))
+//
+//	op.On(MyOperationStart(func (op MyOperation, args MyOperationArgs) {
+//	    // ...
+//	}))
 func (o *operation) On(l EventListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()

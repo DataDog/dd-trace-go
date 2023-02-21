@@ -6,7 +6,7 @@ mkdir "${REPORTS_DIR}" || :
 
 # Change threshold for detection of regression
 # @see https://github.com/DataDog/relenv-benchmark-analyzer#what-is-a-significant-difference
-UNCONFIDENCE_THRESHOLD=2.0
+export UNCONFIDENCE_THRESHOLD=2.0
 
 CANDIDATE_COMMIT_SHA=$CI_COMMIT_SHA
 CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
