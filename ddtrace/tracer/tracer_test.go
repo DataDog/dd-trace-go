@@ -102,13 +102,11 @@ func TestTracerCleanStop(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
-	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
-		// avoid CI timeouts due to AppSec slowing down this test
-		os.Unsetenv("DD_APPSEC_ENABLED")
-		defer os.Setenv("DD_APPSEC_ENABLED", old)
-	}
-	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+	// avoid CI timeouts due to AppSec and telemetry slowing down this test
+	t.Setenv("DD_APPSEC_ENABLED", "")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
 	var wg sync.WaitGroup
 	transport := newDummyTransport()

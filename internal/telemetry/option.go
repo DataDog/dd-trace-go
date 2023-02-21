@@ -1,8 +1,14 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 package telemetry
 
 import (
 	"net/http"
 	"net/url"
+	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -42,6 +48,15 @@ func WithAPIKey(v string) Option {
 func WithURL(agentless bool, agentURL string) Option {
 	return func(client *Client) {
 		if agentless {
+			// need to check that there is a valid api key
+			if client.APIKey == "" {
+				if v := os.Getenv("DD_API_KEY"); v != "" {
+					WithAPIKey(v)(client)
+				} else {
+					log.Warn("Agentless is turned out, but valid DD API key was not found. Not starting telemetry")
+					client.Disabled = true
+				}
+			}
 			client.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 		} else {
 			// TODO: check agent /info endpoint to see if the agent is
