@@ -15,36 +15,58 @@ import (
 
 type Option func(*Client)
 
+// WithNamespace sets name as the telemetry client's namespace (tracer, profiler, appsec)
 func WithNamespace(name Namespace) Option {
 	return func(client *Client) {
 		client.Namespace = name
 	}
 }
+
+// WithEnv sets the app specific environment for the telemetry client
 func WithEnv(env string) Option {
 	return func(client *Client) {
 		client.Env = env
 	}
 }
+
+// WithService sets the app specific service for the telemetry client
 func WithService(service string) Option {
 	return func(client *Client) {
 		client.Service = service
 	}
 }
+
+// WithVersion sets the app specific version for the telemetry client
 func WithVersion(version string) Option {
 	return func(client *Client) {
 		client.Version = version
 	}
 }
+
+// WithHTTPClient specifies the http client for the telemetry client
 func WithHTTPClient(httpClient *http.Client) Option {
 	return func(client *Client) {
 		client.Client = httpClient
 	}
 }
+
+// WithAPIKey sets the DD API KEY for the telemetry client
 func WithAPIKey(v string) Option {
 	return func(client *Client) {
 		client.APIKey = v
 	}
 }
+
+// WithURL sets the URL for where telemetry information is flushed to.
+// For the URL, uploading through agent goes through
+//
+//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
+//
+// for agentless:
+//
+//	https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
+//
+// with an API key
 func WithURL(agentless bool, agentURL string) Option {
 	return func(client *Client) {
 		if agentless {
@@ -72,11 +94,14 @@ func WithURL(agentless bool, agentURL string) Option {
 		}
 	}
 }
+
+// WithLogger sets the logger for submission-related events
 func WithLogger(logger Logger) Option {
 	return func(client *Client) {
 		client.Logger = logger
 	}
 }
+
 func defaultClient() (client *Client) {
 	client = new(Client)
 	return client

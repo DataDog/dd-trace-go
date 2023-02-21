@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -303,6 +304,10 @@ type mockBackend struct {
 }
 
 func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/telemetry/proxy/api/v2/apmtelemetry" {
+		// ignore instrumentation telemetry request
+		return
+	}
 	profile := profileMeta{
 		attachments: make(map[string][]byte),
 	}
@@ -441,6 +446,8 @@ func TestCorrectTags(t *testing.T) {
 
 func TestTelemetryEnabled(t *testing.T) {
 	received := make(chan *telemetry.AppStarted, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
@@ -448,7 +455,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
 			return
 		}
-
 		var body telemetry.Request
 		body.Payload = new(telemetry.AppStarted)
 		err := json.NewDecoder(r.Body).Decode(&body)
@@ -474,7 +480,14 @@ func TestTelemetryEnabled(t *testing.T) {
 		CPUDuration(1*time.Millisecond),
 	)
 	defer Stop()
-	payload := <-received
+
+	var payload *telemetry.AppStarted
+	select {
+	case <-ctx.Done():
+		t.Fatalf("Time out: waiting for telemetry payload")
+	case payload = <-received:
+	}
+
 	check := func(key string, expected interface{}) {
 		for _, kv := range payload.Configuration {
 			if kv.Name == key {

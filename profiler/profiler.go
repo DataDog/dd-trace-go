@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -200,43 +199,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 	}
 	p.uploadFunc = p.upload
-	p.telemetry = &telemetry.Client{
-		APIKey:    cfg.apiKey,
-		Namespace: telemetry.NamespaceProfilers,
-		Service:   cfg.service,
-		Env:       cfg.env,
-		Client:    p.cfg.httpClient, // use the profiler's http.Client, gives us UDS if that's used
-	}
-
-	// For the initial release, prefer off-by-default rather than
-	// on-by-default
-	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", false) {
-		p.telemetry.Disabled = true
-	}
-
-	// For the URL, uploading through agent goes through
-	//	${AGENT_URL}/telemetry/proxy/api/v2/apmtelemetry
-	// for agentless (which we technically don't support):
-	//	https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry
-	// with an API key
-	//
-	// TODO: move this logic into the telemetry package, make the URL field
-	// unnecessary?
-	if cfg.agentless {
-		p.telemetry.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
-	} else {
-		// TODO: check agent /info endpoint to see if the agent is
-		// sufficiently recent to support this endpiont? overkill?
-		u, err := url.Parse(cfg.agentURL)
-		if err == nil {
-			u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
-			p.telemetry.URL = u.String()
-		} else {
-			log.Warn("Agent URL %s is invalid, not starting telemetry", cfg.agentURL)
-			p.telemetry.Disabled = true
-		}
-	}
-
+	p.telemetry = telemetry.NewClient(
+		telemetry.WithAPIKey(cfg.apiKey),
+		telemetry.WithNamespace(telemetry.NamespaceProfilers),
+		telemetry.WithService(cfg.service),
+		telemetry.WithEnv(cfg.env),
+		telemetry.WithHTTPClient(p.cfg.httpClient),
+		telemetry.WithURL(cfg.agentless, cfg.agentURL),
+	)
 	return &p, nil
 }
 
