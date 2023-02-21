@@ -7,6 +7,7 @@ package sharedsec
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -31,7 +32,19 @@ type (
 	// OnUserIDOperationStart function type, called when a user ID
 	// operation starts.
 	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
+
+	// UserMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
+	UserMonitoringError struct {
+		error
+	}
 )
+
+// NewUserMonitoringError creates a new user monitoring error that returns `msg` upon calling `Error()`
+func NewUserMonitoringError(msg string) *UserMonitoringError {
+	return &UserMonitoringError{
+		errors.New(msg),
+	}
+}
 
 var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 
