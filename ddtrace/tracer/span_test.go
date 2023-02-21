@@ -759,12 +759,9 @@ func TestSpanLog(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
-		span := tracer.StartSpan("test.request").(*span)
-		span.SpanID = 87654321
+		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
 		span.context.traceID128 = "01"
-		wantID := fmt.Sprintf("0000000000000001%x", span.TraceID) // make sure it's sufficiently padded with zeroes
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321"`, wantID)
-		assert.Equal(expect, fmt.Sprintf("%v", span))
+		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
 	})
 }
 
