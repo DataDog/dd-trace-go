@@ -53,7 +53,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				if v := os.Getenv("DD_API_KEY"); v != "" {
 					WithAPIKey(v)(client)
 				} else {
-					log.Warn("Agentless is turned out, but valid DD API key was not found. Not starting telemetry")
+					log.Warn("instrumentation telemetry: Agentless is turned out, but valid DD API key was not found. Not starting telemetry")
 					client.Disabled = true
 				}
 			}
@@ -66,15 +66,13 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				log.Warn("Agent URL %s is invalid, not starting telemetry", agentURL)
+				log.Warn("instrumentation telemetry: Agent URL %s is invalid, not starting telemetry", agentURL)
 				client.Disabled = true
 			}
 		}
 	}
 }
-func WithLogger(logger interface {
-	Printf(msg string, args ...interface{})
-}) Option {
+func WithLogger(logger Logger) Option {
 	return func(client *Client) {
 		client.Logger = logger
 	}

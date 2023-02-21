@@ -25,7 +25,7 @@ func TestStartupLog(t *testing.T) {
 
 		tp.Reset()
 		logStartup(tracer)
-		lines := removeAppSec(tp.Lines())
+		lines := onlyTracerLogs(tp.Lines())
 		require.Len(t, lines, 2)
 		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":0}}`, lines[1])
 	})
@@ -125,7 +125,7 @@ func TestLogSamplingRules(t *testing.T) {
 	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
-	lines := removeAppSec(tp.Lines())
+	lines := onlyTracerLogs(tp.Lines())
 	assert.Len(lines, 1)
 	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0}: rate is out of \[0\.0, 1\.0] range$`, lines[0])
 }

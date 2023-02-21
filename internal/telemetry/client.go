@@ -99,9 +99,7 @@ type Client struct {
 	debug bool
 
 	// Optional destination to record submission-related logging events
-	Logger interface {
-		Printf(msg string, args ...interface{})
-	}
+	Logger Logger
 
 	// Client will be used for telemetry uploads. This http.Client, if
 	// provided, should be the same as would be used for any other
@@ -133,6 +131,10 @@ type Client struct {
 	newMetrics bool
 }
 
+type Logger interface {
+	Log(msg string)
+}
+
 func NewClient(opts ...Option) (client *Client) {
 	client = defaultClient()
 	for _, opt := range opts {
@@ -147,7 +149,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 	if c.Logger == nil {
 		return
 	}
-	c.Logger.Printf(msg, args...)
+	c.Logger.Log(fmt.Sprintf("Instrumentation telemetry: "+msg, args...))
 }
 
 // Start registers that the app has begun running with the given integrations
