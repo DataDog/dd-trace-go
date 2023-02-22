@@ -25,10 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
-type nullLogger struct{}
-
-func (n nullLogger) Log(_ string) {}
-
 func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {
 	payloads = make(chan string)
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +43,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 		}
 		w.WriteHeader(200)
 	}))
-	opts = append(opts, tracer.WithHTTPClient(c), tracer.WithLogger(&nullLogger{}))
+	opts = append(opts, tracer.WithHTTPClient(c))
 	tp = NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	return tp, payloads, func() {
