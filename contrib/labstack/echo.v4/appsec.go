@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 
 	"github.com/labstack/echo/v4"
 )
@@ -24,7 +25,9 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
-			if err != nil {
+			// If the error is a user monitoring one, it means appsec actions will take care of writing the response
+			// and handling the error. Don't call the echo error handler in this case
+			if _, ok := err.(*sharedsec.UserMonitoringError); !ok && err != nil {
 				c.Error(err)
 			}
 		})
