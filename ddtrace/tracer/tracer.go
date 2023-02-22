@@ -284,7 +284,7 @@ func newTracer(opts ...StartOption) *tracer {
 	t.telemetry.Start(
 		[]telemetry.Integration{},
 		[]telemetry.Configuration{
-			{Name: "test_name", Value: "test_value"},
+			// {Name: "test_name", Value: "test_value"},
 			// TO DO (lievan): which fields are unnecessary / how to clean this up?
 			// {Name: "debug", Value: c.debug},
 			// {Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
