@@ -19,7 +19,7 @@ type tracerCfg struct {
 var (
 	// globalTracer stores the current tracer as *ddtrace.Tracer (pointer to interface). The
 	// atomic.Value type requires types to be consistent, which requires using *ddtrace.Tracer.
-	globalTracer atomic.Value //atomic.Value[*tracerCfg]
+	globalTracer atomic.Value // atomic.Value[*tracerCfg]
 )
 
 func init() {
@@ -27,7 +27,7 @@ func init() {
 	globalTracer.Store(&tracerCfg{tracer: tracer})
 }
 
-// SetGlobalTracer sets the global tracer to t. testing is set to true when the mock tracer is
+// SetGlobalTracer sets the global tracer to t.testing is set to true when the mock tracer is
 // active. It usually signifies that we are in a test environment. This value is used by
 // tracer.Start to prevent overriding the GlobalTracer in tests.
 func SetGlobalTracer(t ddtrace.Tracer, testing bool) {
@@ -39,8 +39,7 @@ func SetGlobalTracer(t ddtrace.Tracer, testing bool) {
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
-	gt := globalTracer.Load().(*tracerCfg)
-	if gt != nil {
+	if gt := globalTracer.Load().(*tracerCfg); gt != nil {
 		return gt.tracer
 	}
 	return nil
@@ -48,8 +47,7 @@ func GetGlobalTracer() ddtrace.Tracer {
 
 // Testing returns if there is a currently running tracer in testing mode.
 func Testing() bool {
-	gt := globalTracer.Load().(*tracerCfg)
-	if gt != nil {
+	if gt := globalTracer.Load().(*tracerCfg); gt != nil {
 		return gt.testing
 	}
 	return false
