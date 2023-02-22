@@ -8,7 +8,9 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -42,7 +44,7 @@ func TestSpanWithContext(t *testing.T) {
 
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
-	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
+	assert.Equal(fmt.Sprintf("%016x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
 func TestSpanWithNewRoot(t *testing.T) {
@@ -83,6 +85,88 @@ func TestTracerOptions(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
+}
+
+func TestSpanContext(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	pCtx, parent := tr.Start(context.Background(), "parent")
+	pSpanCtx := parent.SpanContext()
+
+	_, child := tr.Start(pCtx, "child")
+	cSpanCtx := child.SpanContext()
+
+	assert.Equal(cSpanCtx.TraceFlags(), pSpanCtx.TraceFlags())
+	assert.Equal(cSpanCtx.TraceID(), pSpanCtx.TraceID())
+	assert.Equal(cSpanCtx.IsRemote(), pSpanCtx.IsRemote())
+	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
+}
+
+func TestForceFlush(t *testing.T) {
+	assert := assert.New(t)
+	const (
+		UNSET = iota
+		ERROR
+		OK
+	)
+	testData := []struct {
+		timeOut   time.Duration
+		flushed   bool
+		flushFunc func()
+	}{
+		{timeOut: 30 * time.Second, flushed: true, flushFunc: tracer.Flush},
+		{timeOut: 0 * time.Second, flushed: false, flushFunc: func() {
+			time.Sleep(300 * time.Second)
+		}},
+	}
+	for _, tc := range testData {
+		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			tp, payloads, cleanup := mockTracerProvider(t)
+			defer cleanup()
+
+			flushStatus := UNSET
+			setFlushStatus := func(ok bool) {
+				if ok {
+					flushStatus = OK
+				} else {
+					flushStatus = ERROR
+				}
+			}
+			tr := otel.Tracer("")
+			_, sp := tr.Start(context.Background(), "test_span")
+			sp.End()
+			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
+			payload, err := waitForPayload(ctx, payloads)
+			if tc.flushed {
+				assert.NoError(err)
+				assert.Contains(payload, "test_span")
+				assert.Equal(OK, flushStatus)
+			} else {
+				assert.Equal(ERROR, flushStatus)
+			}
+		})
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tp.Shutdown()
+
+	// attempt to get the Tracer after shutdown and
+	// start a span. The context and span returned
+	// from calling Start should be nil.
+	tr := otel.Tracer("")
+	ctx, sp := tr.Start(context.Background(), "after_shutdown")
+	assert.Equal(sp, nil)
+	assert.Equal(ctx, nil)
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
@@ -144,4 +228,32 @@ func BenchmarkApiWithCustomTags(b *testing.B) {
 			sp.Finish()
 		}
 	})
+}
+
+func BenchmarkOtelConcurrentTracing(b *testing.B) {
+	tp := NewTracerProvider()
+	defer tp.Shutdown()
+	otel.SetTracerProvider(NewTracerProvider())
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		wg := sync.WaitGroup{}
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx := context.Background()
+				newCtx, parent := tr.Start(ctx, "parent")
+				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
+					attribute.String("ResourceName", "/"))
+				defer parent.End()
+
+				for i := 0; i < 10; i++ {
+					_, child := tr.Start(newCtx, "child")
+					child.End()
+				}
+			}()
+		}
+	}
 }
