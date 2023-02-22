@@ -79,7 +79,7 @@ func applyActions(op *Operation) http.Handler {
 	for _, action := range op.Actions() {
 		switch a := action.(type) {
 		case *BlockRequestAction:
-			op.AddTag(BlockedRequestTag, true)
+			op.AddTag(instrumentation.BlockedRequestTag, true)
 			return a.handler
 		default:
 			log.Error("appsec: ignoring security action: unexpected action type %T", a)
@@ -110,12 +110,13 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			events := op.Finish(HandlerOperationRes{Status: status})
+			if h := applyActions(op); h != nil {
+				h.ServeHTTP(w, r)
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
-
-			applyActions(op)
 			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
@@ -181,8 +182,6 @@ type (
 	SDKBodyOperation struct {
 		dyngo.Operation
 	}
-
-	contextKey struct{}
 )
 
 // StartOperation starts an HTTP handler operation, along with the given
@@ -194,14 +193,15 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Con
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
 
+// fromContext returns the Operation object stored in the context, if any
 func fromContext(ctx context.Context) *Operation {
 	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(contextKey{}).(*Operation)
+	op, _ := ctx.Value(instrumentation.ContextKey{}).(*Operation)
 	return op
 }
 
