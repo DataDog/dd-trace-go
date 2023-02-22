@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net"
@@ -17,9 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -244,52 +241,21 @@ func TestCustomTransport(t *testing.T) {
 	assert.Equal(hits, 1)
 }
 
-// hitCounter returns an http handler function that counts the number of hits it receives. It also returns
-// a wait function that blocks when called until:
-// 1. the context passed into hitCounter times out
-// 2. the expected number of hits is reached inside the handler function
-// hitCounter is used to reduce flakiness of (TestWithHTTPClient, TestWithUDS) by clearly defining and waiting
-// for an expected number of requests the tracer client will receive, and failing the test if this goal is
-// not reached.
-func hitCounter(ctx context.Context, expectedHits int) (counter http.HandlerFunc, waiter func() ([]string, error)) {
-	received := make(chan []string)
-	requestPaths := []string{}
-	var hits int
-	var mu sync.Mutex
-	return func(_ http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			defer mu.Unlock()
-			requestPaths = append(requestPaths, r.URL.Path)
-			hits++
-			if hits == expectedHits {
-				received <- requestPaths
-			}
-		}, func() (requestPaths []string, err error) {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("Time out: waiting on test server to receive (%d) hits", expectedHits)
-			case requestPaths := <-received:
-				return requestPaths, nil
-			}
-		}
-}
-
 func TestWithHTTPClient(t *testing.T) {
+	// disable instrumentation telemetry to prevent flaky number of requests
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	expectedReqs := 3
-	countReqs, waitForReqs := hitCounter(ctx, expectedReqs)
-
-	srv := httptest.NewServer(countReqs)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits++
+	}))
 	defer srv.Close()
 
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	c := &http.Client{}
+	rt := wrapRecordingRoundTripper(c)
 	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
 	defer trc.Stop()
 
@@ -297,23 +263,17 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
-	reqs, err := waitForReqs()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	assert.Len(reqs, expectedReqs)
-	assert.Contains(reqs[0], "/info")
-	assert.Contains(reqs[1], "/traces")
-	assert.Contains(reqs[2], "/apmtelemetry")
+	assert.Len(rt.reqs, 2)
+	assert.Contains(rt.reqs[0].URL.Path, "/info")
+	assert.Contains(rt.reqs[1].URL.Path, "/traces")
+	assert.Equal(hits, 2)
 }
 
 func TestWithUDS(t *testing.T) {
+	// disable instrumentation telemetry to prevent flaky number of requests
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	dir, err := os.MkdirTemp("", "socket")
 	if err != nil {
 		t.Fatal(err)
@@ -324,25 +284,24 @@ func TestWithUDS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	expectedReqs := 3
-	countHits, waitForReqs := hitCounter(ctx, expectedReqs)
-
-	srv := http.Server{Handler: countHits}
+	var hits int
+	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		hits++
+	})}
 	go srv.Serve(unixListener)
 	defer srv.Close()
 
 	trc := newTracer(WithUDS(udsPath))
+	rt := wrapRecordingRoundTripper(trc.config.httpClient)
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = trc.config.transport.send(p)
 	assert.NoError(err)
-
-	reqs, err := waitForReqs()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	assert.Len(reqs, expectedReqs)
+	// There are 2 requests, but one happens on tracer startup before we wrap the round tripper.
+	// This is OK for this test, since we just want to check that WithUDS allows communication
+	// between a server and client over UDS. hits tells us that there were 2 requests received.
+	assert.Len(rt.reqs, 1)
+	assert.Equal(hits, 2)
 }
