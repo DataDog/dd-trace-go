@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -176,17 +177,17 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		Integrations:  append([]Integration{}, integrations...),
 		Configuration: append([]Configuration{}, configuration...),
 	}
-	// deps, ok := debug.ReadBuildInfo()
-	// if ok {
-	// 	for _, dep := range deps.Deps {
-	// 		payload.Dependencies = append(payload.Dependencies,
-	// 			Dependency{
-	// 				Name:    dep.Path,
-	// 				Version: dep.Version,
-	// 			},
-	// 		)
-	// 	}
-	// }
+	deps, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, dep := range deps.Deps {
+			payload.Dependencies = append(payload.Dependencies,
+				Dependency{
+					Name:    dep.Path,
+					Version: dep.Version,
+				},
+			)
+		}
+	}
 
 	// configEnvFallback returns the value of environment variable with the
 	// given key if def == ""
