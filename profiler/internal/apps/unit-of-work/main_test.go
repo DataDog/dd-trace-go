@@ -43,9 +43,10 @@ func TestUnitOfWork(t *testing.T) {
 		// Request /foo and /bar
 		app.Run(t, func(hostPort string) {
 			start := time.Now()
-			for time.Since(start) < testDuration {
+			for i := 0; i < 100; i++ {
 				requestEndpoints(t, hostPort, "/foo", "/bar")
 			}
+			time.Sleep(testDuration - time.Since(start))
 		})
 	})
 
@@ -54,9 +55,10 @@ func TestUnitOfWork(t *testing.T) {
 		// Request /bar twice as much as /foo
 		app.Run(t, func(hostPort string) {
 			start := time.Now()
-			for time.Since(start) < testDuration {
+			for i := 0; i < 100; i++ {
 				requestEndpoints(t, hostPort, "/foo", "/bar", "/bar")
 			}
+			time.Sleep(testDuration - time.Since(start))
 		})
 	})
 }
