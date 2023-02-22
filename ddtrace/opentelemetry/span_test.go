@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
@@ -229,6 +231,102 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	assert.Contains(p, "ctx_rsc")
 	assert.Contains(p, "1234567890")
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
+}
+
+func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	startTime := time.Now()
+	_, sp := tr.Start(
+		ContextWithStartOptions(context.Background(),
+			tracer.ResourceName("persisted_ctx_rsc"),
+			tracer.ServiceName("persisted_srv"),
+		), "op_name",
+		oteltrace.WithTimestamp(startTime.Add(time.Second)),
+		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
+		oteltrace.WithSpanKind(oteltrace.SpanKindProducer))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, "persisted_ctx_rsc")
+	assert.Contains(p, "persisted_srv")
+	assert.Contains(p, `"type":"producer"`)
+	assert.NotContains(p, "discarded")
+}
+
+func TestSpanEndOptionsPriorityOrder(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	startTime := time.Now()
+	_, sp := tr.Start(
+		ContextWithStartOptions(context.Background(),
+			tracer.ResourceName("ctx_rsc"),
+			tracer.ServiceName("ctx_srv"),
+			tracer.StartTime(startTime),
+			tracer.WithSpanID(1234567890),
+		), "op_name")
+
+	EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second)))
+	// Next Calls to EndOptions do not keep previous options
+	EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second*5)))
+	// EndOptions timestamp should prevail
+	sp.End(oteltrace.WithTimestamp(startTime.Add(time.Second * 3)))
+	// making sure end options don't have effect after the span has returned
+	EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second*2)))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, `"duration":5000000000,`)
+	assert.NotContains(p, `"duration":2000000000,`)
+	assert.NotContains(p, `"duration":1000000000,`)
+	assert.NotContains(p, `"duration":3000000000,`)
+}
+
+func TestSpanEndOptions(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	startTime := time.Now()
+	_, sp := tr.Start(
+		ContextWithStartOptions(context.Background(),
+			tracer.ResourceName("ctx_rsc"),
+			tracer.ServiceName("ctx_srv"),
+			tracer.StartTime(startTime),
+			tracer.WithSpanID(1234567890),
+		), "op_name")
+
+	EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second*5)),
+		tracer.WithError(errors.New("persisted_option")))
+	sp.End()
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, `"duration":5000000000,`)
+	assert.Contains(p, `persisted_option`)
 }
 
 func TestSpanSetAttributes(t *testing.T) {
