@@ -124,7 +124,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			if len(matches) > 0 {
 				for _, id := range actionIds {
 					if actionHandler.Apply(id, op) {
-						operation.Error = errors.New("Request blocked")
+						operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
 					}
 				}
 				op.AddSecurityEvents(matches)
