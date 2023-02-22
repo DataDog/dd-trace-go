@@ -12,16 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -45,7 +43,7 @@ func TestSpanWithContext(t *testing.T) {
 
 	assert.True(ok)
 	assert.Equal(got, sp.(*span).Span)
-	assert.Equal(fmt.Sprintf("%x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
+	assert.Equal(fmt.Sprintf("%016x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
 func TestSpanWithNewRoot(t *testing.T) {
@@ -109,31 +107,49 @@ func TestSpanContext(t *testing.T) {
 
 func TestForceFlush(t *testing.T) {
 	assert := assert.New(t)
+	const (
+		UNSET = iota
+		ERROR
+		OK
+	)
 	testData := []struct {
 		timeOut   time.Duration
-		flushFail bool
+		flushed   bool
+		flushFunc func()
 	}{
-		{timeOut: 0 * time.Second, flushFail: true},
-		{timeOut: 300 * time.Second, flushFail: false},
+		{timeOut: 30 * time.Second, flushed: true, flushFunc: tracer.Flush},
+		{timeOut: 0 * time.Second, flushed: false, flushFunc: func() {
+			time.Sleep(300 * time.Second)
+		}},
 	}
-	success := false
-	setFlushFail := func(ok bool) { success = ok }
-
 	for _, tc := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		tp, payloads, cleanup := mockTracerProvider(t)
-		tr := otel.Tracer("")
-		_, sp := tr.Start(context.Background(), "test_span")
-		sp.End()
-		tp.ForceFlush(tc.timeOut, setFlushFail)
-		if !tc.flushFail {
-			payload := waitForPayload(ctx, t, payloads)
-			assert.Contains(payload, "test_span")
-		}
-		assert.Equal(tc.flushFail, !success)
-		success = false
-		cleanup()
-		cancel()
+		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			tp, payloads, cleanup := mockTracerProvider(t)
+			defer cleanup()
+
+			flushStatus := UNSET
+			setFlushStatus := func(ok bool) {
+				if ok {
+					flushStatus = OK
+				} else {
+					flushStatus = ERROR
+				}
+			}
+			tr := otel.Tracer("")
+			_, sp := tr.Start(context.Background(), "test_span")
+			sp.End()
+			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
+			payload, err := waitForPayload(ctx, payloads)
+			if tc.flushed {
+				assert.NoError(err)
+				assert.Contains(payload, "test_span")
+				assert.Equal(OK, flushStatus)
+			} else {
+				assert.Equal(ERROR, flushStatus)
+			}
+		})
 	}
 }
 
@@ -141,15 +157,15 @@ func TestShutdown(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
-
-	testLog := new(log.RecordLogger)
-	defer log.UseLogger(testLog)()
-
 	tp.Shutdown()
-	tp.ForceFlush(5*time.Second, func(ok bool) {})
 
-	logs := testLog.Logs()
-	assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
+	// attempt to get the Tracer after shutdown and
+	// start a span. The context and span returned
+	// from calling Start should be nil.
+	tr := otel.Tracer("")
+	ctx, sp := tr.Start(context.Background(), "after_shutdown")
+	assert.Equal(sp, nil)
+	assert.Equal(ctx, nil)
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
