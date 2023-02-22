@@ -7,9 +7,10 @@ package opentelemetry
 
 import (
 	"encoding/binary"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"strconv"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
