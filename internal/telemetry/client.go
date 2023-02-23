@@ -16,11 +16,13 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
@@ -84,9 +86,10 @@ type Client struct {
 	Namespace Namespace
 
 	// App-specific information
-	Service string
-	Env     string
-	Version string
+	Service  string
+	Env      string
+	Version  string
+	Products Products
 
 	// Determines whether telemetry should actually run.
 	// Defaults to false, but will be overridden by the environment variable
@@ -187,6 +190,17 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 				},
 			)
 		}
+	}
+
+	// Enabled field of AppSec in product details is required
+	c.Products = Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			Enabled: strconv.FormatBool(appsec.Enabled()),
+		},
+		Profiler: ProductDetails{
+			Version: version.Tag,
+		},
 	}
 
 	// configEnvFallback returns the value of environment variable with the
