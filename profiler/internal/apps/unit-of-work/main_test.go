@@ -40,26 +40,30 @@ func TestUnitOfWork(t *testing.T) {
 
 	t.Run("v1", func(t *testing.T) {
 		app.ServiceVersion = "v1"
-		// Request /foo and /bar
-		app.Run(t, func(hostPort string) {
-			start := time.Now()
-			for i := 0; i < 100; i++ {
-				requestEndpoints(t, hostPort, "/foo", "/bar")
-			}
-			time.Sleep(testDuration - time.Since(start))
-		})
+		for i := 0; i < 3; i++ {
+			// Request /foo and /bar
+			app.Run(t, func(hostPort string) {
+				start := time.Now()
+				for i := 0; i < 100; i++ {
+					requestEndpoints(t, hostPort, "/foo", "/bar")
+				}
+				time.Sleep(testDuration - time.Since(start))
+			})
+		}
 	})
 
 	t.Run("v2", func(t *testing.T) {
 		app.ServiceVersion = "v2"
-		// Request /bar twice as much as /foo
-		app.Run(t, func(hostPort string) {
-			start := time.Now()
-			for i := 0; i < 100; i++ {
-				requestEndpoints(t, hostPort, "/foo", "/bar", "/bar")
-			}
-			time.Sleep(testDuration - time.Since(start))
-		})
+		for i := 0; i < 3; i++ {
+			// Request /bar twice as much as /foo
+			app.Run(t, func(hostPort string) {
+				start := time.Now()
+				for i := 0; i < 100; i++ {
+					requestEndpoints(t, hostPort, "/foo", "/bar", "/bar")
+				}
+				time.Sleep(testDuration - time.Since(start))
+			})
+		}
 	})
 }
 
