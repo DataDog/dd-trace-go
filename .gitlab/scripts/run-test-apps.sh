@@ -10,6 +10,7 @@ cp /etc/datadog-agent/security-agent.yaml.example /etc/datadog-agent/security-ag
 service datadog-agent start
 
 tail -n500 /var/log/datadog/*
+service datadog-agent status
 
 cd ./profiler/internal/apps/unit-of-work && TestUnitOfWork=true go test -v
 
