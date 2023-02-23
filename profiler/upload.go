@@ -73,12 +73,24 @@ func (e retriableError) Error() string { return e.err.Error() }
 func (p *profiler) doRequest(bat batch) error {
 	tags := append(p.cfg.tags.Slice(),
 		fmt.Sprintf("service:%s", p.cfg.service),
-		fmt.Sprintf("env:%s", p.cfg.env),
 		// The profile_seq tag can be used to identify the first profile
 		// uploaded by a given runtime-id, identify missing profiles, etc.. See
 		// PROF-5612 (internal) for more details.
 		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
+	// If the user did not configure an "env" in the client, we should omit
+	// the tag so that the agent has a chance to supply a default tag.
+	// Otherwise, the tag supplied by the client will have priority.
+	if p.cfg.env != "" {
+		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
+	}
+	// If the profile batch includes a runtime execution trace, add a tag so
+	// that the uploads are more easily discoverable in the UI.
+	for _, b := range bat.profiles {
+		if b.pt == executionTrace {
+			tags = append(tags, "go_execution_traced:yes")
+		}
+	}
 	contentType, body, err := encode(bat, tags)
 	if err != nil {
 		return err
@@ -127,12 +139,13 @@ func (p *profiler) doRequest(bat batch) error {
 }
 
 type uploadEvent struct {
-	Start       string   `json:"start"`
-	End         string   `json:"end"`
-	Attachments []string `json:"attachments"`
-	Tags        string   `json:"tags_profiler"`
-	Family      string   `json:"family"`
-	Version     string   `json:"version"`
+	Start          string            `json:"start"`
+	End            string            `json:"end"`
+	Attachments    []string          `json:"attachments"`
+	Tags           string            `json:"tags_profiler"`
+	Family         string            `json:"family"`
+	Version        string            `json:"version"`
+	EndpointCounts map[string]uint64 `json:"endpoint_counts,omitempty"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -147,11 +160,12 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	tags = append(tags, "runtime:go")
 
 	event := &uploadEvent{
-		Version: "4",
-		Family:  "go",
-		Start:   bat.start.Format(time.RFC3339),
-		End:     bat.end.Format(time.RFC3339),
-		Tags:    strings.Join(tags, ","),
+		Version:        "4",
+		Family:         "go",
+		Start:          bat.start.Format(time.RFC3339),
+		End:            bat.end.Format(time.RFC3339),
+		Tags:           strings.Join(tags, ","),
+		EndpointCounts: bat.endpointCounts,
 	}
 
 	for _, p := range bat.profiles {

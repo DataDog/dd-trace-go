@@ -10,6 +10,7 @@
 package grpcsec
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 
@@ -39,12 +40,14 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
+		Error error
 	}
 	// HandlerOperationArgs is the grpc handler arguments.
 	HandlerOperationArgs struct {
 		// Message received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
+		ClientIP instrumentation.NetaddrIP
 	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
@@ -72,13 +75,14 @@ type (
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(args HandlerOperationArgs, parent dyngo.Operation) *HandlerOperation {
+func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, parent dyngo.Operation) (context.Context, *HandlerOperation) {
 	op := &HandlerOperation{
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
+	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
-	return op
+	return newCtx, op
 }
 
 // Finish the gRPC handler operation, along with the given results, and emit a

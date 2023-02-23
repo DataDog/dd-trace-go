@@ -47,14 +47,14 @@ type Config struct {
 	traceRateLimit uint
 	// Obfuscator configuration parameters
 	obfuscator ObfuscatorConfig
-	// rc is the remote configuration client used to receive product configuration updates
-	rc remoteconfig.ClientConfig
+	// rc is the remote configuration client used to receive product configuration updates. Nil if rc is disabled (default)
+	rc *remoteconfig.ClientConfig
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg
 func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 	return func(c *Config) {
-		c.rc = cfg
+		c.rc = &cfg
 	}
 }
 
@@ -156,7 +156,7 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 }
 
 func readRulesConfig() (rules []byte, err error) {
-	rules = []byte(staticRecommendedRule)
+	rules = []byte(staticRecommendedRules)
 	filepath := os.Getenv(rulesEnvVar)
 	if filepath == "" {
 		log.Info("appsec: starting with the default recommended security rules")

@@ -6,10 +6,12 @@
 package remoteconfig
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
@@ -25,39 +27,37 @@ import (
 func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
-	client := &Client{
-		ClientConfig: cfg,
-		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("http://%s/v0.7/config", cfg.AgentAddr),
-		stop:         make(chan struct{}),
-		callbacks:    map[string][]Callback{},
-	}
+	client, err := NewClient(cfg)
+	require.NoError(t, err)
 
 	t.Run("registerCallback", func(t *testing.T) {
+		client.callbacks = map[string][]Callback{}
+		nilCallback := func(ProductUpdate) map[string]rc.ApplyStatus { return nil }
 		defer func() { client.callbacks = map[string][]Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
-		client.RegisterCallback(func(ProductUpdate) {}, rc.ProductASMFeatures)
+		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
 		require.Equal(t, 1, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
-		client.RegisterCallback(func(ProductUpdate) {}, rc.ProductASMFeatures)
+		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
 		require.Equal(t, 2, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
-		// Skip for now as this needs a valid Repository object
-		t.Skip()
+		client.callbacks = map[string][]Callback{}
+		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
 		client.Products = append(client.Products, rc.ProductASMFeatures)
-		client.RegisterCallback(func(u ProductUpdate) {
+
+		client.RegisterCallback(func(u ProductUpdate) map[string]rc.ApplyStatus {
 			require.NotNil(t, u)
-			require.NotNil(t, u[rc.ProductASMFeatures])
-			require.Equal(t, string(u[rc.ProductASMFeatures]), "test")
+			require.NotNil(t, u[cfgPath])
+			require.Equal(t, string(u[cfgPath]), "test")
+			return map[string]rc.ApplyStatus{cfgPath: {State: rc.ApplyStateAcknowledged}}
 		}, rc.ProductASMFeatures)
 
-		client.applyUpdate(&clientGetConfigsResponse{
-			TargetFiles:   []*file{{Path: "path/to/ASM_FEATURES/config", Raw: []byte("test")}},
-			ClientConfigs: []string{rc.ProductASMFeatures},
-		})
+		resp := genUpdateResponse([]byte("test"), cfgPath)
+		err := client.applyUpdate(resp)
+		require.NoError(t, err)
 	})
 }
 
@@ -160,6 +160,66 @@ func TestPayloads(t *testing.T) {
 				err := json.Unmarshal([]byte(payload), &out)
 				require.NoError(t, err)
 				require.Equal(t, cfg, out)
+
+			})
+		}
+	})
+}
+
+func genUpdateResponse(payload []byte, cfgPath string) *clientGetConfigsResponse {
+	var targets string
+	targetsFmt := `{"signed":{"_type":"targets","custom":{"agent_refresh_interval":0,"opaque_backend_state":"test"},"expires":"2023-01-12T08:46:28Z","spec_version":"1.0.0","targets":{"%s":{"custom":{"c":["HX4ZhCZRs74V1_XaalnCY"],"tracer-predicates":{"tracer_predicates_v1":[{"clientID":"HX4ZhCZRs74V1_XaalnCY"}]},"v":87},"hashes":{"sha256":"%x"},"length":%d}},"version":33431626}}`
+	sum := sha256.Sum256(payload)
+	targets = fmt.Sprintf(targetsFmt, cfgPath, sum, len(payload))
+
+	return &clientGetConfigsResponse{
+		Targets:       []byte(targets),
+		TargetFiles:   []*file{{Path: cfgPath, Raw: payload}},
+		ClientConfigs: []string{cfgPath},
+	}
+}
+
+func TestConfig(t *testing.T) {
+	t.Run("poll-interval", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			env      string
+			expected time.Duration
+		}{
+			{
+				name:     "default",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "1s",
+				env:      "1",
+				expected: 1 * time.Second,
+			},
+			{
+				name:     "1min",
+				env:      "60",
+				expected: 60 * time.Second,
+			},
+			{
+				name:     "-1s",
+				env:      "-1",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "invalid-1",
+				env:      "10s",
+				expected: 5 * time.Second,
+			},
+			{
+				name:     "invalid-2",
+				env:      "1b2",
+				expected: 5 * time.Second,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv(envPollIntervalSec, tc.env)
+				duration := pollIntervalFromEnv()
+				require.Equal(t, tc.expected, duration)
 
 			})
 		}

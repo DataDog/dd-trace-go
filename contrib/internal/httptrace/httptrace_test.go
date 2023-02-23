@@ -6,18 +6,19 @@
 package httptrace
 
 import (
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestStartRequestSpan(t *testing.T) {
@@ -27,176 +28,89 @@ func TestStartRequestSpan(t *testing.T) {
 	s, _ := StartRequestSpan(r)
 	s.Finish()
 	spans := mt.FinishedSpans()
-
 	require.Len(t, spans, 1)
 	assert.Equal(t, "example.com", spans[0].Tag("http.host"))
 }
 
-type IPTestCase struct {
-	name           string
-	remoteAddr     string
-	headers        map[string]string
-	expectedIP     netaddrIP
-	multiHeaders   string
-	clientIPHeader string
-}
+// TestClientIP tests behavior of StartRequestSpan based on
+// the DD_TRACE_CLIENT_IP_ENABLED environment variable
+func TestTraceClientIPFlag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-func genIPTestCases() []IPTestCase {
-	ipv4Global := randGlobalIPv4().String()
-	ipv6Global := randGlobalIPv6().String()
-	ipv4Private := randPrivateIPv4().String()
-	ipv6Private := randPrivateIPv6().String()
-	tcs := []IPTestCase{}
-	// Simple ipv4 test cases over all headers
-	for _, header := range defaultIPHeaders {
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv4-global." + header,
-			headers:    map[string]string{header: ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
-		})
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv4-private." + header,
-			headers:    map[string]string{header: ipv4Private},
-			expectedIP: netaddrIP{},
-		})
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	// use 0.0.0.0 as ip address of all test cases
+	// more comprehensive ip address testing is done in testing
+	// of ClientIPTags in appsec/dyngo/instrumentation/httpsec
+	validIPAddr := "0.0.0.0"
+
+	type ipTestCase struct {
+		name                string
+		remoteAddr          string
+		traceClientIPEnvVal string
+		expectTrace         bool
+		expectedIP          instrumentation.NetaddrIP
 	}
-	// Simple ipv6 test cases over all headers
-	for _, header := range defaultIPHeaders {
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv6-global." + header,
-			headers:    map[string]string{header: ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
-		})
-		tcs = append(tcs, IPTestCase{
-			name:       "ipv6-private." + header,
-			headers:    map[string]string{header: ipv6Private},
-			expectedIP: netaddrIP{},
-		})
-	}
-	// private and global in same header
-	tcs = append([]IPTestCase{
-		{
-			name:       "ipv4-private+global",
-			headers:    map[string]string{"x-forwarded-for": ipv4Private + "," + ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
-		},
-		{
-			name:       "ipv4-global+private",
-			headers:    map[string]string{"x-forwarded-for": ipv4Global + "," + ipv4Private},
-			expectedIP: netaddrMustParseIP(ipv4Global),
-		},
-		{
-			name:       "ipv6-private+global",
-			headers:    map[string]string{"x-forwarded-for": ipv6Private + "," + ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
-		},
-		{
-			name:       "ipv6-global+private",
-			headers:    map[string]string{"x-forwarded-for": ipv6Global + "," + ipv6Private},
-			expectedIP: netaddrMustParseIP(ipv6Global),
-		},
-	}, tcs...)
-	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
-	tcs = append([]IPTestCase{
-		{
-			name:       "invalid-ipv4",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
-			expectedIP: netaddrIP{},
-		},
-		{
-			name:       "invalid-ipv4-recover",
-			headers:    map[string]string{"x-forwarded-for": "127..0.0.1, " + ipv4Global},
-			expectedIP: netaddrMustParseIP(ipv4Global),
-		},
-		{
-			name:         "ipv4-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
-			expectedIP:   netaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:         "ipv4-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
-			expectedIP:   netaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:       "invalid-ipv6",
-			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP: netaddrIP{},
-		},
-		{
-			name:       "invalid-ipv6-recover",
-			headers:    map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::, " + ipv6Global},
-			expectedIP: netaddrMustParseIP(ipv6Global),
-		},
-		{
-			name:         "ipv6-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
-			expectedIP:   netaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-		{
-			name:         "ipv6-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP:   netaddrIP{},
-			multiHeaders: "x-forwarded-for,forwarded-for",
-		},
-	}, tcs...)
-	tcs = append([]IPTestCase{
-		{
-			name:       "no-headers",
-			expectedIP: netaddrIP{},
-		},
-		{
-			name:       "header-case",
-			expectedIP: netaddrMustParseIP(ipv4Global),
-			headers:    map[string]string{"X-fOrWaRdEd-FoR": ipv4Global},
-		},
-		{
-			name:           "user-header",
-			expectedIP:     netaddrMustParseIP(ipv4Global),
-			headers:        map[string]string{"x-forwarded-for": ipv6Global, "custom-header": ipv4Global},
-			clientIPHeader: "custom-header",
-		},
-		{
-			name:           "user-header-not-found",
-			expectedIP:     netaddrIP{},
-			headers:        map[string]string{"x-forwarded-for": ipv4Global},
-			clientIPHeader: "custom-header",
-		},
-	}, tcs...)
 
-	return tcs
-}
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
 
-func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of cfg.clientIPHeader at the end of the test
-	defer func(s string) { cfg.clientIPHeader = s }(cfg.clientIPHeader)
-	for _, tc := range genIPTestCases() {
+	for _, tc := range []ipTestCase{
+		{
+			name:                "Trace client IP set to true",
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			traceClientIPEnvVal: "true",
+			expectTrace:         true,
+		},
+		{
+			name:                "Trace client IP set to false",
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			traceClientIPEnvVal: "false",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP unset",
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			traceClientIPEnvVal: "",
+			expectTrace:         false,
+		},
+		{
+			name:                "Trace client IP set to non-boolean value",
+			remoteAddr:          validIPAddr,
+			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			traceClientIPEnvVal: "asdadsasd",
+			expectTrace:         false,
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header := http.Header{}
-			for k, v := range tc.headers {
-				header.Add(k, v)
-			}
-			r := http.Request{Header: header, RemoteAddr: tc.remoteAddr}
-			cfg.clientIPHeader = tc.clientIPHeader
-			spanCfg := ddtrace.StartSpanConfig{}
-			for _, opt := range genClientIPSpanTags(&r) {
-				opt(&spanCfg)
-			}
-			if tc.expectedIP.IsValid() {
-				require.Equal(t, tc.expectedIP.String(), spanCfg.Tags[ext.HTTPClientIP])
-				require.Nil(t, spanCfg.Tags[multipleIPHeaders])
+			t.Setenv(envTraceClientIPEnabled, tc.traceClientIPEnvVal)
+
+			// reset config based on new DD_TRACE_CLIENT_IP_ENABLED value
+			cfg = newConfig()
+
+			r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
+			r.RemoteAddr = tc.remoteAddr
+			s, _ := StartRequestSpan(r)
+			s.Finish()
+			spans := mt.FinishedSpans()
+			targetSpan := spans[0]
+
+			if tc.expectTrace {
+				assert.Equal(t, tc.expectedIP.String(), targetSpan.Tag(ext.HTTPClientIP))
 			} else {
-				require.Nil(t, spanCfg.Tags[ext.HTTPClientIP])
-				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, spanCfg.Tags[multipleIPHeaders])
-					for hdr, ip := range tc.headers {
-						require.Equal(t, ip, spanCfg.Tags[ext.HTTPRequestHeaders+"."+hdr])
-					}
+				assert.NotContains(t, targetSpan.Tags(), ext.HTTPClientIP)
+				if _, err := strconv.ParseBool(tc.traceClientIPEnvVal); err != nil && tc.traceClientIPEnvVal != "" {
+					logs := tp.Logs()
+					assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_CLIENT_IP_ENABLED")
+					tp.Reset()
 				}
 			}
+			mt.Reset()
 		})
 	}
 }
@@ -292,54 +206,5 @@ func TestURLTag(t *testing.T) {
 			url := urlFromRequest(&r)
 			require.Equal(t, tc.expectedURL, url)
 		})
-	}
-}
-
-func randIPv4() netaddrIP {
-	return netaddrIPv4(uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()))
-}
-
-func randIPv6() netaddrIP {
-	return netaddrIPv6Raw([16]byte{
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-		uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()), uint8(rand.Uint32()),
-	})
-}
-
-func randGlobalIPv4() netaddrIP {
-	for {
-		ip := randIPv4()
-		if isGlobal(ip) {
-			return ip
-		}
-	}
-}
-
-func randGlobalIPv6() netaddrIP {
-	for {
-		ip := randIPv6()
-		if isGlobal(ip) {
-			return ip
-		}
-	}
-}
-
-func randPrivateIPv4() netaddrIP {
-	for {
-		ip := randIPv4()
-		if !isGlobal(ip) && ip.IsPrivate() {
-			return ip
-		}
-	}
-}
-
-func randPrivateIPv6() netaddrIP {
-	for {
-		ip := randIPv6()
-		if !isGlobal(ip) && ip.IsPrivate() {
-			return ip
-		}
 	}
 }

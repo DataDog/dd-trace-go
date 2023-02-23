@@ -15,11 +15,12 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate float64
-	isStatusError func(statusCode int) bool
-	ignoreRequest func(r *http.Request) bool
+	serviceName        string
+	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate      float64
+	isStatusError      func(statusCode int) bool
+	ignoreRequest      func(r *http.Request) bool
+	modifyResourceName func(resourceName string) string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -37,6 +38,7 @@ func defaults(cfg *config) {
 	}
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.modifyResourceName = func(s string) string { return s }
 }
 
 // WithServiceName sets the given service name for the router.
@@ -94,5 +96,12 @@ func isServerError(statusCode int) bool {
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = fn
+	}
+}
+
+// WithModifyResourceName specifies a function to use to modify the resource name.
+func WithModifyResourceName(fn func(resourceName string) string) Option {
+	return func(cfg *config) {
+		cfg.modifyResourceName = fn
 	}
 }

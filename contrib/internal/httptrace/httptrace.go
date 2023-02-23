@@ -10,7 +10,6 @@ package httptrace
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,29 +17,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
-var (
-	ipv6SpecialNetworks = []*netaddrIPPrefix{
-		ippref("fec0::/10"), // site local
-	}
-	defaultIPHeaders = []string{
-		"x-forwarded-for",
-		"x-real-ip",
-		"x-client-ip",
-		"x-forwarded",
-		"x-cluster-client-ip",
-		"forwarded-for",
-		"forwarded",
-		"via",
-		"true-client-ip",
-	}
-	cfg = newConfig()
-)
-
-// multipleIPHeaders sets the multiple ip header tag used internally to tell the backend an error occurred when
-// retrieving an HTTP request client IP.
-const multipleIPHeaders = "_dd.multiple-ip-headers"
+var cfg = newConfig()
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -59,11 +40,14 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			tracer.Tag("http.host", r.Host),
 		}, opts...)
 	}
-	if cfg.clientIP {
-		opts = append(genClientIPSpanTags(r), opts...)
-	}
 	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+	if cfg.traceClientIP {
+		ipTags, _ := httpsec.ClientIPTags(r.Header, r.RemoteAddr)
+		for k, v := range ipTags {
+			opts = append(opts, tracer.Tag(k, v))
+		}
 	}
 	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
 }
@@ -82,79 +66,6 @@ func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
 		s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 	}
 	s.Finish(opts...)
-}
-
-// ippref returns the IP network from an IP address string s. If not possible, it returns nil.
-func ippref(s string) *netaddrIPPrefix {
-	if prefix, err := netaddrParseIPPrefix(s); err == nil {
-		return &prefix
-	}
-	return nil
-}
-
-// genClientIPSpanTags generates the client IP related tags that need to be added to the span.
-// See https://docs.datadoghq.com/tracing/configure_data_security#configuring-a-client-ip-header for more information.
-func genClientIPSpanTags(r *http.Request) []ddtrace.StartSpanOption {
-	ipHeaders := defaultIPHeaders
-	if len(cfg.clientIPHeader) > 0 {
-		ipHeaders = []string{cfg.clientIPHeader}
-	}
-	var headers []string
-	var ips []string
-	var opts []ddtrace.StartSpanOption
-	for _, hdr := range ipHeaders {
-		if v := r.Header.Get(hdr); v != "" {
-			headers = append(headers, hdr)
-			ips = append(ips, v)
-		}
-	}
-	if len(ips) == 0 {
-		if remoteIP := parseIP(r.RemoteAddr); remoteIP.IsValid() && isGlobal(remoteIP) {
-			opts = append(opts, tracer.Tag(ext.HTTPClientIP, remoteIP.String()))
-		}
-	} else if len(ips) == 1 {
-		for _, ipstr := range strings.Split(ips[0], ",") {
-			ip := parseIP(strings.TrimSpace(ipstr))
-			if ip.IsValid() && isGlobal(ip) {
-				opts = append(opts, tracer.Tag(ext.HTTPClientIP, ip.String()))
-				break
-			}
-		}
-	} else {
-		for i := range ips {
-			opts = append(opts, tracer.Tag(ext.HTTPRequestHeaders+"."+headers[i], ips[i]))
-		}
-		opts = append(opts, tracer.Tag(multipleIPHeaders, strings.Join(headers, ",")))
-	}
-	return opts
-}
-
-func parseIP(s string) netaddrIP {
-	if ip, err := netaddrParseIP(s); err == nil {
-		return ip
-	}
-	if h, _, err := net.SplitHostPort(s); err == nil {
-		if ip, err := netaddrParseIP(h); err == nil {
-			return ip
-		}
-	}
-	return netaddrIP{}
-}
-
-func isGlobal(ip netaddrIP) bool {
-	// IsPrivate also checks for ipv6 ULA.
-	// We care to check for these addresses are not considered public, hence not global.
-	// See https://www.rfc-editor.org/rfc/rfc4193.txt for more details.
-	isGlobal := !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
-	if !isGlobal || !ip.Is6() {
-		return isGlobal
-	}
-	for _, n := range ipv6SpecialNetworks {
-		if n.Contains(ip) {
-			return false
-		}
-	}
-	return isGlobal
 }
 
 // urlFromRequest returns the full URL from the HTTP request. If query params are collected, they are obfuscated granted

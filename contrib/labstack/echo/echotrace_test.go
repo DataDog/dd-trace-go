@@ -7,6 +7,7 @@ package echo
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/labstack/echo"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -84,6 +86,8 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
+	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
@@ -131,6 +135,8 @@ func TestTraceAnalytics(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 	assert.Equal(root.Context().SpanID(), span.ParentID())
+	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
@@ -170,7 +176,10 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestErrorHandling(t *testing.T) {
@@ -208,7 +217,119 @@ func TestErrorHandling(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+}
+
+func TestStatusError(t *testing.T) {
+	for _, tt := range []struct {
+		isStatusError func(statusCode int) bool
+		err           error
+		code          string
+		handler       func(c echo.Context) error
+	}{
+		{
+			err:  errors.New("oh no"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return errors.New("oh no")
+			},
+		},
+		{
+			err:  echo.NewHTTPError(http.StatusInternalServerError, "my error message"),
+			code: "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
+		{
+			err:  nil,
+			code: "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
+			err:           nil,
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return errors.New("oh no")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 },
+			err:           nil,
+			code:          "500",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusInternalServerError, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 400 },
+			err:           echo.NewHTTPError(http.StatusBadRequest, "my error message"),
+			code:          "400",
+			handler: func(c echo.Context) error {
+				return echo.NewHTTPError(http.StatusBadRequest, "my error message")
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 200 },
+			err:           fmt.Errorf("201: Created"),
+			code:          "201",
+			handler: func(c echo.Context) error {
+				c.JSON(201, map[string]string{"status": "ok", "type": "test"})
+				return nil
+			},
+		},
+		{
+			isStatusError: func(statusCode int) bool { return statusCode >= 200 },
+			err:           fmt.Errorf("200: OK"),
+			code:          "200",
+			handler: func(c echo.Context) error {
+				// It's not clear if unset (0) status is possible naturally, but we can simulate that situation.
+				c.Response().Status = 0
+				return nil
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			opts := []Option{WithServiceName("foobar")}
+			if tt.isStatusError != nil {
+				opts = append(opts, WithStatusCheck(tt.isStatusError))
+			}
+			router.Use(Middleware(opts...))
+			router.GET("/err", tt.handler)
+			r := httptest.NewRequest("GET", "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Len(spans, 1)
+			span := spans[0]
+			assert.Equal("http.request", span.OperationName())
+			assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+			assert.Equal("foobar", span.Tag(ext.ServiceName))
+			assert.Contains(span.Tag(ext.ResourceName), "/err")
+			assert.Equal(tt.code, span.Tag(ext.HTTPCode))
+			assert.Equal("GET", span.Tag(ext.HTTPMethod))
+			err := span.Tag(ext.Error)
+			if tt.err != nil {
+				assert.NotNil(err)
+				require.NotNil(t, span.Tag(ext.Error))
+				assert.Equal(tt.err.Error(), err.(error).Error())
+			} else {
+				assert.Nil(err)
+			}
+		})
+	}
 }
 
 func TestGetSpanNotInstrumented(t *testing.T) {
@@ -263,6 +384,9 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
+	require.NotNil(t, span.Tag(ext.Error))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
+	assert.Equal("labstack/echo", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }

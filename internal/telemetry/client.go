@@ -314,7 +314,7 @@ func (c *Client) flush() {
 		r := c.newRequest(RequestTypeGenerateMetrics)
 		payload := &Metrics{
 			Namespace:   c.Namespace,
-			LibLanguage: "golang",
+			LibLanguage: "go",
 			LibVersion:  version.Tag,
 		}
 		for _, m := range c.metrics {
@@ -372,7 +372,7 @@ func getOSVersion() string {
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
-	c.seqID += 1
+	c.seqID++
 	return &Request{
 		APIVersion:  "v1",
 		RequestType: t,
@@ -385,7 +385,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 			Env:             c.Env,
 			ServiceVersion:  c.Version,
 			TracerVersion:   version.Tag,
-			LanguageName:    "golang",
+			LanguageName:    "go",
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{

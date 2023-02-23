@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -67,7 +68,7 @@ type tracer struct {
 	prioritySampling *prioritySampler
 
 	// pid of the process
-	pid string
+	pid int
 
 	// These integers track metrics about spans and traces as they are started,
 	// finished, and dropped
@@ -88,6 +89,9 @@ type tracer struct {
 	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
+
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
+	statsd statsdClient
 }
 
 const (
@@ -129,12 +133,13 @@ func Start(opts ...StartOption) {
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentAddr = t.config.agentAddr
+	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
+	hostname.Get() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -192,11 +197,15 @@ const payloadQueueSize = 1000
 func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
+	statsd, err := newStatsdClient(c)
+	if err != nil {
+		log.Warn("Runtime and health metrics disabled: %v", err)
+	}
 	var writer traceWriter
 	if c.logToStdout {
-		writer = newLogTraceWriter(c)
+		writer = newLogTraceWriter(c, statsd)
 	} else {
-		writer = newAgentTraceWriter(c, sampler)
+		writer = newAgentTraceWriter(c, sampler, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -216,7 +225,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
-		pid:              strconv.Itoa(os.Getpid()),
+		pid:              os.Getpid(),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
@@ -227,6 +236,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
+		statsd: statsd,
 	}
 	return t
 }
@@ -234,7 +244,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
-	t.config.statsd.Incr("datadog.tracer.started", nil, 1)
+	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
@@ -297,12 +307,14 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				t.traceWriter.add(trace.spans)
 			}
 		case <-tick:
-			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
-			t.config.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
+			t.statsd.Flush()
+			t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionnality is used
 			// in Lambda so for that purpose this mechanism should suffice.
@@ -331,13 +343,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // finishedTrace holds information about a trace that has finished, including its spans.
 type finishedTrace struct {
 	spans    []*span
-	decision samplingDecision
+	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
 // sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
 func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
-	if info.decision == decisionKeep {
-		return
+	if len(info.spans) > 0 {
+		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
+			// The trace is kept, no need to run single span sampling rules.
+			return
+		}
 	}
 	var kept []*span
 	if t.rulesSampling.HasSpanRules() {
@@ -356,7 +371,9 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
 	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
-	info.spans = kept
+	if !info.willSend {
+		info.spans = kept
+	}
 }
 
 func (t *tracer) pushTrace(trace *finishedTrace) {
@@ -421,7 +438,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
-		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
@@ -448,15 +464,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 	}
 	span.context = newSpanContext(span, context)
-	if context == nil || context.span == nil {
-		// this is either a root span or it has a remote parent, we should add the PID.
-		span.setMeta(ext.Pid, t.pid)
-		if _, ok := opts.Tags[ext.ServiceName]; !ok && t.config.runtimeMetrics {
-			// this is a root span in the global service; runtime metrics should
-			// be linked to it:
-			span.setMeta("language", "go")
-		}
-	}
+	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMeta("language", "go")
+
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -487,6 +497,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
@@ -512,7 +523,8 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored.
+// found in ctx are restored. Additionally this func informs the profiler how
+// many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
@@ -521,13 +533,18 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
-	if span.context.trace != nil && span.context.trace.root != nil {
-		localRootSpan := span.context.trace.root
+	if localRootSpan := span.root(); localRootSpan != nil {
 		if t.config.profilerHotspots {
 			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+			if span == localRootSpan {
+				// Inform the profiler of endpoint hits. This is used for the unit of
+				// work feature. We can't use APM stats for this since the stats don't
+				// have enough cardinality (e.g. runtime-id tags are missing).
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+			}
 		}
 	}
 	if len(labels) > 0 {
@@ -548,12 +565,12 @@ func spanResourcePIISafe(s *span) bool {
 func (t *tracer) Stop() {
 	t.stopOnce.Do(func() {
 		close(t.stop)
-		t.config.statsd.Incr("datadog.tracer.stopped", nil, 1)
+		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
-	t.config.statsd.Close()
+	t.statsd.Close()
 	appsec.Stop()
 }
 
@@ -590,10 +607,28 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(name string) func() {
+func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
-		return func() {}
+		return ctx, func() {}
 	}
-	_, task := rt.NewTask(gocontext.TODO(), name)
-	return task.End
+	span.SetTag("go_execution_traced", "yes")
+	// Task name is the resource (operationName) of the span, e.g.
+	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
+	taskName := span.Resource
+	// If the resource could contain PII (e.g. SQL query that's not using bind
+	// arguments), play it safe and just use the span type as the taskName,
+	// e.g. "sql".
+	if !spanResourcePIISafe(span) {
+		taskName = span.Type
+	}
+	ctx, task := rt.NewTask(ctx, taskName)
+	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
+	return ctx, task.End
+}
+
+func (t *tracer) hostname() string {
+	if !t.config.disableHostnameDetection {
+		return hostname.Get()
+	}
+	return ""
 }

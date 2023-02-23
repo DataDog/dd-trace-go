@@ -25,6 +25,10 @@ const (
 	tagAWSRegion     = "aws.region"
 	tagAWSRetryCount = "aws.retry_count"
 	tagAWSRequestID  = "aws.request_id"
+	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
+	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
+	CompleteHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete"
 )
 
 type handlers struct {
@@ -42,11 +46,11 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send",
+		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
-		Name: "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete",
+		Name: CompleteHandlerName,
 		Fn:   h.Complete,
 	})
 	return s
@@ -56,6 +60,9 @@ func (h *handlers) Send(req *request.Request) {
 	if req.RetryCount != 0 {
 		return
 	}
+	// Make a copy of the URL so we don't modify the outgoing request
+	url := *req.HTTPRequest.URL
+	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
@@ -64,7 +71,9 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
-		tracer.Tag(ext.HTTPURL, req.HTTPRequest.URL.String()),
+		tracer.Tag(ext.HTTPURL, url.String()),
+		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))

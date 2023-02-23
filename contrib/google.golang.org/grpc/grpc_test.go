@@ -102,12 +102,17 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
+			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
+			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
+			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
+			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
+
 		})
 	}
 }
@@ -151,7 +156,6 @@ func TestStreaming(t *testing.T) {
 					"expected service name to be grpc in span: %v",
 					span)
 			}
-
 			switch span.OperationName() {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
@@ -178,6 +182,25 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
+
+			switch span.OperationName() { //checks spankind and component without fallthrough
+			case "grpc.client":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
+					" expected spankind to be client in span %v", span)
+			case "grpc.server":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
+					" expected spankind to be server in span %v, %v", span, span.OperationName())
+			case "grpc.message":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.NotContains(t, span.Tags(), ext.SpanKind,
+					" expected no spankind tag to be in span %v", span)
+			}
+
 		}
 	}
 
@@ -355,24 +378,41 @@ func TestSpanTree(t *testing.T) {
 
 		assert.Empty(mt.OpenSpans())
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 7)
+		require.Len(t, spans, 7)
 
-		// Ping spans
-		rootSpan := spans[6]
-		clientStreamSpan := spans[5]
-		clientStreamSendMsgSpan := spans[4]
-		serverStreamSpan := spans[3]
-		serverStreamRecvMsgSpan := spans[2]
-		serverStreamSendMsgSpan := spans[1]
-		clientStreamRecvMsgSpan := spans[0]
+		var rootSpan, clientStreamSpan, serverStreamSpan mocktracer.Span
+		var messageSpans []mocktracer.Span
+		for _, s := range spans {
+			switch n := s.OperationName(); n {
+			case "root":
+				rootSpan = s
+			case "grpc.client":
+				clientStreamSpan = s
+			case "grpc.server":
+				serverStreamSpan = s
+			case "grpc.message":
+				messageSpans = append(messageSpans, s)
+			}
+		}
+		require.NotNil(t, rootSpan)
+		require.NotNil(t, clientStreamSpan)
+		require.NotNil(t, serverStreamSpan)
 
 		assert.Zero(rootSpan.ParentID())
 		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamSendMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
 		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamRecvMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamSendMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamRecvMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		var clientSpans, serverSpans int
+		for _, ms := range messageSpans {
+			if ms.ParentID() == clientStreamSpan.SpanID() {
+				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				clientSpans++
+			} else {
+				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				serverSpans++
+			}
+		}
+		assert.Equal(2, clientSpans)
+		assert.Equal(2, serverSpans)
 	})
 }
 
@@ -725,6 +765,79 @@ func TestIgnoredMethods(t *testing.T) {
 			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 3},
 		} {
 			rig, err := newRig(true, WithIgnoredMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+
+			ctx, done := context.WithCancel(context.Background())
+			client := rig.client
+			stream, err := client.StreamPing(ctx)
+			assert.NoError(t, err)
+
+			err = stream.Send(&FixtureRequest{Name: "pass"})
+			assert.NoError(t, err)
+
+			resp, err := stream.Recv()
+			assert.NoError(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			assert.NoError(t, stream.CloseSend())
+			done() // close stream from client side
+			rig.Close()
+
+			waitForSpans(mt, c.exp, 5*time.Second)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			mt.Reset()
+		}
+	})
+}
+
+func TestUntracedMethods(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			{ignore: []string{}, exp: 2},
+			{ignore: []string{"/some/endpoint"}, exp: 2},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
+		} {
+			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+			client := rig.client
+			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			assert.Nil(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			rig.Close()
+			mt.Reset()
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			// client span: 1 send + 1 recv(OK) + 1 stream finish (OK)
+			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
+			{ignore: []string{}, exp: 7},
+			{ignore: []string{"/some/endpoint"}, exp: 7},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
+		} {
+			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
 			if err != nil {
 				t.Fatalf("error setting up rig: %s", err)
 			}

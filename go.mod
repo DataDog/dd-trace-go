@@ -1,12 +1,12 @@
 module gopkg.in/DataDog/dd-trace-go.v1
 
-go 1.17
+go 1.18
 
 require (
 	cloud.google.com/go/pubsub v1.4.0
 	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.40.0-rc.2.0.20220929172920-a43645df5cf2
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.42.0-rc.1
 	github.com/DataDog/datadog-go/v5 v5.0.2
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
@@ -34,9 +34,9 @@ require (
 	github.com/go-redis/redis/v8 v8.0.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
-	github.com/gofiber/fiber/v2 v2.11.0
+	github.com/gofiber/fiber/v2 v2.24.0
 	github.com/golang/protobuf v1.5.2
-	github.com/gomodule/redigo v1.7.0
+	github.com/gomodule/redigo v1.8.9
 	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.7.1
@@ -56,7 +56,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/segmentio/kafka-go v0.4.29
 	github.com/sirupsen/logrus v1.7.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/tidwall/buntdb v1.2.0
 	github.com/tinylib/msgp v1.1.6
@@ -68,9 +68,9 @@ require (
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.7.5
-	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
+	golang.org/x/net v0.7.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
+	golang.org/x/sys v0.5.0
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/api v0.29.0
@@ -172,10 +172,11 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
+	github.com/richardartoul/molecule v1.0.1-0.20221107223329-32cfee06a052
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.3.1 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
+	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/theupdateframework/go-tuf v0.3.0 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
 	github.com/tidwall/gjson v1.12.1 // indirect
 	github.com/tidwall/grect v0.1.4 // indirect
@@ -201,11 +202,11 @@ require (
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
 	golang.org/x/exp v0.0.0-20200908183739-ae8ad444f925 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/mod v0.7.0 // indirect
+	golang.org/x/sync v0.1.0 // indirect
+	golang.org/x/term v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/tools v0.4.0 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/genproto v0.0.0-20200726014623-da3ae01ef02d // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -219,3 +220,5 @@ require (
 	mellium.im/sasl v0.2.1 // indirect
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
+
+require github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect

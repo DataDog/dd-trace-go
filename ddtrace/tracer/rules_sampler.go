@@ -359,12 +359,12 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 			}
 			var sampled bool
 			if rule.limiter != nil {
-				sampled, rate = rule.limiter.allowOne(time.Now())
+				sampled, rate = rule.limiter.allowOne(nowTime())
 				if !sampled {
 					return false
 				}
 			}
-			span.setMetric(keySpanSamplingMechanism, samplingMechanismSingleSpan)
+			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
 			span.setMetric(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
 				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)

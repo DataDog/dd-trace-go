@@ -14,28 +14,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"strconv"
+	"strings"
 )
 
 func main() {
-	prURL, ok := os.LookupEnv("CIRCLE_PULL_REQUEST")
-	if !ok {
-		fmt.Println("CIRCLE_PULL_REQUEST not set")
-		os.Exit(0)
-	}
 	exit := func(err error) {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	u, err := url.Parse(prURL)
-	if err != nil {
-		exit(err)
-	}
-	base := path.Base(u.Path)
-	pr, err := strconv.Atoi(base)
+	pr, err := strconv.Atoi(os.Getenv("PR_NUMBER"))
 	if err != nil {
 		exit(err)
 	}
@@ -52,5 +41,16 @@ func main() {
 	resp.Body.Close()
 	if data.Milestone == nil {
 		exit(errors.New("Milestone not set."))
+	} else if m, ok := data.Milestone.(map[string]interface{}); ok {
+		title, ok := m["title"].(string)
+		if !ok {
+			exit(errors.New("Could not find milestone \"title\" in milestone map."))
+		}
+		if strings.ToLower(title) == "triage" {
+			exit(errors.New("PR's in the Triage milestone cannot be merged."))
+		}
+	} else {
+		exit(errors.New("Could not resolve milestone. checkmilestone.go likely needs to be updated."))
 	}
+	fmt.Println("Milestone check passed.")
 }

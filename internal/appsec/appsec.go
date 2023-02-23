@@ -11,8 +11,6 @@ package appsec
 import (
 	"sync"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -49,17 +47,21 @@ func Start(opts ...StartOption) {
 		opt(cfg)
 	}
 	appsec := newAppSec(cfg)
+	appsec.startRC()
 
+	// If the env var is not set ASM is disabled, but can be enabled through remote config
 	if !set {
-		// If the env var is not set AppSec is disabled but can be enabled through remote config
 		log.Debug("appsec: %s is not set. AppSec won't start until activated through remote configuration", enabledEnvVar)
+		if err := appsec.enableRemoteActivation(); err != nil {
+			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
+			logUnexpectedStartError(err)
+			appsec.stopRC()
+			return
+		}
 	} else if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
+		appsec.stopRC()
 		return
-	}
-	if appsec.rc != nil {
-		// TODO: register ASM_FEATURES callback
-		appsec.rc.Start()
 	}
 	setActiveAppSec(appsec)
 }
@@ -83,9 +85,7 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
-		if activeAppSec.rc != nil {
-			activeAppSec.rc.Stop()
-		}
+		activeAppSec.stopRC()
 		activeAppSec.stop()
 	}
 	activeAppSec = a
@@ -100,16 +100,17 @@ type appsec struct {
 }
 
 func newAppSec(cfg *Config) *appsec {
-	// Set RC capabilities and products for ASM
-	cfg.rc.Capabilities = append(cfg.rc.Capabilities, remoteconfig.ASMActivation)
-	cfg.rc.Products = append(cfg.rc.Products, rc.ProductASMFeatures)
-	rc, err := remoteconfig.NewClient(cfg.rc)
+	var client *remoteconfig.Client
+	var err error
+	if cfg.rc != nil {
+		client, err = remoteconfig.NewClient(*cfg.rc)
+	}
 	if err != nil {
-		log.Warn("Could not create remote configuration client. Feature will be disabled.")
+		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
 		cfg: cfg,
-		rc:  rc,
+		rc:  client,
 	}
 }
 
@@ -118,7 +119,7 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	unregisterWAF, err := registerWAF(a.cfg.rules, a.cfg.wafTimeout, a.limiter, &a.cfg.obfuscator)
+	unregisterWAF, err := a.registerWAF()
 	if err != nil {
 		return err
 	}
