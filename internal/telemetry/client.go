@@ -16,7 +16,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -192,14 +191,15 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		}
 	}
 
-	// Enabled field of AppSec in product details is required
+	// Enabled field of product details is required
 	c.Products = Products{
 		AppSec: ProductDetails{
 			Version: version.Tag,
-			Enabled: strconv.FormatBool(appsec.Enabled()),
+			Enabled: appsec.Enabled(),
 		},
 		Profiler: ProductDetails{
 			Version: version.Tag,
+			Enabled: c.Namespace == NamespaceProfilers,
 		},
 	}
 

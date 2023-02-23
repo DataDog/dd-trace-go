@@ -72,7 +72,7 @@ type Products struct {
 // ProductDetails specifies details about a product.
 type ProductDetails struct {
 	Version string `json:"version"`
-	Enabled string `json:"enabled,omitempty"`
+	Enabled bool   `json:"enabled,omitempty"`
 }
 
 // Host is identifying information about the host on which the app
