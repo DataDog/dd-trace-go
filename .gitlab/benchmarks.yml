@@ -28,7 +28,7 @@ variables:
 #     FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
 
 test-apps:
-  stage: benchmarks
+  stage: benchmarks # not really a benchmark, but whatever
   when: manual
   image: $BASE_CI_IMAGE
   timeout: 1h
