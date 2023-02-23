@@ -103,7 +103,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	span := mt.FinishedSpans()[1]
+	span := mt.FinishedSpans()[0]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
@@ -158,7 +158,7 @@ func TestResourceNamerSettingsV6(t *testing.T) {
 			DocumentType: "tweet",
 		}.Do(context.Background(), client)
 
-		span := mt.FinishedSpans()[1]
+		span := mt.FinishedSpans()[0]
 		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
 	})
 
@@ -207,8 +207,8 @@ func TestAnalyticsSettingsV6(t *testing.T) {
 		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
-		s := spans[1]
+		assert.Len(t, spans, 1)
+		s := spans[0]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
