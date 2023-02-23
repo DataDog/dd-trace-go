@@ -416,6 +416,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 			TracerVersion:   version.Tag,
 			LanguageName:    "go",
 			LanguageVersion: runtime.Version(),
+			Products:        c.Products,
 		},
 		Host: Host{
 			Hostname:    hostname,
