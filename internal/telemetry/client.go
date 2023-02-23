@@ -150,6 +150,7 @@ func NewClient(opts ...Option) (client *Client) {
 	}
 	return client
 }
+
 func (c *Client) log(msg string, args ...interface{}) {
 	if c.Logger == nil {
 		return
@@ -196,10 +197,6 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		AppSec: ProductDetails{
 			Version: version.Tag,
 			Enabled: appsec.Enabled(),
-		},
-		Profiler: ProductDetails{
-			Version: version.Tag,
-			Enabled: c.Namespace == NamespaceProfilers,
 		},
 	}
 

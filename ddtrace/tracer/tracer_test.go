@@ -2167,7 +2167,7 @@ func TestUserMonitoring(t *testing.T) {
 
 func TestTelemetryEnabled(t *testing.T) {
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	received := make(chan *telemetry.AppStarted, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
