@@ -9,6 +9,8 @@ DD_INSTALL_ONLY=true DD_AGENT_MAJOR_VERSION=7 DD_API_KEY=$DD_API_KEY DD_SITE="da
 cp /etc/datadog-agent/security-agent.yaml.example /etc/datadog-agent/security-agent.yaml
 service datadog-agent start
 
+tail -n500 /var/log/datadog/*
+
 cd ./profiler/internal/apps/unit-of-work && TestUnitOfWork=true go test -v
 
 service datadog-agent stop
