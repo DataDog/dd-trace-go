@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"fmt"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -312,16 +313,24 @@ func newTracer(opts ...StartOption) *tracer {
 	for k, v := range c.globalTags {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
 	}
-	// TODO:
-	//		sampler -- c.sampler, rate sampler, priority sampler
-	//		propagator - c.propagator - what kind of propagator is being used
-	//{Name: "span_rules", Value: c.spanRules},
-	//{Name: "trace_rules", Value: c.traceRules},
+	for _, rule := range append(c.spanRules, c.traceRules...) {
+		var service string
+		var name string
+		if rule.Service != nil {
+			service = rule.Service.String()
+		}
+		if rule.Name != nil {
+			name = rule.Name.String()
+		}
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
+				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
+	}
 	t.telemetry.Start(
+		// leave integration empty: we cannot access what integration is being used from here
 		[]telemetry.Integration{},
 		telemetryConfigs,
 	)
-
 	return t
 }
 
