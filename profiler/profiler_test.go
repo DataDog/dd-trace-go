@@ -6,7 +6,6 @@
 package profiler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +24,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
@@ -304,10 +302,6 @@ type mockBackend struct {
 }
 
 func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/telemetry/proxy/api/v2/apmtelemetry" {
-		// ignore instrumentation telemetry request
-		return
-	}
 	profile := profileMeta{
 		attachments: make(map[string][]byte),
 	}
@@ -442,69 +436,6 @@ func TestCorrectTags(t *testing.T) {
 			require.Contains(t, p.tags, tag)
 		}
 	}
-}
-
-func TestTelemetryEnabled(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	received := make(chan *telemetry.AppStarted, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
-			return
-		}
-		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
-			return
-		}
-		var body telemetry.Request
-		body.Payload = new(telemetry.AppStarted)
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			t.Errorf("bad body: %s", err)
-		}
-		select {
-		case received <- body.Payload.(*telemetry.AppStarted):
-		default:
-		}
-	}))
-	defer server.Close()
-
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(
-			BlockProfile,
-			HeapProfile,
-			MutexProfile,
-		),
-		WithPeriod(10*time.Millisecond),
-		CPUDuration(1*time.Millisecond),
-	)
-	defer Stop()
-
-	var payload *telemetry.AppStarted
-	select {
-	case <-ctx.Done():
-		t.Fatalf("Time out: waiting for telemetry payload")
-	case payload = <-received:
-	}
-
-	check := func(key string, expected interface{}) {
-		for _, kv := range payload.Configuration {
-			if kv.Name == key {
-				if kv.Value != expected {
-					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
-				}
-				return
-			}
-		}
-		t.Errorf("missing configuration %s", key)
-	}
-
-	check("heap_profile_enabled", true)
-	check("block_profile_enabled", true)
-	check("goroutine_profile_enabled", false)
-	check("mutex_profile_enabled", true)
-	check("profile_period", time.Duration(10*time.Millisecond).String())
-	check("cpu_duration", time.Duration(1*time.Millisecond).String())
 }
 
 func TestImmediateProfile(t *testing.T) {

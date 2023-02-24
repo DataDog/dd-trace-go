@@ -18,7 +18,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
@@ -71,7 +70,6 @@ type profiler struct {
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
 	deltas          map[ProfileType]deltaProfiler
-	telemetry       *telemetry.Client
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
@@ -199,14 +197,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 	}
 	p.uploadFunc = p.upload
-	p.telemetry = telemetry.NewClient(
-		telemetry.WithAPIKey(cfg.apiKey),
-		telemetry.WithNamespace(telemetry.NamespaceProfilers),
-		telemetry.WithService(cfg.service),
-		telemetry.WithEnv(cfg.env),
-		telemetry.WithHTTPClient(p.cfg.httpClient),
-		telemetry.WithURL(cfg.agentless, cfg.agentURL),
-	)
 	return &p, nil
 }
 
@@ -216,32 +206,6 @@ func (p *profiler) run() {
 		_, ok := p.cfg.types[t]
 		return ok
 	}
-	p.telemetry.Start(
-		// Integrations are part of this API to match the telemetry API,
-		// but there aren't really "integrations" for the profiler.
-		// Note that if we did have integrations, we'd need a mechanism
-		// to report the individual packages. runtime/debug.BuildInfo
-		// only shows *modules* that we depend on, not individual
-		// packages.
-		[]telemetry.Integration{},
-		[]telemetry.Configuration{
-			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
-			{Name: "agentless", Value: p.cfg.agentless},
-			{Name: "profile_period", Value: p.cfg.period.String()},
-			{Name: "cpu_duration", Value: p.cfg.cpuDuration.String()},
-			{Name: "cpu_profile_rate", Value: p.cfg.cpuProfileRate},
-			{Name: "block_profile_rate", Value: p.cfg.blockRate},
-			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
-			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
-			{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
-			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
-			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
-			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
-			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
-			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
-			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
-		},
-	)
 
 	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
@@ -462,7 +426,6 @@ func (p *profiler) interruptibleSleep(d time.Duration) {
 func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
-		p.telemetry.Stop()
 	})
 	p.wg.Wait()
 	if p.cfg.logStartup {
