@@ -23,8 +23,8 @@ import (
 )
 
 func TestUnitOfWork(t *testing.T) {
-	if os.Getenv("TestUnitOfWork") != "true" {
-		t.Skip("set TestUnitOfWork=true env var to run")
+	if os.Getenv("TEST_APPS_RUN") != "true" {
+		t.Skip("set TEST_APPS_RUN=true env var to run")
 	}
 
 	app := App{
