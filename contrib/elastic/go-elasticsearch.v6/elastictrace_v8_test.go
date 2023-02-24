@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
-	esapi7 "github.com/elastic/go-elasticsearch/v7/esapi"
+	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
+	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -20,15 +20,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-func checkGETTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
+func checkGETTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
-	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
-	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET /twitter/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/_doc/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
 }
 
-func checkErrTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
+func checkErrTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
@@ -37,48 +37,46 @@ func checkErrTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 }
 
-func TestClientV7(t *testing.T) {
+func TestClientV8(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cfg := elasticsearch7.Config{
+	cfg := elasticsearch8.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			elasticV7URL,
+			elasticV8URL,
 		},
 	}
-	client, err := elasticsearch7.NewClient(cfg)
+	client, err := elasticsearch8.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi7.IndexRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
-		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
+	_, err = esapi8.IndexRequest{
+		Index:      "twitter",
+		DocumentID: "1",
+		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
 	mt.Reset()
-	_, err = esapi7.GetRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
+	_, err = esapi8.GetRequest{
+		Index:      "twitter",
+		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkGETTraceV7(assert, mt)
+	checkGETTraceV8(assert, mt)
 
 	mt.Reset()
-	_, err = esapi7.GetRequest{
+	_, err = esapi8.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkErrTraceV7(assert, mt)
+	checkErrTraceV8(assert, mt)
 
 }
 
-func TestClientErrorCutoffV7(t *testing.T) {
+func TestClientErrorCutoffV8(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -88,40 +86,40 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	}()
 	bodyCutoff = 10
 
-	cfg := elasticsearch7.Config{
+	cfg := elasticsearch8.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
-			elasticV7URL,
+			elasticV8URL,
 		},
 	}
-	client, err := elasticsearch7.NewClient(cfg)
+	client, err := elasticsearch8.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi7.GetRequest{
+	_, err = esapi8.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
 
-	span := mt.FinishedSpans()[1]
+	span := mt.FinishedSpans()[0]
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
-func TestClientV7Failure(t *testing.T) {
+func TestClientV8Failure(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cfg := elasticsearch7.Config{
+	cfg := elasticsearch8.Config{
 		Transport: NewRoundTripper(WithServiceName("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},
 	}
-	client, err := elasticsearch7.NewClient(cfg)
+	client, err := elasticsearch8.NewClient(cfg)
 	assert.NoError(err)
 
-	_, err = esapi7.IndexRequest{
+	_, err = esapi8.IndexRequest{
 		Index:      "twitter",
 		DocumentID: "1",
 		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
@@ -133,7 +131,7 @@ func TestClientV7Failure(t *testing.T) {
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
 
-func TestResourceNamerSettingsV7(t *testing.T) {
+func TestResourceNamerSettingsV8(t *testing.T) {
 	staticName := "static resource name"
 	staticNamer := func(url, method string) string {
 		return staticName
@@ -143,42 +141,40 @@ func TestResourceNamerSettingsV7(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		cfg := elasticsearch7.Config{
+		cfg := elasticsearch8.Config{
 			Transport: NewRoundTripper(),
 			Addresses: []string{
-				elasticV7URL,
+				elasticV8URL,
 			},
 		}
-		client, err := elasticsearch7.NewClient(cfg)
+		client, err := elasticsearch8.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi7.GetRequest{
-			Index:        "logs_2017_05/event/_search",
-			DocumentID:   "1",
-			DocumentType: "tweet",
+		_, err = esapi8.GetRequest{
+			Index:      "logs_2017_05/event/_search",
+			DocumentID: "1",
 		}.Do(context.Background(), client)
 
-		span := mt.FinishedSpans()[1]
-		assert.Equal(t, "GET /logs_?_?/event/_search/tweet/?", span.Tag(ext.ResourceName))
+		span := mt.FinishedSpans()[0]
+		assert.Equal(t, "GET /logs_?_?/event/_search/_doc/?", span.Tag(ext.ResourceName))
 	})
 
 	t.Run("custom", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		cfg := elasticsearch7.Config{
+		cfg := elasticsearch8.Config{
 			Transport: NewRoundTripper(WithResourceNamer(staticNamer)),
 			Addresses: []string{
-				elasticV7URL,
+				elasticV8URL,
 			},
 		}
-		client, err := elasticsearch7.NewClient(cfg)
+		client, err := elasticsearch8.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi7.GetRequest{
-			Index:        "logs_2017_05/event/_search",
-			DocumentID:   "1",
-			DocumentType: "tweet",
+		_, err = esapi8.GetRequest{
+			Index:      "logs_2017_05/event/_search",
+			DocumentID: "1",
 		}.Do(context.Background(), client)
 
 		span := mt.FinishedSpans()[0]
@@ -186,29 +182,28 @@ func TestResourceNamerSettingsV7(t *testing.T) {
 	})
 }
 
-func TestAnalyticsSettingsV7(t *testing.T) {
+func TestAnalyticsSettingsV8(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 
-		cfg := elasticsearch7.Config{
+		cfg := elasticsearch8.Config{
 			Transport: NewRoundTripper(opts...),
 			Addresses: []string{
-				elasticV7URL,
+				elasticV8URL,
 			},
 		}
-		client, err := elasticsearch7.NewClient(cfg)
+		client, err := elasticsearch8.NewClient(cfg)
 		assert.NoError(t, err)
 
-		_, err = esapi7.IndexRequest{
-			Index:        "twitter",
-			DocumentID:   "1",
-			DocumentType: "tweet",
-			Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
+		_, err = esapi8.IndexRequest{
+			Index:      "twitter",
+			DocumentID: "1",
+			Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 		}.Do(context.Background(), client)
 		assert.NoError(t, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
-		s := spans[1]
+		assert.Len(t, spans, 1)
+		s := spans[0]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
