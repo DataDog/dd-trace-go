@@ -52,7 +52,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resource == "" {
 		resource = r.Method + " " + route
 	}
-	//MTOFF - QTNA #5
+	// MTOFF - QTNA #6
 	mux.cfg.spanOpts = append(mux.cfg.spanOpts, HeaderTagsFromRequest(r, mux.cfg.headersAsTags))
 
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{

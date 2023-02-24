@@ -908,20 +908,18 @@ func StackFrames(n, skip uint) FinishOption {
 // WithHeaderTags enables web integrations to attach the specified request headers as span tags.
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
-func WithHeaderTags(headers []string) StartOption {
+func WithHeaderTags(headerAsTagss []string) StartOption {
 	return func(c *config) {
-		for _, h := range headers {
+		for _, h := range headerAsTagss {
 			headerAndTag := strings.Split(h, ":")
 			header := strings.TrimSpace(strings.ToLower(headerAndTag[0]))
 			var tag string
-			// if there are multiple ':' in the string, we only look at the str before and after — subsequent values are ignored
-			// e.g, header:tag:extra becomes ['header', 'tag', 'extra'] but we only look at 'header' and 'tag'
 			if len(headerAndTag) > 1 {
-				//this checks whether the header has a mapped value. If so, use it as the tag name
+				// Check whether the header has a mapped value. If so, use it as the tag name
 				tag = strings.TrimSpace(strings.ToLower(headerAndTag[1]))
 				globalconfig.SetHeaderTag(header, tag)
 			} else {
-				//otherwise, just use the header as the tag name
+				// Otherwise, just use the header as the tag name
 				tag = ext.HTTPRequestHeaders + "." + header
 				globalconfig.SetHeaderTag(header, tag)
 			}

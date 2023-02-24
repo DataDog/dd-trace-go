@@ -62,7 +62,7 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 // ForEachStringTag runs fn on every key:val pair encountered in str.
 // str may contain multiple key:val pairs separated by either space
 // or comma (but not a mixture of both).
-//MTOFF - QTNA #4 this seems similar to the logic I had to do when parsing headertags. Should I be reusing this?
+// MTOFF - QTNA #4 this seems similar to the logic I had to do when parsing headertags. Should I be reusing this?
 func ForEachStringTag(str string, fn func(key string, val string)) {
 	sep := " "
 	if strings.Index(str, ",") > -1 {
