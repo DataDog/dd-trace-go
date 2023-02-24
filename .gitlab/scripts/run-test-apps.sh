@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -x
+echo "TEST_APP_DURATION: $TEST_APP_DURATION"
 
 export DD_API_KEY="$(aws ssm get-parameter --region us-east-1 --name ci.dd-trace-go.dd_api_key --with-decryption --query "Parameter.Value" --out text)"
 

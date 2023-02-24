@@ -1,5 +1,5 @@
 # todo: make run-length configurable
-test-apps:
+unit-of-work:
   stage: test-apps # not really a benchmark, but it's okay
   when: manual
   image: $BASE_CI_IMAGE
@@ -8,3 +8,7 @@ test-apps:
   tags: ["runner:apm-k8s-tweaked-metal"]
   script:
     - ./.gitlab/scripts/run-test-apps.sh
+  variables:
+    TEST_APP_DURATION:
+      value: "60m"
+      description: "The total amount of time this test app is going to run."
