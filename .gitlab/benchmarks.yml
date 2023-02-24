@@ -33,7 +33,7 @@ variables:
 
 # todo: make run-length configurable
 test-apps:
-  stage: benchmarks # not really a benchmark, but it's okay
+  stage: test-apps # not really a benchmark, but it's okay
   when: manual
   image: $BASE_CI_IMAGE
   timeout: 1h
