@@ -201,6 +201,9 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
+	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
+		WithHeaderTags(strings.Split(v, ","))
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
@@ -605,6 +608,7 @@ func WithServiceMapping(from, to string) StartOption {
 		if c.serviceMappings == nil {
 			c.serviceMappings = make(map[string]string)
 		}
+		fmt.Println("\nMTOFF: In withservicemapping")
 		c.serviceMappings[from] = to
 	}
 }
@@ -899,6 +903,32 @@ func StackFrames(n, skip uint) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
+	}
+}
+
+// func WithServiceMapping(from, to string) StartOption {
+	// return func(c *config) {
+	// 	if c.serviceMappings == nil {
+	// 		c.serviceMappings = make(map[string]string)
+	// 	}
+	// 	c.serviceMappings[from] = to
+	// }
+// }
+
+func WithHeaderTags(headers []string) StartOption {
+	return func(c *config) {
+		for _, h := range headers {
+			hs := strings.Split(h, ":")
+			// if there are multiple ':' in the string, we only look at the str before and after -- subsequent values are ignored
+			// e.g, header:tag:extra becomes ['header', 'tag', 'extra'] but we only look at 'header' and 'tag'
+			if len(hs) > 1 {
+				//this checks whether the header has a mapped value. If so, use it as the tag name
+				globalconfig.SetHeaderTag(strings.ToLower(hs[0]), strings.ToLower(hs[1]))
+			} else {
+				//otherwise, just use the header as the tag name
+				globalconfig.SetHeaderTag(strings.ToLower(hs[0]), ext.HTTPRequestHeaders + "." + strings.ToLower(hs[0]))
+			}
+		}
 	}
 }
 

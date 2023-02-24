@@ -41,6 +41,9 @@ func defaults(cfg *config) {
 	}
 	cfg.serviceName = "http.router"
 	//MTOFF: reminder that headerTags can also be a global config
+	if ht := globalconfig.GetHeaderTags(); ht != nil {
+		cfg.headersAsTags = ht
+	}
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
@@ -73,9 +76,9 @@ func WithServiceName(name string) MuxOption {
 // to Datadog.
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
-		if cfg.headersAsTags == nil {
-			cfg.headersAsTags = make(map[string]string)
-		}
+		//if this method is called on, then we want to create a new local headerTags config to overwrite global
+		cfg.headersAsTags = make(map[string]string)
+		//MTOFF: Remember to trim whitespace too
 		for _, h := range headers {
 			hs := strings.Split(h, ":")
 			// if there are multiple ':' in the string, we only look at the str before and after -- subsequent values are ignored

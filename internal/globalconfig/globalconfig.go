@@ -17,6 +17,7 @@ import (
 var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
+	headersAsTags: make(map[string]string),
 }
 
 type config struct {
@@ -24,6 +25,7 @@ type config struct {
 	analyticsRate float64
 	serviceName   string
 	runtimeID     string
+	headersAsTags map[string]string
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -61,4 +63,12 @@ func RuntimeID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.runtimeID
+}
+
+func SetHeaderTag(from, to string) {
+	cfg.headersAsTags[from] = to
+}
+
+func GetHeaderTags() map[string]string {
+	return cfg.headersAsTags
 }

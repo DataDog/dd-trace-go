@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"fmt"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -477,6 +478,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
+			fmt.Printf("\n MTOFF: span is %v, old svc %v, new svc %v", span, span.Service, newSvc)
 			span.Service = newSvc
 		}
 	}

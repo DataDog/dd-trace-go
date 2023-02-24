@@ -111,7 +111,7 @@ func TestWithHeaderTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	mux := NewRouter(WithServiceName("my-service"), WithHeaderTags())
+	mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header"}))
 	mux.Handle("/200", okHandler()).Host("localhost")
 	r := httptest.NewRequest("GET", "http://localhost/200", nil)
 	r.Header.Set("header", "header-value")
@@ -119,7 +119,8 @@ func TestWithHeaderTags(t *testing.T) {
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
 	spans := mt.FinishedSpans()
-	assert.Equal("header-value", spans[0].Tags()["http.request.headers.Header"])
+	//QTNA #2
+	assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 

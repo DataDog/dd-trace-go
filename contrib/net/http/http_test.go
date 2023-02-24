@@ -243,6 +243,9 @@ func TestAnalyticsSettings(t *testing.T) {
 	}
 }
 
+//waiting on QTNA #2 before writing this:
+//func TestWithHeaderTags(t *testing.T) {}
+
 func TestIgnoreRequestOption(t *testing.T) {
 	tests := []struct {
 		url       string

@@ -6,6 +6,7 @@
 package mux
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"strings"
@@ -129,15 +130,17 @@ func WithHeaderTags(headers []string) RouterOption {
 			cfg.headersAsTags = make(map[string]string)
 		}
 		for _, h := range headers {
+			fmt.Printf("We have a header: %v", h)
 			hs := strings.Split(h, ":")
+			// QTNA #1
 			// if there are multiple ':' in the string, we only look at the str before and after -- subsequent values are ignored
 			// e.g, header:tag:extra becomes ['header', 'tag', 'extra'] but we only look at 'header' and 'tag'
 			if len(hs) > 1 {
 				//this checks whether the header has a mapped value. If so, use it as the tag name
-				cfg.headersAsTags[strings.ToLower(hs[0])] = strings.ToLower(hs[1])
+				cfg.headersAsTags[strings.ToLower(hs[0])] = hs[1]
 			} else {
 				//otherwise, just use the header as the tag name
-				cfg.headersAsTags[strings.ToLower(hs[0])] = ext.HTTPRequestHeaders + "." + strings.ToLower(hs[0])
+				cfg.headersAsTags[strings.ToLower(hs[0])] = ext.HTTPRequestHeaders + "." + hs[0]
 			}
 		}
 	}
