@@ -468,13 +468,17 @@ func (c *Client) submitToURL(r *Request, url string) (err error, retry bool) {
 		return err, false
 	}
 	req.Header = http.Header{
-		"Content-Type":              {"application/json"},
-		"DD-Telemetry-API-Version":  {"v1"},
-		"DD-Telemetry-Request-Type": {string(r.RequestType)},
+		"DD-API-KEY":                 {c.APIKey}, // DD-API-KEY is required as of v2
+		"Content-Type":               {"application/json"},
+		"DD-Telemetry-API-Version":   {"v1"},
+		"DD-Telemetry-Request-Type":  {string(r.RequestType)},
+		"DD-Client-Library-Language": {"go"},
+		"DD-Client-Library-Version":  {version.Tag},
+		"DD-Agent-Env":               {c.Env},
+		"DD-Agent-Hostname":          {hostname},
+		"Datadog-Container-ID":       {internal.ContainerID()},
 	}
-	if len(c.APIKey) > 0 {
-		req.Header.Add("DD-API-Key", c.APIKey)
-	}
+
 	req.ContentLength = int64(len(b))
 
 	client := c.Client
