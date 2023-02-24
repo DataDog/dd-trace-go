@@ -1,4 +1,4 @@
-name: Test And Demo Apps
+name: Test Apps
 on:
   workflow_dispatch: {} # manually
   schedule: # nightly
