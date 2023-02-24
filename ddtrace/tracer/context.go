@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -44,7 +43,6 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	// we will add at least 1, at most 2 items
 	optsLocal := make([]StartSpanOption, len(opts), len(opts)+2)
 	copy(optsLocal, opts)
-	fmt.Printf("\nMTOFF: In StartSpanFromContext, opts is %+v", opts)
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()

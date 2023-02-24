@@ -28,7 +28,6 @@ var cfg = newConfig()
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
-	fmt.Println("\nMTOFF: StartRequestSpan")
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, r.Method),
@@ -56,7 +55,6 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
 // code. Any further span finish option can be added with opts.
 func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
-	fmt.Println("\nMTOFF: FinishRequestSpan")
 	var statusStr string
 	if status == 0 {
 		statusStr = "200"

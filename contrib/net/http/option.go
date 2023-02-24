@@ -40,7 +40,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = "http.router"
-	//MTOFF: reminder that headerTags can also be a global config
 	if ht := globalconfig.GetHeaderTags(); ht != nil {
 		cfg.headersAsTags = ht
 	}
@@ -70,25 +69,28 @@ func WithServiceName(name string) MuxOption {
 	}
 }
 
-// WithHeaderTags specifies that the integration should attach HTTP request headers as
-// tags to spans. It provides an option to specify a tag value to map the header to
+// WithHeaderTags specifies that the integration should attach HTTP request headers as tags to spans. 
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
+//MTOFF - QTNA #5
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
 		//if this method is called on, then we want to create a new local headerTags config to overwrite global
 		cfg.headersAsTags = make(map[string]string)
-		//MTOFF: Remember to trim whitespace too
 		for _, h := range headers {
-			hs := strings.Split(h, ":")
-			// if there are multiple ':' in the string, we only look at the str before and after -- subsequent values are ignored
+			headerAndTag := strings.Split(h, ":")
+			header := strings.TrimSpace(strings.ToLower(headerAndTag[0]))
+			var tag string
+			// if there are multiple ':' in the string, we only look at the str before and after — subsequent values are ignored
 			// e.g, header:tag:extra becomes ['header', 'tag', 'extra'] but we only look at 'header' and 'tag'
-			if len(hs) > 1 {
+			if len(headerAndTag) > 1 {
 				//this checks whether the header has a mapped value. If so, use it as the tag name
-				cfg.headersAsTags[strings.ToLower(hs[0])] = strings.ToLower(hs[1])
+				tag = strings.TrimSpace(strings.ToLower(headerAndTag[1]))
+				cfg.headersAsTags[header] = tag
 			} else {
 				//otherwise, just use the header as the tag name
-				cfg.headersAsTags[strings.ToLower(hs[0])] = ext.HTTPRequestHeaders + "." + strings.ToLower(hs[0])
+				tag = ext.HTTPRequestHeaders + "." + header
+				cfg.headersAsTags[header] = tag
 			}
 		}
 	}

@@ -120,10 +120,10 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 		cfg.resourceNamer = namer
 	}
 }
-// WithHeaderTags specifies that the integration should attach HTTP request headers as
-// tags to spans. It provides an option to specify a tag value to map the header to
+// WithHeaderTags specifies that the integration should attach HTTP request headers as tags to spans. 
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
+//MTOFF - QTNA #5
 func WithHeaderTags(headers []string) RouterOption {
 	return func(cfg *routerConfig) {
 		if cfg.headersAsTags == nil {
@@ -132,7 +132,9 @@ func WithHeaderTags(headers []string) RouterOption {
 		for _, h := range headers {
 			fmt.Printf("We have a header: %v", h)
 			hs := strings.Split(h, ":")
-			// QTNA #1
+			// MTOFF - QTNA #1: What if a user passes this in: `WithHeaderTags([]string{“header:map:map2”})`
+			// Currently I have the program ignoring the third part `:map2`, it just maps ‘header’ to ‘map’
+
 			// if there are multiple ':' in the string, we only look at the str before and after -- subsequent values are ignored
 			// e.g, header:tag:extra becomes ['header', 'tag', 'extra'] but we only look at 'header' and 'tag'
 			if len(hs) > 1 {

@@ -107,6 +107,10 @@ func TestDomain(t *testing.T) {
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
 
+//MTOFF - QTNA #3 I want to test multiple conditions here, not just one.
+// e.g, when the feature is enabled on both tracer & integration-level, 
+// when just headers vs headers + mapped values passed in (i.e, `"Accept"` vs `"Accept:mappedtag"`)
+// and a combination thereof. Should that all go in one test, or separated out?
 func TestWithHeaderTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -119,7 +123,12 @@ func TestWithHeaderTags(t *testing.T) {
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
 	spans := mt.FinishedSpans()
-	//QTNA #2
+	//MTOFF - QTNA #2: Not sure how to handle casing expectations. I currently have everything getting lowercased.
+	//Should the value of the tag always begin with a capital letter even if:
+	// - the value given to `WithHeaderTags` differs, e.g, WithHeaderTags([]string{“HeAdEr”}) or
+	// - the header itself differs, e.g, `header:value` (lowercase)
+	//E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation? 
+
 	assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
