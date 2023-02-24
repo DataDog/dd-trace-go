@@ -51,6 +51,8 @@ var (
 	// TODO: Default telemetry URL?
 	hostname string
 
+	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
+
 	defaultHeartbeatInterval = 60 // seconds
 )
 
@@ -131,6 +133,10 @@ type Client struct {
 	// metrics are sent
 	metrics    map[string]*metric
 	newMetrics bool
+
+	// temporaryAgentless allows us to toggle on agentless in the case where
+	// there are issues with sending telemetry to the agent
+	temporaryAgentless bool
 }
 
 // Logger for submission-related events
@@ -152,7 +158,9 @@ func NewClient(opts ...Option) (client *Client) {
 }
 
 func (c *Client) log(msg string, args ...interface{}) {
-	if c.Logger == nil {
+	// we don't log if the client is temporarily using agentless
+	// to avoid spamming the user with instrumentation telemetry error messages
+	if c.Logger == nil || c.temporaryAgentless {
 		return
 	}
 	c.Logger.Log(fmt.Sprintf("Instrumentation telemetry: "+msg, args...))
@@ -370,6 +378,9 @@ func (c *Client) flush() {
 			err := c.submit(r)
 			if err != nil {
 				c.log("telemetry submission failed: %s", err)
+				if r.RequestType == "app-started" {
+					c.retryWithAgentless(r)
+				}
 			}
 		}
 	}()
@@ -424,16 +435,37 @@ func (c *Client) newRequest(t RequestType) *Request {
 	}
 }
 
-// submit posts a telemetry request to the backend
+// if there is an error with sending telemetry to the agent
+// we use this function to retry with agentless endpoint
+func (c *Client) retryWithAgentless(r *Request) error {
+	err, _ := c.submitToURL(r, agentlessURL)
+	if err != nil {
+		c.log("Retrying with agentless telemetry failed: %s", err)
+	}
+	return err
+}
+
 func (c *Client) submit(r *Request) error {
+	err, retry := c.submitToURL(r, c.URL)
+	if err == nil {
+		// submitting to the agent is working, turn off temporary agentless
+		c.temporaryAgentless = false
+	} else if retry {
+		c.retryWithAgentless(r)
+		c.temporaryAgentless = true
+	}
+	return err
+}
+
+func (c *Client) submitToURL(r *Request, url string) (err error, retry bool) {
 	b, err := json.Marshal(r)
 	if err != nil {
-		return err
+		return err, false
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.URL, bytes.NewReader(b))
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
-		return err
+		return err, false
 	}
 	req.Header = http.Header{
 		"Content-Type":              {"application/json"},
@@ -451,13 +483,13 @@ func (c *Client) submit(r *Request) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return err, true && (url != agentlessURL)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return errBadStatus(resp.StatusCode)
+		return errBadStatus(resp.StatusCode), true && (url != agentlessURL)
 	}
-	return nil
+	return nil, false
 }
 
 type errBadStatus int

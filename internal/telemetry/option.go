@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -51,10 +52,33 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
+// isAPIKeyValid reports whether the given string is a structurally valid API key
+// (copied from profiler)
+func isAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
+}
+
+func defaultAPIKey() string {
+	if v := os.Getenv("DD_API_KEY"); isAPIKeyValid(v) {
+		return v
+	}
+	return ""
+}
+
 // WithAPIKey sets the DD API KEY for the telemetry client
 func WithAPIKey(v string) Option {
 	return func(client *Client) {
-		client.APIKey = v
+		if isAPIKeyValid(v) {
+			client.APIKey = v
+		}
 	}
 }
 
@@ -71,16 +95,17 @@ func WithAPIKey(v string) Option {
 func WithURL(agentless bool, agentURL string) Option {
 	return func(client *Client) {
 		if agentless {
-			// need to check that there is a valid api key
 			if client.APIKey == "" {
-				if v := os.Getenv("DD_API_KEY"); v != "" {
-					WithAPIKey(v)(client)
-				} else {
-					log.Warn("instrumentation telemetry: Agentless is turned out, but valid DD API key was not found. Not starting telemetry")
+				// set the api key if APIKey field is blank for the client.
+				// WithAPIKey only sets the APIKey field if the key passed in is valid
+				// else, it does nothing
+				WithAPIKey(defaultAPIKey())(client)
+				if client.APIKey == "" {
+					log.Warn("instrumentation telemetry: Agentless is turned on, but valid DD API key was not found. Not starting telemetry")
 					client.Disabled = true
 				}
 			}
-			client.URL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
+			client.URL = agentlessURL
 		} else {
 			// TODO: check agent /info endpoint to see if the agent is
 			// sufficiently recent to support this endpoint? overkill?
@@ -105,5 +130,7 @@ func WithLogger(logger Logger) Option {
 
 func defaultClient() (client *Client) {
 	client = new(Client)
+	WithHTTPClient(defaultHTTPClient)(client)
+	WithAPIKey(defaultAPIKey())(client)
 	return client
 }
