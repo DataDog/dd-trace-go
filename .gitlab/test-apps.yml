@@ -1,0 +1,10 @@
+# todo: make run-length configurable
+test-apps:
+  stage: test-apps # not really a benchmark, but it's okay
+  when: manual
+  image: $BASE_CI_IMAGE
+  timeout: 1h
+  interruptible: true
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  script:
+    - ./.gitlab/scripts/run-test-apps.sh

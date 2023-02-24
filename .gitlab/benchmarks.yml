@@ -1,12 +1,3 @@
-stages:
-  - benchmarks
-  - test-apps
-
-variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/relenv-microbenchmarking-platform/-/jobs/201492583
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/relenv-microbenchmarking-platform:dd-trace-go_knusbaum
-  INDEX_FILE: index.txt
-
 # benchmark:
 #   stage: benchmarks
 #   image: $BASE_CI_IMAGE
@@ -27,20 +18,3 @@ variables:
 #     paths:
 #       - reports/
 #     expire_in: 3 months
-#   variables:
-#     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-#     FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
-
-# todo: make run-length configurable
-test-apps:
-  stage: test-apps # not really a benchmark, but it's okay
-  when: manual
-  image: $BASE_CI_IMAGE
-  timeout: 1h
-  interruptible: true
-  tags: ["runner:apm-k8s-tweaked-metal"]
-  script:
-    - ./.gitlab/scripts/run-test-apps.sh
-  variables:
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
