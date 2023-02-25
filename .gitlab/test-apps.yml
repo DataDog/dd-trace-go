@@ -8,5 +8,6 @@ unit-of-work:
   script:
     - ./.gitlab/scripts/run-test-apps.sh
   variables:
-    TEST_APPS_DURATION: "60m"
-    TEST_APPS_RUN: "true"
+    TEST_APPS_ENABLED: "true"
+    TEST_APPS_TOTAL_DURATION: "630s"
+    TEST_APPS_PROFILE_PERIOD: "60s"

@@ -15,72 +15,117 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestUnitOfWork(t *testing.T) {
-	if os.Getenv("TEST_APPS_RUN") != "true" {
-		t.Skip("set TEST_APPS_RUN=true env var to run")
+	if os.Getenv("TEST_APPS_ENABLED") != "true" {
+		t.Skip("set TEST_APPS_ENABLED=true env var to run")
 	}
 
-	app := App{
-		DDTags: strings.TrimSpace(fmt.Sprintf(
-			"%s run_id:%d",
-			os.Getenv("DD_TAGS"),
-			rand.Uint64()),
-		),
-		ProfilePeriod: 60 * time.Second,
+	// The test executes for totalDuration as shown below. The first half of the
+	// time goes to running the app as v1 and the other half to run it as v2 with
+	// a different workload. Each version produces one profile every
+	// profilePeriod.
+	//
+	// | totalDuration                                            |
+	// | v1                          | v2                         |
+	// | profile 1 | profile 2 | ... | profile 1 | profile 2 | ...|
+	// ------------------------------------------> time
+
+	totalDuration := 70 * time.Second // default
+	if durationS := os.Getenv("TEST_APPS_TOTAL_DURATION"); durationS != "" {
+		var err error
+		totalDuration, err = time.ParseDuration(durationS)
+		require.NoError(t, err)
 	}
-	log.Printf("Using DD_TAGS=%q", app.DDTags)
-	testDuration := app.ProfilePeriod + 5*time.Second
 
-	t.Run("v1", func(t *testing.T) {
-		app.ServiceVersion = "v1"
-		for i := 0; i < 3; i++ {
-			// Request /foo and /bar
-			app.Run(t, func(hostPort string) {
-				start := time.Now()
-				for i := 0; i < 100; i++ {
-					requestEndpoints(t, hostPort, "/foo", "/bar")
-				}
-				time.Sleep(testDuration - time.Since(start))
-			})
-		}
-	})
+	profilePeriod := 10 * time.Second // enough for 3 profiles per version
+	if durationS := os.Getenv("TEST_APPS_PROFILE_PERIOD"); durationS != "" {
+		var err error
+		profilePeriod, err = time.ParseDuration(durationS)
+		require.NoError(t, err)
+	}
 
-	t.Run("v2", func(t *testing.T) {
-		app.ServiceVersion = "v2"
-		for i := 0; i < 3; i++ {
-			// Request /bar twice as much as /foo
-			app.Run(t, func(hostPort string) {
-				start := time.Now()
-				for i := 0; i < 100; i++ {
-					requestEndpoints(t, hostPort, "/foo", "/bar", "/bar")
-				}
-				time.Sleep(testDuration - time.Since(start))
-			})
-		}
-	})
+	ddTags := strings.TrimSpace(fmt.Sprintf(
+		"%s run_id:%d",
+		os.Getenv("DD_TAGS"),
+		rand.Uint64()),
+	)
+	log.Printf("Using DD_TAGS: %s", ddTags)
+
+	versions := []struct {
+		Version   string
+		Endpoints []string // each endpoint is requested once per second
+	}{
+		{"v1", []string{"/foo", "/bar"}},
+		{"v2", []string{"/foo", "/bar", "/bar"}},
+	}
+	for _, version := range versions {
+		t.Run(version.Version, func(t *testing.T) {
+			app := App{
+				DDTags:         ddTags,
+				ProfilePeriod:  profilePeriod,
+				ServiceVersion: version.Version,
+			}
+			app.Start(t)
+			defer app.Stop(t)
+
+			stop := closeAfter(totalDuration / time.Duration(len(versions)))
+
+			var eg errgroup.Group
+			for _, endpoint := range version.Endpoints {
+				url := "http://" + app.HostPort + endpoint
+				eg.Go(func() error {
+					ticker := time.Tick(time.Second)
+					for {
+						select {
+						case <-ticker:
+							req, err := http.Get(url)
+							if err != nil {
+								return err
+							}
+							req.Body.Close()
+						case <-stop:
+							return nil
+						}
+					}
+				})
+			}
+			require.NoError(t, eg.Wait())
+		})
+	}
+}
+
+// closeAfter returns a channel that is closed after the given amount of time.
+func closeAfter(dt time.Duration) <-chan struct{} {
+	ch := make(chan struct{})
+	time.AfterFunc(dt, func() { close(ch) })
+	return ch
 }
 
 type App struct {
 	ServiceVersion string
 	ProfilePeriod  time.Duration
 	DDTags         string
+	HostPort       string
+
+	proc *exec.Cmd
 }
 
-// Run launches the unit of work test app and then call fn in order to put some
-// load on the app. When fn returns, the app is terminated.
-func (a *App) Run(t *testing.T, fn func(hostPort string)) {
+// Run launches the test app.
+func (a *App) Start(t *testing.T) {
 	// Start app
-	hostPort := "localhost:8080"
+	if a.HostPort == "" {
+		a.HostPort = "localhost:8080"
+	}
 	cmd := fmt.Sprintf(
 		"go build && exec ./unit-of-work -http %s -version %s -period %s",
-		hostPort,
+		a.HostPort,
 		a.ServiceVersion,
 		a.ProfilePeriod,
 	)
@@ -101,26 +146,12 @@ func (a *App) Run(t *testing.T, fn func(hostPort string)) {
 	// Keep draining r to avoid blocking
 	go io.Copy(io.Discard, r)
 
-	// Invoke callback
-	fn(hostPort)
-
-	// Shutdown app
-	proc.Process.Signal(os.Interrupt)
-	require.NoError(t, proc.Wait())
+	a.proc = proc
 }
 
-// requestEndpoints requests the given endpoints at hostPort concurrently.
-func requestEndpoints(t *testing.T, hostPort string, endpoints ...string) {
-	var wg sync.WaitGroup
-	for _, endpoint := range endpoints {
-		endpoint := endpoint
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, err := http.Get("http://" + hostPort + endpoint)
-			require.NoError(t, err)
-			req.Body.Close()
-		}()
-	}
-	wg.Wait()
+// Stop terminates the app.
+func (a *App) Stop(t *testing.T) {
+	// Shutdown app
+	a.proc.Process.Signal(os.Interrupt)
+	require.NoError(t, a.proc.Wait())
 }
