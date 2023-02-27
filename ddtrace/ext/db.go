@@ -50,3 +50,9 @@ const (
 	// MongoDBCollection indicates the collection being accessed.
 	MongoDBCollection = "db.mongodb.collection"
 )
+
+// Redis tags.
+const (
+	// RedisDatabaseIndex indicates the Redis database index connected to.
+	RedisDatabaseIndex = "db.redis.database_index"
+)

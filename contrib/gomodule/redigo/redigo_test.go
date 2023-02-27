@@ -12,13 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/gomodule/redigo/redis"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -35,8 +36,8 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	c, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"))
-	assert.Nil(err)
+	c, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), redis.DialDatabase(15))
+	require.NoError(t, err)
 	c.Do("SET", 1, "truck")
 
 	spans := mt.FinishedSpans()
@@ -54,6 +55,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal(15, span.Tag("db.redis.database_index"))
 }
 
 func TestCommandError(t *testing.T) {
@@ -80,6 +82,7 @@ func TestCommandError(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal(0, span.Tag("db.redis.database_index"))
 }
 
 func TestConnectionError(t *testing.T) {
@@ -125,6 +128,7 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, child.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", child.Tag(ext.Component))
 	assert.Equal("redis", child.Tag(ext.DBSystem))
+	assert.Equal(0, child.Tag("db.redis.database_index"))
 }
 
 type stringifyTest struct{ A, B int }
@@ -154,6 +158,7 @@ func TestCommandsToSring(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal(0, span.Tag("db.redis.database_index"))
 }
 
 func TestPool(t *testing.T) {
@@ -185,13 +190,27 @@ func TestTracingDialUrl(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	url := "redis://127.0.0.1:6379"
+	url := "redis://127.0.0.1:6379/15"
 	client, err := DialURL(url, WithServiceName("redis-service"))
-	assert.Nil(err)
+	require.NoError(t, err)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
 	spans := mt.FinishedSpans()
-	assert.True(len(spans) > 0)
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("redis.command", span.OperationName())
+	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+	assert.Equal("redis-service", span.Tag(ext.ServiceName))
+	assert.Equal("SET", span.Tag(ext.ResourceName))
+	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("SET ONE  TWO", span.Tag("redis.raw_command"))
+	assert.Equal("2", span.Tag("redis.args_length"))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal(15, span.Tag("db.redis.database_index"))
 }
 
 func TestTracingDialContext(t *testing.T) {

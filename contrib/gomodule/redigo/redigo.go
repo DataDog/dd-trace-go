@@ -16,12 +16,13 @@ import (
 	"strconv"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/redigo"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	redis "github.com/gomodule/redigo/redis"
+	"github.com/gomodule/redigo/redis"
 )
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -48,6 +49,7 @@ type params struct {
 	network string
 	host    string
 	port    string
+	db      int
 }
 
 // parseOptions parses a set of arbitrary options (which can be of type redis.DialOption
@@ -98,7 +100,12 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc := wrapConn(c, &params{cfg, network, host, port})
+	db := 0
+	dialCfg, ok := redigo.ResolveDialOpts(dialOpts)
+	if ok {
+		db = dialCfg.DB
+	}
+	tc := wrapConn(c, &params{cfg, network, host, port, db})
 	return tc, nil
 }
 
@@ -115,7 +122,12 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 	if err != nil {
 		return nil, err
 	}
-	tc := wrapConn(c, &params{cfg, network, host, port})
+	db := 0
+	dialCfg, ok := redigo.ResolveDialOpts(dialOpts)
+	if ok {
+		db = dialCfg.DB
+	}
+	tc := wrapConn(c, &params{cfg, network, host, port, db})
 	return tc, nil
 }
 
@@ -139,8 +151,9 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 		host = "localhost"
 	}
 	network := "tcp"
+	db, _ := redigo.GetDBIndexFromURL(rawurl)
 	c, err := redis.DialURL(rawurl, dialOpts...)
-	tc := wrapConn(c, &params{cfg, network, host, port})
+	tc := wrapConn(c, &params{cfg, network, host, port, db})
 	return tc, err
 }
 
@@ -152,6 +165,7 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 		tracer.Tag(ext.Component, "gomodule/redigo"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		tracer.Tag(ext.RedisDatabaseIndex, p.db),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
