@@ -96,7 +96,7 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.status = status
 }
 
-// HeaderTagsFromRequest matches req headers to user-defined list of header tags 
+// HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
 // MTOFF - QTNA #6
 func HeaderTagsFromRequest(req *http.Request, headersAsTags map[string]string) ddtrace.StartSpanOption {
