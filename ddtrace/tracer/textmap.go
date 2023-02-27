@@ -694,6 +694,7 @@ var (
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
+	b.Grow(128)
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
@@ -749,6 +750,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
 	var stateHeader string
+	var ctx spanContext
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -760,18 +762,23 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 			parentHeader = v
 		case tracestateHeader:
 			stateHeader = v
+		default:
+			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
+				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
+			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	var ctx spanContext
+
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
 	if err := parseTracestate(&ctx, stateHeader); err != nil {
 		return nil, err
 	}
+
 	return &ctx, nil
 }
 

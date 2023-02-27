@@ -50,6 +50,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.PeerPort, port),
 		tracer.Tag(ext.Component, "go.mongodb.org/mongo-driver/mongo"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
