@@ -2,8 +2,8 @@ version: '3'
 services:
   app:
     build:
-      context: ../../../.. # repository root
-      dockerfile: profiler/internal/apps/unit-of-work/Dockerfile
+      context: ../../.. # repository root
+      dockerfile: internal/apps/unit-of-work/Dockerfile
     network_mode: host
     depends_on:
       agent:

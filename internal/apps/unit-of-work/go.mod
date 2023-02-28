@@ -53,4 +53,4 @@ require (
 )
 
 // use local version of dd-trace-go
-replace gopkg.in/DataDog/dd-trace-go.v1 => ../../../..
+replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
