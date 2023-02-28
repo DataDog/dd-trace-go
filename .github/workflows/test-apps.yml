@@ -1,14 +1,15 @@
 name: Test Apps
+
 on:
   workflow_dispatch: {} # manually
-  schedule: # nightly
-    - cron: "0 0 * * *"
-  pull_request: # on pull requests touching profiler files
-    paths:
-      - 'profiler/**'
+  schedule:
+    - cron: "0 0 * * *" # nightly
+  pull_request: {} # on pull request
+
 env:
+  DD_ENV: github
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}"
-  TestUnitOfWork: "true"
+
 jobs:
   unit-of-work:
     runs-on: ubuntu-latest
@@ -17,15 +18,30 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/dd-trace-go'
+
       - uses: datadog/agent-github-action@v1.3
         with:
             api_key: ${{ secrets.DD_TEST_AND_DEMO_API_KEY }}
             datadog_site: datad0g.com
+
       - uses: actions/setup-go@v3
         with:
           go-version: 'stable'
           check-latest: true
           cache: true
+
+      - name: "Setup nightly run to last 10 minutes"
+        if: (github.event_name == 'schedule')
+        run: |
+          echo "DD_TEST_APPS_TOTAL_DURATION=660s" >> $GITHUB_ENV
+          echo "DD_TEST_APPS_PROFILE_PERIOD=60s" >> $GITHUB_ENV
+          echo "DD_TAGS=${DD_TAGS} nightly:true" >> $GITHUB_ENV
+
+      - name: "Set other env vars, just for test"
+        if: (github.event_name != 'schedule')
+        run: |
+          echo "DD_TAGS=${DD_TAGS} nightly:false" >> $GITHUB_ENV
+
       - name: Run unit of work app
         run: |
-          cd ./profiler/internal/apps/unit-of-work && go test -v
+          cd ./profiler/internal/apps/unit-of-work && ./run.bash

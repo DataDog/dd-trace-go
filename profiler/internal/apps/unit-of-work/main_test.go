@@ -23,9 +23,10 @@ import (
 )
 
 func TestUnitOfWork(t *testing.T) {
-	if os.Getenv("TEST_APPS_ENABLED") != "true" {
-		t.Skip("set TEST_APPS_ENABLED=true env var to run")
+	if os.Getenv("DD_TEST_APPS_ENABLED") != "true" {
+		t.Skip("set DD_TEST_APPS_ENABLED=true env var to run")
 	}
+	var err error
 
 	// The test executes for totalDuration as shown below. The first half of the
 	// time goes to running the app as v1 and the other half to run it as v2 with
@@ -38,16 +39,20 @@ func TestUnitOfWork(t *testing.T) {
 	// ------------------------------------------> time
 
 	totalDuration := 70 * time.Second // default
-	if durationS := os.Getenv("TEST_APPS_TOTAL_DURATION"); durationS != "" {
-		var err error
-		totalDuration, err = time.ParseDuration(durationS)
+	if s := os.Getenv("DD_TEST_APPS_TOTAL_DURATION"); s != "" {
+		totalDuration, err = time.ParseDuration(s)
 		require.NoError(t, err)
 	}
 
 	profilePeriod := 10 * time.Second // enough for 3 profiles per version
-	if durationS := os.Getenv("TEST_APPS_PROFILE_PERIOD"); durationS != "" {
-		var err error
-		profilePeriod, err = time.ParseDuration(durationS)
+	if s := os.Getenv("DD_TEST_APPS_PROFILE_PERIOD"); s != "" {
+		profilePeriod, err = time.ParseDuration(s)
+		require.NoError(t, err)
+	}
+
+	rps := 5
+	if s := os.Getenv("DD_TEST_APPS_REQUESTS_PER_SECOND"); s != "" {
+		_, err := fmt.Sscan(s, &rps)
 		require.NoError(t, err)
 	}
 
@@ -60,7 +65,7 @@ func TestUnitOfWork(t *testing.T) {
 
 	versions := []struct {
 		Version   string
-		Endpoints []string // each endpoint is requested once per second
+		Endpoints []string // each endpoint is requested at the rps rate
 	}{
 		{"v1", []string{"/foo", "/bar"}},
 		{"v2", []string{"/foo", "/bar", "/bar"}},
@@ -81,7 +86,7 @@ func TestUnitOfWork(t *testing.T) {
 			for _, endpoint := range version.Endpoints {
 				url := "http://" + app.HostPort + endpoint
 				eg.Go(func() error {
-					ticker := time.Tick(time.Second)
+					ticker := time.Tick(time.Second / time.Duration(rps))
 					for {
 						select {
 						case <-ticker:
