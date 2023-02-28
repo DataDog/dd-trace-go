@@ -7,6 +7,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -83,37 +85,39 @@ func TestUnitOfWork(t *testing.T) {
 			app.Start(t)
 			defer app.Stop(t)
 
-			stop := closeAfter(totalDuration / time.Duration(len(versions)))
+			ctx, cancel := context.WithTimeout(context.Background(), totalDuration/time.Duration(len(versions)))
+			defer cancel()
+			eg := errgroup.Group{}
+			ticker := time.NewTicker(time.Second / time.Duration(rps))
+			defer ticker.Stop()
 
-			var eg errgroup.Group
-			for _, endpoint := range version.Endpoints {
-				url := "http://" + app.HostPort + endpoint
-				eg.Go(func() error {
-					ticker := time.Tick(time.Second / time.Duration(rps))
-					for {
-						select {
-						case <-ticker:
-							req, err := http.Get(url)
+		loop:
+			for {
+				select {
+				case <-ticker.C:
+					for _, endpoint := range version.Endpoints {
+						url := "http://" + app.HostPort + endpoint
+						eg.Go(func() error {
+							req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 							if err != nil {
 								return err
 							}
-							req.Body.Close()
-						case <-stop:
-							return nil
-						}
+							res, err := http.DefaultClient.Do(req)
+							if err != nil {
+								return err
+							}
+							return res.Body.Close()
+						})
 					}
-				})
+				case <-ctx.Done():
+					break loop
+				}
 			}
-			require.NoError(t, eg.Wait())
+			if err := eg.Wait(); !errors.Is(err, context.DeadlineExceeded) {
+				require.NoError(t, err)
+			}
 		})
 	}
-}
-
-// closeAfter returns a channel that is closed after the given amount of time.
-func closeAfter(dt time.Duration) <-chan struct{} {
-	ch := make(chan struct{})
-	time.AfterFunc(dt, func() { close(ch) })
-	return ch
 }
 
 type App struct {

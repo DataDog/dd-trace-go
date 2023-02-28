@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 echo "-> Installing agent"
-
 DD_HOSTNAME=$(hostname) \
 	DD_SITE="datad0g.com" \
   DD_API_KEY="$(aws ssm get-parameter --region us-east-1 --name ci.dd-trace-go.dd_api_key --with-decryption --query "Parameter.Value" --out text)" \
