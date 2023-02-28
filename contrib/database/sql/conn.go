@@ -228,6 +228,8 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, "database/sql"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		// set a default value for this tag which will be overwritten later if set in the metadata.
+		tracer.Tag(ext.DBSystem, ext.DBSystemOtherSQL),
 	)
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {

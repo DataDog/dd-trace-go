@@ -273,6 +273,7 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 		tracer.ResourceName(name),
 		tracer.Tag(ext.Component, "syndtr/goleveldb/leveldb"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemLevelDB),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

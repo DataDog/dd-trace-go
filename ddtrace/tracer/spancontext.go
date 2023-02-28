@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -334,6 +335,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
+		for k, v := range ginternal.GetTracerGitMetadataTags() {
+			s.setMeta(k, v)
+		}
 	}
 	if len(t.spans) != t.finished {
 		return
@@ -345,6 +349,9 @@ func (t *trace) finishedOne(s *span) {
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
 		return
+	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))

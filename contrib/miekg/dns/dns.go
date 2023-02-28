@@ -45,7 +45,7 @@ func WrapHandler(handler dns.Handler) *Handler {
 // ServeDNS dispatches requests to the underlying Handler. All requests will be
 // traced.
 func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
-	span, _ := startSpan(context.Background(), r.Opcode)
+	span, _ := startServerSpan(context.Background(), r.Opcode)
 	rw := &responseWriter{ResponseWriter: w}
 	h.Handler.ServeDNS(rw, r)
 	span.Finish(tracer.WithError(rw.err))
@@ -67,7 +67,7 @@ func (rw *responseWriter) WriteMsg(msg *dns.Msg) error {
 
 // Exchange calls dns.Exchange and traces the request.
 func Exchange(m *dns.Msg, addr string) (r *dns.Msg, err error) {
-	span, _ := startSpan(context.Background(), m.Opcode)
+	span, _ := startClientSpan(context.Background(), m.Opcode)
 	r, err = dns.Exchange(m, addr)
 	span.Finish(tracer.WithError(err))
 	return r, err
@@ -75,7 +75,7 @@ func Exchange(m *dns.Msg, addr string) (r *dns.Msg, err error) {
 
 // ExchangeConn calls dns.ExchangeConn and traces the request.
 func ExchangeConn(c net.Conn, m *dns.Msg) (r *dns.Msg, err error) {
-	span, _ := startSpan(context.Background(), m.Opcode)
+	span, _ := startClientSpan(context.Background(), m.Opcode)
 	r, err = dns.ExchangeConn(c, m)
 	span.Finish(tracer.WithError(err))
 	return r, err
@@ -83,7 +83,7 @@ func ExchangeConn(c net.Conn, m *dns.Msg) (r *dns.Msg, err error) {
 
 // ExchangeContext calls dns.ExchangeContext and traces the request.
 func ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (r *dns.Msg, err error) {
-	span, ctx := startSpan(ctx, m.Opcode)
+	span, ctx := startClientSpan(ctx, m.Opcode)
 	r, err = dns.ExchangeContext(ctx, m, addr)
 	span.Finish(tracer.WithError(err))
 	return r, err
@@ -96,7 +96,7 @@ type Client struct {
 
 // Exchange calls the underlying Client.Exchange and traces the request.
 func (c *Client) Exchange(m *dns.Msg, addr string) (r *dns.Msg, rtt time.Duration, err error) {
-	span, _ := startSpan(context.Background(), m.Opcode)
+	span, _ := startClientSpan(context.Background(), m.Opcode)
 	r, rtt, err = c.Client.Exchange(m, addr)
 	span.Finish(tracer.WithError(err))
 	return r, rtt, err
@@ -104,7 +104,7 @@ func (c *Client) Exchange(m *dns.Msg, addr string) (r *dns.Msg, rtt time.Duratio
 
 // ExchangeContext calls the underlying Client.ExchangeContext and traces the request.
 func (c *Client) ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (r *dns.Msg, rtt time.Duration, err error) {
-	span, ctx := startSpan(ctx, m.Opcode)
+	span, ctx := startClientSpan(ctx, m.Opcode)
 	r, rtt, err = c.Client.ExchangeContext(ctx, m, addr)
 	span.Finish(tracer.WithError(err))
 	return r, rtt, err
@@ -115,6 +115,17 @@ func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) 
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
 		tracer.SpanType(ext.SpanTypeDNS),
-		tracer.Tag(ext.Component, "miekg/dns"),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient))
+		tracer.Tag(ext.Component, "miekg/dns"))
+}
+
+func startClientSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+	span, ctx := startSpan(ctx, opcode)
+	span.SetTag(ext.SpanKind, ext.SpanKindClient)
+	return span, ctx
+}
+
+func startServerSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+	span, ctx := startSpan(ctx, opcode)
+	span.SetTag(ext.SpanKind, ext.SpanKindServer)
+	return span, ctx
 }

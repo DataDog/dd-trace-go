@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -40,6 +41,16 @@ func main() {
 	resp.Body.Close()
 	if data.Milestone == nil {
 		exit(errors.New("Milestone not set."))
+	} else if m, ok := data.Milestone.(map[string]interface{}); ok {
+		title, ok := m["title"].(string)
+		if !ok {
+			exit(errors.New("Could not find milestone \"title\" in milestone map."))
+		}
+		if strings.ToLower(title) == "triage" {
+			exit(errors.New("PR's in the Triage milestone cannot be merged."))
+		}
+	} else {
+		exit(errors.New("Could not resolve milestone. checkmilestone.go likely needs to be updated."))
 	}
 	fmt.Println("Milestone check passed.")
 }
