@@ -57,10 +57,13 @@ func TestUnitOfWork(t *testing.T) {
 	}
 
 	ddTags := strings.TrimSpace(fmt.Sprintf(
-		"%s run_id:%d",
+		"%s run_id:%d DD_TEST_APPS_REQUESTS_PER_SECOND:%d DD_TEST_APPS_PROFILE_PERIOD:%s DD_TEST_APPS_TOTAL_DURATION:%s",
 		os.Getenv("DD_TAGS"),
-		rand.Uint64()),
-	)
+		rand.Uint64(),
+		rps,
+		profilePeriod,
+		totalDuration,
+	))
 	log.Printf("Using DD_TAGS: %s", ddTags)
 
 	versions := []struct {
