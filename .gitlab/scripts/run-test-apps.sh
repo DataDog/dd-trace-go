@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+set -eu
+
+stop_agent() {
+  echo "-> Stopping agent"
+  service datadog-agent stop
+}
+trap "stop_agent" ERR
 
 echo "-> Installing agent"
 DD_HOSTNAME=$(hostname) \
@@ -16,5 +23,4 @@ service datadog-agent start
 echo "-> Running unit-of-work test app"
 cd ./internal/apps/unit-of-work && ./run.bash
 
-echo "-> Stopping agent"
-service datadog-agent stop
+stop_agent
