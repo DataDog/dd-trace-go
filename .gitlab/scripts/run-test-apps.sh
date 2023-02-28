@@ -14,7 +14,7 @@ cp /etc/datadog-agent/security-agent.yaml.example /etc/datadog-agent/security-ag
 service datadog-agent start
 
 echo "-> Running unit-of-work test app"
-cd ./profiler/internal/apps/unit-of-work && ./run.bash
+cd ./internal/apps/unit-of-work && ./run.bash
 
 echo "-> Stopping agent"
 service datadog-agent stop

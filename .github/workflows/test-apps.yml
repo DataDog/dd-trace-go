@@ -39,4 +39,4 @@ jobs:
 
       - name: Run unit of work app
         run: |
-          cd ./profiler/internal/apps/unit-of-work && ./run.bash
+          cd ./internal/apps/unit-of-work && ./run.bash
