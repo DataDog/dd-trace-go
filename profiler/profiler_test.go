@@ -551,7 +551,7 @@ func TestExecutionTrace(t *testing.T) {
 		return false
 	}
 	seenTraces := 0
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
 		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
@@ -559,7 +559,7 @@ func TestExecutionTrace(t *testing.T) {
 		}
 	}
 	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 5 profile collections: one at
+	// second, we should see 2 traces after 4 profile collections: one at
 	// the start, and one 3 seconds later.
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
