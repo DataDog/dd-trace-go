@@ -440,7 +440,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 // if there is an error with sending telemetry to the agent
 // we use this function to retry with agentless endpoint
 func (c *Client) retryWithAgentless(r *Request) error {
-	err, _ := c.submitToURL(r, agentlessURL)
+	_, err := c.submitToURL(r, agentlessURL)
 	if err != nil {
 		c.log("Retrying with agentless telemetry failed: %s", err)
 	}
