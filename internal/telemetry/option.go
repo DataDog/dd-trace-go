@@ -11,6 +11,7 @@ import (
 	"os"
 	"unicode"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -130,6 +131,8 @@ func WithLogger(logger Logger) Option {
 
 func defaultClient() (client *Client) {
 	client = new(Client)
+	client.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	client.CollectDependencies = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
 	WithHTTPClient(defaultHTTPClient)(client)
 	WithAPIKey(defaultAPIKey())(client)
 	return client

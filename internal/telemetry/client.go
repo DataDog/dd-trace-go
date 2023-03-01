@@ -93,9 +93,14 @@ type Client struct {
 	Products Products
 
 	// Determines whether telemetry should actually run.
-	// Defaults to false, but will be overridden by the environment variable
+	// Defaults to true, but will be overridden by the environment variable
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
 	Disabled bool
+
+	// Determines whether dependencies should be collected
+	// Defaults to true, but will be overridden by the environment variable
+	// DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED is set to 0 or false
+	CollectDependencies bool
 
 	// debug enables the debug flag for all requests, see
 	// https://dtdg.co/3bv2MMv If set, the DD_INSTRUMENTATION_TELEMETRY_DEBUG
@@ -150,9 +155,6 @@ func NewClient(opts ...Option) (client *Client) {
 	client = defaultClient()
 	for _, opt := range opts {
 		opt(client)
-	}
-	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
-		client.Disabled = true
 	}
 	return client
 }
@@ -218,26 +220,27 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 
 	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
-	depPayload := Dependencies{[]Dependency{}}
-	deps, ok := debug.ReadBuildInfo()
-	if ok {
-		for _, dep := range deps.Deps {
-			depPayload.Dependencies = append(depPayload.Dependencies,
-				Dependency{
-					Name:    dep.Path,
-					Version: dep.Version,
-				},
-			)
-		}
-	}
-
 	appStarted := c.newRequest(RequestTypeAppStarted)
 	appStarted.Payload = payload
 	c.scheduleSubmit(appStarted)
 
-	dep := c.newRequest(RequestTypeDependenciesLoaded)
-	dep.Payload = depPayload
-	c.scheduleSubmit(dep)
+	if c.CollectDependencies || internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
+		depPayload := Dependencies{[]Dependency{}}
+		deps, ok := debug.ReadBuildInfo()
+		if ok {
+			for _, dep := range deps.Deps {
+				depPayload.Dependencies = append(depPayload.Dependencies,
+					Dependency{
+						Name:    dep.Path,
+						Version: dep.Version,
+					},
+				)
+			}
+		}
+		dep := c.newRequest(RequestTypeDependenciesLoaded)
+		dep.Payload = depPayload
+		c.scheduleSubmit(dep)
+	}
 
 	c.flush()
 
