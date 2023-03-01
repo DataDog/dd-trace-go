@@ -188,18 +188,6 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 		Integrations:  append([]Integration{}, integrations...),
 		Configuration: append([]Configuration{}, configuration...),
 	}
-	deps, ok := debug.ReadBuildInfo()
-	if ok {
-		for _, dep := range deps.Deps {
-			payload.Dependencies = append(payload.Dependencies,
-				Dependency{
-					Name:    dep.Path,
-					Version: dep.Version,
-				},
-			)
-		}
-	}
-
 	// Enabled field of product details is required
 	c.Products = Products{
 		AppSec: ProductDetails{
@@ -230,9 +218,27 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 
 	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
-	r := c.newRequest(RequestTypeAppStarted)
-	r.Payload = payload
-	c.scheduleSubmit(r)
+	depPayload := Dependencies{[]Dependency{}}
+	deps, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, dep := range deps.Deps {
+			depPayload.Dependencies = append(depPayload.Dependencies,
+				Dependency{
+					Name:    dep.Path,
+					Version: dep.Version,
+				},
+			)
+		}
+	}
+
+	appStarted := c.newRequest(RequestTypeAppStarted)
+	appStarted.Payload = payload
+	c.scheduleSubmit(appStarted)
+
+	dep := c.newRequest(RequestTypeDependenciesLoaded)
+	dep.Payload = depPayload
+	c.scheduleSubmit(dep)
+
 	c.flush()
 
 	if c.SubmissionInterval == 0 {
@@ -411,7 +417,7 @@ func getOSVersion() string {
 func (c *Client) newRequest(t RequestType) *Request {
 	c.seqID++
 	return &Request{
-		APIVersion:  "v1",
+		APIVersion:  "v2",
 		RequestType: t,
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),

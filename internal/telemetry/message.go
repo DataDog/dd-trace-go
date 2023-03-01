@@ -34,6 +34,9 @@ const (
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
+	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
+	// is enabled. Still sent when Start is called for the telemetry client.
+	RequestTypeDependenciesLoaded RequestType = "app-dependencies-loaded"
 )
 
 // Namespace describes an APM product to distinguish telemetry coming from
@@ -73,6 +76,7 @@ type Products struct {
 type ProductDetails struct {
 	Version string `json:"version,omitempty"`
 	Enabled bool   `json:"enabled"`
+	Error   Error  `json:"error"`
 }
 
 // Host is identifying information about the host on which the app
@@ -91,9 +95,10 @@ type Host struct {
 
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
-	Integrations  []Integration   `json:"integrations"`
-	Dependencies  []Dependency    `json:"dependencies"`
-	Configuration []Configuration `json:"configuration"`
+	Integrations      []Integration       `json:"integrations,omitempty"`
+	Configuration     []Configuration     `json:"configuration"`
+	Error             []Error             `json:"error,omitempty"`
+	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 }
 
 // Integration is an integration that is available within the app and applicable
@@ -105,6 +110,10 @@ type Integration struct {
 	AutoEnabled bool   `json:"auto_enabled,omitempty"`
 	Compatible  bool   `json:"compatible,omitempty"`
 	Error       string `json:"error,omitempty"`
+}
+
+type Dependencies struct {
+	Dependencies []Dependency `json:"dependencies"`
 }
 
 // Dependency is a Go module on which the applciation depends. This information
@@ -119,6 +128,19 @@ type Dependency struct {
 type Configuration struct {
 	Name string `json:"name"`
 	// Value should have a type that can be marshaled to JSON
+	Value       interface{} `json:"value"`
+	Origin      string      `json:"origin"` // source of config?
+	Error       Error       `json:"Error,omitempty"`
+	IsOverriden bool        `json:"is_overriden,omitempty"`
+}
+
+type Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type AdditionalPayload struct {
+	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
 }
 
