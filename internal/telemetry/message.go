@@ -54,16 +54,15 @@ const (
 
 // Application is identifying information about the app itself
 type Application struct {
-	ServiceName     string   `json:"service_name"`
-	Env             string   `json:"env,omitempty"`
-	ServiceVersion  string   `json:"service_version,omitempty"`
-	TracerVersion   string   `json:"tracer_version"`
-	LanguageName    string   `json:"language_name"`
-	LanguageVersion string   `json:"language_version"`
-	RuntimeName     string   `json:"runtime_name,omitempty"`
-	RuntimeVersion  string   `json:"runtime_version,omitempty"`
-	RuntimePatches  string   `json:"runtime_patches,omitempty"`
-	Products        Products `json:"products,omitempty"`
+	ServiceName     string `json:"service_name"`
+	Env             string `json:"env,omitempty"`
+	ServiceVersion  string `json:"service_version,omitempty"`
+	TracerVersion   string `json:"tracer_version"`
+	LanguageName    string `json:"language_name"`
+	LanguageVersion string `json:"language_version"`
+	RuntimeName     string `json:"runtime_name,omitempty"`
+	RuntimeVersion  string `json:"runtime_version,omitempty"`
+	RuntimePatches  string `json:"runtime_patches,omitempty"`
 }
 
 // Products specifies information about available products.
@@ -95,10 +94,10 @@ type Host struct {
 
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
-	Integrations      []Integration       `json:"integrations,omitempty"`
 	Configuration     []Configuration     `json:"configuration"`
 	Error             []Error             `json:"error,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
+	Products          Products            `json:"products,omitempty"`
 }
 
 // Integration is an integration that is available within the app and applicable
@@ -130,8 +129,8 @@ type Configuration struct {
 	// Value should have a type that can be marshaled to JSON
 	Value       interface{} `json:"value"`
 	Origin      string      `json:"origin"` // source of config?
-	Error       Error       `json:"Error,omitempty"`
-	IsOverriden bool        `json:"is_overriden,omitempty"`
+	Error       Error       `json:"error,omitempty"`
+	IsOverriden bool        `json:"is_overridden,omitempty"`
 }
 
 type Error struct {

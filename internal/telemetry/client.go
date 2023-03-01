@@ -189,7 +189,6 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	c.metrics = make(map[string]*metric)
 
 	payload := &AppStarted{
-		Integrations:  append([]Integration{}, integrations...),
 		Configuration: append([]Configuration{}, configuration...),
 	}
 	// Enabled field of product details is required
@@ -427,7 +426,6 @@ func (c *Client) newRequest(t RequestType) *Request {
 			TracerVersion:   version.Tag,
 			LanguageName:    "go",
 			LanguageVersion: runtime.Version(),
-			Products:        c.Products,
 		},
 		Host: Host{
 			Hostname:  hostname,
