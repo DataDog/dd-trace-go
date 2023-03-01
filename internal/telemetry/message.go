@@ -146,10 +146,8 @@ type AdditionalPayload struct {
 
 // Metrics corresponds to the "generate-metrics" request type
 type Metrics struct {
-	Namespace   Namespace `json:"namespace"`
-	LibLanguage string    `json:"lib_language"`
-	LibVersion  string    `json:"lib_version"`
-	Series      []Series  `json:"series"`
+	Namespace Namespace `json:"namespace"`
+	Series    []Series  `json:"series"`
 }
 
 // Series is a sequence of observations for a single named metric

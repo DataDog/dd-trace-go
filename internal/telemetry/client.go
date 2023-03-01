@@ -356,9 +356,7 @@ func (c *Client) flush() {
 		c.newMetrics = false
 		r := c.newRequest(RequestTypeGenerateMetrics)
 		payload := &Metrics{
-			Namespace:   c.Namespace,
-			LibLanguage: "go",
-			LibVersion:  version.Tag,
+			Namespace: c.Namespace,
 		}
 		for _, m := range c.metrics {
 			s := Series{
