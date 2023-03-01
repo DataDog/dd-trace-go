@@ -198,6 +198,7 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 			Enabled: appsec.Enabled(),
 		},
 	}
+	payload.Products = c.Products
 
 	// configEnvFallback returns the value of environment variable with the
 	// given key if def == ""

@@ -95,8 +95,8 @@ type Host struct {
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
 	Configuration     []Configuration     `json:"configuration"`
-	Error             []Error             `json:"error,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
+	Error             Error               `json:"error,omitempty"`
 	Products          Products            `json:"products,omitempty"`
 }
 
