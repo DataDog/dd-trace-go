@@ -427,10 +427,10 @@ func (c *Client) newRequest(t RequestType) *Request {
 			Products:        c.Products,
 		},
 		Host: Host{
-			Hostname:    hostname,
-			ContainerID: internal.ContainerID(),
-			OS:          getOSName(),
-			OSVersion:   getOSVersion(),
+			Hostname:  hostname,
+			OS:        getOSName(),
+			OSVersion: getOSVersion(),
+			// TODO (lievan): arch, kernel stuff?
 		},
 	}
 }

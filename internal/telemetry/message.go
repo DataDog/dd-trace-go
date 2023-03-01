@@ -71,22 +71,22 @@ type Products struct {
 
 // ProductDetails specifies details about a product.
 type ProductDetails struct {
-	Version string `json:"version"`
+	Version string `json:"version,omitempty"`
 	Enabled bool   `json:"enabled"`
 }
 
 // Host is identifying information about the host on which the app
 // is running
 type Host struct {
-	ContainerID string `json:"container_id,omitempty"`
-	Hostname    string `json:"hostname,omitempty"`
-	OS          string `json:"os,omitempty"`
-	OSVersion   string `json:"os_version,omitempty"`
+	Hostname  string `json:"hostname"`
+	OS        string `json:"os"`
+	OSVersion string `json:"os_version,omitempty"`
 	// TODO: Do we care about the kernel stuff? internal/osinfo gets most of
 	// this information in OSName/OSVersion
-	KernelName    string `json:"kernel_name,omitempty"`
-	KernelRelease string `json:"kernel_release,omitempty"`
-	KernelVersion string `json:"kernel_version,omitempty"`
+	Architecture  string `json:"architecture"`
+	KernelName    string `json:"kernel_name"`
+	KernelRelease string `json:"kernel_release"`
+	KernelVersion string `json:"kernel_version"`
 }
 
 // AppStarted corresponds to the "app-started" request type
