@@ -448,7 +448,7 @@ func (c *Client) retryWithAgentless(r *Request) error {
 }
 
 func (c *Client) submit(r *Request) error {
-	err, retry := c.submitToURL(r, c.URL)
+	retry, err := c.submitToURL(r, c.URL)
 	c.agentlessLock.Lock()
 	defer c.agentlessLock.Unlock()
 	if err == nil {
@@ -462,15 +462,15 @@ func (c *Client) submit(r *Request) error {
 	return err
 }
 
-func (c *Client) submitToURL(r *Request, url string) (err error, retry bool) {
+func (c *Client) submitToURL(r *Request, url string) (retry bool, err error) {
 	b, err := json.Marshal(r)
 	if err != nil {
-		return err, false
+		return false, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
-		return err, false
+		return false, err
 	}
 	req.Header = http.Header{
 		"DD-API-KEY":                 {c.APIKey}, // DD-API-KEY is required as of v2
@@ -492,13 +492,13 @@ func (c *Client) submitToURL(r *Request, url string) (err error, retry bool) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err, true && (url != agentlessURL)
+		return true && (url != agentlessURL), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return errBadStatus(resp.StatusCode), true && (url != agentlessURL)
+		return true && (url != agentlessURL), errBadStatus(resp.StatusCode)
 	}
-	return nil, false
+	return false, nil
 }
 
 type errBadStatus int

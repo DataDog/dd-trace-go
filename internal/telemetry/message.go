@@ -111,6 +111,7 @@ type Integration struct {
 	Error       string `json:"error,omitempty"`
 }
 
+// Dependencies stores a list of dependencies
 type Dependencies struct {
 	Dependencies []Dependency `json:"dependencies"`
 }
@@ -129,15 +130,18 @@ type Configuration struct {
 	// Value should have a type that can be marshaled to JSON
 	Value       interface{} `json:"value"`
 	Origin      string      `json:"origin"` // source of config?
-	Error       Error       `json:"error,omitempty"`
-	IsOverriden bool        `json:"is_overridden,omitempty"`
+	Error       Error       `json:"error"`
+	IsOverriden bool        `json:"is_overridden"`
 }
 
+// Error stores error information about various tracer events
 type Error struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
+// AdditionalPayload can be used to add extra information to the app-started
+// event
 type AdditionalPayload struct {
 	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
