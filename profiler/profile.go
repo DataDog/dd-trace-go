@@ -191,9 +191,7 @@ var profileTypes = map[ProfileType]profileType{
 			if !p.shouldTrace() {
 				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
 			}
-			defer func() {
-				p.lastTrace = time.Now()
-			}()
+			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
 			lt := &limitedTraceCollector{
 				w:     buf,
