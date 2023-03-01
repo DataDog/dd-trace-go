@@ -139,6 +139,8 @@ type Client struct {
 	metrics    map[string]*metric
 	newMetrics bool
 
+	// agentlessLock gaurds the temporaryAgentless field
+	agentlessLock sync.Mutex
 	// temporaryAgentless allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
 	temporaryAgentless bool
@@ -382,13 +384,7 @@ func (c *Client) flush() {
 
 	go func() {
 		for _, r := range submissions {
-			err := c.submit(r)
-			if err != nil {
-				c.log("telemetry submission failed: %s", err)
-				if r.RequestType == "app-started" {
-					c.retryWithAgentless(r)
-				}
-			}
+			c.submit(r)
 		}
 	}()
 }
@@ -454,10 +450,13 @@ func (c *Client) retryWithAgentless(r *Request) error {
 
 func (c *Client) submit(r *Request) error {
 	err, retry := c.submitToURL(r, c.URL)
+	c.agentlessLock.Lock()
+	defer c.agentlessLock.Unlock()
 	if err == nil {
 		// submitting to the agent is working, turn off temporary agentless
 		c.temporaryAgentless = false
 	} else if retry {
+		c.log("telemetry submission failed, retrying with agentless: %s", err)
 		c.retryWithAgentless(r)
 		c.temporaryAgentless = true
 	}
