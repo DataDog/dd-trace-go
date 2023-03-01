@@ -99,20 +99,24 @@ func TestUnary(t *testing.T) {
 
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
-			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
+			assert.Equal(tt.wantCode.String(), clientSpan.Tag(ext.GRPCStatusCode))
+
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
-			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-
+			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
+			assert.Equal(tt.wantCode.String(), serverSpan.Tag(ext.GRPCStatusCode))
 		})
 	}
 }
@@ -155,6 +159,8 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
 					"expected service name to be grpc in span: %v",
 					span)
+				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem))
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
 			}
 			switch span.OperationName() {
 			case "grpc.client":
@@ -175,7 +181,7 @@ func TestStreaming(t *testing.T) {
 						wantCode = status.Convert(err).Code()
 					}
 				}
-				assert.Equal(t, wantCode.String(), span.Tag(tagCode),
+				assert.Equal(t, wantCode.String(), span.Tag(ext.GRPCStatusCode),
 					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
@@ -456,6 +462,9 @@ func TestPass(t *testing.T) {
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
+	assert.Equal("grpc", s.Tag(ext.RPCSystem))
+	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.GRPCFullMethod))
+	assert.Equal(codes.OK.String(), s.Tag(ext.GRPCStatusCode))
 }
 
 func TestPreservesMetadata(t *testing.T) {
@@ -519,14 +528,14 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 	// check if at least one span has error code
 	for _, s := range spans {
-		if s.Tag(tagCode) == wantCode {
+		if s.Tag(ext.GRPCStatusCode) == wantCode {
 			containsErrorCode = true
 		}
 	}
 	assert.True(t, containsErrorCode, "at least one span should contain error code")
 
 	// ensure that last span contains error code also
-	gotLastSpanCode := spans[len(spans)-1].Tag(tagCode)
+	gotLastSpanCode := spans[len(spans)-1].Tag(ext.GRPCStatusCode)
 	assert.Equal(t, gotLastSpanCode, wantCode, "last span should contain error code")
 }
 

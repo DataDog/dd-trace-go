@@ -49,12 +49,14 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal("grpc.server", span.OperationName())
 	tags := span.Tags()
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])
-	assert.Equal(codes.OK.String(), tags["grpc.code"])
+	assert.Equal(codes.OK.String(), tags[ext.GRPCStatusCode])
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
 	assert.Equal(1, tags["_dd.measured"])
 	assert.Equal("bar", tags["foo"])
+	assert.Equal("grpc", tags[ext.RPCSystem])
+	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

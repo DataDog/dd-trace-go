@@ -52,6 +52,8 @@ func startSpanFromContext(
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
+		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+		tracer.Tag(ext.GRPCFullMethod, method),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
@@ -69,7 +71,7 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 	if errcode == codes.OK || cfg.nonErrorCodes[errcode] {
 		err = nil
 	}
-	span.SetTag(tagCode, errcode.String())
+	span.SetTag(ext.GRPCStatusCode, errcode.String())
 
 	// only allocate finishOptions if needed, and allocate the exact right size
 	var finishOptions []tracer.FinishOption
