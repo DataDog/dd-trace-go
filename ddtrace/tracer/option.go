@@ -202,7 +202,7 @@ func newConfig(opts ...StartOption) *config {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		WithHeaderTags(strings.Split(v, ","))
+		WithHeaderTags(strings.Split(v, ","))(c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
@@ -912,18 +912,8 @@ func StackFrames(n, skip uint) FinishOption {
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
 		for _, h := range headerAsTags {
-			headerAndTag := strings.Split(h, ":")
-			header := strings.TrimSpace(strings.ToLower(headerAndTag[0]))
-			var tag string
-			if len(headerAndTag) > 1 {
-				// Check whether the header has a mapped value. If so, use it as the tag name
-				tag = strings.TrimSpace(strings.ToLower(headerAndTag[1]))
-				globalconfig.SetHeaderTag(header, tag)
-			} else {
-				// Otherwise, just use the header as the tag name
-				tag = ext.HTTPRequestHeaders + "." + header
-				globalconfig.SetHeaderTag(header, tag)
-			}
+			header, tag := ConvertHeaderToTag(h)
+			globalconfig.SetHeaderTag(header, tag)
 		}
 	}
 }

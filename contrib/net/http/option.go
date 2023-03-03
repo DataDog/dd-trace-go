@@ -8,7 +8,6 @@ package http
 import (
 	"math"
 	"net/http"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -40,7 +39,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = "http.router"
-	if ht := globalconfig.GetHeaderTags(); ht != nil {
+	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
 		cfg.headersAsTags = ht
 	}
 	if svc := globalconfig.ServiceName(); svc != "" {
@@ -72,24 +71,13 @@ func WithServiceName(name string) MuxOption {
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
-// MTOFF - QTNA #6
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
 		// When this feature is enabled at the integration level, blindly overwrite the global config
 		cfg.headersAsTags = make(map[string]string)
 		for _, h := range headers {
-			headerAndTag := strings.Split(h, ":")
-			header := strings.TrimSpace(strings.ToLower(headerAndTag[0]))
-			var tag string
-			if len(headerAndTag) > 1 {
-				// Check whether the header has a mapped value. If so, use it as the tag name
-				tag = strings.TrimSpace(strings.ToLower(headerAndTag[1]))
-				cfg.headersAsTags[header] = tag
-			} else {
-				// Otherwise, just use the header as the tag name
-				tag = ext.HTTPRequestHeaders + "." + header
-				cfg.headersAsTags[header] = tag
-			}
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
 		}
 	}
 }

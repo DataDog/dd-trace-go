@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
 func TestToFloat64(t *testing.T) {
@@ -114,4 +115,36 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 			assert.Equal(t, tt.err, err)
 		})
 	}
+}
+
+func TestConvertHeaderToTag(t *testing.T) {
+
+	t.Run("standalone", func(t *testing.T) {
+		header, tag := ConvertHeaderToTag("header")
+		assert.Equal(t, header, "header")
+		assert.Equal(t, ext.HTTPRequestHeaders + ".header", tag)
+	})
+
+	t.Run("mapped", func(t *testing.T) {
+		header, tag := ConvertHeaderToTag("header:tag")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, "tag", tag)
+	})
+
+	// MTOFF - no info in spec about whitespaces between nonspace chars, e.g, "h e a d e r"
+	// or even before/after colon e.g, "header : tag"
+	t.Run("whitespaces", func(t *testing.T) {
+		header, tag := ConvertHeaderToTag("  header:tag   ")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, "tag", tag)
+	})
+
+	t.Run("too-many-keys", func(t *testing.T) {
+		header, tag := ConvertHeaderToTag("header:tag:extra")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, "tag", tag)
+	})
+
+	//MTOFF a test on casing, but I don't know the expectations yet
+	// and What about special chars, who normalizes them?
 }

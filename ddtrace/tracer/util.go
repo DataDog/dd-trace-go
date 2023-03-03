@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -121,4 +122,14 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 	}
 	tags[key] = s[start:]
 	return tags, nil
+}
+
+// ConvertHeaderToTag takes in a string that contains a header and an optional mapped tag key,
+// e.g, "header" or "header:tag" where `tag` will be the name of the header tag.
+func ConvertHeaderToTag(headerAsTag string) (header string, tag string) {
+	headerAndTag := strings.Split(strings.ToLower(strings.TrimSpace(headerAsTag)), ":")
+	if len(headerAndTag) > 1 {
+		return headerAndTag[0], headerAndTag[1]
+	}
+	return headerAndTag[0], ext.HTTPRequestHeaders + "." + headerAndTag[0]
 }

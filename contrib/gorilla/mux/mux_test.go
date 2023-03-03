@@ -107,30 +107,74 @@ func TestDomain(t *testing.T) {
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
 
-// MTOFF - QTNA #3 I want to test multiple conditions here, not just one.
-// e.g, when the feature is enabled on both tracer & integration-level, 
-// when just headers vs headers + mapped values passed in (i.e, `"Accept"` vs `"Accept:mappedtag"`)
-// and a combination thereof. Should that all go in one test, or separated out?
 func TestWithHeaderTags(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header"}))
-	mux.Handle("/200", okHandler()).Host("localhost")
-	r := httptest.NewRequest("GET", "http://localhost/200", nil)
-	r.Header.Set("header", "header-value")
-	r.Header.Set("x-datadog-header", "value")
-	mux.ServeHTTP(httptest.NewRecorder(), r)
+	t.Run("one-header", func(t *testing.T){
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header"}))
+		mux.Handle("/200", okHandler()).Host("localhost")
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		r.Header.Set("header", "header-value")
+		r.Header.Set("x-datadog-header", "value")
+		mux.ServeHTTP(httptest.NewRecorder(), r)
 
-	spans := mt.FinishedSpans()
-	// MTOFF - QTNA #2: Not sure how to handle casing expectations. I currently have everything getting lowercased.
-	// Should the value of the tag always begin with a capital letter even if:
-	//  > the value given to `WithHeaderTags` differs, e.g, WithHeaderTags([]string{“HeAdEr”}) or
-	//  > the header itself differs, e.g, `header:value` (lowercase)
-	// E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation? 
+		spans := mt.FinishedSpans()
+		// MTOFF - QTNA #2:
+		// Should the value of the tag always begin with a capital letter even if:
+		//  > the value given to `WithHeaderTags` differs, e.g, WithHeaderTags([]string{“HeAdEr”}) or
+		//  > the header itself differs, e.g, `header:value` (lowercase)
+		// E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation? 
 
-	assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
-	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+		assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
+		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+	})
+	t.Run("one-header-and-tag", func(t *testing.T){
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header:tag"}))
+		mux.Handle("/200", okHandler()).Host("localhost")
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		r.Header.Set("header", "header-value")
+		mux.ServeHTTP(httptest.NewRecorder(), r)
+
+		spans := mt.FinishedSpans()
+		assert.Equal("header-value", spans[0].Tags()["tag"])
+	})
+
+	t.Run("multi-header-tags", func(t *testing.T){
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"1header:1tag","2header","3header:3tag"}))
+		mux.Handle("/200", okHandler()).Host("localhost")
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		r.Header.Set("1header", "1value")
+		r.Header.Set("2header", "2value")
+		r.Header.Set("3header", "3value")
+		mux.ServeHTTP(httptest.NewRecorder(), r)
+
+		spans := mt.FinishedSpans()
+		assert.Equal("1value", spans[0].Tags()["1tag"])
+		assert.Equal("2value", spans[0].Tags()["http.request.headers.2header"])
+		assert.Equal("3value", spans[0].Tags()["3tag"])
+	})
+
+	t.Run("duplicates", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header:tag"}))
+		mux.Handle("/200", okHandler()).Host("localhost")
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		r.Header.Add("header", "1value")
+		r.Header.Add("header", "2value")
+		mux.ServeHTTP(httptest.NewRecorder(), r)
+
+		spans := mt.FinishedSpans()
+		assert.Equal("1value,2value", spans[0].Tags()["tag"])
+	})
 }
 
 func TestWithQueryParams(t *testing.T) {

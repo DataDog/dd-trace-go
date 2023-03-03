@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -20,6 +21,7 @@ type config struct {
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
+	headersAsTags map[string]string
 }
 
 func newConfig(service string) *config {
@@ -33,11 +35,13 @@ func newConfig(service string) *config {
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
+	ht := globalconfig.GetAllHeaderTags()
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
 		serviceName:   service,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
+		headersAsTags: ht,
 	}
 }
 
@@ -72,6 +76,20 @@ func WithAnalyticsRate(rate float64) Option {
 func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithHeaderTags(headers []string) Option {
+	return func(cfg *config) {
+		// When this feature is enabled at the integration level, blindly overwrite the global config
+		cfg.headersAsTags = make(map[string]string)
+		for _, h := range headers {
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
+		}
 	}
 }
 

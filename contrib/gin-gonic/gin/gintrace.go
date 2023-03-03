@@ -11,6 +11,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -41,6 +42,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+		opts = append(opts, http.HeaderTagsFromRequest(c.Request, cfg.headersAsTags))
 
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {

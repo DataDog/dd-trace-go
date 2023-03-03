@@ -8,7 +8,6 @@ package mux
 import (
 	"math"
 	"net/http"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -48,6 +47,9 @@ func defaults(cfg *routerConfig) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
+	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
+		cfg.headersAsTags = ht
 	}
 	cfg.serviceName = "mux.router"
 	if svc := globalconfig.ServiceName(); svc != "" {
@@ -119,31 +121,17 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 		cfg.resourceNamer = namer
 	}
 }
-// WithHeaderTags specifies that the integration should attach HTTP request headers as tags to spans. 
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
-// MTOFF - QTNA #6
-func WithHeaderTags(headersAsTags []string) RouterOption {
+func WithHeaderTags(headers []string) RouterOption {
 	return func(cfg *routerConfig) {
 		// When this feature is enabled at the integration level, blindly overwrite the global config
-		if cfg.headersAsTags == nil {
-			cfg.headersAsTags = make(map[string]string)
-		}
-		for _, h := range headersAsTags {
-			headerAndTag := strings.Split(h, ":")
-			header := strings.TrimSpace(strings.ToLower(headerAndTag[0]))
-			var tag string
-			// MTOFF - QTNA #1: What if a user passes this in: `WithHeaderTags([]string{“header:map:map2”})`
-			// Currently I have the program ignoring the third part `:map2`, it just maps ‘header’ to ‘map’
-			if len(headerAndTag) > 1 {
-				// Check whether the header has a mapped value. If so, use it as the tag name.
-				tag = strings.TrimSpace(strings.ToLower(headerAndTag[1]))
-				cfg.headersAsTags[header] = tag
-			} else {
-				// Otherwise, just use the header as the tag name
-				tag = ext.HTTPRequestHeaders + "." + header
-				cfg.headersAsTags[header] = tag
-			}
+		cfg.headersAsTags = make(map[string]string)
+		for _, h := range headers {
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
 		}
 	}
 }

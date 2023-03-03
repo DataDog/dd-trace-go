@@ -69,6 +69,10 @@ func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
-func GetHeaderTags() map[string]string {
+func GetHeaderTag(header string) (tag string) {
+	return cfg.headersAsTags[header]
+}
+
+func GetAllHeaderTags() map[string]string {
 	return cfg.headersAsTags
 }

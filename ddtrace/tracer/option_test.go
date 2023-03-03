@@ -953,3 +953,52 @@ func TestWithLogStartup(t *testing.T) {
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
 }
+
+func TestWithHeaderTags(t *testing.T) {
+	t.Run("default-off", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig()
+		assert.Equal(0, len(globalconfig.GetAllHeaderTags()))
+	})
+	t.Run("single-header", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "header"
+		newConfig(WithHeaderTags([]string{header}))
+		assert.Equal("http.request.headers.header", globalconfig.GetHeaderTag(header))
+	})
+
+	t.Run("header-and-tag", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "header"
+		tag := "tag"
+		newConfig(WithHeaderTags([]string{header + ":" + tag}))
+		assert.Equal(tag, globalconfig.GetHeaderTag(header))
+	})
+
+	t.Run("multi-header", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.GetHeaderTag("2header"))
+		assert.Equal("3tag", globalconfig.GetHeaderTag("3header"))
+	})
+
+	t.Run("with-whitespaces", func(t *testing.T){
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{" 1header:1tag ", "  2header  ", "   3header:3tag   "}))
+		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.GetHeaderTag("2header"))
+		assert.Equal("3tag", globalconfig.GetHeaderTag("3header"))
+	})
+
+	t.Run("with-envvar", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2header  ")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.GetHeaderTag("2header"))
+	})
+}

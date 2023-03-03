@@ -429,6 +429,33 @@ func TestResourceNamerSettings(t *testing.T) {
 	})
 }
 
+func TestWithHeaderTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	router := gin.New()
+	router.Use(Middleware("gin", WithHeaderTags([]string{"  header  ", "  2header:2tag  "})))
+
+	router.GET("/test", func(c *gin.Context) {
+		span, ok := tracer.SpanFromContext(c.Request.Context())
+		assert.True(ok)
+		assert.Equal(span.(mocktracer.Span).Tag(ext.HTTPRequestHeaders), "tag")
+	})
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("header", "header-value")
+	r.Header.Add("header", "header-value2")
+	r.Header.Set("2header", "2header-value")
+	r.Header.Set("x-datadog-header", "value")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	fmt.Println(spans)
+	assert.Equal("header-value,header-value2", spans[0].Tags()[ext.HTTPRequestHeaders + ".header"])
+	assert.Equal("2header-value", spans[0].Tags()["2tag"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
 func TestIgnoreRequestSettings(t *testing.T) {
 	router := gin.New()
 	router.Use(Middleware("foobar", WithIgnoreRequest(func(c *gin.Context) bool {
