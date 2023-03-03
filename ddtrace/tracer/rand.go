@@ -41,7 +41,9 @@ type randT struct{}
 // Uint64 returns a random number. It's optimized for concurrent access.
 func (randT) Uint64() uint64 {
 	r := randPool.Get().(*rand.Rand)
-	v := r.Uint64()
+	// NOTE: TestTextMapPropagator fails if we return r.Uint64() here. Seems like
+	// span ids are expected to be 64 bit with the first bit being 0?
+	v := uint64(r.Int63())
 	randPool.Put(r)
 	return v
 }
