@@ -207,8 +207,8 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.DropP0s)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
-			"a": struct{}{},
-			"b": struct{}{},
+			"a": {},
+			"b": {},
 		})
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
@@ -983,7 +983,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal("3tag", globalconfig.GetHeaderTag("3header"))
 	})
 
-	t.Run("with-whitespaces", func(t *testing.T){
+	t.Run("with-whitespaces", func(t *testing.T) {
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{" 1header:1tag ", "  2header  ", "   3header:3tag   "}))
 		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))

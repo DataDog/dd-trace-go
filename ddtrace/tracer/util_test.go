@@ -122,7 +122,7 @@ func TestConvertHeaderToTag(t *testing.T) {
 	t.Run("standalone", func(t *testing.T) {
 		header, tag := ConvertHeaderToTag("header")
 		assert.Equal(t, header, "header")
-		assert.Equal(t, ext.HTTPRequestHeaders + ".header", tag)
+		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
 
 	t.Run("mapped", func(t *testing.T) {

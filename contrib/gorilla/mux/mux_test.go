@@ -108,7 +108,7 @@ func TestDomain(t *testing.T) {
 }
 
 func TestWithHeaderTags(t *testing.T) {
-	t.Run("one-header", func(t *testing.T){
+	t.Run("one-header", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -124,12 +124,12 @@ func TestWithHeaderTags(t *testing.T) {
 		// Should the value of the tag always begin with a capital letter even if:
 		//  > the value given to `WithHeaderTags` differs, e.g, WithHeaderTags([]string{“HeAdEr”}) or
 		//  > the header itself differs, e.g, `header:value` (lowercase)
-		// E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation? 
+		// E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation?
 
 		assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
 		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 	})
-	t.Run("one-header-and-tag", func(t *testing.T){
+	t.Run("one-header-and-tag", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -143,11 +143,11 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal("header-value", spans[0].Tags()["tag"])
 	})
 
-	t.Run("multi-header-tags", func(t *testing.T){
+	t.Run("multi-header-tags", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"1header:1tag","2header","3header:3tag"}))
+		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
 		mux.Handle("/200", okHandler()).Host("localhost")
 		r := httptest.NewRequest("GET", "http://localhost/200", nil)
 		r.Header.Set("1header", "1value")
