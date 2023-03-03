@@ -40,8 +40,12 @@ const (
 	ASMIPBlocking
 	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
 	ASMDDRules
+	// ASMRequestBlocking represents the capability for ASM to block requests based on the HTTP request related WAF addresses
+	ASMRequestBlocking = 5
+	// ASMResponseBlocking represents the capability for ASM to block requests based on the HTTP response related WAF addresses
+	ASMResponseBlocking
 	// ASMUserBlocking represents the capability for ASM to block requests based on user ID
-	ASMUserBlocking = 7
+	ASMUserBlocking
 )
 
 // ProductUpdate represents an update for a specific product.
