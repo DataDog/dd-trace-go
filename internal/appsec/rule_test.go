@@ -11,9 +11,8 @@ package appsec
 import (
 	"testing"
 
+	"github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 )
 
 func TestStaticRule(t *testing.T) {
