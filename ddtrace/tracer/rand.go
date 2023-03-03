@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -19,6 +20,7 @@ import (
 var (
 	random   randT
 	warnOnce sync.Once
+	seedSeq  int64
 	randPool = sync.Pool{
 		New: func() interface{} {
 			var seed int64
@@ -31,7 +33,9 @@ var (
 				})
 				seed = time.Now().UnixNano()
 			}
-			return rand.New(rand.NewSource(seed))
+			// seedSeq makes sure we don't create two generators with the same seed
+			// by accident.
+			return rand.New(rand.NewSource(seed + atomic.AddInt64(&seedSeq, 1)))
 		},
 	}
 )
