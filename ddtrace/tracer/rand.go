@@ -44,6 +44,8 @@ type randT struct{}
 
 // Uint64 returns a random number. It's optimized for concurrent access.
 func (randT) Uint64() uint64 {
+	// sync.Pool is optimized so we end up with one *rand.Rand per P under load.
+	// This is pretty much optimal for avoiding contention.
 	r := randPool.Get().(*rand.Rand)
 	// NOTE: TestTextMapPropagator fails if we return r.Uint64() here. Seems like
 	// span ids are expected to be 64 bit with the first bit being 0?
