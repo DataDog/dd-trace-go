@@ -16,41 +16,32 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-// random holds a thread-safe source of random numbers.
-var random *rand.Rand
-
-func init() {
-	var seed int64
-	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
-	if err == nil {
-		seed = n.Int64()
-	} else {
-		log.Warn("cannot generate random seed: %v; using current time", err)
-		seed = time.Now().UnixNano()
+var (
+	random   randT
+	warnOnce sync.Once
+	randPool = sync.Pool{
+		New: func() interface{} {
+			var seed int64
+			n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(math.MaxInt64))
+			if err == nil {
+				seed = n.Int64()
+			} else {
+				warnOnce.Do(func() {
+					log.Warn("cannot generate random seed: %v; using current time", err)
+				})
+				seed = time.Now().UnixNano()
+			}
+			return rand.New(rand.NewSource(seed))
+		},
 	}
-	random = rand.New(&safeSource{
-		source: rand.NewSource(seed),
-	})
-}
+)
 
-// safeSource holds a thread-safe implementation of rand.Source64.
-type safeSource struct {
-	source rand.Source
-	sync.Mutex
-}
+type randT struct{}
 
-func (rs *safeSource) Int63() int64 {
-	rs.Lock()
-	n := rs.source.Int63()
-	rs.Unlock()
-
-	return n
-}
-
-func (rs *safeSource) Uint64() uint64 { return uint64(rs.Int63()) }
-
-func (rs *safeSource) Seed(seed int64) {
-	rs.Lock()
-	rs.source.Seed(seed)
-	rs.Unlock()
+// Uint64 returns a random number. It's optimized for concurrent access.
+func (randT) Uint64() uint64 {
+	r := randPool.Get().(*rand.Rand)
+	v := r.Uint64()
+	randPool.Put(r)
+	return v
 }
