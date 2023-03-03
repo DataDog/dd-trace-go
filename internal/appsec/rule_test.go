@@ -11,7 +11,7 @@ package appsec
 import (
 	"testing"
 
-	"github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/require"
 )
 

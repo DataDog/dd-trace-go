@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {

@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
-	"github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
