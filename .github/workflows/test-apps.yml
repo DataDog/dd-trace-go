@@ -21,8 +21,8 @@ jobs:
 
       - uses: datadog/agent-github-action@v1.3
         with:
-            api_key: ${{ secrets.DD_TEST_AND_DEMO_API_KEY }}
-            datadog_site: datad0g.com
+            api_key: ${{ secrets.DD_TEST_APP_API_KEY }}
+            datadog_site: datadoghq.com
 
       - uses: actions/setup-go@v3
         with:
