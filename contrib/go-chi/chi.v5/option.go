@@ -22,7 +22,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
-	headersAsTags map[string]string
+	headersAsTags      map[string]string
 }
 
 // Option represents an option that can be passed to NewRouter.
