@@ -1430,7 +1430,7 @@ func TestPushTrace(t *testing.T) {
 
 	tp := new(testLogger)
 	log.UseLogger(tp)
-	tracer := newUnstartedTracer()
+	tracer, _ := newUnstartedTracer()
 	defer tracer.statsd.Close()
 	trace := []*span{
 		&span{

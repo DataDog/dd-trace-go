@@ -55,13 +55,13 @@ const (
 // Application is identifying information about the app itself
 type Application struct {
 	ServiceName     string `json:"service_name"`
-	Env             string `json:"env,omitempty"`
-	ServiceVersion  string `json:"service_version,omitempty"`
+	Env             string `json:"env"`
+	ServiceVersion  string `json:"service_version"`
 	TracerVersion   string `json:"tracer_version"`
 	LanguageName    string `json:"language_name"`
 	LanguageVersion string `json:"language_version"`
-	RuntimeName     string `json:"runtime_name,omitempty"`
-	RuntimeVersion  string `json:"runtime_version,omitempty"`
+	RuntimeName     string `json:"runtime_name"`
+	RuntimeVersion  string `json:"runtime_version"`
 	RuntimePatches  string `json:"runtime_patches,omitempty"`
 }
 
@@ -95,9 +95,9 @@ type Host struct {
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
 	Configuration     []Configuration     `json:"configuration"`
+	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
-	Products          Products            `json:"products,omitempty"`
 }
 
 // Integration is an integration that is available within the app and applicable
@@ -121,7 +121,6 @@ type Dependencies struct {
 type Dependency struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
-	Type    string `json:"type"`
 }
 
 // Configuration is a library-specific configuration value

@@ -814,7 +814,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer := newUnstartedTracer()
+		tracer, _ := newUnstartedTracer()
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -824,7 +824,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -834,7 +834,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -864,7 +864,7 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, _ := newUnstartedTracer(WithSamplingRules(rules))
 		benchmarkStartSpan(b, tracer)
 	})
 }

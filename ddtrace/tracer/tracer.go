@@ -197,10 +197,11 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) *tracer {
+func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
+	telemetryErrors := []telemetry.Error{}
 	if err != nil {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
@@ -212,7 +213,12 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+		msg := fmt.Sprintf("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+		log.Warn(msg)
+		telemetryErrors = append(telemetryErrors, telemetry.Error{
+			Code:    2,
+			Message: msg},
+		)
 	}
 	if traces != nil {
 		c.traceRules = traces
@@ -249,11 +255,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			telemetry.WithVersion(c.version),
 		),
 	}
-	return t
+	return t, telemetryErrors
 }
 
 func newTracer(opts ...StartOption) *tracer {
-	t := newUnstartedTracer(opts...)
+	t, telemetryErrors := newUnstartedTracer(opts...)
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
@@ -326,11 +332,7 @@ func newTracer(opts ...StartOption) *tracer {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	t.telemetry.Start(
-		// leave integration empty: we cannot access what integration is being used from here
-		[]telemetry.Integration{},
-		telemetryConfigs,
-	)
+	t.telemetry.Start(telemetryConfigs, telemetryErrors)
 	return t
 }
 

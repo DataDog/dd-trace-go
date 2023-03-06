@@ -144,6 +144,9 @@ type Client struct {
 	// temporaryAgentless allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
 	temporaryAgentless bool
+
+	// tracks tracer start errors
+	Errors []Error
 }
 
 // Logger for submission-related events
@@ -172,7 +175,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 
 // Start registers that the app has begun running with the given integrations
 // and configuration.
-func (c *Client) Start(integrations []Integration, configuration []Configuration) {
+func (c *Client) Start(configuration []Configuration, errors []Error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.Disabled || !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
@@ -200,6 +203,8 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 	}
 	payload.Products = c.Products
 
+	c.Errors = errors
+
 	// configEnvFallback returns the value of environment variable with the
 	// given key if def == ""
 	configEnvFallback := func(key, def string) string {
@@ -217,9 +222,9 @@ func (c *Client) Start(integrations []Integration, configuration []Configuration
 			c.Service = "unnamed-go-service"
 		}
 	}
+
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-
 	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
 	appStarted := c.newRequest(RequestTypeAppStarted)

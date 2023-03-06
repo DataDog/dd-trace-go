@@ -129,6 +129,12 @@ func WithLogger(logger Logger) Option {
 	}
 }
 
+func WithStartErrors(errors []Error) Option {
+	return func(client *Client) {
+		client.Errors = errors
+	}
+}
+
 func defaultClient() (client *Client) {
 	client = new(Client)
 	client.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
