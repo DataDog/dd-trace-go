@@ -38,6 +38,7 @@ const (
 	keyDBMTraceInjected = "_dd.dbm_trace_injected"
 )
 
+// TracedConn holds a traced connection with tracing parameters.
 type TracedConn struct {
 	driver.Conn
 	*traceParams
