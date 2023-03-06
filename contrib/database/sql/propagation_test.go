@@ -169,6 +169,66 @@ func TestDBMPropagation(t *testing.T) {
 	}
 }
 
+func TestDBMPropagationNoActiveTrace(t *testing.T) {
+	testCases := []struct {
+		name     string
+		opts     []RegisterOption
+		callDB   func(ctx context.Context, db *sql.DB) error
+		prepared []string
+		executed []*regexp.Regexp
+	}{
+		{
+			name: "query-full",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-[\\da-f]{32}-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
+		},
+		{
+			name: "exec-full",
+			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-[\\da-f]{32}-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer.Start(tracer.WithService("test-service"), tracer.WithEnv("test-env"), tracer.WithServiceVersion("1.0.0"))
+			defer tracer.Stop()
+
+			d := &internal.MockDriver{}
+			Register("test", d, tc.opts...)
+			defer unregister("test")
+
+			db, err := Open("test", "dn")
+			require.NoError(t, err)
+
+			err = tc.callDB(context.Background(), db)
+
+			require.NoError(t, err)
+			require.Len(t, d.Prepared, len(tc.prepared))
+			for i, e := range tc.prepared {
+				assert.Equal(t, e, d.Prepared[i])
+			}
+
+			require.Len(t, d.Executed, len(tc.executed))
+			for i, e := range tc.executed {
+				// TODO figure out a way to get the env/version and the sampling prority when there's no
+				// active trace when the sql span is executed and the dbm propagation happens before we create
+				// the trace/span
+				assert.Regexp(t, e, d.Executed[i])
+				assert.NotContains(t, d.Executed[i], "traceparent='00-00000000000000000000000000000001-0000000000000001")
+			}
+		})
+	}
+}
+
 func TestDBMTraceContextTagging(t *testing.T) {
 	testCases := []struct {
 		name                    string
