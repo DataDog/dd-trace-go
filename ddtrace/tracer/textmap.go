@@ -634,13 +634,15 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	}
 
 	var traceID string
-	// if previous traceparent is valid, do NOT update the trace ID
+	var tracestate string
 	if ctx.trace != nil && ctx.trace.propagatingTags != nil {
-		tag := ctx.trace.propagatingTags[w3cTraceIDTag]
-		if len(tag) == 32 {
-			id, err := strconv.ParseUint(tag[16:], 16, 64)
+		tracestate = ctx.trace.propagatingTags[tracestateHeader]
+		idTag := ctx.trace.propagatingTags[w3cTraceIDTag]
+		// if previous traceparent is valid, do NOT update the trace ID
+		if len(idTag) == 32 {
+			id, err := strconv.ParseUint(idTag[16:], 16, 64)
 			if err == nil && id != 0 {
-				traceID = tag
+				traceID = idTag
 			}
 		}
 	}
@@ -648,15 +650,13 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		traceID = fmt.Sprintf("%032x", ctx.traceID)
 	}
 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
-	// if context priority / origin / tags were updated after extraction,
-	// or the tracestateHeader doesn't start with `dd=`
-	// we need to recreate tracestate
-	if ctx.updated ||
-		(ctx.trace != nil && ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) ||
-		len(ctx.trace.propagatingTags[tracestateHeader]) == 0 {
-		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
-	} else {
-		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
+	// re-generate the tracestate if the context priority / origin / tags
+	// were updated after extraction, or the header is not prefixed with "dd="
+	if ctx.updated || !strings.HasPrefix(tracestate, "dd=") {
+		tracestate = composeTracestate(ctx, p, tracestate)
+	}
+	if tracestate != "" {
+		writer.Set(tracestateHeader, tracestate)
 	}
 	return nil
 }
