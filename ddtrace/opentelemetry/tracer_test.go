@@ -12,10 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"

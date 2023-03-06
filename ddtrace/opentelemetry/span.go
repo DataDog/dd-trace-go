@@ -16,7 +16,6 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -24,8 +23,9 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	ddtrace.Span
-	finished bool
+	tracer.Span
+	finished   bool
+	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
 }
@@ -37,6 +37,9 @@ func (s *span) RecordError(err error, options ...oteltrace.EventOption) { /*	no-
 func (s *span) SetName(name string) { s.SetOperationName(name) }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
+	if s.finished {
+		return
+	}
 	s.finished = true
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -46,7 +49,19 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if t := finishCfg.Timestamp(); !t.IsZero() {
 		opts = append(opts, tracer.FinishTime(t))
 	}
+	if len(s.finishOpts) != 0 {
+		opts = append(opts, s.finishOpts...)
+	}
 	s.Finish(opts...)
+}
+
+// EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
+func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
+	s, ok := sp.(*span)
+	if !ok || !s.IsRecording() {
+		return
+	}
+	s.finishOpts = options
 }
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
@@ -73,6 +88,7 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
 	if err != nil {
 		log.Debug("Couldn't parse tracestate: %v", err)
+		return
 	}
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
@@ -88,7 +104,6 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	c.Remote = true
 }
 
-// todo: verify whether we need
 func uint64ToByte(n uint64, b []byte) {
 	binary.BigEndian.PutUint64(b, n)
 }
@@ -106,7 +121,7 @@ type statusInfo struct {
 
 // SetStatus saves state of code and description indicating
 // whether the span has recorded errors. This will be done by setting
-// `error.msg` tag on the span. If the code has been set to a higher
+// `error.message` tag on the span. If the code has been set to a higher
 // value before (OK > Error > Unset), the code will not be changed.
 // The code and description are set once when the span is finished.
 func (s *span) SetStatus(code otelcodes.Code, description string) {
