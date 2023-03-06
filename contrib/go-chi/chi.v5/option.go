@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -21,6 +22,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
+	headersAsTags map[string]string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -35,6 +37,9 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
+	}
+	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
+		cfg.headersAsTags = ht
 	}
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
@@ -103,5 +108,19 @@ func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 func WithModifyResourceName(fn func(resourceName string) string) Option {
 	return func(cfg *config) {
 		cfg.modifyResourceName = fn
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithHeaderTags(headers []string) Option {
+	return func(cfg *config) {
+		// When this feature is enabled at the integration level, blindly overwrite the global config
+		cfg.headersAsTags = make(map[string]string)
+		for _, h := range headers {
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
+		}
 	}
 }

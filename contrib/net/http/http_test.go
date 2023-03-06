@@ -19,7 +19,7 @@ import (
 )
 
 func TestWithHeaderTags(t *testing.T) {
-	t.Run("integration-level", func(t *testing.T){
+	t.Run("integration-level", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -40,13 +40,13 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	//check that http spans have request tags when feature is configured at global level
-	t.Run("global-level", func(t *testing.T){
+	t.Run("global-level", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 	})
 
 	// when feature is set at both global and integration level, ensure span tags match those set at the integration level only
-	t.Run("integration-override-global", func(t *testing.T){
+	t.Run("integration-override-global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 	})
