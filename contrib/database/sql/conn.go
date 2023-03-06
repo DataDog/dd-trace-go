@@ -43,6 +43,7 @@ type TracedConn struct {
 	*traceParams
 }
 
+// WrappedConn returns the wrapped connection object.
 func (tc *TracedConn) WrappedConn() driver.Conn {
 	return tc.Conn
 }
@@ -135,7 +136,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 	return nil, driver.ErrSkip
 }
 
-// PingContext verifies the connection to the database is still alive.
+// Ping verifies the connection to the database is still alive.
 func (tc *TracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
