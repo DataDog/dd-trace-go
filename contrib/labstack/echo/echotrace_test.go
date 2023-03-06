@@ -52,7 +52,7 @@ func TestWithHeaderTags(t *testing.T) {
 	router.Use(Middleware(WithHeaderTags([]string{"  header  ", "  2header:tag  "})))
 
 	router.GET("/test", func(c echo.Context) error {
-		 return c.String(http.StatusOK, "test")
+		return c.String(http.StatusOK, "test")
 	})
 	r := httptest.NewRequest("GET", "/test", nil)
 	r.Header.Set("header", "val")

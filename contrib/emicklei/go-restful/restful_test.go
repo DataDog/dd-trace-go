@@ -20,7 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
-func TestWithHeaderTags(t *testing.T){
+func TestWithHeaderTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()

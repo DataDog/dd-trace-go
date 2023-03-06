@@ -19,23 +19,37 @@ import (
 )
 
 func TestWithHeaderTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	
-	r := httptest.NewRequest("GET", "/test", nil)
-	r.Header.Set("header", "val")
-	r.Header.Add("header", "val2")
-	r.Header.Set("2header", "2val")
-	r.Header.Set("x-datadog-header", "value")
-	w := httptest.NewRecorder()
-	router(WithHeaderTags([]string{"  header  ", "  2header:tag  "})).ServeHTTP(w, r)
+	t.Run("integration-level", func(t *testing.T){
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	assert := assert.New(t)
+		r := httptest.NewRequest("GET", "/test", nil)
+		r.Header.Set("header", "val")
+		r.Header.Add("header", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		router(WithHeaderTags([]string{"  header  ", "  2header:tag  "})).ServeHTTP(w, r)
 
-	spans := mt.FinishedSpans()
-	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
-	assert.Equal("2val", spans[0].Tags()["tag"])
-	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+		assert := assert.New(t)
+
+		spans := mt.FinishedSpans()
+		assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+		assert.Equal("2val", spans[0].Tags()["tag"])
+		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+	})
+
+	//check that http spans have request tags when feature is configured at global level
+	t.Run("global-level", func(t *testing.T){
+		mt := mocktracer.Start()
+		defer mt.Stop()
+	})
+
+	// when feature is set at both global and integration level, ensure span tags match those set at the integration level only
+	t.Run("integration-override-global", func(t *testing.T){
+		mt := mocktracer.Start()
+		defer mt.Stop()
+	})
 }
 
 func TestHttpTracer200(t *testing.T) {
