@@ -236,9 +236,13 @@ func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
+	a.registerRCProduct(rc.ProductASM)
+	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
 	a.registerRCCapability(remoteconfig.ASMIPBlocking)
 	a.registerRCCapability(remoteconfig.ASMUserBlocking)
+	a.registerRCCapability(remoteconfig.ASMDDRules)
+	a.registerRCCapability(remoteconfig.ASMRequestBlocking)
 	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
 	return nil
 }
