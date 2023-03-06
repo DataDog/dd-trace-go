@@ -47,6 +47,16 @@ func (tc *TracedConn) WrappedConn() driver.Conn {
 	return tc.Conn
 }
 
+// BeginTx starts a transaction.
+//
+// The provided context is used until the transaction is committed or rolled back.
+// If the context is canceled, the sql package will roll back
+// the transaction. Tx.Commit will return an error if the context provided to
+// BeginTx is canceled.
+//
+// The provided TxOptions is optional and may be nil if defaults should be used.
+// If a non-default isolation level is used that the driver doesn't support,
+// an error will be returned.
 func (tc *TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
 	start := time.Now()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
@@ -65,6 +75,14 @@ func (tc *TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 	return &tracedTx{tx, tc.traceParams, ctx}, nil
 }
 
+// PrepareContext creates a prepared statement for later queries or executions.
+// Multiple queries or executions may be run concurrently from the
+// returned statement.
+// The caller must call the statement's Close method
+// when the statement is no longer needed.
+//
+// The provided context is used for the preparation of the statement, not for the
+// execution of the statement.
 func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt driver.Stmt, err error) {
 	start := time.Now()
 	mode := tc.cfg.dbmPropagationMode
@@ -89,6 +107,8 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 }
 
+// ExecContext executes a query without returning any rows.
+// The args are for any placeholder parameters in the query.
 func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (r driver.Result, err error) {
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
@@ -115,7 +135,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 	return nil, driver.ErrSkip
 }
 
-// TracedConn has a Ping method in order to implement the pinger interface
+// PingContext verifies the connection to the database is still alive.
 func (tc *TracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
@@ -125,6 +145,8 @@ func (tc *TracedConn) Ping(ctx context.Context) (err error) {
 	return err
 }
 
+// QueryContext executes a query that returns rows, typically a SELECT.
+// The args are for any placeholder parameters in the query.
 func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
@@ -151,6 +173,9 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 	return nil, driver.ErrSkip
 }
 
+// CheckNamedValue is called before passing arguments to the driver
+// and is called in place of any ColumnConverter. CheckNamedValue must do type
+// validation and conversion as appropriate for the driver.
 func (tc *TracedConn) CheckNamedValue(value *driver.NamedValue) error {
 	if checker, ok := tc.Conn.(driver.NamedValueChecker); ok {
 		return checker.CheckNamedValue(value)
