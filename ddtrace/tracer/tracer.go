@@ -289,26 +289,27 @@ func newTracer(opts ...StartOption) *tracer {
 	t.stats.Start()
 
 	// Start collecting telemetry data
+	// make sure key names is able to be normalized by
+	// instrumentation telemetry backend
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "debug", Value: c.debug},
+		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
-		{Name: "agent_feature_stats", Value: c.agent.Stats},
-		{Name: "agent_feature_statsdport", Value: c.agent.StatsdPort},
+		{Name: "stats_computation_enabled", Value: c.agent.Stats},
+		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
-		{Name: "log_startup", Value: c.logStartup},
-		{Name: "service_name", Value: c.serviceName},
+		{Name: "trace_startup_logs_enabled", Value: c.logStartup},
+		{Name: "service", Value: c.serviceName},
 		{Name: "universal_version", Value: c.universalVersion},
-		{Name: "app_version", Value: c.version},
-		{Name: "app_env", Value: c.env},
+		{Name: "env", Value: c.env},
 		{Name: "agent_url", Value: c.agentURL.String()},
-		{Name: "hostname", Value: c.hostname},
-		{Name: "runtime_metrics", Value: c.runtimeMetrics},
+		{Name: "agent_hostname", Value: c.hostname},
+		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-		{Name: "no_debug_stack", Value: c.noDebugStack},
-		{Name: "profiler_hotspots", Value: c.profilerHotspots},
-		{Name: "profiler_endpoints", Value: c.profilerEndpoints},
-		{Name: "tracing_enabled", Value: c.enabled},
+		{Name: "trace_debug_enabled", Value: c.noDebugStack},
+		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
+		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
+		{Name: "trace_enabled", Value: c.enabled},
 	}
 	for k, v := range c.featureFlags {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})

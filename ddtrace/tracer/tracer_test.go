@@ -2210,7 +2210,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		for _, kv := range payload.Configuration {
 			if kv.Name == key {
 				if kv.Value != expected {
-					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
+					t.Errorf("configuration %s: wanted %v, got %v", key, expected, kv.Value)
 				}
 				return
 			}
@@ -2218,10 +2218,10 @@ func TestTelemetryEnabled(t *testing.T) {
 		t.Errorf("missing configuration %s", key)
 	}
 
-	check("no_debug_stack", true)
-	check("service_name", "test-serv")
-	check("app_env", "test-env")
-	check("runtime_metrics", true)
+	check("trace_debug_enabled", false)
+	check("service", "test-serv")
+	check("env", "test-env")
+	check("runtime_metrics_enabled", true)
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.

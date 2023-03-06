@@ -73,9 +73,9 @@ type Products struct {
 
 // ProductDetails specifies details about a product.
 type ProductDetails struct {
-	Version string `json:"version,omitempty"`
 	Enabled bool   `json:"enabled"`
-	Error   Error  `json:"error"`
+	Version string `json:"version,omitempty"`
+	Error   Error  `json:"error,omitempty"`
 }
 
 // Host is identifying information about the host on which the app
@@ -94,7 +94,7 @@ type Host struct {
 
 // AppStarted corresponds to the "app-started" request type
 type AppStarted struct {
-	Configuration     []Configuration     `json:"configuration"`
+	Configuration     []Configuration     `json:"configuration,omitempty"`
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
