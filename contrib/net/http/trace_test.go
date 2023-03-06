@@ -338,19 +338,6 @@ func (w noopWriter) Header() http.Header         { return nil }
 func (w noopWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (w noopWriter) WriteHeader(_ int)           {}
 
-// MTOFF
-// func TestHeaderTagsFromRequest(t *testing.T){
-// 	mt := mocktracer.Start()
-// 	assert := assert.New(t)
-// 	defer mt.Stop()
-
-// 	r, err := http.NewRequest("GET", "/", nil)
-// 	assert.NoError(err)
-// 	r.Header.Add("header", "1value")
-// 	r.Header.Add("header", "2value")
-// 	cfg := ServeConfig{ SpanOpts: []ddtrace.StartSpanOption{}}
-// }
-
 func BenchmarkTraceAndServe(b *testing.B) {
 	handler := new(noopHandler)
 	req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)

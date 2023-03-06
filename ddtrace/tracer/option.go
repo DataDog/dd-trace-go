@@ -906,7 +906,6 @@ func StackFrames(n, skip uint) FinishOption {
 }
 
 // WithHeaderTags enables web integrations to attach the specified request headers as span tags.
-// TODO(mtoffl01) - Write tests for this method (MTOFF - QTNA #7: Should this be in tracer_test.go or option_test.go?)
 // Warning: using this feature can risk exposing sensitive data such as authorisation tokens
 // to Datadog.
 func WithHeaderTags(headerAsTags []string) StartOption {

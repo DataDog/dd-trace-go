@@ -42,6 +42,32 @@ func TestChildSpan(t *testing.T) {
 	router.ServeHTTP(w, r)
 }
 
+func TestWithHeaderTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("test"))
+	})
+	router := negroni.New()
+	router.Use(Middleware(WithHeaderTags([]string{"  header  ", "  2header:tag  "})))
+	router.UseHandler(mux)
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("header", "val")
+	r.Header.Add("header", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("x-datadog-header", "value")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+	assert.Equal("2val", spans[0].Tags()["tag"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
 func TestTrace200(t *testing.T) {
 	assertDoRequest := func(assert *assert.Assertions, mt mocktracer.Tracer, router *negroni.Negroni, resourceName string) {
 		r := httptest.NewRequest("GET", "/user", nil)

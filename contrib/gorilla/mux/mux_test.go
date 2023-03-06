@@ -108,73 +108,25 @@ func TestDomain(t *testing.T) {
 }
 
 func TestWithHeaderTags(t *testing.T) {
-	t.Run("one-header", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header"}))
-		mux.Handle("/200", okHandler()).Host("localhost")
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		r.Header.Set("header", "header-value")
-		r.Header.Set("x-datadog-header", "value")
-		mux.ServeHTTP(httptest.NewRecorder(), r)
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
 
-		spans := mt.FinishedSpans()
-		// MTOFF - QTNA #2:
-		// Should the value of the tag always begin with a capital letter even if:
-		//  > the value given to `WithHeaderTags` differs, e.g, WithHeaderTags([]string{“HeAdEr”}) or
-		//  > the header itself differs, e.g, `header:value` (lowercase)
-		// E.g, a case like this `WithHeaderTags([]string{“header:neWhEadEr”})`, what’s the expectation?
+	mux := NewRouter(WithHeaderTags([]string{"  header  ", "  2header:tag  "}))
+	mux.Handle("/test", okHandler())
 
-		assert.Equal("header-value", spans[0].Tags()["http.request.headers.header"])
-		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
-	})
-	t.Run("one-header-and-tag", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header:tag"}))
-		mux.Handle("/200", okHandler()).Host("localhost")
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		r.Header.Set("header", "header-value")
-		mux.ServeHTTP(httptest.NewRecorder(), r)
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("header", "val")
+	r.Header.Add("header", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("x-datadog-header", "value")
 
-		spans := mt.FinishedSpans()
-		assert.Equal("header-value", spans[0].Tags()["tag"])
-	})
+	mux.ServeHTTP(httptest.NewRecorder(), r)
 
-	t.Run("multi-header-tags", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
-		mux.Handle("/200", okHandler()).Host("localhost")
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		r.Header.Set("1header", "1value")
-		r.Header.Set("2header", "2value")
-		r.Header.Set("3header", "3value")
-		mux.ServeHTTP(httptest.NewRecorder(), r)
-
-		spans := mt.FinishedSpans()
-		assert.Equal("1value", spans[0].Tags()["1tag"])
-		assert.Equal("2value", spans[0].Tags()["http.request.headers.2header"])
-		assert.Equal("3value", spans[0].Tags()["3tag"])
-	})
-
-	t.Run("duplicates", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		mux := NewRouter(WithServiceName("my-service"), WithHeaderTags([]string{"header:tag"}))
-		mux.Handle("/200", okHandler()).Host("localhost")
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		r.Header.Add("header", "1value")
-		r.Header.Add("header", "2value")
-		mux.ServeHTTP(httptest.NewRecorder(), r)
-
-		spans := mt.FinishedSpans()
-		assert.Equal("1value,2value", spans[0].Tags()["tag"])
-	})
+	spans := mt.FinishedSpans()
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+	assert.Equal("2val", spans[0].Tags()["tag"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 
 func TestWithQueryParams(t *testing.T) {

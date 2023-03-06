@@ -8,6 +8,7 @@ package restful
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -15,6 +16,7 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	headersAsTags map[string]string
 }
 
 func newConfig() *config {
@@ -22,9 +24,11 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
+	ht := globalconfig.GetAllHeaderTags()
 	return &config{
 		serviceName:   "go-restful",
 		analyticsRate: rate,
+		headersAsTags: ht,
 	}
 }
 
@@ -57,6 +61,20 @@ func WithAnalyticsRate(rate float64) Option {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
+		}
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithHeaderTags(headers []string) Option {
+	return func(cfg *config) {
+		// When this feature is enabled at the integration level, blindly overwrite the global config
+		cfg.headersAsTags = make(map[string]string)
+		for _, h := range headers {
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
 		}
 	}
 }

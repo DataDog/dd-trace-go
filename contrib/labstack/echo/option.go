@@ -8,6 +8,7 @@ package echo
 import (
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -17,6 +18,7 @@ type config struct {
 	analyticsRate float64
 	noDebugStack  bool
 	isStatusError func(statusCode int) bool
+	headersAsTags map[string]string
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -33,6 +35,9 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.isStatusError = isServerError
+	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
+		cfg.headersAsTags = ht
+	}
 }
 
 // WithServiceName sets the given service name for the system.
@@ -84,4 +89,18 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// to Datadog.
+func WithHeaderTags(headers []string) Option {
+	return func(cfg *config) {
+		// When this feature is enabled at the integration level, blindly overwrite the global config
+		cfg.headersAsTags = make(map[string]string)
+		for _, h := range headers {
+			header, tag := tracer.ConvertHeaderToTag(h)
+			cfg.headersAsTags[header] = tag
+		}
+	}
 }

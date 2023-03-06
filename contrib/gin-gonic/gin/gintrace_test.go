@@ -434,25 +434,22 @@ func TestWithHeaderTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	router := gin.New()
-	router.Use(Middleware("gin", WithHeaderTags([]string{"  header  ", "  2header:2tag  "})))
+	router.Use(Middleware("gin", WithHeaderTags([]string{"  header  ", "  2header:tag  "})))
 
 	router.GET("/test", func(c *gin.Context) {
-		span, ok := tracer.SpanFromContext(c.Request.Context())
-		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).Tag(ext.HTTPRequestHeaders), "tag")
+		c.Writer.Write([]byte("test"))
 	})
-	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("header", "header-value")
-	r.Header.Add("header", "header-value2")
-	r.Header.Set("2header", "2header-value")
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("header", "val")
+	r.Header.Add("header", "val2")
+	r.Header.Set("2header", "2val")
 	r.Header.Set("x-datadog-header", "value")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 
 	spans := mt.FinishedSpans()
-	fmt.Println(spans)
-	assert.Equal("header-value,header-value2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
-	assert.Equal("2header-value", spans[0].Tags()["2tag"])
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+	assert.Equal("2val", spans[0].Tags()["tag"])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 

@@ -177,6 +177,31 @@ func TestError(t *testing.T) {
 	})
 }
 
+func TestWithHeaderTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware(WithHeaderTags([]string{"  header  ", "  2header:tag  "})))
+
+	router.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("test"))
+	})
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("header", "val")
+	r.Header.Add("header", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("x-datadog-header", "value")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+	assert.Equal("2val", spans[0].Tags()["tag"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
 func TestGetSpanNotInstrumented(t *testing.T) {
 	assert := assert.New(t)
 	router := chi.NewRouter()

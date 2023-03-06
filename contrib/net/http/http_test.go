@@ -18,6 +18,26 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
+func TestWithHeaderTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("header", "val")
+	r.Header.Add("header", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("x-datadog-header", "value")
+	w := httptest.NewRecorder()
+	router(WithHeaderTags([]string{"  header  ", "  2header:tag  "})).ServeHTTP(w, r)
+
+	assert := assert.New(t)
+
+	spans := mt.FinishedSpans()
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
+	assert.Equal("2val", spans[0].Tags()["tag"])
+	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+}
+
 func TestHttpTracer200(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
