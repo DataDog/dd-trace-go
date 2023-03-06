@@ -28,6 +28,10 @@ type SpanContextW3C interface {
 	// TraceID128 returns the hex-encoded 128-bit trace ID that this context is carrying.
 	// The string will be exactly 32 bytes and may include leading zeroes.
 	TraceID128() string
+
+	// TraceID128Bytes returns the 128-bit trace ID that this context is carrying.
+	// The slice will be exactly 16 bytes and may include leading zeroes.
+	TraceID128Bytes() []byte
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting

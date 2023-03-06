@@ -55,7 +55,13 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
 	// todo(dianashevchenko): change ctx.TraceID() to extract 128 traceID from W3C interface
-	uint64ToByte(ctx.TraceID(), traceID[:])
+	w3cCtx, ok := ctx.(ddtrace.SpanContextW3C)
+	if !ok {
+		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
+		uint64ToByte(ctx.TraceID(), traceID[:]) //TODO does this need to be offset by 8?
+	} else {
+		copy(traceID[:], w3cCtx.TraceID128Bytes())
+	}
 	uint64ToByte(ctx.SpanID(), spanID[:])
 	config := oteltrace.SpanContextConfig{
 		TraceID: traceID,
