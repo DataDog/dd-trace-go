@@ -26,7 +26,7 @@ import (
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates. This function returns the configuration processing status
 // for each config file received through the update.
-type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
+type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -62,7 +62,7 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks map[string][]Callback
+	callbacks []Callback
 
 	lastError error
 }
@@ -84,7 +84,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,
-		callbacks:    map[string][]Callback{},
+		callbacks:    []Callback{},
 	}, nil
 }
 
@@ -159,9 +159,10 @@ func (c *Client) updateState() {
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
-// receives a configuration update for the specified product.
-func (c *Client) RegisterCallback(f Callback, product string) {
-	c.callbacks[product] = append(c.callbacks[product], f)
+// receives configuration updates. It is up to that callback to then decide what to do
+// depending on the product related to the configuration update.
+func (c *Client) RegisterCallback(f Callback) {
+	c.callbacks = append(c.callbacks, f)
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
@@ -229,13 +230,13 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		updatedProducts[p] = struct{}{}
 	}
 
-	// Performs the callbacks registered for all updated products and update the application status in the repository
-	// (RCTE2)
-	for p := range updatedProducts {
-		for _, fn := range c.callbacks[p] {
-			for path, status := range fn(productUpdates[p]) {
-				c.repository.UpdateApplyStatus(path, status)
-			}
+	if len(updatedProducts) == 0 {
+		return nil
+	}
+	// Performs the callbacks registered and update the application status in the repository (RCTE2)
+	for _, fn := range c.callbacks {
+		for path, status := range fn(productUpdates) {
+			c.repository.UpdateApplyStatus(path, status)
 		}
 	}
 

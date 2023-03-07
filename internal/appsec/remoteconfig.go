@@ -41,6 +41,46 @@ func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[s
 	return statuses
 }
 
+func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
+	merged := make(map[K]V)
+	for key, value := range m1 {
+		merged[key] = value
+	}
+	for key, value := range m2 {
+		merged[key] = value
+	}
+	return merged
+}
+
+func isInSlice(strings []string, str string) bool {
+	for _, s := range strings {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	statuses := map[string]rc.ApplyStatus{}
+	for p, u := range updates {
+		if !isInSlice(a.cfg.rc.Products, p) {
+			continue
+		}
+		switch p {
+		case rc.ProductASMFeatures:
+			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
+		case rc.ProductASMData:
+			// TODO
+		case rc.ProductASMDD:
+			// TODO
+		default:
+			log.Debug("appsec: remote config: unknown product %s. Ignoring", p)
+		}
+	}
+	return statuses
+}
+
 // asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
@@ -169,6 +209,7 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 
 func (a *appsec) startRC() {
 	if a.rc != nil {
+		a.rc.RegisterCallback(a.asmUmbrellaCallback)
 		a.rc.Start()
 	}
 }
@@ -189,6 +230,7 @@ func (a *appsec) registerRCProduct(product string) error {
 			return nil
 		}
 	}
+	a.cfg.rc.Products = append(a.cfg.rc.Products, product)
 	a.rc.Products = append(a.rc.Products, product)
 	return nil
 }
@@ -206,15 +248,6 @@ func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 	return nil
 }
 
-func (a *appsec) registerRCCallback(c remoteconfig.Callback, product string) error {
-	if a.rc == nil {
-		return fmt.Errorf("no valid remote configuration client")
-	}
-	a.rc.RegisterCallback(c, product)
-	return nil
-
-}
-
 func (a *appsec) enableRemoteActivation() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
@@ -228,7 +261,6 @@ func (a *appsec) enableRemoteActivation() error {
 	}
 	a.registerRCProduct(rc.ProductASMFeatures)
 	a.registerRCCapability(remoteconfig.ASMActivation)
-	a.registerRCCallback(a.asmFeaturesCallback, rc.ProductASMFeatures)
 	return nil
 }
 
@@ -236,13 +268,12 @@ func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.registerRCProduct(rc.ProductASM)
+	//a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
 	a.registerRCCapability(remoteconfig.ASMIPBlocking)
 	a.registerRCCapability(remoteconfig.ASMUserBlocking)
 	a.registerRCCapability(remoteconfig.ASMDDRules)
 	a.registerRCCapability(remoteconfig.ASMRequestBlocking)
-	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
 	return nil
 }

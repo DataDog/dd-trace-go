@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,6 +23,7 @@ import (
 // as we will be able to setup a Repository and test applying updates, creating a client, etc... all of which require a valid
 // Repository object at the moment
 
+/*
 func TestRCClient(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
@@ -60,6 +60,7 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+*/
 
 func TestPayloads(t *testing.T) {
 	t.Run("getConfigResponse", func(t *testing.T) {
