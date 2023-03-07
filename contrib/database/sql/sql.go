@@ -160,7 +160,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tracedConn{conn, tp}, err
+	return &TracedConn{conn, tp}, err
 }
 
 func (t *tracedConnector) Driver() driver.Driver {
