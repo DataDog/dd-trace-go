@@ -71,6 +71,7 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		case rc.ProductASMFeatures:
 			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
 		case rc.ProductASMData:
+			statuses = mergeMaps(statuses, a.asmDataCallback(u))
 			// TODO
 		case rc.ProductASMDD:
 			// TODO
@@ -122,13 +123,7 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	return statuses
 }
 
-type wafHandleWrapper struct {
-	handle interface {
-		UpdateRulesData([]rc.ASMDataRuleData) error
-	}
-}
-
-func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+func (a *appsec) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
 	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
@@ -174,7 +169,7 @@ func (h *wafHandleWrapper) asmDataCallback(u remoteconfig.ProductUpdate) map[str
 			rulesData = append(rulesData, data)
 		}
 	}
-	if err := h.handle.UpdateRulesData(rulesData); err != nil {
+	if err := a.wafHandle.UpdateRulesData(rulesData); err != nil {
 		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
 		statuses = statusesFromUpdate(u, false, err)
 	}
@@ -264,7 +259,7 @@ func (a *appsec) enableRemoteActivation() error {
 	return nil
 }
 
-func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
+func (a *appsec) enableRCBlocking() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}

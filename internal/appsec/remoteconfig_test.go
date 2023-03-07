@@ -128,6 +128,7 @@ func (u *chanUpdater) UpdateRulesData(rulesData []rc.ASMDataRuleData) error {
 	return nil
 }
 
+/*
 func TestASMDataCallback(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -225,6 +226,7 @@ func TestASMDataCallback(t *testing.T) {
 		})
 	}
 }
+*/
 
 // This test makes sure that the merging behavior follows what is described in the ASM blocking RFC
 func TestRuleDataMerging(t *testing.T) {

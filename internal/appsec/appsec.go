@@ -9,6 +9,7 @@
 package appsec
 
 import (
+	waf "github.com/DataDog/go-libddwaf"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -96,6 +97,7 @@ type appsec struct {
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
 	rc            *remoteconfig.Client
+	wafHandle     *waf.Handle
 	started       bool
 }
 

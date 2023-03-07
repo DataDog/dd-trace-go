@@ -82,9 +82,10 @@ func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, a.cfg.wafTimeout, a.limiter))
 	}
 
-	if err := a.enableRCBlocking(wafHandleWrapper{waf}); err != nil {
+	if err := a.enableRCBlocking(); err != nil {
 		log.Error("appsec: Remote config: cannot enable blocking, rules data won't be updated: %v", err)
 	}
+	a.wafHandle = waf
 
 	// Return an unregistration function that will also release the WAF instance.
 	return func() {
