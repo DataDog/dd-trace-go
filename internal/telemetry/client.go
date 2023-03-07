@@ -55,6 +55,7 @@ var (
 
 	defaultHeartbeatInterval = 60 // seconds
 
+	// all telemetry logging should have the following prefix
 	LogPrefix = "instrumentation telemetry: "
 )
 
