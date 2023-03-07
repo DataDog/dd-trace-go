@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -141,6 +142,7 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
+	hostname.Get() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -280,9 +282,9 @@ func newTracer(opts ...StartOption) *tracer {
 // use case described below.
 //
 // Flush is of use in Lambda environments, where starting and stopping
-// the tracer on each invokation may create too much latency. In this
+// the tracer on each invocation may create too much latency. In this
 // scenario, a tracer may be started and stopped by the parent process
-// whereas the invokation can make use of Flush to ensure any created spans
+// whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -636,4 +638,11 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	ctx, task := rt.NewTask(ctx, taskName)
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
 	return ctx, task.End
+}
+
+func (t *tracer) hostname() string {
+	if !t.config.disableHostnameDetection {
+		return hostname.Get()
+	}
+	return ""
 }

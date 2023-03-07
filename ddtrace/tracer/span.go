@@ -640,11 +640,13 @@ func (s *span) Format(f fmt.State, c rune) {
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyDecisionMaker           = "_dd.p.dm"
-	keyServiceHash             = "_dd.dm.service_hash"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -665,6 +667,8 @@ const (
 	keyPropagatedUserID = "_dd.p.usr.id"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceID128 = "_dd.p.tid"
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

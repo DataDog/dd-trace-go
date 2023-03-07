@@ -1552,6 +1552,27 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 	assert.ElementsMatch(gotInnerList, wantInnerList)
 }
 
+func TestW3CExtractsBaggage(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
+		tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
+		"ot-baggage-something": "someVal",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	found := false
+	s.ForeachBaggageItem(func(k, v string) bool {
+		if k == "something" {
+			found = true
+			return false
+		}
+		return true
+	})
+	assert.True(t, found)
+}
+
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
