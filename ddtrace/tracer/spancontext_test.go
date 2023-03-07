@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -456,7 +457,7 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 func onlyTracerLogs(lines []string) []string {
 	res := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if strings.Contains(line, "appsec:") || strings.Contains(line, "instrumentation telemetry:") {
+		if strings.Contains(line, "appsec:") || strings.Contains(line, telemetry.LogPrefix) {
 			continue
 		}
 		res = append(res, line)

@@ -12,7 +12,6 @@ import (
 	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // An Option is used to configure the telemetry client's settings
@@ -102,7 +101,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				// else, it does nothing
 				WithAPIKey(defaultAPIKey())(client)
 				if client.APIKey == "" {
-					log.Warn("instrumentation telemetry: Agentless is turned on, but valid DD API key was not found. Not starting telemetry")
+					client.log("Agentless is turned on, but valid DD API key was not found. Not starting telemetry")
 					client.Disabled = true
 				}
 			}
@@ -115,17 +114,10 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				log.Warn("instrumentation telemetry: Agent URL %s is invalid, not starting telemetry", agentURL)
+				client.log("Agent URL %s is invalid, not starting telemetry", agentURL)
 				client.Disabled = true
 			}
 		}
-	}
-}
-
-// WithLogger sets the logger for submission-related events
-func WithLogger(logger Logger) Option {
-	return func(client *Client) {
-		client.Logger = logger
 	}
 }
 

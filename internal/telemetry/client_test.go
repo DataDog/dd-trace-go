@@ -236,3 +236,9 @@ func TestConcurrentClient(t *testing.T) {
 		t.Fatalf("want %+v, got %+v", want, got)
 	}
 }
+
+func TestAgentlessRetry(t *testing.T) {
+	// make sure we don't spam users with log messages when
+	// sending fails after the first try
+
+}

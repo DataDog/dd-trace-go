@@ -54,6 +54,8 @@ var (
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	defaultHeartbeatInterval = 60 // seconds
+
+	LogPrefix = "instrumentation telemetry: "
 )
 
 func init() {
@@ -107,9 +109,6 @@ type Client struct {
 	// takes precedence over this field.
 	debug bool
 
-	// Optional destination to record submission-related logging events
-	Logger Logger
-
 	// Client will be used for telemetry uploads. This http.Client, if
 	// provided, should be the same as would be used for any other
 	// interaction with the Datadog agent, e.g. if the agent is accessed
@@ -149,11 +148,6 @@ type Client struct {
 	Errors []Error
 }
 
-// Logger for submission-related events
-type Logger interface {
-	Log(msg string)
-}
-
 // NewClient returns a telemetry client based on the
 // specified options
 func NewClient(opts ...Option) (client *Client) {
@@ -167,10 +161,10 @@ func NewClient(opts ...Option) (client *Client) {
 func (c *Client) log(msg string, args ...interface{}) {
 	// we don't log if the client is temporarily using agentless
 	// to avoid spamming the user with instrumentation telemetry error messages
-	if c.Logger == nil || c.temporaryAgentless {
+	if c.temporaryAgentless {
 		return
 	}
-	c.Logger.Log(fmt.Sprintf("Instrumentation telemetry: "+msg, args...))
+	log.Warn(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
 // Start registers that the app has begun running with the given integrations
@@ -258,7 +252,7 @@ func (c *Client) Start(configuration []Configuration, errors []Error) {
 
 	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
 	if heartbeat < 1 || heartbeat > 3600 {
-		log.Warn("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
 		heartbeat = defaultHeartbeatInterval
 	}
 	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
@@ -460,7 +454,7 @@ func (c *Client) submit(r *Request) error {
 		// submitting to the agent is working, turn off temporary agentless
 		c.temporaryAgentless = false
 	} else if retry {
-		c.log("telemetry submission failed, retrying with agentless: %s", err)
+		c.log("Telemetry submission failed, retrying with agentless: %s", err)
 		c.retryWithAgentless(r)
 		c.temporaryAgentless = true
 	}
