@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
-REPORTS_DIR="$(pwd)/reports/"
-mkdir "${REPORTS_DIR}" || :
-
 # Change threshold for detection of regression
 # @see https://github.com/DataDog/relenv-benchmark-analyzer#what-is-a-significant-difference
 export UNCONFIDENCE_THRESHOLD=2.0
@@ -25,7 +21,7 @@ cd /benchmark-analyzer
     \"git_commit_sha\":\"$CANDIDATE_COMMIT_SHA\", \
     \"git_branch\":\"$CANDIDATE_BRANCH\"\
     }" \
-  --outpath="pr.json" \
+  --outpath="${ARTIFACTS_DIR}/pr.converted.json" \
   "${ARTIFACTS_DIR}/pr_bench.txt"
 
 ./benchmark_analyzer convert \
@@ -35,9 +31,8 @@ cd /benchmark-analyzer
     \"git_commit_sha\":\"$BASELINE_COMMIT_SHA\", \
     \"git_branch\":\"$BASELINE_BRANCH\"\
     }" \
-  --outpath="main.json" \
+  --outpath="${ARTIFACTS_DIR}/main.converted.json" \
   "${ARTIFACTS_DIR}/main_bench.txt"
 
-./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
-./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
-
+./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report.md" --format md-nodejs "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
+./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report_full.html" --format html "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
