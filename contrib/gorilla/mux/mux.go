@@ -99,7 +99,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	spanopts = append(spanopts, ddhttp.HeaderTagsFromRequest(req, r.config.headersAsTags))
+	spanopts = append(spanopts, ddhttptrace.HeaderTagsFromRequest(req, r.config.headersAsTags))
 	resource := r.config.resourceNamer(r, req)
 	ddhttp.TraceAndServe(r.Router, w, req, &ddhttp.ServeConfig{
 		Service:     r.config.serviceName,

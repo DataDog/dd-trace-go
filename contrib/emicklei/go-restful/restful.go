@@ -10,7 +10,6 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -35,7 +34,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		spanOpts = append(spanOpts, http.HeaderTagsFromRequest(req.Request, cfg.headersAsTags))
+		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headersAsTags))
 		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))

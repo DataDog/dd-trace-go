@@ -9,7 +9,6 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
 	"net/http"
-	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -94,17 +93,4 @@ func (w *responseWriter) WriteHeader(status int) {
 	}
 	w.ResponseWriter.WriteHeader(status)
 	w.status = status
-}
-
-// HeaderTagsFromRequest matches req headers to user-defined list of header tags
-// and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, headersAsTags map[string]string) ddtrace.StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		for h, v := range req.Header {
-			h = strings.ToLower(h)
-			if tag, ok := headersAsTags[h]; ok && !strings.HasPrefix(h, "x-datadog-") {
-				cfg.Tags[tag] = strings.Join(v, ",")
-			}
-		}
-	}
 }

@@ -100,3 +100,16 @@ func urlFromRequest(r *http.Request) string {
 	}
 	return url
 }
+
+// HeaderTagsFromRequest matches req headers to user-defined list of header tags
+// and creates span tags based on the header tag target and the req header value
+func HeaderTagsFromRequest(req *http.Request, headersAsTags map[string]string) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		for h, v := range req.Header {
+			h = strings.ToLower(h)
+			if tag, ok := headersAsTags[h]; ok && !strings.HasPrefix(h, "x-datadog-") {
+				cfg.Tags[tag] = strings.Join(v, ",")
+			}
+		}
+	}
+}
