@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -131,7 +130,7 @@ func WithHeaderTags(headers []string) RouterOption {
 		// When this feature is enabled at the integration level, blindly overwrite the global config
 		cfg.headersAsTags = make(map[string]string)
 		for _, h := range headers {
-			header, tag := httptrace.ConvertHeaderToTag(h)
+			header, tag := tracer.ConvertHeaderToTag(h)
 			cfg.headersAsTags[header] = tag
 		}
 	}
