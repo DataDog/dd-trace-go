@@ -906,7 +906,7 @@ func StackFrames(n, skip uint) FinishOption {
 }
 
 // WithHeaderTags enables web integrations to attach the specified request headers as span tags.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {

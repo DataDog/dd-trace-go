@@ -123,7 +123,7 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
 func WithHeaderTags(headers []string) RouterOption {
 	return func(cfg *routerConfig) {
@@ -137,7 +137,7 @@ func WithHeaderTags(headers []string) RouterOption {
 }
 
 // WithQueryParams specifies that the integration should attach request query parameters as APM tags.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
 func WithQueryParams() RouterOption {
 	return func(cfg *routerConfig) {

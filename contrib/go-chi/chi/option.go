@@ -95,7 +95,7 @@ func isServerError(statusCode int) bool {
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
-// Warning: using this feature can risk exposing sensitive data such as authorisation tokens
+// Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
