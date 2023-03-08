@@ -8,7 +8,7 @@ package echo
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -99,7 +99,7 @@ func WithHeaderTags(headers []string) Option {
 		// When this feature is enabled at the integration level, blindly overwrite the global config
 		cfg.headersAsTags = make(map[string]string)
 		for _, h := range headers {
-			header, tag := tracer.ConvertHeaderToTag(h)
+			header, tag := httptrace.ConvertHeaderToTag(h)
 			cfg.headersAsTags[header] = tag
 		}
 	}
