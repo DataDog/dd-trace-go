@@ -29,6 +29,7 @@ import (
 )
 
 var (
+	GlobalClient *Client
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -55,7 +56,7 @@ var (
 
 	defaultHeartbeatInterval = 60 // seconds
 
-	// all telemetry logging should have the following prefix
+	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "instrumentation telemetry: "
 )
 
@@ -149,14 +150,13 @@ type Client struct {
 	Errors []Error
 }
 
-// NewClient returns a telemetry client based on the
-// specified options
-func NewClient(opts ...Option) (client *Client) {
-	client = defaultClient()
+// ApplyOps
+func (c *Client) ApplyOps(opts ...Option) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, opt := range opts {
-		opt(client)
+		opt(c)
 	}
-	return client
 }
 
 func (c *Client) log(msg string, args ...interface{}) {
@@ -223,7 +223,7 @@ func (c *Client) Start(configuration []Configuration, errors []Error) {
 	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
 	appStarted := c.newRequest(RequestTypeAppStarted)
-	appStarted.Payload = payload
+	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
 
 	if c.CollectDependencies || internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
@@ -240,7 +240,7 @@ func (c *Client) Start(configuration []Configuration, errors []Error) {
 			}
 		}
 		dep := c.newRequest(RequestTypeDependenciesLoaded)
-		dep.Payload = depPayload
+		dep.Body.Payload = depPayload
 		c.scheduleSubmit(dep)
 	}
 
@@ -370,7 +370,7 @@ func (c *Client) flush() {
 			s.Points = [][2]float64{{m.ts, m.value}}
 			payload.Series = append(payload.Series, s)
 		}
-		r.Payload = payload
+		r.Body.Payload = payload
 		submissions = append(submissions, r)
 	}
 
@@ -384,7 +384,7 @@ func (c *Client) flush() {
 
 	go func() {
 		for _, r := range submissions {
-			c.submit(r)
+			r.submit()
 		}
 	}()
 }
@@ -413,7 +413,7 @@ func getOSVersion() string {
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
 	c.seqID++
-	return &Request{
+	body := &TelemetryBody{
 		APIVersion:  "v2",
 		RequestType: t,
 		TracerTime:  time.Now().Unix(),
@@ -435,68 +435,72 @@ func (c *Client) newRequest(t RequestType) *Request {
 			// TODO (lievan): arch, kernel stuff?
 		},
 	}
-}
-
-// if there is an error with sending telemetry to the agent
-// we use this function to retry with agentless endpoint
-func (c *Client) retryWithAgentless(r *Request) error {
-	_, err := c.submitToURL(r, agentlessURL)
-	if err != nil {
-		c.log("Retrying with agentless telemetry failed: %s", err)
-	}
-	return err
-}
-
-func (c *Client) submit(r *Request) error {
-	retry, err := c.submitToURL(r, c.URL)
-	c.agentlessLock.Lock()
-	defer c.agentlessLock.Unlock()
-	if err == nil {
-		// submitting to the agent is working, turn off temporary agentless
-		c.temporaryAgentless = false
-	} else if retry {
-		c.log("Telemetry submission failed, retrying with agentless: %s", err)
-		c.retryWithAgentless(r)
-		c.temporaryAgentless = true
-	}
-	return err
-}
-
-func (c *Client) submitToURL(r *Request, url string) (retry bool, err error) {
-	b, err := json.Marshal(r)
-	if err != nil {
-		return false, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
-	if err != nil {
-		return false, err
-	}
-	req.Header = http.Header{
+	header := &http.Header{
 		"DD-API-KEY":                 {c.APIKey}, // DD-API-KEY is required as of v2
 		"Content-Type":               {"application/json"},
 		"DD-Telemetry-API-Version":   {"v1"},
-		"DD-Telemetry-Request-Type":  {string(r.RequestType)},
+		"DD-Telemetry-Request-Type":  {string(t)},
 		"DD-Client-Library-Language": {"go"},
 		"DD-Client-Library-Version":  {version.Tag},
 		"DD-Agent-Env":               {c.Env},
 		"DD-Agent-Hostname":          {hostname},
 		"Datadog-Container-ID":       {internal.ContainerID()},
 	}
+	client := c.Client
+	if client == nil {
+		client = defaultHTTPClient
+	}
+	return &Request{Body: body,
+		Header:          header,
+		HttpClient:      client,
+		URL:             c.URL,
+		TelemetryClient: c}
+}
+
+func (r *Request) submit() error {
+	retry, err := r._submit()
+	if r.TelemetryClient == nil {
+		r.TelemetryClient = GlobalClient
+	}
+	if err == nil {
+		r.TelemetryClient.setAgentless(false)
+	} else if retry {
+		r.TelemetryClient.log("Retrying with agentless telemetry failed: %s", err)
+		r.URL = agentlessURL
+		_, err := r._submit()
+		if err != nil {
+			r.TelemetryClient.log("Retrying with agentless telemetry failed: %s", err)
+		}
+		r.TelemetryClient.setAgentless(true)
+	}
+	return err
+}
+
+func (r *Request) _submit() (retry bool, err error) {
+	b, err := json.Marshal(r.Body)
+	if err != nil {
+		return false, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, r.URL, bytes.NewReader(b))
+	if err != nil {
+		return false, err
+	}
+	req.Header = *r.Header
 
 	req.ContentLength = int64(len(b))
 
-	client := c.Client
+	client := r.HttpClient
 	if client == nil {
 		client = defaultHTTPClient
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return true && (url != agentlessURL), err
+		return true && (r.URL != agentlessURL), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return true && (url != agentlessURL), errBadStatus(resp.StatusCode)
+		return true && (r.URL != agentlessURL), errBadStatus(resp.StatusCode)
 	}
 	return false, nil
 }
@@ -517,10 +521,14 @@ func (c *Client) backgroundHeartbeat() {
 	if !c.started {
 		return
 	}
-	err := c.submit(c.newRequest(RequestTypeAppHeartbeat))
-	if err != nil {
-		c.log("heartbeat failed: %s", err)
-	}
+	// TODO (evan.li): thoughts on calling go func here?
+	//				   don't want the request to block while holding the lock
+	go func() {
+		err := c.newRequest(RequestTypeAppHeartbeat).submit()
+		if err != nil {
+			c.log("heartbeat failed: %s", err)
+		}
+	}()
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }
 
@@ -532,4 +540,17 @@ func (c *Client) backgroundFlush() {
 	}
 	c.flush()
 	c.flushT.Reset(c.SubmissionInterval)
+}
+
+// toggleAgentless is used to set the ```temporaryAgentless```
+// field in the telemetry client.
+func (c *Client) setAgentless(agentless bool) {
+	c.agentlessLock.Lock()
+	defer c.agentlessLock.Unlock()
+	c.temporaryAgentless = agentless
+}
+
+func init() {
+	// initialize a global client
+	GlobalClient = defaultClient()
 }

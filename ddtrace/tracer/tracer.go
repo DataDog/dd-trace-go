@@ -93,9 +93,6 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
-
-	// telemetry is used to send information regarding the tracer to the telemetry backend
-	telemetry *telemetry.Client
 }
 
 const (
@@ -246,15 +243,15 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 			},
 		}),
 		statsd: statsd,
-		telemetry: telemetry.NewClient(
-			telemetry.WithNamespace(telemetry.NamespaceTracers),
-			telemetry.WithService(c.serviceName),
-			telemetry.WithEnv(c.env),
-			telemetry.WithHTTPClient(c.httpClient),
-			telemetry.WithURL(c.logToStdout, c.agentURL.String()),
-			telemetry.WithVersion(c.version),
-		),
 	}
+	telemetry.GlobalClient.ApplyOps(
+		telemetry.WithNamespace(telemetry.NamespaceTracers),
+		telemetry.WithService(c.serviceName),
+		telemetry.WithEnv(c.env),
+		telemetry.WithHTTPClient(c.httpClient),
+		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+		telemetry.WithVersion(c.version),
+	)
 	return t, telemetryErrors
 }
 
@@ -333,7 +330,7 @@ func newTracer(opts ...StartOption) *tracer {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	t.telemetry.Start(telemetryConfigs, telemetryErrors)
+	telemetry.GlobalClient.Start(telemetryConfigs, telemetryErrors)
 	return t
 }
 
@@ -636,7 +633,7 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
-	t.telemetry.Stop()
+	telemetry.GlobalClient.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

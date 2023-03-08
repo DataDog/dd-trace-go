@@ -2180,7 +2180,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
 			return
 		}
-		var body telemetry.Request
+		var body telemetry.TelemetryBody
 		body.Payload = new(telemetry.AppStarted)
 		err := json.NewDecoder(r.Body).Decode(&body)
 		if err != nil {

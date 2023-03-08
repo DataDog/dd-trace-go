@@ -5,8 +5,22 @@
 
 package telemetry
 
-// Request is the common high-level structure encapsulating a telemetry request
+import "net/http"
+
+// Request capture all neccessary information for a telemetry event submission
+// so we do not need to read directly from our telemetry client when submitting
+// asynchronously
 type Request struct {
+	Body       *TelemetryBody
+	Header     *http.Header
+	HttpClient *http.Client
+	URL        string
+	// still store pointer to origin telemetry client for logging and error handling
+	TelemetryClient *Client
+}
+
+// TelemetryBody is the common high-level structure encapsulating a telemetry request body
+type TelemetryBody struct {
 	APIVersion  string      `json:"api_version"`
 	RequestType RequestType `json:"request_type"`
 	TracerTime  int64       `json:"tracer_time"`
