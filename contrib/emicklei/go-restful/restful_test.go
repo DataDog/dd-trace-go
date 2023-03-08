@@ -47,7 +47,6 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
 	assert.Equal("val", spans[0].Tags()["tag"])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
-
 }
 
 func TestTrace200(t *testing.T) {
