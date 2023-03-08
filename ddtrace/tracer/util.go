@@ -129,7 +129,13 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 func ConvertHeaderToTag(headerAsTag string) (header string, tag string) {
 	headerAndTag := strings.Split(strings.ToLower(strings.TrimSpace(headerAsTag)), ":")
 	if len(headerAndTag) > 1 {
-		return headerAndTag[0], headerAndTag[1]
+		return headerAndTag[0], normalizeTag(headerAndTag[1])
 	}
-	return headerAndTag[0], ext.HTTPRequestHeaders + "." + headerAndTag[0]
+	return headerAndTag[0], ext.HTTPRequestHeaders + "." + normalizeTag(headerAndTag[0])
+}
+
+// normalizeTag removes all "." in the string with "_" and returns the result
+// MTOFF: what gets normalized to underscore and what doesn't? B/c the def implies "!" also becomes "_", but "\" and "-" do not.
+func normalizeTag(tag string) string {
+	return strings.Replace(tag, ".", "_", -1)
 }

@@ -6,6 +6,7 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,13 +30,14 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Set("2header", "2val")
 		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
-		router(WithHeaderTags([]string{"  header  ", "  2header:tag  "})).ServeHTTP(w, r)
+		router(WithHeaderTags([]string{"  header  ", "  2header:t.a.g.  "})).ServeHTTP(w, r)
 
 		assert := assert.New(t)
 
 		spans := mt.FinishedSpans()
+		fmt.Println(spans)
 		assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
-		assert.Equal("2val", spans[0].Tags()["tag"])
+		assert.Equal("2val", spans[0].Tags()["t_a_g_"])
 
 		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 	})
