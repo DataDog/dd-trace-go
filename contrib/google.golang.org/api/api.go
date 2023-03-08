@@ -13,7 +13,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -43,8 +43,8 @@ func NewClient(options ...Option) (*http.Client, error) {
 func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.RoundTripper {
 	cfg := newConfig(options...)
 	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
-	rtOpts := []httptrace.RoundTripperOption{
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	rtOpts := []ddhttp.RoundTripperOption{
+		ddhttp.WithBefore(func(req *http.Request, span ddtrace.Span) {
 			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 			if ok {
 				span.SetTag(ext.ServiceName, e.ServiceName)
@@ -62,7 +62,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 		}),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
-		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
+		rtOpts = append(rtOpts, ddhttp.RTWithAnalyticsRate(cfg.analyticsRate))
 	}
-	return httptrace.WrapRoundTripper(transport, rtOpts...)
+	return ddhttp.WrapRoundTripper(transport, rtOpts...)
 }

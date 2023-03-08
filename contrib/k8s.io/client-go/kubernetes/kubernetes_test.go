@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -93,7 +93,7 @@ func TestKubernetes(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...httptrace.RoundTripperOption) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ddhttp.RoundTripperOption) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("Hello World"))
 		}))
@@ -138,14 +138,14 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, 1.0, httptrace.RTWithAnalytics(true))
+		assertRate(t, mt, 1.0, ddhttp.RTWithAnalytics(true))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil, httptrace.RTWithAnalytics(false))
+		assertRate(t, mt, nil, ddhttp.RTWithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -156,6 +156,6 @@ func TestAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		assertRate(t, mt, 0.23, httptrace.RTWithAnalyticsRate(0.23))
+		assertRate(t, mt, 0.23, ddhttp.RTWithAnalyticsRate(0.23))
 	})
 }

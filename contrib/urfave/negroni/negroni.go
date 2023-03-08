@@ -13,9 +13,8 @@ import (
 
 	"github.com/urfave/negroni"
 
-	//MTOFF - not sure what to name this, when http and httptrace already exist
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	nethttptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -27,7 +26,7 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := append(m.cfg.spanOpts, tracer.ServiceName(m.cfg.serviceName), tracer.ResourceName(m.cfg.resourceNamer(r)), nethttptrace.HeaderTagsFromRequest(r, m.cfg.headersAsTags))
+	opts := append(m.cfg.spanOpts, tracer.ServiceName(m.cfg.serviceName), tracer.ResourceName(m.cfg.resourceNamer(r)), ddhttp.HeaderTagsFromRequest(r, m.cfg.headersAsTags))
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
