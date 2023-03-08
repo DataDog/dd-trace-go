@@ -42,7 +42,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			opts = append(opts, ddhttptrace.HeaderTagsFromRequest(r, cfg.headersAsTags))
+			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headersAsTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
