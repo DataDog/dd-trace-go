@@ -985,10 +985,10 @@ func TestWithHeaderTags(t *testing.T) {
 
 	t.Run("normalization", func(t *testing.T) {
 		assert := assert.New(t)
-		newConfig(WithHeaderTags([]string{" 1header:.1.t.a.g. ", "  .2.h.e.a.d.e.r.  ", "   3header:.3.t.a.g.   "}))
-		assert.Equal("_1_t_a_g_", globalconfig.GetHeaderTag("1header"))
+		newConfig(WithHeaderTags([]string{" 1header:.1.t.a.g. ", "  .2.h.e.a.d.e.r.  ", "   3header:3tag   "}))
+		assert.Equal(".1.t.a.g.", globalconfig.GetHeaderTag("1header"))
 		assert.Equal("http.request.headers._2_h_e_a_d_e_r_", globalconfig.GetHeaderTag(".2.h.e.a.d.e.r."))
-		assert.Equal("_3_t_a_g_", globalconfig.GetHeaderTag("3header"))
+		assert.Equal("3tag", globalconfig.GetHeaderTag("3header"))
 	})
 
 	t.Run("with-envvar", func(t *testing.T) {
