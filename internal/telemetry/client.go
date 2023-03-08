@@ -29,6 +29,8 @@ import (
 )
 
 var (
+	// GlobalClient acts as a global telemetry client that the
+	// tracer, profiler, and appsec products will use
 	GlobalClient *Client
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
@@ -141,7 +143,7 @@ type Client struct {
 	newMetrics bool
 
 	// agentlessLock gaurds the temporaryAgentless field
-	agentlessLock sync.Mutex
+	agentlessLock sync.RWMutex
 	// temporaryAgentless allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
 	temporaryAgentless bool
@@ -162,6 +164,8 @@ func (c *Client) ApplyOps(opts ...Option) {
 func (c *Client) log(msg string, args ...interface{}) {
 	// we don't log if the client is temporarily using agentless
 	// to avoid spamming the user with instrumentation telemetry error messages
+	c.agentlessLock.RLock()
+	defer c.agentlessLock.RUnlock()
 	if c.temporaryAgentless {
 		return
 	}
@@ -413,7 +417,7 @@ func getOSVersion() string {
 // sent through this Client
 func (c *Client) newRequest(t RequestType) *Request {
 	c.seqID++
-	body := &TelemetryBody{
+	body := &Body{
 		APIVersion:  "v2",
 		RequestType: t,
 		TracerTime:  time.Now().Unix(),
@@ -452,7 +456,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 	}
 	return &Request{Body: body,
 		Header:          header,
-		HttpClient:      client,
+		HTTPClient:      client,
 		URL:             c.URL,
 		TelemetryClient: c}
 }
@@ -490,7 +494,7 @@ func (r *Request) _submit() (retry bool, err error) {
 
 	req.ContentLength = int64(len(b))
 
-	client := r.HttpClient
+	client := r.HTTPClient
 	if client == nil {
 		client = defaultHTTPClient
 	}
@@ -551,6 +555,5 @@ func (c *Client) setAgentless(agentless bool) {
 }
 
 func init() {
-	// initialize a global client
 	GlobalClient = defaultClient()
 }

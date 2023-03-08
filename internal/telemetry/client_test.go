@@ -71,7 +71,7 @@ func TestMetrics(t *testing.T) {
 			}
 			return
 		}
-		req := telemetry.TelemetryBody{
+		req := telemetry.Body{
 			Payload: new(telemetry.Metrics),
 		}
 		dec := json.NewDecoder(r.Body)
@@ -177,7 +177,7 @@ func TestConcurrentClient(t *testing.T) {
 				return
 			}
 		}
-		req := telemetry.TelemetryBody{
+		req := telemetry.Body{
 			Payload: new(telemetry.Metrics),
 		}
 		dec := json.NewDecoder(r.Body)

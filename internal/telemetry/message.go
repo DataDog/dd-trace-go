@@ -11,16 +11,16 @@ import "net/http"
 // so we do not need to read directly from our telemetry client when submitting
 // asynchronously
 type Request struct {
-	Body       *TelemetryBody
+	Body       *Body
 	Header     *http.Header
-	HttpClient *http.Client
+	HTTPClient *http.Client
 	URL        string
 	// still store pointer to origin telemetry client for logging and error handling
 	TelemetryClient *Client
 }
 
-// TelemetryBody is the common high-level structure encapsulating a telemetry request body
-type TelemetryBody struct {
+// Body is the common high-level structure encapsulating a telemetry request body
+type Body struct {
 	APIVersion  string      `json:"api_version"`
 	RequestType RequestType `json:"request_type"`
 	TracerTime  int64       `json:"tracer_time"`
