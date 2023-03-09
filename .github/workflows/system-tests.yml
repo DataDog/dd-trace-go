@@ -69,7 +69,7 @@ jobs:
 
       - name: Compress artifact
         if: ${{ always() }}
-        run: tar -czvf artifact.tar.gz $(ls | grep -e "logs*")
+        run: tar -czvf artifact.tar.gz $(ls | grep logs)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v2
