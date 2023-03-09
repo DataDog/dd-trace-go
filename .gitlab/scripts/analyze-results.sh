@@ -10,10 +10,7 @@ CANDIDATE_SRC="/app/candidate/"
 cd "$CANDIDATE_SRC"
 CANDIDATE_COMMIT_SHA=$(git rev-parse --short HEAD)
 
-source /benchmark-analyzer/.venv/bin/activate
-cd /benchmark-analyzer
-
-./benchmark_analyzer convert \
+benchmark_analyzer convert \
   --framework=GoBench \
   --extra-params="{\
     \"config\":\"candidate\", \
@@ -23,7 +20,6 @@ cd /benchmark-analyzer
   --outpath="${ARTIFACTS_DIR}/pr.converted.json" \
   "${ARTIFACTS_DIR}/pr_bench.txt"
 
-
 BASELINE_SRC="/app/baseline/"
 if [ -d $BASELINE_SRC ]; then
   BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CANDIDATE_BRANCH" || :)
@@ -31,7 +27,7 @@ if [ -d $BASELINE_SRC ]; then
   cd "$BASELINE_SRC"
   BASELINE_COMMIT_SHA=$(git rev-parse --short HEAD)
 
-  ./benchmark_analyzer convert \
+  benchmark_analyzer convert \
     --framework=GoBench \
     --extra-params="{\
       \"config\":\"baseline\", \
@@ -41,6 +37,6 @@ if [ -d $BASELINE_SRC ]; then
     --outpath="${ARTIFACTS_DIR}/main.converted.json" \
     "${ARTIFACTS_DIR}/main_bench.txt"
 
-  ./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report.md" --format md-nodejs "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
-  ./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report_full.html" --format html "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
+  benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report.md" --format md-nodejs "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
+  benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report_full.html" --format html "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
 fi
