@@ -255,16 +255,17 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 // start the global telemetry client with tracer data
 func startTelemetry(c *config, errors []telemetry.Error) {
 	// need to re-intialize default values
-	telemetry.GlobalClient.Default()
-	telemetry.GlobalClient.ApplyOps(
-		telemetry.WithNamespace(telemetry.NamespaceTracers),
-		telemetry.WithService(c.serviceName),
-		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
-		// c.logToStdout is true if serverless is turned o
-		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
-		telemetry.WithVersion(c.version),
-	)
+	if !telemetry.GlobalClient.Started() {
+		telemetry.GlobalClient.Default()
+		telemetry.GlobalClient.ApplyOps(
+			telemetry.WithService(c.serviceName),
+			telemetry.WithEnv(c.env),
+			telemetry.WithHTTPClient(c.httpClient),
+			// c.logToStdout is true if serverless is turned o
+			telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+			telemetry.WithVersion(c.version),
+		)
+	}
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},

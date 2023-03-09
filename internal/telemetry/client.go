@@ -165,6 +165,13 @@ func (c *Client) log(msg string, args ...interface{}) {
 	log.Warn(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
+// Started returns whether the client has started or not
+func (c *Client) Started() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.started
+}
+
 // Start registers that the app has begun running with the given integrations
 // and configuration.
 func (c *Client) Start(configuration []Configuration, errors []Error) {
@@ -252,6 +259,12 @@ func (c *Client) Stop() {
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		log.Warn("attempted to send product telemetry info without starting the telemetry client.")
+		return
+	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
 	if namespace == NamespaceProfilers {
@@ -562,6 +575,8 @@ func (c *Client) Default() {
 	c.readEnvVars()
 }
 
+// SetAgentlessEndpoint is used for testing purposes to replace the real agentless
+// endpoint with a custom one
 func SetAgentlessEndpoint(endpoint string) string {
 	agentlessEndpointLock.Lock()
 	defer agentlessEndpointLock.Unlock()

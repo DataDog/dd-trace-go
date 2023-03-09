@@ -18,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
@@ -200,12 +201,48 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
+func (p *profiler) startTelemetry(profileEnabled func(t ProfileType) bool) {
+	configs := []telemetry.Configuration{}
+	if !telemetry.GlobalClient.Started() {
+		telemetry.GlobalClient.Default()
+		telemetry.GlobalClient.ApplyOps(
+			telemetry.WithService(p.cfg.service),
+			telemetry.WithEnv(p.cfg.env),
+			telemetry.WithHTTPClient(p.cfg.httpClient),
+			telemetry.WithURL(p.cfg.agentless, p.cfg.agentURL),
+		)
+		configs = append(configs, telemetry.Configuration{Name: "trace.enabled", Value: false})
+		telemetry.GlobalClient.Start(configs, []telemetry.Error{})
+	}
+
+	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers, true,
+		append(configs, []telemetry.Configuration{
+			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
+			{Name: "agentless", Value: p.cfg.agentless},
+			{Name: "profile_period", Value: p.cfg.period.String()},
+			{Name: "cpu_duration", Value: p.cfg.cpuDuration.String()},
+			{Name: "cpu_profile_rate", Value: p.cfg.cpuProfileRate},
+			{Name: "block_profile_rate", Value: p.cfg.blockRate},
+			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
+			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
+			{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
+			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
+			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
+			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
+			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
+			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
+			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
+		}...))
+}
+
 // run runs the profiler.
 func (p *profiler) run() {
 	profileEnabled := func(t ProfileType) bool {
 		_, ok := p.cfg.types[t]
 		return ok
 	}
+
+	p.startTelemetry(profileEnabled)
 
 	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
