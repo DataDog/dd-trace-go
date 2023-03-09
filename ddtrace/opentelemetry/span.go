@@ -67,6 +67,7 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
+	print("SPAN CONTEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXT")
 	ctx := s.Span.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
@@ -88,6 +89,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 }
 
 func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
+	print("EXTRACT TIME")
 	headers := tracer.TextMapCarrier{}
 	if err := tracer.Inject(s.Context(), headers); err != nil {
 		return
@@ -100,6 +102,7 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
+		print("GOT A PARENTTTTTTTTTTTTT ", parent)
 		// checking the length to avoid panic when parsing
 		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
 			c.TraceFlags = oteltrace.TraceFlags(f)
