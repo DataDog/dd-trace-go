@@ -27,7 +27,8 @@ type TracerProvider struct {
 	tracer  *oteltracer
 	ddopts  []tracer.StartOption
 	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
-	sync.Once
+	stop    sync.Once
+	start   sync.Once
 }
 
 // NewTracerProvider returns an instance of OpenTelemetry TracerProvider with Datadog Tracer start options.
@@ -42,17 +43,20 @@ func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) 
 	if atomic.LoadUint32(&p.stopped) != 0 {
 		return &noopOteltracer{}
 	}
-	tracer.Start(p.ddopts...)
+	p.start.Do(func() {
+		//TODO: what about the options
+		tracer.Start(p.ddopts...)
+	})
 	return &oteltracer{
 		Tracer:   internal.GetGlobalTracer(),
-		cfg:      oteltrace.NewTracerConfig(options...),
+		cfg:      oteltrace.NewTracerConfig(options...), //TODO: this config is never used
 		provider: p,
 	}
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
 func (p *TracerProvider) Shutdown() error {
-	p.Once.Do(func() {
+	p.stop.Do(func() {
 		tracer.Stop()
 		atomic.StoreUint32(&p.stopped, 1)
 	})

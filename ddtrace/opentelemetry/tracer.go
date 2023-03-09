@@ -7,6 +7,8 @@ package opentelemetry
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
 
@@ -22,10 +24,39 @@ type oteltracer struct {
 	ddtrace.Tracer
 }
 
+type otelCtxToDDCtx struct {
+	oc oteltrace.SpanContext
+}
+
+func (c *otelCtxToDDCtx) TraceID() uint64 {
+	allTraceID := [16]byte(c.oc.TraceID())
+	return binary.BigEndian.Uint64(allTraceID[8:])
+}
+func (c *otelCtxToDDCtx) SpanID() uint64 {
+	sid := [8]byte(c.oc.SpanID())
+	return binary.BigEndian.Uint64(sid[:])
+}
+func (c *otelCtxToDDCtx) ForeachBaggageItem(handler func(k, v string) bool) {
+	// TODO: otel trace state seems to be the closest thing to baggage but there's not a way to walk over the list afaik
+	return
+}
+func (c *otelCtxToDDCtx) TraceID128() string {
+	allTraceID := [16]byte(c.oc.TraceID())
+	return hex.EncodeToString(allTraceID[:])
+}
+func (c *otelCtxToDDCtx) TraceID128Bytes() []byte {
+	allTraceID := [16]byte(c.oc.TraceID())
+	return allTraceID[:]
+}
+
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	var ddopts []ddtrace.StartSpanOption
 	if !ssConfig.NewRoot() {
+		if s := oteltrace.SpanFromContext(ctx); s.SpanContext().IsValid() {
+			otelsctx := &otelCtxToDDCtx{s.SpanContext()}
+			ddopts = append(ddopts, tracer.ChildOf(otelsctx))
+		}
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
 		}
@@ -43,10 +74,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, opts...)
 	}
 	s := tracer.StartSpan(spanName, ddopts...)
-	return tracer.ContextWithSpan(ctx, s), oteltrace.Span(&span{
+	os := oteltrace.Span(&span{
 		Span:       s,
 		oteltracer: t,
 	})
+
+	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os //TODO does this make sense?
 }
 
 var _ oteltrace.Tracer = (*noopOteltracer)(nil)

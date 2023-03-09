@@ -67,7 +67,6 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	print("SPAN CONTEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXT")
 	ctx := s.Span.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
@@ -75,7 +74,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	w3cCtx, ok := ctx.(ddtrace.SpanContextW3C)
 	if !ok {
 		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
-		uint64ToByte(ctx.TraceID(), traceID[:]) //TODO does this need to be offset by 8?
+		uint64ToByte(ctx.TraceID(), traceID[:])
 	} else {
 		copy(traceID[:], w3cCtx.TraceID128Bytes())
 	}
@@ -101,9 +100,8 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
-		println("GOT A PARENTTTTTTTTTTTTT ", parent)
 		// checking the length to avoid panic when parsing
-		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err == nil {
+		if f, err := strconv.ParseUint(parent[len(parent)-2:], 16, 8); err == nil {
 			println("parsed ", f)
 			c.TraceFlags = oteltrace.TraceFlags(f)
 			println("setting trace flags, ", c.TraceFlags)
