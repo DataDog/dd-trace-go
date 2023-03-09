@@ -3,11 +3,11 @@
 set -x
 
 CANDIDATE_SRC="/app/candidate/"
-CANDIDATE_BRANCH=$UPSTREAM_BRANCH
-CANDIDATE_COMMIT_SHA=$UPSTREAM_COMMIT_SHA
+CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
+CANDIDATE_COMMIT_SHA=$CI_COMMIT_SHA
 
 # Clone candidate release
-git clone --branch $CANDIDATE_BRANCH https://github.com/DataDog/dd-trace-go "$CANDIDATE_SRC" && \
+git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$CANDIDATE_SRC" && \
   cd "$CANDIDATE_SRC" && \
   git checkout $CANDIDATE_COMMIT_SHA
 
@@ -23,7 +23,7 @@ if [ ! -z "$BASELINE_BRANCH" ]; then
   BASELINE_COMMIT_SHA=$(git merge-base "origin/$BASELINE_BRANCH" "origin/$CANDIDATE_BRANCH")
 
   # Clone baseline release
-  git clone --branch $BASELINE_BRANCH https://github.com/DataDog/dd-trace-js/ "$BASELINE_SRC" && \
+  git clone --branch "$BASELINE_BRANCH" https://github.com/DataDog/dd-trace-js/ "$BASELINE_SRC" && \
     cd "$BASELINE_SRC" && \
     git checkout $BASELINE_COMMIT_SHA
 
