@@ -32,6 +32,12 @@ type serverStatsHandler struct {
 
 // TagRPC starts a new span for the initiated RPC request.
 func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) context.Context {
+	_, im := h.cfg.ignoredMethods[rti.FullMethodName]
+	_, um := h.cfg.untracedMethods[rti.FullMethodName]
+	if im || um {
+		return ctx
+	}
+
 	spanOpts := append([]tracer.StartSpanOption{
 		tracer.Measured(),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer)},
