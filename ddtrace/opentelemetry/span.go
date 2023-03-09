@@ -103,7 +103,7 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	if len(parent) > 3 {
 		println("GOT A PARENTTTTTTTTTTTTT ", parent)
 		// checking the length to avoid panic when parsing
-		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
+		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err == nil {
 			println("parsed ", f)
 			c.TraceFlags = oteltrace.TraceFlags(f)
 			println("setting trace flags, ", c.TraceFlags)
