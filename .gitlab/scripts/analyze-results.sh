@@ -39,4 +39,6 @@ if [ -d $BASELINE_SRC ]; then
 
   benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report.md" --format md-nodejs "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
   benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath "${ARTIFACTS_DIR}/report_full.html" --format html "${ARTIFACTS_DIR}/main.converted.json" "${ARTIFACTS_DIR}/pr.converted.json"
+else
+  benchmark_analyzer analyze --outpath "${ARTIFACTS_DIR}/analysis.html" --format html "${ARTIFACTS_DIR}/pr.converted.json"
 fi
