@@ -94,6 +94,7 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg           *Config
+	ruleset       ruleset
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
 	rc            *remoteconfig.Client
@@ -111,8 +112,9 @@ func newAppSec(cfg *Config) *appsec {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
-		cfg: cfg,
-		rc:  client,
+		cfg:     cfg,
+		rc:      client,
+		ruleset: NewRuleset(),
 	}
 }
 

@@ -71,14 +71,59 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		case rc.ProductASMFeatures:
 			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
 		case rc.ProductASMData:
-			statuses = mergeMaps(statuses, a.asmDataCallback(u))
-			// TODO
+			rulesData, _ := a.mergeRulesData(u)
+			a.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
+			// TODO: track config name
 		case rc.ProductASMDD:
-			// TODO
+			if len(u) > 1 {
+				//error
+			}
+			for path, data := range u {
+				if data == nil {
+					a.ruleset.base.Default()
+					a.ruleset.basePath = ""
+					break
+				}
+				if err := json.Unmarshal(data, &a.ruleset.base); err != nil {
+					// TODO: update status
+					break
+				}
+				a.ruleset.basePath = path
+			}
+		case rc.ProductASM:
+			for path, data := range u {
+				if data == nil {
+					delete(a.ruleset.edits, path)
+					continue
+				}
+				var f rulesetFragment
+				if err := json.Unmarshal(data, &f); err != nil {
+					// TODO: update status
+					continue
+				}
+				a.ruleset.edits[path] = f
+			}
+		// TODO:
+		// - get configs for each product (ASM_DD, ASM)
+		// - merge configs
+		// - update WAF handle with merge result
 		default:
 			log.Debug("appsec: remote config: unknown product %s. Ignoring", p)
 		}
 	}
+
+	finalRuleset := a.ruleset.Compile()
+	if len(finalRuleset.Exclusions) == 0 {
+
+	}
+	//	handle, err := waf.NewHandleFromRuleSet(finalRuleset, a.cfg.obfuscator.KeyRegex, a.cfg.obfuscator.ValueRegex)
+	//	if err != nil {
+	// handle WAF error
+	//	}
+	// a.wafHandle.Close()
+	// TODO:
+	// - Swap waf handles
+	// - Swap dyngo listeners
 	return statuses
 }
 
@@ -123,10 +168,10 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	return statuses
 }
 
-func (a *appsec) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+func (a *appsec) mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]rc.ApplyStatus) {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
-	allRulesData := make(map[string]map[string]rc.ASMDataRuleData)
+	allRulesData := make(map[string]map[string]ruleDataEntry)
 	statuses := statusesFromUpdate(u, true, nil)
 
 	for path, raw := range u {
@@ -140,7 +185,7 @@ func (a *appsec) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.App
 			continue
 		}
 
-		var rulesData rc.ASMDataRulesData
+		var rulesData rulesData
 		if err := json.Unmarshal(raw, &rulesData); err != nil {
 			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = genApplyStatus(false, err)
@@ -150,7 +195,7 @@ func (a *appsec) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.App
 		// Check each entry against allRulesData to see if merging is necessary
 		for _, ruleData := range rulesData.RulesData {
 			if allRulesData[ruleData.ID] == nil {
-				allRulesData[ruleData.ID] = make(map[string]rc.ASMDataRuleData)
+				allRulesData[ruleData.ID] = make(map[string]ruleDataEntry)
 			}
 			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
 				// Merge rules data entries with the same ID and Type
@@ -163,17 +208,19 @@ func (a *appsec) asmDataCallback(u remoteconfig.ProductUpdate) map[string]rc.App
 	}
 
 	// Aggregate all the rules data before passing it over to the WAF
-	var rulesData []rc.ASMDataRuleData
+	var rulesData []ruleDataEntry
 	for _, m := range allRulesData {
 		for _, data := range m {
 			rulesData = append(rulesData, data)
 		}
 	}
-	if err := a.wafHandle.UpdateRulesData(rulesData); err != nil {
-		log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
-		statuses = statusesFromUpdate(u, false, err)
-	}
-	return statuses
+	/*
+		if err := a.wafHandle.UpdateRulesData(rulesData); err != nil {
+			log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
+			statuses = statusesFromUpdate(u, false, err)
+		}
+	*/
+	return rulesData, statuses
 }
 
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
