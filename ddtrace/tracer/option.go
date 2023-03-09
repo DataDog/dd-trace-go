@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -911,7 +912,7 @@ func StackFrames(n, skip uint) FinishOption {
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
 		for _, h := range headerAsTags {
-			header, tag := ConvertHeaderToTag(h)
+			header, tag := normalizer.ConvertHeaderToTag(h)
 			globalconfig.SetHeaderTag(header, tag)
 		}
 	}
