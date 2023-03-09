@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -x
+set -ex
 
 CANDIDATE_SRC="/app/candidate/"
 CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
@@ -23,7 +23,7 @@ if [ ! -z "$BASELINE_BRANCH" ]; then
   BASELINE_COMMIT_SHA=$(git merge-base "origin/$BASELINE_BRANCH" "origin/$CANDIDATE_BRANCH")
 
   # Clone baseline release
-  git clone --branch "$BASELINE_BRANCH" https://github.com/DataDog/dd-trace-js/ "$BASELINE_SRC" && \
+  git clone --branch "$BASELINE_BRANCH" https://github.com/DataDog/dd-trace-go/ "$BASELINE_SRC" && \
     cd "$BASELINE_SRC" && \
     git checkout $BASELINE_COMMIT_SHA
 
