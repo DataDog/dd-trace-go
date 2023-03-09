@@ -57,6 +57,27 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal("bar", tags["foo"])
 }
 
+func TestServerStatsHandlerWithUntracedMethod(t *testing.T) {
+	assert := assert.New(t)
+
+	serviceName := "grpc-service"
+	statsHandler := NewServerStatsHandler(WithServiceName(serviceName), WithUntracedMethods("/grpc.Fixture/Ping"))
+	server, err := newServerStatsHandlerTestServer(statsHandler)
+	if err != nil {
+		t.Fatalf("failed to start test server: %s", err)
+	}
+	defer server.Close()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	_, err = server.client.Ping(context.Background(), &FixtureRequest{Name: "name"})
+	assert.NoError(err)
+
+	waitForSpans(mt, 1, 1*time.Second)
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 0)
+}
+
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
 	server := grpc.NewServer(grpc.StatsHandler(statsHandler))
 	fixtureServer := new(fixtureServer)
