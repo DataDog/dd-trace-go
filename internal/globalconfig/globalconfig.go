@@ -69,6 +69,7 @@ func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
+// MTOFF maybe remove this ? or move it to the test
 func GetHeaderTag(header string) (tag string) {
 	return cfg.headersAsTags[header]
 }

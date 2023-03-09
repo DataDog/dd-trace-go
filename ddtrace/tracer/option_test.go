@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -20,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -985,20 +987,20 @@ func TestWithHeaderTags(t *testing.T) {
 
 	t.Run("normalization", func(t *testing.T) {
 		assert := assert.New(t)
-		newConfig(WithHeaderTags([]string{" 1header:.1.t.a.g. ", "  .2.h.e.a.d.e.r.  ", "   3header:3tag   "}))
-		assert.Equal(".1.t.a.g.", globalconfig.GetHeaderTag("1header"))
-		assert.Equal("http.request.headers._2_h_e_a_d_e_r_", globalconfig.GetHeaderTag(".2.h.e.a.d.e.r."))
-		assert.Equal("3tag", globalconfig.GetHeaderTag("3header"))
+		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		fmt.Println(globalconfig.GetAllHeaderTags())
+		assert.Equal(ext.HTTPRequestHeaders + ".h_e_a-d_e_r", globalconfig.GetHeaderTag("h!e@a-d.e*r"))
+		assert.Equal("t!a@g.", globalconfig.GetHeaderTag("2header"))
 	})
 
 	t.Run("with-envvar", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2header  ")
+		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 
 		assert := assert.New(t)
 		newConfig()
 
 		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
-		assert.Equal("http.request.headers.2header", globalconfig.GetHeaderTag("2header"))
+		assert.Equal(ext.HTTPRequestHeaders + ".2_h_e_a_d_e_r", globalconfig.GetHeaderTag("2.h.e.a.d.e.r"))
 	})
 }

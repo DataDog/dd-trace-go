@@ -112,20 +112,20 @@ func TestWithHeaderTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	mux := NewRouter(WithHeaderTags([]string{"  header  ", "  2header:tag  "}))
+	mux := NewRouter(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
 	mux.Handle("/test", okHandler())
 
 	r := httptest.NewRequest("GET", "/test", nil)
-	r.Header.Set("header", "val")
-	r.Header.Add("header", "val2")
+	r.Header.Set("h!e@a-d.e*r", "val")
+	r.Header.Add("h!e@a-d.e*r", "val2")
 	r.Header.Set("2header", "2val")
 	r.Header.Set("x-datadog-header", "value")
 
 	mux.ServeHTTP(httptest.NewRecorder(), r)
 
 	spans := mt.FinishedSpans()
-	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
-	assert.Equal("2val", spans[0].Tags()["tag"])
+	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".h_e_a-d_e_r"])
+	assert.Equal("2val", spans[0].Tags()["t!a@g."])
 	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
 }
 

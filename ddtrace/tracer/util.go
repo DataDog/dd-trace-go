@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -137,5 +138,6 @@ func ConvertHeaderToTag(headerAsTag string) (header string, tag string) {
 // normalizeTag removes all "." in the string with "_" and returns the result
 // MTOFF: what gets normalized to underscore and what doesn't? B/c the def implies "!" also becomes "_", but "\" and "-" do not.
 func normalizeTag(header string) (tag string) {
-	return strings.Replace(header, ".", "_", -1)
+	regex := regexp.MustCompile(`[^a-zA-Z0-9 -]+`)
+	return regex.ReplaceAllString(header, "_")
 }
