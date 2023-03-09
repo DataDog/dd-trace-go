@@ -54,6 +54,9 @@ var (
 	// TODO: Default telemetry URL?
 	hostname string
 
+	// protects agentlessURL, which may be changed for testing purposes
+	agentlessEndpointLock sync.RWMutex
+
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	defaultHeartbeatInterval = 60 // seconds
@@ -93,10 +96,9 @@ type Client struct {
 	Namespace Namespace
 
 	// App-specific information
-	Service  string
-	Env      string
-	Version  string
-	Products Products
+	Service string
+	Env     string
+	Version string
 
 	// Determines whether telemetry should actually run.
 	// Defaults to true, but will be overridden by the environment variable
@@ -142,31 +144,22 @@ type Client struct {
 	metrics    map[string]*metric
 	newMetrics bool
 
-	// agentlessLock gaurds the temporaryAgentless field
-	agentlessLock sync.RWMutex
-	// temporaryAgentless allows us to toggle on agentless in the case where
+	// logLock gaurds the logging field
+	logLock sync.RWMutex
+	// Logging allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
-	temporaryAgentless bool
+	Logging bool
 
 	// tracks tracer start errors
 	Errors []Error
 }
 
-// ApplyOps
-func (c *Client) ApplyOps(opts ...Option) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, opt := range opts {
-		opt(c)
-	}
-}
-
 func (c *Client) log(msg string, args ...interface{}) {
 	// we don't log if the client is temporarily using agentless
 	// to avoid spamming the user with instrumentation telemetry error messages
-	c.agentlessLock.RLock()
-	defer c.agentlessLock.RUnlock()
-	if c.temporaryAgentless {
+	c.logLock.RLock()
+	defer c.logLock.RUnlock()
+	if !c.Logging {
 		return
 	}
 	log.Warn(fmt.Sprintf(LogPrefix+msg, args...))
@@ -183,48 +176,21 @@ func (c *Client) Start(configuration []Configuration, errors []Error) {
 	if c.started {
 		return
 	}
-	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
-
 	c.started = true
-
+	c.Errors = errors
 	// XXX: Should we let metrics persist between starting and stopping?
 	c.metrics = make(map[string]*metric)
+	c.applyDefaultOps()
 
 	payload := &AppStarted{
 		Configuration: append([]Configuration{}, configuration...),
-	}
-	// Enabled field of product details is required
-	c.Products = Products{
-		AppSec: ProductDetails{
-			Version: version.Tag,
-			Enabled: appsec.Enabled(),
+		Products: Products{
+			AppSec: ProductDetails{
+				Version: version.Tag,
+				Enabled: appsec.Enabled(),
+			},
 		},
 	}
-	payload.Products = c.Products
-
-	c.Errors = errors
-
-	// configEnvFallback returns the value of environment variable with the
-	// given key if def == ""
-	configEnvFallback := func(key, def string) string {
-		if def != "" {
-			return def
-		}
-		return os.Getenv(key)
-	}
-	c.Service = configEnvFallback("DD_SERVICE", c.Service)
-	if len(c.Service) == 0 {
-		if name := globalconfig.ServiceName(); len(name) != 0 {
-			c.Service = name
-		} else {
-			// I think service *has* to be something?
-			c.Service = "unnamed-go-service"
-		}
-	}
-
-	c.Env = configEnvFallback("DD_ENV", c.Env)
-	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	c.APIKey = configEnvFallback("DD_API_KEY", c.APIKey)
 
 	appStarted := c.newRequest(RequestTypeAppStarted)
 	appStarted.Body.Payload = payload
@@ -280,6 +246,34 @@ func (c *Client) Stop() {
 	r := c.newRequest(RequestTypeAppClosing)
 	c.scheduleSubmit(r)
 	c.flush()
+}
+
+// ProductEnabled sends app-product-change event that signals a product has been turned on/off.
+// the caller can also specify additional configuration changes (e.g. profiler config info),
+// which will be sent via the app-client-configuration-change event
+func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
+	productReq := c.newRequest(RequestTypeAppProductChange)
+	products := new(Products)
+	if namespace == NamespaceProfilers {
+		products.Profiler = ProductDetails{Enabled: enabled}
+	} else if namespace == NamespaceASM {
+		products.AppSec = ProductDetails{Enabled: enabled}
+	}
+	productReq.Body.Payload = products
+	c.newRequest(RequestTypeAppClientConfigurationChange)
+	if len(configuration) > 0 {
+		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
+		configChange := new(ConfigurationChange)
+		configChange.Configuration = append([]Configuration{}, configuration...)
+		configReq.Body.Payload = configChange
+		go func() {
+			configReq.submit()
+		}()
+	}
+	go func() {
+		productReq.submit()
+	}()
+
 }
 
 type metricKind string
@@ -462,20 +456,27 @@ func (c *Client) newRequest(t RequestType) *Request {
 }
 
 func (r *Request) submit() error {
-	retry, err := r._submit()
 	if r.TelemetryClient == nil {
-		r.TelemetryClient = GlobalClient
+		return fmt.Errorf("all telemetry requests must be associated with a telemetry client")
 	}
+	retry, err := r._submit()
+
 	if err == nil {
-		r.TelemetryClient.setAgentless(false)
+		// submitting to the telemetry client's intended
+		// URL succeeded - turn logging back on
+		r.TelemetryClient.logging(true)
 	} else if retry {
-		r.TelemetryClient.log("Retrying with agentless telemetry failed: %s", err)
-		r.URL = agentlessURL
+		// retry telemetry submissions in instances where the teletry client has trouble
+		// connecting with the agent
+		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
+		r.URL = getAgentlessURL()
 		_, err := r._submit()
 		if err != nil {
-			r.TelemetryClient.log("Retrying with agentless telemetry failed: %s", err)
+			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
-		r.TelemetryClient.setAgentless(true)
+		// turn off logging after a failed submission to avoid spamming the user with
+		// telemetry error messages
+		r.TelemetryClient.logging(false)
 	}
 	return err
 }
@@ -500,11 +501,11 @@ func (r *Request) _submit() (retry bool, err error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return true && (r.URL != agentlessURL), err
+		return true && (r.URL != getAgentlessURL()), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return true && (r.URL != agentlessURL), errBadStatus(resp.StatusCode)
+		return true && (r.URL != getAgentlessURL()), errBadStatus(resp.StatusCode)
 	}
 	return false, nil
 }
@@ -546,14 +547,30 @@ func (c *Client) backgroundFlush() {
 	c.flushT.Reset(c.SubmissionInterval)
 }
 
-// toggleAgentless is used to set the ```temporaryAgentless```
-// field in the telemetry client.
-func (c *Client) setAgentless(agentless bool) {
-	c.agentlessLock.Lock()
-	defer c.agentlessLock.Unlock()
-	c.temporaryAgentless = agentless
+// logging is used to turn logging on/off
+func (c *Client) logging(logging bool) {
+	c.logLock.Lock()
+	defer c.logLock.Unlock()
+	c.Logging = logging
+}
+
+// Default resets the telemetry client to default values
+func (c *Client) Default() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.applyDefaultOps()
+	c.readEnvVars()
+}
+
+func SetAgentlessEndpoint(endpoint string) string {
+	agentlessEndpointLock.Lock()
+	defer agentlessEndpointLock.Unlock()
+	prev := agentlessURL
+	agentlessURL = endpoint
+	return prev
 }
 
 func init() {
-	GlobalClient = defaultClient()
+	GlobalClient = new(Client)
+	GlobalClient.Default()
 }

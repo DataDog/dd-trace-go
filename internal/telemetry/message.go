@@ -51,6 +51,11 @@ const (
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
 	// is enabled. Still sent when Start is called for the telemetry client.
 	RequestTypeDependenciesLoaded RequestType = "app-dependencies-loaded"
+	// RequestTypeAppClientConfigurationChange is sent if there are changes
+	// to the client library configuration
+	RequestTypeAppClientConfigurationChange RequestType = "app-client-configuration-change"
+	// RequestTypeAppProductChange is sent when products are enabled/disabled
+	RequestTypeAppProductChange RequestType = "app-product-change"
 )
 
 // Namespace describes an APM product to distinguish telemetry coming from
@@ -79,19 +84,6 @@ type Application struct {
 	RuntimePatches  string `json:"runtime_patches,omitempty"`
 }
 
-// Products specifies information about available products.
-type Products struct {
-	AppSec   ProductDetails `json:"appsec,omitempty"`
-	Profiler ProductDetails `json:"profiler,omitempty"`
-}
-
-// ProductDetails specifies details about a product.
-type ProductDetails struct {
-	Enabled bool   `json:"enabled"`
-	Version string `json:"version,omitempty"`
-	Error   Error  `json:"error,omitempty"`
-}
-
 // Host is identifying information about the host on which the app
 // is running
 type Host struct {
@@ -114,6 +106,36 @@ type AppStarted struct {
 	Error             Error               `json:"error,omitempty"`
 }
 
+// ConfigurationChange corresponds to the `AppClientConfigurationChange` event
+// that contains information about configuration changes since the app-started event
+type ConfigurationChange struct {
+	Configuration []Configuration `json:"conf_key_values"`
+	RemoteConfig  RemoteConfig    `json:"remote_config"`
+}
+
+// Configuration is a library-specific configuration value
+type Configuration struct {
+	Name string `json:"name"`
+	// Value should have a type that can be marshaled to JSON
+	Value       interface{} `json:"value"`
+	Origin      string      `json:"origin"` // source of config?
+	Error       Error       `json:"error"`
+	IsOverriden bool        `json:"is_overridden"`
+}
+
+// Products specifies information about available products.
+type Products struct {
+	AppSec   ProductDetails `json:"appsec,omitempty"`
+	Profiler ProductDetails `json:"profiler,omitempty"`
+}
+
+// ProductDetails specifies details about a product.
+type ProductDetails struct {
+	Enabled bool   `json:"enabled"`
+	Version string `json:"version,omitempty"`
+	Error   Error  `json:"error,omitempty"`
+}
+
 // Integration is an integration that is available within the app and applicable
 // to be traced
 type Integration struct {
@@ -130,21 +152,18 @@ type Dependencies struct {
 	Dependencies []Dependency `json:"dependencies"`
 }
 
-// Dependency is a Go module on which the applciation depends. This information
+// Dependency is a Go module on which the application depends. This information
 // can be accesed at run-time through the runtime/debug.ReadBuildInfo API.
 type Dependency struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
 
-// Configuration is a library-specific configuration value
-type Configuration struct {
-	Name string `json:"name"`
-	// Value should have a type that can be marshaled to JSON
-	Value       interface{} `json:"value"`
-	Origin      string      `json:"origin"` // source of config?
-	Error       Error       `json:"error"`
-	IsOverriden bool        `json:"is_overridden"`
+// RemoteConfig contains information about remote-config
+type RemoteConfig struct {
+	UserEnabled     string `json:"user_enabled"`     // whether the library has made a request to fetch remote-config
+	ConfigsRecieved bool   `json:"configs_received"` // whether the library recieves a valid config response
+	Error           Error  `json:"error"`
 }
 
 // Error stores error information about various tracer events
@@ -181,5 +200,5 @@ type Series struct {
 	Common bool `json:"common"`
 }
 
-// TODO: app-dependencies-loaded and app-integrations-change? Does this really
+// TODO: app-integrations-change? Does this really
 // apply to Go?

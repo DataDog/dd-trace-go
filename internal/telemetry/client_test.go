@@ -6,6 +6,7 @@
 package telemetry_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -205,11 +207,9 @@ func TestConcurrentClient(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		client := &telemetry.Client{
-			URL: server.URL,
-		}
-		client.Start(nil, nil)
-		defer client.Stop()
+		telemetry.GlobalClient.ApplyOps(telemetry.WithURL(false, server.URL))
+		telemetry.GlobalClient.Start(nil, nil)
+		defer telemetry.GlobalClient.Stop()
 
 		var wg sync.WaitGroup
 		for i := 0; i < 8; i++ {
@@ -217,7 +217,7 @@ func TestConcurrentClient(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 10; j++ {
-					client.Count("foobar", 1, []string{"tag"}, false)
+					telemetry.GlobalClient.Count("foobar", 1, []string{"tag"}, false)
 				}
 			}()
 		}
@@ -237,8 +237,136 @@ func TestConcurrentClient(t *testing.T) {
 	}
 }
 
-func TestAgentlessRetry(t *testing.T) {
-	// make sure we don't spam users with log messages when
-	// sending fails after the first try
+// fakeAgentless is a helper function for TestAgentlessRetry. It replaces the agentless
+// endpoint in the telemetry package with a custom server URL and returns
+//  1. a function that waits for a telemetry request to that server
+//  2. a cleanup function that closes the server and resets the agentless endpoint to
+//     its original value
+func fakeAgentless(t *testing.T, ctx context.Context) (wait func(), cleanup func()) {
+	received := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Get("DD-Telemetry-Request-Type")
+		if len(h) > 0 {
+			received <- struct{}{}
+		}
+	}))
+	prevEndpoint := telemetry.SetAgentlessEndpoint(server.URL)
+	return func() {
+			select {
+			case <-ctx.Done():
+				t.Fatalf("fake agentless endpoint timed out waiting for telemetry")
+			case <-received:
+				return
+			}
+		}, func() {
+			server.Close()
+			telemetry.SetAgentlessEndpoint(prevEndpoint)
+		}
+}
 
+// TestAgentlessRetry tests the behavior of the telemetry client in the case where
+// the client cannot connect to the agent. The client should re-try the request
+// with the agentless endpoint.
+func TestAgentlessRetry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	waitAgentlessEndpoint, cleanup := fakeAgentless(t, ctx)
+	defer cleanup()
+
+	brokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}))
+	client := &telemetry.Client{
+		URL: brokenServer.URL,
+	}
+	brokenServer.Close()
+
+	client.Start([]telemetry.Configuration{}, []telemetry.Error{})
+	waitAgentlessEndpoint()
+}
+
+func TestCollectDependencies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	received := make(chan *telemetry.Dependencies)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeDependenciesLoaded) {
+			var body telemetry.Body
+			body.Payload = new(telemetry.Dependencies)
+			err := json.NewDecoder(r.Body).Decode(&body)
+			if err != nil {
+				t.Errorf("bad body: %s", err)
+			}
+			select {
+			case received <- body.Payload.(*telemetry.Dependencies):
+			default:
+			}
+		}
+	}))
+	defer server.Close()
+	client := &telemetry.Client{
+		URL: server.URL,
+	}
+	client.Start([]telemetry.Configuration{}, []telemetry.Error{})
+	select {
+	case <-received:
+	case <-ctx.Done():
+		t.Fatalf("Timed out waiting for dependency payload")
+	}
+}
+
+func TestProductEnabled(t *testing.T) {
+	receivedProducts := make(chan *telemetry.Products, 1)
+	receivedConfigs := make(chan *telemetry.ConfigurationChange, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppProductChange) {
+			var body telemetry.Body
+			body.Payload = new(telemetry.Products)
+			err := json.NewDecoder(r.Body).Decode(&body)
+			if err != nil {
+				t.Errorf("bad body: %s", err)
+			}
+			select {
+			case receivedProducts <- body.Payload.(*telemetry.Products):
+			default:
+			}
+		}
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppClientConfigurationChange) {
+			var body telemetry.Body
+			body.Payload = new(telemetry.ConfigurationChange)
+			err := json.NewDecoder(r.Body).Decode(&body)
+			if err != nil {
+				t.Errorf("bad body: %s", err)
+			}
+			select {
+			case receivedConfigs <- body.Payload.(*telemetry.ConfigurationChange):
+			default:
+			}
+		}
+	}))
+	defer server.Close()
+	client := &telemetry.Client{
+		URL: server.URL,
+	}
+
+	client.ProductEnabled(telemetry.NamespaceProfilers, true,
+		[]telemetry.Configuration{{Name: "delta_profiles", Value: true}})
+
+	var productsPayload *telemetry.Products = <-receivedProducts
+	assert.Equal(t, productsPayload.Profiler.Enabled, true)
+
+	var configPayload *telemetry.ConfigurationChange = <-receivedConfigs
+	check := func(key string, expected interface{}) {
+		for _, kv := range configPayload.Configuration {
+			if kv.Name == key {
+				if kv.Value != expected {
+					t.Errorf("configuration %s: wanted %v, got %v", key, expected, kv.Value)
+				}
+				return
+			}
+		}
+		t.Errorf("missing configuration %s", key)
+	}
+	check("delta_profiles", true)
 }

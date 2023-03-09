@@ -12,10 +12,20 @@ import (
 	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // An Option is used to configure the telemetry client's settings
 type Option func(*Client)
+
+// ApplyOps sets various fields of the client
+func (c *Client) ApplyOps(opts ...Option) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, opt := range opts {
+		opt(c)
+	}
+}
 
 // WithNamespace sets name as the telemetry client's namespace (tracer, profiler, appsec)
 func WithNamespace(name Namespace) Option {
@@ -82,6 +92,12 @@ func WithAPIKey(v string) Option {
 	}
 }
 
+func getAgentlessURL() string {
+	agentlessEndpointLock.RLock()
+	defer agentlessEndpointLock.RUnlock()
+	return agentlessURL
+}
+
 // WithURL sets the URL for where telemetry information is flushed to.
 // For the URL, uploading through agent goes through
 //
@@ -105,7 +121,7 @@ func WithURL(agentless bool, agentURL string) Option {
 					client.Disabled = true
 				}
 			}
-			client.URL = agentlessURL
+			client.URL = getAgentlessURL()
 		} else {
 			// TODO: check agent /info endpoint to see if the agent is
 			// sufficiently recent to support this endpoint? overkill?
@@ -121,11 +137,42 @@ func WithURL(agentless bool, agentURL string) Option {
 	}
 }
 
-func defaultClient() (client *Client) {
-	client = new(Client)
-	client.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
-	client.CollectDependencies = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
-	WithHTTPClient(defaultHTTPClient)(client)
-	WithAPIKey(defaultAPIKey())(client)
-	return client
+// configEnvFallback returns the value of environment variable with the
+// given key if def == ""
+func configEnvFallback(key, def string) string {
+	if def != "" {
+		return def
+	}
+	return os.Getenv(key)
+}
+
+// applyDefaultOps applies default values to the client unless
+// those values are already set
+func (c *Client) applyDefaultOps() {
+	if c.Client == nil {
+		WithHTTPClient(defaultHTTPClient)(c)
+	}
+	if len(c.APIKey) == 0 {
+		WithAPIKey(defaultAPIKey())(c)
+	}
+	c.Service = configEnvFallback("DD_SERVICE", c.Service)
+	if len(c.Service) == 0 {
+		if name := globalconfig.ServiceName(); len(name) != 0 {
+			c.Service = name
+		} else {
+			// I think service *has* to be something?
+			c.Service = "unnamed-go-service"
+		}
+	}
+	c.Env = configEnvFallback("DD_ENV", c.Env)
+	c.Version = configEnvFallback("DD_VERSION", c.Version)
+}
+
+// readEnvVars reads environment variables that should configure
+// the telemetry client's behavior and sets the corresponding field in the
+// telemetry client
+func (c *Client) readEnvVars() {
+	c.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	c.CollectDependencies = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
 }

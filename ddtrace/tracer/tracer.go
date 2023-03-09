@@ -200,7 +200,12 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 	statsd, err := newStatsdClient(c)
 	telemetryErrors := []telemetry.Error{}
 	if err != nil {
-		log.Warn("Runtime and health metrics disabled: %v", err)
+		msg := fmt.Sprintf("Runtime and health metrics disabled: %v", err)
+		log.Warn(msg)
+		telemetryErrors = append(telemetryErrors, telemetry.Error{
+			Code:    2,
+			Message: msg},
+		)
 	}
 	var writer traceWriter
 	if c.logToStdout {
@@ -244,50 +249,22 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 		}),
 		statsd: statsd,
 	}
+	return t, telemetryErrors
+}
+
+// start the global telemetry client with tracer data
+func startTelemetry(c *config, errors []telemetry.Error) {
+	// need to re-intialize default values
+	telemetry.GlobalClient.Default()
 	telemetry.GlobalClient.ApplyOps(
 		telemetry.WithNamespace(telemetry.NamespaceTracers),
 		telemetry.WithService(c.serviceName),
 		telemetry.WithEnv(c.env),
 		telemetry.WithHTTPClient(c.httpClient),
+		// c.logToStdout is true if serverless is turned o
 		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
 		telemetry.WithVersion(c.version),
 	)
-	return t, telemetryErrors
-}
-
-func newTracer(opts ...StartOption) *tracer {
-	t, telemetryErrors := newUnstartedTracer(opts...)
-	c := t.config
-	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.runtimeMetrics {
-		log.Debug("Runtime metrics enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
-			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		}()
-	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		tick := t.config.tickChan
-		if tick == nil {
-			ticker := time.NewTicker(flushInterval)
-			defer ticker.Stop()
-			tick = ticker.C
-		}
-		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		t.reportHealthMetrics(statsInterval)
-	}()
-	t.stats.Start()
-
-	// Start collecting telemetry data
-	// make sure key names is able to be normalized by
-	// instrumentation telemetry backend
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
@@ -330,7 +307,39 @@ func newTracer(opts ...StartOption) *tracer {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	telemetry.GlobalClient.Start(telemetryConfigs, telemetryErrors)
+	telemetry.GlobalClient.Start(telemetryConfigs, errors)
+}
+
+func newTracer(opts ...StartOption) *tracer {
+	t, telemetryErrors := newUnstartedTracer(opts...)
+	c := t.config
+	t.statsd.Incr("datadog.tracer.started", nil, 1)
+	if c.runtimeMetrics {
+		log.Debug("Runtime metrics enabled.")
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		}()
+	}
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		tick := t.config.tickChan
+		if tick == nil {
+			ticker := time.NewTicker(flushInterval)
+			defer ticker.Stop()
+			tick = ticker.C
+		}
+		t.worker(tick)
+	}()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		t.reportHealthMetrics(statsInterval)
+	}()
+	t.stats.Start()
+	startTelemetry(c, telemetryErrors)
 	return t
 }
 
