@@ -53,6 +53,20 @@ jobs:
       - name: Run
         run: ./run.sh
 
+      - name: Run APM E2E default tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E
+
+      - name: Run APM E2E Single Span tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
+
       - name: Compress artifact
         if: ${{ always() }}
         run: tar -czvf artifact.tar.gz $(ls | grep logs)
