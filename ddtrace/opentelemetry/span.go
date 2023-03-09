@@ -89,7 +89,6 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 }
 
 func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
-	print("EXTRACT TIME")
 	headers := tracer.TextMapCarrier{}
 	if err := tracer.Inject(s.Context(), headers); err != nil {
 		return
@@ -102,10 +101,12 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
-		print("GOT A PARENTTTTTTTTTTTTT ", parent)
+		println("GOT A PARENTTTTTTTTTTTTT ", parent)
 		// checking the length to avoid panic when parsing
 		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
+			println("parsed ", f)
 			c.TraceFlags = oteltrace.TraceFlags(f)
+			println("setting trace flags, ", c.TraceFlags)
 		} else {
 			log.Debug("Couldn't parse traceparent: %v", err)
 		}
