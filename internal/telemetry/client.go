@@ -259,12 +259,6 @@ func (c *Client) Stop() {
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.started {
-		log.Warn("attempted to send product telemetry info without starting the telemetry client.")
-		return
-	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
 	if namespace == NamespaceProfilers {
