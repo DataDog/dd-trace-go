@@ -112,7 +112,7 @@ func TestWithHeaderTags(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	mux := NewRouter(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+	mux := NewRouter(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header : t!a@g.  "}))
 	mux.Handle("/test", okHandler())
 
 	r := httptest.NewRequest("GET", "/test", nil)

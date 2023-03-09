@@ -115,7 +115,7 @@ func WithHeaderTags(headers []string) Option {
 		// When this feature is enabled at the integration level, blindly overwrite the global config
 		cfg.headersAsTags = make(map[string]string)
 		for _, h := range headers {
-			header, tag := normalizer.ConvertHeaderToTag(h)
+			header, tag := normalizer.NormalizeHeaderTag(h)
 			cfg.headersAsTags[header] = tag
 		}
 	}

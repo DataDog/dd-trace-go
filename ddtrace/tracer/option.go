@@ -912,7 +912,7 @@ func StackFrames(n, skip uint) FinishOption {
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
 		for _, h := range headerAsTags {
-			header, tag := normalizer.ConvertHeaderToTag(h)
+			header, tag := normalizer.NormalizeHeaderTag(h)
 			globalconfig.SetHeaderTag(header, tag)
 		}
 	}

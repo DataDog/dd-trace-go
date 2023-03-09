@@ -118,31 +118,51 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 	}
 }
 
-func TestConvertHeaderToTag(t *testing.T) {
+func TestNormalizeHeaderTag(t *testing.T) {
 
-	t.Run("standalone", func(t *testing.T) {
-		header, tag := normalizer.ConvertHeaderToTag("header")
+	t.Run("single", func(t *testing.T) {
+		header, tag := normalizer.NormalizeHeaderTag("header")
 		assert.Equal(t, header, "header")
 		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
 
 	t.Run("mapped", func(t *testing.T) {
-		header, tag := normalizer.ConvertHeaderToTag("header:tag")
+		header, tag := normalizer.NormalizeHeaderTag("header:tag")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "tag", tag)
 	})
 
-	// MTOFF - no info in spec about whitespaces between nonspace chars, e.g, "h e a d e r"
-	// or even before/after colon e.g, "header : tag"
 	t.Run("whitespaces", func(t *testing.T) {
-		header, tag := normalizer.ConvertHeaderToTag("  header:tag   ")
+		header, tag := normalizer.NormalizeHeaderTag("  header : tag   ")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "tag", tag)
 	})
 
-	t.Run("too-many-keys", func(t *testing.T) {
-		header, tag := normalizer.ConvertHeaderToTag("header:tag:extra")
+	t.Run("header-special-chars", func(t *testing.T) {
+		// when no target tag is specified, the header tag gets normalized
+		// on all special chars except '-'
+		header, tag := normalizer.NormalizeHeaderTag("h-e-a-d-e-r")
+		assert.Equal(t, "h-e-a-d-e-r", header)
+		assert.Equal(t, ext.HTTPRequestHeaders+".h-e-a-d-e-r", tag)
+		header, tag = normalizer.NormalizeHeaderTag("h.e.a.d.e.r")
+		assert.Equal(t, "h.e.a.d.e.r", header)
+		assert.Equal(t, ext.HTTPRequestHeaders+".h_e_a_d_e_r", tag)
+		header, tag = normalizer.NormalizeHeaderTag("h!e@a*d/e)r")
+		assert.Equal(t, "h!e@a*d/e)r", header)
+		assert.Equal(t, ext.HTTPRequestHeaders+".h_e_a_d_e_r", tag)
+	})
+
+	t.Run("tag-special-chars", func(t *testing.T) {
+		// no normalization shoul occur on the tag when a target has been specified
+		header, tag := normalizer.NormalizeHeaderTag("header:t*a.g!")
 		assert.Equal(t, "header", header)
-		assert.Equal(t, "tag", tag)
+		assert.Equal(t, "t*a.g!", tag)		
+	})
+
+	t.Run("multi-colon", func(t *testing.T) {
+		// split on the last colon; span tag keys cannot contain colons
+		header, tag := normalizer.NormalizeHeaderTag("header:tag:extra")
+		assert.Equal(t, "header:tag", header)
+		assert.Equal(t, "extra", tag)
 	})
 }

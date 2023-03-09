@@ -13,20 +13,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
-// ConvertHeaderToTag accepts a string that contains a header and an optional mapped tag key,
+// NormalizeHeaderTag accepts a string that contains a header and an optional mapped tag key,
 // e.g, "header" or "header:tag" where `tag` will be the name of the header tag.
-func ConvertHeaderToTag(headerAsTag string) (header string, tag string) {
-	headerAsTag = strings.ToLower(strings.TrimSpace(headerAsTag))
+func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	lastIdx := strings.LastIndex(headerAsTag, ":")
+
 	// If no colon or colon sits at the very beginning or very end of the string
 	if lastIdx == -1 || lastIdx == 0 || lastIdx == len(headerAsTag)-1 {
-		return headerAsTag, ext.HTTPRequestHeaders + "." + normalizeTag(headerAsTag)
+		headerAsTag = strings.ToLower(strings.TrimSpace(headerAsTag))
+		regex := regexp.MustCompile(`[^a-zA-Z0-9 -]+`)
+		return headerAsTag, ext.HTTPRequestHeaders + "." + regex.ReplaceAllString(headerAsTag, "_")
 	}
-	return headerAsTag[:lastIdx], headerAsTag[lastIdx+1:]
-}
-
-// normalizeTag removes all "." in the string with "_" and returns the result
-func normalizeTag(header string) (tag string) {
-	regex := regexp.MustCompile(`[^a-zA-Z0-9 -]+`)
-	return regex.ReplaceAllString(header, "_")
+	return strings.ToLower(strings.TrimSpace(headerAsTag[:lastIdx])), strings.ToLower(strings.TrimSpace(headerAsTag[lastIdx+1:]))
 }
