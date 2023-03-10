@@ -22,7 +22,6 @@ import (
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
 // default service name will be used.
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
-	appsecEnabled := appsec.Enabled()
 	cfg := newConfig(service)
 	for _, opt := range opts {
 		opt(cfg)
@@ -52,7 +51,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 
 		// Use AppSec if enabled by user
-		if appsecEnabled {
+		if appsec.Enabled() {
 			useAppSec(c, span)
 		}
 

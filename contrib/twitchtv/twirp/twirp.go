@@ -57,7 +57,6 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 		tracer.Tag(ext.Component, "twitchtv/twirp"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.RPCSystem, "twirp"),
 	}
 	ctx := req.Context()
 	if pkg, ok := twirp.PackageName(ctx); ok {
@@ -65,11 +64,9 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	}
 	if svc, ok := twirp.ServiceName(ctx); ok {
 		opts = append(opts, tracer.Tag("twirp.service", svc))
-		opts = append(opts, tracer.Tag(ext.RPCService, svc))
 	}
 	if method, ok := twirp.MethodName(ctx); ok {
 		opts = append(opts, tracer.Tag("twirp.method", method))
-		opts = append(opts, tracer.Tag(ext.RPCMethod, method))
 	}
 	if !math.IsNaN(wc.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
@@ -117,7 +114,6 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
 			tracer.Tag(ext.Component, "twitchtv/twirp"),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			tracer.Tag(ext.RPCSystem, "twirp"),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
@@ -168,14 +164,12 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Measured(),
 			tracer.Tag(ext.Component, "twitchtv/twirp"),
-			tracer.Tag(ext.RPCSystem, "twirp"),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.package", pkg))
 		}
 		if svc, ok := twirp.ServiceName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.service", svc))
-			opts = append(opts, tracer.Tag(ext.RPCService, svc))
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -202,7 +196,6 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 		if method, ok := twirp.MethodName(ctx); ok {
 			span.SetTag(ext.ResourceName, method)
 			span.SetTag("twirp.method", method)
-			span.SetTag(ext.RPCMethod, method)
 		}
 		return ctx, nil
 	}
