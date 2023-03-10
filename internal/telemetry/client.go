@@ -254,7 +254,7 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// ProductEnabled sends app-product-change event that signals a product has been turned on/off.
+// ProductEnabled queues an app-product-change event that signals a product has been turned on/off.
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
