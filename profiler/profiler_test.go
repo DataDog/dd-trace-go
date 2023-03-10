@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/trace"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
@@ -477,7 +480,6 @@ func TestExecutionTrace(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "50ms")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(CPUProfile),
@@ -495,15 +497,15 @@ func TestExecutionTrace(t *testing.T) {
 		return false
 	}
 	seenTraces := 0
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
 		}
 	}
 	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 5 profile collections: one at
+	// second, we should see 2 traces after 4 profile collections: one at
 	// the start, and one 3 seconds later.
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
@@ -556,4 +558,52 @@ func TestEndpointCounts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecutionTraceSizeLimit(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	done := make(chan struct{})
+	// bigMessage just forces a bunch of data to be written to the trace buffer.
+	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
+	// a trace duration of 2 seconds, so we should stop early.
+	bigMessage := string(make([]byte, 1024))
+	tick := time.NewTicker(3 * time.Millisecond)
+	defer tick.Stop()
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				trace.Log(context.Background(), "msg", bigMessage)
+			case <-done:
+				return
+			}
+		}
+	}()
+	defer close(done)
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(), // just want the execution trace
+		WithPeriod(2*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	const expectedSize = 300 * 1024
+	for i := 0; i < 5; i++ {
+		m := <-got
+		if p, ok := m.attachments["go.trace"]; ok {
+			if len(p) > expectedSize {
+				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
+			}
+			return
+		}
+	}
+	t.Errorf("did not see an execution trace")
 }
