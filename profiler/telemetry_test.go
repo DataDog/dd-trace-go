@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -54,6 +55,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	tracer.Start(tracer.WithAgentAddr(server.Listener.Addr().String()))
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(

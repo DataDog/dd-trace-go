@@ -7,19 +7,8 @@ package profiler
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-func (p *profiler) startTelemetry() {
+func (p *profiler) sendTelemetry() {
 	configs := []telemetry.Configuration{}
-	if !telemetry.GlobalClient.Started() {
-		telemetry.GlobalClient.Default()
-		telemetry.GlobalClient.ApplyOps(
-			telemetry.WithService(p.cfg.service),
-			telemetry.WithEnv(p.cfg.env),
-			telemetry.WithHTTPClient(p.cfg.httpClient),
-			telemetry.WithURL(p.cfg.agentless, p.cfg.agentURL),
-		)
-		configs = append(configs, telemetry.Configuration{Name: "trace.enabled", Value: false})
-		telemetry.GlobalClient.Start(configs)
-	}
 	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers,
 		true,
 		append(configs, []telemetry.Configuration{

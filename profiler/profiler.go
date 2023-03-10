@@ -44,7 +44,7 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	p.startTelemetry()
+	p.sendTelemetry()
 	activeProfiler = p
 	activeProfiler.run()
 	return nil
