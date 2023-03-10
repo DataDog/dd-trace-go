@@ -46,8 +46,8 @@ func TestClient(t *testing.T) {
 		URL:                server.URL,
 		SubmissionInterval: time.Millisecond,
 	}
-	client.Start(nil, nil)
-	client.Start(nil, nil) // test idempotence
+	client.Start(nil)
+	client.Start(nil) // test idempotence
 	defer client.Stop()
 
 	timeout := time.After(30 * time.Second)
@@ -105,7 +105,7 @@ func TestMetrics(t *testing.T) {
 		client := &telemetry.Client{
 			URL: server.URL,
 		}
-		client.Start(nil, nil)
+		client.Start(nil)
 
 		// Gauges should have the most recent value
 		client.Gauge("foobar", 1, nil, false)
@@ -144,7 +144,7 @@ func TestDisabledClient(t *testing.T) {
 		URL:                server.URL,
 		SubmissionInterval: time.Millisecond,
 	}
-	client.Start(nil, nil)
+	client.Start(nil)
 	client.Gauge("foobar", 1, nil, false)
 	client.Count("bonk", 4, []string{"org:1"}, false)
 	client.Stop()
@@ -209,7 +209,7 @@ func TestConcurrentClient(t *testing.T) {
 
 	go func() {
 		telemetry.GlobalClient.ApplyOps(telemetry.WithURL(false, server.URL))
-		telemetry.GlobalClient.Start(nil, nil)
+		telemetry.GlobalClient.Start(nil)
 		defer telemetry.GlobalClient.Stop()
 
 		var wg sync.WaitGroup
@@ -282,7 +282,7 @@ func TestAgentlessRetry(t *testing.T) {
 	}
 	brokenServer.Close()
 
-	client.Start([]telemetry.Configuration{}, []telemetry.Error{})
+	client.Start([]telemetry.Configuration{})
 	waitAgentlessEndpoint()
 }
 
@@ -309,7 +309,7 @@ func TestCollectDependencies(t *testing.T) {
 	client := &telemetry.Client{
 		URL: server.URL,
 	}
-	client.Start([]telemetry.Configuration{}, []telemetry.Error{})
+	client.Start([]telemetry.Configuration{})
 	select {
 	case <-received:
 	case <-ctx.Done():
@@ -350,7 +350,7 @@ func TestProductEnabled(t *testing.T) {
 	client := &telemetry.Client{
 		URL: server.URL,
 	}
-	client.Start(nil, nil)
+	client.Start(nil)
 	client.ProductEnabled(telemetry.NamespaceProfilers, true,
 		[]telemetry.Configuration{{Name: "delta_profiles", Value: true}})
 

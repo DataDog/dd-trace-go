@@ -194,18 +194,12 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
+func newUnstartedTracer(opts ...StartOption) *tracer {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
-	telemetryErrors := []telemetry.Error{}
 	if err != nil {
-		msg := fmt.Sprintf("Runtime and health metrics disabled: %v", err)
-		log.Warn(msg)
-		telemetryErrors = append(telemetryErrors, telemetry.Error{
-			Code:    2,
-			Message: msg},
-		)
+		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
 	var writer traceWriter
 	if c.logToStdout {
@@ -215,12 +209,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
-		msg := fmt.Sprintf("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
-		log.Warn(msg)
-		telemetryErrors = append(telemetryErrors, telemetry.Error{
-			Code:    2,
-			Message: msg},
-		)
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
 	}
 	if traces != nil {
 		c.traceRules = traces
@@ -249,11 +238,11 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, []telemetry.Error) {
 		}),
 		statsd: statsd,
 	}
-	return t, telemetryErrors
+	return t
 }
 
 // start the global telemetry client with tracer data
-func startTelemetry(c *config, errors []telemetry.Error) {
+func startTelemetry(c *config) {
 	// need to re-intialize default values
 	if !telemetry.GlobalClient.Started() {
 		telemetry.GlobalClient.Default()
@@ -308,11 +297,11 @@ func startTelemetry(c *config, errors []telemetry.Error) {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	telemetry.GlobalClient.Start(telemetryConfigs, errors)
+	telemetry.GlobalClient.Start(telemetryConfigs)
 }
 
 func newTracer(opts ...StartOption) *tracer {
-	t, telemetryErrors := newUnstartedTracer(opts...)
+	t := newUnstartedTracer(opts...)
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
@@ -340,7 +329,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	startTelemetry(c, telemetryErrors)
+	startTelemetry(c)
 	return t
 }
 

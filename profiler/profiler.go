@@ -44,6 +44,7 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
+	p.startTelemetry()
 	activeProfiler = p
 	activeProfiler.run()
 	return nil
@@ -201,7 +202,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
-func (p *profiler) startTelemetry(profileEnabled func(t ProfileType) bool) {
+func (p *profiler) profileEnabled(t ProfileType) bool {
+	_, ok := p.cfg.types[t]
+	return ok
+}
+
+func (p *profiler) startTelemetry() {
 	configs := []telemetry.Configuration{}
 	if !telemetry.GlobalClient.Started() {
 		telemetry.GlobalClient.Default()
@@ -212,9 +218,10 @@ func (p *profiler) startTelemetry(profileEnabled func(t ProfileType) bool) {
 			telemetry.WithURL(p.cfg.agentless, p.cfg.agentURL),
 		)
 		configs = append(configs, telemetry.Configuration{Name: "trace.enabled", Value: false})
-		telemetry.GlobalClient.Start(configs, []telemetry.Error{})
+		telemetry.GlobalClient.Start(configs)
 	}
-	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers, true,
+	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers,
+		true,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
 			{Name: "agentless", Value: p.cfg.agentless},
@@ -224,29 +231,22 @@ func (p *profiler) startTelemetry(profileEnabled func(t ProfileType) bool) {
 			{Name: "block_profile_rate", Value: p.cfg.blockRate},
 			{Name: "mutex_profile_fraction", Value: p.cfg.mutexFraction},
 			{Name: "max_goroutines_wait", Value: p.cfg.maxGoroutinesWait},
-			{Name: "cpu_profile_enabled", Value: profileEnabled(CPUProfile)},
-			{Name: "heap_profile_enabled", Value: profileEnabled(HeapProfile)},
-			{Name: "block_profile_enabled", Value: profileEnabled(BlockProfile)},
-			{Name: "mutex_profile_enabled", Value: profileEnabled(MutexProfile)},
-			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
-			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
+			{Name: "cpu_profile_enabled", Value: p.profileEnabled(CPUProfile)},
+			{Name: "heap_profile_enabled", Value: p.profileEnabled(HeapProfile)},
+			{Name: "block_profile_enabled", Value: p.profileEnabled(BlockProfile)},
+			{Name: "mutex_profile_enabled", Value: p.profileEnabled(MutexProfile)},
+			{Name: "goroutine_profile_enabled", Value: p.profileEnabled(GoroutineProfile)},
+			{Name: "goroutine_wait_profile_enabled", Value: p.profileEnabled(expGoroutineWaitProfile)},
 			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
 		}...))
 }
 
 // run runs the profiler.
 func (p *profiler) run() {
-	profileEnabled := func(t ProfileType) bool {
-		_, ok := p.cfg.types[t]
-		return ok
-	}
-
-	p.startTelemetry(profileEnabled)
-
-	if profileEnabled(MutexProfile) {
+	if p.profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
-	if profileEnabled(BlockProfile) {
+	if p.profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
 	p.wg.Add(1)

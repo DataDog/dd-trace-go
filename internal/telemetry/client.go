@@ -149,9 +149,6 @@ type Client struct {
 	// Logging allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
 	Logging bool
-
-	// tracks tracer start errors
-	Errors []Error
 }
 
 func (c *Client) log(msg string, args ...interface{}) {
@@ -174,7 +171,9 @@ func (c *Client) Started() bool {
 
 // Start registers that the app has begun running with the given integrations
 // and configuration.
-func (c *Client) Start(configuration []Configuration, errors []Error) {
+// TODO (evan.li): errors is passed in here, but not actually used
+// since app-started only accepts one error.
+func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.Disabled || !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
@@ -184,7 +183,7 @@ func (c *Client) Start(configuration []Configuration, errors []Error) {
 		return
 	}
 	c.started = true
-	c.Errors = errors
+
 	// XXX: Should we let metrics persist between starting and stopping?
 	c.metrics = make(map[string]*metric)
 	c.applyDefaultOps()
