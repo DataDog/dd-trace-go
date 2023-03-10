@@ -85,9 +85,6 @@ type Client struct {
 	// APIKey should be supplied if the endpoint is not a Datadog agent,
 	// i.e. you are sending telemetry directly to Datadog
 	APIKey string
-	// How often to send batched requests. Defaults to 60s
-	SubmissionInterval time.Duration
-
 	// The interval for sending a heartbeat signal to the backend.
 	// Configurable with DD_TELEMETRY_HEARTBEAT_INTERVAL. Default 60s.
 	heartbeatInterval time.Duration
@@ -133,8 +130,6 @@ type Client struct {
 	// seqID is a sequence number used to order telemetry messages by
 	// the back end.
 	seqID int64
-	// flushT is used to schedule flushing outstanding messages
-	flushT *time.Timer
 	// heartbeatT is used to schedule heartbeat messages
 	heartbeatT *time.Timer
 	// requests hold all messages which don't need to be immediately sent
@@ -222,17 +217,6 @@ func (c *Client) Start(configuration []Configuration) {
 
 	c.flush()
 
-	if c.SubmissionInterval == 0 {
-		c.SubmissionInterval = 60 * time.Second
-	}
-	c.flushT = time.AfterFunc(c.SubmissionInterval, c.backgroundFlush)
-
-	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-	if heartbeat < 1 || heartbeat > 3600 {
-		c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
-		heartbeat = defaultHeartbeatInterval
-	}
-	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
 
@@ -246,7 +230,6 @@ func (c *Client) Stop() {
 		return
 	}
 	c.started = false
-	c.flushT.Stop()
 	c.heartbeatT.Stop()
 	// close request types have no body
 	r := c.newRequest(RequestTypeAppClosing)
@@ -254,7 +237,7 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// ProductEnabled queues an app-product-change event that signals a product has been turned on/off.
+// ProductEnabled enqueues an app-product-change event that signals a product has been turned on/off.
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
@@ -277,13 +260,9 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 		configChange := new(ConfigurationChange)
 		configChange.Configuration = append([]Configuration{}, configuration...)
 		configReq.Body.Payload = configChange
-		go func() {
-			configReq.submit()
-		}()
+		c.scheduleSubmit(configReq)
 	}
-	go func() {
-		productReq.submit()
-	}()
+	c.scheduleSubmit(productReq)
 }
 
 type metricKind string
@@ -537,6 +516,7 @@ func (c *Client) backgroundHeartbeat() {
 	}
 	// TODO (evan.li): thoughts on calling go func here?
 	//				   don't want the request to block while holding the lock
+	c.flush()
 	go func() {
 		err := c.newRequest(RequestTypeAppHeartbeat).submit()
 		if err != nil {
@@ -544,16 +524,6 @@ func (c *Client) backgroundHeartbeat() {
 		}
 	}()
 	c.heartbeatT.Reset(c.heartbeatInterval)
-}
-
-func (c *Client) backgroundFlush() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.started {
-		return
-	}
-	c.flush()
-	c.flushT.Reset(c.SubmissionInterval)
 }
 
 // logging is used to turn logging on/off

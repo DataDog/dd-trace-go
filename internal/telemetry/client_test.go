@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"sort"
 	"sync"
@@ -23,8 +22,7 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	os.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
-	defer os.Unsetenv("DD_TELEMETRY_HEARTBEAT_INTERVAL")
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 
 	heartbeat := make(chan struct{})
 
@@ -43,8 +41,7 @@ func TestClient(t *testing.T) {
 	defer server.Close()
 
 	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Start(nil)
 	client.Start(nil) // test idempotence
@@ -60,6 +57,7 @@ func TestClient(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	var (
 		mu  sync.Mutex
 		got []telemetry.Series
@@ -134,6 +132,7 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestDisabledClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("shouldn't have got any requests")
 	}))
@@ -141,8 +140,7 @@ func TestDisabledClient(t *testing.T) {
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 
 	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Start(nil)
 	client.Gauge("foobar", 1, nil, false)
@@ -151,14 +149,14 @@ func TestDisabledClient(t *testing.T) {
 }
 
 func TestNonStartedClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("shouldn't have got any requests")
 	}))
 	defer server.Close()
 
 	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Gauge("foobar", 1, nil, false)
 	client.Count("bonk", 4, []string{"org:1"}, false)
@@ -166,6 +164,7 @@ func TestNonStartedClient(t *testing.T) {
 }
 
 func TestConcurrentClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	var (
 		mu  sync.Mutex
 		got []telemetry.Series
@@ -318,6 +317,7 @@ func TestCollectDependencies(t *testing.T) {
 }
 
 func TestProductEnabled(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	receivedProducts := make(chan *telemetry.Products, 1)
 	receivedConfigs := make(chan *telemetry.ConfigurationChange, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
