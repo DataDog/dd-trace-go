@@ -303,6 +303,9 @@ type mockBackend struct {
 }
 
 func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
+		return
+	}
 	profile := profileMeta{
 		attachments: make(map[string][]byte),
 	}
@@ -475,7 +478,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(

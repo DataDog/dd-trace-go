@@ -214,7 +214,6 @@ func (p *profiler) startTelemetry(profileEnabled func(t ProfileType) bool) {
 		configs = append(configs, telemetry.Configuration{Name: "trace.enabled", Value: false})
 		telemetry.GlobalClient.Start(configs, []telemetry.Error{})
 	}
-
 	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers, true,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
@@ -464,6 +463,7 @@ func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
 	})
+	telemetry.GlobalClient.Stop()
 	p.wg.Wait()
 	if p.cfg.logStartup {
 		log.Info("Profiling stopped")

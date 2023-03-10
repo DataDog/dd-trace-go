@@ -350,7 +350,7 @@ func TestProductEnabled(t *testing.T) {
 	client := &telemetry.Client{
 		URL: server.URL,
 	}
-
+	client.Start(nil, nil)
 	client.ProductEnabled(telemetry.NamespaceProfilers, true,
 		[]telemetry.Configuration{{Name: "delta_profiles", Value: true}})
 

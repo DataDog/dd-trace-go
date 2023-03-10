@@ -259,6 +259,11 @@ func (c *Client) Stop() {
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		c.log("attempted to send product change event, but telemetry client has not started")
+	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
 	if namespace == NamespaceProfilers {
@@ -280,7 +285,6 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	go func() {
 		productReq.submit()
 	}()
-
 }
 
 type metricKind string
@@ -467,7 +471,6 @@ func (r *Request) submit() error {
 		return fmt.Errorf("all telemetry requests must be associated with a telemetry client")
 	}
 	retry, err := r._submit()
-
 	if err == nil {
 		// submitting to the telemetry client's intended
 		// URL succeeded - turn logging back on
