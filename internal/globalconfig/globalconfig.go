@@ -77,3 +77,7 @@ func GetHeaderTag(header string) (tag string) {
 func GetAllHeaderTags() map[string]string {
 	return cfg.headersAsTags
 }
+
+func ClearHeaderTags() {
+	cfg.headersAsTags = make(map[string]string)
+}

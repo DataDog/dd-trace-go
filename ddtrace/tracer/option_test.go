@@ -993,7 +993,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal("t!a@g.", globalconfig.GetHeaderTag("2header"))
 	})
 
-	t.Run("with-envvar", func(t *testing.T) {
+	t.Run("envvar-only", func(t *testing.T) {
 		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 
@@ -1002,5 +1002,16 @@ func TestWithHeaderTags(t *testing.T) {
 
 		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
 		assert.Equal(ext.HTTPRequestHeaders + ".2_h_e_a_d_e_r", globalconfig.GetHeaderTag("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_HEADER_TAGS", "header1")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+		newConfig(WithHeaderTags([]string{"header2"}))
+		tags := globalconfig.GetAllHeaderTags()
+		fmt.Println(tags)
+		assert.Equal(1, len(tags))
+		assert.Equal(ext.HTTPRequestHeaders + ".header2", tags["header2"])
 	})
 }

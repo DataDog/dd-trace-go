@@ -911,6 +911,7 @@ func StackFrames(n, skip uint) FinishOption {
 // to Datadog.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
+		globalconfig.ClearHeaderTags()
 		for _, h := range headerAsTags {
 			header, tag := normalizer.NormalizeHeaderTag(h)
 			globalconfig.SetHeaderTag(header, tag)
