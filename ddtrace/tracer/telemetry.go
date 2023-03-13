@@ -54,7 +54,8 @@ func startTelemetry(c *config) {
 	for k, v := range c.globalTags {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
 	}
-	for _, rule := range append(c.spanRules, c.traceRules...) {
+	rules := append(c.spanRules, c.traceRules...)
+	for _, rule := range rules {
 		var service string
 		var name string
 		if rule.Service != nil {

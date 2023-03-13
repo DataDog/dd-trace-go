@@ -124,8 +124,6 @@ func WithURL(agentless bool, agentURL string) Option {
 			}
 			client.URL = getAgentlessURL()
 		} else {
-			// TODO: check agent /info endpoint to see if the agent is
-			// sufficiently recent to support this endpoint? overkill?
 			u, err := url.Parse(agentURL)
 			if err == nil {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"

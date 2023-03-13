@@ -70,6 +70,8 @@ func init() {
 	if err == nil {
 		hostname = h
 	}
+	GlobalClient = new(Client)
+	GlobalClient.Default()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -97,14 +99,12 @@ type Client struct {
 	Env     string
 	Version string
 
-	// Determines whether telemetry should actually run.
-	// Defaults to true, but will be overridden by the environment variable
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED is set to 0 or false
+	// Disables instrumentation telemetry.
+	// Configurable with DD_INSTRUMENTATION_TELEMETRY_ENABLED. Defaults to false.
 	Disabled bool
 
 	// Determines whether dependencies should be collected
-	// Defaults to true, but will be overridden by the environment variable
-	// DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED is set to 0 or false
+	// Configurable with DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED. Defaults to true.
 	CollectDependencies bool
 
 	// debug enables the debug flag for all requests, see
@@ -166,12 +166,11 @@ func (c *Client) Started() bool {
 
 // Start registers that the app has begun running with the given integrations
 // and configuration.
-// TODO (evan.li): errors is passed in here, but not actually used
-// since app-started only accepts one error.
+// TODO: implement passing in error information about tracer start
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.Disabled || !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) {
+	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) || c.Disabled {
 		return
 	}
 	if c.started {
@@ -197,7 +196,7 @@ func (c *Client) Start(configuration []Configuration) {
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
 
-	if c.CollectDependencies || internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) {
+	if internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) || c.CollectDependencies {
 		depPayload := Dependencies{[]Dependency{}}
 		deps, ok := debug.ReadBuildInfo()
 		if ok {
@@ -423,8 +422,8 @@ func (c *Client) newRequest(t RequestType) *Request {
 			// TODO (lievan): arch, kernel stuff?
 		},
 	}
+
 	header := &http.Header{
-		"DD-API-KEY":                 {c.APIKey}, // DD-API-KEY is required as of v2
 		"Content-Type":               {"application/json"},
 		"DD-Telemetry-API-Version":   {"v2"},
 		"DD-Telemetry-Request-Type":  {string(t)},
@@ -433,6 +432,9 @@ func (c *Client) newRequest(t RequestType) *Request {
 		"DD-Agent-Env":               {c.Env},
 		"DD-Agent-Hostname":          {hostname},
 		"Datadog-Container-ID":       {internal.ContainerID()},
+	}
+	if c.URL == getAgentlessURL() && isAPIKeyValid(c.APIKey) {
+		header.Set("DD-API-KEY", c.APIKey)
 	}
 	client := c.Client
 	if client == nil {
@@ -490,11 +492,11 @@ func (r *Request) _submit() (retry bool, err error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return true && (r.URL != getAgentlessURL()), err
+		return r.URL != getAgentlessURL(), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return true && (r.URL != getAgentlessURL()), errBadStatus(resp.StatusCode)
+		return r.URL != getAgentlessURL(), errBadStatus(resp.StatusCode)
 	}
 	return false, nil
 }
@@ -515,15 +517,8 @@ func (c *Client) backgroundHeartbeat() {
 	if !c.started {
 		return
 	}
-	// TODO (evan.li): thoughts on calling go func here?
-	//				   don't want the request to block while holding the lock
+	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
 	c.flush()
-	go func() {
-		err := c.newRequest(RequestTypeAppHeartbeat).submit()
-		if err != nil {
-			c.log("heartbeat failed: %s", err)
-		}
-	}()
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }
 
@@ -550,9 +545,4 @@ func SetAgentlessEndpoint(endpoint string) string {
 	prev := agentlessURL
 	agentlessURL = endpoint
 	return prev
-}
-
-func init() {
-	GlobalClient = new(Client)
-	GlobalClient.Default()
 }
