@@ -208,7 +208,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs{
+		for _, arg := range htArgs {
 			header, tag := normalizer.NormalizeHeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
@@ -218,7 +218,7 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		
+
 		header, tag := normalizer.NormalizeHeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
 		defer globalconfig.ClearHeaderTags()
@@ -248,7 +248,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs{
+		for _, arg := range htArgs {
 			header, tag := normalizer.NormalizeHeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}

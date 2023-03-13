@@ -156,7 +156,7 @@ func TestNormalizeHeaderTag(t *testing.T) {
 		// no normalization shoul occur on the tag when a target has been specified
 		header, tag := normalizer.NormalizeHeaderTag("header:t*a.g!")
 		assert.Equal(t, "header", header)
-		assert.Equal(t, "t*a.g!", tag)		
+		assert.Equal(t, "t*a.g!", tag)
 	})
 
 	t.Run("multi-colon", func(t *testing.T) {

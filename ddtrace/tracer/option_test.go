@@ -989,7 +989,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
 		fmt.Println(globalconfig.GetAllHeaderTags())
-		assert.Equal(ext.HTTPRequestHeaders + ".h_e_a-d_e_r", globalconfig.GetHeaderTag("h!e@a-d.e*r"))
+		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.GetHeaderTag("h!e@a-d.e*r"))
 		assert.Equal("t!a@g.", globalconfig.GetHeaderTag("2header"))
 	})
 
@@ -1001,7 +1001,7 @@ func TestWithHeaderTags(t *testing.T) {
 		newConfig()
 
 		assert.Equal("1tag", globalconfig.GetHeaderTag("1header"))
-		assert.Equal(ext.HTTPRequestHeaders + ".2_h_e_a_d_e_r", globalconfig.GetHeaderTag("2.h.e.a.d.e.r"))
+		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.GetHeaderTag("2.h.e.a.d.e.r"))
 	})
 
 	t.Run("env-override", func(t *testing.T) {
@@ -1012,6 +1012,6 @@ func TestWithHeaderTags(t *testing.T) {
 		tags := globalconfig.GetAllHeaderTags()
 		fmt.Println(tags)
 		assert.Equal(1, len(tags))
-		assert.Equal(ext.HTTPRequestHeaders + ".header2", tags["header2"])
+		assert.Equal(ext.HTTPRequestHeaders+".header2", tags["header2"])
 	})
 }
