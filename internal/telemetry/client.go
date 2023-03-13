@@ -455,7 +455,7 @@ func (r *Request) submit() error {
 		// URL succeeded - turn logging back on
 		r.TelemetryClient.logging(true)
 	} else if retry {
-		// retry telemetry submissions in instances where the teletry client has trouble
+		// retry telemetry submissions in instances where the telemetry client has trouble
 		// connecting with the agent
 		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
