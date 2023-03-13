@@ -51,6 +51,7 @@ var (
 		"content-encoding",
 		"content-language",
 		"forwarded",
+		"via",
 		"user-agent",
 		"accept",
 		"accept-encoding",
