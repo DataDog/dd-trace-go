@@ -21,10 +21,6 @@ import (
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-
-	// multipleIPHeadersTag sets the multiple ip header tag used internally to tell the backend an error occurred when
-	// retrieving an HTTP request client IP.
-	multipleIPHeadersTag = "_dd.multiple-ip-headers"
 )
 
 var (
@@ -33,6 +29,7 @@ var (
 	}
 
 	// List of IP-related headers leveraged to retrieve the public client IP address.
+	// The order matters and is the one in which ClientIPTags will look up the HTTP headers.
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
@@ -110,7 +107,26 @@ func ippref(s string) *instrumentation.NetaddrIPPrefix {
 
 // ClientIPTags generates the IP related span tags for a given request headers
 func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
-	tags = map[string]string{}
+	remoteIP, clientIP := ClientIP(hdrs, hasCanonicalMIMEHeaderKeys, remoteAddr)
+
+	remoteIPValid := remoteIP.IsValid()
+	clientIPValid := clientIP.IsValid()
+	if !remoteIPValid && !clientIPValid {
+		return nil, instrumentation.NetaddrIP{}
+	}
+
+	tags = make(map[string]string, 2)
+	if remoteIPValid {
+		tags["network.client.ip"] = remoteIP.String()
+	}
+	if clientIPValid {
+		tags[ext.HTTPClientIP] = clientIP.String()
+	}
+
+	return tags, clientIP
+}
+
+func ClientIP(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (remoteIP, clientIP instrumentation.NetaddrIP) {
 	monitoredHeaders := defaultIPHeaders
 	if clientIPHeaderCfg != "" {
 		monitoredHeaders = []string{clientIPHeaderCfg}
@@ -153,10 +169,9 @@ func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, rem
 	}
 
 	// Decide which IP address is the client one by starting with the remote IP
-	remoteIP := parseIP(remoteAddr)
-	if remoteIP.IsValid() {
-		tags["network.client.ip"] = remoteIP.String()
-		clientIP = remoteIP
+	if ip := parseIP(remoteAddr); ip.IsValid() {
+		remoteIP = ip
+		clientIP = ip
 	}
 
 	// The IP address found in the headers supersedes a private remote IP address.
@@ -164,11 +179,7 @@ func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, rem
 		clientIP = foundIP
 	}
 
-	if clientIP.IsValid() {
-		tags[ext.HTTPClientIP] = clientIP.String()
-	}
-
-	return tags, clientIP
+	return remoteIP, clientIP
 }
 
 func parseIP(s string) instrumentation.NetaddrIP {

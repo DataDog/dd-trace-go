@@ -187,6 +187,11 @@ func genIPTestCases() []ipTestCase {
 	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
 	tcs = append([]ipTestCase{
 		{
+			name:       "no headers",
+			headers:    nil,
+			expectedIP: instrumentation.NetaddrIP{},
+		},
+		{
 			name:       "invalid-ipv4",
 			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
 			expectedIP: instrumentation.NetaddrIP{},
@@ -293,7 +298,6 @@ func TestIPHeaders(t *testing.T) {
 				expectedIP := tc.expectedIP.String()
 				require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
 				require.Equal(t, expectedIP, clientIP.String())
-				require.NotContains(t, tags, multipleIPHeadersTag)
 			} else {
 				require.NotContains(t, tags, ext.HTTPClientIP)
 			}
