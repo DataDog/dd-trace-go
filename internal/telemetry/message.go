@@ -7,7 +7,7 @@ package telemetry
 
 import "net/http"
 
-// Request capture all neccessary information for a telemetry event submission
+// Request captures all necessary information for a telemetry event submission
 // so we do not need to read directly from our telemetry client when submitting
 // asynchronously
 type Request struct {
