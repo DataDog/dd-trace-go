@@ -34,10 +34,8 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
 	cfg.isStatusError = isServerError
-	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
-		cfg.headersAsTags = ht
-	}
 }
 
 // WithServiceName sets the given service name for the system.
@@ -96,8 +94,10 @@ func isServerError(statusCode int) bool {
 // to Datadog.
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
-		// When this feature is enabled at the integration level, blindly overwrite the global config
-		cfg.headersAsTags = make(map[string]string)
+		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
+		if len(cfg.headersAsTags) > 0{
+			cfg.headersAsTags = make(map[string]string)
+		}
 		for _, h := range headers {
 			header, tag := normalizer.NormalizeHeaderTag(h)
 			cfg.headersAsTags[header] = tag

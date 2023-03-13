@@ -221,4 +221,7 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-require github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+require (
+	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	golang.org/dl v0.0.0-20230307162516-8f1b16c06e73 // indirect
+)

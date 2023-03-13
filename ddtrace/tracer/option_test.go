@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -988,7 +987,6 @@ func TestWithHeaderTags(t *testing.T) {
 	t.Run("normalization", func(t *testing.T) {
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
-		fmt.Println(globalconfig.GetAllHeaderTags())
 		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.GetHeaderTag("h!e@a-d.e*r"))
 		assert.Equal("t!a@g.", globalconfig.GetHeaderTag("2header"))
 	})
@@ -1010,7 +1008,6 @@ func TestWithHeaderTags(t *testing.T) {
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 		newConfig(WithHeaderTags([]string{"header2"}))
 		tags := globalconfig.GetAllHeaderTags()
-		fmt.Println(tags)
 		assert.Equal(1, len(tags))
 		assert.Equal(ext.HTTPRequestHeaders+".header2", tags["header2"])
 	})

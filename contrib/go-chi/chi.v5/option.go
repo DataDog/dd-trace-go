@@ -38,9 +38,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
-		cfg.headersAsTags = ht
-	}
+	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
@@ -116,8 +114,10 @@ func WithModifyResourceName(fn func(resourceName string) string) Option {
 // to Datadog.
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
-		// When this feature is enabled at the integration level, blindly overwrite the global config
-		cfg.headersAsTags = make(map[string]string)
+		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
+		if len(cfg.headersAsTags) > 0{
+			cfg.headersAsTags = make(map[string]string)
+		}
 		for _, h := range headers {
 			header, tag := normalizer.NormalizeHeaderTag(h)
 			cfg.headersAsTags[header] = tag

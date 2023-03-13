@@ -40,9 +40,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = "http.router"
-	if ht := globalconfig.GetAllHeaderTags(); ht != nil {
-		cfg.headersAsTags = ht
-	}
+	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
@@ -74,8 +72,10 @@ func WithServiceName(name string) MuxOption {
 // to Datadog.
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
-		// When this feature is enabled at the integration level, blindly overwrite the global config
-		cfg.headersAsTags = make(map[string]string)
+		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
+		if len(cfg.headersAsTags) > 0{
+			cfg.headersAsTags = make(map[string]string)
+		}
 		for _, h := range headers {
 			header, tag := normalizer.NormalizeHeaderTag(h)
 			cfg.headersAsTags[header] = tag

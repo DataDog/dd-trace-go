@@ -10,11 +10,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/labstack/echo"
 	"github.com/stretchr/testify/assert"
@@ -45,28 +48,81 @@ func TestChildSpan(t *testing.T) {
 }
 
 func TestWithHeaderTags(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	router := echo.New()
-	router.Use(Middleware(WithHeaderTags([]string{"  header  ", "  2header:tag  "})))
+	setupReq := func(opts ...Option) *http.Request {
+		router := echo.New()
+		router.Use(Middleware(opts...))
 
-	router.GET("/test", func(c echo.Context) error {
-		return c.String(http.StatusOK, "test")
+		router.GET("/test", func(c echo.Context) error {
+			return c.String(http.StatusOK, "test")
+		})
+		r := httptest.NewRequest("GET", "/test", nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return r
+	}
+	t.Run("integration", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
 	})
-	r := httptest.NewRequest("GET", "/test", nil)
-	r.Header.Set("header", "val")
-	r.Header.Add("header", "val2")
-	r.Header.Set("2header", "2val")
-	r.Header.Set("x-datadog-header", "value")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, r)
 
-	spans := mt.FinishedSpans()
-	fmt.Println(spans)
-	assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".header"])
-	assert.Equal("2val", spans[0].Tags()["tag"])
-	assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		header, tag := normalizer.NormalizeHeaderTag("3header")
+		globalconfig.SetHeaderTag(header, tag)
+		defer globalconfig.ClearHeaderTags()
+
+		r := setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalconfig.SetHeaderTag(globalH, globalT)
+		defer globalconfig.ClearHeaderTags()
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+		assert.NotContains(s.Tags(), globalT)
+	})
 }
 
 func TestTrace200(t *testing.T) {
