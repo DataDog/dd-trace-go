@@ -8,6 +8,7 @@ package http
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,39 +17,78 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 func TestWithHeaderTags(t *testing.T) {
-	t.Run("integration-level", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
+	setupReq := func(opts ...Option) *http.Request {
 		r := httptest.NewRequest("GET", "/test", nil)
 		r.Header.Set("h!e@a-d.e*r", "val")
 		r.Header.Add("h!e@a-d.e*r", "val2")
 		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
 		r.Header.Set("x-datadog-header", "value")
 		w := httptest.NewRecorder()
-		router(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "})).ServeHTTP(w, r)
+		router(opts...).ServeHTTP(w, r)
+		return r
+	}
+	t.Run("integration", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-		assert := assert.New(t)
-
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
-		assert.Equal("val,val2", spans[0].Tags()[ext.HTTPRequestHeaders+".h_e_a-d_e_r"])
-		assert.Equal("2val", spans[0].Tags()["t!a@g."])
-		assert.NotContains(spans[0].Tags(), "http.headers.X-Datadog-Header")
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs{
+			header, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
 	})
 
-	//check that http spans have request tags when feature is configured at global level
-	t.Run("global-level", func(t *testing.T) {
+	t.Run("global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
+		
+		header, tag := normalizer.NormalizeHeaderTag("3header")
+		globalconfig.SetHeaderTag(header, tag)
+		defer globalconfig.ClearHeaderTags()
+
+		r := setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
 	})
 
-	// when feature is set at both global and integration level, ensure span tags match those set at the integration level only
-	t.Run("integration-override-global", func(t *testing.T) {
+	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
+
+		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalconfig.SetHeaderTag(globalH, globalT)
+		defer globalconfig.ClearHeaderTags()
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs{
+			header, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+		assert.NotContains(s.Tags(), globalT)
 	})
 }
 
