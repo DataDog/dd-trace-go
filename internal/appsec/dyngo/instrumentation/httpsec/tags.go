@@ -8,6 +8,7 @@ package httpsec
 import (
 	"encoding/json"
 	"net"
+	"net/textproto"
 	"os"
 	"sort"
 	"strings"
@@ -35,13 +36,14 @@ var (
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
+		"true-client-ip",
 		"x-client-ip",
 		"x-forwarded",
-		"x-cluster-client-ip",
 		"forwarded-for",
-		"forwarded",
-		"via",
-		"true-client-ip",
+		"x-cluster-client-ip",
+		"fastly-client-ip",
+		"cf-connecting-ip",
+		"cf-connecting-ip6",
 	}
 
 	// List of HTTP headers we collect and send.
@@ -62,7 +64,6 @@ var (
 
 func init() {
 	// Required by sort.SearchStrings
-	sort.Strings(defaultIPHeaders[:])
 	sort.Strings(collectedHTTPHeaders[:])
 	clientIPHeaderCfg = os.Getenv(envClientIPHeader)
 }
@@ -108,42 +109,29 @@ func ippref(s string) *instrumentation.NetaddrIPPrefix {
 }
 
 // ClientIPTags generates the IP related span tags for a given request headers
-func ClientIPTags(hdrs map[string][]string, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
+func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
 	tags = map[string]string{}
 	monitoredHeaders := defaultIPHeaders
 	if clientIPHeaderCfg != "" {
 		monitoredHeaders = []string{clientIPHeaderCfg}
 	}
 
-	// Filter the list of headers
-	foundHeaders := map[string][]string{}
-	for k, v := range hdrs {
-		k = strings.ToLower(k)
-		if i := sort.SearchStrings(monitoredHeaders, k); i < len(monitoredHeaders) && monitoredHeaders[i] == k {
-			if len(v) >= 1 && v[0] != "" {
-				foundHeaders[k] = v
-			}
-		}
-	}
-
-	// If more than one IP header is present, report them and don't return any client ip
-	if len(foundHeaders) > 1 {
-		var headers []string
-		for header, ips := range foundHeaders {
-			tags[ext.HTTPRequestHeaders+"."+header] = strings.Join(ips, ",")
-			headers = append(headers, header)
-		}
-		sort.Strings(headers) // produce a predictable value
-		tags[multipleIPHeadersTag] = strings.Join(headers, ",")
-		return tags, instrumentation.NetaddrIP{}
-	}
-
 	// Walk IP-related headers
 	var foundIP instrumentation.NetaddrIP
-	for _, v := range foundHeaders {
-		// Handle multi-value headers by flattening the list of values
+	for _, headerName := range monitoredHeaders {
+		if hasCanonicalMIMEHeaderKeys {
+			headerName = textproto.CanonicalMIMEHeaderKey(headerName)
+		}
+
+		headerValues, exists := hdrs[headerName]
+		if !exists {
+			continue // this monitored header is not present
+		}
+
+		// Assuming a list of comma-separated IP addresses, split them and build
+		// the list of values to try to parse as IP addresses
 		var ips []string
-		for _, ip := range v {
+		for _, ip := range headerValues {
 			ips = append(ips, strings.Split(ip, ",")...)
 		}
 
