@@ -20,7 +20,7 @@ func startTelemetry(c *config) {
 			telemetry.WithService(c.serviceName),
 			telemetry.WithEnv(c.env),
 			telemetry.WithHTTPClient(c.httpClient),
-			// c.logToStdout is true if serverless is turned o
+			// c.logToStdout is true if serverless is turned on
 			telemetry.WithURL(c.logToStdout, c.agentURL.String()),
 			telemetry.WithVersion(c.version),
 		)
