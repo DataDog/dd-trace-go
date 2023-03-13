@@ -461,6 +461,7 @@ func (r *Request) submit() error {
 		// connecting with the agent
 		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
+		r.Header.Set("DD-API-KEY", defaultAPIKey())
 		_, err := r._submit()
 		if err != nil {
 			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
