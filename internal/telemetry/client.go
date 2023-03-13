@@ -473,7 +473,32 @@ func (r *Request) submit() error {
 	return err
 }
 
-func (r *Request) _submit() (retry bool, err error) {
+// agentlessRetry determines if we should retry a failed a request with
+// by submitting to the agentless endpoint
+func agentlessRetry(req *Request, resp *http.Response, err error) bool {
+	if req.URL == getAgentlessURL() {
+		// no need to retry with agentless endpoint if it already failed
+		return false
+	}
+	if err != nil {
+		// we didn't get a response which might signal a connectivity problem with
+		// agent - retry with agentless
+		return true
+	}
+	// Do not retry with the following status codes:
+	// 400 - client side error
+	// 429 - too many requests
+	// TODO - add more
+	doNotRetry := []int{400, 429}
+	for status := range doNotRetry {
+		if resp.StatusCode == status {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *Request) _submit() (bool, error) {
 	b, err := json.Marshal(r.Body)
 	if err != nil {
 		return false, err
@@ -493,11 +518,11 @@ func (r *Request) _submit() (retry bool, err error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return r.URL != getAgentlessURL(), err
+		return agentlessRetry(r, resp, err), err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return r.URL != getAgentlessURL(), errBadStatus(resp.StatusCode)
+		return agentlessRetry(r, resp, err), errBadStatus(resp.StatusCode)
 	}
 	return false, nil
 }
