@@ -106,7 +106,10 @@ func ippref(s string) *instrumentation.NetaddrIPPrefix {
 	return nil
 }
 
-// ClientIPTags generates the IP related span tags for a given request headers
+// ClientIPTags returns the resulting Datadog span tags `http.client_ip`
+// containing the client IP and `network.client.ip` containing the remote IP.
+// The tags are present only if a valid ip address has been returned by
+// ClientIP().
 func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
 	remoteIP, clientIP := ClientIP(hdrs, hasCanonicalMIMEHeaderKeys, remoteAddr)
 
@@ -127,6 +130,10 @@ func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, rem
 	return tags, clientIP
 }
 
+// ClientIP returns the first public IP address found in the given headers. If
+// none is present, it returns the first valid IP address present, possibly
+// being a local IP address. The remote address, when valid, is used as fallback
+// when no IP address has been found at all.
 func ClientIP(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (remoteIP, clientIP instrumentation.NetaddrIP) {
 	monitoredHeaders := defaultIPHeaders
 	if clientIPHeaderCfg != "" {
