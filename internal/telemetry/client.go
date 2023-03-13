@@ -245,6 +245,7 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	defer c.mu.Unlock()
 	if !c.started {
 		c.log("attempted to send product change event, but telemetry client has not started")
+		return
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
@@ -425,7 +426,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 	header := &http.Header{
 		"DD-API-KEY":                 {c.APIKey}, // DD-API-KEY is required as of v2
 		"Content-Type":               {"application/json"},
-		"DD-Telemetry-API-Version":   {"v1"},
+		"DD-Telemetry-API-Version":   {"v2"},
 		"DD-Telemetry-Request-Type":  {string(t)},
 		"DD-Client-Library-Language": {"go"},
 		"DD-Client-Library-Version":  {version.Tag},
