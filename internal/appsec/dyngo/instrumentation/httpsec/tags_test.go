@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -283,23 +284,32 @@ func genIPTestCases() []ipTestCase {
 	return tcs
 }
 
-func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of clientIPHeaderCfg at the end of the test
-	defer func(s string) { clientIPHeaderCfg = s }(clientIPHeaderCfg)
-	for _, tc := range genIPTestCases() {
-		t.Run(tc.name, func(t *testing.T) {
-			header := http.Header{}
-			for k, v := range tc.headers {
-				header.Add(k, v)
-			}
-			clientIPHeaderCfg = tc.clientIPHeader
-			tags, clientIP := ClientIPTags(header, true, tc.remoteAddr)
-			if tc.expectedIP.IsValid() {
-				expectedIP := tc.expectedIP.String()
-				require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
-				require.Equal(t, expectedIP, clientIP.String())
-			} else {
-				require.NotContains(t, tags, ext.HTTPClientIP)
+func TestClientIP(t *testing.T) {
+	for _, hasCanonicalMIMEHeaderKeys := range []bool{true, false} {
+		t.Run(fmt.Sprintf("canonical-headers-%t", hasCanonicalMIMEHeaderKeys), func(t *testing.T) {
+			// Make sure to restore the real value of clientIPHeaderCfg at the end of the test
+			defer func(s string) { clientIPHeaderCfg = s }(clientIPHeaderCfg)
+			for _, tc := range genIPTestCases() {
+				t.Run(tc.name, func(t *testing.T) {
+					header := http.Header{}
+					for k, v := range tc.headers {
+						if hasCanonicalMIMEHeaderKeys {
+							header.Add(k, v)
+						} else {
+							k = strings.ToLower(k)
+							header[k] = append(header[k], v)
+						}
+					}
+					clientIPHeaderCfg = tc.clientIPHeader
+					tags, clientIP := ClientIPTags(header, hasCanonicalMIMEHeaderKeys, tc.remoteAddr)
+					if tc.expectedIP.IsValid() {
+						expectedIP := tc.expectedIP.String()
+						require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
+						require.Equal(t, expectedIP, clientIP.String())
+					} else {
+						require.NotContains(t, tags, ext.HTTPClientIP)
+					}
+				})
 			}
 		})
 	}
