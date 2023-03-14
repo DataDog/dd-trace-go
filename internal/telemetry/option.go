@@ -93,12 +93,6 @@ func WithAPIKey(v string) Option {
 	}
 }
 
-func getAgentlessURL() string {
-	agentlessEndpointLock.RLock()
-	defer agentlessEndpointLock.RUnlock()
-	return agentlessURL
-}
-
 // WithURL sets the URL for where telemetry information is flushed to.
 // For the URL, uploading through agent goes through
 //
@@ -134,6 +128,12 @@ func WithURL(agentless bool, agentURL string) Option {
 			}
 		}
 	}
+}
+
+func getAgentlessURL() string {
+	agentlessEndpointLock.RLock()
+	defer agentlessEndpointLock.RUnlock()
+	return agentlessURL
 }
 
 // configEnvFallback returns the value of environment variable with the
@@ -182,4 +182,22 @@ func (c *Client) readEnvVars() {
 	c.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 	c.CollectDependencies = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
+}
+
+// Default resets the telemetry client to default values
+func (c *Client) Default() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.applyDefaultOps()
+	c.readEnvVars()
+}
+
+// SetAgentlessEndpoint is used for testing purposes to replace the real agentless
+// endpoint with a custom one
+func SetAgentlessEndpoint(endpoint string) string {
+	agentlessEndpointLock.Lock()
+	defer agentlessEndpointLock.Unlock()
+	prev := agentlessURL
+	agentlessURL = endpoint
+	return prev
 }

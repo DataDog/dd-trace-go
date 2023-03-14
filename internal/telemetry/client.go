@@ -157,6 +157,13 @@ func (c *Client) log(msg string, args ...interface{}) {
 	log.Warn(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
+// logging is used to turn logging on/off
+func (c *Client) logging(logging bool) {
+	c.logLock.Lock()
+	defer c.logLock.Unlock()
+	c.Logging = logging
+}
+
 // Started returns whether the client has started or not
 func (c *Client) Started() bool {
 	c.mu.Lock()
@@ -550,29 +557,4 @@ func (c *Client) backgroundHeartbeat() {
 	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
 	c.flush()
 	c.heartbeatT.Reset(c.heartbeatInterval)
-}
-
-// logging is used to turn logging on/off
-func (c *Client) logging(logging bool) {
-	c.logLock.Lock()
-	defer c.logLock.Unlock()
-	c.Logging = logging
-}
-
-// Default resets the telemetry client to default values
-func (c *Client) Default() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.applyDefaultOps()
-	c.readEnvVars()
-}
-
-// SetAgentlessEndpoint is used for testing purposes to replace the real agentless
-// endpoint with a custom one
-func SetAgentlessEndpoint(endpoint string) string {
-	agentlessEndpointLock.Lock()
-	defer agentlessEndpointLock.Unlock()
-	prev := agentlessURL
-	agentlessURL = endpoint
-	return prev
 }
