@@ -11,7 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-// start the global instrumentation telemetry client with tracer data
+// startTelemetry starts the global instrumentation telemetry client with tracer data
 func startTelemetry(c *config) {
 	// need to re-intialize default values
 	if !telemetry.GlobalClient.Started() {
