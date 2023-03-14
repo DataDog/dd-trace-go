@@ -22,7 +22,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -1666,13 +1665,11 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")
-	defer log.UseLogger(new(log.DiscardLogger))()
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 20; i++ {
 		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 	dst := map[string]string{}
@@ -1684,8 +1681,6 @@ func BenchmarkInjectDatadog(b *testing.B) {
 
 func BenchmarkInjectW3C(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "tracecontext")
-	defer log.UseLogger(new(log.DiscardLogger))()
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
@@ -1714,8 +1709,6 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 func BenchmarkExtractDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleExtract, "datadog")
-	defer log.UseLogger(new(log.DiscardLogger))()
-
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1123123132131312313123123",
