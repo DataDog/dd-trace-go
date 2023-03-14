@@ -104,13 +104,13 @@ func TestMetrics(t *testing.T) {
 		client.Start(nil)
 
 		// Gauges should have the most recent value
-		client.Gauge("foobar", 1, nil, false)
-		client.Gauge("foobar", 2, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
+		client.Gauge(NamespaceTracers, "foobar", 2, nil, false)
 		// Counts should be aggregated
-		client.Count("baz", 3, nil, true)
-		client.Count("baz", 1, nil, true)
+		client.Count(NamespaceTracers, "baz", 3, nil, true)
+		client.Count(NamespaceTracers, "baz", 1, nil, true)
 		// Tags should be passed through
-		client.Count("bonk", 4, []string{"org:1"}, false)
+		client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 		client.Stop()
 	}()
 
@@ -141,8 +141,8 @@ func TestDisabledClient(t *testing.T) {
 		heartbeatInterval: time.Millisecond,
 	}
 	client.Start(nil)
-	client.Gauge("foobar", 1, nil, false)
-	client.Count("bonk", 4, []string{"org:1"}, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
+	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
 
@@ -156,8 +156,8 @@ func TestNonStartedClient(t *testing.T) {
 		URL:               server.URL,
 		heartbeatInterval: time.Millisecond,
 	}
-	client.Gauge("foobar", 1, nil, false)
-	client.Count("bonk", 4, []string{"org:1"}, false)
+	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
+	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
 
@@ -218,7 +218,7 @@ func TestConcurrentClient(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 10; j++ {
-					GlobalClient.Count("foobar", 1, []string{"tag"}, false)
+					GlobalClient.Count(NamespaceTracers, "foobar", 1, []string{"tag"}, false)
 				}
 			}()
 		}

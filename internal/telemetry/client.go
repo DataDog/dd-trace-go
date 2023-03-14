@@ -136,7 +136,7 @@ type Client struct {
 	requests []*Request
 	// metrics holds un-sent metrics that will be aggregated the next time
 	// metrics are sent
-	metrics    map[string]*metric
+	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
 
 	// logLock gaurds the logging field
@@ -186,7 +186,7 @@ func (c *Client) Start(configuration []Configuration) {
 	c.started = true
 
 	// XXX: Should we let metrics persist between starting and stopping?
-	c.metrics = make(map[string]*metric)
+	c.metrics = make(map[Namespace]map[string]*metric)
 	c.applyDefaultOps()
 
 	payload := &AppStarted{
@@ -261,7 +261,7 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	case NamespaceASM:
 		products.AppSec = ProductDetails{Enabled: enabled}
 	default:
-		c.log("unknown")
+		c.log("unknown product, app-product-change telemetry event will not send")
 		return
 	}
 	productReq.Body.Payload = products
@@ -311,17 +311,20 @@ func metricKey(name string, tags []string) string {
 
 // Gauge sets the value for a gauge with the given name and tags. If the metric
 // is not language-specific, common should be set to true
-func (c *Client) Gauge(name string, value float64, tags []string, common bool) {
+func (c *Client) Gauge(namespace Namespace, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
 		return
 	}
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
 	key := metricKey(name, tags)
-	m, ok := c.metrics[key]
+	m, ok := c.metrics[namespace][key]
 	if !ok {
 		m = newmetric(name, metricKindGauge, tags, common)
-		c.metrics[key] = m
+		c.metrics[namespace][key] = m
 	}
 	m.value = value
 	m.ts = float64(time.Now().Unix())
@@ -330,17 +333,20 @@ func (c *Client) Gauge(name string, value float64, tags []string, common bool) {
 
 // Count adds the value to a count with the given name and tags. If the metric
 // is not language-specific, common should be set to true
-func (c *Client) Count(name string, value float64, tags []string, common bool) {
+func (c *Client) Count(namespace Namespace, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
 		return
 	}
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
 	key := metricKey(name, tags)
-	m, ok := c.metrics[key]
+	m, ok := c.metrics[namespace][key]
 	if !ok {
 		m = newmetric(name, metricKindCount, tags, common)
-		c.metrics[key] = m
+		c.metrics[namespace][key] = m
 	}
 	m.value += value
 	m.ts = float64(time.Now().Unix())
@@ -355,23 +361,24 @@ func (c *Client) flush() {
 	if c.newMetrics {
 		c.newMetrics = false
 		r := c.newRequest(RequestTypeGenerateMetrics)
-		payload := &Metrics{
-			Namespace: c.Namespace,
-		}
-		for _, m := range c.metrics {
-			s := Series{
-				Metric: m.name,
-				Type:   string(m.kind),
-				Tags:   m.tags,
-				Common: m.common,
+		for namespace := range c.metrics {
+			payload := &Metrics{
+				Namespace: namespace,
 			}
-			s.Points = [][2]float64{{m.ts, m.value}}
-			payload.Series = append(payload.Series, s)
+			for _, m := range c.metrics[namespace] {
+				s := Series{
+					Metric: m.name,
+					Type:   string(m.kind),
+					Tags:   m.tags,
+					Common: m.common,
+				}
+				s.Points = [][2]float64{{m.ts, m.value}}
+				payload.Series = append(payload.Series, s)
+			}
+			r.Body.Payload = payload
+			submissions = append(submissions, r)
 		}
-		r.Body.Payload = payload
-		submissions = append(submissions, r)
 	}
-
 	// copy over requests so we can do the actual submission without holding
 	// the lock. Zero out the old stuff so we don't leak references
 	for i, r := range c.requests {
