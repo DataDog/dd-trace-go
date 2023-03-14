@@ -2,6 +2,8 @@
 
 set -x
 
+export UNSTABLE_CI_WIDTH=10000.0
+
 source ./.gitlab/scripts/config-benchmarks.sh
 INITIAL_DIR=$(pwd)
 
