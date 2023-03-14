@@ -204,7 +204,7 @@ func (c *Client) Start(configuration []Configuration) {
 	c.scheduleSubmit(appStarted)
 
 	if internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) || c.CollectDependencies {
-		depPayload := Dependencies{[]Dependency{}}
+		var depPayload Dependencies
 		deps, ok := debug.ReadBuildInfo()
 		if ok {
 			for _, dep := range deps.Deps {
