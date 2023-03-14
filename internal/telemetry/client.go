@@ -266,9 +266,9 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	productReq.Body.Payload = products
 	c.newRequest(RequestTypeAppClientConfigurationChange)
 	if len(configuration) > 0 {
-		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
 		configChange := new(ConfigurationChange)
 		configChange.Configuration = append([]Configuration{}, configuration...)
+		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
 		configReq.Body.Payload = configChange
 		c.scheduleSubmit(configReq)
 	}
