@@ -13,6 +13,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
+var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]+")
+
 // NormalizeHeaderTag accepts a string that contains a header and an optional mapped tag key,
 // e.g, "header" or "header:tag" where `tag` will be the name of the header tag.
 func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
@@ -21,8 +23,7 @@ func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	// If no colon or colon sits at the very beginning or very end of the string
 	if lastIdx == -1 || lastIdx == 0 || lastIdx == len(headerAsTag)-1 {
 		headerAsTag = strings.ToLower(strings.TrimSpace(headerAsTag))
-		regex := regexp.MustCompile(`[^a-zA-Z0-9 -]+`)
-		return headerAsTag, ext.HTTPRequestHeaders + "." + regex.ReplaceAllString(headerAsTag, "_")
+		return headerAsTag, ext.HTTPRequestHeaders + "." + headerTagRegexp.ReplaceAllString(headerAsTag, "_")
 	}
 	return strings.ToLower(strings.TrimSpace(headerAsTag[:lastIdx])), strings.ToLower(strings.TrimSpace(headerAsTag[lastIdx+1:]))
 }
