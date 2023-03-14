@@ -207,6 +207,12 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
 		cfg.dbmPropagationMode = rc.dbmPropagationMode
 	}
+	if cfg.tags == nil {
+		cfg.tags = make(map[string]interface{})
+	}
+	for k, v := range rc.tags {
+		cfg.tags[k] = v
+	}
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
