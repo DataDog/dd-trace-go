@@ -62,7 +62,7 @@ var (
 	defaultHeartbeatInterval = 60 // seconds
 
 	// LogPrefix specifies the prefix for all telemetry logging
-	LogPrefix = "instrumentation telemetry: "
+	LogPrefix = "Instrumentation telemetry: "
 
 	// debugTelemtry enables payload debug mode for telemetry
 	debugTelemetry = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
@@ -446,10 +446,11 @@ func (c *Client) newRequest(t RequestType) *Request {
 			LanguageVersion: runtime.Version(),
 		},
 		Host: Host{
-			Hostname:  hostname,
-			OS:        getOSName(),
-			OSVersion: getOSVersion(),
-			// TODO (lievan): arch, kernel stuff?
+			Hostname:     hostname,
+			OS:           getOSName(),
+			OSVersion:    getOSVersion(),
+			Architecture: runtime.GOARCH,
+			// TODO (lievan): getting kernel name, release, version TBD
 		},
 	}
 
