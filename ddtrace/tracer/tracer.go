@@ -395,6 +395,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for _, fn := range options {
 		fn(&opts)
 	}
+	time.Sleep(5 * time.Millisecond)
 	var startTime int64
 	if opts.StartTime.IsZero() {
 		startTime = now()
