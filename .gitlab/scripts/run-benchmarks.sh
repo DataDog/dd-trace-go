@@ -5,7 +5,7 @@ set -ex
 CANDIDATE_SRC="/app/candidate/"
 CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
 CANDIDATE_COMMIT_SHA=$CI_COMMIT_SHA
-BENCHMARK_TARGETS="BenchmarkConcurrentTracing|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkInjectDatadog|BenchmarkInjectW3C"
+BENCHMARK_TARGETS="BenchmarkConcurrentTracing|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkInjectW3C"
 
 # Clone candidate release
 git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$CANDIDATE_SRC" && \
