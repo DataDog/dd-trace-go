@@ -139,7 +139,7 @@ type Client struct {
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
 
-	// logLock gaurds the logging field
+	// logLock guards the Logging field
 	logLock sync.RWMutex
 	// Logging allows us to toggle on agentless in the case where
 	// there are issues with sending telemetry to the agent
