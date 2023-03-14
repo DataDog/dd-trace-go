@@ -20,6 +20,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // newSpan creates a new span. This is a low-level function, required for testing and advanced usage.
@@ -705,6 +706,66 @@ func TestSpanLog(t *testing.T) {
 		stop()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+}
+
+func TestRootSpanAccessor(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	t.Run("nil-span", func(t *testing.T) {
+		var s *span = nil
+		require.Nil(t, s.Root())
+	})
+
+	t.Run("single-span", func(t *testing.T) {
+		sp := tracer.StartSpan("root")
+		require.Equal(t, sp, sp.(*span).Root())
+		sp.Finish()
+	})
+
+	t.Run("single-span-finished", func(t *testing.T) {
+		sp := tracer.StartSpan("root")
+		sp.Finish()
+		require.Equal(t, sp, sp.(*span).Root())
+	})
+
+	t.Run("root-with-children", func(t *testing.T) {
+		root := tracer.StartSpan("root")
+		defer root.Finish()
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+		defer child1.Finish()
+		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
+		defer child2.Finish()
+		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
+		defer child21.Finish()
+		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
+		defer child211.Finish()
+
+		require.Equal(t, root, root.(*span).Root())
+		require.Equal(t, root, child1.(*span).Root())
+		require.Equal(t, root, child2.(*span).Root())
+		require.Equal(t, root, child21.(*span).Root())
+		require.Equal(t, root, child211.(*span).Root())
+	})
+
+	t.Run("root-finished-with-children", func(t *testing.T) {
+		root := tracer.StartSpan("root")
+		root.Finish()
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+		defer child1.Finish()
+		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
+		defer child2.Finish()
+		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
+		defer child21.Finish()
+		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
+		defer child211.Finish()
+
+		require.Equal(t, root, root.(*span).Root())
+		require.Equal(t, root, child1.(*span).Root())
+		require.Equal(t, root, child2.(*span).Root())
+		require.Equal(t, root, child21.(*span).Root())
+		require.Equal(t, root, child211.(*span).Root())
 	})
 }
 

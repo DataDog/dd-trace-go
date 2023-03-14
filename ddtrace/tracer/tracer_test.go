@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -1679,6 +1680,80 @@ func TestEnvironment(t *testing.T) {
 	})
 }
 
+func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+
+	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
+	})
+
+	t.Run("git-metadata-from-env", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+
+		// git metadata env has priority under DD_TAGS
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-disabled", func(t *testing.T) {
+		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
+
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+}
+
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
@@ -1932,9 +2007,20 @@ func (w *testTraceWriter) Flushed() []*span {
 
 func TestFlush(t *testing.T) {
 	tr, _, _, stop := startTestTracer(t)
+	defer stop()
+
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
-	defer stop()
+
+	ts := &testStatsdClient{}
+	tr.statsd = ts
+
+	transport := newDummyTransport()
+	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	tr.stats = c
+	c.Start()
+	defer c.Stop()
+
 	tr.StartSpan("op").Finish()
 	timeout := time.After(time.Second)
 loop:
@@ -1950,9 +2036,23 @@ loop:
 			time.Sleep(time.Millisecond)
 		}
 	}
+	as := &aggregableSpan{
+		key: aggregation{
+			Name: "http.request",
+		},
+		// Start must be older than latest bucket to get flushed
+		Start:    time.Now().UnixNano() - 3*defaultStatsBucketSize,
+		Duration: 1,
+	}
+	c.add(as)
+
 	assert.Len(t, tw.Flushed(), 0)
+	assert.Zero(t, ts.flushed)
+	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
+	assert.Equal(t, 1, ts.flushed)
+	assert.Len(t, transport.Stats(), 1)
 }
 
 func TestTakeStackTrace(t *testing.T) {
@@ -2029,8 +2129,7 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id, WithPropagation())
 		s.Finish()
-		_, ok := s.Meta[keyUserID]
-		assert.False(t, ok)
+		assert.Equal(t, id, s.Meta[keyUserID])
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
 		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
@@ -2146,4 +2245,31 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 			span.Finish()
 		}
 	})
+}
+
+func TestExecutionTraceSpanTagged(t *testing.T) {
+	if rt.IsEnabled() {
+		t.Skip("runtime execution tracing is already enabled")
+	}
+
+	if err := rt.Start(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure we unconditionally stop tracing. It's safe to call this
+	// multiple times.
+	defer rt.Stop()
+
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	tracedSpan := tracer.StartSpan("traced").(*span)
+	tracedSpan.Finish()
+
+	rt.Stop()
+
+	untracedSpan := tracer.StartSpan("untraced").(*span)
+	untracedSpan.Finish()
+
+	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
+	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }

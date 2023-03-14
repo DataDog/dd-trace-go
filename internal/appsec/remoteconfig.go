@@ -12,11 +12,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
@@ -238,6 +238,7 @@ func (a *appsec) enableRCBlocking(handle wafHandleWrapper) error {
 	}
 	a.registerRCProduct(rc.ProductASMData)
 	a.registerRCCapability(remoteconfig.ASMIPBlocking)
+	a.registerRCCapability(remoteconfig.ASMUserBlocking)
 	a.registerRCCallback(handle.asmDataCallback, rc.ProductASMData)
 	return nil
 }

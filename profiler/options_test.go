@@ -324,6 +324,16 @@ func TestEnvVars(t *testing.T) {
 		assert.Contains(t, tags, "c:3")
 	})
 
+	t.Run("DD_TAGS_SPACES", func(t *testing.T) {
+		t.Setenv("DD_TAGS", "a:1 b:2 c")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c")
+	})
+
 	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DELTA", "false")
 		cfg, err := defaultConfig()

@@ -6,6 +6,7 @@
 package grpcsec_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -57,7 +58,7 @@ func TestUsage(t *testing.T) {
 				}))
 			}))
 
-			rpcOp := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, localRootOp)
+			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), grpcsec.HandlerOperationArgs{}, localRootOp)
 
 			for i := 1; i <= expectedRecvOperation; i++ {
 				recvOp := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, rpcOp)
