@@ -205,8 +205,7 @@ func (c *Client) Start(configuration []Configuration) {
 
 	if internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) || c.CollectDependencies {
 		var depPayload Dependencies
-		deps, ok := debug.ReadBuildInfo()
-		if ok {
+		if deps, ok := debug.ReadBuildInfo(); ok {
 			for _, dep := range deps.Deps {
 				depPayload.Dependencies = append(depPayload.Dependencies,
 					Dependency{
