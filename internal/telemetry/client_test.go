@@ -243,7 +243,7 @@ func TestConcurrentClient(t *testing.T) {
 //  1. a function that waits for a telemetry request to that server
 //  2. a cleanup function that closes the server and resets the agentless endpoint to
 //     its original value
-func fakeAgentless(t *testing.T, ctx context.Context) (wait func(), cleanup func()) {
+func fakeAgentless(ctx context.Context, t *testing.T) (wait func(), cleanup func()) {
 	received := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("DD-Telemetry-Request-Type")
@@ -272,7 +272,7 @@ func TestAgentlessRetry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	waitAgentlessEndpoint, cleanup := fakeAgentless(t, ctx)
+	waitAgentlessEndpoint, cleanup := fakeAgentless(ctx, t)
 	defer cleanup()
 
 	brokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
