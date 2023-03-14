@@ -5,9 +5,14 @@
 
 package profiler
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+)
 
 func (p *profiler) sendTelemetry() {
+	if telemetry.Disabled() {
+		return
+	}
 	configs := []telemetry.Configuration{}
 	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers,
 		true,

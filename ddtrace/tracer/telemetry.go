@@ -12,19 +12,20 @@ import (
 )
 
 // startTelemetry starts the global instrumentation telemetry client with tracer data
+// unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
+// env var.
 func startTelemetry(c *config) {
-	// need to re-intialize default values
-	if !telemetry.GlobalClient.Started() {
-		telemetry.GlobalClient.Default()
-		telemetry.GlobalClient.ApplyOps(
-			telemetry.WithService(c.serviceName),
-			telemetry.WithEnv(c.env),
-			telemetry.WithHTTPClient(c.httpClient),
-			// c.logToStdout is true if serverless is turned on
-			telemetry.WithURL(c.logToStdout, c.agentURL.String()),
-			telemetry.WithVersion(c.version),
-		)
+	if telemetry.Disabled() {
+		return
 	}
+	telemetry.GlobalClient.ApplyOps(
+		telemetry.WithService(c.serviceName),
+		telemetry.WithEnv(c.env),
+		telemetry.WithHTTPClient(c.httpClient),
+		// c.logToStdout is true if serverless is turned on
+		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
+		telemetry.WithVersion(c.version),
+	)
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
@@ -40,7 +41,7 @@ func startTelemetry(c *config) {
 		{Name: "agent_hostname", Value: c.hostname},
 		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-		{Name: "trace_debug_enabled", Value: c.noDebugStack},
+		{Name: "trace_debug_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_enabled", Value: c.enabled},

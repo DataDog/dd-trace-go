@@ -205,9 +205,8 @@ func TestConcurrentClient(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		client := GlobalClient
-		GlobalClient.ApplyOps(WithURL(false, server.URL))
-		defer GlobalClient.Default()
+		client := new(Client)
+		client.ApplyOps(WithURL(false, server.URL))
 
 		client.Start(nil)
 		defer client.Stop()
@@ -218,7 +217,7 @@ func TestConcurrentClient(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 10; j++ {
-					GlobalClient.Count(NamespaceTracers, "foobar", 1, []string{"tag"}, false)
+					client.Count(NamespaceTracers, "foobar", 1, []string{"tag"}, false)
 				}
 			}()
 		}

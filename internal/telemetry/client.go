@@ -63,6 +63,9 @@ var (
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "instrumentation telemetry: "
+
+	// debugTelemtry enables payload debug mode for telemetry
+	debugTelemetry = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 )
 
 func init() {
@@ -71,7 +74,25 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
-	GlobalClient.Default()
+	GlobalClient.applyFallbackOps()
+}
+
+// Started returns whether the client has started or not
+func (c *Client) Started() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.started
+}
+
+// Disabled returns whether instrumentation telemetry is disabled
+// according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+func Disabled() bool {
+	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+}
+
+// collectDependencies returns whether dependencies telemetry information is sent
+func collectDependencies() bool {
+	return internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -99,19 +120,6 @@ type Client struct {
 	Env     string
 	Version string
 
-	// Disables instrumentation telemetry.
-	// Configurable with DD_INSTRUMENTATION_TELEMETRY_ENABLED. Defaults to false.
-	Disabled bool
-
-	// Determines whether dependencies should be collected
-	// Configurable with DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED. Defaults to true.
-	CollectDependencies bool
-
-	// debug enables the debug flag for all requests, see
-	// https://dtdg.co/3bv2MMv If set, the DD_INSTRUMENTATION_TELEMETRY_DEBUG
-	// takes precedence over this field.
-	debug bool
-
 	// Client will be used for telemetry uploads. This http.Client, if
 	// provided, should be the same as would be used for any other
 	// interaction with the Datadog agent, e.g. if the agent is accessed
@@ -124,6 +132,10 @@ type Client struct {
 
 	// mu guards all of the following fields
 	mu sync.Mutex
+
+	// disabled is set to true if there some error with configuring the client
+	// e.g. agentless is turned on but there is no api key
+	disabled bool
 	// started is true in between when Start() returns and the next call to
 	// Stop()
 	started bool
@@ -164,30 +176,22 @@ func (c *Client) logging(logging bool) {
 	c.Logging = logging
 }
 
-// Started returns whether the client has started or not
-func (c *Client) Started() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.started
-}
-
 // Start registers that the app has begun running with the given integrations
 // and configuration.
 // TODO: implement passing in error information about tracer start
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true) || c.Disabled {
+	if Disabled() {
 		return
 	}
 	if c.started {
+		c.log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
 	}
-	c.started = true
+	c.applyFallbackOps()
 
-	// XXX: Should we let metrics persist between starting and stopping?
-	c.metrics = make(map[Namespace]map[string]*metric)
-	c.applyDefaultOps()
+	c.started = true
 
 	payload := &AppStarted{
 		Configuration: append([]Configuration{}, configuration...),
@@ -203,7 +207,7 @@ func (c *Client) Start(configuration []Configuration) {
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
 
-	if internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true) || c.CollectDependencies {
+	if collectDependencies() {
 		var depPayload Dependencies
 		if deps, ok := debug.ReadBuildInfo(); ok {
 			for _, dep := range deps.Deps {
@@ -222,6 +226,12 @@ func (c *Client) Start(configuration []Configuration) {
 
 	c.flush()
 
+	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	if heartbeat < 1 || heartbeat > 3600 {
+		c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		heartbeat = defaultHeartbeatInterval
+	}
+	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
 
@@ -252,7 +262,6 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 		c.log("attempted to send product change event, but telemetry client has not started")
 		return
 	}
-	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
 	switch namespace {
 	case NamespaceProfilers:
@@ -260,9 +269,10 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	case NamespaceASM:
 		products.AppSec = ProductDetails{Enabled: enabled}
 	default:
-		c.log("unknown product, app-product-change telemetry event will not send")
+		c.log("unknown product namespace, app-product-change telemetry event will not send")
 		return
 	}
+	productReq := c.newRequest(RequestTypeAppProductChange)
 	productReq.Body.Payload = products
 	c.newRequest(RequestTypeAppClientConfigurationChange)
 	if len(configuration) > 0 {
@@ -388,7 +398,10 @@ func (c *Client) flush() {
 
 	go func() {
 		for _, r := range submissions {
-			r.submit()
+			err := r.submit()
+			if err != nil {
+				c.log("submission error: %s", err.Error())
+			}
 		}
 	}()
 }
@@ -423,7 +436,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
 		SeqID:       c.seqID,
-		Debug:       c.debug,
+		Debug:       debugTelemetry,
 		Application: Application{
 			ServiceName:     c.Service,
 			Env:             c.Env,
