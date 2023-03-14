@@ -477,11 +477,12 @@ func (c *Client) newRequest(t RequestType) *Request {
 		TelemetryClient: c}
 }
 
+// submit sends a telemetry request
 func (r *Request) submit() error {
 	if r.TelemetryClient == nil {
 		return fmt.Errorf("all telemetry requests must be associated with a telemetry client")
 	}
-	retry, err := r._submit()
+	retry, err := r.trySubmit()
 	if err == nil {
 		// submitting to the telemetry client's intended
 		// URL succeeded - turn logging back on
@@ -492,7 +493,7 @@ func (r *Request) submit() error {
 		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
-		_, err := r._submit()
+		_, err := r.trySubmit()
 		if err != nil {
 			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
@@ -528,7 +529,11 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 	return true
 }
 
-func (r *Request) _submit() (bool, error) {
+// trySubmit submits a telemetry request to the specified URL
+// in the Request struct. If submission fails, return whether or not
+// this submission should be re-tried with the agentless endpoint
+// as well as the error that occurred
+func (r *Request) trySubmit() (retry bool, err error) {
 	b, err := json.Marshal(r.Body)
 	if err != nil {
 		return false, err
