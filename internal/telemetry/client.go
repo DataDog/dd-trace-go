@@ -248,10 +248,14 @@ func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	products := new(Products)
-	if namespace == NamespaceProfilers {
+	switch namespace {
+	case NamespaceProfilers:
 		products.Profiler = ProductDetails{Enabled: enabled}
-	} else if namespace == NamespaceASM {
+	case NamespaceASM:
 		products.AppSec = ProductDetails{Enabled: enabled}
+	default:
+		c.log("unknown")
+		return
 	}
 	productReq.Body.Payload = products
 	c.newRequest(RequestTypeAppClientConfigurationChange)
