@@ -165,12 +165,14 @@ func (c *Client) applyDefaultOps() {
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-	if heartbeat < 0 || heartbeat > 3600 {
-		c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
-		heartbeat = defaultHeartbeatInterval
+	if c.heartbeatInterval == 0 {
+		heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+		if heartbeat < 0 || heartbeat > 3600 {
+			c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+			heartbeat = defaultHeartbeatInterval
+		}
+		c.heartbeatInterval = time.Duration(heartbeat) * time.Second
 	}
-	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
 }
 
 // readEnvVars reads environment variables that should configure
