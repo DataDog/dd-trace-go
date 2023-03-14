@@ -167,7 +167,7 @@ func (c *Client) applyDefaultOps() {
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
 	if c.heartbeatInterval == 0 {
 		heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-		if heartbeat < 0 || heartbeat > 3600 {
+		if heartbeat < 1 || heartbeat > 3600 {
 			c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
 			heartbeat = defaultHeartbeatInterval
 		}
