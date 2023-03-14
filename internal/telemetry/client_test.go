@@ -20,6 +20,7 @@ import (
 )
 
 func TestClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	heartbeat := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,8 +38,7 @@ func TestClient(t *testing.T) {
 	defer server.Close()
 
 	client := &Client{
-		URL:               server.URL,
-		heartbeatInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Start(nil)
 	client.Start(nil) // test idempotence
@@ -54,7 +54,7 @@ func TestClient(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
-
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	var (
 		mu  sync.Mutex
 		got []Series
@@ -98,8 +98,7 @@ func TestMetrics(t *testing.T) {
 
 	go func() {
 		client := &Client{
-			URL:               server.URL,
-			heartbeatInterval: time.Millisecond,
+			URL: server.URL,
 		}
 		client.Start(nil)
 
@@ -130,15 +129,16 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestDisabledClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("shouldn't have got any requests")
 	}))
 	defer server.Close()
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 
 	client := &Client{
-		URL:               server.URL,
-		heartbeatInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Start(nil)
 	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
@@ -147,14 +147,14 @@ func TestDisabledClient(t *testing.T) {
 }
 
 func TestNonStartedClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("shouldn't have got any requests")
 	}))
 	defer server.Close()
 
 	client := &Client{
-		URL:               server.URL,
-		heartbeatInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
@@ -317,6 +317,7 @@ func TestCollectDependencies(t *testing.T) {
 }
 
 func TestProductEnabled(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	receivedProducts := make(chan *Products, 1)
 	receivedConfigs := make(chan *ConfigurationChange, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -347,8 +348,7 @@ func TestProductEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &Client{
-		URL:               server.URL,
-		heartbeatInterval: time.Millisecond,
+		URL: server.URL,
 	}
 	client.Start(nil)
 	client.ProductEnabled(NamespaceProfilers, true,

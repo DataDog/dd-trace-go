@@ -134,7 +134,7 @@ type Client struct {
 	mu sync.Mutex
 
 	// disabled is set to true if there some error with configuring the client
-	// e.g. agentless is turned on but there is no api key
+	// e.g. agentless is turned on but there is no api key.
 	disabled bool
 	// started is true in between when Start() returns and the next call to
 	// Stop()
@@ -166,7 +166,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 	if !c.Logging {
 		return
 	}
-	log.Warn(fmt.Sprintf(LogPrefix+msg, args...))
+	log.Info(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
 // logging is used to turn logging on/off

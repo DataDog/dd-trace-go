@@ -9,10 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 	"unicode"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
@@ -113,7 +111,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				WithAPIKey(defaultAPIKey())(client)
 				if client.APIKey == "" {
 					client.log("Agentless is turned on, but valid DD API key was not found. Not starting telemetry")
-					client.Disabled = true
+					client.disabled = true
 				}
 			}
 			client.URL = getAgentlessURL()
@@ -124,7 +122,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				client.URL = u.String()
 			} else {
 				client.log("Agent URL %s is invalid, not starting telemetry", agentURL)
-				client.Disabled = true
+				client.disabled = true
 			}
 		}
 	}
@@ -145,9 +143,9 @@ func configEnvFallback(key, def string) string {
 	return os.Getenv(key)
 }
 
-// applyDefaultOps applies default values to the client unless
-// those values are already set
-func (c *Client) applyDefaultOps() {
+// applyFallbackOps applies default values to the client unless
+// those values are already set.
+func (c *Client) applyFallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
@@ -165,31 +163,10 @@ func (c *Client) applyDefaultOps() {
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	if c.heartbeatInterval == 0 {
-		heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-		if heartbeat < 1 || heartbeat > 3600 {
-			c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
-			heartbeat = defaultHeartbeatInterval
-		}
-		c.heartbeatInterval = time.Duration(heartbeat) * time.Second
+	if len(c.metrics) == 0 {
+		// XXX: Should we let metrics persist between starting and stopping?
+		c.metrics = make(map[Namespace]map[string]*metric)
 	}
-}
-
-// readEnvVars reads environment variables that should configure
-// the telemetry client's behavior and sets the corresponding field in the
-// telemetry client
-func (c *Client) readEnvVars() {
-	c.Disabled = !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
-	c.CollectDependencies = internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
-	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", c.debug)
-}
-
-// Default resets the telemetry client to default values
-func (c *Client) Default() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.applyDefaultOps()
-	c.readEnvVars()
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless
