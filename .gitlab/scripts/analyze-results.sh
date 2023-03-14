@@ -54,21 +54,7 @@ if [ -d $BASELINE_SRC ]; then
     --format md-nodejs \
     "${ARTIFACTS_DIR}/main.converted.json" \
     "${ARTIFACTS_DIR}/pr.converted.json"; then
-      mkdir -p "${ARTIFACTS_DIR}/candidate-profile"
-      cd "$CANDIDATE_SRC/ddtrace/tracer/"
-      go test -run=XXX -bench "BenchmarkConcurrentTracing|BenchmarkStartSpan" \
-        -cpuprofile "${ARTIFACTS_DIR}/candidate-profile/cpu.pprof" \
-        -memprofile "${ARTIFACTS_DIR}/candidate-profile/mem.pprof" \
-        -benchmem -count 10 -benchtime 2s ./...
-
-      mkdir -p "${ARTIFACTS_DIR}/baseline-profile"
-      cd "$BASELINE_SRC/ddtrace/tracer/"
-      go test -run=XXX -bench "BenchmarkConcurrentTracing|BenchmarkStartSpan" \
-        -cpuprofile "${ARTIFACTS_DIR}/baseline-profile/cpu.pprof" \
-        -memprofile "${ARTIFACTS_DIR}/baseline-profile/mem.pprof" \
-        -benchmem -count 10 -benchtime 2s ./...
-
-      # TODO: Upload profiles to Datadog
+      "$ARTIFACTS_DIR/../.gitlab/scripts/run-benchmarks-with-profiler.sh"
   fi
 else
   benchmark_analyzer analyze --outpath "${ARTIFACTS_DIR}/analysis.html" --format html "${ARTIFACTS_DIR}/pr.converted.json"
