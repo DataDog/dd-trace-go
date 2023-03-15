@@ -251,3 +251,31 @@ func TestHTTPCredentials(t *testing.T) {
 	// receives the auth request.
 	assert.Equal(t, auth, "myuser:mypassword")
 }
+
+func TestWithErrorCheck(t *testing.T) {
+	testOpts := func(errExist bool, opts ...Option) func(t *testing.T) {
+		return func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+			sess := session.Must(session.NewSession(aws.NewConfig().WithRegion("us-west-2")))
+			sess = WrapSession(sess, opts...)
+			s3api := s3.New(sess)
+			s3api.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String("some-bucket-name"),
+			})
+			root.Finish()
+
+			spans := mt.FinishedSpans()
+			assert.True(t, len(spans) > 0)
+			assert.Equal(t, errExist, spans[0].Tag(ext.Error) != nil)
+		}
+	}
+
+	t.Run("defaults", testOpts(true))
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+		return !strings.Contains(err.Error(), `NoCredentialProviders: no valid providers in chain`)
+	})))
+
+}
