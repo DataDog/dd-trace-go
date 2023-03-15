@@ -115,7 +115,7 @@ func (c *Client) backgroundHeartbeat() {
 // ProductEnabled enqueues an app-product-change event that signals a product has been turned on/off.
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
-func (c *Client) ProductEnabled(namespace Namespace, enabled bool, configuration []Configuration) {
+func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {

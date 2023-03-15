@@ -161,7 +161,8 @@ func (c *Client) log(msg string, args ...interface{}) {
 	if !c.Logging {
 		return
 	}
-	log.Info(fmt.Sprintf(LogPrefix+msg, args...))
+	// Debug level because ...
+	log.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
 // logging is used to turn logging on/off

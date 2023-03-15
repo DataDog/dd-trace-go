@@ -276,11 +276,11 @@ func TestAgentlessRetry(t *testing.T) {
 
 	brokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	}))
+	brokenServer.Close()
+
 	client := &Client{
 		URL: brokenServer.URL,
 	}
-	brokenServer.Close()
-
 	client.Start([]Configuration{})
 	waitAgentlessEndpoint()
 }
@@ -316,7 +316,7 @@ func TestCollectDependencies(t *testing.T) {
 	}
 }
 
-func TestProductEnabled(t *testing.T) {
+func TestProductChange(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	receivedProducts := make(chan *Products, 1)
 	receivedConfigs := make(chan *ConfigurationChange, 1)
@@ -351,7 +351,7 @@ func TestProductEnabled(t *testing.T) {
 		URL: server.URL,
 	}
 	client.Start(nil)
-	client.ProductEnabled(NamespaceProfilers, true,
+	client.ProductChange(NamespaceProfilers, true,
 		[]Configuration{{Name: "delta_profiles", Value: true}})
 
 	var productsPayload *Products = <-receivedProducts

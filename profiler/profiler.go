@@ -43,7 +43,7 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	p.sendTelemetry()
+	p.startTelemetry()
 	activeProfiler = p
 	activeProfiler.run()
 	return nil
@@ -55,6 +55,7 @@ func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
+		activeProfiler.stopTelemetry()
 		activeProfiler = nil
 	}
 	mu.Unlock()

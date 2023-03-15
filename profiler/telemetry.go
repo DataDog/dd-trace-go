@@ -9,12 +9,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-func (p *profiler) sendTelemetry() {
+func (p *profiler) startTelemetry() {
 	if telemetry.Disabled() {
 		return
 	}
 	configs := []telemetry.Configuration{}
-	telemetry.GlobalClient.ProductEnabled(telemetry.NamespaceProfilers,
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers,
 		true,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: p.cfg.deltaProfiles},
@@ -33,4 +33,8 @@ func (p *profiler) sendTelemetry() {
 			{Name: "goroutine_wait_profile_enabled", Value: p.profileEnabled(expGoroutineWaitProfile)},
 			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
 		}...))
+}
+
+func (p *profiler) stopTelemetry() {
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers, false, nil)
 }
