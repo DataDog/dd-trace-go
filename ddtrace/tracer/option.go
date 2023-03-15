@@ -422,8 +422,10 @@ func (c *config) loadAgentFeatures() {
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
 		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
 		FeatureFlags  []string `json:"feature_flags"`
+		Config        struct {
+			StatsdPort int `json:"statsd_port"`
+		} `json:"config"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -431,7 +433,7 @@ func (c *config) loadAgentFeatures() {
 		return
 	}
 	c.agent.DropP0s = info.ClientDropP0s
-	c.agent.StatsdPort = info.StatsdPort
+	c.agent.StatsdPort = info.Config.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":

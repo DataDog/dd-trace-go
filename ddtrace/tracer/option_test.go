@@ -146,7 +146,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 	t.Run("agent", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":0}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":0}}`))
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
@@ -155,7 +155,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 
 		t.Run("port", func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Write([]byte(`{"statsd_port":8999}`))
+				w.Write([]byte(`{"endpoints": [], "config": {"statsd_port":8999}}`))
 			}))
 			defer srv.Close()
 			cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
