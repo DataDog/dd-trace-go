@@ -55,7 +55,6 @@ func Stop() {
 	mu.Lock()
 	if activeProfiler != nil {
 		activeProfiler.stop()
-		activeProfiler.stopTelemetry()
 		activeProfiler = nil
 	}
 	mu.Unlock()

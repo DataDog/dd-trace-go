@@ -112,7 +112,7 @@ func (c *Client) backgroundHeartbeat() {
 	c.heartbeatT.Reset(c.heartbeatInterval)
 }
 
-// ProductEnabled enqueues an app-product-change event that signals a product has been turned on/off.
+// ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
 // the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {

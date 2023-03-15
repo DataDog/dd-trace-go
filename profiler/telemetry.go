@@ -34,7 +34,3 @@ func (p *profiler) startTelemetry() {
 			{Name: "upload_timeout", Value: p.cfg.uploadTimeout.String()},
 		}...))
 }
-
-func (p *profiler) stopTelemetry() {
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers, false, nil)
-}
