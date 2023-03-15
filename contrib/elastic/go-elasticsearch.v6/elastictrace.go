@@ -59,6 +59,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
 		tracer.Tag(ext.Component, "elastic/go-elasticsearch.v6"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
@@ -94,7 +95,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 var (
-	idRegexp         = regexp.MustCompile("/([0-9]+)([/\\?]|$)")
+	idRegexp         = regexp.MustCompile(`/([0-9]+)([/\?]|$)`)
 	idPlaceholder    = []byte("/?$2")
 	indexRegexp      = regexp.MustCompile("[0-9]{2,}")
 	indexPlaceholder = []byte("?")

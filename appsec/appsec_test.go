@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestTrackUserLoginSuccessEvent(t *testing.T) {
@@ -132,6 +133,37 @@ func TestCustomEvent(t *testing.T) {
 		require.NotPanics(t, func() {
 			appsec.TrackCustomEvent(context.Background(), "my-custom-event", nil)
 		})
+	})
+}
+
+func TestSetUser(t *testing.T) {
+	t.Run("early-return/appsec-disabled", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetUser(ctx, "usr.id")
+		require.NoError(t, err)
+	})
+
+	privateAppsec.Start()
+	defer privateAppsec.Stop()
+	if !privateAppsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	t.Run("early-return/nil-ctx", func(t *testing.T) {
+		err := appsec.SetUser(nil, "usr.id")
+		require.NoError(t, err)
+	})
+
+	t.Run("no-early-return", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "example")
+		defer span.Finish()
+		err := appsec.SetUser(ctx, "usr.id")
+		require.Nil(t, err)
 	})
 }
 
