@@ -12,7 +12,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -26,7 +26,7 @@ func Hello(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 }
 
 func Example() {
-	router := ddhttp.New()
+	router := httptrace.New()
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 
@@ -34,7 +34,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	router := ddhttp.New(ddhttp.WithServiceName("http.router"))
+	router := httptrace.New(httptrace.WithServiceName("http.router"))
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 
@@ -42,9 +42,9 @@ func Example_withServiceName() {
 }
 
 func Example_withSpanOpts() {
-	router := ddhttp.New(
-		ddhttp.WithServiceName("http.router"),
-		ddhttp.WithSpanOptions(
+	router := httptrace.New(
+		httptrace.WithServiceName("http.router"),
+		httptrace.WithSpanOptions(
 			tracer.Tag(ext.SamplingPriority, ext.PriorityUserKeep),
 		),
 	)

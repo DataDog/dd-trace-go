@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
@@ -36,7 +36,7 @@ func TestWAF(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := ddhttp.NewServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -188,7 +188,7 @@ func TestBlocking(t *testing.T) {
 	)
 
 	// Start and trace an HTTP server
-	mux := ddhttp.NewServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})

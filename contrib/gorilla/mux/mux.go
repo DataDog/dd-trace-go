@@ -11,8 +11,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -100,9 +100,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	spanopts = append(spanopts, httptrace.HeaderTagsFromRequest(req, r.config.headersAsTags))
+	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headersAsTags))
 	resource := r.config.resourceNamer(r, req)
-	ddhttp.TraceAndServe(r.Router, w, req, &ddhttp.ServeConfig{
+	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:     r.config.serviceName,
 		Resource:    resource,
 		FinishOpts:  r.config.finishOpts,

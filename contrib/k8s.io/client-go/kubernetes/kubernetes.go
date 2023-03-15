@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -26,7 +26,7 @@ const (
 // WrapRoundTripperFunc creates a new WrapTransport function using the given set of
 // RountripperOption. It is useful when desiring to enable Trace Analytics or setting
 // up a RoundTripperAfterFunc.
-func WrapRoundTripperFunc(opts ...ddhttp.RoundTripperOption) func(http.RoundTripper) http.RoundTripper {
+func WrapRoundTripperFunc(opts ...httptrace.RoundTripperOption) func(http.RoundTripper) http.RoundTripper {
 	return func(rt http.RoundTripper) http.RoundTripper {
 		return wrapRoundTripperWithOptions(rt, opts...)
 	}
@@ -38,8 +38,8 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 	return wrapRoundTripperWithOptions(rt)
 }
 
-func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...ddhttp.RoundTripperOption) http.RoundTripper {
-	opts = append(opts, ddhttp.WithBefore(func(req *http.Request, span ddtrace.Span) {
+func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
+	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, "k8s.io/client-go/kubernetes")
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
@@ -53,7 +53,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...ddhttp.RoundTripp
 		span.SetTag("kubernetes.audit_id", kubeAuditID)
 	}))
 	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
-	return ddhttp.WrapRoundTripper(rt, opts...)
+	return httptrace.WrapRoundTripper(rt, opts...)
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"sync"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -51,7 +51,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
 				})
 			}
-			ddhttp.TraceAndServe(h, w, r, &ddhttp.ServeConfig{
+			httptrace.TraceAndServe(h, w, r, &httptrace.ServeConfig{
 				Service:    cfg.serviceName,
 				Resource:   resource,
 				FinishOpts: cfg.finishOpts,

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -126,7 +126,7 @@ func (a *App) start(t testing.TB) {
 		a.grpcClientConn, err = grpc.Dial(l.Addr().String(), grpc.WithInsecure())
 		require.NoError(t, err)
 	case HTTP:
-		router := ddhttp.New()
+		router := httptrace.New()
 		// We use a routing pattern here so our test can validate that potential
 		// Personal Identifiable Information (PII) values, in this case :secret,
 		// isn't beeing collected in the "trace endpoint" label.

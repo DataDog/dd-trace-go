@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 
@@ -48,9 +48,9 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	for _, o := range opts {
 		o(&conf)
 	}
-	c.Transport = ddhttp.WrapRoundTripper(c.Transport,
-		ddhttp.RTWithAnalyticsRate(conf.analyticsRate),
-		ddhttp.WithBefore(func(r *http.Request, s ddtrace.Span) {
+	c.Transport = httptrace.WrapRoundTripper(c.Transport,
+		httptrace.RTWithAnalyticsRate(conf.analyticsRate),
+		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
@@ -62,7 +62,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				s.SetTag("vault.namespace", ns)
 			}
 		}),
-		ddhttp.WithAfter(func(res *http.Response, s ddtrace.Span) {
+		httptrace.WithAfter(func(res *http.Response, s ddtrace.Span) {
 			if res == nil {
 				// An error occurred during the request.
 				return

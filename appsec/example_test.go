@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	echotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4"
-	ddhttp "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 	"github.com/labstack/echo/v4"
 )
@@ -29,7 +29,7 @@ func customBodyParser(body io.ReadCloser) (*parsedBodyType, error) {
 
 // Monitor HTTP request parsed body
 func ExampleMonitorParsedHTTPBody() {
-	mux := ddhttp.NewServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
 		// Use the SDK to monitor the request's parsed body
 		body, err := customBodyParser(r.Body)
@@ -67,7 +67,7 @@ func userIDFromRequest(r *http.Request) string {
 
 // Monitor and block requests depending on user ID
 func ExampleSetUser() {
-	mux := ddhttp.NewServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 		// We use SetUser() here to associate the user ID to the request's span. The return value
 		// can then be checked to decide whether to block the request or not.
