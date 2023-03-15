@@ -54,6 +54,8 @@ func testMemcache(t *testing.T, addr string) {
 			"component should be set to gomemcache")
 		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 			"span.kind should be set to client")
+		assert.Equal(t, "memcached", span.Tag(ext.DBSystem),
+			"db.system should be set to memcached")
 	}
 
 	t.Run("default", func(t *testing.T) {

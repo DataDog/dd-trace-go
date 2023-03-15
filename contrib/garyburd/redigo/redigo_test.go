@@ -51,6 +51,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("2", span.Tag("redis.args_length"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("garyburd/redigo", span.Tag(ext.Component))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestCommandError(t *testing.T) {
@@ -76,6 +77,7 @@ func TestCommandError(t *testing.T) {
 	assert.Equal("NOT_A_COMMAND", span.Tag("redis.raw_command"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("garyburd/redigo", span.Tag(ext.Component))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestConnectionError(t *testing.T) {
@@ -120,6 +122,7 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(child.Tag(ext.TargetPort), "6379")
 	assert.Equal(ext.SpanKindClient, child.Tag(ext.SpanKind))
 	assert.Equal("garyburd/redigo", child.Tag(ext.Component))
+	assert.Equal("redis", child.Tag(ext.DBSystem))
 }
 
 type stringifyTest struct{ A, B int }
@@ -148,6 +151,7 @@ func TestCommandsToSring(t *testing.T) {
 	assert.Equal("SADD testSet a 0 1 2 [57, 8]", span.Tag("redis.raw_command"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("garyburd/redigo", span.Tag(ext.Component))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
 func TestPool(t *testing.T) {

@@ -88,7 +88,7 @@ func (p *profiler) doRequest(bat batch) error {
 	// that the uploads are more easily discoverable in the UI.
 	for _, b := range bat.profiles {
 		if b.pt == executionTrace {
-			tags = append(tags, "profile_has_go_execution_trace:yes")
+			tags = append(tags, "go_execution_traced:yes")
 		}
 	}
 	contentType, body, err := encode(bat, tags)
@@ -139,12 +139,13 @@ func (p *profiler) doRequest(bat batch) error {
 }
 
 type uploadEvent struct {
-	Start       string   `json:"start"`
-	End         string   `json:"end"`
-	Attachments []string `json:"attachments"`
-	Tags        string   `json:"tags_profiler"`
-	Family      string   `json:"family"`
-	Version     string   `json:"version"`
+	Start          string            `json:"start"`
+	End            string            `json:"end"`
+	Attachments    []string          `json:"attachments"`
+	Tags           string            `json:"tags_profiler"`
+	Family         string            `json:"family"`
+	Version        string            `json:"version"`
+	EndpointCounts map[string]uint64 `json:"endpoint_counts,omitempty"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -159,11 +160,12 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	tags = append(tags, "runtime:go")
 
 	event := &uploadEvent{
-		Version: "4",
-		Family:  "go",
-		Start:   bat.start.Format(time.RFC3339),
-		End:     bat.end.Format(time.RFC3339),
-		Tags:    strings.Join(tags, ","),
+		Version:        "4",
+		Family:         "go",
+		Start:          bat.start.Format(time.RFC3339Nano),
+		End:            bat.end.Format(time.RFC3339Nano),
+		Tags:           strings.Join(tags, ","),
+		EndpointCounts: bat.endpointCounts,
 	}
 
 	for _, p := range bat.profiles {

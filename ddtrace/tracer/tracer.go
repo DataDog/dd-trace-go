@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -132,12 +133,13 @@ func Start(opts ...StartOption) {
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.agentURL
+	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
+	hostname.Get() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -436,7 +438,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		SpanID:       id,
 		TraceID:      id,
 		Start:        startTime,
-		taskEnd:      startExecutionTracerTask(operationName),
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
@@ -496,6 +497,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
 	}
@@ -521,7 +523,8 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored.
+// found in ctx are restored. Additionally this func informs the profiler how
+// many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
 	if t.config.profilerHotspots {
@@ -536,6 +539,12 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+			if span == localRootSpan {
+				// Inform the profiler of endpoint hits. This is used for the unit of
+				// work feature. We can't use APM stats for this since the stats don't
+				// have enough cardinality (e.g. runtime-id tags are missing).
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+			}
 		}
 	}
 	if len(labels) > 0 {
@@ -598,10 +607,28 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(name string) func() {
+func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
-		return func() {}
+		return ctx, func() {}
 	}
-	_, task := rt.NewTask(gocontext.TODO(), name)
-	return task.End
+	span.SetTag("go_execution_traced", "yes")
+	// Task name is the resource (operationName) of the span, e.g.
+	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
+	taskName := span.Resource
+	// If the resource could contain PII (e.g. SQL query that's not using bind
+	// arguments), play it safe and just use the span type as the taskName,
+	// e.g. "sql".
+	if !spanResourcePIISafe(span) {
+		taskName = span.Type
+	}
+	ctx, task := rt.NewTask(ctx, taskName)
+	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
+	return ctx, task.End
+}
+
+func (t *tracer) hostname() string {
+	if !t.config.disableHostnameDetection {
+		return hostname.Get()
+	}
+	return ""
 }

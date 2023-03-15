@@ -13,6 +13,7 @@ import (
 	"io"
 	"runtime"
 	"runtime/trace"
+	"sync"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -100,10 +101,12 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
+
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types
@@ -188,21 +191,65 @@ var profileTypes = map[ProfileType]profileType{
 			if !p.shouldTrace() {
 				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
 			}
-			defer func() {
-				p.lastTrace = time.Now()
-			}()
+			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			if err := trace.Start(buf); err != nil {
+			lt := &limitedTraceCollector{
+				w:     buf,
+				limit: p.cfg.traceConfig.Limit,
+			}
+			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
-			// TODO: randomize where we collect within the current
-			// profile collection cycle, so we're not biased toward
-			// stuff that happens at the start of the cycle.
-			p.interruptibleSleep(p.cfg.traceConfig.Duration)
-			trace.Stop()
+			p.interruptibleSleep(p.cfg.period)
+			lt.Stop()
 			return buf.Bytes(), nil
 		},
 	},
+}
+
+// defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
+// of an executiont trace.
+//
+// 5MB was selected to give reasonable latency for processing, both online and
+// using offline tools. This is a conservative estimate--we could possibly get
+// away with 10MB and still have a tolerable experience.
+const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
+
+type limitedTraceCollector struct {
+	w       io.Writer
+	limit   int
+	written int
+	// stop is used to control stopping the execution tracer. Since stopping
+	// tracing incurs a STW pause to even attempt(*), we'd like to only do
+	// it once.
+	//
+	// *: see https://cs.opensource.google/go/go/+/refs/tags/go1.20.1:src/runtime/trace.go;l=330;drc=40ed3591829f67e7a116180aec543dd15bfcf5f9
+	stop sync.Once
+}
+
+// Write calls the underlying writer's Write method, and stops tracing if the
+// limit has been reached.
+func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
+	n, err = l.w.Write(p)
+	if err != nil {
+		// TODO: still count n against the limit?
+		return
+	}
+	l.written += n
+	if l.written >= l.limit {
+		// We can't stop tracing within this method, because trace.Stop
+		// won't return until all pending events are written, which
+		// requires calling this function, meaning we'll deadlock.
+		go l.Stop()
+	}
+	return
+}
+
+// Stop stops tracing
+func (l *limitedTraceCollector) Stop() {
+	l.stop.Do(func() {
+		trace.Stop()
+	})
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
@@ -271,10 +318,11 @@ type profile struct {
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
-	seq        uint64 // seq is the value of the profile_seq tag
-	start, end time.Time
-	host       string
-	profiles   []*profile
+	seq            uint64 // seq is the value of the profile_seq tag
+	start, end     time.Time
+	host           string
+	profiles       []*profile
+	endpointCounts map[string]uint64
 }
 
 func (b *batch) addProfile(p *profile) {

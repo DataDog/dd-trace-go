@@ -14,15 +14,12 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -43,50 +40,13 @@ const (
 	ASMIPBlocking
 	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
 	ASMDDRules
+	// ASMUserBlocking represents the capability for ASM to block requests based on user ID
+	ASMUserBlocking = 7
 )
-
-// DefaultClientConfig returns the default remote config client configuration
-func DefaultClientConfig() ClientConfig {
-	return ClientConfig{
-		Env:           os.Getenv("DD_ENV"),
-		HTTP:          &http.Client{Timeout: 10 * time.Second},
-		PollInterval:  time.Second * 1,
-		RuntimeID:     globalconfig.RuntimeID(),
-		ServiceName:   globalconfig.ServiceName(),
-		TracerVersion: version.Tag,
-		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
-	}
-}
 
 // ProductUpdate represents an update for a specific product.
 // It is a map of file path to raw file content
 type ProductUpdate map[string][]byte
-
-// ClientConfig contains the required values to configure a remoteconfig client
-type ClientConfig struct {
-	// The address at which the agent is listening for remoteconfig update requests on
-	AgentURL string
-	// The semantic version of the user's application
-	AppVersion string
-	// The env this tracer is running in
-	Env string
-	// The time interval between two client polls to the agent for updates
-	PollInterval time.Duration
-	// A list of remote config products this client is interested in
-	Products []string
-	// The tracer's runtime id
-	RuntimeID string
-	// The name of the user's application
-	ServiceName string
-	// The semantic version of the tracer
-	TracerVersion string
-	// The base TUF root metadata file
-	TUFRoot string
-	// The capabilities of the client
-	Capabilities []Capability
-	// HTTP is the HTTP client used to receive config updates
-	HTTP *http.Client
-}
 
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
