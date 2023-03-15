@@ -63,9 +63,6 @@ var (
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "Instrumentation telemetry: "
-
-	// debugTelemtry enables payload debug mode for telemetry
-	debugTelemetry = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 )
 
 func init() {
@@ -130,12 +127,24 @@ type Client struct {
 	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
+	// logLock guards the Logging field
+	logLock sync.RWMutex
+	// Logging allows us to toggle on agentless in the case where
+	// there are issues with sending telemetry to the agent
+	Logging bool
+
 	// mu guards all of the following fields
 	mu sync.Mutex
 
-	// disabled is set to true if there some error with configuring the client
+	// disabled is set to true if there some error with the client
+	// that prevents us from sending telemetry
 	// e.g. agentless is turned on but there is no api key.
+	// This field is NOT configured by DD_INSTRUMENTATION_TELEMETRY_DISABLED.
 	disabled bool
+	// debug enables the debug flag for all requests, see
+	// https://dtdg.co/3bv2MMv.
+	// DD_INSTRUMENTATION_TELEMETRY_DEBUG configures this field.
+	debug bool
 	// started is true in between when Start() returns and the next call to
 	// Stop()
 	started bool
@@ -150,12 +159,6 @@ type Client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
-
-	// logLock guards the Logging field
-	logLock sync.RWMutex
-	// Logging allows us to toggle on agentless in the case where
-	// there are issues with sending telemetry to the agent
-	Logging bool
 }
 
 func (c *Client) log(msg string, args ...interface{}) {
@@ -178,11 +181,14 @@ func (c *Client) logging(logging bool) {
 
 // Start registers that the app has begun running with the given integrations
 // and configuration.
+// Start also configures the telemetry client based on the following telemetry
+// environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
+// DD_TELEMETRY_HEARTBEAT_INTERVAL, and DD_INSTRUMENTATION_TELEMETRY_DEBUG
 // TODO: implement passing in error information about tracer start
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if Disabled() {
+	if Disabled() || c.disabled {
 		return
 	}
 	if c.started {
@@ -192,6 +198,8 @@ func (c *Client) Start(configuration []Configuration) {
 	c.applyFallbackOps()
 
 	c.started = true
+
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
 		Configuration: append([]Configuration{}, configuration...),
@@ -436,7 +444,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		TracerTime:  time.Now().Unix(),
 		RuntimeID:   globalconfig.RuntimeID(),
 		SeqID:       c.seqID,
-		Debug:       debugTelemetry,
+		Debug:       c.debug,
 		Application: Application{
 			ServiceName:     c.Service,
 			Env:             c.Env,
