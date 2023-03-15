@@ -523,7 +523,7 @@ func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
 		return res, nil
 	}
 
-	pprofDiff, err := pprofDiff(pprofSut, pprofGolden)
+	pprofDiff, err := PprofDiff(pprofSut, pprofGolden)
 	if err != nil {
 		cdp.reportError(err.Error())
 		return res, nil
@@ -572,11 +572,18 @@ func (cdp *comparingDeltaProfiler) reportError(error string, extraTags ...string
 	_ = cdp.statsd.Count("datadog.profiling.go.delta_compare.error", 1, tags, 1)
 }
 
-// pprofDiff computes the delta between all values b-a and returns them as a new
+// PprofDiff computes the delta between all values b-a and returns them as a new
 // profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
-func pprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
+//
+// Deprecated: This function was introduced into our public API unintentionally.
+// It will be removed in the next release. If you need this functionality,
+// it can be implemented in two lines:
+//
+//	a.Scale(-1)
+//	return pprofile.Merge([]*pprofile.Profile{a, b})
+func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
 	a.Scale(-1)
 	return pprofile.Merge([]*pprofile.Profile{a, b})
 }
