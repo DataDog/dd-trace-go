@@ -48,16 +48,40 @@ func TestNormalizeHeaderTag(t *testing.T) {
 		assert.Equal(t, "t*a.g!", tag)
 	})
 
-	// TODO: mtoffl01 This test currently fails. Working on getting the normalization fixed to address this 
-	// t.Run("adjacent-special-chars", func(t *testing.T) {
-	// 	_, tag := NormalizeHeaderTag("h**eader")
-	// 	assert.Equal(t, ext.HTTPRequestHeaders + ".h__eader", tag)
-	// })
+	t.Run("adjacent-special-chars", func(t *testing.T) {
+		_, tag := NormalizeHeaderTag("h**eader")
+		assert.Equal(t, ext.HTTPRequestHeaders + ".h__eader", tag)
+	})
 
 	t.Run("multi-colon", func(t *testing.T) {
 		// split on the last colon; span tag keys cannot contain colons
 		header, tag := NormalizeHeaderTag("header:tag:extra")
 		assert.Equal(t, "header:tag", header)
 		assert.Equal(t, "extra", tag)
+	})
+
+	t.Run("lowercase-ify header", func(t *testing.T) {
+		header, tag := NormalizeHeaderTag("HEADER")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, ext.HTTPRequestHeaders + ".header", tag)
+	})
+
+	t.Run("lowercase-ify tag", func(t *testing.T) {
+		header, tag := NormalizeHeaderTag("header:TAG")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, "tag", tag)
+	})
+
+	// TODO: mtoffl01 - these two colon tests may need to be changed depending on the outcome of this thread:
+	// https://github.com/DataDog/dd-trace-go/pull/1764#discussion_r1134574413
+	t.Run("leading colon", func(t *testing.T) {
+		header, tag := NormalizeHeaderTag(":header")
+		assert.Equal(t, "", header)
+		assert.Equal(t, "header", tag)
+	})
+	t.Run("trailing colon", func(t *testing.T) {
+		header, tag := NormalizeHeaderTag("header:")
+		assert.Equal(t, "header", header)
+		assert.Equal(t, "", tag)
 	})
 }
