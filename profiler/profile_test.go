@@ -430,7 +430,7 @@ func requirePprofEqual(t *testing.T, a, b []byte) {
 	require.NoError(t, err)
 	pprofB, err := pprofile.ParseData(b)
 	require.NoError(t, err)
-	pprofDiff, err := PprofDiff(pprofA, pprofB)
+	pprofDiff, err := pprofDiff(pprofA, pprofB)
 	require.NoError(t, err)
 	require.Len(t, pprofDiff.Sample, 0)
 }
