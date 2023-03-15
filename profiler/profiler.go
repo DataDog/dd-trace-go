@@ -18,7 +18,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
@@ -429,7 +428,6 @@ func (p *profiler) stop() {
 	p.stopOnce.Do(func() {
 		close(p.exit)
 	})
-	telemetry.GlobalClient.Stop()
 	p.wg.Wait()
 	if p.cfg.logStartup {
 		log.Info("Profiling stopped")
