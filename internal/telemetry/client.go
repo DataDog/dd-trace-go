@@ -136,11 +136,6 @@ type Client struct {
 	// mu guards all of the following fields
 	mu sync.Mutex
 
-	// disabled is set to true if there some error with the client
-	// that prevents us from sending telemetry
-	// e.g. agentless is turned on but there is no api key.
-	// This field is NOT configured by DD_INSTRUMENTATION_TELEMETRY_DISABLED.
-	disabled bool
 	// debug enables the debug flag for all requests, see
 	// https://dtdg.co/3bv2MMv.
 	// DD_INSTRUMENTATION_TELEMETRY_DEBUG configures this field.
