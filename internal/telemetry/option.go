@@ -104,16 +104,6 @@ func WithAPIKey(v string) Option {
 func WithURL(agentless bool, agentURL string) Option {
 	return func(client *Client) {
 		if agentless {
-			if client.APIKey == "" {
-				// set the api key if APIKey field is blank for the client.
-				// WithAPIKey only sets the APIKey field if the key passed in is valid
-				// else, it does nothing
-				WithAPIKey(defaultAPIKey())(client)
-				if client.APIKey == "" {
-					client.log("Agentless is turned on, but valid DD API key was not found. Not starting telemetry")
-					client.disabled = true
-				}
-			}
 			client.URL = getAgentlessURL()
 		} else {
 			u, err := url.Parse(agentURL)
@@ -121,8 +111,8 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				client.log("Agent URL %s is invalid, not starting telemetry", agentURL)
-				client.disabled = true
+				client.log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
+				client.URL = getAgentlessURL()
 			}
 		}
 	}
@@ -149,8 +139,11 @@ func (c *Client) applyFallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
-	if len(c.APIKey) == 0 {
+	if len(c.APIKey) == 0 && c.URL == getAgentlessURL() {
 		WithAPIKey(defaultAPIKey())(c)
+		if c.APIKey == "" {
+			c.log("Agentless is turned on, but valid DD API key was not found.")
+		}
 	}
 	c.Service = configEnvFallback("DD_SERVICE", c.Service)
 	if len(c.Service) == 0 {

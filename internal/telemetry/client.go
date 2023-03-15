@@ -188,7 +188,7 @@ func (c *Client) logging(logging bool) {
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if Disabled() || c.disabled {
+	if Disabled() {
 		return
 	}
 	if c.started {
@@ -507,7 +507,12 @@ func (r *Request) submit() error {
 			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
 		// turn off logging after a failed submission to avoid spamming the user with
-		// telemetry error messages
+		// telemetry messages
+		r.TelemetryClient.logging(false)
+	} else if r.URL == getAgentlessURL() {
+		// this is the case we don't re-try since we are already using the agentless URL.
+		// there is something wrong with sending to agentless, and we don't want to
+		// spam the user with telemetry messages
 		r.TelemetryClient.logging(false)
 	}
 	return err
