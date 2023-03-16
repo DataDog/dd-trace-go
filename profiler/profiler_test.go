@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,16 +15,19 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/trace"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 func TestMain(m *testing.M) {
@@ -125,64 +129,38 @@ func TestStart(t *testing.T) {
 	})
 }
 
-func TestStartStopIdempotency(t *testing.T) {
-	t.Run("linear", func(t *testing.T) {
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
+// TestStartWithoutStopReconfigures verifies that calling Start while the
+// profiler is already running will restart it with the given configuration.
+func TestStartWithoutStopReconfigures(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
 
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-	})
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
+	defer Stop()
 
-	t.Run("parallel", func(t *testing.T) {
-		var wg sync.WaitGroup
+	m := <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; !ok {
+		t.Errorf("did not see a heap profile")
+	}
 
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					// startup logging makes this test very slow
-					//
-					// Also, the CPU profile is really slow
-					// to stop (200ms/iter) and in general
-					// we don't need to actually run any
-					// profiles for this test
-					Start(WithLogStartup(false), WithProfileTypes())
-				}
-			}()
-		}
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					Stop()
-				}
-			}()
-		}
-		wg.Wait()
-	})
+	// Disable the heap profile, verify that we're not sending it
+	err = Start(
+		WithHTTPClient(client),
+		WithProfileTypes(),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
 
-	t.Run("stop", func(t *testing.T) {
-		Start(WithPeriod(time.Minute))
-		defer Stop()
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		mu.Unlock()
-	})
+	m = <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; ok {
+		t.Errorf("unexpectedly saw a heap profile")
+	}
 }
 
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
@@ -529,7 +507,6 @@ func TestExecutionTrace(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_DURATION", "50ms")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(CPUProfile),
@@ -547,17 +524,113 @@ func TestExecutionTrace(t *testing.T) {
 		return false
 	}
 	seenTraces := 0
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "profile_has_go_execution_trace:yes") {
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
 		}
 	}
 	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 5 profile collections: one at
+	// second, we should see 2 traces after 4 profile collections: one at
 	// the start, and one 3 seconds later.
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
 	}
+}
+
+// TestEndpointCounts verfies that the unit of work feature works end to end.
+func TestEndpointCounts(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		name := fmt.Sprintf("enabled=%v", enabled)
+		t.Run(name, func(t *testing.T) {
+			// Spin up mock backend
+			got := make(chan profileMeta, 1)
+			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			// Configure endpoint counting
+			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
+
+			// Start the tracer (before profiler to avoid race in case of slow tracer start)
+			tracer.Start()
+			defer tracer.Stop()
+
+			// Start profiler
+			err := Start(
+				WithAgentAddr(server.Listener.Addr().String()),
+				WithProfileTypes(CPUProfile),
+				WithPeriod(100*time.Millisecond),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			// Create spans until the first profile is finished
+			var m profileMeta
+			for m.attachments == nil {
+				select {
+				case m = <-got:
+				default:
+					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
+					span.Finish()
+				}
+			}
+
+			// Check that the first uploaded profile matches our expectations
+			if enabled {
+				require.Equal(t, 1, len(m.event.EndpointCounts))
+				require.Greater(t, m.event.EndpointCounts["/foo/bar"], uint64(0))
+			} else {
+				require.Empty(t, m.event.EndpointCounts)
+			}
+		})
+	}
+}
+
+func TestExecutionTraceSizeLimit(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	done := make(chan struct{})
+	// bigMessage just forces a bunch of data to be written to the trace buffer.
+	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
+	// a trace duration of 2 seconds, so we should stop early.
+	bigMessage := string(make([]byte, 1024))
+	tick := time.NewTicker(3 * time.Millisecond)
+	defer tick.Stop()
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				trace.Log(context.Background(), "msg", bigMessage)
+			case <-done:
+				return
+			}
+		}
+	}()
+	defer close(done)
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(), // just want the execution trace
+		WithPeriod(2*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	const expectedSize = 300 * 1024
+	for i := 0; i < 5; i++ {
+		m := <-got
+		if p, ok := m.attachments["go.trace"]; ok {
+			if len(p) > expectedSize {
+				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
+			}
+			return
+		}
+	}
+	t.Errorf("did not see an execution trace")
 }

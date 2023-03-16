@@ -683,8 +683,9 @@ var (
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|=|;|[^\\x21-\\x7E]+")
+	// Equals character must be encoded with a tilde.
+	// Other disallowed characters must be replaced with the underscore.
+	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
@@ -693,12 +694,14 @@ var (
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
+	b.Grow(128)
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
 	if ctx.origin != "" {
+		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
 		b.WriteString(fmt.Sprintf(";o:%s",
-			originRgx.ReplaceAllString(ctx.origin, "_")))
+			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
 	for k, v := range ctx.trace.propagatingTags {
@@ -747,6 +750,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
 	var stateHeader string
+	var ctx spanContext
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -758,18 +762,23 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 			parentHeader = v
 		case tracestateHeader:
 			stateHeader = v
+		default:
+			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
+				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
+			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	var ctx spanContext
+
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
 	if err := parseTracestate(&ctx, stateHeader); err != nil {
 		return nil, err
 	}
+
 	return &ctx, nil
 }
 
@@ -874,7 +883,7 @@ func parseTracestate(ctx *spanContext, header string) error {
 			}
 			k, v := x[0], x[1]
 			if k == "o" {
-				ctx.origin = v
+				ctx.origin = strings.ReplaceAll(v, "~", "=")
 			} else if k == "s" {
 				p, err := strconv.Atoi(v)
 				if err != nil {
