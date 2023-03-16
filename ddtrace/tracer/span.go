@@ -627,7 +627,7 @@ func (s *span) Format(f fmt.State, c rune) {
 			}
 		}
 		var traceID string
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && strings.TrimLeft(s.context.traceID128, "0") != "" {
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && strings.TrimLeft(s.context.traceIDUpperBits, "0") != "" {
 			traceID = s.context.TraceID128()
 		} else {
 			traceID = fmt.Sprintf("%d", s.TraceID)

@@ -79,7 +79,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		oteltracer: t,
 	})
 
-	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os //TODO does this make sense?
+	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os
 }
 
 var _ oteltrace.Tracer = (*noopOteltracer)(nil)

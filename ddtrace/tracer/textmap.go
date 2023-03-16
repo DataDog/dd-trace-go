@@ -289,8 +289,8 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
-	if strings.Trim(ctx.traceID128, "0") != "" {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID128)
+	if strings.Trim(ctx.traceIDUpperBits, "0") != "" {
+		setPropagatingTag(ctx, keyTraceID128, ctx.traceIDUpperBits)
 	} else if ctx.trace != nil {
 		ctx.trace.unsetPropagatingTag(keyTraceID128)
 	}
@@ -366,7 +366,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 			if ctx.trace != nil {
-				ctx.traceID128 = ctx.trace.propagatingTags[keyTraceID128]
+				ctx.traceIDUpperBits = ctx.trace.propagatingTags[keyTraceID128]
 			}
 		case p.cfg.ParentHeader:
 			ctx.spanID, err = parseUint64(v)
@@ -454,7 +454,7 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	if strings.Trim(ctx.traceID128, "0") == "" { // 64-bit trace id
+	if strings.Trim(ctx.traceIDUpperBits, "0") == "" { // 64-bit trace id
 		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
 	} else { // 128-bit trace id
 		var w3Cctx ddtrace.SpanContextW3C
@@ -537,7 +537,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 	}
 	sb := strings.Builder{}
 	var traceID string
-	if strings.Trim(ctx.traceID128, "0") == "" { // 64-bit trace id
+	if strings.Trim(ctx.traceIDUpperBits, "0") == "" { // 64-bit trace id
 		traceID = fmt.Sprintf("%016x", ctx.traceID)
 	} else { // 128-bit trace id
 		var w3Cctx ddtrace.SpanContextW3C
@@ -652,8 +652,8 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	}
 
 	var traceID string
-	if strings.Trim(ctx.traceID128, "0") != "" {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID128)
+	if strings.Trim(ctx.traceIDUpperBits, "0") != "" {
+		setPropagatingTag(ctx, keyTraceID128, ctx.traceIDUpperBits)
 		if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); ok {
 			traceID = w3Cctx.TraceID128()
 		}
@@ -917,7 +917,7 @@ func parseTracestate(ctx *spanContext, header string) error {
 }
 
 // extractTraceID128 extracts the trace id from v and populates the traceID
-// field, and the traceID128 field (if applicable) of the provided ctx,
+// field, and the traceIDUpperBits field (if applicable) of the provided ctx,
 // returning an error if v is invalid.
 func extractTraceID128(ctx *spanContext, v string) error {
 	if len(v) > 32 {
@@ -929,8 +929,8 @@ func extractTraceID128(ctx *spanContext, v string) error {
 		ctx.traceID, err = strconv.ParseUint(v, 16, 64)
 	} else { // 128-bit trace id
 		id128 := v[:len(v)-16]
-		// pad ctx.traceID128 with zeroes to ensure length of 16
-		ctx.traceID128 = fmt.Sprintf("%016s", id128)
+		// pad ctx.traceIDUpperBits with zeroes to ensure length of 16
+		ctx.traceIDUpperBits = fmt.Sprintf("%016s", id128)
 		ctx.traceID, err = strconv.ParseUint(v[len(id128):], 16, 64)
 	}
 	if err != nil {

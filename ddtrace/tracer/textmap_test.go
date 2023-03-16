@@ -452,7 +452,7 @@ func TestEnvVars(t *testing.T) {
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.traceID = test.traceID
-					ctx.traceID128 = fmt.Sprintf("%016x", test.traceID128)
+					ctx.traceIDUpperBits = fmt.Sprintf("%016x", test.traceID128)
 					ctx.spanID = test.spanID
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
@@ -527,7 +527,7 @@ func TestEnvVars(t *testing.T) {
 					sctx, ok := ctx.(*spanContext)
 					assert.True(ok)
 
-					assert.Equal(test.traceID128, sctx.traceID128)
+					assert.Equal(test.traceID128, sctx.traceIDUpperBits)
 					assert.Equal(test.out[0], sctx.traceID)
 					assert.Equal(test.out[1], sctx.spanID)
 				})
@@ -625,7 +625,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.out[0], sctx.traceID)
 					assert.Equal(tc.out[1], sctx.spanID)
-					// assert.Equal(test.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
+					// assert.Equal(test.traceIDUpperBits, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
 						require.NotNil(t, sctx.trace)
 						assert.Equal(float64(tc.out[2]), *sctx.trace.priority)
@@ -657,7 +657,7 @@ func TestEnvVars(t *testing.T) {
 				root := tracer.StartSpan("myrequest").(*span)
 				ctx, ok := root.Context().(*spanContext)
 				require.True(t, ok)
-				ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0])
+				ctx.traceIDUpperBits = fmt.Sprintf("%016x", tc.in[0])
 				ctx.traceID = tc.in[1]
 				ctx.spanID = tc.in[2]
 				ctx.setSamplingPriority(int(tc.in[3]), samplernames.Unknown)
@@ -714,7 +714,7 @@ func TestEnvVars(t *testing.T) {
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0]) // add when 128-bit trace id support is enabled
+					ctx.traceIDUpperBits = fmt.Sprintf("%016x", tc.in[0]) // add when 128-bit trace id support is enabled
 					ctx.traceID = tc.in[1]
 					ctx.spanID = tc.in[2]
 					headers := TextMapCarrier(map[string]string{})
@@ -850,7 +850,7 @@ func TestEnvVars(t *testing.T) {
 					root.SetTag(ext.SamplingPriority, -1)
 					root.SetBaggageItem("item", "x")
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0])
+					ctx.traceIDUpperBits = fmt.Sprintf("%016x", tc.in[0])
 					ctx.traceID = tc.in[1]
 					ctx.spanID = tc.in[2]
 					headers := TextMapCarrier(map[string]string{})
@@ -1012,7 +1012,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.out[0], sctx.traceID)
 					assert.Equal(tc.out[1], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.traceID128, sctx.traceIDUpperBits)
 					assert.Equal(tc.origin, sctx.origin)
 					p, ok := sctx.samplingPriority()
 					assert.True(ok)
@@ -1121,7 +1121,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.out[0], sctx.traceID)
 					assert.Equal(tc.out[1], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.traceID128, sctx.traceIDUpperBits)
 					p, ok := sctx.samplingPriority()
 					assert.True(ok)
 					assert.Equal(tc.priority, p)
@@ -1295,7 +1295,7 @@ func TestEnvVars(t *testing.T) {
 					ctx, ok := root.Context().(*spanContext)
 					ctx.origin = tc.origin
 					ctx.traceID = tc.in[0]
-					ctx.traceID128 = tc.traceID128
+					ctx.traceIDUpperBits = tc.traceID128
 					ctx.spanID = tc.in[1]
 					ctx.trace.propagatingTags = tc.propagatingTags
 					headers := TextMapCarrier(map[string]string{})
@@ -1535,7 +1535,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[0], sctx.traceID)
 					assert.Equal(tc.out[1], sctx.span.ParentID)
 					assert.Equal(tc.out[2], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.traceID128, sctx.traceIDUpperBits)
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
