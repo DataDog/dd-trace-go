@@ -108,7 +108,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		raw := cmd.String()
 		length := strings.Count(raw, " ")
 		p := ddh.params
-		startOpts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts := make([]ddtrace.StartSpanOption, 0, 7+1+len(ddh.additionalTags)+1) // 7 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
 			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
@@ -143,7 +143,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		raw := commandsToString(cmds)
 		length := strings.Count(raw, " ")
 		p := ddh.params
-		startOpts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts := make([]ddtrace.StartSpanOption, 0, 8+1+len(ddh.additionalTags)+1) // 8 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
 			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
