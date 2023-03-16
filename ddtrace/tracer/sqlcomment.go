@@ -82,42 +82,31 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		return nil
 	case DBMPropagationModeFull:
 		var (
-			samplingPriority int
-			traceID          uint64
+			sampled int64
+			traceID uint64
 		)
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if sp, ok := ctx.samplingPriority(); ok {
-				samplingPriority = sp
+			if sp, ok := ctx.samplingPriority(); ok && sp > 0 {
+				sampled = 1
 			}
 			traceID = ctx.TraceID()
 		}
-		if traceID == 0 {
+		if traceID == 0 { // check if this is a root span
 			traceID = c.SpanID
-		}
-		sampled := int64(0)
-		if samplingPriority > 0 {
-			sampled = 1
 		}
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case DBMPropagationModeService:
-		var env, version string
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if e, ok := ctx.meta(ext.Environment); ok {
-				env = e
+			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
+				tags[sqlCommentEnv] = e
 			}
-			if v, ok := ctx.meta(ext.Version); ok {
-				version = v
+			if v, ok := ctx.meta(ext.Version); ok && v != "" {
+				tags[sqlCommentParentVersion] = v
 			}
 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
-		}
-		if env != "" {
-			tags[sqlCommentEnv] = env
-		}
-		if version != "" {
-			tags[sqlCommentParentVersion] = version
 		}
 		tags[sqlCommentDBService] = c.DBServiceName
 	}

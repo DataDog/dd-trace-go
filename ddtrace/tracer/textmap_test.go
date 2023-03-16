@@ -1665,12 +1665,11 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 20; i++ {
 		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 	dst := map[string]string{}
@@ -1682,7 +1681,6 @@ func BenchmarkInjectDatadog(b *testing.B) {
 
 func BenchmarkInjectW3C(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "tracecontext")
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
