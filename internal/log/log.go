@@ -239,4 +239,5 @@ func (r *RecordLogger) Reset() {
 	r.m.Lock()
 	defer r.m.Unlock()
 	r.logs = r.logs[:0]
+	r.ignore = r.ignore[:0]
 }
