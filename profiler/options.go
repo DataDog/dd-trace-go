@@ -140,7 +140,7 @@ func logStartup(c *config) {
 		UploadTimeout        string   `json:"upload_timeout"`
 		TraceEnabled         bool     `json:"execution_trace_enabled"`
 		TracePeriod          string   `json:"execution_trace_period"`
-		TraceDuration        string   `json:"execution_trace_duration"`
+		TraceSizeLimit       int      `json:"execution_trace_size_limit"`
 		EndpointCountEnabled bool     `json:"endpoint_count_enabled"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
@@ -166,7 +166,7 @@ func logStartup(c *config) {
 		UploadTimeout:        c.uploadTimeout.String(),
 		TraceEnabled:         c.traceEnabled,
 		TracePeriod:          c.traceConfig.Period.String(),
-		TraceDuration:        c.traceConfig.Duration.String(),
+		TraceSizeLimit:       c.traceConfig.Limit,
 		EndpointCountEnabled: c.endpointCountEnabled,
 	}
 	for t := range c.types {
@@ -268,20 +268,23 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
+
+	tags := make(map[string]string)
 	if v := os.Getenv("DD_TAGS"); v != "" {
-		sep := " "
-		if strings.Index(v, ",") > -1 {
-			// falling back to comma as separator
-			sep = ","
-		}
-		for _, tag := range strings.Split(v, sep) {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-			WithTags(tag)(&c)
+		tags = internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+	}
+	for key, val := range internal.GetGitMetadataTags() {
+		tags[key] = val
+	}
+	for key, val := range tags {
+		if val != "" {
+			WithTags(key + ":" + val)(&c)
+		} else {
+			WithTags(key)(&c)
 		}
 	}
+
 	WithTags(
 		"profiler_version:"+version.Tag,
 		"runtime_version:"+strings.TrimPrefix(runtime.Version(), "go"),
@@ -309,9 +312,9 @@ func defaultConfig() (*config, error) {
 	// Experimental feature: Go execution trace (runtime/trace) recording.
 	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
 	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
-	c.traceConfig.Duration = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_DURATION", 1*time.Second)
-	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Duration == 0) {
-		log.Warn("Invalid execution trace config, enabled is true but duration or frequency is 0. Disabling execution trace.")
+	c.traceConfig.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
+	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Limit == 0) {
+		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
 		c.traceEnabled = false
 	}
 	return &c, nil
@@ -541,8 +544,15 @@ func WithHostname(hostname string) Option {
 // executionTraceConfig controls how often, and for how long, runtime execution
 // traces are collected, see defaultConfig() for more details.
 type executionTraceConfig struct {
-	// Duration is how long the execution trace will run.
-	Duration time.Duration
 	// Period is the amount of time between traces.
 	Period time.Duration
+	// Limit is the desired upper bound, in bytes, of a collected trace.
+	// Traces may be slightly larger than this limit due to flushing pending
+	// buffers at the end of tracing.
+	//
+	// We attempt to record for a full profiling period. The size limit of
+	// the trace is a better proxy for overhead (it scales with the number
+	// of events recorded) than duration, so we use that to decide when to
+	// stop tracing.
+	Limit int
 }
