@@ -20,6 +20,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const debug = false
@@ -47,7 +48,7 @@ func TestSkipRaw(t *testing.T) {
 		pipeline.Expire(ctx, "pipeline_counter", time.Hour)
 		pipeline.Exec(ctx)
 		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 2)
+		require.Len(t, spans, 2)
 		return spans
 	}
 
@@ -96,7 +97,7 @@ func TestClientEvalSha(t *testing.T) {
 	client.EvalSha(ctx, sha1, []string{"key1", "key2", "first", "second"})
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("redis.command", span.OperationName())
@@ -121,7 +122,7 @@ func TestClient(t *testing.T) {
 	client.Set(ctx, "test_key", "test_value", 0)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("redis.command", span.OperationName())
@@ -184,7 +185,7 @@ func TestWrapClient(t *testing.T) {
 			tc.client.Set(ctx, "test_key", "test_value", 0)
 
 			spans := mt.FinishedSpans()
-			assert.Len(spans, 1)
+			require.Len(t, spans, 1)
 
 			span := spans[0]
 			assert.Equal("redis.command", span.OperationName())
@@ -262,6 +263,7 @@ func TestPipeline(t *testing.T) {
 	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	assert := assert.New(t)
+	require := require.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -273,7 +275,7 @@ func TestPipeline(t *testing.T) {
 	pipeline.Exec(ctx)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(spans, 1)
 
 	span := spans[0]
 	assert.Equal("redis.command", span.OperationName())
@@ -295,7 +297,7 @@ func TestPipeline(t *testing.T) {
 	pipeline.Exec(ctx)
 
 	spans = mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(spans, 1)
 
 	span = spans[0]
 	assert.Equal("redis.command", span.OperationName())
@@ -357,7 +359,7 @@ func TestMultipleCommands(t *testing.T) {
 	client.ClientList(ctx)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 4)
+	require.Len(t, spans, 4)
 
 	// Checking all commands were recorded
 	var commands [4]string
@@ -382,7 +384,7 @@ func TestError(t *testing.T) {
 		_, err := client.Get(ctx, "key").Result()
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 
 		assert.Equal("redis.command", span.OperationName())
@@ -407,7 +409,7 @@ func TestError(t *testing.T) {
 		_, err := client.Get(ctx, "non_existent_key").Result()
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 
 		assert.Equal(redis.Nil, err)
@@ -436,7 +438,7 @@ func TestError(t *testing.T) {
 		_, err := pipeline.Exec(ctx)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 
 		assert.Equal("redis.command", span.OperationName())
