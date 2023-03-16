@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -23,6 +24,8 @@ var _ ddtrace.SpanContext = (*spanContext)(nil)
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
+	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
+
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
@@ -69,6 +72,10 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// setting context.updated to false here is necessary to distinguish
+	// between initializing properties of the span (priority)
+	// and updating them after extracting context through propagators
+	context.updated = false
 	return context
 }
 
@@ -95,6 +102,9 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
+	}
+	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
 }
@@ -325,6 +335,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
+		for k, v := range ginternal.GetTracerGitMetadataTags() {
+			s.setMeta(k, v)
+		}
 	}
 	if len(t.spans) != t.finished {
 		return
@@ -336,6 +349,9 @@ func (t *trace) finishedOne(s *span) {
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
 		return
+	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))

@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - release-v*
     tags:
       - "**"
   pull_request:
     branches:
       - "**"
+  merge_group:
   workflow_dispatch: {}
   schedule:
     - cron:  '00 04 * * 2-6'

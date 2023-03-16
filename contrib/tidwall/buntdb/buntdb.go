@@ -100,6 +100,7 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.ResourceName(name),
 		tracer.Tag(ext.Component, "tidwall/buntdb"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemBuntDB),
 	}
 	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))

@@ -3,8 +3,11 @@ on:
   push:
     branches:
       - main
+      - release-v*
   schedule:
     - cron: '00 00 * * *'
+  workflow_dispatch:
+
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
@@ -15,24 +18,9 @@ jobs:
       - name: Checkout Go
         uses: actions/setup-go@v3
         with:
-          go-version: '1.18'
+          go-version: 'stable'
       - name: Install govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Comment results
-        id: results
-        run: |
-          function check_results {
-            results=$(govulncheck $path | grep -Eo '\w+-\d+-\d+' | uniq)
-            num=$(echo $results | wc -l)
-            if [ $num -gt 0 ]; then
-              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more" >> $GITHUB_STEP_SUMMARY
-              echo "Found $num vulnerabilities in $path. Run 'govulncheck $path' to find out more"
-              found=$(( found | 1))
-            fi
-          }
-          path=./ddtrace/... check_results
-          path=./appsec/... check_results
-          path=./internal/... check_results
-          path=./profiler/... check_results
-          exit $found
+      - name: Run govulncheck
+        run: govulncheck -v -tags appsec ./ddtrace/... ./appsec/... ./profiler/... ./internal/... 

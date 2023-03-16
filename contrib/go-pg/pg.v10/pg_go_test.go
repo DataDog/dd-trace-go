@@ -67,9 +67,8 @@ func TestSelect(t *testing.T) {
 	assert.Equal(1, n)
 	assert.Equal("go-pg", spans[0].OperationName())
 	assert.Equal("http.request", spans[1].OperationName())
-	assert.Equal("go-pg/pg.v10", spans[0].Tags()[ext.Component])
-	assert.Equal(ext.SpanKindClient, spans[0].Tags()[ext.SpanKind])
-
+	assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+	assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 }
 
 func TestServiceName(t *testing.T) {
@@ -108,8 +107,8 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("http.request", spans[1].OperationName())
 		assert.Equal("gopg.db", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
-		assert.Equal("go-pg/pg.v10", spans[0].Tags()[ext.Component])
-		assert.Equal(ext.SpanKindClient, spans[0].Tags()[ext.SpanKind])
+		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -150,8 +149,8 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("http.request", spans[1].OperationName())
 		assert.Equal("global-service", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
-		assert.Equal("go-pg/pg.v10", spans[0].Tags()[ext.Component])
-		assert.Equal(ext.SpanKindClient, spans[0].Tags()[ext.SpanKind])
+		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -189,8 +188,8 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("http.request", spans[1].OperationName())
 		assert.Equal("my-service-name", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
-		assert.Equal("go-pg/pg.v10", spans[0].Tags()[ext.Component])
-		assert.Equal(ext.SpanKindClient, spans[0].Tags()[ext.SpanKind])
+		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 }
 

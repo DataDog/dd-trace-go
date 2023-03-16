@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/trace"
+	"sync"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -50,6 +52,11 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+
+	// executionTrace is the runtime/trace execution tracer.
+	// This is private, as this trace requires special explicit configuration and
+	// shouldn't just be added to WithProfileTypes
+	executionTrace
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -94,10 +101,12 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
+
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types
@@ -175,6 +184,72 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), err
 		},
 	},
+	executionTrace: {
+		Name:     "execution-trace",
+		Filename: "go.trace",
+		Collect: func(p *profiler) ([]byte, error) {
+			if !p.shouldTrace() {
+				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
+			}
+			p.lastTrace = time.Now()
+			buf := new(bytes.Buffer)
+			lt := &limitedTraceCollector{
+				w:     buf,
+				limit: p.cfg.traceConfig.Limit,
+			}
+			if err := trace.Start(lt); err != nil {
+				return nil, err
+			}
+			p.interruptibleSleep(p.cfg.period)
+			lt.Stop()
+			return buf.Bytes(), nil
+		},
+	},
+}
+
+// defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
+// of an executiont trace.
+//
+// 5MB was selected to give reasonable latency for processing, both online and
+// using offline tools. This is a conservative estimate--we could possibly get
+// away with 10MB and still have a tolerable experience.
+const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
+
+type limitedTraceCollector struct {
+	w       io.Writer
+	limit   int
+	written int
+	// stop is used to control stopping the execution tracer. Since stopping
+	// tracing incurs a STW pause to even attempt(*), we'd like to only do
+	// it once.
+	//
+	// *: see https://cs.opensource.google/go/go/+/refs/tags/go1.20.1:src/runtime/trace.go;l=330;drc=40ed3591829f67e7a116180aec543dd15bfcf5f9
+	stop sync.Once
+}
+
+// Write calls the underlying writer's Write method, and stops tracing if the
+// limit has been reached.
+func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
+	n, err = l.w.Write(p)
+	if err != nil {
+		// TODO: still count n against the limit?
+		return
+	}
+	l.written += n
+	if l.written >= l.limit {
+		// We can't stop tracing within this method, because trace.Stop
+		// won't return until all pending events are written, which
+		// requires calling this function, meaning we'll deadlock.
+		go l.Stop()
+	}
+	return
+}
+
+// Stop stops tracing
+func (l *limitedTraceCollector) Stop() {
+	l.stop.Do(func() {
+		trace.Stop()
+	})
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
@@ -236,16 +311,18 @@ func (t ProfileType) Tag() string {
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
 	name string
+	pt   ProfileType
 	data []byte
 }
 
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
-	seq        uint64 // seq is the value of the profile_seq tag
-	start, end time.Time
-	host       string
-	profiles   []*profile
+	seq            uint64 // seq is the value of the profile_seq tag
+	start, end     time.Time
+	host           string
+	profiles       []*profile
+	endpointCounts map[string]uint64
 }
 
 func (b *batch) addProfile(p *profile) {
@@ -267,7 +344,7 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
-	return []*profile{{name: filename, data: data}}, nil
+	return []*profile{{name: filename, pt: pt, data: data}}, nil
 }
 
 type deltaProfiler interface {
@@ -290,15 +367,16 @@ type pprofileDeltaProfiler struct {
 // Otherwise, deltas will be computed for every value.
 func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
 	switch cfg.deltaMethod {
-	case "fastdelta":
-		return newFastDeltaProfiler(v...)
+	// TODO: slowdelta and comparing implementation can be removed after 2023-04-11.
+	case "slowdelta":
+		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
 	case "comparing":
 		return newComparingDeltaProfiler(
 			cfg,
 			&pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}},
 			newFastDeltaProfiler(v...))
 	default:
-		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
+		return newFastDeltaProfiler(v...)
 	}
 }
 
@@ -381,7 +459,12 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if err = fdp.gzw.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
-	return fdp.buf.Bytes(), nil
+	// The returned slice will be retained in case the profile upload fails,
+	// so we need to return a copy of the buffer's bytes to avoid a data
+	// race.
+	b = make([]byte, len(fdp.buf.Bytes()))
+	copy(b, fdp.buf.Bytes())
+	return b, nil
 }
 
 type comparingDeltaProfiler struct {
