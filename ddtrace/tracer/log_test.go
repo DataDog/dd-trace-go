@@ -21,19 +21,21 @@ func TestStartupLog(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ")
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
 		defer stop()
 
 		tp.Reset()
 		logStartup(tracer)
-		lines := removeAppSec(tp.Logs())
-		require.Len(t, lines, 2)
-		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":0}}`, lines[1])
+		require.Len(t, tp.Logs(), 2)
+		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"Post .*","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"false","appsec":((true)|(false)),"agent_features":{"DropP0s":((true)|(false)),"Stats":((true)|(false)),"StatsdPort":0}}`, tp.Logs()[1])
 	})
 
 	t.Run("configured", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ")
+
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 		tracer, _, _, stop := startTestTracer(t,
@@ -121,14 +123,14 @@ func TestStartupLog(t *testing.T) {
 func TestLogSamplingRules(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ")
 	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
 	defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp))
 	defer stop()
 
-	lines := removeAppSec(tp.Logs())
-	assert.Len(lines, 1)
-	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0}: rate is out of \[0\.0, 1\.0] range$`, lines[0])
+	assert.Len(tp.Logs(), 1)
+	assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
 }
 
 func TestLogAgentReachable(t *testing.T) {

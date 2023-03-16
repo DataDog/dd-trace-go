@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +33,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -45,7 +45,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
-	assert.Contains(t, removeAppSec(tp.Logs())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -145,6 +145,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -162,7 +163,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	<-time.After(time.Second / 10)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Logs()), 0)
+	assert.Len(tp.Logs(), 0)
 	t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 }
 
@@ -355,6 +356,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -366,13 +368,13 @@ func TestSpanContextPushFull(t *testing.T) {
 	assert := assert.New(t)
 	buffer.push(span1)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Logs()), 0)
+	assert.Len(tp.Logs(), 0)
 	buffer.push(span2)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Logs()), 0)
+	assert.Len(tp.Logs(), 0)
 	buffer.push(span3)
 	log.Flush()
-	assert.Contains(removeAppSec(tp.Logs())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -423,18 +425,6 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 			return true
 		})
 	}
-}
-
-// Remove the appsec logs from the given log lines
-func removeAppSec(lines []string) []string {
-	res := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.Contains(line, "appsec:") {
-			continue
-		}
-		res = append(res, line)
-	}
-	return res
 }
 
 func TestSetSamplingPriorityLocked(t *testing.T) {
