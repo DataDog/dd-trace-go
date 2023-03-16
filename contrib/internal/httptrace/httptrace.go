@@ -17,8 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 var cfg = newConfig()
@@ -44,7 +43,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	if cfg.traceClientIP {
-		ipTags, _ := httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ := instrumentation.ClientIPTags(r.Header, true, r.RemoteAddr)
 		for k, v := range ipTags {
 			opts = append(opts, tracer.Tag(k, v))
 		}

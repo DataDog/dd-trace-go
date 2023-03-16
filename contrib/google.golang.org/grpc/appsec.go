@@ -11,7 +11,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -106,7 +105,7 @@ func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) instrum
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()
 	}
-	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	ipTags, clientIP := instrumentation.ClientIPTags(md, false, remoteAddr)
 	if len(ipTags) > 0 {
 		instrumentation.SetStringTags(span, ipTags)
 	}
