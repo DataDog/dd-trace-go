@@ -2,8 +2,6 @@
 
 set -e
 
-source ./.gitlab/scripts/config-benchmarks.sh
-
 DD_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.dd-trace-go.dd_api_key --with-decryption --query "Parameter.Value" --out text)
 INTAKE_API_HOST=intake.profile.datad0g.com
 
