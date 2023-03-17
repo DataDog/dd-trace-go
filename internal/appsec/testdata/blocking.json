@@ -28,6 +28,81 @@
             "on_match": [
                 "block"
             ]
+        },
+        {
+            "id": "blk-001-002",
+            "name": "Block User Addresses",
+            "tags": {
+                "type": "block_user",
+                "category": "security_response"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "usr.id"
+                            }
+                        ],
+                        "data": "blocked_users"
+                    },
+                    "operator": "exact_match"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "block"
+            ]
+        },
+        {
+            "id": "crs-941-110",
+            "name": "XSS Filter - Category 1: Script Tag Vector",
+            "tags": {
+                "type": "xss",
+                "crs_id": "941110",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "user-agent"
+                                ]
+                            },
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "referer"
+                                ]
+                            },
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            }
+                        ],
+                        "regex": "<script[^>]*>[\\s\\S]*?",
+                        "options": {
+                            "min_length": 8
+                        }
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": [
+                "removeNulls"
+            ]
         }
     ],
     "rules_data": [
@@ -36,6 +111,13 @@
             "type": "ip_with_expiration",
             "data": [
                 { "value": "1.2.3.4" }
+            ]
+        },
+        {
+            "id": "blocked_users",
+            "type": "data_with_expiration",
+            "data": [
+                { "value": "blocked-user-1" }
             ]
         }
     ]

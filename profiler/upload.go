@@ -88,7 +88,7 @@ func (p *profiler) doRequest(bat batch) error {
 	// that the uploads are more easily discoverable in the UI.
 	for _, b := range bat.profiles {
 		if b.pt == executionTrace {
-			tags = append(tags, "profile_has_go_execution_trace:yes")
+			tags = append(tags, "go_execution_traced:yes")
 		}
 	}
 	contentType, body, err := encode(bat, tags)
@@ -162,8 +162,8 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	event := &uploadEvent{
 		Version:        "4",
 		Family:         "go",
-		Start:          bat.start.Format(time.RFC3339),
-		End:            bat.end.Format(time.RFC3339),
+		Start:          bat.start.Format(time.RFC3339Nano),
+		End:            bat.end.Format(time.RFC3339Nano),
 		Tags:           strings.Join(tags, ","),
 		EndpointCounts: bat.endpointCounts,
 	}

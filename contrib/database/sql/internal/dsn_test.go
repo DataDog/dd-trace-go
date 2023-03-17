@@ -65,6 +65,17 @@ func TestParseDSN(t *testing.T) {
 				ext.DBSystem:   "mssql",
 			},
 		},
+		{
+			driverName: "sqlserver",
+			dsn:        "sqlserver://alice:secret@localhost/SQLExpress?database=mydb",
+			expected: map[string]string{
+				ext.DBUser:                         "alice",
+				ext.TargetHost:                     "localhost",
+				ext.DBName:                         "mydb",
+				ext.DBSystem:                       "mssql",
+				ext.MicrosoftSQLServerInstanceName: "SQLExpress",
+			},
+		},
 	} {
 		m, err := ParseDSN(tt.driverName, tt.dsn)
 		assert.Equal(nil, err)
@@ -120,14 +131,14 @@ func TestParsePostgresDSN(t *testing.T) {
 }
 
 func TestParseSqlServerDSN(t *testing.T) {
-	assert := assert.New(t)
-
 	for _, tt := range []struct {
+		name     string
 		dsn      string
 		expected map[string]string
 	}{
 		{
-			dsn: "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
+			name: "sqlserver_url_1",
+			dsn:  "sqlserver://bob:secret@1.2.3.4:1433?database=mydb",
 			expected: map[string]string{
 				"user":   "bob",
 				"host":   "1.2.3.4",
@@ -136,16 +147,18 @@ func TestParseSqlServerDSN(t *testing.T) {
 			},
 		},
 		{
-			dsn: "sqlserver://alice:secret@localhost/SQLExpress?database=mydb",
+			name: "sqlserver_url_2",
+			dsn:  "sqlserver://alice:secret@localhost/SQLExpress?database=mydb",
 			expected: map[string]string{
-				"user":         "alice",
-				"host":         "localhost",
-				"dbname":       "mydb",
-				"instanceName": "SQLExpress",
+				"user":                   "alice",
+				"host":                   "localhost",
+				"dbname":                 "mydb",
+				"db.mssql.instance_name": "SQLExpress",
 			},
 		},
 		{
-			dsn: "server=1.2.3.4,1433;User Id=dog;Password=secret;Database=mydb;",
+			name: "ado_1",
+			dsn:  "server=1.2.3.4,1433;User Id=dog;Password=secret;Database=mydb;",
 			expected: map[string]string{
 				"user":   "dog",
 				"port":   "1433",
@@ -154,7 +167,8 @@ func TestParseSqlServerDSN(t *testing.T) {
 			},
 		},
 		{
-			dsn: "ADDRESS=1.2.3.4;UID=cat;PASSWORD=secret;INITIAL CATALOG=mydb;",
+			name: "ado_2",
+			dsn:  "ADDRESS=1.2.3.4;UID=cat;PASSWORD=secret;INITIAL CATALOG=mydb;",
 			expected: map[string]string{
 				"user":   "cat",
 				"host":   "1.2.3.4",
@@ -162,8 +176,10 @@ func TestParseSqlServerDSN(t *testing.T) {
 			},
 		},
 	} {
-		m, err := parseSQLServerDSN(tt.dsn)
-		assert.Equal(nil, err)
-		assert.Equal(tt.expected, m)
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := parseSQLServerDSN(tt.dsn)
+			assert.Equal(t, nil, err)
+			assert.Equal(t, tt.expected, m)
+		})
 	}
 }
