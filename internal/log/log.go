@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -199,14 +200,28 @@ func (d DiscardLogger) Log(msg string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {
-	m    sync.Mutex
-	logs []string
+	m      sync.Mutex
+	logs   []string
+	ignore []string // a log is ignored if it contains a string in ignored
+}
+
+// Ignore adds substrings to the ignore field of RecordLogger, allowing
+// the RecordLogger to ignore attempts to log strings with certain substrings.
+func (r *RecordLogger) Ignore(substrings ...string) {
+	r.m.Lock()
+	defer r.m.Unlock()
+	r.ignore = append(r.ignore, substrings...)
 }
 
 // Log implements Logger.
 func (r *RecordLogger) Log(msg string) {
 	r.m.Lock()
 	defer r.m.Unlock()
+	for _, ignored := range r.ignore {
+		if strings.Contains(msg, ignored) {
+			return
+		}
+	}
 	r.logs = append(r.logs, msg)
 }
 
@@ -224,4 +239,5 @@ func (r *RecordLogger) Reset() {
 	r.m.Lock()
 	defer r.m.Unlock()
 	r.logs = r.logs[:0]
+	r.ignore = r.ignore[:0]
 }
