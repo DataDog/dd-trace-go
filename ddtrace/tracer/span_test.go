@@ -719,6 +719,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request").(*span)
 		span.TraceID = 12345678
 		span.SpanID = 87654321
+		span.Finish()
 		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321"`
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
@@ -734,6 +735,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request").(*span)
 		span.TraceID = 12345678
 		span.SpanID = 87654321
+		span.Finish()
 		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321"`
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
@@ -747,8 +749,8 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
-		span.Finish()
 		span.SpanID = 87654321
+		span.Finish()
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321"`, span.context.TraceID128())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 		v, _ := span.context.meta(keyTraceID128)
