@@ -281,6 +281,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		"Datadog-Container-ID":       {internal.ContainerID()},
 	}
 	header.Set("DD-API-KEY", c.APIKey)
+
 	client := c.Client
 	if client == nil {
 		client = defaultHTTPClient

@@ -139,7 +139,7 @@ func (c *Client) applyFallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
-	if len(c.APIKey) == 0 && c.URL == getAgentlessURL() {
+	if len(c.APIKey) == 0 {
 		WithAPIKey(defaultAPIKey())(c)
 		if c.APIKey == "" {
 			c.log("Agentless is turned on, but valid DD API key was not found.")
