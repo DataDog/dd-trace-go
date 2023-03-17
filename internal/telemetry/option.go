@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -61,33 +60,14 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-// isAPIKeyValid reports whether the given string is a structurally valid API key
-// (copied from profiler)
-func isAPIKeyValid(key string) bool {
-	if len(key) != 32 {
-		return false
-	}
-	for _, c := range key {
-		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
-			return false
-		}
-	}
-	return true
-}
-
 func defaultAPIKey() string {
-	if v := os.Getenv("DD_API_KEY"); isAPIKeyValid(v) {
-		return v
-	}
-	return ""
+	return os.Getenv("DD_API_KEY")
 }
 
 // WithAPIKey sets the DD API KEY for the telemetry client
 func WithAPIKey(v string) Option {
 	return func(client *Client) {
-		if isAPIKeyValid(v) {
-			client.APIKey = v
-		}
+		client.APIKey = v
 	}
 }
 
