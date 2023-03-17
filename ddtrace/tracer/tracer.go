@@ -7,8 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"encoding/binary"
-	"encoding/hex"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -20,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -476,17 +473,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
-
-	// add 128 bit trace id, if enabled, formatted as big-endian:
-	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-	if span.context.traceID128 == "" && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
-		id128 := startTime.Unix()
-		b := make([]byte, 8)
-		// casting from int64 -> uint32 should be safe since the start time won't be
-		// negative, and the seconds should fit within 32-bits for the forseeable future.
-		binary.BigEndian.PutUint32(b, uint32(id128))
-		span.context.traceID128 = hex.EncodeToString(b)
-	}
 
 	// add tags from options
 	for k, v := range opts.Tags {
