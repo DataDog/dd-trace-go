@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -72,7 +73,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-		id128 := span.Start
+		id128 := time.Duration(span.Start) / time.Second
 		b := make([]byte, 8)
 		// casting from int64 -> uint32 should be safe since the start time won't be
 		// negative, and the seconds should fit within 32-bits for the forseeable future.
