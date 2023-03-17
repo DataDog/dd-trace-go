@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -365,7 +366,7 @@ func (t *trace) finishedOne(s *span) {
 			s.setMeta(k, v)
 		}
 	}
-	if s.context != nil {
+	if s.context != nil && strings.Trim(s.context.traceID128, "0") != "" {
 		s.setMeta(keyTraceID128, s.context.traceID128)
 	}
 	if len(t.spans) != t.finished {
