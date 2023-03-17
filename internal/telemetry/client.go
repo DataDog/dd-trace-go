@@ -280,9 +280,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		"DD-Agent-Hostname":          {hostname},
 		"Datadog-Container-ID":       {internal.ContainerID()},
 	}
-	if c.URL == getAgentlessURL() && isAPIKeyValid(c.APIKey) {
-		header.Set("DD-API-KEY", c.APIKey)
-	}
+	header.Set("DD-API-KEY", c.APIKey)
 	client := c.Client
 	if client == nil {
 		client = defaultHTTPClient
