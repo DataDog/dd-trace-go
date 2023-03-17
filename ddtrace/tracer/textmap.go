@@ -365,9 +365,6 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			if ctx.trace != nil {
-				ctx.traceID128 = ctx.trace.propagatingTags[keyTraceID128]
-			}
 		case p.cfg.ParentHeader:
 			ctx.spanID, err = parseUint64(v)
 			if err != nil {
@@ -392,6 +389,9 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	})
 	if err != nil {
 		return nil, err
+	}
+	if ctx.trace != nil {
+		ctx.traceID128 = ctx.trace.propagatingTags[keyTraceID128]
 	}
 	if ctx.traceID == 0 || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
