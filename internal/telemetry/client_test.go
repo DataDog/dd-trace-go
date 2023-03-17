@@ -206,9 +206,9 @@ func TestConcurrentClient(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		client := new(telemetry.Client)
-		client.ApplyOps(telemetry.WithURL(false, server.URL))
-
+		client := &telemetry.Client{
+			URL: server.URL,
+		}
 		client.Start(nil)
 		defer client.Stop()
 
