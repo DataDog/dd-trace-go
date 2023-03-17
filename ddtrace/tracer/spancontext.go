@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -367,7 +368,7 @@ func (t *trace) finishedOne(s *span) {
 		}
 	}
 	if s.context != nil && strings.Trim(s.context.traceID128, "0") != "" {
-		s.setMeta(keyTraceID128, s.context.traceID128)
+		s.setMeta(keyTraceID128, fmt.Sprintf("%016s", s.context.traceID128))
 	}
 	if len(t.spans) != t.finished {
 		return

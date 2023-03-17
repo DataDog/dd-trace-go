@@ -497,8 +497,8 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.Error)
 
-	// '+2' is `_dd.p.dm` and `_dd.p.tid`
-	assert.Equal(nMeta+2, len(span.Meta))
+	// '+1' is `_dd.p.dm`
+	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta[ext.ErrorMsg])
 	assert.Equal("", span.Meta[ext.ErrorType])
 	assert.Equal("", span.Meta[ext.ErrorStack])
@@ -747,9 +747,12 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
+		span.Finish()
 		span.SpanID = 87654321
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321"`, span.context.TraceID128())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
+		v, _ := span.context.meta(keyTraceID128)
+		assert.NotEmpty(v)
 	})
 
 	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
@@ -761,7 +764,10 @@ func TestSpanLog(t *testing.T) {
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
 		span.context.traceID128 = "01"
+		span.Finish()
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
+		v, _ := span.context.meta(keyTraceID128)
+		assert.Equal("0000000000000001", v)
 	})
 }
 
