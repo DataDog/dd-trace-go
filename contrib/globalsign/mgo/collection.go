@@ -115,6 +115,7 @@ func (c *Collection) Bulk() *Bulk {
 	return &Bulk{
 		Bulk: c.Collection.Bulk(),
 		cfg:  c.cfg,
+		tags: c.tags,
 	}
 }
 

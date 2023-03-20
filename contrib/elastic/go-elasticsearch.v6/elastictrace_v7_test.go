@@ -20,6 +20,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
+func checkGETTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET", span.Tag("elasticsearch.method"))
+}
+
+func checkErrTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
+	assert.NotEmpty(span.Tag(ext.Error))
+	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+}
+
 func TestClientV7(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -49,7 +66,7 @@ func TestClientV7(t *testing.T) {
 		DocumentType: "tweet",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTraceV7(assert, mt)
 
 	mt.Reset()
 	_, err = esapi7.GetRequest{
@@ -57,7 +74,7 @@ func TestClientV7(t *testing.T) {
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkErrTrace(assert, mt)
+	checkErrTraceV7(assert, mt)
 
 }
 
@@ -105,10 +122,9 @@ func TestClientV7Failure(t *testing.T) {
 	assert.NoError(err)
 
 	_, err = esapi7.IndexRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
-		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:      "twitter",
+		DocumentID: "1",
+		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), client)
 	assert.Error(err)
 

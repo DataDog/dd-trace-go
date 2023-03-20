@@ -11,10 +11,10 @@ package appsec
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
+
+	waf "github.com/DataDog/go-libddwaf"
+	"github.com/stretchr/testify/require"
 )
 
 // Test that internal functions used to set span tags use the correct types

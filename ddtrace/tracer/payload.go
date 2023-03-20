@@ -40,7 +40,6 @@ import (
 // • https://github.com/DataDog/dd-trace-go/pull/475
 // • https://github.com/DataDog/dd-trace-go/pull/549
 // • https://github.com/DataDog/dd-trace-go/pull/976
-//
 type payload struct {
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
