@@ -7,6 +7,27 @@
 // Datadog regarding usage of an APM library such as tracing or profiling.
 package telemetry
 
+// ProductStart ...
+func (c *Client) ProductStart(namespace Namespace, configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.started {
+		c.productChange(namespace, true, configuration)
+	} else {
+		c.start(configuration)
+	}
+
+}
+
+// ProductStop ...
+// Ensure you have called ProductStart before calling ProductStop.
+func (c *Client) ProductStop(namespace Namespace) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.productChange(namespace, false, []Configuration{})
+}
+
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
 // The caller can also specify additional configuration changes (e.g. profiler config info), which
 // will be sent via the app-client-configuration-change event.
@@ -15,13 +36,7 @@ package telemetry
 // starts, and another app-product-change message with enabled=false can be sent when the profiler stops.
 // Product enablement messages do not apply to the tracer, since the tracer is not considered a product
 // by the instrumentation telemetry API.
-func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.started {
-		c.log("attempted to send product change event, but telemetry client has not started")
-		return
-	}
+func (c *Client) productChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	products := new(Products)
 	switch namespace {
 	case NamespaceProfilers:

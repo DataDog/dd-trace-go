@@ -63,6 +63,11 @@ var (
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "Instrumentation telemetry: "
+
+	// StartedProducts keeps track of how many products are using the global telemetry client
+	// note: this variable is accessed concurrently
+	// TODO: once go 1.18 support is dropped, we can use a atomic.Uint32 here.
+	Started uint32
 )
 
 func init() {
@@ -143,7 +148,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *Client) Start(configuration []Configuration) {
+func (c *Client) start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if disabled() {
@@ -207,6 +212,7 @@ func (c *Client) Start(configuration []Configuration) {
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
 // messages will also be sent. No further messages will be sent until the client
 // is started again
+// TODO: hook into OS signal package for sigint and sigquit
 func (c *Client) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
