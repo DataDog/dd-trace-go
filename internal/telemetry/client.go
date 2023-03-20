@@ -160,7 +160,7 @@ func (c *Client) Start(configuration []Configuration) {
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
-		Configuration: valConfigs(configuration),
+		Configuration: configuration,
 		Products: Products{
 			AppSec: ProductDetails{
 				Version: version.Tag,
@@ -227,23 +227,6 @@ func disabled() bool {
 // collectDependencies returns whether dependencies telemetry information is sent
 func collectDependencies() bool {
 	return internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
-}
-
-func valConfigs(configs []Configuration) []Configuration {
-	validConfigs := []Configuration{}
-	for _, config := range configs {
-		switch config.Value.(type) {
-		case int:
-			validConfigs = append(validConfigs, config)
-		case float64:
-			validConfigs = append(validConfigs, config)
-		case string:
-			validConfigs = append(validConfigs, config)
-		case bool:
-			validConfigs = append(validConfigs, config)
-		}
-	}
-	return validConfigs
 }
 
 type metricKind string

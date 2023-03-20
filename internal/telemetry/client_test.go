@@ -354,7 +354,7 @@ func TestProductChange(t *testing.T) {
 	}
 	client.Start(nil)
 	client.ProductChange(telemetry.NamespaceProfilers, true,
-		[]telemetry.Configuration{{Name: "delta_profiles", Value: true}})
+		[]telemetry.Configuration{telemetry.BoolConfig("delta_profiles", true)})
 
 	var productsPayload *telemetry.Products = <-receivedProducts
 	assert.Equal(t, productsPayload.Profiler.Enabled, true)

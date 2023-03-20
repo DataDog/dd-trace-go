@@ -32,7 +32,7 @@ func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration 
 	c.newRequest(RequestTypeAppClientConfigurationChange)
 	if len(configuration) > 0 {
 		configChange := new(ConfigurationChange)
-		configChange.Configuration = valConfigs(configuration)
+		configChange.Configuration = configuration
 		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
 		configReq.Body.Payload = configChange
 		c.scheduleSubmit(configReq)
