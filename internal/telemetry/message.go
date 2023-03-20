@@ -117,10 +117,11 @@ type ConfigurationChange struct {
 type Configuration struct {
 	Name string `json:"name"`
 	// Value should have a type that can be marshaled to JSON
-	Value       interface{} `json:"value"`
-	Origin      string      `json:"origin"` // source of config?
-	Error       Error       `json:"error"`
-	IsOverriden bool        `json:"is_overridden"`
+	Value interface{} `json:"value"`
+	// Origin is the source of the config. It is one of {env_var, code, dd_config, remote_config}
+	Origin      string `json:"origin"`
+	Error       Error  `json:"error"`
+	IsOverriden bool   `json:"is_overridden"`
 }
 
 // Products specifies information about available products.
@@ -134,17 +135,6 @@ type ProductDetails struct {
 	Enabled bool   `json:"enabled"`
 	Version string `json:"version,omitempty"`
 	Error   Error  `json:"error,omitempty"`
-}
-
-// Integration is an integration that is available within the app and applicable
-// to be traced
-type Integration struct {
-	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
-	Version     string `json:"version,omitempty"`
-	AutoEnabled bool   `json:"auto_enabled,omitempty"`
-	Compatible  bool   `json:"compatible,omitempty"`
-	Error       string `json:"error,omitempty"`
 }
 
 // Dependencies stores a list of dependencies

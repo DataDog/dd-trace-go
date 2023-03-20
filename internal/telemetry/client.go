@@ -146,7 +146,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if Disabled() {
+	if disabled() {
 		return
 	}
 	if c.started {
@@ -160,7 +160,7 @@ func (c *Client) Start(configuration []Configuration) {
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
-		Configuration: append([]Configuration{}, configuration...),
+		Configuration: valConfigs(configuration),
 		Products: Products{
 			AppSec: ProductDetails{
 				Version: version.Tag,
@@ -218,15 +218,32 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// Disabled returns whether instrumentation telemetry is disabled
+// disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-func Disabled() bool {
+func disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 }
 
 // collectDependencies returns whether dependencies telemetry information is sent
 func collectDependencies() bool {
 	return internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
+}
+
+func valConfigs(configs []Configuration) []Configuration {
+	validConfigs := []Configuration{}
+	for _, config := range configs {
+		switch config.Value.(type) {
+		case int:
+			validConfigs = append(validConfigs, config)
+		case float64:
+			validConfigs = append(validConfigs, config)
+		case string:
+			validConfigs = append(validConfigs, config)
+		case bool:
+			validConfigs = append(validConfigs, config)
+		}
+	}
+	return validConfigs
 }
 
 type metricKind string
