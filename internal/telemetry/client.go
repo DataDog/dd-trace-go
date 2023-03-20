@@ -434,8 +434,9 @@ func (r *Request) submit() error {
 		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
-		_, err := r.trySubmit()
-		if err != nil {
+		if _, err := r.trySubmit(); err == nil {
+			return nil
+		} else {
 			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
 	}
@@ -454,11 +455,8 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 		// agent - retry with agentless
 		return true
 	}
-	// Do not retry with the following status codes:
-	// 400 - client side error
-	// 429 - too many requests
-	// TODO - add more
-	doNotRetry := []int{400, 429}
+	// TODO: add more status codes we do not want to retry on
+	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests}
 	for status := range doNotRetry {
 		if resp.StatusCode == status {
 			return false
