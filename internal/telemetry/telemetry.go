@@ -8,7 +8,7 @@
 package telemetry
 
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
-// the caller can also specify additional configuration changes (e.g. profiler config info),
+// The caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	c.mu.Lock()
