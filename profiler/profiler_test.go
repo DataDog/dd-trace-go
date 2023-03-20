@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"runtime/trace"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -130,64 +129,38 @@ func TestStart(t *testing.T) {
 	})
 }
 
-func TestStartStopIdempotency(t *testing.T) {
-	t.Run("linear", func(t *testing.T) {
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
+// TestStartWithoutStopReconfigures verifies that calling Start while the
+// profiler is already running will restart it with the given configuration.
+func TestStartWithoutStopReconfigures(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
 
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-	})
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
+	defer Stop()
 
-	t.Run("parallel", func(t *testing.T) {
-		var wg sync.WaitGroup
+	m := <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; !ok {
+		t.Errorf("did not see a heap profile")
+	}
 
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					// startup logging makes this test very slow
-					//
-					// Also, the CPU profile is really slow
-					// to stop (200ms/iter) and in general
-					// we don't need to actually run any
-					// profiles for this test
-					Start(WithLogStartup(false), WithProfileTypes())
-				}
-			}()
-		}
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					Stop()
-				}
-			}()
-		}
-		wg.Wait()
-	})
+	// Disable the heap profile, verify that we're not sending it
+	err = Start(
+		WithHTTPClient(client),
+		WithProfileTypes(),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
 
-	t.Run("stop", func(t *testing.T) {
-		Start(WithPeriod(time.Minute))
-		defer Stop()
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		mu.Unlock()
-	})
+	m = <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; ok {
+		t.Errorf("unexpectedly saw a heap profile")
+	}
 }
 
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
