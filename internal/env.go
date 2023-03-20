@@ -44,6 +44,16 @@ func IntEnv(key string, def int) int {
 	return v
 }
 
+// StringEnv returns the parsed string value of an environment variable, or
+// def otherwise.
+func StringEnv(key string, def string) string {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	return vv
+}
+
 // DurationEnv returns the parsed duration value of an environment variable, or
 // def otherwise.
 func DurationEnv(key string, def time.Duration) time.Duration {
