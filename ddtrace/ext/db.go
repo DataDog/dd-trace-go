@@ -38,3 +38,15 @@ const (
 	DBSystemLevelDB       = "leveldb"
 	DBSystemBuntDB        = "buntdb"
 )
+
+// MicrosoftSQLServer specific tags.
+const (
+	// MicrosoftSQLServerInstanceName indicates the Microsoft SQL Server instance name connecting to.
+	MicrosoftSQLServerInstanceName = "db.mssql.instance_name"
+)
+
+// MongoDB specific tags.
+const (
+	// MongoDBCollection indicates the collection being accessed.
+	MongoDBCollection = "db.mongodb.collection"
+)

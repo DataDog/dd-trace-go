@@ -15,17 +15,30 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
-// TagSetter is the interface needed to set a span tag.
-type TagSetter interface {
-	SetTag(string, interface{})
-}
+// BlockedRequestTag used to convey whether a request is blocked
+const BlockedRequestTag = "appsec.blocked"
 
-// TagsHolder wraps a map holding tags. The purpose of this struct is to be used by composition in an Operation
-// to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
-type TagsHolder struct {
-	tags map[string]interface{}
-	mu   sync.Mutex
-}
+type (
+	// TagSetter is the interface needed to set a span tag.
+	TagSetter interface {
+		SetTag(string, interface{})
+	}
+	// TagsHolder wraps a map holding tags. The purpose of this struct is to be used by composition in an Operation
+	// to allow said operation to handle tags addition/retrieval. See httpsec/http.go and grpcsec/grpc.go.
+	TagsHolder struct {
+		tags map[string]interface{}
+		mu   sync.Mutex
+	}
+	// SecurityEventsHolder is a wrapper around a thread safe security events slice. The purpose of this struct is to be
+	// used by composition in an Operation to allow said operation to handle security events addition/retrieval.
+	// See httpsec/http.go and grpcsec/grpc.go.
+	SecurityEventsHolder struct {
+		events []json.RawMessage
+		mu     sync.RWMutex
+	}
+	// ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)
+	ContextKey struct{}
+)
 
 // NewTagsHolder returns a new instance of a TagsHolder struct.
 func NewTagsHolder() TagsHolder {
@@ -42,14 +55,6 @@ func (m *TagsHolder) AddTag(k string, v interface{}) {
 // Tags returns the tags map
 func (m *TagsHolder) Tags() map[string]interface{} {
 	return m.tags
-}
-
-// SecurityEventsHolder is a wrapper around a thread safe security events slice. The purpose of this struct is to be
-// used by composition in an Operation to allow said operation to handle security events addition/retrieval.
-// See httpsec/http.go and grpcsec/grpc.go.
-type SecurityEventsHolder struct {
-	events []json.RawMessage
-	mu     sync.RWMutex
 }
 
 // AddSecurityEvents adds the security events to the collected events list.
