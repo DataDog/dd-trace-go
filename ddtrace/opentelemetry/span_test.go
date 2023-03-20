@@ -169,35 +169,38 @@ func TestSpanSetStatus(t *testing.T) {
 	defer cleanup()
 
 	for _, test := range testData {
-		_, sp := tr.Start(context.Background(), test.trueName)
-		sp.SetStatus(codes.Error, test.trueErrorMsg)
-		for k, v := range test.trueAttributes {
-			sp.SetAttributes(attribute.String(k, v))
-		}
-		assert.True(sp.IsRecording())
-		sp.End()
-		assert.False(sp.IsRecording())
-		// following operations should not be able to modify the Span
-		sp.SetName(test.trueName)
-		sp.SetStatus(test.falseError, test.falseErrorMsg)
-		for k, v := range test.trueAttributes {
-			sp.SetAttributes(attribute.String(k, v))
-			sp.SetAttributes(attribute.String(k, v))
-		}
+		t.Run(fmt.Sprintf("Setting Code: %d", test.code), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 
-		tracer.Flush()
-		payload := waitForPayload(ctx, t, payloads)
+			var sp oteltrace.Span
+			testStatus := func() {
+				sp.End()
+				tracer.Flush()
+				payload, err := waitForPayload(ctx, payloads)
+				if err != nil {
+					t.Fatalf(err.Error())
+				}
+				// An error description is set IFF the span has an error
+				// status code value. Messages related to any other status code
+				// are ignored.
+				if test.code == codes.Error {
+					assert.Contains(payload, test.msg)
+				} else {
+					assert.NotContains(payload, test.msg)
+				}
+				assert.NotContains(payload, test.ignoredCode)
+			}
+			_, sp = tr.Start(context.Background(), "test")
+			sp.SetStatus(test.code, test.msg)
+			sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+			testStatus()
 
-		assert.Contains(payload, test.trueErrorMsg)
-		assert.NotContains(payload, test.falseErrorMsg)
-		assert.Contains(payload, test.trueName)
-		assert.NotContains(payload, test.falseName)
-		for k, v := range test.trueAttributes {
-			assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
-		}
-		for k, v := range test.falseAttributes {
-			assert.NotContains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
-		}
+			_, sp = tr.Start(context.Background(), "test")
+			sp.SetStatus(test.code, test.msg)
+			sp.SetStatus(test.ignoredCode, test.ignoredMsg)
+			testStatus()
+		})
 	}
 }
 
@@ -213,44 +216,29 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	duration := time.Second * 5
 	_, sp := tr.Start(
 		ContextWithStartOptions(context.Background(),
-			tracer.ResourceName("ctx_rsc"),
-			tracer.ServiceName("ctx_srv"),
+			tracer.ResourceName("persisted_ctx_rsc"),
+			tracer.ServiceName("persisted_srv"),
 			tracer.StartTime(startTime),
 			tracer.WithSpanID(1234567890),
-		), "op_name")
+		), "op_name",
+		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
+		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
+	)
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
 	sp.End()
 
 	tracer.Flush()
-	p := waitForPayload(ctx, t, payloads)
-	assert.Contains(p, "ctx_srv")
-	assert.Contains(p, "ctx_rsc")
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, "persisted_ctx_rsc")
+	assert.Contains(p, "persisted_srv")
+	assert.Contains(p, `"type":"producer"`)
 	assert.Contains(p, "1234567890")
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
-}
-
-func TestSpanSetStatus(t *testing.T) {
-	assert := assert.New(t)
-	testData := []struct {
-		higherCode     codes.Code
-		higherCodeDesc string
-		lowerCode      codes.Code
-		lowerCodeDesc  string
-	}{
-		{
-			higherCode:     codes.Ok,
-			higherCodeDesc: "ok_description",
-			lowerCode:      codes.Error,
-			lowerCodeDesc:  "error_description",
-		},
-		{
-			higherCode:     codes.Error,
-			higherCodeDesc: "error_description",
-			lowerCode:      codes.Unset,
-			lowerCodeDesc:  "unset_description",
-		},
-	}
+	assert.NotContains(p, "discarded")
 }
 
 func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
@@ -261,42 +249,6 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	tr := otel.Tracer("")
 	defer cleanup()
 
-	for _, test := range testData {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		_, sp := tr.Start(context.Background(), "test")
-		sp.SetStatus(test.higherCode, test.higherCodeDesc)
-		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
-		sp.End()
-
-		tracer.Flush()
-		payload := waitForPayload(ctx, t, payloads)
-
-		if test.higherCode == codes.Error {
-			assert.Contains(payload, test.higherCodeDesc)
-		} else {
-			assert.NotContains(payload, test.higherCodeDesc)
-		}
-		assert.NotContains(payload, test.lowerCodeDesc)
-
-		_, sp = tr.Start(context.Background(), "test")
-		sp.SetStatus(test.lowerCode, test.lowerCodeDesc)
-		sp.SetStatus(test.higherCode, test.higherCodeDesc)
-		sp.End()
-
-		tracer.Flush()
-		payload = waitForPayload(ctx, t, payloads)
-
-		if test.higherCode == codes.Error {
-			assert.Contains(payload, test.higherCodeDesc)
-		} else {
-			assert.NotContains(payload, test.higherCodeDesc)
-		}
-		assert.NotContains(payload, test.lowerCodeDesc)
-		cancel()
-	}
-}
-
-func TestSpanContextWithStartOptions(t *testing.T) {
 	startTime := time.Now()
 	_, sp := tr.Start(
 		ContextWithStartOptions(context.Background(),
@@ -372,12 +324,15 @@ func TestSpanEndOptions(t *testing.T) {
 			tracer.StartTime(startTime),
 			tracer.WithSpanID(1234567890),
 		), "op_name")
-  EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second*5)),
+
+	EndOptions(sp, tracer.FinishTime(startTime.Add(time.Second*5)),
 		tracer.WithError(errors.New("persisted_option")))
 	sp.End()
-
 	tracer.Flush()
-	p := waitForPayload(ctx, t, payloads)
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
 	assert.Contains(p, "ctx_srv")
 	assert.Contains(p, "ctx_rsc")
 	assert.Contains(p, "1234567890")
@@ -405,7 +360,6 @@ func TestSpanSetAttributes(t *testing.T) {
 	}
 	sp.End()
 	tracer.Flush()
-
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -429,7 +383,6 @@ func TestTracerStartOptions(t *testing.T) {
 	_, sp := tr.Start(context.Background(), "test")
 	sp.End()
 	tracer.Flush()
-  
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
