@@ -93,7 +93,10 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
 		// checking the length to avoid panic when parsing
-		if f, err := strconv.ParseUint(parent[len(parent)-2:], 16, 8); err != nil {
+		// The format of the traceparent is `-` separated string,
+		// where flags represents the propagated flags in the format of 2 hex-encoded digits at the end of the traceparent.
+		otelFlagLen := 2
+		if f, err := strconv.ParseUint(parent[len(parent)-otelFlagLen:], 16, 8); err != nil {
 			log.Debug("Couldn't parse traceparent: %v", err)
 		} else {
 			c.TraceFlags = oteltrace.TraceFlags(f)
