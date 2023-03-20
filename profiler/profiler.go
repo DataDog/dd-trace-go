@@ -32,8 +32,11 @@ var (
 	containerID    = internal.ContainerID() // replaced in tests
 )
 
-// Start starts the profiler. It may return an error if an API key is not provided by means of
-// the WithAPIKey option, or if a hostname is not found.
+// Start starts the profiler. If the profiler is already running, it will be
+// stopped and restarted with the given options.
+//
+// It may return an error if an API key is not provided by means of the
+// WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()

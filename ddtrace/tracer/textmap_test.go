@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -1571,7 +1572,7 @@ func TestNonePropagator(t *testing.T) {
 
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
@@ -1590,7 +1591,7 @@ func TestNonePropagator(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
 		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
-		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
+		assert.Contains(tp.Logs()[0], "Propagator \"none\" has no effect when combined with other propagators. "+
 			"To disable the propagator, set to `none`")
 	})
 

@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - "**"
+  merge_group:
 
 concurrency: 
   group: ${{ github.ref }}
