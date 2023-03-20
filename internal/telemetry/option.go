@@ -136,10 +136,6 @@ func (c *Client) applyFallbackOps() {
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	if len(c.metrics) == 0 {
-		// XXX: Should we let metrics persist between starting and stopping?
-		c.metrics = make(map[Namespace]map[string]*metric)
-	}
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless

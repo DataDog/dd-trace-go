@@ -156,7 +156,7 @@ func (c *Client) Start(configuration []Configuration) {
 	c.applyFallbackOps()
 
 	c.started = true
-
+	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
