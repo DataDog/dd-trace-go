@@ -3,6 +3,27 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
+// Package opentelemetry provides a wrapper on top of the Datadog tracer that can be used with OpenTelemetry.
+// This feature is currently in beta.
+// It also provides a wrapper around TracerProvider to propagate a list of tracer.StartOption
+// that are specific to Datadog's APM product. To use it, simply call "NewTracerProvider".
+//
+//	provider := opentelemetry.NewTracerProvider(tracer.WithService("opentelemetry_service"))
+//
+// When using Datadog, the OpenTelemetry span name is what is called operation name in Datadog's terms.
+// Below is an example setting the tracer provider, initializing a tracer, and creating a span.
+//
+//	otel.SetTracerProvider(opentelemetry.NewTracerProvider())
+//	tracer := otel.Tracer("")
+//	ctx, sp := tracer.Start(context.Background(), "span_name")
+//	yourCode(ctx)
+//	sp.End()
+//
+// Not every feature provided by OpenTelemtry is supported with this wrapper today.
+// This package seeks to implement a minimal set of functions within
+// the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
+// to allow users to send traces to Datadog using existing OpenTelemtry code with minimal changes to the application.
+// Span events (https://opentelemetry.io/docs/concepts/signals/traces/#span-events) are not supported at this time.
 package opentelemetry
 
 import (
