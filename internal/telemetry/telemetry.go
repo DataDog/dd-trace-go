@@ -7,25 +7,43 @@
 // Datadog regarding usage of an APM library such as tracing or profiling.
 package telemetry
 
-// ProductStart ...
-func (c *Client) ProductStart(namespace Namespace, configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+)
 
-	if c.started {
-		c.productChange(namespace, true, configuration)
+// ProductStart signals that the tracer or profiler has started with
+// some configuration information. The telemetry event emitted depends
+// on which product is starting, as well as whether an app-started event
+// has already been sent.
+func ProductStart(namespace Namespace, configuration []Configuration) {
+	GlobalClient.mu.Lock()
+	defer GlobalClient.mu.Unlock()
+
+	if GlobalClient.started {
+		switch namespace {
+		case NamespaceProfilers:
+			GlobalClient.productChange(NamespaceProfilers, true, configuration)
+		case NamespaceTracers:
+			// Since appsec is integrated with the tracer, we sent an app-product-change
+			// update about appsec when the tracer starts. Any tracer-related configuration
+			// information can be passed along here as well.
+			GlobalClient.productChange(NamespaceASM, appsec.Enabled(), configuration)
+		}
 	} else {
-		c.start(configuration)
+		GlobalClient.start(configuration, namespace)
 	}
 
 }
 
-// ProductStop ...
+// ProductStop signals that a Product had stopped. For the tracer, we do nothing when it stops.
 // Ensure you have called ProductStart before calling ProductStop.
-func (c *Client) ProductStop(namespace Namespace) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.productChange(namespace, false, []Configuration{})
+func ProductStop(namespace Namespace) {
+	GlobalClient.mu.Lock()
+	defer GlobalClient.mu.Unlock()
+	if namespace == NamespaceTracers {
+		return
+	}
+	GlobalClient.productChange(namespace, false, []Configuration{})
 }
 
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
@@ -43,6 +61,9 @@ func (c *Client) productChange(namespace Namespace, enabled bool, configuration 
 		products.Profiler = ProductDetails{Enabled: enabled}
 	case NamespaceASM:
 		products.AppSec = ProductDetails{Enabled: enabled}
+	case NamespaceTracers:
+		c.log("attempted to send app-product-change with the tracer namespace, but tracer is not a product")
+		return
 	default:
 		c.log("unknown product namespace, app-product-change telemetry event will not send")
 		return

@@ -148,9 +148,7 @@ func (c *Client) log(msg string, args ...interface{}) {
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *Client) start(configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Client) start(configuration []Configuration, namespace Namespace) {
 	if disabled() {
 		return
 	}
@@ -167,14 +165,21 @@ func (c *Client) start(configuration []Configuration) {
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
+	productInfo := Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			Enabled: appsec.Enabled(),
+		},
+	}
+	if namespace == NamespaceProfilers {
+		productInfo.Profiler = ProductDetails{
+			Version: version.Tag,
+			Enabled: true,
+		}
+	}
 	payload := &AppStarted{
 		Configuration: configuration,
-		Products: Products{
-			AppSec: ProductDetails{
-				Version: version.Tag,
-				Enabled: appsec.Enabled(),
-			},
-		},
+		Products:      productInfo,
 	}
 
 	appStarted := c.newRequest(RequestTypeAppStarted)
