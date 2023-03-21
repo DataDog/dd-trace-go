@@ -375,7 +375,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
-			spanCtx := &spanContext{traceID: 42, spanID: 42}
+			spanCtx := &spanContext{traceID: traceIDFromLowerUint64(42), spanID: 42}
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
@@ -765,7 +765,7 @@ func TestSpanLog(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
-		span.context.traceID128 = "01"
+		span.context.traceID.SetUpper(1)
 		span.Finish()
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
 		v, _ := span.context.meta(keyTraceID128)

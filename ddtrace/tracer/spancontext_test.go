@@ -290,9 +290,9 @@ func TestNewSpanContext(t *testing.T) {
 		sctx, ok := ctx.(*spanContext)
 		assert.True(ok)
 		span := StartSpan("some-span", ChildOf(ctx))
-		assert.EqualValues(sctx.traceID, 1)
-		assert.EqualValues(sctx.spanID, 2)
-		assert.EqualValues(*sctx.trace.priority, 3)
+		assert.EqualValues(uint64(1), sctx.traceID.Lower())
+		assert.EqualValues(2, sctx.spanID)
+		assert.EqualValues(3, *sctx.trace.priority)
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -493,4 +493,16 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
+}
+
+func TestTraceIDHexEncoded(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
+}
+
+func TestTraceIDEmpty(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.False(t, tid.Empty())
 }

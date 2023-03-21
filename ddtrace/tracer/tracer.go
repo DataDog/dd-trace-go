@@ -7,8 +7,6 @@ package tracer
 
 import (
 	gocontext "context"
-	"encoding/binary"
-	"encoding/hex"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -448,7 +446,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID
+		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
@@ -472,13 +470,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 
 	// add 128 bit trace id, if enabled, formatted as big-endian:
 	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-	if span.context.traceID128 == "" && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+	if !span.context.traceID.HasUpper() && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		id128 := startTime.Unix()
-		b := make([]byte, 8)
 		// casting from int64 -> uint32 should be safe since the start time won't be
-		// negative, and the seconds should fit within 32-bits for the forseeable future.
-		binary.BigEndian.PutUint32(b, uint32(id128))
-		span.context.traceID128 = hex.EncodeToString(b)
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+
+		//TODO: I think I messed this up and need to to bit twiddling
+		span.context.traceID.SetUpper(uint64(uint32(id128)))
 	}
 
 	// add tags from options

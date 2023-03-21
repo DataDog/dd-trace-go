@@ -25,6 +25,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
+func traceIDFromLowerUint64(i uint64) traceID {
+	t := traceID{}
+	t.SetLower(i)
+	return t
+}
+
+func traceIDFromUint64s(u, l uint64) traceID {
+	t := traceID{}
+	t.SetLower(l)
+	t.SetUpper(u)
+	return t
+}
+
 func TestHTTPHeadersCarrierSet(t *testing.T) {
 	h := http.Header{}
 	c := HTTPHeadersCarrier(h)
@@ -100,7 +113,7 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	assert.Equal(ErrInvalidSpanContext, err)
 	err = propagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err) // no traceID and spanID
-	err = propagator.Inject(&spanContext{traceID: 1}, TextMapCarrier(map[string]string{}))
+	err = propagator.Inject(&spanContext{traceID: traceIDFromLowerUint64(1)}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err) // no spanID
 
 	_, err = propagator.Extract(2)
@@ -405,40 +418,37 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				traceID, traceID128, spanID uint64
-				out                         map[string]string
+				tid    traceID
+				spanID uint64
+				out    map[string]string
 			}{
 				{
-					traceID:    1412508178991881,
-					traceID128: 9863134987902842,
-					spanID:     1842642739201064,
+					tid:    traceIDFromUint64s(9863134987902842, 1412508178991881),
+					spanID: 1842642739201064,
 					out: map[string]string{
 						b3TraceIDHeader: "00230a7811535f7a000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
 				{
-					traceID:    1412508178991881,
-					traceID128: 0,
-					spanID:     1842642739201064,
+					tid:    traceIDFromUint64s(0, 1412508178991881),
+					spanID: 1842642739201064,
 					out: map[string]string{
 						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
 				{
-					traceID:    9530669991610245,
-					traceID128: 0,
-					spanID:     9455715668862222,
+					tid:    traceIDFromUint64s(0, 9530669991610245),
+					spanID: 9455715668862222,
 					out: map[string]string{
 						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
 				},
 				{
-					traceID:    1,
-					traceID128: 1,
-					spanID:     1,
+					tid:    traceIDFromUint64s(1, 1),
+					spanID: 1,
 					out: map[string]string{
 						b3TraceIDHeader: "00000000000000010000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
@@ -451,8 +461,7 @@ func TestEnvVars(t *testing.T) {
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID = test.traceID
-					ctx.traceID128 = fmt.Sprintf("%016x", test.traceID128)
+					ctx.traceID = test.tid
 					ctx.spanID = test.spanID
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
@@ -526,9 +535,8 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 					sctx, ok := ctx.(*spanContext)
 					assert.True(ok)
-
-					assert.Equal(test.traceID128, sctx.traceID128)
-					assert.Equal(test.out[0], sctx.traceID)
+					// TODO: need to check the rest of the trace ID :(
+					assert.Equal(traceIDFromLowerUint64(test.out[0]), sctx.traceID)
 					assert.Equal(test.out[1], sctx.spanID)
 				})
 			}
@@ -623,7 +631,7 @@ func TestEnvVars(t *testing.T) {
 					sctx, ok := ctx.(*spanContext)
 					assert.True(ok)
 
-					assert.Equal(tc.out[0], sctx.traceID)
+					assert.Equal(tc.out[0], sctx.traceID.Lower())
 					assert.Equal(tc.out[1], sctx.spanID)
 					// assert.Equal(test.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
@@ -638,15 +646,15 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3 single header inject", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "b3 single header")
 		var tests = []struct {
-			in  []uint64 // contains [<trace_id_128>, <trace_id>, <span_id>, <sampling_decision>]
+			in  []uint64 // contains [<trace_id_lower_bits>, <span_id>, <sampling_decision>]
 			out string
 		}{
 			{
-				[]uint64{0, 18368781661998368512, 17939463908140879269, 1},
+				[]uint64{18368781661998368512, 17939463908140879269, 1},
 				"feeb0599801f4700-f8f5c76089ad8da5-1",
 			},
 			{
-				[]uint64{0, 11681107445354718197, 11667520360719770894, 0},
+				[]uint64{11681107445354718197, 11667520360719770894, 0},
 				"a21ba1551789e3f5-a1eb5bf36e56e50e-0",
 			},
 		}
@@ -657,10 +665,9 @@ func TestEnvVars(t *testing.T) {
 				root := tracer.StartSpan("myrequest").(*span)
 				ctx, ok := root.Context().(*spanContext)
 				require.True(t, ok)
-				ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0])
-				ctx.traceID = tc.in[1]
-				ctx.spanID = tc.in[2]
-				ctx.setSamplingPriority(int(tc.in[3]), samplernames.Unknown)
+				ctx.traceID = traceIDFromLowerUint64(tc.in[0])
+				ctx.spanID = tc.in[1]
+				ctx.setSamplingPriority(int(tc.in[2]), samplernames.Unknown)
 				headers := TextMapCarrier(map[string]string{})
 				err := tracer.Inject(ctx, headers)
 				require.Nil(t, err)
@@ -683,25 +690,25 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  []uint64 // contains [<trace_id_128>, <trace_id>, <span_id>]
+				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 				out map[string]string
 			}{
 				{
-					[]uint64{0, 1412508178991881, 1842642739201064},
+					[]uint64{1412508178991881, 1842642739201064},
 					map[string]string{
 						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
 				{
-					[]uint64{0, 9530669991610245, 9455715668862222},
+					[]uint64{9530669991610245, 9455715668862222},
 					map[string]string{
 						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
 				},
 				{
-					[]uint64{0, 1, 1},
+					[]uint64{1, 1},
 					map[string]string{
 						b3TraceIDHeader: "0000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
@@ -714,9 +721,8 @@ func TestEnvVars(t *testing.T) {
 					defer tracer.Stop()
 					root := tracer.StartSpan("web.request").(*span)
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0]) // add when 128-bit trace id support is enabled
-					ctx.traceID = tc.in[1]
-					ctx.spanID = tc.in[2]
+					ctx.traceID = traceIDFromLowerUint64(tc.in[0])
+					ctx.spanID = tc.in[1]
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
 
@@ -817,25 +823,25 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  []uint64 // contains [<trace_id_128>, <trace_id>, <span_id>]
+				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 				out map[string]string
 			}{
 				{
-					[]uint64{0, 1412508178991881, 1842642739201064},
+					[]uint64{1412508178991881, 1842642739201064},
 					map[string]string{
 						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
 				},
 				{
-					[]uint64{0, 9530669991610245, 9455715668862222},
+					[]uint64{9530669991610245, 9455715668862222},
 					map[string]string{
 						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
 				},
 				{
-					[]uint64{0, 1, 1},
+					[]uint64{1, 1},
 					map[string]string{
 						b3TraceIDHeader: "0000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
@@ -850,9 +856,8 @@ func TestEnvVars(t *testing.T) {
 					root.SetTag(ext.SamplingPriority, -1)
 					root.SetBaggageItem("item", "x")
 					ctx, ok := root.Context().(*spanContext)
-					ctx.traceID128 = fmt.Sprintf("%016x", tc.in[0])
-					ctx.traceID = tc.in[1]
-					ctx.spanID = tc.in[2]
+					ctx.traceID = traceIDFromLowerUint64(tc.in[0])
+					ctx.spanID = tc.in[1]
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
 
@@ -861,7 +866,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Nil(err)
 
 					sctx, err := tracer.Extract(headers)
-					assert.Nil(err)
+					require.Nil(t, err)
 
 					xctx, ok := sctx.(*spanContext)
 					assert.True(ok)
@@ -888,8 +893,8 @@ func TestEnvVars(t *testing.T) {
 			}
 			var tests = []struct {
 				in              TextMapCarrier
-				out             []uint64 // contains [<trace_id>, <span_id>, <sampling_decision>]
-				traceID128      string
+				out             []uint64 // contains [<span_id>, <sampling_decision>]
+				tid             traceID
 				origin          string
 				propagatingTags map[string]string
 			}{
@@ -898,7 +903,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 2},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					out:    []uint64{2459565876494606882, 2},
 					origin: "rum",
 					propagatingTags: map[string]string{
 						"_dd.p.dm":     "-4",
@@ -911,9 +917,9 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-10000000000000000000000000000000-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out:        []uint64{0x0, 2459565876494606882, 2},
-					traceID128: "1000000000000000",
-					origin:     "rum",
+					out:    []uint64{2459565876494606882, 2},
+					tid:    traceIDFromUint64s(1152921504606846976, 0),
+					origin: "rum",
 					propagatingTags: map[string]string{
 						"_dd.p.dm":     "-4",
 						"_dd.p.usr.id": "baz64==",
@@ -925,7 +931,9 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
 						tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 1},
+					out: []uint64{2459565876494606882, 1},
+					tid: traceIDFromLowerUint64(1229782938247303441),
+
 					origin: "rum",
 					propagatingTags: map[string]string{
 						"_dd.p.dm":     "-2",
@@ -937,7 +945,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 2}, // tracestate priority takes precedence
+					out:    []uint64{2459565876494606882, 2}, // tracestate priority takes precedence
+					tid:    traceIDFromLowerUint64(1229782938247303441),
 					origin: "rum:rum",
 					propagatingTags: map[string]string{
 						"_dd.p.dm":     "-4",
@@ -950,7 +959,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 1}, // tracestate priority takes precedence
+					out:    []uint64{2459565876494606882, 1}, // tracestate priority takes precedence
+					tid:    traceIDFromLowerUint64(1229782938247303441),
 					origin: "rum:rum",
 					propagatingTags: map[string]string{
 						"_dd.p.dm":     "-4",
@@ -963,7 +973,9 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
 						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 1}, // tracestate priority takes precedence
+					out: []uint64{2459565876494606882, 1}, // tracestate priority takes precedence
+					tid: traceIDFromLowerUint64(1229782938247303441),
+
 					origin: "rum:rum",
 					propagatingTags: map[string]string{
 						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
@@ -976,7 +988,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 1}, // tracestate priority takes precedence
+					out:    []uint64{2459565876494606882, 1}, // tracestate priority takes precedence
+					tid:    traceIDFromLowerUint64(1229782938247303441),
 					origin: "2",
 					propagatingTags: map[string]string{
 						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
@@ -989,7 +1002,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
 					},
-					out:    []uint64{1229782938247303441, 2459565876494606882, 1}, // tracestate priority takes precedence
+					out:    []uint64{2459565876494606882, 1}, // tracestate priority takes precedence
+					tid:    traceIDFromLowerUint64(1229782938247303441),
 					origin: "=_=",
 					propagatingTags: map[string]string{
 						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
@@ -1010,13 +1024,12 @@ func TestEnvVars(t *testing.T) {
 					sctx, ok := ctx.(*spanContext)
 					assert.True(ok)
 
-					assert.Equal(tc.out[0], sctx.traceID)
-					assert.Equal(tc.out[1], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.out[0], sctx.spanID)
 					assert.Equal(tc.origin, sctx.origin)
 					p, ok := sctx.samplingPriority()
 					assert.True(ok)
-					assert.Equal(int(tc.out[2]), p)
+					assert.Equal(int(tc.out[1]), p)
 
 					assert.Equal(tc.propagatingTags, sctx.trace.propagatingTags)
 				})
@@ -1081,7 +1094,8 @@ func TestEnvVars(t *testing.T) {
 			var tests = []struct {
 				inHeaders  TextMapCarrier
 				outHeaders TextMapCarrier
-				out        []uint64 // contains [<trace_id>, <span_id>]
+				sid        uint64
+				tid        traceID
 				priority   int
 				traceID128 string
 				origin     string
@@ -1098,7 +1112,8 @@ func TestEnvVars(t *testing.T) {
 						DefaultTraceIDHeader:  "4bf92f3577b34da6a3ce929d0e0e4736",
 						DefaultParentIDHeader: "00f067aa0ba902b7",
 					},
-					out:        []uint64{11803532876627986230, 67667974448284343},
+					sid:        67667974448284343,
+					tid:        traceIDFromLowerUint64(11803532876627986230),
 					priority:   -1,
 					traceID128: "4bf92f3577b34da6",
 					origin:     "synthetics",
@@ -1119,9 +1134,8 @@ func TestEnvVars(t *testing.T) {
 					sctx.origin = tc.origin
 					assert.True(ok)
 
-					assert.Equal(tc.out[0], sctx.traceID)
-					assert.Equal(tc.out[1], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.sid, sctx.spanID)
 					p, ok := sctx.samplingPriority()
 					assert.True(ok)
 					assert.Equal(tc.priority, p)
@@ -1153,18 +1167,20 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in                 []uint64 // contains [<trace_id>, <span_id>]
-				out                TextMapCarrier
-				priority           int
-				origin, traceID128 string
-				propagatingTags    map[string]string
+				tid             traceID
+				sid             uint64
+				out             TextMapCarrier
+				priority        int
+				origin          string
+				propagatingTags map[string]string
 			}{
 				{
 					out: TextMapCarrier{
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum;t.usr.id: baz64 ~~,othervendor=t61rcWkgMzE",
 					},
-					in:       []uint64{1229782938247303441, 2459565876494606882},
+					tid:      traceIDFromLowerUint64(1229782938247303441),
+					sid:      2459565876494606882,
 					priority: 2,
 					origin:   "rum",
 					propagatingTags: map[string]string{
@@ -1177,7 +1193,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~",
 					},
-					in:       []uint64{1229782938247303441, 2459565876494606882},
+					tid:      traceIDFromLowerUint64(1229782938247303441),
+					sid:      2459565876494606882,
 					priority: 1,
 					origin:   "rum",
 					propagatingTags: map[string]string{
@@ -1189,10 +1206,10 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-12300000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum:rum;t.tid:1230000000000000;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					in:         []uint64{1229782938247303441, 2459565876494606882},
-					priority:   2, // tracestate priority takes precedence
-					origin:     "rum:rum",
-					traceID128: "1230000000000000",
+					tid:      traceIDFromUint64s(1310547491564814336, 1229782938247303441),
+					sid:      2459565876494606882,
+					priority: 2, // tracestate priority takes precedence
+					origin:   "rum:rum",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz64==",
 						"tracestate":   "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
@@ -1203,7 +1220,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					in:       []uint64{1229782938247303441, 2459565876494606882},
+					tid:      traceIDFromLowerUint64(1229782938247303441),
+					sid:      2459565876494606882,
 					priority: 1, // traceparent priority takes precedence
 					origin:   "rum:rum",
 					propagatingTags: map[string]string{
@@ -1216,7 +1234,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
 						tracestateHeader:  "dd=s:-1;o:rum:rum;t.usr.id:baz:64~~,othervendor=t61rcWkgMzE",
 					},
-					in:       []uint64{1229782938247303441, 2459565876494606882},
+					tid:      traceIDFromLowerUint64(1229782938247303441),
+					sid:      2459565876494606882,
 					priority: -1, // traceparent priority takes precedence
 					origin:   "rum:rum",
 					propagatingTags: map[string]string{
@@ -1229,7 +1248,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~ ,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
 					},
-					in:     []uint64{1229782938247303442, 2459565876494606882},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					sid:    2459565876494606882,
 					origin: "old_tracestate",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64== ",
@@ -1241,7 +1261,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
 					},
-					in:     []uint64{1229782938247303442, 2459565876494606882},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					sid:    2459565876494606882,
 					origin: "old_tracestate",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64==",
@@ -1253,7 +1274,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~,foo=bar",
 					},
-					in:     []uint64{1229782938247303442, 2459565876494606882},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					sid:    2459565876494606882,
 					origin: "old_tracestate",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64==",
@@ -1265,7 +1287,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64__,foo=bar",
 					},
-					in:     []uint64{1229782938247303442, 2459565876494606882},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					sid:    2459565876494606882,
 					origin: "old_tracestate",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64~~",
@@ -1277,7 +1300,8 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
 						tracestateHeader:  "dd=s:0;o:~~_;t.usr.id:baz:64__,foo=bar",
 					},
-					in:     []uint64{1229782938247303442, 2459565876494606882},
+					tid:    traceIDFromLowerUint64(1229782938247303441),
+					sid:    2459565876494606882,
 					origin: "==~",
 					propagatingTags: map[string]string{
 						"_dd.p.usr.id": "baz:64~~",
@@ -1294,9 +1318,8 @@ func TestEnvVars(t *testing.T) {
 					root.SetTag(ext.SamplingPriority, tc.priority)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.origin = tc.origin
-					ctx.traceID = tc.in[0]
-					ctx.traceID128 = tc.traceID128
-					ctx.spanID = tc.in[1]
+					ctx.traceID = tc.tid
+					ctx.spanID = tc.sid
 					ctx.trace.propagatingTags = tc.propagatingTags
 					headers := TextMapCarrier(map[string]string{})
 					err := tracer.Inject(ctx, headers)
@@ -1323,7 +1346,7 @@ func TestEnvVars(t *testing.T) {
 					root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.origin = "old_tracestate"
-					ctx.traceID = 1229782938247303442
+					ctx.traceID = traceIDFromLowerUint64(1229782938247303442)
 					ctx.spanID = 2459565876494606882
 					ctx.trace.propagatingTags = map[string]string{
 						"tracestate": "valid_vendor=a:1",
@@ -1490,12 +1513,12 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in         TextMapCarrier
-				outMap     TextMapCarrier
-				out        []uint64 // contains [<trace_id>, <parent_id>, <span_id>]
-				traceID128 string
-				priority   float64
-				origin     string
+				in       TextMapCarrier
+				outMap   TextMapCarrier
+				out      []uint64 // contains [<parent_id>, <span_id>]
+				tid      traceID
+				priority float64
+				origin   string
 			}{
 				{
 					in: TextMapCarrier{
@@ -1506,9 +1529,9 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-12345678901234567890123456789012-0000000000000001-01",
 						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~;t.tid:1234567890123456",
 					},
-					out:        []uint64{8687463697196027922, 1311768467284833366, 1},
-					traceID128: "1234567890123456",
-					priority:   1,
+					out:      []uint64{1311768467284833366, 1},
+					tid:      traceIDFromUint64s(1311768467284833366, 8687463697196027922),
+					priority: 1,
 				},
 			}
 			for i, tc := range tests {
@@ -1532,10 +1555,9 @@ func TestEnvVars(t *testing.T) {
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
-					assert.Equal(tc.out[0], sctx.traceID)
-					assert.Equal(tc.out[1], sctx.span.ParentID)
-					assert.Equal(tc.out[2], sctx.spanID)
-					assert.Equal(tc.traceID128, sctx.traceID128)
+					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.out[0], sctx.span.ParentID)
+					assert.Equal(tc.out[1], sctx.spanID)
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
@@ -1582,7 +1604,7 @@ func TestNonePropagator(t *testing.T) {
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		ctx, ok := root.Context().(*spanContext)
-		ctx.traceID = 1
+		ctx.traceID = traceIDFromLowerUint64(1)
 		ctx.spanID = 1
 		headers := TextMapCarrier(map[string]string{})
 		err := tracer.Inject(ctx, headers)
@@ -1604,7 +1626,7 @@ func TestNonePropagator(t *testing.T) {
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		ctx, ok := root.Context().(*spanContext)
-		ctx.traceID = 1
+		ctx.traceID = traceIDFromLowerUint64(1)
 		ctx.spanID = 1
 		headers := TextMapCarrier(map[string]string{})
 		err := tracer.Inject(ctx, headers)
@@ -1643,7 +1665,7 @@ func TestNonePropagator(t *testing.T) {
 			root.SetTag(ext.SamplingPriority, -1)
 			root.SetBaggageItem("item", "x")
 			ctx, ok := root.Context().(*spanContext)
-			ctx.traceID = 1
+			ctx.traceID = traceIDFromLowerUint64(1)
 			ctx.spanID = 1
 			headers := TextMapCarrier(map[string]string{})
 			err := tracer.Inject(ctx, headers)
@@ -1667,7 +1689,7 @@ func TestNonePropagator(t *testing.T) {
 			root.SetTag(ext.SamplingPriority, -1)
 			root.SetBaggageItem("item", "x")
 			ctx, ok := root.Context().(*spanContext)
-			ctx.traceID = 1
+			ctx.traceID = traceIDFromLowerUint64(1)
 			ctx.spanID = 1
 			headers := TextMapCarrier(map[string]string{})
 			err := tracer.Inject(ctx, headers)

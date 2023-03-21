@@ -8,9 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +20,60 @@ import (
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
+
+type traceID [16]byte // TraceID in big endian
+
+var emptyTraceID traceID
+
+func (t *traceID) HexEncoded() string {
+	return hex.EncodeToString(t[:])
+}
+
+func (t *traceID) Lower() uint64 {
+	return binary.BigEndian.Uint64(t[8:])
+}
+
+func (t *traceID) Upper() uint64 {
+	return binary.BigEndian.Uint64(t[:9])
+}
+
+func (t *traceID) SetLower(i uint64) {
+	binary.BigEndian.PutUint64(t[8:], i)
+}
+
+func (t *traceID) SetUpper(i uint64) {
+	binary.BigEndian.PutUint64(t[:9], i)
+}
+
+func (t *traceID) SetUpperFromHex(s string) {
+	bs, err := hex.DecodeString(s)
+	if err != nil {
+		log.Debug("Attempted to decode an invalid hex traceID %s", s)
+		return
+	}
+	n := copy(t[:9], bs)
+	if n > 8 {
+		log.Debug("More than 8 bytes received from hex trace ID %s", s)
+	}
+}
+
+func (t *traceID) Empty() bool {
+	return *t == emptyTraceID
+}
+
+func (t *traceID) HasUpper() bool {
+	//TODO: in go 1.20 we can simplify this
+	for _, b := range t[:9] {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *traceID) UpperHex() string {
+	return hex.EncodeToString(t[:9])
+}
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -38,9 +90,8 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID    uint64
-	traceID128 string // high order 64 bits of a 128 bit trace id, hex encoded into 16 bytes
-	spanID     uint64
+	traceID traceID
+	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
@@ -55,12 +106,12 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		spanID: span.SpanID,
+		span:   span,
 	}
+	context.traceID.SetLower(span.TraceID) // TODO: look in the incoming span for the upper bits?
 	if parent != nil {
-		context.traceID128 = parent.traceID128
+		context.traceID = parent.traceID
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
@@ -89,28 +140,11 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID }
+func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
-	var hi []byte
-	if c.traceID128 != "" {
-		// 128 bit trace ids is enabled, so fill the higher order bits
-		var err error
-		hi, err = hex.DecodeString(c.traceID128)
-		if err != nil {
-			log.Debug("failed to decode upper 64 bits of 128-bit trace id %q", c.traceID128)
-			return "" // this would be our fault, and means we have a bug
-		}
-		if len(hi) > 8 {
-			log.Debug("invalid 128-bit trace id %q", c.traceID128)
-			return "" // this would be our fault, and means we have a bug
-		}
-	}
-	buf := make([]byte, 16)
-	copy(buf[8-len(hi):], hi)
-	binary.BigEndian.PutUint64(buf[8:], c.traceID)
-	return hex.EncodeToString(buf)
+	return c.traceID.HexEncoded()
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
@@ -367,8 +401,8 @@ func (t *trace) finishedOne(s *span) {
 			s.setMeta(k, v)
 		}
 	}
-	if s.context != nil && strings.Trim(s.context.traceID128, "0") != "" {
-		s.setMeta(keyTraceID128, fmt.Sprintf("%016s", s.context.traceID128))
+	if s.context != nil && s.context.traceID.HasUpper() {
+		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
 	if len(t.spans) != t.finished {
 		return
