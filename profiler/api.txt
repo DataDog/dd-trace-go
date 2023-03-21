@@ -1,0 +1,45 @@
+const BlockProfile ProfileType = 2
+const CPUProfile ProfileType = 1
+const DefaultBlockRate untyped int = 100000000
+const DefaultDuration Duration = 60000000000
+const DefaultMutexFraction untyped int = 10
+const DefaultPeriod Duration = 60000000000
+const DefaultUploadTimeout Duration = 10000000000
+const GoroutineProfile ProfileType = 4
+const HeapProfile ProfileType = 0
+const MetricsProfile ProfileType = 6
+const MutexProfile ProfileType = 3
+func BlockProfileRate(rate int) Option
+func CPUDuration(d Duration) Option
+func CPUProfileRate(hz int) Option
+func MutexProfileFraction(rate int) Option
+func PprofDiff(a *Profile, b *Profile) (*Profile, error)
+func Start(opts ...Option) error
+func Stop()
+func WithAPIKey(key string) Option
+func WithAgentAddr(hostport string) Option
+func WithAgentlessUpload() Option
+func WithDeltaProfiles(enabled bool) Option
+func WithEnv(env string) Option
+func WithHTTPClient(client *Client) Option
+func WithHostname(hostname string) Option
+func WithLogStartup(enabled bool) Option
+func WithPeriod(d Duration) Option
+func WithProfileTypes(types ...ProfileType) Option
+func WithService(name string) Option
+func WithSite(site string) Option
+func WithStatsd(client StatsdClient) Option
+func WithTags(tags ...string) Option
+func WithUDS(socketPath string) Option
+func WithURL(url string) Option
+func WithUploadTimeout(d Duration) Option
+func WithVersion(version string) Option
+type Option func(*config)
+type ProfileType int
+method (ProfileType) Filename() string
+method (ProfileType) String() string
+method (ProfileType) Tag() string
+method (ProfileType) lookup() profileType
+type StatsdClient interface{Count(event string, times int64, tags []string, rate float64) error; Timing(event string, duration Duration, tags []string, rate float64) error}
+method (StatsdClient) Count(event string, times int64, tags []string, rate float64) error
+method (StatsdClient) Timing(event string, duration Duration, tags []string, rate float64) error
