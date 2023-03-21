@@ -47,7 +47,7 @@ const (
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
-	// is enabled. Still sent when Start is called for the telemetry client.
+	// is enabled. Sent when Start is called for the telemetry client.
 	RequestTypeDependenciesLoaded RequestType = "app-dependencies-loaded"
 	// RequestTypeAppClientConfigurationChange is sent if there are changes
 	// to the client library configuration
