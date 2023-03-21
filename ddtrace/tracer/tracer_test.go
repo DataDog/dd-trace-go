@@ -611,28 +611,28 @@ func TestSamplingDecision(t *testing.T) {
 
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
 	t.Run("env", func(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
 	t.Run("overrideEnv", func(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 }
 
@@ -1429,7 +1429,7 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer := newUnstartedTracer()
 	defer tracer.statsd.Close()
@@ -1458,7 +1458,7 @@ func TestPushTrace(t *testing.T) {
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
-	assert.True(len(tp.Lines()) >= 1)
+	assert.True(len(tp.Logs()) >= 1)
 }
 
 func TestTracerFlush(t *testing.T) {

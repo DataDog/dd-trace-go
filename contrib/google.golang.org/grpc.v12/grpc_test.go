@@ -295,4 +295,35 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("spanOpts", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.33), WithSpanOptions(tracer.AnalyticsRate(0.23)))
+	})
+}
+
+func TestSpanOpts(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRigWithOpts(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+	client := rig.client
+
+	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	assert.Nil(err)
+	assert.Equal(resp.Message, "passed")
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 2)
+
+	for _, s := range spans {
+		assert.Equal(s.Tags()["foo"], "bar")
+	}
 }
