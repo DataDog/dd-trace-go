@@ -153,6 +153,8 @@ func (c *Client) Start(configuration []Configuration) {
 		log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
 	}
+	// Don't start the telemetry client if there is some error configuring the client with fallback
+	// options, e.g. an API key was not found but agentless telemetry is expected.
 	if err := c.applyFallbackOps(); err != nil {
 		log(err.Error())
 		return
@@ -455,7 +457,7 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 		return true
 	}
 	// TODO: add more status codes we do not want to retry on
-	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests}
+	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests, http.StatusUnauthorized, http.StatusForbidden}
 	for status := range doNotRetry {
 		if resp.StatusCode == status {
 			return false
