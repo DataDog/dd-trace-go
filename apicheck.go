@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
 //go:build ignore
 
 // apicheck prints the exported constants, functions, and types from a package.
@@ -56,7 +61,6 @@ func CreateAPIEntry(obj types.Object, scope *types.Scope) APIEntry {
 		// Qualify types within this package using just the package
 		// name, rather than the whole path, just so the output is less
 		// verbose
-		//return pkg.Name()
 		return ""
 	}
 	b := new(strings.Builder)
