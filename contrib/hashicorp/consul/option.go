@@ -11,10 +11,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
-const (
-	serviceName = "consul"
-)
-
 type clientConfig struct {
 	serviceName   string
 	analyticsRate float64
@@ -24,7 +20,6 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = serviceName
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

@@ -8,6 +8,7 @@ package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -26,9 +27,10 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
+	serviceName := namingschema.NewServiceNameSchema(cfg.serviceName, "gin.router").GetName()
+	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.serviceName),
+		tracer.ServiceName(serviceName),
 		tracer.Tag(ext.Component, "gin-gonic/gin"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}

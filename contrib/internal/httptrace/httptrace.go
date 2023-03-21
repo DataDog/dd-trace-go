@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 var cfg = newConfig()
@@ -49,7 +50,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			opts = append(opts, tracer.Tag(k, v))
 		}
 	}
-	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
+	opName := namingschema.NewHTTPInboundOperationNameSchema().GetName()
+	return tracer.StartSpanFromContext(r.Context(), opName, opts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status

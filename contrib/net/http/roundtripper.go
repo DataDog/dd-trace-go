@@ -7,6 +7,7 @@ package http
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 	"net/http"
 	"os"
@@ -27,10 +28,13 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		return rt.base.RoundTrip(req)
 	}
 	resourceName := rt.cfg.resourceNamer(req)
+	serviceName := namingschema.NewServiceNameSchema(rt.cfg.serviceName, "").GetName()
+	opName := rt.cfg.operationNamer(req)
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName(serviceName),
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
@@ -41,13 +45,10 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
 	}
-	if rt.cfg.serviceName != "" {
-		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
-	}
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
 	}
-	span, ctx := tracer.StartSpanFromContext(req.Context(), "http.request", opts...)
+	span, ctx := tracer.StartSpanFromContext(req.Context(), opName, opts...)
 	defer func() {
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)

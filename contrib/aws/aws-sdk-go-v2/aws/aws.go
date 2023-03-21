@@ -70,9 +70,12 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
 
+		serviceName := newServiceNameSchema(mw.cfg.serviceName, serviceID).GetName()
+		opName := newOutboundOperationNameSchema(serviceID).GetName()
+
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+			tracer.ServiceName(serviceName),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tagAWSOperation, operation),
@@ -84,7 +87,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, fmt.Sprintf("%s.request", serviceID), opts...)
+		span, spanctx := tracer.StartSpanFromContext(ctx, opName, opts...)
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
@@ -127,12 +130,4 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 
 		return out, metadata, err
 	}), middleware.Before)
-}
-
-func serviceName(cfg *config, serviceID string) string {
-	if cfg.serviceName != "" {
-		return cfg.serviceName
-	}
-
-	return fmt.Sprintf("aws.%s", serviceID)
 }

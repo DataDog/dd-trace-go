@@ -65,9 +65,11 @@ func (c *Client) KV() *KV {
 }
 
 func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
+	serviceName := newServiceNameSchema(k.config.serviceName).GetName()
+	opName := newOutboundOperationNameSchema().GetName()
 	opts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(resourceName),
-		tracer.ServiceName(k.config.serviceName),
+		tracer.ServiceName(serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
 		tracer.Tag(ext.Component, "hashicorp/consul"),
@@ -77,7 +79,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(k.ctx, "consul.command", opts...)
+	span, _ := tracer.StartSpanFromContext(k.ctx, opName, opts...)
 	return span
 }
 

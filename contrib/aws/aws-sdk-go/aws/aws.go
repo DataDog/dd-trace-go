@@ -60,16 +60,18 @@ func (h *handlers) Send(req *request.Request) {
 	if req.RetryCount != 0 {
 		return
 	}
+	serviceName := newServiceNameSchema(h.cfg.serviceName, req).GetName()
+	opName := newOutboundOperationNameSchema(req).GetName()
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.HTTPRequest.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ServiceName(h.serviceName(req)),
-		tracer.ResourceName(h.resourceName(req)),
-		tracer.Tag(tagAWSAgent, h.awsAgent(req)),
-		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
-		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
+		tracer.ServiceName(serviceName),
+		tracer.ResourceName(resourceName(req)),
+		tracer.Tag(tagAWSAgent, awsAgent(req)),
+		tracer.Tag(tagAWSOperation, awsOperation(req)),
+		tracer.Tag(tagAWSRegion, awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
@@ -78,7 +80,7 @@ func (h *handlers) Send(req *request.Request) {
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
-	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req), opts...)
+	_, ctx := tracer.StartSpanFromContext(req.Context(), opName, opts...)
 	req.SetContext(ctx)
 }
 
@@ -95,36 +97,25 @@ func (h *handlers) Complete(req *request.Request) {
 	span.Finish(tracer.WithError(req.Error))
 }
 
-func (h *handlers) operationName(req *request.Request) string {
-	return h.awsService(req) + ".command"
+func resourceName(req *request.Request) string {
+	return awsService(req) + "." + req.Operation.Name
 }
 
-func (h *handlers) resourceName(req *request.Request) string {
-	return h.awsService(req) + "." + req.Operation.Name
-}
-
-func (h *handlers) serviceName(req *request.Request) string {
-	if h.cfg.serviceName != "" {
-		return h.cfg.serviceName
-	}
-	return "aws." + h.awsService(req)
-}
-
-func (h *handlers) awsAgent(req *request.Request) string {
+func awsAgent(req *request.Request) string {
 	if agent := req.HTTPRequest.Header.Get("User-Agent"); agent != "" {
 		return agent
 	}
 	return "aws-sdk-go"
 }
 
-func (h *handlers) awsOperation(req *request.Request) string {
+func awsOperation(req *request.Request) string {
 	return req.Operation.Name
 }
 
-func (h *handlers) awsRegion(req *request.Request) string {
+func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
 }
 
-func (h *handlers) awsService(req *request.Request) string {
+func awsService(req *request.Request) string {
 	return req.ClientInfo.ServiceName
 }

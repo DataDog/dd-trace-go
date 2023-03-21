@@ -1,0 +1,44 @@
+package namingschema
+
+import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+// NewServiceNameSchema returns a Schema with the standard logic to be used for generating service names.
+// If any version does not follow the standard logic, you can use WithVersionOverride option.
+func NewServiceNameSchema(userOverride, defaultName string, opts ...Option) Schema {
+	cfg := &config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	return New(&standardServiceNameSchema{
+		userOverride: userOverride,
+		defaultName:  defaultName,
+		cfg:          cfg,
+	})
+}
+
+type standardServiceNameSchema struct {
+	userOverride string
+	defaultName  string
+	cfg          *config
+}
+
+func (s *standardServiceNameSchema) V0() string {
+	return s.getName(SchemaV0)
+}
+
+func (s *standardServiceNameSchema) V1() string {
+	return s.getName(SchemaV1)
+}
+
+func (s *standardServiceNameSchema) getName(v Version) string {
+	if f, ok := s.cfg.versionOverrides[v]; ok {
+		return f()
+	}
+	if s.userOverride != "" {
+		return s.userOverride
+	}
+	if svc := globalconfig.ServiceName(); svc != "" {
+		return svc
+	}
+	return s.defaultName
+}

@@ -146,8 +146,8 @@ func TestChildSpans(t *testing.T) {
 		opNames = append(opNames, span.OperationName())
 		assert.Equal("99designs/gqlgen", span.Tag(ext.Component))
 	}
-	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, query})
-	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, "graphql.query"})
+	assert.ElementsMatch(resNames, []string{"graphql.read", "graphql.validate", "graphql.parse", query})
+	assert.ElementsMatch(opNames, []string{"graphql.read", "graphql.validate", "graphql.parse", "graphql.query"})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
 }

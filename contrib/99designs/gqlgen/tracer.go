@@ -13,35 +13,37 @@
 // use parameterized graphql queries with sensitive data in variables.
 //
 // Usage example:
-//		import (
-//			"log"
-//			"net/http"
 //
-//			"github.com/99designs/gqlgen/_examples/todo"
-//			"github.com/99designs/gqlgen/graphql/handler"
+//	import (
+//		"log"
+//		"net/http"
 //
-//			"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-//			gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
+//		"github.com/99designs/gqlgen/_examples/todo"
+//		"github.com/99designs/gqlgen/graphql/handler"
+//
+//		"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+//		gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
+//	)
+//
+//	func Example() {
+//		tracer.Start()
+//		defer tracer.Stop()
+//
+//		t := gqlgentrace.NewTracer(
+//			gqlgentrace.WithAnalytics(true),
+//			gqlgentrace.WithServiceName("todo.server"),
 //		)
-//
-//		func Example() {
-//			tracer.Start()
-//			defer tracer.Stop()
-//
-//			t := gqlgentrace.NewTracer(
-//				gqlgentrace.WithAnalytics(true),
-//				gqlgentrace.WithServiceName("todo.server"),
-//			)
-//			h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
-//			h.Use(t)
-//			http.Handle("/query", h)
-//			log.Fatal(http.ListenAndServe(":8080", nil))
-//		}
+//		h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
+//		h.Use(t)
+//		http.Handle("/query", h)
+//		log.Fatal(http.ListenAndServe(":8080", nil))
+//	}
 package gqlgen
 
 import (
 	"context"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 	"strings"
 	"time"
@@ -55,11 +57,11 @@ import (
 )
 
 const (
-	defaultGraphqlOperation = "graphql.request"
+	defaultGraphqlOperation = "request"
 
-	readOp       = "graphql.read"
-	parsingOp    = "graphql.parse"
-	validationOp = "graphql.validate"
+	readOp       = "read"
+	parsingOp    = "parse"
+	validationOp = "validate"
 )
 
 type gqlTracer struct {
@@ -75,6 +77,7 @@ func NewTracer(opts ...Option) graphql.HandlerExtension {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.serviceName = namingschema.NewServiceNameSchema(cfg.serviceName, defaultServiceName).GetName()
 	return &gqlTracer{cfg: cfg}
 }
 
@@ -98,7 +101,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	var (
 		octx *graphql.OperationContext
 	)
-	name := defaultGraphqlOperation
+	graphqlOp := defaultGraphqlOperation
 	if graphql.HasOperationContext(ctx) {
 		// Variables in the operation will be left out of the tags
 		// until obfuscation is implemented in the agent.
@@ -110,15 +113,16 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 				// Return early and do not create these spans.
 				return next(ctx)
 			}
-			name = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+			graphqlOp = string(octx.Operation.Operation)
 		}
 		if octx.RawQuery != "" {
 			opts = append(opts, tracer.ResourceName(octx.RawQuery))
 		}
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
+	opName := newInboundOperationNameSchema(graphqlOp).GetName()
 	var span ddtrace.Span
-	span, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
+	span, ctx = tracer.StartSpanFromContext(ctx, opName, opts...)
 	defer func() {
 		var errs []string
 		for _, err := range graphql.GetErrors(ctx) {
@@ -133,13 +137,14 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 
 	if octx != nil {
 		// Create child spans based on the stats in the operation context.
-		createChildSpan := func(name string, start, finish time.Time) {
+		createChildSpan := func(graphqlOp string, start, finish time.Time) {
+			opName := newInboundOperationNameSchema(graphqlOp).GetName()
 			var childOpts []ddtrace.StartSpanOption
 			childOpts = append(childOpts, tracer.StartTime(start))
-			childOpts = append(childOpts, tracer.ResourceName(name))
+			childOpts = append(childOpts, tracer.ResourceName(opName))
 			childOpts = append(childOpts, tracer.Tag(ext.Component, "99designs/gqlgen"))
 			var childSpan ddtrace.Span
-			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
+			childSpan, _ = tracer.StartSpanFromContext(ctx, opName, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))
 		}
 		createChildSpan(readOp, octx.Stats.Read.Start, octx.Stats.Read.End)

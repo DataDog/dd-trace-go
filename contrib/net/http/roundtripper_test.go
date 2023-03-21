@@ -8,6 +8,7 @@ package http
 import (
 	"encoding/base64"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -445,4 +446,64 @@ func TestSpanOptions(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
+}
+
+func TestNamingSchema(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World"))
+	})
+	s := httptest.NewServer(WrapHandler(h, "http-server", "/hello/world"))
+	defer s.Close()
+
+	t.Run("naming schema v0", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		defer namingschema.SetVersion(namingschema.GetVersion())
+		namingschema.SetVersion(namingschema.SchemaV0)
+
+		rt := WrapRoundTripper(http.DefaultTransport,
+			RTWithServiceName("http-client"),
+		)
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		serverSpan := spans[0]
+		assert.Equal(t, "http-server", serverSpan.Tag(ext.ServiceName))
+		assert.Equal(t, "http.request", serverSpan.OperationName())
+
+		clientSpan := spans[1]
+		assert.Equal(t, "http-client", clientSpan.Tag(ext.ServiceName))
+		assert.Equal(t, "http.request", clientSpan.OperationName())
+	})
+
+	t.Run("naming schema v1", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		defer namingschema.SetVersion(namingschema.GetVersion())
+		namingschema.SetVersion(namingschema.SchemaV1)
+
+		rt := WrapRoundTripper(http.DefaultTransport,
+			RTWithServiceName("http-client"),
+		)
+		client := &http.Client{
+			Transport: rt,
+		}
+		client.Get(s.URL + "/hello/world")
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		serverSpan := spans[0]
+		assert.Equal(t, "http-server", serverSpan.Tag(ext.ServiceName))
+		assert.Equal(t, "http.server.request", serverSpan.OperationName())
+
+		clientSpan := spans[1]
+		assert.Equal(t, "http-client", clientSpan.Tag(ext.ServiceName))
+		assert.Equal(t, "http.client.request", clientSpan.OperationName())
+	})
 }

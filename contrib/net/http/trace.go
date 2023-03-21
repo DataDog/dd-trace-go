@@ -8,6 +8,7 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 //go:generate sh -c "go run make_responsewriter.go | gofmt > trace_gen.go"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
@@ -45,7 +46,8 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
+	serviceName := namingschema.NewServiceNameSchema(cfg.Service, "http.router").GetName()
+	opts := append(cfg.SpanOpts, tracer.ServiceName(serviceName), tracer.ResourceName(cfg.Resource))
 	opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
