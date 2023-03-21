@@ -15,8 +15,6 @@ type Request struct {
 	Header     *http.Header
 	HTTPClient *http.Client
 	URL        string
-	// still store pointer to origin telemetry client for logging and error handling
-	TelemetryClient *Client
 }
 
 // Body is the common high-level structure encapsulating a telemetry request body
@@ -119,9 +117,9 @@ type Configuration struct {
 	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
 	// origin is the source of the config. It is one of {env_var, code, dd_config, remote_config}
-	origin      string `json:"origin"`
-	error       Error  `json:"error"`
-	isOverriden bool   `json:"is_overridden"`
+	Origin      string `json:"origin"`
+	Error       Error  `json:"error"`
+	IsOverriden bool   `json:"is_overridden"`
 }
 
 // TODO: be able to pass in origin, error, isOverriden info to config

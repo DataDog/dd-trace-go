@@ -93,7 +93,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				client.log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
+				log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
 				client.URL = getAgentlessURL()
 			}
 		}
