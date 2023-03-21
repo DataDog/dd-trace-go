@@ -173,7 +173,7 @@ type Dependency struct {
 // RemoteConfig contains information about remote-config
 type RemoteConfig struct {
 	UserEnabled     string `json:"user_enabled"`     // whether the library has made a request to fetch remote-config
-	ConfigsRecieved bool   `json:"configs_received"` // whether the library recieves a valid config response
+	ConfigsRecieved bool   `json:"configs_received"` // whether the library receives a valid config response
 	Error           Error  `json:"error"`
 }
 
