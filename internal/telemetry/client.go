@@ -15,12 +15,15 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -68,7 +71,7 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
-	GlobalClient.applyFallbackOps()
+	GlobalClient.fallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -106,12 +109,6 @@ type Client struct {
 	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
-	// logLock guards the Logging field
-	logLock sync.RWMutex
-	// Logging allows us to toggle on agentless in the case where
-	// there are issues with sending telemetry to the agent
-	Logging bool
-
 	// mu guards all of the following fields
 	mu sync.Mutex
 
@@ -135,14 +132,106 @@ type Client struct {
 	newMetrics bool
 }
 
-// Started returns whether the client has started or not
-func (c *Client) Started() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.started
+func log(msg string, args ...interface{}) {
+	// Debug level so users aren't spammed with telemetry info.
+	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
-// Disabled returns whether instrumentation telemetry is disabled
+// Start registers that the app has begun running with the app-started event
+// Start also configures the telemetry client based on the following telemetry
+// environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
+// DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
+// and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
+// TODO: implement passing in error information about tracer start
+func (c *Client) Start(configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if Disabled() {
+		return
+	}
+	if c.started {
+		log("attempted to start telemetry client when client has already started - ignoring attempt")
+		return
+	}
+	// Don't start the telemetry client if there is some error configuring the client with fallback
+	// options, e.g. an API key was not found but agentless telemetry is expected.
+	if err := c.fallbackOps(); err != nil {
+		log(err.Error())
+		return
+	}
+
+	c.started = true
+	c.metrics = make(map[Namespace]map[string]*metric)
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
+
+	payload := &AppStarted{
+		Configuration: configuration,
+		Products: Products{
+			AppSec: ProductDetails{
+				Version: version.Tag,
+				Enabled: appsec.Enabled(),
+			},
+			// If the profiler starts, an app-product-change event will be sent
+			// to signal that the profiler is enabled. It is important that we
+			// send the profiler version, since product info is hashed on it's version
+			// when being stored by the instrumentation telemetry backend.
+			Profiler: ProductDetails{
+				Version: version.Tag,
+				Enabled: false,
+			},
+		},
+	}
+
+	appStarted := c.newRequest(RequestTypeAppStarted)
+	appStarted.Body.Payload = payload
+	c.scheduleSubmit(appStarted)
+
+	if collectDependencies() {
+		var depPayload Dependencies
+		if deps, ok := debug.ReadBuildInfo(); ok {
+			for _, dep := range deps.Deps {
+				depPayload.Dependencies = append(depPayload.Dependencies,
+					Dependency{
+						Name:    dep.Path,
+						Version: dep.Version,
+					},
+				)
+			}
+		}
+		dep := c.newRequest(RequestTypeDependenciesLoaded)
+		dep.Body.Payload = depPayload
+		c.scheduleSubmit(dep)
+	}
+
+	c.flush()
+
+	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	if heartbeat < 1 || heartbeat > 3600 {
+		log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		heartbeat = defaultHeartbeatInterval
+	}
+	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
+	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
+}
+
+// Stop notifies the telemetry endpoint that the app is closing. All outstanding
+// messages will also be sent. No further messages will be sent until the client
+// is started again
+func (c *Client) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	c.started = false
+	c.heartbeatT.Stop()
+	// close request types have no body
+	r := c.newRequest(RequestTypeAppClosing)
+	c.scheduleSubmit(r)
+	c.flush()
+}
+
+// disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
@@ -153,29 +242,81 @@ func collectDependencies() bool {
 	return internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
 }
 
-func (c *Client) log(msg string, args ...interface{}) {
-	// we don't log if the client is temporarily using agentless
-	// to avoid spamming the user with instrumentation telemetry error messages
-	c.logLock.RLock()
-	defer c.logLock.RUnlock()
-	if !c.Logging {
+type metricKind string
+
+var (
+	metricKindGauge metricKind = "gauge"
+	metricKindCount metricKind = "count"
+)
+
+type metric struct {
+	name  string
+	kind  metricKind
+	value float64
+	// Unix timestamp
+	ts     float64
+	tags   []string
+	common bool
+}
+
+// TODO: Can there be identically named/tagged metrics with a "common" and "not
+// common" variant?
+
+func newmetric(name string, kind metricKind, tags []string, common bool) *metric {
+	return &metric{
+		name:   name,
+		kind:   kind,
+		tags:   append([]string{}, tags...),
+		common: common,
+	}
+}
+
+func metricKey(name string, tags []string) string {
+	return name + strings.Join(tags, "-")
+}
+
+// Gauge sets the value for a gauge with the given name and tags. If the metric
+// is not language-specific, common should be set to true
+func (c *Client) Gauge(namespace Namespace, name string, value float64, tags []string, common bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
 		return
 	}
-	// Debug level because ...
-	log.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
+	key := metricKey(name, tags)
+	m, ok := c.metrics[namespace][key]
+	if !ok {
+		m = newmetric(name, metricKindGauge, tags, common)
+		c.metrics[namespace][key] = m
+	}
+	m.value = value
+	m.ts = float64(time.Now().Unix())
+	c.newMetrics = true
 }
 
-// logging is used to turn logging on/off
-func (c *Client) logging(logging bool) {
-	c.logLock.Lock()
-	defer c.logLock.Unlock()
-	c.Logging = logging
-}
-
-// scheduleSubmit queues a request to be sent to the backend. Should be called
-// with c.mu locked
-func (c *Client) scheduleSubmit(r *Request) {
-	c.requests = append(c.requests, r)
+// Count adds the value to a count with the given name and tags. If the metric
+// is not language-specific, common should be set to true
+func (c *Client) Count(namespace Namespace, name string, value float64, tags []string, common bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	if _, ok := c.metrics[namespace]; !ok {
+		c.metrics[namespace] = map[string]*metric{}
+	}
+	key := metricKey(name, tags)
+	m, ok := c.metrics[namespace][key]
+	if !ok {
+		m = newmetric(name, metricKindCount, tags, common)
+		c.metrics[namespace][key] = m
+	}
+	m.value += value
+	m.ts = float64(time.Now().Unix())
+	c.newMetrics = true
 }
 
 // flush sends any outstanding telemetry messages and aggregated metrics to be
@@ -216,7 +357,7 @@ func (c *Client) flush() {
 		for _, r := range submissions {
 			err := r.submit()
 			if err != nil {
-				c.log("submission error: %s", err.Error())
+				log("submission error: %s", err.Error())
 			}
 		}
 	}()
@@ -288,40 +429,25 @@ func (c *Client) newRequest(t RequestType) *Request {
 		client = defaultHTTPClient
 	}
 	return &Request{Body: body,
-		Header:          header,
-		HTTPClient:      client,
-		URL:             c.URL,
-		TelemetryClient: c}
+		Header:     header,
+		HTTPClient: client,
+		URL:        c.URL,
+	}
 }
 
 // submit sends a telemetry request
 func (r *Request) submit() error {
-	if r.TelemetryClient == nil {
-		return fmt.Errorf("all telemetry requests must be associated with a telemetry client")
-	}
 	retry, err := r.trySubmit()
-	if err == nil {
-		// submitting to the telemetry client's intended
-		// URL succeeded - turn logging back on
-		r.TelemetryClient.logging(true)
-	} else if retry {
+	if retry {
 		// retry telemetry submissions in instances where the telemetry client has trouble
 		// connecting with the agent
-		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
+		log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
-		_, err := r.trySubmit()
-		if err != nil {
-			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
+		if _, err := r.trySubmit(); err == nil {
+			return nil
 		}
-		// turn off logging after a failed submission to avoid spamming the user with
-		// telemetry messages
-		r.TelemetryClient.logging(false)
-	} else if r.URL == getAgentlessURL() {
-		// this is the case we don't re-try since we are already using the agentless URL.
-		// there is something wrong with sending to agentless, and we don't want to
-		// spam the user with telemetry messages
-		r.TelemetryClient.logging(false)
+		log("retrying with agentless telemetry failed: %s", err)
 	}
 	return err
 }
@@ -338,11 +464,8 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 		// agent - retry with agentless
 		return true
 	}
-	// Do not retry with the following status codes:
-	// 400 - client side error
-	// 429 - too many requests
-	// TODO - add more
-	doNotRetry := []int{400, 429}
+	// TODO: add more status codes we do not want to retry on
+	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests, http.StatusUnauthorized, http.StatusForbidden}
 	for status := range doNotRetry {
 		if resp.StatusCode == status {
 			return false
@@ -387,3 +510,23 @@ func (r *Request) trySubmit() (retry bool, err error) {
 type errBadStatus int
 
 func (e errBadStatus) Error() string { return fmt.Sprintf("bad HTTP response status %d", e) }
+
+// scheduleSubmit queues a request to be sent to the backend. Should be called
+// with c.mu locked
+func (c *Client) scheduleSubmit(r *Request) {
+	c.requests = append(c.requests, r)
+}
+
+// backgroundHeartbeat is invoked at every heartbeat interval,
+// sending the app-heartbeat event and flushing any outstanding
+// telemetry messages
+func (c *Client) backgroundHeartbeat() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started {
+		return
+	}
+	c.scheduleSubmit(c.newRequest(RequestTypeAppHeartbeat))
+	c.flush()
+	c.heartbeatT.Reset(c.heartbeatInterval)
+}
