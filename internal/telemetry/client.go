@@ -171,6 +171,10 @@ func (c *Client) Start(configuration []Configuration) {
 				Version: version.Tag,
 				Enabled: appsec.Enabled(),
 			},
+			Profiler: ProductDetails{
+				Version: version.Tag,
+				Enabled: false,
+			},
 		},
 	}
 
