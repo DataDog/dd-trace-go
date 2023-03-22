@@ -17,11 +17,13 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 func TestMemcache(t *testing.T) {
@@ -174,6 +176,106 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+	addr := li.Addr().String()
+
+	createSpan := func(t *testing.T, opts ...ClientOption) mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := getClient(addr, opts...)
+		defer client.DeleteAll()
+		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		return spans[0]
+	}
+
+	testCases := []struct {
+		name                  string
+		schemaVersion         namingschema.Version
+		serviceNameOverride   string
+		ddService             string
+		expectedServiceName   string
+		expectedOperationName string
+	}{
+		{
+			name:                  "schema v0",
+			schemaVersion:         namingschema.SchemaV0,
+			serviceNameOverride:   "",
+			ddService:             "",
+			expectedServiceName:   "memcached",
+			expectedOperationName: "memcached.query",
+		},
+		{
+			name:                  "schema v0 with DD_SERVICE",
+			schemaVersion:         namingschema.SchemaV0,
+			serviceNameOverride:   "",
+			ddService:             "dd-service",
+			expectedServiceName:   "memcached",
+			expectedOperationName: "memcached.query",
+		},
+		{
+			name:                  "schema v0 with service override",
+			schemaVersion:         namingschema.SchemaV0,
+			serviceNameOverride:   "service-override",
+			ddService:             "",
+			expectedServiceName:   "service-override",
+			expectedOperationName: "memcached.query",
+		},
+		{
+			name:                  "schema v1",
+			schemaVersion:         namingschema.SchemaV1,
+			serviceNameOverride:   "",
+			ddService:             "",
+			expectedServiceName:   "memcached",
+			expectedOperationName: "memcached.command",
+		},
+		{
+			name:                  "schema v1 with DD_SERVICE",
+			schemaVersion:         namingschema.SchemaV1,
+			serviceNameOverride:   "",
+			ddService:             "dd-service",
+			expectedServiceName:   "dd-service",
+			expectedOperationName: "memcached.command",
+		},
+		{
+			name:                  "schema v1 with service override",
+			schemaVersion:         namingschema.SchemaV1,
+			serviceNameOverride:   "service-override",
+			ddService:             "",
+			expectedServiceName:   "service-override",
+			expectedOperationName: "memcached.command",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(tc.schemaVersion)
+
+			if tc.ddService != "" {
+				svc := globalconfig.ServiceName()
+				defer globalconfig.SetServiceName(svc)
+				globalconfig.SetServiceName(tc.ddService)
+			}
+
+			var opts []ClientOption
+			if tc.serviceNameOverride != "" {
+				opts = append(opts, WithServiceName(tc.serviceNameOverride))
+			}
+
+			span := createSpan(t, opts...)
+			assert.Equal(t, tc.expectedServiceName, span.Tag(ext.ServiceName))
+			assert.Equal(t, tc.expectedOperationName, span.OperationName())
+		})
+	}
 }
 
 func makeFakeServer(t *testing.T) net.Listener {

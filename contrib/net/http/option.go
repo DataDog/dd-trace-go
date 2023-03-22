@@ -179,7 +179,7 @@ func RTWithOperationNamer(namer func(req *http.Request) string) RoundTripperOpti
 }
 
 func defaultOperationNamer(_ *http.Request) string {
-	return namingschema.NewHTTPOutboundOperationNameSchema().GetName()
+	return namingschema.NewClientOutboundOperationNameSchema("").GetName()
 }
 
 // RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added

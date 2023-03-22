@@ -50,7 +50,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			opts = append(opts, tracer.Tag(k, v))
 		}
 	}
-	opName := namingschema.NewHTTPInboundOperationNameSchema().GetName()
+	opName := namingschema.NewServerInboundOperationNameSchema("").GetName()
 	return tracer.StartSpanFromContext(r.Context(), opName, opts...)
 }
 

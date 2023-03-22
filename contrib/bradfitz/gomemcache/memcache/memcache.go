@@ -76,7 +76,7 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(c.context, operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(c.context, c.cfg.operationName, opts...)
 	return span
 }
 

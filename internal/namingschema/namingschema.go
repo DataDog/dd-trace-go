@@ -1,8 +1,16 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
 package namingschema
 
 import (
 	"os"
+	"strings"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -22,17 +30,16 @@ var (
 	sv Version
 )
 
-// TODO: probably this can be moved to ddtrace/tracer/option.go
 func init() {
 	mu.Lock()
 	defer mu.Unlock()
-	switch os.Getenv(envSpanAttributeSchema) {
+	switch version := strings.ToLower(os.Getenv(envSpanAttributeSchema)); version {
 	case "", "v0":
 		sv = SchemaV0
 	case "v1":
 		sv = SchemaV1
 	default:
-		// TODO: log warning "unknown value for DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v0", version)
 		sv = SchemaV0
 	}
 }
@@ -55,38 +62,20 @@ type VersionSupportSchema interface {
 	V1() string
 }
 
-type Schema interface {
-	VersionSupportSchema
-	GetName() string
+type Schema struct {
+	selectedVersion Version
+	vSchema         VersionSupportSchema
 }
 
-type schema struct {
-	vSchema VersionSupportSchema
+func New(vSchema VersionSupportSchema) *Schema {
+	return &Schema{selectedVersion: GetVersion(), vSchema: vSchema}
 }
 
-func New(vSchema VersionSupportSchema) Schema {
-	return &schema{vSchema: vSchema}
-}
-
-func (s *schema) V0() string {
-	return s.vSchema.V0()
-}
-
-func (s *schema) V1() string {
-	return s.vSchema.V1()
-}
-
-func (s *schema) GetName() string {
-	return GetName(s)
-}
-
-func GetName(vSchema VersionSupportSchema) string {
-	mu.RLock()
-	defer mu.RUnlock()
-	switch sv {
+func (s *Schema) GetName() string {
+	switch s.selectedVersion {
 	case SchemaV1:
-		return vSchema.V1()
+		return s.vSchema.V1()
 	default:
-		return vSchema.V0()
+		return s.vSchema.V0()
 	}
 }
