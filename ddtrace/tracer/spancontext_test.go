@@ -250,7 +250,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority)
@@ -267,7 +267,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
@@ -334,7 +334,7 @@ func TestSpanContextParent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID, s.TraceID)
+			assert.Equal(ctx.traceID.Lower(), s.TraceID)
 			assert.Equal(ctx.spanID, s.SpanID)
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))

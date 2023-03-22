@@ -34,7 +34,7 @@ func (t *traceID) Lower() uint64 {
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t[:9])
+	return binary.BigEndian.Uint64(t[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
@@ -42,7 +42,7 @@ func (t *traceID) SetLower(i uint64) {
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t[:9], i)
+	binary.BigEndian.PutUint64(t[:8], i)
 }
 
 func (t *traceID) SetUpperFromHex(s string) {
@@ -51,7 +51,7 @@ func (t *traceID) SetUpperFromHex(s string) {
 		log.Debug("Attempted to decode an invalid hex traceID %s", s)
 		return
 	}
-	n := copy(t[:9], bs)
+	n := copy(t[:8], bs)
 	if n > 8 {
 		log.Debug("More than 8 bytes received from hex trace ID %s", s)
 	}
@@ -63,7 +63,7 @@ func (t *traceID) Empty() bool {
 
 func (t *traceID) HasUpper() bool {
 	//TODO: in go 1.20 we can simplify this
-	for _, b := range t[:9] {
+	for _, b := range t[:8] {
 		if b != 0 {
 			return true
 		}
@@ -72,7 +72,7 @@ func (t *traceID) HasUpper() bool {
 }
 
 func (t *traceID) UpperHex() string {
-	return hex.EncodeToString(t[:9])
+	return hex.EncodeToString(t[:8])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -109,9 +109,9 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		spanID: span.SpanID,
 		span:   span,
 	}
-	context.traceID.SetLower(span.TraceID) // TODO: look in the incoming span for the upper bits?
+	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
-		context.traceID = parent.traceID
+		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors

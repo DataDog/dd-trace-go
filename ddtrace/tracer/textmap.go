@@ -457,8 +457,8 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	if ctx.traceID.HasUpper() { // 64-bit trace id
-		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID))
+	if !ctx.traceID.HasUpper() { // 64-bit trace id
+		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
 	} else { // 128-bit trace id
 		var w3Cctx ddtrace.SpanContextW3C
 		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {

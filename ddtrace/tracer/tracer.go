@@ -475,9 +475,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// casting from int64 -> uint32 should be safe since the start time won't be
 		// negative, and the seconds should fit within 32-bits for the foreseeable future.
 		// (We only want 32 bits of time, then the rest is zero)
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
 
-		//TODO: I think I messed this up and need to to bit twiddling
-		span.context.traceID.SetUpper(uint64(uint32(id128)))
+		span.context.traceID.SetUpper(tUp)
 	}
 
 	// add tags from options
