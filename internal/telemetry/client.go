@@ -71,7 +71,7 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
-	GlobalClient.applyFallbackOps()
+	GlobalClient.fallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -155,7 +155,7 @@ func (c *Client) Start(configuration []Configuration) {
 	}
 	// Don't start the telemetry client if there is some error configuring the client with fallback
 	// options, e.g. an API key was not found but agentless telemetry is expected.
-	if err := c.applyFallbackOps(); err != nil {
+	if err := c.fallbackOps(); err != nil {
 		log(err.Error())
 		return
 	}

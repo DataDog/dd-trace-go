@@ -115,9 +115,8 @@ func configEnvFallback(key, def string) string {
 	return os.Getenv(key)
 }
 
-// applyFallbackOps applies default values to the client unless
-// those values are already set.
-func (c *Client) applyFallbackOps() error {
+// fallbackOps populates missing fields of the client
+func (c *Client) fallbackOps() error {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
