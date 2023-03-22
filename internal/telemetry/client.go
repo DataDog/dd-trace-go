@@ -173,8 +173,8 @@ func (c *Client) Start(configuration []Configuration) {
 			},
 			// If the profiler starts, an app-product-change event will be sent
 			// to signal that the profiler is enabled. It is important that we
-			// send the profiler version, since the telemetry api hashes on the verision
-			// when storing product info.
+			// send the profiler version, since product info is hashed on it's version
+			// when being stored by the instrumentation telemetry backend
 			Profiler: ProductDetails{
 				Version: version.Tag,
 				Enabled: false,
