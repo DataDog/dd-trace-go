@@ -115,7 +115,8 @@ func configEnvFallback(key, def string) string {
 	return os.Getenv(key)
 }
 
-// fallbackOps populates missing fields of the client
+// fallbackOps populates missing fields of the client with environment variables
+// or default values.
 func (c *Client) fallbackOps() error {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
