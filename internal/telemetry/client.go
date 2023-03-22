@@ -171,6 +171,10 @@ func (c *Client) Start(configuration []Configuration) {
 				Version: version.Tag,
 				Enabled: appsec.Enabled(),
 			},
+			// If the profiler starts, an app-product-change event will be sent
+			// to signal that the profiler is enabled. It is important that we
+			// send the profiler version, since the telemetry api hashes on the verision
+			// when storing product info.
 			Profiler: ProductDetails{
 				Version: version.Tag,
 				Enabled: false,
