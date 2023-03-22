@@ -11,11 +11,14 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-
 	consul "github.com/hashicorp/consul/api"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 func TestMain(m *testing.M) {
@@ -101,6 +104,104 @@ func TestKV(t *testing.T) {
 			assert.Equal("hashicorp/consul", span.Tag(ext.Component))
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal(ext.DBSystemConsulKV, span.Tag(ext.DBSystem))
+		})
+	}
+}
+
+func TestNamingSchema(t *testing.T) {
+	createSpan := func(t *testing.T, opts ...ClientOption) mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		client, err := NewClient(consul.DefaultConfig(), opts...)
+		require.NoError(t, err)
+		kv := client.KV()
+
+		pair := &consul.KVPair{Key: "test.key", Value: []byte("test_value")}
+		_, err = kv.Put(pair, nil)
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		return spans[0]
+	}
+
+	testCases := []struct {
+		name                string
+		schemaVersion       namingschema.Version
+		serviceNameOverride string
+		ddService           string
+		wantServiceName     string
+		wantOperationName   string
+	}{
+		{
+			name:                "schema v0",
+			schemaVersion:       namingschema.SchemaV0,
+			serviceNameOverride: "",
+			ddService:           "",
+			wantServiceName:     "consul",
+			wantOperationName:   "consul.command",
+		},
+		{
+			name:                "schema v0 with DD_SERVICE",
+			schemaVersion:       namingschema.SchemaV0,
+			serviceNameOverride: "",
+			ddService:           "dd-service",
+			wantServiceName:     "consul",
+			wantOperationName:   "consul.command",
+		},
+		{
+			name:                "schema v0 with service override",
+			schemaVersion:       namingschema.SchemaV0,
+			serviceNameOverride: "service-override",
+			ddService:           "dd-service",
+			wantServiceName:     "service-override",
+			wantOperationName:   "consul.command",
+		},
+		{
+			name:                "schema v1",
+			schemaVersion:       namingschema.SchemaV1,
+			serviceNameOverride: "",
+			ddService:           "",
+			wantServiceName:     "consul",
+			wantOperationName:   "consul.query",
+		},
+		{
+			name:                "schema v1 with DD_SERVICE",
+			schemaVersion:       namingschema.SchemaV1,
+			serviceNameOverride: "",
+			ddService:           "dd-service",
+			wantServiceName:     "consul",
+			wantOperationName:   "consul.query",
+		},
+		{
+			name:                "schema v1 with service override",
+			schemaVersion:       namingschema.SchemaV1,
+			serviceNameOverride: "service-override",
+			ddService:           "dd-service",
+			wantServiceName:     "service-override",
+			wantOperationName:   "consul.query",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(tc.schemaVersion)
+
+			if tc.ddService != "" {
+				svc := globalconfig.ServiceName()
+				defer globalconfig.SetServiceName(svc)
+				globalconfig.SetServiceName(tc.ddService)
+			}
+
+			var opts []ClientOption
+			if tc.serviceNameOverride != "" {
+				opts = append(opts, WithServiceName(tc.serviceNameOverride))
+			}
+
+			span := createSpan(t, opts...)
+			assert.Equal(t, tc.wantServiceName, span.Tag(ext.ServiceName))
+			assert.Equal(t, tc.wantOperationName, span.OperationName())
 		})
 	}
 }

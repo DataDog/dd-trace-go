@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	serviceName = "consul"
+	defaultServiceName = "consul"
 )
 
 type clientConfig struct {
 	serviceName   string
+	operationName string
 	analyticsRate float64
 }
 
@@ -24,7 +25,8 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = serviceName
+	cfg.serviceName = newServiceNameSchema().GetName()
+	cfg.operationName = newOutboundOperationNameSchema().GetName()
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
