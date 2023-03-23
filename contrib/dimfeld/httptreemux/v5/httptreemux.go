@@ -70,7 +70,7 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
-	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring Router: %#v", cfg)
+	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }
 
@@ -98,14 +98,14 @@ func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, re
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
 		old := "/" + v + "/"
-		new := "/" + ":" + k + "/"
+		new := "/:" + k + "/"
 		if strings.Contains(route, old) {
 			route = strings.Replace(route, old, new, 1)
 			continue
 		}
 		// replace parameter at end of the path, i.e. "../:param"
 		old = "/" + v
-		new = "/" + ":" + k
+		new = "/:" + k
 		route = strings.Replace(route, old, new, 1)
 	}
 	return req.Method + " " + route
