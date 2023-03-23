@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -31,6 +32,8 @@ func New(opts ...RouterOption) *Router {
 		fn(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
 	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring Router: %#v", cfg)
 	return &Router{httptreemux.New(), cfg}
 }
@@ -62,6 +65,8 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 		fn(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
 	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }
