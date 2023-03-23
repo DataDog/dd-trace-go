@@ -21,7 +21,7 @@ import (
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
-type traceID [16]byte // TraceID in big endian
+type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
 
 var emptyTraceID traceID
 
