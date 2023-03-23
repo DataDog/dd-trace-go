@@ -39,17 +39,13 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-// Register the WAF event listener.
-func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
-	// Check the WAF is healthy
-	if err := waf.Health(); err != nil {
-		return nil, err
-	}
-
-	// Instantiate the WAF
-	waf, err := waf.NewHandle(a.cfg.rules, a.cfg.obfuscator.KeyRegex, a.cfg.obfuscator.ValueRegex)
+func (a *appsec) swapWAF(rules []byte) error {
+	// 1 - Instantiate a new WAF handle and verify its state
+	waf, err := freshWAFHandle(rules, a.cfg)
 	if err != nil {
-		return nil, err
+		return err
+	} else if waf == nil { // Nil handle but no error means the handle was not updated (ddwaf_update, not supported yet)
+		return nil
 	}
 	// Close the WAF in case of an error in what's following
 	defer func() {
@@ -57,7 +53,44 @@ func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 			waf.Close()
 		}
 	}()
+	// 2 - Register dyngo listeners now that we know that the new handle is valid
+	unreg, err := registerDyngoListeners(waf, a.cfg, a.limiter)
+	if err != nil {
+		return err
+	}
+	// 3 - Unregister current WAF, if any
+	if a.unregisterWAF != nil {
+		a.unregisterWAF()
+	}
+	// 4 - Update appsec state
+	a.unregisterWAF = func() {
+		defer waf.Close()
+		unreg()
+	}
+	a.wafHandle = waf
+	return nil
+}
 
+// Register the WAF and dyngo event listeners by invoking swapWAF().
+func (a *appsec) registerWAF(rules []byte) (dyngo.UnregisterFunc, error) {
+	if err := a.swapWAF(rules); err != nil {
+		return nil, err
+	}
+
+	if err := a.enableRCBlocking(); err != nil {
+		log.Error("appsec: Remote config: cannot enable blocking, rules data won't be updated: %v", err)
+	}
+	return a.unregisterWAF, nil
+}
+
+func freshWAFHandle(rules []byte, cfg *Config) (*waf.Handle, error) {
+	if err := waf.Health(); err != nil {
+		return nil, err
+	}
+	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+}
+
+func registerDyngoListeners(waf *waf.Handle, cfg *Config, l Limiter) (dyngo.UnregisterFunc, error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
@@ -75,21 +108,14 @@ func (a *appsec) registerWAF() (unreg dyngo.UnregisterFunc, err error) {
 	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, a.cfg.wafTimeout, a.limiter))
+		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
 	}
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, a.cfg.wafTimeout, a.limiter))
+		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
 	}
 
-	if err := a.enableRCBlocking(); err != nil {
-		log.Error("appsec: Remote config: cannot enable blocking, rules data won't be updated: %v", err)
-	}
-	a.wafHandle = waf
-
-	// Return an unregistration function that will also release the WAF instance.
 	return func() {
-		defer waf.Close()
 		if unregisterHTTP != nil {
 			unregisterHTTP()
 		}

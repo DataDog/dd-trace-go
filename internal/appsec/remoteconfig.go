@@ -103,27 +103,20 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 				}
 				a.ruleset.edits[path] = f
 			}
-		// TODO:
-		// - get configs for each product (ASM_DD, ASM)
-		// - merge configs
-		// - update WAF handle with merge result
 		default:
 			log.Debug("appsec: remote config: unknown product %s. Ignoring", p)
 		}
 	}
 
 	finalRuleset := a.ruleset.Compile()
-	if len(finalRuleset.Exclusions) == 0 {
-
+	// TODO: remove marshalling, use for debugging purpose
+	data, err := json.Marshal(finalRuleset)
+	if err != nil {
+		// handle WAF error
 	}
-	//	handle, err := waf.NewHandleFromRuleSet(finalRuleset, a.cfg.obfuscator.KeyRegex, a.cfg.obfuscator.ValueRegex)
-	//	if err != nil {
-	// handle WAF error
-	//	}
-	// a.wafHandle.Close()
-	// TODO:
-	// - Swap waf handles
-	// - Swap dyngo listeners
+	if err := a.swapWAF(data); err != nil {
+		// TODO: error status for all products/all configs
+	}
 	return statuses
 }
 
@@ -214,12 +207,6 @@ func (a *appsec) mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, 
 			rulesData = append(rulesData, data)
 		}
 	}
-	/*
-		if err := a.wafHandle.UpdateRulesData(rulesData); err != nil {
-			log.Debug("appsec: Remote config: could not update WAF rule data: %v.", err)
-			statuses = statusesFromUpdate(u, false, err)
-		}
-	*/
 	return rulesData, statuses
 }
 
@@ -310,7 +297,7 @@ func (a *appsec) enableRCBlocking() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	//a.registerRCProduct(rc.ProductASM)
+	a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
 	a.registerRCCapability(remoteconfig.ASMIPBlocking)
