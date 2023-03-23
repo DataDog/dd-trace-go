@@ -19,10 +19,10 @@
 //	yourCode(ctx)
 //	sp.End()
 //
-// Not every feature provided by OpenTelemtry is supported with this wrapper today.
+// Not every feature provided by OpenTelemetry is supported with this wrapper today.
 // This package seeks to implement a minimal set of functions within
 // the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
-// to allow users to send traces to Datadog using existing OpenTelemtry code with minimal changes to the application.
+// to allow users to send traces to Datadog using existing OpenTelemetry code with minimal changes to the application.
 // Span events (https://opentelemetry.io/docs/concepts/signals/traces/#span-events) are not supported at this time.
 package opentelemetry
 
