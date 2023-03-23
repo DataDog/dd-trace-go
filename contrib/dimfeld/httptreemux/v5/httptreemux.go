@@ -7,12 +7,10 @@
 package httptreemux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/dimfeld/httptreemux/v5"
 
 import (
-	"math"
 	"net/http"
 	"strings"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -31,9 +29,6 @@ func New(opts ...RouterOption) *Router {
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
-	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring Router: %#v", cfg)
@@ -65,9 +60,6 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	defaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
-	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	log.Debug("contrib/dimfeld/httptreemux/v5: Configuring ContextRouter: %#v", cfg)

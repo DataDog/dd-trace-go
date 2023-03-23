@@ -7,19 +7,16 @@
 package httptreemux
 
 import (
-	"math"
 	"net/http"
 
 	"github.com/dimfeld/httptreemux/v5"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []ddtrace.StartSpanOption
-	analyticsRate float64
 	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 }
 
@@ -27,11 +24,6 @@ type routerConfig struct {
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
-	if internal.BoolEnv("DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
 	cfg.serviceName = "http.router"
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
@@ -50,29 +42,6 @@ func WithServiceName(name string) RouterOption {
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
-	}
-}
-
-// WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) RouterOption {
-	return func(cfg *routerConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// WithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
-func WithAnalyticsRate(rate float64) RouterOption {
-	return func(cfg *routerConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
 	}
 }
 
