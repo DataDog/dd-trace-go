@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/dimfeld/httptreemux/v5"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
