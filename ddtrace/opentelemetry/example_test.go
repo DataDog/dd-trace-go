@@ -7,7 +7,9 @@ package opentelemetry_test
 
 import (
 	"context"
+
 	"go.opentelemetry.io/otel"
+
 	ddotel "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentelemetry"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
