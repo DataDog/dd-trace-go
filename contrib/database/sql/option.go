@@ -17,6 +17,7 @@ type config struct {
 	serviceName        string
 	analyticsRate      float64
 	dsn                string
+	ignoreQueryTypes   map[QueryType]struct{}
 	childSpansOnly     bool
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
@@ -83,6 +84,19 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDSN(name string) Option {
 	return func(cfg *config) {
 		cfg.dsn = name
+	}
+}
+
+// WithIgnoreQueryTypes specifies the query types for which spans should not be
+// created.
+func WithIgnoreQueryTypes(qtypes ...QueryType) Option {
+	return func(cfg *config) {
+		if cfg.ignoreQueryTypes == nil {
+			cfg.ignoreQueryTypes = make(map[QueryType]struct{})
+		}
+		for _, qt := range qtypes {
+			cfg.ignoreQueryTypes[qt] = struct{}{}
+		}
 	}
 }
 

@@ -249,6 +249,11 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		// See: https://github.com/DataDog/dd-trace-go/issues/270
 		return
 	}
+	if tp.cfg.ignoreQueryTypes != nil {
+		if _, ok := tp.cfg.ignoreQueryTypes[qtype]; ok {
+			return
+		}
+	}
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}

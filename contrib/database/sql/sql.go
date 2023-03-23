@@ -207,6 +207,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
 		cfg.dbmPropagationMode = rc.dbmPropagationMode
 	}
+	cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,

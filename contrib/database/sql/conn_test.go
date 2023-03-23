@@ -121,6 +121,63 @@ func TestWithSpanTags(t *testing.T) {
 	}
 }
 
+func TestWithIgnoreQueryTypes(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+		opts   []RegisterOption
+	}
+	testcases := []struct {
+		name        string
+		sqlRegister sqlRegister
+	}{
+		{
+			name: "mysql",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+				opts: []RegisterOption{
+					WithIgnoreQueryTypes(QueryTypeConnect),
+				},
+			},
+		},
+		{
+			name: "postgres",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+				opts: []RegisterOption{
+					WithIgnoreQueryTypes(QueryTypeConnect),
+				},
+			},
+		},
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			defer unregister(tt.sqlRegister.name)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
+			require.NoError(t, err)
+			defer db.Close()
+			mt.Reset()
+
+			ctx := context.Background()
+
+			rows, err := db.QueryContext(ctx, "SELECT 1")
+			require.NoError(t, err)
+			rows.Close()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+		})
+	}
+}
+
 func TestWithChildSpansOnly(t *testing.T) {
 	type sqlRegister struct {
 		name   string
