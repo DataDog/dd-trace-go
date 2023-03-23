@@ -172,7 +172,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		fileMap[f.Path] = f.Raw
 		for _, p := range c.Products {
 			productUpdates[p] = make(ProductUpdate)
-			if strings.Contains(f.Path, p) {
+			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
 			}
 		}
