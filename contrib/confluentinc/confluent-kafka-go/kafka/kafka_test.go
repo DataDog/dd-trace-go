@@ -15,10 +15,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -331,4 +333,165 @@ func TestCustomTags(t *testing.T) {
 
 	assert.Equal(t, "bar", s.Tag("foo"))
 	assert.Equal(t, []byte("key1"), s.Tag("key"))
+}
+
+func TestNamingSchema(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+
+	createSpans := func(t *testing.T, opts ...Option) (mocktracer.Span, mocktracer.Span) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// first write a message to the topic
+
+		p, err := NewProducer(&kafka.ConfigMap{
+			"group.id":            testGroupID,
+			"bootstrap.servers":   "127.0.0.1:9092",
+			"go.delivery.reports": true,
+		}, opts...)
+		require.NoError(t, err)
+
+		delivery := make(chan kafka.Event, 1)
+		err = p.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &testTopic,
+				Partition: 0,
+			},
+			Key:   []byte("key2"),
+			Value: []byte("value2"),
+		}, delivery)
+		require.NoError(t, err)
+
+		msg1, _ := (<-delivery).(*kafka.Message)
+		p.Close()
+
+		// next attempt to consume the message
+
+		c, err := NewConsumer(&kafka.ConfigMap{
+			"group.id":                 testGroupID,
+			"bootstrap.servers":        "127.0.0.1:9092",
+			"socket.timeout.ms":        1000,
+			"session.timeout.ms":       1000,
+			"enable.auto.offset.store": false,
+		}, opts...)
+		require.NoError(t, err)
+
+		err = c.Assign([]kafka.TopicPartition{
+			{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
+		})
+		require.NoError(t, err)
+
+		msg2, err := c.ReadMessage(3000 * time.Millisecond)
+		require.NoError(t, err)
+		assert.Equal(t, msg1.String(), msg2.String())
+		c.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		producerSpan, consumerSpan := spans[0], spans[1]
+
+		// they should be linked via headers
+		assert.Equal(t, producerSpan.TraceID(), consumerSpan.TraceID())
+		return producerSpan, consumerSpan
+	}
+
+	testCases := []struct {
+		name                      string
+		schemaVersion             namingschema.Version
+		serviceNameOverride       string
+		ddService                 string
+		wantProducerServiceName   string
+		wantConsumerServiceName   string
+		wantProducerOperationName string
+		wantConsumerOperationName string
+	}{
+		{
+			name:                      "schema v0",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "",
+			ddService:                 "",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "kafka",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v0 with DD_SERVICE",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "dd-service",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v0 with service override",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "service-override",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "service-override",
+			wantConsumerServiceName:   "service-override",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v1",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "",
+			ddService:                 "",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "kafka",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+		{
+			name:                      "schema v1 with DD_SERVICE",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "dd-service",
+			wantConsumerServiceName:   "dd-service",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+		{
+			name:                      "schema v1 with service override",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "service-override",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "service-override",
+			wantConsumerServiceName:   "service-override",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(tc.schemaVersion)
+
+			if tc.ddService != "" {
+				svc := globalconfig.ServiceName()
+				defer globalconfig.SetServiceName(svc)
+				globalconfig.SetServiceName(tc.ddService)
+			}
+
+			var opts []Option
+			if tc.serviceNameOverride != "" {
+				opts = append(opts, WithServiceName(tc.serviceNameOverride))
+			}
+
+			producerSpan, consumerSpan := createSpans(t, opts...)
+			assert.Equal(t, tc.wantProducerServiceName, producerSpan.Tag(ext.ServiceName))
+			assert.Equal(t, tc.wantConsumerServiceName, consumerSpan.Tag(ext.ServiceName))
+
+			assert.Equal(t, tc.wantProducerOperationName, producerSpan.OperationName())
+			assert.Equal(t, tc.wantConsumerOperationName, consumerSpan.OperationName())
+		})
+	}
 }
