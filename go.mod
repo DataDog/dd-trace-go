@@ -19,6 +19,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/denisenkom/go-mssqldb v0.11.0
+	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.4.0
