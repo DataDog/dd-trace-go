@@ -247,8 +247,7 @@ func TestConcurrentClient(t *testing.T) {
 func fakeAgentless(ctx context.Context, t *testing.T) (wait func(), cleanup func()) {
 	received := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("DD-Telemetry-Request-Type")
-		if len(h) > 0 {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppStarted) {
 			received <- struct{}{}
 		}
 	}))
