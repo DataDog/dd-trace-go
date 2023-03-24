@@ -104,7 +104,6 @@ func TestTracerCleanStop(t *testing.T) {
 	// avoid CI timeouts due to AppSec and telemetry slowing down this test
 	t.Setenv("DD_APPSEC_ENABLED", "")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
 	var wg sync.WaitGroup
