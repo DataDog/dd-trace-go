@@ -9,21 +9,40 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
-	consumerServiceName string
-	producerServiceName string
-	analyticsRate       float64
+	consumerServiceName   string
+	producerServiceName   string
+	consumerOperationName string
+	producerOperationName string
+	analyticsRate         float64
 }
 
 func defaults(cfg *config) {
-	cfg.producerServiceName = "kafka"
-	cfg.consumerServiceName = "kafka"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.consumerServiceName = svc
-	}
+	cfg.consumerServiceName = namingschema.NewServiceNameSchema("", "kafka").GetName()
+	cfg.producerServiceName = namingschema.NewServiceNameSchema(
+		"",
+		"kafka",
+		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
+			return "kafka"
+		}),
+	).GetName()
+
+	cfg.consumerOperationName = namingschema.NewMessagingInboundOperationNameSchema(
+		namingschema.MessagingSystemKafka,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
+			return "kafka.consume"
+		}),
+	).GetName()
+	cfg.producerOperationName = namingschema.NewMessagingOutboundOperationNameSchema(
+		namingschema.MessagingSystemKafka,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
+			return "kafka.produce"
+		}),
+	).GetName()
+
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

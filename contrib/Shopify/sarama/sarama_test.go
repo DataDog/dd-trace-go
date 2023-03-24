@@ -13,9 +13,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConsumer(t *testing.T) {
@@ -289,6 +292,162 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 		}
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	createSpans := func(t *testing.T, opts ...Option) (producerSpan mocktracer.Span, consumerSpan mocktracer.Span) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		broker := sarama.NewMockBroker(t, 1)
+		defer broker.Close()
+
+		broker.SetHandlerByMap(map[string]sarama.MockResponse{
+			"MetadataRequest": sarama.NewMockMetadataResponse(t).
+				SetBroker(broker.Addr(), broker.BrokerID()).
+				SetLeader("test-topic", 0, broker.BrokerID()),
+			"OffsetRequest": sarama.NewMockOffsetResponse(t).
+				SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
+				SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
+			"FetchRequest": sarama.NewMockFetchResponse(t, 1).
+				SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")),
+			"ProduceRequest": sarama.NewMockProduceResponse(t).
+				SetError("test-topic", 0, sarama.ErrNoError),
+		})
+
+		cfg := sarama.NewConfig()
+		cfg.Version = sarama.MinVersion
+		cfg.Producer.Return.Successes = true
+		cfg.Producer.Flush.Messages = 1
+
+		producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, cfg)
+		require.NoError(t, err)
+		producer = WrapSyncProducer(cfg, producer, opts...)
+
+		c, err := sarama.NewConsumer([]string{broker.Addr()}, cfg)
+		require.NoError(t, err)
+		defer c.Close()
+		c = WrapConsumer(c, opts...)
+
+		msg1 := &sarama.ProducerMessage{
+			Topic:    "test-topic",
+			Value:    sarama.StringEncoder("test 1"),
+			Metadata: "test",
+		}
+		_, _, err = producer.SendMessage(msg1)
+		require.NoError(t, err)
+
+		pc, err := c.ConsumePartition("test-topic", 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = <-pc.Messages()
+		pc.Close()
+		// wait for the channel to be closed
+		<-pc.Messages()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		return spans[0], spans[1]
+	}
+
+	testCases := []struct {
+		name                      string
+		schemaVersion             namingschema.Version
+		serviceNameOverride       string
+		ddService                 string
+		wantProducerServiceName   string
+		wantConsumerServiceName   string
+		wantProducerOperationName string
+		wantConsumerOperationName string
+	}{
+		{
+			name:                      "schema v0",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "",
+			ddService:                 "",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "kafka",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v0 with DD_SERVICE",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "dd-service",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v0 with service override",
+			schemaVersion:             namingschema.SchemaV0,
+			serviceNameOverride:       "service-override",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "service-override",
+			wantConsumerServiceName:   "service-override",
+			wantProducerOperationName: "kafka.produce",
+			wantConsumerOperationName: "kafka.consume",
+		},
+		{
+			name:                      "schema v1",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "",
+			ddService:                 "",
+			wantProducerServiceName:   "kafka",
+			wantConsumerServiceName:   "kafka",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+		{
+			name:                      "schema v1 with DD_SERVICE",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "dd-service",
+			wantConsumerServiceName:   "dd-service",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+		{
+			name:                      "schema v1 with service override",
+			schemaVersion:             namingschema.SchemaV1,
+			serviceNameOverride:       "service-override",
+			ddService:                 "dd-service",
+			wantProducerServiceName:   "service-override",
+			wantConsumerServiceName:   "service-override",
+			wantProducerOperationName: "kafka.send",
+			wantConsumerOperationName: "kafka.process",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(tc.schemaVersion)
+
+			if tc.ddService != "" {
+				svc := globalconfig.ServiceName()
+				defer globalconfig.SetServiceName(svc)
+				globalconfig.SetServiceName(tc.ddService)
+			}
+
+			var opts []Option
+			if tc.serviceNameOverride != "" {
+				opts = append(opts, WithServiceName(tc.serviceNameOverride))
+			}
+
+			producerSpan, consumerSpan := createSpans(t, opts...)
+			assert.Equal(t, tc.wantProducerServiceName, producerSpan.Tag(ext.ServiceName))
+			assert.Equal(t, tc.wantConsumerServiceName, consumerSpan.Tag(ext.ServiceName))
+
+			assert.Equal(t, tc.wantProducerOperationName, producerSpan.OperationName())
+			assert.Equal(t, tc.wantConsumerOperationName, consumerSpan.OperationName())
+		})
+	}
 }
 
 func newMockBroker(t *testing.T) *sarama.MockBroker {
