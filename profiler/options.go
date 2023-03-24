@@ -91,6 +91,7 @@ type config struct {
 	targetURL            string
 	apiURL               string // apiURL is the Datadog intake API URL
 	agentURL             string // agentURL is the Datadog agent profiling URL
+	udsPath              string
 	service, env         string
 	hostname             string
 	statsd               StatsdClient
@@ -115,6 +116,15 @@ type config struct {
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
+	url := c.targetURL
+	if c.udsPath != "" {
+		// We don't actually use the UNIX path in our upload requests.
+		// The UNIX path is used in the underlying transport, so the
+		// client doesn't care what the host part of the URL is, as long
+		// as the path ("/profiling/v1/input") is right. Nonetheless, we
+		// should give some signal that UDS was configured properly.
+		url = fmt.Sprintf("unix://%s", c.udsPath)
+	}
 	info := struct {
 		Date                 string   `json:"date"`         // ISO 8601 date and time of start
 		OSName               string   `json:"os_name"`      // Windows, Darwin, Debian, etc.
@@ -154,7 +164,7 @@ func logStartup(c *config) {
 		DeltaMethod:          c.deltaMethod,
 		Service:              c.service,
 		Env:                  c.env,
-		TargetURL:            c.targetURL,
+		TargetURL:            url,
 		Agentless:            c.agentless,
 		Tags:                 c.tags.Slice(),
 		ProfilePeriod:        c.period.String(),
@@ -505,13 +515,16 @@ func WithHTTPClient(client *http.Client) Option {
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) Option {
-	return WithHTTPClient(&http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
+	return func(cfg *config) {
+		cfg.udsPath = socketPath
+		WithHTTPClient(&http.Client{
+			Transport: &http.Transport{
+				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+					return net.Dial("unix", socketPath)
+				},
 			},
-		},
-	})
+		})(cfg)
+	}
 }
 
 // withOutputDir writes a copy of all uploaded profiles to the given
