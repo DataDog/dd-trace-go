@@ -46,7 +46,6 @@ func Start(opts ...Option) error {
 	if err != nil {
 		return err
 	}
-	p.startTelemetry()
 	activeProfiler = p
 	activeProfiler.run()
 	return nil
@@ -204,19 +203,19 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
-func (p *profiler) profileEnabled(t ProfileType) bool {
-	_, ok := p.cfg.types[t]
-	return ok
-}
-
 // run runs the profiler.
 func (p *profiler) run() {
-	if p.profileEnabled(MutexProfile) {
+	profileEnabled := func(t ProfileType) bool {
+		_, ok := p.cfg.types[t]
+		return ok
+	}
+	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
-	if p.profileEnabled(BlockProfile) {
+	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
+	startTelemetry(p.cfg)
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()

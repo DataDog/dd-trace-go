@@ -117,8 +117,8 @@ func TestStartupLog(t *testing.T) {
 		defer stop()
 
 		tp.Reset()
-		logStartup(tracer)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		logStartup(tracer)
 		assert.Len(tp.Logs(), 1)
 		assert.Regexp(`Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)? INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0}}`, tp.Logs()[0])
 	})
