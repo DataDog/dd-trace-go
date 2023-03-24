@@ -7,8 +7,9 @@ package namingschema
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
-// NewServiceNameSchema returns a Schema with the standard logic to be used for generating service names.
-// If any version does not follow the standard logic, you can use WithVersionOverride option to override this behavior.
+// NewServiceNameSchema returns a Schema with the standard logic to be used for contrib span service names
+// (in-code override > DD_SERVICE environment variable > integration default name).
+// If you need to support older versions not following this logic, you can use WithVersionOverride option to override this behavior.
 func NewServiceNameSchema(userOverride, defaultName string, opts ...Option) *Schema {
 	cfg := &config{}
 	for _, opt := range opts {

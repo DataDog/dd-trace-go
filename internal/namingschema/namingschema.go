@@ -3,6 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
+// Package namingschema provides functionality to create naming schemas used by integrations to set different
+// service and span/operation names based on the value of the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA environment variable.
+// It also provides some already implemented schemas for common use cases (client-server, db, messaging, etc.).
+//
+// How to use this package:
+// 1. Implement the VersionSupportSchema interface containing the correct name for each version.
+// 2. Create a new Schema using the New function.
+// 3. Call Schema.GetName to get the correct name based on the user configuration.
 package namingschema
 
 import (
