@@ -8,13 +8,13 @@ package profiler
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -25,7 +25,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	receivedProducts := make(chan *telemetry.Products, 1)
 	configChanges := make(chan *telemetry.ConfigurationChange, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
@@ -55,9 +55,10 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	tracer.Start(tracer.WithAgentAddr(server.Listener.Addr().String()))
+	tracer.Start(tracer.WithHTTPClient(client))
+	defer tracer.Stop()
 	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+		WithHTTPClient(client),
 		WithProfileTypes(
 			BlockProfile,
 			HeapProfile,

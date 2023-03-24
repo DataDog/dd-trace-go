@@ -9,10 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -22,7 +22,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	defer cancel()
 
 	received := make(chan *telemetry.AppStarted, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
@@ -43,7 +43,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	defer server.Close()
 
 	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+		WithHTTPClient(client),
 		WithDebugStack(false),
 		WithService("test-serv"),
 		WithEnv("test-env"),
