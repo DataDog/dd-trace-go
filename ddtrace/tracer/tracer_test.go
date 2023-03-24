@@ -854,7 +854,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
-		traceID: traceIDFromLowerUint64(root.context.TraceID()),
+		traceID: traceIDFrom64Bits(root.context.TraceID()),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -869,7 +869,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	defer tracer.Stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
-		traceID: traceIDFromLowerUint64(root.context.TraceID()),
+		traceID: traceIDFrom64Bits(root.context.TraceID()),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}

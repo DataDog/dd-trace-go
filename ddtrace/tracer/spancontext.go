@@ -46,15 +46,12 @@ func (t *traceID) SetUpper(i uint64) {
 }
 
 func (t *traceID) SetUpperFromHex(s string) {
-	bs, err := hex.DecodeString(s)
+	u, err := strconv.ParseUint(s, 16, 64)
 	if err != nil {
 		log.Debug("Attempted to decode an invalid hex traceID %s", s)
 		return
 	}
-	n := copy(t[:8], bs)
-	if n > 8 {
-		log.Debug("More than 8 bytes received from hex trace ID %s", s)
-	}
+	t.SetUpper(u)
 }
 
 func (t *traceID) Empty() bool {
