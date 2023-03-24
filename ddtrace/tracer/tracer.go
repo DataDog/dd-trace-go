@@ -125,6 +125,10 @@ func Start(opts ...StartOption) {
 	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
+		// TODO: instrumentation telemetry client won't get started
+		// if tracing is disabled, but we still want to capture this
+		// telemetry information. Will be fixed when the tracer and profiler
+		// share control of the global telemetry client.
 		return
 	}
 	internal.SetGlobalTracer(t)
