@@ -141,14 +141,12 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
 		raw := commandsToString(cmds)
-		length := strings.Count(raw, " ")
 		p := ddh.params
 		startOpts := make([]ddtrace.StartSpanOption, 0, 8+1+len(ddh.additionalTags)+1) // 8 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
 			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
 			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-			tracer.Tag("redis.args_length", strconv.Itoa(length)),
 			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 			tracer.Tag(ext.Component, "redis/go-redis.v9"),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
