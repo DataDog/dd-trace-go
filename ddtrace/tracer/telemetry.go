@@ -70,9 +70,8 @@ func startTelemetry(c *config) {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	telemetry.GlobalClient.Start(telemetryConfigs)
+	telemetry.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
 }
 
 func stopTelemetry() {
-	telemetry.GlobalClient.Stop()
 }

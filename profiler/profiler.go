@@ -434,6 +434,7 @@ func (p *profiler) stop() {
 	if p.cfg.logStartup {
 		log.Info("Profiling stopped")
 	}
+	stopTelemetry()
 }
 
 // StatsdClient implementations can count and time certain event occurrences that happen
