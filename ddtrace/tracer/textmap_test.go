@@ -24,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -971,6 +972,23 @@ func TestEnvVars(t *testing.T) {
 						"_dd.p.usr.id": "baz64==",
 					},
 				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "cc-00000000000000001111111111111111-2222222222222222-01-what-the-future-will-be-like",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "=_=",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
 			}
 			for i, test := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
@@ -1573,6 +1591,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithLogger(tp))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set

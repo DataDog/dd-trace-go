@@ -9,6 +9,7 @@ package telemetry
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 // ProductStart signals that the tracer or profiler has started with
@@ -58,14 +59,14 @@ func (c *Client) productChange(namespace Namespace, enabled bool, configuration 
 	products := new(Products)
 	switch namespace {
 	case NamespaceProfilers:
-		products.Profiler = ProductDetails{Enabled: enabled}
+		products.Profiler = ProductDetails{Enabled: enabled, Version: version.Tag}
 	case NamespaceASM:
-		products.AppSec = ProductDetails{Enabled: enabled}
+		products.AppSec = ProductDetails{Enabled: enabled, Version: version.Tag}
 	case NamespaceTracers:
-		c.log("attempted to send app-product-change with the tracer namespace, but tracer is not a product")
+		log("attempted to send app-product-change with the tracer namespace, but tracer is not a product")
 		return
 	default:
-		c.log("unknown product namespace, app-product-change telemetry event will not send")
+		log("unknown product namespace, app-product-change telemetry event will not send")
 		return
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)

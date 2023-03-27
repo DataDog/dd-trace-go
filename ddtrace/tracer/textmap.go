@@ -785,7 +785,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 // parseTraceparent attempts to parse traceparentHeader which describes the position
 // of the incoming request in its trace graph in a portable, fixed-length format.
 // The format of the traceparentHeader is `-` separated string with in the
-// following format: `version-traceId-spanID-flags`,
+// following format: `version-traceId-spanID-flags`, with an optional `-<prefix>` if version > 0.
 // where:
 // - version - represents the version of the W3C Tracecontext Propagation format in hex format.
 // - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
@@ -798,21 +798,29 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 func parseTraceparent(ctx *spanContext, header string) error {
 	nonWordCutset := "_-\t \n"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
-	if len(header) == 0 {
+	headerLen := len(header)
+	if headerLen == 0 {
 		return ErrSpanContextNotFound
 	}
-	if len(header) != 55 {
+	if headerLen < 55 {
 		return ErrSpanContextCorrupted
 	}
-	parts := strings.Split(header, "-")
-	if len(parts) != 4 {
+	parts := strings.SplitN(header, "-", 5) // 5 because we expect 4 required + 1 optional substrings
+	if len(parts) < 4 {
 		return ErrSpanContextCorrupted
 	}
 	version := strings.Trim(parts[0], nonWordCutset)
 	if len(version) != 2 {
 		return ErrSpanContextCorrupted
 	}
-	if v, err := strconv.ParseUint(version, 16, 64); err != nil || v == 255 {
+	v, err := strconv.ParseUint(version, 16, 64)
+	if err != nil || v == 255 {
+		// version 255 (0xff) is invalid
+		return ErrSpanContextCorrupted
+	}
+	if v == 0 && headerLen != 55 {
+		// The header length in v0 has to be 55.
+		// It's allowed to be longer in other versions.
 		return ErrSpanContextCorrupted
 	}
 	// parsing traceID
@@ -824,7 +832,6 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if ok, err := regexp.MatchString("^[a-f0-9]+$", fullTraceID); !ok || err != nil {
 		return ErrSpanContextCorrupted
 	}
-	var err error
 	if ctx.traceID, err = strconv.ParseUint(fullTraceID[16:], 16, 64); err != nil {
 		return ErrSpanContextCorrupted
 	}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -92,7 +93,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				client.log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
+				log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
 				client.URL = getAgentlessURL()
 			}
 		}
@@ -114,9 +115,9 @@ func configEnvFallback(key, def string) string {
 	return os.Getenv(key)
 }
 
-// applyFallbackOps applies default values to the client unless
-// those values are already set.
-func (c *Client) applyFallbackOps() error {
+// fallbackOps populates missing fields of the client with environment variables
+// or default values.
+func (c *Client) fallbackOps() error {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
@@ -131,8 +132,7 @@ func (c *Client) applyFallbackOps() error {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
 		} else {
-			// I think service *has* to be something?
-			c.Service = "unnamed-go-service"
+			c.Service = filepath.Base(os.Args[0])
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
