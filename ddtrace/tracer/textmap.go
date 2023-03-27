@@ -689,6 +689,7 @@ var (
 
 	// validIDRegex is used to verify that the input is a valid hex string.
 	// The input must match the pattern from start to end.
+	// validIDRegex is applicable for both trace and span IDs.
 	validIDRegex = regexp.MustCompile("^[a-f0-9]+$")
 )
 
