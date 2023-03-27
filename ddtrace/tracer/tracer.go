@@ -402,11 +402,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for _, fn := range options {
 		fn(&opts)
 	}
-	var startTime time.Time
+	var startTime int64
 	if opts.StartTime.IsZero() {
-		startTime = nowTime()
+		startTime = now()
 	} else {
-		startTime = opts.StartTime
+		startTime = opts.StartTime.UnixNano()
 	}
 	var context *spanContext
 	// The default pprof context is taken from the start options and is
@@ -435,7 +435,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	id := opts.SpanID
 	if id == 0 {
-		id = generateSpanID(startTime.UnixNano())
+		id = generateSpanID(startTime)
 	}
 	// span defaults
 	span := &span{
@@ -444,7 +444,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Resource:     operationName,
 		SpanID:       id,
 		TraceID:      id,
-		Start:        startTime.UnixNano(),
+		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
 	if t.config.hostname != "" {
