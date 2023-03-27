@@ -523,7 +523,7 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally this func informs the profiler how
+// found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
