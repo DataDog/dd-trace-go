@@ -124,11 +124,11 @@ type config struct {
 	statsdClient statsdClient
 
 	// spanRules contains user-defined rules to determine the sampling rate to apply
-	// to trace spans.
+	// to a single span without affecting the entire trace
 	spanRules []SamplingRule
 
 	// traceRules contains user-defined rules to determine the sampling rate to apply
-	// to individual spans.
+	// to the entire trace if any spans satisfy the criteria
 	traceRules []SamplingRule
 
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
