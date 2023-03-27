@@ -167,6 +167,24 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				if args.ClientIP.IsValid() {
 					values[httpClientIPAddr] = args.ClientIP.String()
 				}
+			case serverRequestRawURIAddr:
+				values[serverRequestRawURIAddr] = args.RequestURI
+			case serverRequestHeadersNoCookiesAddr:
+				if headers := args.Headers; headers != nil {
+					values[serverRequestHeadersNoCookiesAddr] = headers
+				}
+			case serverRequestCookiesAddr:
+				if cookies := args.Cookies; cookies != nil {
+					values[serverRequestCookiesAddr] = cookies
+				}
+			case serverRequestQueryAddr:
+				if query := args.Query; query != nil {
+					values[serverRequestQueryAddr] = query
+				}
+			case serverRequestPathParamsAddr:
+				if pathParams := args.PathParams; pathParams != nil {
+					values[serverRequestPathParamsAddr] = pathParams
+				}
 			}
 		}
 		// TODO: suspicious request blocking by moving here all the addresses available when the request begins
@@ -197,24 +215,6 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			values := make(map[string]interface{}, len(addresses))
 			for _, addr := range addresses {
 				switch addr {
-				case serverRequestRawURIAddr:
-					values[serverRequestRawURIAddr] = args.RequestURI
-				case serverRequestHeadersNoCookiesAddr:
-					if headers := args.Headers; headers != nil {
-						values[serverRequestHeadersNoCookiesAddr] = headers
-					}
-				case serverRequestCookiesAddr:
-					if cookies := args.Cookies; cookies != nil {
-						values[serverRequestCookiesAddr] = cookies
-					}
-				case serverRequestQueryAddr:
-					if query := args.Query; query != nil {
-						values[serverRequestQueryAddr] = query
-					}
-				case serverRequestPathParamsAddr:
-					if pathParams := args.PathParams; pathParams != nil {
-						values[serverRequestPathParamsAddr] = pathParams
-					}
 				case serverRequestBodyAddr:
 					if body != nil {
 						values[serverRequestBodyAddr] = body
