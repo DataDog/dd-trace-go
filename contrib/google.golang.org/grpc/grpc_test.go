@@ -343,7 +343,7 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithRequestTags())
+		rig, err := newRig(true, WithRequestTags(), WithMetadataTags())
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
@@ -358,6 +358,7 @@ func TestSpanTree(t *testing.T) {
 			//  -> server receive message -> server send message
 			//  -> client receive message
 			ctx, cancel := context.WithCancel(ctx)
+			ctx = metadata.AppendToOutgoingContext(ctx, "custom_metadata_key", "custom_metadata_value")
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(err)
 			err = stream.SendMsg(&FixtureRequest{Name: "break"})
@@ -412,6 +413,9 @@ func TestSpanTree(t *testing.T) {
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
+					assert.Len(metadataTag, 1)
+					assert.Equal("custom_metadata_value", metadataTag[0])
 					reqMsgFound = true
 				}
 			}
