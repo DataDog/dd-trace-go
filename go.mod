@@ -5,9 +5,9 @@ go 1.18
 require (
 	cloud.google.com/go/pubsub v1.4.0
 	github.com/99designs/gqlgen v0.16.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.0.0-20211129110424-6491aa3bf583
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.43.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.43.1
-	github.com/DataDog/datadog-go/v5 v5.0.2
+	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
@@ -19,6 +19,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/denisenkom/go-mssqldb v0.11.0
+	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.4.0
@@ -91,7 +92,6 @@ require (
 require (
 	cloud.google.com/go v0.57.0 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect
-	github.com/DataDog/datadog-go v4.8.2+incompatible // indirect
 	github.com/DataDog/zstd v1.3.5 // indirect
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/agnivade/levenshtein v1.1.0 // indirect
@@ -103,7 +103,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgraph-io/ristretto v0.1.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/eapache/go-resiliency v1.1.0 // indirect
@@ -120,7 +119,6 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.7 // indirect
@@ -222,5 +220,6 @@ require github.com/DataDog/go-libddwaf v1.0.0
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/outcaste-io/ristretto v0.2.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 )

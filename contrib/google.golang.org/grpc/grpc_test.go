@@ -728,6 +728,13 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("spanOpts", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.33), WithSpanOptions(tracer.AnalyticsRate(0.23)))
+	})
 }
 
 func TestIgnoredMethods(t *testing.T) {
@@ -917,6 +924,64 @@ func TestIgnoredMetadata(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
+}
+
+func TestSpanOpts(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		rig.Close()
+		mt.Reset()
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+
+		ctx, done := context.WithCancel(context.Background())
+		client := rig.client
+		stream, err := client.StreamPing(ctx)
+		assert.NoError(t, err)
+
+		err = stream.Send(&FixtureRequest{Name: "pass"})
+		assert.NoError(t, err)
+
+		resp, err := stream.Recv()
+		assert.NoError(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		assert.NoError(t, stream.CloseSend())
+		done() // close stream from client side
+		rig.Close()
+
+		waitForSpans(mt, 7, 5*time.Second)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 7)
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		mt.Reset()
+	})
 }
 
 func TestCustomTag(t *testing.T) {

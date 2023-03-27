@@ -57,5 +57,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }
