@@ -129,6 +129,7 @@ type roundTripperConfig struct {
 	resourceNamer func(req *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
+	errCheck      func(err error) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -214,5 +215,14 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.ignoreRequest = f
+	}
+}
+
+// RTWithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever an http operation
+// finishes with an error
+func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.errCheck = fn
 	}
 }

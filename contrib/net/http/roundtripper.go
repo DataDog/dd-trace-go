@@ -52,7 +52,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		span.Finish(tracer.WithError(err))
+		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
+			span.Finish(tracer.WithError(err))
+		} else {
+			span.Finish()
+		}
 	}()
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
@@ -67,7 +71,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	res, err = rt.base.RoundTrip(r2)
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
-		span.SetTag(ext.Error, err)
+		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
+			span.SetTag(ext.Error, err)
+		}
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 		// treat 5XX as errors

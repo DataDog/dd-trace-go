@@ -1,43 +1,57 @@
 #!/usr/bin/env bash
 
-ARTIFACTS_DIR="/artifacts/${CI_JOB_ID}"
-REPORTS_DIR="$(pwd)/reports/"
-mkdir "${REPORTS_DIR}" || :
+source ./.gitlab/scripts/config-benchmarks.sh
+INITIAL_DIR=$(pwd)
 
-# Change threshold for detection of regression
-# @see https://github.com/DataDog/relenv-benchmark-analyzer#what-is-a-significant-difference
-UNCONFIDENCE_THRESHOLD=2.0
-
-CANDIDATE_COMMIT_SHA=$CI_COMMIT_SHA
 CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
 
-cd dd-trace-go/ddtrace/tracer/
-BASELINE_COMMIT_SHA=$(git rev-parse HEAD)
-BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CANDIDATE_BRANCH" || :)
+cd "$CANDIDATE_SRC"
+CANDIDATE_COMMIT_SHA=$(git rev-parse --short HEAD)
 
-source /benchmark-analyzer/.venv/bin/activate
-cd /benchmark-analyzer
-
-./benchmark_analyzer convert \
+benchmark_analyzer convert \
   --framework=GoBench \
   --extra-params="{\
     \"config\":\"candidate\", \
     \"git_commit_sha\":\"$CANDIDATE_COMMIT_SHA\", \
     \"git_branch\":\"$CANDIDATE_BRANCH\"\
     }" \
-  --outpath="pr.json" \
+  --outpath="${ARTIFACTS_DIR}/pr.converted.json" \
   "${ARTIFACTS_DIR}/pr_bench.txt"
 
-./benchmark_analyzer convert \
-  --framework=GoBench \
-  --extra-params="{\
-    \"config\":\"baseline\", \
-    \"git_commit_sha\":\"$BASELINE_COMMIT_SHA\", \
-    \"git_branch\":\"$BASELINE_BRANCH\"\
-    }" \
-  --outpath="main.json" \
-  "${ARTIFACTS_DIR}/main_bench.txt"
+if [ -d $BASELINE_SRC ]; then
+  BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CANDIDATE_BRANCH" || :)
 
-./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report.md --format md-nodejs main.json pr.json
-./benchmark_analyzer compare pairwise --baseline='{"config":"baseline"}' --candidate='{"config":"candidate"}' --outpath ${REPORTS_DIR}/report_full.html --format html main.json pr.json
+  cd "$BASELINE_SRC"
+  BASELINE_COMMIT_SHA=$(git rev-parse --short HEAD)
 
+  benchmark_analyzer convert \
+    --framework=GoBench \
+    --extra-params="{\
+      \"config\":\"baseline\", \
+      \"git_commit_sha\":\"$BASELINE_COMMIT_SHA\", \
+      \"git_branch\":\"$BASELINE_BRANCH\"\
+      }" \
+    --outpath="${ARTIFACTS_DIR}/main.converted.json" \
+    "${ARTIFACTS_DIR}/main_bench.txt"
+
+  benchmark_analyzer compare pairwise \
+    --baseline='{"config":"baseline"}' \
+    --candidate='{"config":"candidate"}' \
+    --outpath "${ARTIFACTS_DIR}/report_full.html" \
+    --format html \
+    "${ARTIFACTS_DIR}/main.converted.json" \
+    "${ARTIFACTS_DIR}/pr.converted.json"
+
+  if ! benchmark_analyzer compare pairwise \
+    --baseline='{"config":"baseline"}' \
+    --candidate='{"config":"candidate"}' \
+    --outpath "${ARTIFACTS_DIR}/report.md" \
+    --fail_on_regression=True \
+    --format md-nodejs \
+    "${ARTIFACTS_DIR}/main.converted.json" \
+    "${ARTIFACTS_DIR}/pr.converted.json"; then
+      "$INITIAL_DIR/.gitlab/scripts/run-benchmarks-with-profiler.sh"
+  fi
+else
+  benchmark_analyzer analyze --outpath "${ARTIFACTS_DIR}/analysis.html" --format html "${ARTIFACTS_DIR}/pr.converted.json"
+fi

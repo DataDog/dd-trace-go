@@ -224,10 +224,9 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 			s.context.updated = true
 		}
 		delete(root.Meta, keyPropagatedUserID)
-		// setMeta is used since the span is already locked
-		root.setMeta(keyUserID, id)
 	}
 	for k, v := range map[string]string{
+		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -235,6 +234,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	} {
 		if v != "" {
+			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
 		}
 	}
@@ -637,11 +637,13 @@ func (s *span) Format(f fmt.State, c rune) {
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyDecisionMaker           = "_dd.p.dm"
-	keyServiceHash             = "_dd.dm.service_hash"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -660,6 +662,9 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
@@ -670,10 +675,4 @@ const (
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
-)
-
-const (
-	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	samplingMechanismSingleSpan = 8
 )

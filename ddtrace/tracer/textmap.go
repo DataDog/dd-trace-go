@@ -683,8 +683,9 @@ var (
 	// semi-colon (reserved for separator between entries in the dd list-member),
 	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|=|;|[^\\x21-\\x7E]+")
+	// Equals character must be encoded with a tilde.
+	// Other disallowed characters must be replaced with the underscore.
+	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
@@ -693,12 +694,14 @@ var (
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 	var b strings.Builder
+	b.Grow(128)
 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
 	listLength := 1
 
 	if ctx.origin != "" {
+		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
 		b.WriteString(fmt.Sprintf(";o:%s",
-			originRgx.ReplaceAllString(ctx.origin, "_")))
+			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
 	for k, v := range ctx.trace.propagatingTags {
@@ -747,6 +750,7 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
 	var stateHeader string
+	var ctx spanContext
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		key := strings.ToLower(k)
@@ -758,25 +762,30 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 			parentHeader = v
 		case tracestateHeader:
 			stateHeader = v
+		default:
+			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
+				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
+			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	var ctx spanContext
+
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
 	if err := parseTracestate(&ctx, stateHeader); err != nil {
 		return nil, err
 	}
+
 	return &ctx, nil
 }
 
 // parseTraceparent attempts to parse traceparentHeader which describes the position
 // of the incoming request in its trace graph in a portable, fixed-length format.
 // The format of the traceparentHeader is `-` separated string with in the
-// following format: `version-traceId-spanID-flags`,
+// following format: `version-traceId-spanID-flags`, with an optional `-<prefix>` if version > 0.
 // where:
 // - version - represents the version of the W3C Tracecontext Propagation format in hex format.
 // - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
@@ -789,21 +798,29 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 func parseTraceparent(ctx *spanContext, header string) error {
 	nonWordCutset := "_-\t \n"
 	header = strings.ToLower(strings.Trim(header, "\t -"))
-	if len(header) == 0 {
+	headerLen := len(header)
+	if headerLen == 0 {
 		return ErrSpanContextNotFound
 	}
-	if len(header) != 55 {
+	if headerLen < 55 {
 		return ErrSpanContextCorrupted
 	}
-	parts := strings.Split(header, "-")
-	if len(parts) != 4 {
+	parts := strings.SplitN(header, "-", 5) // 5 because we expect 4 required + 1 optional substrings
+	if len(parts) < 4 {
 		return ErrSpanContextCorrupted
 	}
 	version := strings.Trim(parts[0], nonWordCutset)
 	if len(version) != 2 {
 		return ErrSpanContextCorrupted
 	}
-	if v, err := strconv.ParseUint(version, 16, 64); err != nil || v == 255 {
+	v, err := strconv.ParseUint(version, 16, 64)
+	if err != nil || v == 255 {
+		// version 255 (0xff) is invalid
+		return ErrSpanContextCorrupted
+	}
+	if v == 0 && headerLen != 55 {
+		// The header length in v0 has to be 55.
+		// It's allowed to be longer in other versions.
 		return ErrSpanContextCorrupted
 	}
 	// parsing traceID
@@ -815,7 +832,6 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if ok, err := regexp.MatchString("^[a-f0-9]+$", fullTraceID); !ok || err != nil {
 		return ErrSpanContextCorrupted
 	}
-	var err error
 	if ctx.traceID, err = strconv.ParseUint(fullTraceID[16:], 16, 64); err != nil {
 		return ErrSpanContextCorrupted
 	}
@@ -874,7 +890,7 @@ func parseTracestate(ctx *spanContext, header string) error {
 			}
 			k, v := x[0], x[1]
 			if k == "o" {
-				ctx.origin = v
+				ctx.origin = strings.ReplaceAll(v, "~", "=")
 			} else if k == "s" {
 				p, err := strconv.Atoi(v)
 				if err != nil {

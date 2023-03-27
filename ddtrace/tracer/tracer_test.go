@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -610,28 +611,28 @@ func TestSamplingDecision(t *testing.T) {
 
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
 	t.Run("env", func(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 
 	t.Run("overrideEnv", func(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Lines()[0], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
 	})
 }
 
@@ -1428,7 +1429,7 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer := newUnstartedTracer()
 	defer tracer.statsd.Close()
@@ -1457,7 +1458,7 @@ func TestPushTrace(t *testing.T) {
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
-	assert.True(len(tp.Lines()) >= 1)
+	assert.True(len(tp.Logs()) >= 1)
 }
 
 func TestTracerFlush(t *testing.T) {
@@ -1676,6 +1677,80 @@ func TestEnvironment(t *testing.T) {
 		sp := tracer.StartSpan("http.request").(*span)
 		_, ok := sp.Meta[ext.Environment]
 		assert.False(ok)
+	})
+}
+
+func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+
+	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
+	})
+
+	t.Run("git-metadata-from-env", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+
+		// git metadata env has priority under DD_TAGS
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-disabled", func(t *testing.T) {
+		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
+
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("", sp.Meta[maininternal.TraceTagRepositoryURL])
 	})
 }
 
@@ -2054,8 +2129,7 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id, WithPropagation())
 		s.Finish()
-		_, ok := s.Meta[keyUserID]
-		assert.False(t, ok)
+		assert.Equal(t, id, s.Meta[keyUserID])
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
 		assert.Equal(t, encoded, s.Meta[keyPropagatedUserID])
@@ -2171,4 +2245,31 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 			span.Finish()
 		}
 	})
+}
+
+func TestExecutionTraceSpanTagged(t *testing.T) {
+	if rt.IsEnabled() {
+		t.Skip("runtime execution tracing is already enabled")
+	}
+
+	if err := rt.Start(io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure we unconditionally stop tracing. It's safe to call this
+	// multiple times.
+	defer rt.Stop()
+
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	tracedSpan := tracer.StartSpan("traced").(*span)
+	tracedSpan.Finish()
+
+	rt.Stop()
+
+	untracedSpan := tracer.StartSpan("untraced").(*span)
+	untracedSpan.Finish()
+
+	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
+	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }
