@@ -146,7 +146,7 @@ func log(msg string, args ...interface{}) {
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if disabled() {
+	if Disabled() {
 		return
 	}
 	if c.started {
@@ -231,9 +231,9 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// disabled returns whether instrumentation telemetry is disabled
+// Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-func disabled() bool {
+func Disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 }
 
