@@ -18,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -474,18 +473,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.context = newSpanContext(span, context)
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
-
-	// add 128 bit trace id, if enabled, formatted as big-endian:
-	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-	if !span.context.traceID.HasUpper() && sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
-		id128 := startTime.Unix()
-		// casting from int64 -> uint32 should be safe since the start time won't be
-		// negative, and the seconds should fit within 32-bits for the foreseeable future.
-		// (We only want 32 bits of time, then the rest is zero)
-		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
-
-		span.context.traceID.SetUpper(tUp)
-	}
 
 	// add tags from options
 	for k, v := range opts.Tags {
