@@ -1017,14 +1017,11 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "cc-00000000000000001111111111111111-2222222222222222-01-what-the-future-will-be-like",
 						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
 					},
-					fullTraceID: "00000000000000001111111111111111",
-					traceID:     1229782938247303441,
-					spanID:      2459565876494606882,
-					priority:    1,
-					origin:      "=_=",
+					out:    []uint64{2459565876494606882, 1}, // tracestate priority takes precedence
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "=_=",
 					propagatingTags: map[string]string{
 						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
-						"w3cTraceID":   "00000000000000001111111111111111",
 						"_dd.p.dm":     "-4",
 						"_dd.p.usr.id": "baz64==",
 					},

@@ -871,7 +871,6 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if ok := validIDRgx.MatchString(spanID); !ok {
 		return ErrSpanContextCorrupted
 	}
-	var err error
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
 		return ErrSpanContextCorrupted
 	}
