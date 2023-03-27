@@ -687,9 +687,9 @@ var (
 	// Other disallowed characters must be replaced with the underscore.
 	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 
-	// validIdRegex is used to verify that the input is a valid hex string.
+	// validIDRegex is used to verify that the input is a valid hex string.
 	// The input must match the pattern from start to end.
-	validIdRegex = regexp.MustCompile("^[a-f0-9]+$")
+	validIDRegex = regexp.MustCompile("^[a-f0-9]+$")
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
@@ -833,7 +833,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if ok := validIdRegex.MatchString(fullTraceID); !ok {
+	if ok := validIDRegex.MatchString(fullTraceID); !ok {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.traceID, err = strconv.ParseUint(fullTraceID[16:], 16, 64); err != nil {
@@ -851,7 +851,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if ok := validIdRegex.MatchString(spanID); !ok {
+	if ok := validIDRegex.MatchString(spanID); !ok {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
