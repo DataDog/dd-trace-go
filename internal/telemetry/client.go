@@ -147,10 +147,9 @@ func log(msg string, args ...interface{}) {
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
+// The client lock needs to be held when calling start.
 // TODO: implement passing in error information about tracer start
 func (c *Client) start(configuration []Configuration, namespace Namespace) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if Disabled() {
 		return
 	}

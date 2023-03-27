@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
 func TestProductChange(t *testing.T) {
@@ -77,17 +76,17 @@ func TestProductChange(t *testing.T) {
 	check("delta_profiles", true)
 }
 
-func backend(ctx context.Context, t *testing.T, expectedHits int, telemetry func()) (wait func() []string, cleanup func()) {
+func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func()) (wait func() []string, cleanup func()) {
 	messages := make([]string, expectedHits)
 	hits := 0
 	done := make(chan struct{})
 	mu := sync.Mutex{}
-	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
 		rType := RequestType(r.Header.Get("DD-Telemetry-Request-Type"))
-		if rType != RequestTypeAppClientConfigurationChange && rType != RequestTypeAppProductChange && rType != RequestTypeAppStarted {
+		if rType != RequestTypeAppClientConfigurationChange && rType != RequestTypeAppProductChange && rType != RequestTypeAppStarted && rType != RequestTypeDependenciesLoaded {
 			return
 		}
 		mu.Lock()
@@ -101,8 +100,8 @@ func backend(ctx context.Context, t *testing.T, expectedHits int, telemetry func
 			done <- struct{}{}
 		}
 	}))
-	prevClient := GlobalClient.Client
-	GlobalClient.ApplyOps(WithHTTPClient(client))
+	prevURL := GlobalClient.URL
+	GlobalClient.ApplyOps(WithURL(false, server.URL))
 	return func() []string {
 			telemetry()
 			select {
@@ -113,26 +112,69 @@ func backend(ctx context.Context, t *testing.T, expectedHits int, telemetry func
 			return messages
 		}, func() {
 			server.Close()
-			GlobalClient.ApplyOps(WithHTTPClient(prevClient))
+			GlobalClient.ApplyOps(WithURL(false, prevURL))
+			GlobalClient.Stop()
 		}
 }
 
 func TestProductStart(t *testing.T) {
-	// goal of this test is to ensure that based on a certain sequence of ProductStart/ProductStop calls
-	// telemetry events show up in an expected order
+	// this test is meant to ensure that a given sequence of ProductStart/ProductStop calls
+	// emits the expected telemetry events.
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	tests := []struct {
+		name           string
+		wantedMessages []string
+		telemetry      func()
+	}{
+		{
+			name:           "tracer start, profiler start with config",
+			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-client-configuration-change", "app-product-change"},
+			telemetry: func() {
+				ProductStart(NamespaceTracers, []Configuration{})
+				ProductStart(NamespaceProfilers, []Configuration{{Name: "key", Value: "value"}})
+			},
+		},
+		{
+			name:           "profiler start, tracer start, profiler stop",
+			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-client-configuration-change", "app-product-change", "app-product-change"},
+			telemetry: func() {
+				ProductStart(NamespaceProfilers, nil)
+				ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
+				ProductStop(NamespaceProfilers)
+			},
+		},
+		{
+			name:           "profiler start, profiler stop, tracer start",
+			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-client-configuration-change", "app-product-change"},
+			telemetry: func() {
+				ProductStart(NamespaceProfilers, nil)
+				ProductStop(NamespaceProfilers)
+				ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
+			},
+		},
+		{
+			name:           "tracer start, tracer stop, profiler start, profiler stop",
+			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-product-change"},
+			telemetry: func() {
+				ProductStart(NamespaceTracers, nil)
+				ProductStop(NamespaceProfilers)
+				ProductStart(NamespaceProfilers, nil)
+				ProductStop(NamespaceProfilers)
+			},
+		},
+	}
 
-	expectedHits := 5
-	wait, cleanup := backend(ctx, t, expectedHits, func() {
-		ProductStart(NamespaceTracers, nil)
-		ProductStart(NamespaceProfilers, nil)
-	})
-
-	defer cleanup()
-	messages := wait()
-	for i := range messages {
-		assert.Equal(t, []string{"app-started", "app-client-configuration-change", "app-client-configuration-change", "app-product-change"}, messages[i])
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			wait, cleanup := mockServer(ctx, t, len(test.wantedMessages), test.telemetry)
+			defer cleanup()
+			messages := wait()
+			for i := range messages {
+				assert.Equal(t, test.wantedMessages[i], messages[i])
+			}
+		})
 	}
 }

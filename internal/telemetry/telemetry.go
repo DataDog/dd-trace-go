@@ -19,7 +19,6 @@ import (
 func ProductStart(namespace Namespace, configuration []Configuration) {
 	GlobalClient.mu.Lock()
 	defer GlobalClient.mu.Unlock()
-
 	if GlobalClient.started {
 		switch namespace {
 		case NamespaceProfilers:
@@ -33,7 +32,6 @@ func ProductStart(namespace Namespace, configuration []Configuration) {
 	} else {
 		GlobalClient.start(configuration, namespace)
 	}
-
 }
 
 // ProductStop signals that a Product had stopped. For the tracer, we do nothing when it stops.
