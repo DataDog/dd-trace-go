@@ -155,10 +155,11 @@ func (c *Client) Start(configuration []Configuration) {
 	}
 	// Don't start the telemetry client if there is some error configuring the client with fallback
 	// options, e.g. an API key was not found but agentless telemetry is expected.
-	if err := c.fallbackOps(); err != nil {
-		log(err.Error())
-		return
-	}
+	c.fallbackOps()
+	// if err := c.fallbackOps(); err != nil {
+	// 	log(err.Error())
+	// 	return
+	// }
 
 	c.started = true
 	c.metrics = make(map[Namespace]map[string]*metric)

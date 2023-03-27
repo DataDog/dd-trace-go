@@ -6,10 +6,10 @@
 package telemetry
 
 import (
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -116,25 +116,26 @@ func configEnvFallback(key, def string) string {
 
 // fallbackOps populates missing fields of the client with environment variables
 // or default values.
-func (c *Client) fallbackOps() error {
+func (c *Client) fallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
 	if len(c.APIKey) == 0 && c.URL == getAgentlessURL() {
 		WithAPIKey(defaultAPIKey())(c)
 		if c.APIKey == "" {
-			return errors.New("agentless is turned on, but valid DD API key was not found")
+			return
 		}
 	}
 	c.Service = configEnvFallback("DD_SERVICE", c.Service)
 	if len(c.Service) == 0 {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
+		} else {
+			c.Service = filepath.Base(os.Args[0])
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	return nil
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless
