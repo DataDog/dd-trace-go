@@ -77,9 +77,6 @@ func (a *appsec) registerWAF(rules []byte) (dyngo.UnregisterFunc, error) {
 		return nil, err
 	}
 
-	if err := a.enableRCBlocking(); err != nil {
-		log.Error("appsec: Remote config: cannot enable blocking, rules data won't be updated: %v", err)
-	}
 	return a.unregisterWAF, nil
 }
 

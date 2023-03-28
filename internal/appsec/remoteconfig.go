@@ -11,6 +11,7 @@ package appsec
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -297,12 +298,18 @@ func (a *appsec) enableRCBlocking() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
+
 	a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
-	a.registerRCCapability(remoteconfig.ASMIPBlocking)
 	a.registerRCCapability(remoteconfig.ASMUserBlocking)
-	a.registerRCCapability(remoteconfig.ASMDDRules)
 	a.registerRCCapability(remoteconfig.ASMRequestBlocking)
+
+	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
+		a.registerRCCapability(remoteconfig.ASMIPBlocking)
+		a.registerRCCapability(remoteconfig.ASMDDRules)
+		a.registerRCCapability(remoteconfig.ASMExclusions)
+	}
+
 	return nil
 }

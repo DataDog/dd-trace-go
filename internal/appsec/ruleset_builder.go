@@ -21,6 +21,8 @@ type (
 	}
 	// rulesetFragment can represent a full ruleset or a fragment of it
 	rulesetFragment struct {
+		Version    json.RawMessage      `json:"version,omitempty"`
+		Metadata   json.RawMessage      `json:"metadata,omitempty"`
 		Rules      []ruleEntry          `json:"rules,omitempty"`
 		Overrides  []rulesOverrideEntry `json:"rules_override,omitempty"`
 		Exclusions []exclusionEntry     `json:"exclusions,omitempty"`
