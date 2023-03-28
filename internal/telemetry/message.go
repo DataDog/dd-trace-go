@@ -212,3 +212,6 @@ type Series struct {
 	// field is technically optional.
 	Common bool `json:"common"`
 }
+
+// TODO: app-integrations-change? Does this really
+// apply to Go?

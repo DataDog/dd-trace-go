@@ -8,13 +8,8 @@
 package telemetry
 
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
-// The caller can also specify additional configuration changes (e.g. profiler config info), which
-// will be sent via the app-client-configuration-change event.
-// The enabled field is meant to specify when a product has be enabled/disabled during
-// runtime. For example, an app-product-change message with enabled=true can be sent when the profiler
-// starts, and another app-product-change message with enabled=false can be sent when the profiler stops.
-// Product enablement messages do not apply to the tracer, since the tracer is not considered a product
-// by the instrumentation telemetry API.
+// The caller can also specify additional configuration changes (e.g. profiler config info),
+// which will be sent via the app-client-configuration-change event
 func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
