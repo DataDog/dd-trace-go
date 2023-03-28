@@ -183,6 +183,53 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 }
 
+func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) mocktracer.Span {
+		done := make(chan struct{})
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+			assert.NoError(t, err)
+			<-done
+		}))
+		defer s.Close()
+		defer close(done)
+
+		rt := WrapRoundTripper(http.DefaultTransport,
+			RTWithErrorCheck(func(err error) bool {
+				return forwardErr
+			}))
+
+		client := &http.Client{
+			Transport: rt,
+			Timeout:   1 * time.Millisecond,
+		}
+
+		client.Get(s.URL + "/hello/world")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+
+		s0 := spans[0]
+		return s0
+	}
+
+	t.Run("error skipped", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span := failedRequest(t, mt, false)
+		assert.Nil(t, span.Tag(ext.Error))
+	})
+
+	t.Run("error forwarded", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span := failedRequest(t, mt, true)
+		assert.NotNil(t, span.Tag(ext.Error))
+	})
+}
+
 func TestRoundTripperCredentials(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
