@@ -31,6 +31,7 @@ import (
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -100,13 +101,10 @@ func TestTracerCleanStop(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
-	if old := os.Getenv("DD_APPSEC_ENABLED"); old != "" {
-		// avoid CI timeouts due to AppSec slowing down this test
-		os.Unsetenv("DD_APPSEC_ENABLED")
-		defer os.Setenv("DD_APPSEC_ENABLED", old)
-	}
-	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
+	// avoid CI timeouts due to AppSec and telemetry slowing down this test
+	t.Setenv("DD_APPSEC_ENABLED", "")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
 	var wg sync.WaitGroup
 	transport := newDummyTransport()
@@ -612,6 +610,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -621,6 +620,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -630,6 +630,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
 		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
