@@ -281,6 +281,32 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
+
+	t.Run("raw", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Raw().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
+
+		err := db.Exec("select 1").Error
+		assert.Nil(t, err)
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		a.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		a.Equal("gorm.raw_query", span.OperationName())
+		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
+	})
 }
 
 func TestAnalyticsSettings(t *testing.T) {
