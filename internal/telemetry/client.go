@@ -32,6 +32,8 @@ var (
 	// GlobalClient acts as a global telemetry client that the
 	// tracer, profiler, and appsec products will use
 	GlobalClient *Client
+	globalClient sync.Mutex
+
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -75,6 +77,14 @@ func init() {
 	if err == nil {
 		hostname = h
 	}
+	Reset()
+}
+
+// Reset erases any previous data from the telemetry client
+// and populates it with fallback options.
+func Reset() {
+	globalClient.Lock()
+	defer globalClient.Unlock()
 	GlobalClient = new(Client)
 	GlobalClient.fallbackOps()
 }

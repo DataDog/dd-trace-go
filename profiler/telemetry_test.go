@@ -23,6 +23,7 @@ import (
 // `app-client-configuration-change` to send profiler-related configuration information
 func TestTelemetryEnabled(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	telemetry.Reset()
 	receivedProducts := make(chan *telemetry.Products, 1)
 	configChanges := make(chan *telemetry.ConfigurationChange, 1)
 	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
