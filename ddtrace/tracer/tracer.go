@@ -139,7 +139,6 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
-	startTelemetry(t.config)
 	hostname.Get() // Prime the hostname cache
 }
 
