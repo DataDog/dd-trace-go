@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2023 Datadog, Inc.
+// Copyright 2016 Datadog, Inc.
 
 package telemetry
 
@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"unicode"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -60,14 +61,33 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
+// isAPIKeyValid reports whether the given string is a structurally valid API key
+// (copied from profiler)
+func isAPIKeyValid(key string) bool {
+	if len(key) != 32 {
+		return false
+	}
+	for _, c := range key {
+		if c > unicode.MaxASCII || (!unicode.IsLower(c) && !unicode.IsNumber(c)) {
+			return false
+		}
+	}
+	return true
+}
+
 func defaultAPIKey() string {
-	return os.Getenv("DD_API_KEY")
+	if v := os.Getenv("DD_API_KEY"); isAPIKeyValid(v) {
+		return v
+	}
+	return ""
 }
 
 // WithAPIKey sets the DD API KEY for the telemetry client
 func WithAPIKey(v string) Option {
 	return func(client *Client) {
-		client.APIKey = v
+		if isAPIKeyValid(v) {
+			client.APIKey = v
+		}
 	}
 }
 
@@ -136,6 +156,10 @@ func (c *Client) applyFallbackOps() {
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
+	if len(c.metrics) == 0 {
+		// XXX: Should we let metrics persist between starting and stopping?
+		c.metrics = make(map[Namespace]map[string]*metric)
+	}
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless

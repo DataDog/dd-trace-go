@@ -1,14 +1,14 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2023 Datadog, Inc.
+// Copyright 2022 Datadog, Inc.
 
 // Package telemetry implements a client for sending telemetry information to
 // Datadog regarding usage of an APM library such as tracing or profiling.
 package telemetry
 
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
-// The caller can also specify additional configuration changes (e.g. profiler config info),
+// the caller can also specify additional configuration changes (e.g. profiler config info),
 // which will be sent via the app-client-configuration-change event
 func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	c.mu.Lock()
@@ -32,7 +32,7 @@ func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration 
 	c.newRequest(RequestTypeAppClientConfigurationChange)
 	if len(configuration) > 0 {
 		configChange := new(ConfigurationChange)
-		configChange.Configuration = configuration
+		configChange.Configuration = append([]Configuration{}, configuration...)
 		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
 		configReq.Body.Payload = configChange
 		c.scheduleSubmit(configReq)

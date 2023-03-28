@@ -156,11 +156,11 @@ func (c *Client) Start(configuration []Configuration) {
 	c.applyFallbackOps()
 
 	c.started = true
-	c.metrics = make(map[Namespace]map[string]*metric)
+
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
-		Configuration: configuration,
+		Configuration: append([]Configuration{}, configuration...),
 		Products: Products{
 			AppSec: ProductDetails{
 				Version: version.Tag,
@@ -218,7 +218,7 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// disabled returns whether instrumentation telemetry is disabled
+// Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
@@ -408,7 +408,7 @@ func (c *Client) newRequest(t RequestType) *Request {
 		"DD-Agent-Hostname":          {hostname},
 		"Datadog-Container-ID":       {internal.ContainerID()},
 	}
-	if c.URL == getAgentlessURL() {
+	if c.URL == getAgentlessURL() && isAPIKeyValid(c.APIKey) {
 		header.Set("DD-API-KEY", c.APIKey)
 	}
 	client := c.Client
