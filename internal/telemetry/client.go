@@ -23,7 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	abc "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -71,6 +71,7 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
+	GlobalClient.fallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -133,7 +134,7 @@ type Client struct {
 
 func log(msg string, args ...interface{}) {
 	// Debug level so users aren't spammed with telemetry info.
-	abc.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
 // Start registers that the app has begun running with the app-started event

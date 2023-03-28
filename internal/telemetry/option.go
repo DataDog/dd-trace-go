@@ -131,7 +131,7 @@ func (c *Client) fallbackOps() error {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
 		} else {
-			c.Service = "something random"
+			c.Service = "unnamed-go-service"
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
