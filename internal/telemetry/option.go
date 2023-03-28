@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
@@ -131,8 +132,7 @@ func (c *Client) applyFallbackOps() error {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
 		} else {
-			// I think service *has* to be something?
-			c.Service = "unnamed-go-service"
+			c.Service = filepath.Base(os.Args[0])
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
