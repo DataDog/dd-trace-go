@@ -19,7 +19,7 @@ func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
-		c.log("attempted to send product change event, but telemetry client has not started")
+		log("attempted to send product change event, but telemetry client has not started")
 		return
 	}
 	products := new(Products)
@@ -29,7 +29,7 @@ func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration 
 	case NamespaceASM:
 		products.AppSec = ProductDetails{Enabled: enabled}
 	default:
-		c.log("unknown product namespace, app-product-change telemetry event will not send")
+		log("unknown product namespace, app-product-change telemetry event will not send")
 		return
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
