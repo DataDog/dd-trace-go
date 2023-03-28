@@ -155,6 +155,11 @@ func (c *spanContext) TraceID128() string {
 	return c.traceID.HexEncoded()
 }
 
+// TraceID128Bytes implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128Bytes() [16]byte {
+	return c.traceID
+}
+
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
