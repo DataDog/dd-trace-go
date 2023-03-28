@@ -23,7 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
@@ -71,7 +71,7 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
-	GlobalClient.fallbackOps()
+	GlobalClient.applyFallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -132,9 +132,9 @@ type Client struct {
 	newMetrics bool
 }
 
-func log(msg string, args ...interface{}) {
+func (c *Client) log(msg string, args ...interface{}) {
 	// Debug level so users aren't spammed with telemetry info.
-	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+	log.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
 // Start registers that the app has begun running with the app-started event
@@ -150,15 +150,10 @@ func (c *Client) Start(configuration []Configuration) {
 		return
 	}
 	if c.started {
-		log("attempted to start telemetry client when client has already started - ignoring attempt")
+		c.log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
 	}
-	// Don't start the telemetry client if there is some error configuring the client with fallback
-	// options, e.g. an API key was not found but agentless telemetry is expected.
-	if err := c.fallbackOps(); err != nil {
-		log(err.Error())
-		return
-	}
+	c.applyFallbackOps()
 
 	c.started = true
 	c.metrics = make(map[Namespace]map[string]*metric)
@@ -170,14 +165,6 @@ func (c *Client) Start(configuration []Configuration) {
 			AppSec: ProductDetails{
 				Version: version.Tag,
 				Enabled: appsec.Enabled(),
-			},
-			// If the profiler starts, an app-product-change event will be sent
-			// to signal that the profiler is enabled. It is important that we
-			// send the profiler version, since product info is hashed on it's version
-			// when being stored by the instrumentation telemetry backend.
-			Profiler: ProductDetails{
-				Version: version.Tag,
-				Enabled: false,
 			},
 		},
 	}
@@ -207,7 +194,7 @@ func (c *Client) Start(configuration []Configuration) {
 
 	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
 	if heartbeat < 1 || heartbeat > 3600 {
-		log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		c.log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
 		heartbeat = defaultHeartbeatInterval
 	}
 	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
@@ -231,7 +218,7 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// Disabled returns whether instrumentation telemetry is disabled
+// disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
@@ -357,7 +344,7 @@ func (c *Client) flush() {
 		for _, r := range submissions {
 			err := r.submit()
 			if err != nil {
-				log("submission error: %s", err.Error())
+				c.log("submission error: %s", err.Error())
 			}
 		}
 	}()
@@ -429,25 +416,29 @@ func (c *Client) newRequest(t RequestType) *Request {
 		client = defaultHTTPClient
 	}
 	return &Request{Body: body,
-		Header:     header,
-		HTTPClient: client,
-		URL:        c.URL,
-	}
+		Header:          header,
+		HTTPClient:      client,
+		URL:             c.URL,
+		TelemetryClient: c}
 }
 
 // submit sends a telemetry request
 func (r *Request) submit() error {
+	if r.TelemetryClient == nil {
+		return fmt.Errorf("all telemetry requests must be associated with a telemetry client")
+	}
 	retry, err := r.trySubmit()
 	if retry {
 		// retry telemetry submissions in instances where the telemetry client has trouble
 		// connecting with the agent
-		log("telemetry submission failed, retrying with agentless: %s", err)
+		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
 		if _, err := r.trySubmit(); err == nil {
 			return nil
+		} else {
+			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
-		log("retrying with agentless telemetry failed: %s", err)
 	}
 	return err
 }
@@ -465,7 +456,7 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 		return true
 	}
 	// TODO: add more status codes we do not want to retry on
-	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests, http.StatusUnauthorized, http.StatusForbidden}
+	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests}
 	for status := range doNotRetry {
 		if resp.StatusCode == status {
 			return false

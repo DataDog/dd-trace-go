@@ -6,7 +6,6 @@
 package telemetry
 
 import (
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -92,7 +91,7 @@ func WithURL(agentless bool, agentURL string) Option {
 				u.Path = "/telemetry/proxy/api/v2/apmtelemetry"
 				client.URL = u.String()
 			} else {
-				log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
+				client.log("Agent URL %s is invalid, switching to agentless telemetry endpoint", agentURL)
 				client.URL = getAgentlessURL()
 			}
 		}
@@ -114,16 +113,16 @@ func configEnvFallback(key, def string) string {
 	return os.Getenv(key)
 }
 
-// fallbackOps populates missing fields of the client with environment variables
-// or default values.
-func (c *Client) fallbackOps() error {
+// applyFallbackOps applies default values to the client unless
+// those values are already set.
+func (c *Client) applyFallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
 	if len(c.APIKey) == 0 && c.URL == getAgentlessURL() {
 		WithAPIKey(defaultAPIKey())(c)
 		if c.APIKey == "" {
-			return errors.New("agentless is turned on, but valid DD API key was not found")
+			c.log("Agentless is turned on, but valid DD API key was not found.")
 		}
 	}
 	c.Service = configEnvFallback("DD_SERVICE", c.Service)
@@ -131,12 +130,12 @@ func (c *Client) fallbackOps() error {
 		if name := globalconfig.ServiceName(); len(name) != 0 {
 			c.Service = name
 		} else {
+			// I think service *has* to be something?
 			c.Service = "unnamed-go-service"
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	return nil
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless

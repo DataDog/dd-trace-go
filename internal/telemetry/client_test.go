@@ -245,13 +245,11 @@ func TestConcurrentClient(t *testing.T) {
 //  2. a cleanup function that closes the server and resets the agentless endpoint to
 //     its original value
 func fakeAgentless(ctx context.Context, t *testing.T) (wait func(), cleanup func()) {
-	received := make(chan struct{}, 1)
+	received := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppStarted) {
-			select {
-			case received <- struct{}{}:
-			default:
-			}
+		h := r.Header.Get("DD-Telemetry-Request-Type")
+		if len(h) > 0 {
+			received <- struct{}{}
 		}
 	}))
 	prevEndpoint := telemetry.SetAgentlessEndpoint(server.URL)
