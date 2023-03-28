@@ -90,6 +90,14 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	if err != nil {
 		return db, err
 	}
+	err = cb.Raw().Before("gorm:query").Register("dd-trace-go:before_raw_query", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Raw().After("gorm:query").Register("dd-trace-go:after_raw_query", afterFunc("gorm.raw_query"))
+	if err != nil {
+		return db, err
+	}
 	return db, nil
 }
 
