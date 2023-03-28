@@ -6,7 +6,6 @@
 package telemetry
 
 import (
-	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -116,14 +115,14 @@ func configEnvFallback(key, def string) string {
 
 // applyFallbackOps applies default values to the client unless
 // those values are already set.
-func (c *Client) applyFallbackOps() error {
+func (c *Client) applyFallbackOps() {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
 	if len(c.APIKey) == 0 && c.URL == getAgentlessURL() {
 		WithAPIKey(defaultAPIKey())(c)
 		if c.APIKey == "" {
-			return errors.New("agentless is turned on, but valid DD API key was not found")
+			c.log("Agentless is turned on, but valid DD API key was not found.")
 		}
 	}
 	c.Service = configEnvFallback("DD_SERVICE", c.Service)
@@ -137,7 +136,6 @@ func (c *Client) applyFallbackOps() error {
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
-	return nil
 }
 
 // SetAgentlessEndpoint is used for testing purposes to replace the real agentless

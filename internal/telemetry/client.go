@@ -153,10 +153,7 @@ func (c *Client) Start(configuration []Configuration) {
 		c.log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
 	}
-	if err := c.applyFallbackOps(); err != nil {
-		c.log(err.Error())
-		return
-	}
+	c.applyFallbackOps()
 
 	c.started = true
 	c.metrics = make(map[Namespace]map[string]*metric)
@@ -439,8 +436,9 @@ func (r *Request) submit() error {
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
 		if _, err := r.trySubmit(); err == nil {
 			return nil
+		} else {
+			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 		}
-		r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 	}
 	return err
 }
