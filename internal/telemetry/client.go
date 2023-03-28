@@ -71,8 +71,6 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
-	fmt.Println("telemetry init")
-	GlobalClient.fallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
