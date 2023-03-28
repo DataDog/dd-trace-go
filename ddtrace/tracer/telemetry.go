@@ -74,4 +74,5 @@ func startTelemetry(c *config) {
 }
 
 func stopTelemetry() {
+	telemetry.ProductStop(telemetry.NamespaceASM)
 }
