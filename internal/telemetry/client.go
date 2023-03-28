@@ -71,6 +71,7 @@ func init() {
 		hostname = h
 	}
 	GlobalClient = new(Client)
+	fmt.Println("telemetry init")
 	GlobalClient.fallbackOps()
 }
 
