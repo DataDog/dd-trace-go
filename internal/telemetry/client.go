@@ -146,21 +146,24 @@ func (c *Client) log(msg string, args ...interface{}) {
 func (c *Client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if Disabled() {
+	if disabled() {
 		return
 	}
 	if c.started {
 		c.log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
 	}
-	c.applyFallbackOps()
+	if err := c.applyFallbackOps(); err != nil {
+		c.log(err.Error())
+		return
+	}
 
 	c.started = true
-
+	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	payload := &AppStarted{
-		Configuration: append([]Configuration{}, configuration...),
+		Configuration: configuration,
 		Products: Products{
 			AppSec: ProductDetails{
 				Version: version.Tag,
@@ -218,9 +221,9 @@ func (c *Client) Stop() {
 	c.flush()
 }
 
-// Disabled returns whether instrumentation telemetry is disabled
+// disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-func Disabled() bool {
+func disabled() bool {
 	return !internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 }
 
@@ -434,10 +437,10 @@ func (r *Request) submit() error {
 		r.TelemetryClient.log("telemetry submission failed, retrying with agentless: %s", err)
 		r.URL = getAgentlessURL()
 		r.Header.Set("DD-API-KEY", defaultAPIKey())
-		_, err := r.trySubmit()
-		if err != nil {
-			r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
+		if _, err := r.trySubmit(); err == nil {
+			return nil
 		}
+		r.TelemetryClient.log("retrying with agentless telemetry failed: %s", err)
 	}
 	return err
 }
@@ -454,11 +457,8 @@ func agentlessRetry(req *Request, resp *http.Response, err error) bool {
 		// agent - retry with agentless
 		return true
 	}
-	// Do not retry with the following status codes:
-	// 400 - client side error
-	// 429 - too many requests
-	// TODO - add more
-	doNotRetry := []int{400, 429}
+	// TODO: add more status codes we do not want to retry on
+	doNotRetry := []int{http.StatusBadRequest, http.StatusTooManyRequests}
 	for status := range doNotRetry {
 		if resp.StatusCode == status {
 			return false

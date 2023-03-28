@@ -114,13 +114,37 @@ type ConfigurationChange struct {
 }
 
 // Configuration is a library-specific configuration value
+// that should be initialized through StringConfig, IntConfig, FloatConfig, or BoolConfig
 type Configuration struct {
-	Name string `json:"name"`
-	// Value should have a type that can be marshaled to JSON
-	Value       interface{} `json:"value"`
-	Origin      string      `json:"origin"` // source of config?
-	Error       Error       `json:"error"`
-	IsOverriden bool        `json:"is_overridden"`
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
+	// origin is the source of the config. It is one of {env_var, code, dd_config, remote_config}
+	origin      string `json:"origin"`
+	error       Error  `json:"error"`
+	isOverriden bool   `json:"is_overridden"`
+}
+
+// TODO: be able to pass in origin, error, isOverriden info to config
+// constructors
+
+// StringConfig returns a Configuration struct with a string value
+func StringConfig(key string, val string) Configuration {
+	return Configuration{Name: key, Value: val}
+}
+
+// IntConfig returns a Configuration struct with a int value
+func IntConfig(key string, val int) Configuration {
+	return Configuration{Name: key, Value: val}
+}
+
+// FloatConfig returns a Configuration struct with a float value
+func FloatConfig(key string, val float64) Configuration {
+	return Configuration{Name: key, Value: val}
+}
+
+// BoolConfig returns a Configuration struct with a bool value
+func BoolConfig(key string, val bool) Configuration {
+	return Configuration{Name: key, Value: val}
 }
 
 // Products specifies information about available products.
@@ -134,17 +158,6 @@ type ProductDetails struct {
 	Enabled bool   `json:"enabled"`
 	Version string `json:"version,omitempty"`
 	Error   Error  `json:"error,omitempty"`
-}
-
-// Integration is an integration that is available within the app and applicable
-// to be traced
-type Integration struct {
-	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
-	Version     string `json:"version,omitempty"`
-	AutoEnabled bool   `json:"auto_enabled,omitempty"`
-	Compatible  bool   `json:"compatible,omitempty"`
-	Error       string `json:"error,omitempty"`
 }
 
 // Dependencies stores a list of dependencies
@@ -199,6 +212,3 @@ type Series struct {
 	// field is technically optional.
 	Common bool `json:"common"`
 }
-
-// TODO: app-integrations-change? Does this really
-// apply to Go?
