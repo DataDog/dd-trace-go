@@ -665,6 +665,8 @@ const (
 
 	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
 	keyTracerHostname = "_dd.tracer_hostname"
+	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

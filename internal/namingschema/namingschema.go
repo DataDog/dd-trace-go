@@ -64,6 +64,11 @@ func SetVersion(v Version) {
 	sv = v
 }
 
+// SetDefaultVersion sets the default global naming schema version.
+func SetDefaultVersion() {
+	SetVersion(SchemaV0)
+}
+
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
 type VersionSupportSchema interface {
 	V0() string
