@@ -158,7 +158,7 @@ func TestClientIP(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := httpsec.ClientIPTags(tc.md, tc.addr.String())
+			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := instrumentation.NetaddrParseIP(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})
