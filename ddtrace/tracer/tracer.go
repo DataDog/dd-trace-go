@@ -145,7 +145,7 @@ func Start(opts ...StartOption) {
 	appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
+	// startTelemetry(t.config)
 	hostname.Get() // Prime the hostname cache
 }
 

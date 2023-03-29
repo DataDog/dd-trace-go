@@ -15,11 +15,13 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
@@ -142,74 +144,74 @@ func log(msg string, args ...interface{}) {
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
 func (c *Client) Start(configuration []Configuration) {
-	//c.mu.Lock()
-	//defer c.mu.Unlock()
-	//if Disabled() {
-	//	return
-	//}
-	//if c.started {
-	//	log("attempted to start telemetry client when client has already started - ignoring attempt")
-	//	return
-	//}
-	//// Don't start the telemetry client if there is some error configuring the client with fallback
-	//// options, e.g. an API key was not found but agentless telemetry is expected.
-	//if err := c.fallbackOps(); err != nil {
-	//	log(err.Error())
-	//	return
-	//}
-	//
-	//c.started = true
-	//c.metrics = make(map[Namespace]map[string]*metric)
-	//c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
-	//
-	//payload := &AppStarted{
-	//	Configuration: configuration,
-	//	Products: Products{
-	//		AppSec: ProductDetails{
-	//			Version: version.Tag,
-	//			Enabled: appsec.Enabled(),
-	//		},
-	//		// If the profiler starts, an app-product-change event will be sent
-	//		// to signal that the profiler is enabled. It is important that we
-	//		// send the profiler version, since product info is hashed on it's version
-	//		// when being stored by the instrumentation telemetry backend.
-	//		Profiler: ProductDetails{
-	//			Version: version.Tag,
-	//			Enabled: false,
-	//		},
-	//	},
-	//}
-	//
-	//appStarted := c.newRequest(RequestTypeAppStarted)
-	//appStarted.Body.Payload = payload
-	//c.scheduleSubmit(appStarted)
-	//
-	//if collectDependencies() {
-	//	var depPayload Dependencies
-	//	if deps, ok := debug.ReadBuildInfo(); ok {
-	//		for _, dep := range deps.Deps {
-	//			depPayload.Dependencies = append(depPayload.Dependencies,
-	//				Dependency{
-	//					Name:    dep.Path,
-	//					Version: dep.Version,
-	//				},
-	//			)
-	//		}
-	//	}
-	//	dep := c.newRequest(RequestTypeDependenciesLoaded)
-	//	dep.Body.Payload = depPayload
-	//	c.scheduleSubmit(dep)
-	//}
-	//
-	//c.flush()
-	//
-	//heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-	//if heartbeat < 1 || heartbeat > 3600 {
-	//	log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
-	//	heartbeat = defaultHeartbeatInterval
-	//}
-	//c.heartbeatInterval = time.Duration(heartbeat) * time.Second
-	//c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if Disabled() {
+		return
+	}
+	if c.started {
+		log("attempted to start telemetry client when client has already started - ignoring attempt")
+		return
+	}
+	// Don't start the telemetry client if there is some error configuring the client with fallback
+	// options, e.g. an API key was not found but agentless telemetry is expected.
+	if err := c.fallbackOps(); err != nil {
+		log(err.Error())
+		return
+	}
+
+	c.started = true
+	c.metrics = make(map[Namespace]map[string]*metric)
+	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
+
+	payload := &AppStarted{
+		Configuration: configuration,
+		Products: Products{
+			AppSec: ProductDetails{
+				Version: version.Tag,
+				Enabled: appsec.Enabled(),
+			},
+			// If the profiler starts, an app-product-change event will be sent
+			// to signal that the profiler is enabled. It is important that we
+			// send the profiler version, since product info is hashed on it's version
+			// when being stored by the instrumentation telemetry backend.
+			Profiler: ProductDetails{
+				Version: version.Tag,
+				Enabled: false,
+			},
+		},
+	}
+
+	appStarted := c.newRequest(RequestTypeAppStarted)
+	appStarted.Body.Payload = payload
+	c.scheduleSubmit(appStarted)
+
+	if collectDependencies() {
+		var depPayload Dependencies
+		if deps, ok := debug.ReadBuildInfo(); ok {
+			for _, dep := range deps.Deps {
+				depPayload.Dependencies = append(depPayload.Dependencies,
+					Dependency{
+						Name:    dep.Path,
+						Version: dep.Version,
+					},
+				)
+			}
+		}
+		dep := c.newRequest(RequestTypeDependenciesLoaded)
+		dep.Body.Payload = depPayload
+		c.scheduleSubmit(dep)
+	}
+
+	c.flush()
+
+	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	if heartbeat < 1 || heartbeat > 3600 {
+		log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+		heartbeat = defaultHeartbeatInterval
+	}
+	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
+	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
 }
 
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
