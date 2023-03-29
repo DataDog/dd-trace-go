@@ -50,8 +50,11 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.ServiceName(cfg.consumerServiceName),
 				tracer.ResourceName("Consume Topic " + msg.Topic),
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
-				tracer.Tag("partition", msg.Partition),
+				tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 				tracer.Tag("offset", msg.Offset),
+				tracer.Tag(ext.Component, "Shopify/sarama"),
+				tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+				tracer.Tag(ext.MessagingSystem, "kafka"),
 				tracer.Measured(),
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
@@ -258,6 +261,9 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.ServiceName(cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
+		tracer.Tag(ext.Component, "Shopify/sarama"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, "kafka"),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -275,7 +281,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 }
 
 func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
-	span.SetTag("partition", partition)
+	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
 }

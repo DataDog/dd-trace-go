@@ -6,8 +6,8 @@
 package grpc
 
 import (
-	"math"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
@@ -21,14 +21,15 @@ type Option func(*config)
 type config struct {
 	serviceName         string
 	nonErrorCodes       map[codes.Code]bool
-	analyticsRate       float64
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
 	ignoredMethods      map[string]struct{}
+	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
+	spanOpts            []ddtrace.StartSpanOption
 	tags                map[string]interface{}
 }
 
@@ -59,11 +60,9 @@ func defaults(cfg *config) {
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
 	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
+		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
 	}
 	cfg.ignoredMetadata = map[string]struct{}{
 		"x-datadog-trace-id":          {},
@@ -118,9 +117,7 @@ func NonErrorCodes(cs ...codes.Code) InterceptorOption {
 func WithAnalytics(on bool) Option {
 	return func(cfg *config) {
 		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
 		}
 	}
 }
@@ -130,15 +127,16 @@ func WithAnalytics(on bool) Option {
 func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
 		}
 	}
 }
 
 // WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
 // When an incoming request's full method is in ms, no spans will be created.
+//
+// Deprecated: This is deprecated in favor of WithUntracedMethods which applies to both
+// the server side and client side interceptors.
 func WithIgnoredMethods(ms ...string) Option {
 	ims := make(map[string]struct{}, len(ms))
 	for _, e := range ms {
@@ -146,6 +144,18 @@ func WithIgnoredMethods(ms ...string) Option {
 	}
 	return func(cfg *config) {
 		cfg.ignoredMethods = ims
+	}
+}
+
+// WithUntracedMethods specifies full methods to be ignored by the server side and client
+// side interceptors. When a request's full method is in ms, no spans will be created.
+func WithUntracedMethods(ms ...string) Option {
+	ums := make(map[string]struct{}, len(ms))
+	for _, e := range ms {
+		ums[e] = struct{}{}
+	}
+	return func(cfg *config) {
+		cfg.untracedMethods = ums
 	}
 }
 
@@ -180,5 +190,13 @@ func WithCustomTag(key string, value interface{}) Option {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
+	}
+}
+
+// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// to spans started by the integration.
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+	return func(cfg *config) {
+		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
 }

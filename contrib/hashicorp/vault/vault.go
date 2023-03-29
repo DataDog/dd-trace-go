@@ -56,6 +56,8 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 			s.SetTag(ext.HTTPMethod, r.Method)
 			s.SetTag(ext.ResourceName, r.Method+" "+r.URL.Path)
 			s.SetTag(ext.SpanType, ext.SpanTypeHTTP)
+			s.SetTag(ext.Component, "hashicorp/vault")
+			s.SetTag(ext.SpanKind, ext.SpanKindClient)
 			if ns := r.Header.Get(consts.NamespaceHeaderName); ns != "" {
 				s.SetTag("vault.namespace", ns)
 			}

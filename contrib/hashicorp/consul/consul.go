@@ -70,6 +70,9 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
+		tracer.Tag(ext.Component, "hashicorp/consul"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))

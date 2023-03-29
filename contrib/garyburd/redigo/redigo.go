@@ -103,6 +103,9 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
+		tracer.Tag(ext.Component, "garyburd/redigo"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

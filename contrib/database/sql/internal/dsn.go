@@ -12,8 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
-// ParseDSN parses various supported DSN types (currently mysql and postgres) into a
-// map of key/value pairs which can be used as valid tags.
+// ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
 func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	meta = make(map[string]string)
 	switch driverName {
@@ -22,16 +21,19 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		if err != nil {
 			return
 		}
+		meta[ext.DBSystem] = ext.DBSystemMySQL
 	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
 			return
 		}
+		meta[ext.DBSystem] = ext.DBSystemPostgreSQL
 	case "sqlserver":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
 			return
 		}
+		meta[ext.DBSystem] = ext.DBSystemMicrosoftSQLServer
 	default:
 		// not supported
 	}
@@ -42,11 +44,13 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 // map containing only the keys relevant as tracing tags, if any.
 func reduceKeys(meta map[string]string) map[string]string {
 	var keysOfInterest = map[string]string{
-		"user":             ext.DBUser,
-		"application_name": ext.DBApplication,
-		"dbname":           ext.DBName,
-		"host":             ext.TargetHost,
-		"port":             ext.TargetPort,
+		"user":                             ext.DBUser,
+		"application_name":                 ext.DBApplication,
+		"dbname":                           ext.DBName,
+		"host":                             ext.TargetHost,
+		"port":                             ext.TargetPort,
+		ext.DBSystem:                       ext.DBSystem,
+		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)
 	for k, v := range meta {

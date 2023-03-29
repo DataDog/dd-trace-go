@@ -6,7 +6,6 @@
 # tracing
 /contrib                        @DataDog/tracing-go
 /ddtrace                        @DataDog/tracing-go
-/internal                       @DataDog/tracing-go
 
 # profiling
 /profiler                       @DataDog/profiling-go
@@ -15,7 +14,7 @@
 # appsec
 /appsec                         @DataDog/appsec-go
 /internal/appsec                @DataDog/appsec-go
-/contrib/**/appsec.go           @DataDog/appsec-go
+/contrib/**/*appsec*.go         @DataDog/appsec-go
 /.github/workflows/appsec.yml   @DataDog/appsec-go
 
 # telemetry

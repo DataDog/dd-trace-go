@@ -29,7 +29,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, "go-chi/chi.v5"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
@@ -65,7 +67,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			// set the resource name as we get it only once the handler is executed
-			resourceName := chi.RouteContext(r.Context()).RoutePattern()
+			resourceName := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
 			span.SetTag(ext.HTTPRoute, resourceName)
 			if resourceName == "" {
 				resourceName = "unknown"

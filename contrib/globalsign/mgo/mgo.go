@@ -56,7 +56,14 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName("mongodb.query"),
+		tracer.Tag(ext.Component, "globalsign/mgo"),
+		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
+
+	if _, ok := tags["createChild"]; !ok {
+		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindClient))
+	}
+
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
@@ -98,10 +105,15 @@ func (s *Session) DB(name string) *Database {
 
 // C returns a new Collection from this Database.
 func (db *Database) C(name string) *Collection {
+	tags := make(map[string]string, len(db.tags)+1)
+	for k, v := range db.tags {
+		tags[k] = v
+	}
+	tags[ext.MongoDBCollection] = name
 	return &Collection{
 		Collection: db.Database.C(name),
 		cfg:        db.cfg,
-		tags:       db.tags,
+		tags:       tags,
 	}
 }
 

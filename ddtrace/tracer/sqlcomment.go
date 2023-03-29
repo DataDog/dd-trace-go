@@ -16,17 +16,37 @@ import (
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
-type SQLCommentInjectionMode string
+//
+// Deprecated: Use DBMPropagationMode instead.
+type SQLCommentInjectionMode DBMPropagationMode
 
 const (
 	// SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
-	SQLInjectionUndefined SQLCommentInjectionMode = ""
+	SQLInjectionUndefined SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeUndefined)
 	// SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
-	SQLInjectionDisabled SQLCommentInjectionMode = "disabled"
+	SQLInjectionDisabled SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeDisabled)
 	// SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
-	SQLInjectionModeService SQLCommentInjectionMode = "service"
+	SQLInjectionModeService SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeService)
 	// SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
-	SQLInjectionModeFull SQLCommentInjectionMode = "full"
+	SQLInjectionModeFull SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeFull)
+)
+
+// DBMPropagationMode represents the mode of dbm propagation.
+//
+// Note that enabling sql comment propagation results in potentially confidential data (service names)
+// being stored in the databases which can then be accessed by other 3rd parties that have been granted
+// access to the database.
+type DBMPropagationMode string
+
+const (
+	// DBMPropagationModeUndefined represents the dbm propagation mode not being set. This is the same as DBMPropagationModeDisabled.
+	DBMPropagationModeUndefined DBMPropagationMode = ""
+	// DBMPropagationModeDisabled represents the dbm propagation mode where all propagation is disabled.
+	DBMPropagationModeDisabled DBMPropagationMode = "disabled"
+	// DBMPropagationModeService represents the dbm propagation mode where only service tags (name, env, version) are propagated to dbm.
+	DBMPropagationModeService DBMPropagationMode = "service"
+	// DBMPropagationModeFull represents the dbm propagation mode where both service tags and tracing tags are propagated. Tracing tags include span id, trace id and the sampled flag.
+	DBMPropagationModeFull DBMPropagationMode = "full"
 )
 
 // Key names for SQL comment tags.
@@ -46,7 +66,7 @@ const w3cContextVersion = "00"
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 type SQLCommentCarrier struct {
 	Query         string
-	Mode          SQLCommentInjectionMode
+	Mode          DBMPropagationMode
 	DBServiceName string
 	SpanID        uint64
 }
@@ -56,48 +76,37 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
-	case SQLInjectionUndefined:
+	case DBMPropagationModeUndefined:
 		fallthrough
-	case SQLInjectionDisabled:
+	case DBMPropagationModeDisabled:
 		return nil
-	case SQLInjectionModeFull:
+	case DBMPropagationModeFull:
 		var (
-			samplingPriority int
-			traceID          uint64
+			sampled int64
+			traceID uint64
 		)
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if sp, ok := ctx.samplingPriority(); ok {
-				samplingPriority = sp
+			if sp, ok := ctx.samplingPriority(); ok && sp > 0 {
+				sampled = 1
 			}
 			traceID = ctx.TraceID()
 		}
-		if traceID == 0 {
+		if traceID == 0 { // check if this is a root span
 			traceID = c.SpanID
-		}
-		sampled := int64(0)
-		if samplingPriority > 0 {
-			sampled = 1
 		}
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
-	case SQLInjectionModeService:
-		var env, version string
+	case DBMPropagationModeService:
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if e, ok := ctx.meta(ext.Environment); ok {
-				env = e
+			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
+				tags[sqlCommentEnv] = e
 			}
-			if v, ok := ctx.meta(ext.Version); ok {
-				version = v
+			if v, ok := ctx.meta(ext.Version); ok && v != "" {
+				tags[sqlCommentParentVersion] = v
 			}
 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
-		}
-		if env != "" {
-			tags[sqlCommentEnv] = env
-		}
-		if version != "" {
-			tags[sqlCommentParentVersion] = version
 		}
 		tags[sqlCommentDBService] = c.DBServiceName
 	}

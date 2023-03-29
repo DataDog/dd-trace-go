@@ -29,8 +29,9 @@ func TestWithSpanTags(t *testing.T) {
 		opts   []RegisterOption
 	}
 	type want struct {
-		opName  string
-		ctxTags map[string]string
+		opName   string
+		ctxTags  map[string]string
+		dbSystem string
 	}
 	testcases := []struct {
 		name        string
@@ -52,6 +53,7 @@ func TestWithSpanTags(t *testing.T) {
 					"mysql_tag2": "mysql_value2",
 					"mysql_tag3": "mysql_value3",
 				},
+				dbSystem: "mysql",
 			},
 		},
 		{
@@ -71,6 +73,7 @@ func TestWithSpanTags(t *testing.T) {
 					"pg_tag1": "pg_value1",
 					"pg_tag2": "pg_value2",
 				},
+				dbSystem: "postgresql",
 			},
 		},
 	}
@@ -102,12 +105,18 @@ func TestWithSpanTags(t *testing.T) {
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", span.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
 }
@@ -212,6 +221,7 @@ func TestWithCustomTag(t *testing.T) {
 	type want struct {
 		opName     string
 		customTags map[string]interface{}
+		dbSystem   string
 	}
 	testcases := []struct {
 		name        string
@@ -232,6 +242,7 @@ func TestWithCustomTag(t *testing.T) {
 					"foo": "bar",
 					"baz": 123,
 				},
+				dbSystem: ext.DBSystemMySQL,
 			},
 			options: []Option{
 				WithCustomTag("foo", "bar"),
@@ -251,6 +262,7 @@ func TestWithCustomTag(t *testing.T) {
 					"foo": "bar",
 					"baz": 123,
 				},
+				dbSystem: "postgresql",
 			},
 			options: []Option{
 				WithCustomTag("foo", "bar"),
@@ -284,12 +296,18 @@ func TestWithCustomTag(t *testing.T) {
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
 }

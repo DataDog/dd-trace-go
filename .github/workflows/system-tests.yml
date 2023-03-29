@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - release-v*
     tags:
       - "**"
   pull_request:
     branches:
       - "**"
+  merge_group:
   workflow_dispatch: {}
   schedule:
     - cron:  '00 04 * * 2-6'
@@ -36,6 +38,11 @@ jobs:
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
     steps:
+      - name: Setup python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
       - name: Checkout system tests
         uses: actions/checkout@v2
         with:
@@ -51,6 +58,20 @@ jobs:
 
       - name: Run
         run: ./run.sh
+
+      - name: Run APM E2E default tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E
+
+      - name: Run APM E2E Single Span tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
 
       - name: Compress artifact
         if: ${{ always() }}

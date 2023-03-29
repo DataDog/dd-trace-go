@@ -27,11 +27,16 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		return rt.base.RoundTrip(req)
 	}
 	resourceName := rt.cfg.resourceNamer(req)
+	// Make a copy of the URL so we don't modify the outgoing request
+	url := *req.URL
+	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, req.URL.String()),
+		tracer.Tag(ext.HTTPURL, url.String()),
+		tracer.Tag(ext.Component, "net/http"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
@@ -47,7 +52,11 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
 		}
-		span.Finish(tracer.WithError(err))
+		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
+			span.Finish(tracer.WithError(err))
+		} else {
+			span.Finish()
+		}
 	}()
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
@@ -62,7 +71,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	res, err = rt.base.RoundTrip(r2)
 	if err != nil {
 		span.SetTag("http.errors", err.Error())
-		span.SetTag(ext.Error, err)
+		if rt.cfg.errCheck == nil || rt.cfg.errCheck(err) {
+			span.SetTag(ext.Error, err)
+		}
 	} else {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(res.StatusCode))
 		// treat 5XX as errors
@@ -82,6 +93,9 @@ func (rt *roundTripper) Unwrap() http.RoundTripper {
 // WrapRoundTripper returns a new RoundTripper which traces all requests sent
 // over the transport.
 func WrapRoundTripper(rt http.RoundTripper, opts ...RoundTripperOption) http.RoundTripper {
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
 	cfg := newRoundTripperConfig()
 	for _, opt := range opts {
 		opt(cfg)

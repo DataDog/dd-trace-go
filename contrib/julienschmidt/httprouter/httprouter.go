@@ -35,6 +35,10 @@ func New(opts ...RouterOption) *Router {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "julienschmidt/httprouter"))
+
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
@@ -48,9 +52,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
+
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }

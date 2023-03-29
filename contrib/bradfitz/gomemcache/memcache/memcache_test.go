@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"))
+	client := getClient(addr, WithServiceName("test-memcache"))
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
@@ -49,6 +50,12 @@ func testMemcache(t *testing.T, addr string) {
 			"operation name should be set to memcached.query")
 		assert.Equal(t, resourceName, span.Tag(ext.ResourceName),
 			"resource name should be set to the memcache command")
+		assert.Equal(t, "bradfitz/gomemcache/memcache", span.Tag(ext.Component),
+			"component should be set to gomemcache")
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
+			"span.kind should be set to client")
+		assert.Equal(t, "memcached", span.Tag(ext.DBSystem),
+			"db.system should be set to memcached")
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -114,7 +121,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
-		client := WrapClient(memcache.New(addr), opts...)
+		client := getClient(addr, opts...)
 		defer client.DeleteAll()
 		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
 		assert.NoError(t, err)
@@ -210,4 +217,10 @@ func makeFakeServer(t *testing.T) net.Listener {
 	}()
 
 	return li
+}
+
+func getClient(addr string, opts ...ClientOption) *Client {
+	client := WrapClient(memcache.New(addr), opts...)
+	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
+	return client
 }

@@ -47,6 +47,8 @@ func TestNoRouter(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestTraceWithRouter(t *testing.T) {
@@ -83,6 +85,8 @@ func TestTraceWithRouter(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestError(t *testing.T) {
@@ -113,6 +117,8 @@ func TestError(t *testing.T) {
 	assert.Equal("my-router", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestPropagation(t *testing.T) {
@@ -218,4 +224,6 @@ func TestNoDebugStack(t *testing.T) {
 	s := spans[0]
 	assert.EqualError(t, s.Tags()[ext.Error].(error), "500: Internal Server Error")
 	assert.Equal(t, "<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
+	assert.Equal(t, "zenazn/goji.v1/web", spans[0].Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindServer, spans[0].Tag(ext.SpanKind))
 }

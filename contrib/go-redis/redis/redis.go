@@ -123,6 +123,9 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.Tag(ext.TargetHost, p.host),
 		tracer.Tag(ext.TargetPort, p.port),
 		tracer.Tag("out.db", p.db),
+		tracer.Tag(ext.Component, "go-redis/redis"),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -193,6 +196,9 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.Tag("out.db", p.db),
 				tracer.Tag("redis.raw_command", raw),
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
+				tracer.Tag(ext.Component, "go-redis/redis"),
+				tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+				tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 			}
 			if !math.IsNaN(p.config.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))

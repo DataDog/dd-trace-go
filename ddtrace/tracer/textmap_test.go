@@ -9,15 +9,22 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
+	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-
-	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -85,6 +92,7 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 }
 
 func TestTextMapPropagatorErrors(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	assert := assert.New(t)
 
@@ -134,6 +142,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 		ParentHeader:  "pid",
 	})
 	tracer := newTracer(WithPropagator(propagator))
+	defer tracer.Stop()
 
 	root := tracer.StartSpan("web.request").(*span)
 	root.SetBaggageItem("item", "x")
@@ -155,12 +164,15 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 }
 
 func TestTextMapPropagatorOrigin(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		originHeader:          "synthetics",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -182,13 +194,16 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 }
 
 func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		DefaultPriorityHeader: "1",
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
-		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
+		traceTagsHeader:       "hello=world=,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -196,7 +211,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	child := tracer.StartSpan("test", ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
 	assert.Equal(t, map[string]string{
-		"hello":    "world",
+		"hello":    "world=",
 		"_dd.p.dm": "934086a6-4",
 	}, sctx.trace.propagatingTags)
 	dst := map[string]string{}
@@ -206,16 +221,19 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, "1", dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "hello=world,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
+	assertTraceTags(t, "hello=world=,_dd.p.dm=934086a6-4", dst["x-datadog-tags"])
 }
 
 func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv(headerPropagationStyleInject, "datadog")
 	src := TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "1",
 		traceTagsHeader:       "hello=world,_dd.p.dm=934086a6-4",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
@@ -237,12 +255,14 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 }
 
 func TestExtractOriginSynthetics(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
 	src := TextMapCarrier(map[string]string{
 		originHeader:          "synthetics",
 		DefaultTraceIDHeader:  "3",
 		DefaultParentIDHeader: "0",
 	})
 	tracer := newTracer()
+	defer tracer.Stop()
 	ctx, err := tracer.Extract(src)
 	if err != nil {
 		t.Fatal(err)
@@ -258,12 +278,14 @@ func TestExtractOriginSynthetics(t *testing.T) {
 
 func TestTextMapPropagator(t *testing.T) {
 	t.Run("InvalidTraceTagsHeader", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
 		src := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1",
 			DefaultParentIDHeader: "1",
 			traceTagsHeader:       "hello=world,=", // invalid value
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -272,6 +294,7 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("ExtractTraceTagsTooLong", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
 		tags := make([]string, 0)
 		for i := 0; i < 100; i++ {
 			tags = append(tags, fmt.Sprintf("_dd.p.tag%d=value%d", i, i))
@@ -283,6 +306,7 @@ func TestTextMapPropagator(t *testing.T) {
 			traceTagsHeader:       traceTags,
 		})
 		tracer := newTracer()
+		defer tracer.Stop()
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
 		sctx, ok := ctx.(*spanContext)
@@ -291,7 +315,9 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "datadog")
 		tracer := newTracer()
+		defer tracer.Stop()
 		child := tracer.StartSpan("test")
 		for i := 0; i < 100; i++ {
 			child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
@@ -309,7 +335,9 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InvalidTraceTags", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "datadog")
 		tracer := newTracer()
+		defer tracer.Stop()
 		internal.SetGlobalTracer(tracer)
 		child := tracer.StartSpan("test")
 		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
@@ -327,12 +355,15 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
 			BaggagePrefix: "bg-",
 			TraceHeader:   "tid",
 			ParentHeader:  "pid",
 		})
 		tracer := newTracer(WithPropagator(propagator))
+		defer tracer.Stop()
 		root := tracer.StartSpan("web.request").(*span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
@@ -355,200 +386,1501 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 }
 
-func TestB3(t *testing.T) {
-	t.Run("inject", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "B3")
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+func TestEnvVars(t *testing.T) {
+	var testEnvs []map[string]string
 
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer s.Close()
+
+	t.Run("b3/b3multi inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "b3"},
+			{headerPropagationStyleInjectDeprecated: "b3,none" /* none should have no affect */},
+			{headerPropagationStyle: "b3"},
+			{headerPropagationStyleInject: "b3multi", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleInject: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  []uint64
+				out map[string]string
+			}{
+				{
+					[]uint64{1412508178991881, 1842642739201064},
+					map[string]string{
+						b3TraceIDHeader: "000504ab30404b09",
+						b3SpanIDHeader:  "00068bdfb1eb0428",
+					},
+				},
+				{
+					[]uint64{9530669991610245, 9455715668862222},
+					map[string]string{
+						b3TraceIDHeader: "0021dc1807524785",
+						b3SpanIDHeader:  "002197ec5d8a250e",
+					},
+				},
+				{
+					[]uint64{1, 1},
+					map[string]string{
+						b3TraceIDHeader: "0000000000000001",
+						b3SpanIDHeader:  "0000000000000001",
+					},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					root := tracer.StartSpan("web.request").(*span)
+					ctx, ok := root.Context().(*spanContext)
+					ctx.traceID = test.in[0]
+					ctx.spanID = test.in[1]
+					headers := TextMapCarrier(map[string]string{})
+					err := tracer.Inject(ctx, headers)
+
+					assert := assert.New(t)
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
+					assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
+				})
+			}
+		}
+	})
+
+	t.Run("b3/b3multi extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "b3"},
+			{headerPropagationStyleExtractDeprecated: "b3"},
+			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  TextMapCarrier
+				out []uint64 // contains [<trace_id>, <span_id>]
+			}{
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "1",
+						b3SpanIDHeader:  "1",
+					},
+					[]uint64{1, 1},
+				},
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "feeb0599801f4700",
+						b3SpanIDHeader:  "f8f5c76089ad8da5",
+					},
+					[]uint64{18368781661998368512, 17939463908140879269},
+				},
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
+						b3SpanIDHeader:  "a1eb5bf36e56e50e",
+					},
+					[]uint64{11681107445354718197, 11667520360719770894},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.in)
+					assert.Nil(err)
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(sctx.traceID, test.out[0])
+					assert.Equal(sctx.spanID, test.out[1])
+				})
+			}
+		}
+	})
+
+	t.Run("b3/b3multi extract invalid", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "b3"},
+			{headerPropagationStyleExtractDeprecated: "b3"},
+			{headerPropagationStyle: "b3,none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "b3multi", headerPropagationStyle: "none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in TextMapCarrier
+			}{
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "0",
+						b3SpanIDHeader:  "0",
+					},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					_, err := tracer.Extract(test.in)
+					assert.NotNil(err)
+				})
+			}
+		}
+	})
+
+	t.Run("b3 single header extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "B3 single header"},
+			{headerPropagationStyleExtractDeprecated: "B3 single header"},
+			{headerPropagationStyle: "B3 single header,none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  TextMapCarrier
+				out []uint64 // contains [<trace_id>, <span_id>, <sampling_decision>]
+			}{
+				{
+					TextMapCarrier{
+						b3SingleHeader: "1-2",
+					},
+					[]uint64{1, 2},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "feeb0599801f4700-f8f5c76089ad8da5-1",
+					},
+					[]uint64{18368781661998368512, 17939463908140879269, 1},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "6e96719ded9c1864a21ba1551789e3f5-a1eb5bf36e56e50e-0",
+					},
+					[]uint64{11681107445354718197, 11667520360719770894, 0},
+				},
+				{
+					TextMapCarrier{
+						b3SingleHeader: "6e96719ded9c1864a21ba1551789e3f5-a1eb5bf36e56e50e-d",
+					},
+					[]uint64{11681107445354718197, 11667520360719770894, 1},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.in)
+					require.Nil(t, err)
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(test.out[0], sctx.traceID)
+					assert.Equal(test.out[1], sctx.spanID)
+					if len(test.out) > 2 {
+						require.NotNil(t, sctx.trace)
+						assert.Equal(float64(test.out[2]), *sctx.trace.priority)
+					}
+				})
+			}
+		}
+	})
+
+	t.Run("b3 single header inject", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "b3 single header")
 		var tests = []struct {
 			in  []uint64
-			out map[string]string
+			out string
 		}{
 			{
-				[]uint64{1412508178991881, 1842642739201064},
-				map[string]string{
-					b3TraceIDHeader: "000504ab30404b09",
-					b3SpanIDHeader:  "00068bdfb1eb0428",
-				},
+				[]uint64{18368781661998368512, 17939463908140879269, 1},
+				"feeb0599801f4700-f8f5c76089ad8da5-1",
 			},
 			{
-				[]uint64{9530669991610245, 9455715668862222},
-				map[string]string{
-					b3TraceIDHeader: "0021dc1807524785",
-					b3SpanIDHeader:  "002197ec5d8a250e",
-				},
-			},
-			{
-				[]uint64{1, 1},
-				map[string]string{
-					b3TraceIDHeader: "0000000000000001",
-					b3SpanIDHeader:  "0000000000000001",
-				},
+				[]uint64{11681107445354718197, 11667520360719770894, 0},
+				"a21ba1551789e3f5-a1eb5bf36e56e50e-0",
 			},
 		}
-
-		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
-				tracer := newTracer()
-				root := tracer.StartSpan("web.request").(*span)
-				root.SetTag(ext.SamplingPriority, -1)
-				root.SetBaggageItem("item", "x")
+		for i, test := range tests {
+			t.Run(fmt.Sprintf("b3 single header inject #%d", i), func(t *testing.T) {
+				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+				defer tracer.Stop()
+				root := tracer.StartSpan("myrequest").(*span)
 				ctx, ok := root.Context().(*spanContext)
+				require.True(t, ok)
 				ctx.traceID = test.in[0]
 				ctx.spanID = test.in[1]
+				ctx.setSamplingPriority(int(test.in[2]), samplernames.Unknown)
 				headers := TextMapCarrier(map[string]string{})
 				err := tracer.Inject(ctx, headers)
-
-				assert := assert.New(t)
-				assert.True(ok)
-				assert.Nil(err)
-				assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
-				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
+				require.Nil(t, err)
+				assert.Equal(t, test.out, headers[b3SingleHeader])
 			})
 		}
 	})
 
-	t.Run("extract", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "b3")
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
-
-		var tests = []struct {
-			in  TextMapCarrier
-			out []uint64 // contains [<trace_id>, <span_id>]
-		}{
-			{
-				TextMapCarrier{
-					b3TraceIDHeader: "1",
-					b3SpanIDHeader:  "1",
-				},
-				[]uint64{1, 1},
-			},
-			{
-				TextMapCarrier{
-					b3TraceIDHeader: "feeb0599801f4700",
-					b3SpanIDHeader:  "f8f5c76089ad8da5",
-				},
-				[]uint64{18368781661998368512, 17939463908140879269},
-			},
-			{
-				TextMapCarrier{
-					b3TraceIDHeader: "6e96719ded9c1864a21ba1551789e3f5",
-					b3SpanIDHeader:  "a1eb5bf36e56e50e",
-				},
-				[]uint64{11681107445354718197, 11667520360719770894},
-			},
+	t.Run("datadog inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "datadog"},
+			{headerPropagationStyleInjectDeprecated: "datadog,none" /* none should have no affect */},
+			{headerPropagationStyle: "datadog"},
+			{headerPropagationStyleInject: "datadog", headerPropagationStyleInjectDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "none" /* none should have no affect */},
 		}
 
-		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
-				tracer := newTracer()
-				assert := assert.New(t)
-				ctx, err := tracer.Extract(test.in)
-				assert.Nil(err)
-				sctx, ok := ctx.(*spanContext)
-				assert.True(ok)
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  []uint64
+				out map[string]string
+			}{
+				{
+					[]uint64{1412508178991881, 1842642739201064},
+					map[string]string{
+						b3TraceIDHeader: "000504ab30404b09",
+						b3SpanIDHeader:  "00068bdfb1eb0428",
+					},
+				},
+				{
+					[]uint64{9530669991610245, 9455715668862222},
+					map[string]string{
+						b3TraceIDHeader: "0021dc1807524785",
+						b3SpanIDHeader:  "002197ec5d8a250e",
+					},
+				},
+				{
+					[]uint64{1, 1},
+					map[string]string{
+						b3TraceIDHeader: "0000000000000001",
+						b3SpanIDHeader:  "0000000000000001",
+					},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					root := tracer.StartSpan("web.request").(*span)
+					ctx, ok := root.Context().(*spanContext)
+					ctx.traceID = test.in[0]
+					ctx.spanID = test.in[1]
+					headers := TextMapCarrier(map[string]string{})
+					err := tracer.Inject(ctx, headers)
 
-				assert.Equal(sctx.traceID, test.out[0])
-				assert.Equal(sctx.spanID, test.out[1])
-			})
+					assert := assert.New(t)
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
+					assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
+				})
+			}
 		}
 	})
 
-	t.Run("multiple", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_EXTRACT", "Datadog,B3")
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_EXTRACT")
+	t.Run("datadog/b3 extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "Datadog,b3"},
+			{headerPropagationStyleExtractDeprecated: "Datadog,b3multi"},
+			{headerPropagationStyle: "Datadog,b3"},
+			{headerPropagationStyle: "none,Datadog,b3" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  TextMapCarrier
+				out uint64
+			}{
+				{
+					TextMapCarrier{
+						b3TraceIDHeader: "1",
+						b3SpanIDHeader:  "1",
+						b3SampledHeader: "1",
+					},
+					1,
+				},
+				{
+					TextMapCarrier{
+						DefaultTraceIDHeader:  "2",
+						DefaultParentIDHeader: "2",
+						DefaultPriorityHeader: "2",
+					},
+					2,
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
 
-		b3Headers := TextMapCarrier(map[string]string{
-			b3TraceIDHeader: "1",
-			b3SpanIDHeader:  "1",
-			b3SampledHeader: "1",
-		})
+					ctx, err := tracer.Extract(test.in)
+					assert.Nil(err)
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
 
+					assert.Equal(sctx.traceID, test.out)
+					assert.Equal(sctx.spanID, test.out)
+					p, ok := sctx.samplingPriority()
+					assert.True(ok)
+					assert.Equal(int(test.out), p)
+				})
+			}
+		}
+	})
+
+	t.Run("datadog inject/extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "datadog", headerPropagationStyleExtract: "datadog"},
+			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
+			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
+			{headerPropagationStyle: "datadog"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  []uint64
+				out map[string]string
+			}{
+				{
+					[]uint64{1412508178991881, 1842642739201064},
+					map[string]string{
+						b3TraceIDHeader: "000504ab30404b09",
+						b3SpanIDHeader:  "00068bdfb1eb0428",
+					},
+				},
+				{
+					[]uint64{9530669991610245, 9455715668862222},
+					map[string]string{
+						b3TraceIDHeader: "0021dc1807524785",
+						b3SpanIDHeader:  "002197ec5d8a250e",
+					},
+				},
+				{
+					[]uint64{1, 1},
+					map[string]string{
+						b3TraceIDHeader: "0000000000000001",
+						b3SpanIDHeader:  "0000000000000001",
+					},
+				},
+			}
+			for _, test := range tests {
+				t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					root := tracer.StartSpan("web.request").(*span)
+					root.SetTag(ext.SamplingPriority, -1)
+					root.SetBaggageItem("item", "x")
+					ctx, ok := root.Context().(*spanContext)
+					ctx.traceID = test.in[0]
+					ctx.spanID = test.in[1]
+					headers := TextMapCarrier(map[string]string{})
+					err := tracer.Inject(ctx, headers)
+
+					assert := assert.New(t)
+					assert.True(ok)
+					assert.Nil(err)
+
+					sctx, err := tracer.Extract(headers)
+					assert.Nil(err)
+
+					xctx, ok := sctx.(*spanContext)
+					assert.True(ok)
+					assert.Equal(ctx.traceID, xctx.traceID)
+					assert.Equal(ctx.spanID, xctx.spanID)
+					assert.Equal(ctx.baggage, xctx.baggage)
+					assert.Equal(ctx.trace.priority, xctx.trace.priority)
+				})
+			}
+		}
+	})
+
+	t.Run("w3c extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "traceContext"},
+			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
+			{headerPropagationStyle: "traceContext"},
+			{headerPropagationStyleExtract: "traceContext", headerPropagationStyleExtractDeprecated: "none" /* none should have no affect */},
+			{headerPropagationStyleExtract: "traceContext", headerPropagationStyle: "none" /* none should have no affect */},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in              TextMapCarrier
+				traceID         uint64
+				fullTraceID     string
+				spanID          uint64
+				priority        int
+				origin          string
+				propagatingTags map[string]string
+			}{
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    2,
+					origin:      "rum",
+					propagatingTags: map[string]string{
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-10000000000000000000000000000000-2222222222222222-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					fullTraceID: "10000000000000000000000000000000",
+					traceID:     0x0,
+					spanID:      2459565876494606882,
+					priority:    2,
+					origin:      "rum",
+					propagatingTags: map[string]string{
+						"w3cTraceID":   "10000000000000000000000000000000",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
+						tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "rum",
+					propagatingTags: map[string]string{
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-2",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    2, // tracestate priority takes precedence
+					origin:      "rum:rum",
+					propagatingTags: map[string]string{
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1, // traceparent priority takes precedence
+					origin:      "rum:rum",
+					propagatingTags: map[string]string{
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:;o:rum:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: " \t-00-00000000000000001111111111111111-2222222222222222-01 \t-",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1, // traceparent priority takes precedence
+					origin:      "rum:rum",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:rum:rum;s:;t.dm:-4;t.usr.id:baz64~~",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "2",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:2;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "=_=",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "cc-00000000000000001111111111111111-2222222222222222-01-what-the-future-will-be-like",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "=_=",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.in)
+					if err != nil {
+						t.Fatal(err)
+					}
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(test.traceID, sctx.traceID)
+					assert.Equal(test.spanID, sctx.spanID)
+					assert.Equal(test.origin, sctx.origin)
+					p, ok := sctx.samplingPriority()
+					assert.True(ok)
+					assert.Equal(test.priority, p)
+
+					assert.Equal(test.fullTraceID, sctx.trace.propagatingTags[w3cTraceIDTag])
+					assert.Equal(test.propagatingTags, sctx.trace.propagatingTags)
+				})
+			}
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []TextMapCarrier{
+				{tracestateHeader: "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				{traceparentHeader: "00-.2345678901234567890123456789012-1234567890123456-01"}, // invalid length
+				{traceparentHeader: "00-1234567890123456789012345678901.-1234567890123456-01"}, // invalid length
+				{traceparentHeader: "00-00000000000000001111111111111111-0000000000000000-01"}, // invalid length
+				{traceparentHeader: "00-00000000000000000000000000000000-0001000000000000-01"}, // invalid length
+				{traceparentHeader: "00-0000000000000.000000000000000000-0001000000000000-01"}, // invalid length
+				{traceparentHeader: "00-1234567890123---ffffffffffffffff--fffffffffffffff-01"}, // invalid length
+				{traceparentHeader: "00-_234567890123---ffffffffffffffff--fffffffffffffff-01"}, // invalid length
+				{traceparentHeader: "00-12345678901234567890123456789011-1234567890123456-0."}, // invalid length
+				{traceparentHeader: "00--2345678901234567890123456789011-1234567890123456-00"}, // invalid length
+				{traceparentHeader: "00-2345678-901234567890123456789011-1234567890123456-00"}, // invalid length
+				{traceparentHeader: "------------------------------------1234567890123456---"}, // invalid length
+				{traceparentHeader: "0"},       // invalid length
+				{traceparentHeader: "\t- -\t"}, // invalid length
+				{
+					traceparentHeader: "00-000000000000000011111111111121111-2222222222222222-01", // invalid length
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				{
+					traceparentHeader: "100-00000000000000001111111111111111-2222222222222222-01", // invalid length
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+				{
+					traceparentHeader: "ff-00000000000000001111111111111111-2222222222222222-01", // invalid version
+					tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+				},
+			}
+
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%v extract/invalid  with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test)
+					assert.NotNil(err)
+					assert.Nil(ctx)
+				})
+			}
+		}
+	})
+
+	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "traceContext"},
+			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
+			{headerPropagationStyle: "traceContext"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				inHeaders   TextMapCarrier
+				outHeaders  TextMapCarrier
+				traceID     uint64
+				fullTraceID string
+				spanID      uint64
+				priority    int
+				origin      string
+			}{
+				{
+					inHeaders: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-00",
+						tracestateHeader:  "foo=1,dd=s:-1",
+					},
+					outHeaders: TextMapCarrier{
+						traceparentHeader:     "00-12345678901234567890123456789012-1234567890123456-00",
+						tracestateHeader:      "dd=s:-1;o:synthetics,foo=1",
+						DefaultPriorityHeader: "-1",
+						DefaultTraceIDHeader:  "12345678901234567890123456789012",
+						DefaultParentIDHeader: "1234567890123456",
+					},
+					fullTraceID: "12345678901234567890123456789012",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    -1,
+					origin:      "synthetics",
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.inHeaders)
+					if err != nil {
+						t.Fatal(err)
+					}
+					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+					defer root.Finish()
+					sctx, ok := ctx.(*spanContext)
+					sctx.origin = test.origin
+					assert.True(ok)
+
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(sctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.outHeaders[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.outHeaders[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+
+	t.Run("w3c inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
+			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
+			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
+			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyle: "datadog,tracecontext"},
+			{headerPropagationStyle: "datadog,tracecontext"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				out             TextMapCarrier
+				traceID         uint64
+				spanID          uint64
+				priority        int
+				origin          string
+				propagatingTags map[string]string
+			}{
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.usr.id: baz64 ~~,othervendor=t61rcWkgMzE",
+					},
+					traceID:  1229782938247303441,
+					spanID:   2459565876494606882,
+					priority: 2,
+					origin:   "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": " baz64 ==",
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~",
+					},
+					traceID:  1229782938247303441,
+					spanID:   2459565876494606882,
+					priority: 1,
+					origin:   "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-12300000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:2;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					traceID:  1229782938247303441,
+					spanID:   2459565876494606882,
+					priority: 2, // tracestate priority takes precedence
+					origin:   "rum:rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:2;o:rum_rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+						w3cTraceIDTag:  "12300000000000001111111111111111",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						tracestateHeader:  "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					traceID:  1229782938247303441,
+					spanID:   2459565876494606882,
+					priority: 1, // traceparent priority takes precedence
+					origin:   "rum:rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:-1;o:rum:rum;t.usr.id:baz:64~~,othervendor=t61rcWkgMzE",
+					},
+					traceID:  1229782938247303441,
+					spanID:   2459565876494606882,
+					priority: -1, // traceparent priority takes precedence
+					origin:   "rum:rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64==",
+						"tracestate":   "dd=s:1;o:rum:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~ ,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					origin:  "old_tracestate",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64== ",
+						"tracestate":   "dd=o:very_long_origin_tag,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1,a31=a:1,a32=a:1",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					origin:  "old_tracestate",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64==",
+						"tracestate":   "dd=o:very_long_origin_tag,a0=a:1,a1=a:1,a2=a:1,a3=a:1,a4=a:1,a5=a:1,a6=a:1,a7=a:1,a8=a:1,a9=a:1,a10=a:1,a11=a:1,a12=a:1,a13=a:1,a14=a:1,a15=a:1,a16=a:1,a17=a:1,a18=a:1,a19=a:1,a20=a:1,a21=a:1,a22=a:1,a23=a:1,a24=a:1,a25=a:1,a26=a:1,a27=a:1,a28=a:1,a29=a:1,a30=a:1,a31=a:1,a32=a:1",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64~~,foo=bar",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					origin:  "old_tracestate",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64==",
+						"tracestate":   "foo=bar ",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:old_tracestate;t.usr.id:baz:64__,foo=bar",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					origin:  "old_tracestate",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64~~",
+						"tracestate":   "\tfoo=bar\t",
+					},
+				},
+				{
+					out: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111112-2222222222222222-00",
+						tracestateHeader:  "dd=s:0;o:~~_;t.usr.id:baz:64__,foo=bar",
+					},
+					traceID: 1229782938247303442,
+					spanID:  2459565876494606882,
+					origin:  "==~",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz:64~~",
+						"tracestate":   "\tfoo=bar\t",
+					},
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%d w3c inject with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					root := tracer.StartSpan("web.request").(*span)
+					root.SetTag(ext.SamplingPriority, test.priority)
+					ctx, ok := root.Context().(*spanContext)
+					ctx.origin = test.origin
+					ctx.traceID = test.traceID
+					ctx.spanID = test.spanID
+					ctx.trace.propagatingTags = test.propagatingTags
+					headers := TextMapCarrier(map[string]string{})
+					err := tracer.Inject(ctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+
+				t.Run(fmt.Sprintf("w3c inject with env=%q / testing tag list-member limit", testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					root := tracer.StartSpan("web.request").(*span)
+					root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+					ctx, ok := root.Context().(*spanContext)
+					ctx.origin = "old_tracestate"
+					ctx.traceID = 1229782938247303442
+					ctx.spanID = 2459565876494606882
+					ctx.trace.propagatingTags = map[string]string{
+						"tracestate": "valid_vendor=a:1",
+					}
+					// dd part of the tracestate must not exceed 256 characters
+					for i := 0; i < 32; i++ {
+						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
+					}
+					headers := TextMapCarrier(map[string]string{})
+					err := tracer.Inject(ctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal("00-00000000000000001111111111111112-2222222222222222-01", headers[traceparentHeader])
+					assert.Contains(headers[tracestateHeader], "valid_vendor=a:1")
+					// iterating through propagatingTags map doesn't guarantee order in tracestate header
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.Contains(ddTag, "s:2")
+					assert.Contains(ddTag, "s:2")
+					assert.Regexp(regexp.MustCompile("dd=[\\w:,]+"), ddTag)
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+
+	t.Run("datadog extract / w3c,datadog inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "tracecontext,datadog", headerPropagationStyleExtract: "datadog"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				outHeaders TextMapCarrier
+				inHeaders  TextMapCarrier
+			}{
+				{
+					outHeaders: TextMapCarrier{
+						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
+						tracestateHeader:  "dd=s:-2;o:test.origin",
+					},
+					inHeaders: TextMapCarrier{
+						DefaultTraceIDHeader:  "123456789",
+						DefaultParentIDHeader: "987654321",
+						DefaultPriorityHeader: "-2",
+						originHeader:          "test.origin",
+					},
+				},
+				{
+					outHeaders: TextMapCarrier{
+						traceparentHeader: "00-000000000000000000000000075bcd15-000000003ade68b1-00",
+						tracestateHeader:  "dd=s:-2;o:synthetics___web",
+					},
+					inHeaders: TextMapCarrier{
+						DefaultTraceIDHeader:  "123456789",
+						DefaultParentIDHeader: "987654321",
+						DefaultPriorityHeader: "-2",
+						originHeader:          "synthetics;,~web",
+					},
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%d with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.inHeaders)
+					assert.Nil(err)
+
+					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+					defer root.Finish()
+					sctx, ok := ctx.(*spanContext)
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(sctx, headers)
+
+					assert.True(ok)
+					assert.Nil(err)
+					assert.Equal(test.outHeaders[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.outHeaders[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+
+	t.Run("w3c inject/extract", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
+			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
+			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in       TextMapCarrier
+				out      TextMapCarrier
+				traceID  uint64
+				spanID   uint64
+				priority float64
+				origin   string
+			}{
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.usr.id:baz64~~",
+					},
+					out: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.usr.id:baz64~~",
+					},
+					traceID:  8687463697196027922,
+					spanID:   1311768467284833366,
+					priority: 2,
+					origin:   "rum",
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+						tracestateHeader:  "foo=1",
+					},
+					out: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+						tracestateHeader:  "dd=s:1,foo=1",
+					},
+					traceID:  8687463697196027922,
+					spanID:   1311768467284833366,
+					priority: 1,
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(test.in)
+					if err != nil {
+						t.FailNow()
+					}
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(test.traceID, sctx.traceID)
+					assert.Equal(test.spanID, sctx.spanID)
+
+					assert.Equal(test.origin, sctx.origin)
+					assert.Equal(test.priority, *sctx.trace.priority)
+
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(ctx, headers)
+					assert.Nil(err)
+
+					assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+
+	t.Run("w3c extract,update span, inject", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
+			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
+			{headerPropagationStyleInjectDeprecated: "tracecontext", headerPropagationStyleExtractDeprecated: "tracecontext"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in       TextMapCarrier
+				out      TextMapCarrier
+				traceID  uint64
+				spanID   uint64
+				parentID uint64
+				priority float64
+				origin   string
+			}{
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-1234567890123456-01",
+						tracestateHeader:  "dd=s:2;o:rum;t.usr.id:baz64~~",
+					},
+					out: TextMapCarrier{
+						traceparentHeader: "00-12345678901234567890123456789012-0000000000000001-01",
+						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~",
+					},
+					traceID:  8687463697196027922,
+					spanID:   1,
+					parentID: 1311768467284833366,
+					priority: 1,
+				},
+			}
+			for i, test := range tests {
+				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					pCtx, err := tracer.Extract(test.in)
+					if err != nil {
+						t.FailNow()
+					}
+					s := tracer.StartSpan("op", ChildOf(pCtx), WithSpanID(1))
+					sctx, ok := s.Context().(*spanContext)
+					assert.True(ok)
+					// changing priority must set ctx.updated = true
+					if test.priority != 0 {
+						sctx.setSamplingPriority(int(test.priority), samplernames.Unknown)
+					}
+					assert.Equal(true, sctx.updated)
+
+					headers := TextMapCarrier(map[string]string{})
+					err = tracer.Inject(s.Context(), headers)
+					assert.Equal(test.traceID, sctx.traceID)
+					assert.Equal(test.parentID, sctx.span.ParentID)
+					assert.Equal(test.spanID, sctx.spanID)
+					assert.Equal(test.out[traceparentHeader], headers[traceparentHeader])
+					assert.Equal(test.out[tracestateHeader], headers[tracestateHeader])
+					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
+					assert.LessOrEqual(len(ddTag), 256)
+				})
+			}
+		}
+	})
+}
+
+func TestW3CExtractsBaggage(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
+		tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
+		"ot-baggage-something": "someVal",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	found := false
+	s.ForeachBaggageItem(func(k, v string) bool {
+		if k == "something" {
+			found = true
+			return false
+		}
+		return true
+	})
+	assert.True(t, found)
+}
+
+func TestNonePropagator(t *testing.T) {
+	t.Run("inject/none", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "none")
 		tracer := newTracer()
+		defer tracer.Stop()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx, ok := root.Context().(*spanContext)
+		ctx.traceID = 1
+		ctx.spanID = 1
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
+
 		assert := assert.New(t)
-
-		ctx, err := tracer.Extract(b3Headers)
+		assert.True(ok)
 		assert.Nil(err)
-		sctx, ok := ctx.(*spanContext)
-		assert.True(ok)
-
-		assert.Equal(sctx.traceID, uint64(1))
-		assert.Equal(sctx.spanID, uint64(1))
-		p, ok := sctx.samplingPriority()
-		assert.True(ok)
-		assert.Equal(1, p)
-
-		ddHeaders := TextMapCarrier(map[string]string{
-			DefaultTraceIDHeader:  "2",
-			DefaultParentIDHeader: "2",
-			DefaultPriorityHeader: "2",
-		})
-
-		ctx, err = tracer.Extract(ddHeaders)
-		assert.Nil(err)
-		sctx, ok = ctx.(*spanContext)
-		assert.True(ok)
-
-		assert.Equal(sctx.traceID, uint64(2))
-		assert.Equal(sctx.spanID, uint64(2))
-		p, ok = sctx.samplingPriority()
-		assert.True(ok)
-		assert.Equal(2, p)
+		assert.Len(headers, 0)
 	})
 
-	t.Run("config", func(t *testing.T) {
-		os.Setenv("DD_PROPAGATION_STYLE_INJECT", "datadog")
-		defer os.Unsetenv("DD_PROPAGATION_STYLE_INJECT")
+	t.Run("inject/none,b3", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "none,b3")
+		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tracer := newTracer(WithLogger(tp))
+		defer tracer.Stop()
+		// reinitializing to capture log output, since propagators are parsed before logger is set
+		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		ctx, ok := root.Context().(*spanContext)
+		ctx.traceID = 1
+		ctx.spanID = 1
+		headers := TextMapCarrier(map[string]string{})
+		err := tracer.Inject(ctx, headers)
 
-		var tests = []struct {
-			in  []uint64
-			out map[string]string
-		}{
-			{
-				[]uint64{1412508178991881, 1842642739201064},
-				map[string]string{
-					b3TraceIDHeader: "000504ab30404b09",
-					b3SpanIDHeader:  "00068bdfb1eb0428",
-				},
-			},
-			{
-				[]uint64{9530669991610245, 9455715668862222},
-				map[string]string{
-					b3TraceIDHeader: "0021dc1807524785",
-					b3SpanIDHeader:  "002197ec5d8a250e",
-				},
-			},
-			{
-				[]uint64{1, 1},
-				map[string]string{
-					b3TraceIDHeader: "0000000000000001",
-					b3SpanIDHeader:  "0000000000000001",
-				},
-			},
-		}
+		assert := assert.New(t)
+		assert.True(ok)
+		assert.Nil(err)
+		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
+		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
+		assert.Contains(tp.Logs()[0], "Propagator \"none\" has no effect when combined with other propagators. "+
+			"To disable the propagator, set to `none`")
+	})
 
-		for _, test := range tests {
-			t.Run("", func(t *testing.T) {
-				tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})))
-				root := tracer.StartSpan("web.request").(*span)
-				root.SetTag(ext.SamplingPriority, -1)
-				root.SetBaggageItem("item", "x")
-				ctx, ok := root.Context().(*spanContext)
-				ctx.traceID = test.in[0]
-				ctx.spanID = test.in[1]
-				headers := TextMapCarrier(map[string]string{})
-				err := tracer.Inject(ctx, headers)
+	t.Run("extract/none", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "none")
+		assert := assert.New(t)
+		tracer := newTracer()
+		defer tracer.Stop()
+		root := tracer.StartSpan("web.request").(*span)
+		root.SetTag(ext.SamplingPriority, -1)
+		root.SetBaggageItem("item", "x")
+		headers := TextMapCarrier(map[string]string{})
 
-				assert := assert.New(t)
-				assert.True(ok)
-				assert.Nil(err)
-				assert.Equal(test.out[b3TraceIDHeader], headers[b3TraceIDHeader])
-				assert.Equal(test.out[b3SpanIDHeader], headers[b3SpanIDHeader])
-			})
-		}
+		_, err := tracer.Extract(headers)
+
+		assert.Equal(err, ErrSpanContextNotFound)
+		assert.Len(headers, 0)
+	})
+
+	t.Run("inject,extract/none", func(t *testing.T) {
+		t.Run("", func(t *testing.T) {
+			t.Setenv(headerPropagationStyle, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = 1
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
+		t.Run("", func(t *testing.T) {
+			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
+			//	"DD_TRACE_PROPAGATION_STYLE_INJECT": "none",
+			t.Setenv(headerPropagationStyleExtract, "NoNe")
+			t.Setenv(headerPropagationStyleInject, "NoNe")
+			tracer := newTracer()
+			defer tracer.Stop()
+			root := tracer.StartSpan("web.request").(*span)
+			root.SetTag(ext.SamplingPriority, -1)
+			root.SetBaggageItem("item", "x")
+			ctx, ok := root.Context().(*spanContext)
+			ctx.traceID = 1
+			ctx.spanID = 1
+			headers := TextMapCarrier(map[string]string{})
+			err := tracer.Inject(ctx, headers)
+
+			assert := assert.New(t)
+			assert.True(ok)
+			assert.Nil(err)
+			assert.Len(headers, 0)
+
+			_, err = tracer.Extract(headers)
+			assert.Equal(err, ErrSpanContextNotFound)
+		})
 	})
 }
 
 func assertTraceTags(t *testing.T, expected, actual string) {
 	assert.ElementsMatch(t, strings.Split(expected, ","), strings.Split(actual, ","))
+}
+
+func BenchmarkInjectDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "datadog")
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+	for i := 0; i < 20; i++ {
+		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
+	}
+	dst := map[string]string{}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkInjectW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleInject, "tracecontext")
+	tracer := newTracer()
+	defer tracer.Stop()
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+
+	ctx := root.Context().(*spanContext)
+
+	setPropagatingTag(ctx, w3cTraceIDTag,
+		"4bf92f3577b34da6a3ce929d0e0e4736")
+	setPropagatingTag(ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
+	for i := 0; i < 100; i++ {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
+		setPropagatingTag(ctx, k, v)
+	}
+	dst := map[string]string{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
+func BenchmarkExtractDatadog(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1123123132131312313123123",
+		DefaultParentIDHeader: "1212321131231312312312312",
+		DefaultPriorityHeader: "-1",
+		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
+								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
+func FuzzMarshalPropagatingTags(f *testing.F) {
+	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
+	f.Fuzz(func(t *testing.T, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		pConfig := PropagatorConfig{MaxTagsHeaderLen: 128}
+		propagator := propagator{&pConfig}
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		for key, val := range tags {
+			sendCtx.trace.setPropagatingTag(key, val)
+		}
+		marshal := propagator.marshalPropagatingTags(sendCtx)
+		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
+			t.Skipf("Skipping invalid tags")
+		}
+		unmarshalPropagatingTags(recvCtx, marshal)
+		marshaled := sendCtx.trace.propagatingTags
+		unmarshaled := recvCtx.trace.propagatingTags
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
+		}
+	})
+}
+
+func FuzzComposeTracestate(f *testing.F) {
+	testCases := []struct {
+		priority                         int
+		k1, v1, k2, v2, k3, v3, oldState string
+	}{
+		{priority: 1,
+			k1: "keyOne", v1: "json",
+			k2: "KeyTwo", v2: "123123",
+			k3: "table", v3: "chair",
+			oldState: "dd=s:-2;o:synthetics___web"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
+	}
+	f.Fuzz(func(t *testing.T, priority int, key1 string, val1 string,
+		key2 string, val2 string, key3 string, val3 string, oldState string) {
+
+		sendCtx := new(spanContext)
+		sendCtx.trace = newTrace()
+		recvCtx := new(spanContext)
+		recvCtx.trace = newTrace()
+
+		tags := map[string]string{key1: val1, key2: val2, key3: val3}
+		totalLen := 0
+		for key, val := range tags {
+			k := "_dd.p." + keyRgx.ReplaceAllString(key, "_")
+			v := valueRgx.ReplaceAllString(val, "_")
+			if strings.ContainsAny(k, ":;") {
+				t.Skipf("Skipping invalid tags")
+			}
+			if strings.HasSuffix(v, " ") {
+				t.Skipf("Skipping invalid tags")
+			}
+			totalLen += (len(k) + len(v))
+			if totalLen > 128 {
+				break
+			}
+			sendCtx.trace.setPropagatingTag(k, v)
+		}
+		if len(strings.Split(strings.Trim(oldState, " \t"), ",")) > 31 {
+			t.Skipf("Skipping invalid tags")
+		}
+		traceState := composeTracestate(sendCtx, priority, oldState)
+		parseTracestate(recvCtx, traceState)
+		setPropagatingTag(sendCtx, tracestateHeader, traceState)
+		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+			t.Fatalf(`Inconsistent composing/parsing:
+			pre compose: (%q)
+			is different from
+			parsed: (%q)
+			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
+				recvCtx.trace.propagatingTags,
+				traceState)
+		}
+	})
+}
+
+func FuzzParseTraceparent(f *testing.F) {
+	testCases := []struct {
+		version, traceID, spanID, flags string
+	}{
+		{"00", "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+		{"01", "00000000000000001111111111111111", "9565876494606882", "02"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.version, tc.traceID, tc.spanID, tc.flags)
+	}
+	f.Fuzz(func(t *testing.T, version string, traceID string,
+		spanID string, flags string) {
+
+		ctx := new(spanContext)
+		ctx.trace = newTrace()
+
+		header := strings.Join([]string{version, traceID, spanID, flags}, "-")
+
+		if parseTraceparent(ctx, header) != nil {
+			t.Skipf("Error parsing parent")
+		}
+		parsedTraceID := ctx.trace.propagatingTags[w3cTraceIDTag]
+		parsedSpanID := ctx.spanID
+		parsedSamplingPriority, ok := ctx.samplingPriority()
+		if !ok {
+			t.Skipf("Error retrieving sampling priority")
+		}
+		expectedSpanID, err := strconv.ParseUint(spanID, 16, 64)
+		if err != nil {
+			t.Skipf("Error parsing span ID")
+		}
+		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		if err != nil {
+			t.Skipf("Error parsing flag")
+		}
+		if parsedTraceID != strings.ToLower(traceID) {
+			t.Fatalf(`Inconsistent trace id parsing:
+				got: %s
+				wanted: %s
+				for header of: %s`, parsedTraceID, traceID, header)
+		}
+		if parsedSpanID != expectedSpanID {
+			t.Fatalf(`Inconsistent span id parsing:
+				got: %d
+				wanted: %d
+				for header of: %s`, parsedSpanID, expectedSpanID, header)
+		}
+		if parsedSamplingPriority != int(expectedFlag)&0x1 {
+			t.Fatalf(`Inconsistent flag parsing:
+					got: %d
+					wanted: %d
+					for header of: %s`, parsedSamplingPriority, int(expectedFlag)&0x1, header)
+		}
+	})
 }

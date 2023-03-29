@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -38,7 +39,9 @@ func (ss *serverStream) Context() context.Context {
 }
 
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
-	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
+	_, im := ss.cfg.ignoredMethods[ss.method]
+	_, um := ss.cfg.untracedMethods[ss.method]
+	if ss.cfg.traceStreamMessages && !im && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -46,14 +49,21 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
-		defer func() { finishWithError(span, err, ss.cfg) }()
+		span.SetTag(ext.Component, "google.golang.org/grpc")
+		defer func() {
+			withMetadataTags(ss.ctx, ss.cfg, span)
+			withRequestTags(ss.cfg, m, span)
+			finishWithError(span, err, ss.cfg)
+		}()
 	}
 	err = ss.ServerStream.RecvMsg(m)
 	return err
 }
 
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
-	if _, ok := ss.cfg.ignoredMethods[ss.method]; ss.cfg.traceStreamMessages && !ok {
+	_, im := ss.cfg.ignoredMethods[ss.method]
+	_, um := ss.cfg.untracedMethods[ss.method]
+	if ss.cfg.traceStreamMessages && !im && !um {
 		span, _ := startSpanFromContext(
 			ss.ctx,
 			ss.method,
@@ -61,6 +71,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.serverServiceName(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
+		span.SetTag(ext.Component, "google.golang.org/grpc")
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
@@ -78,14 +89,18 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
 		// if we've enabled call tracing, create a span
-		if _, ok := cfg.ignoredMethods[info.FullMethod]; cfg.traceStreamCalls && !ok {
+		_, im := cfg.ignoredMethods[info.FullMethod]
+		_, um := cfg.untracedMethods[info.FullMethod]
+		if cfg.traceStreamCalls && !im && !um {
 			var span ddtrace.Span
 			span, ctx = startSpanFromContext(
 				ctx,
 				info.FullMethod,
 				"grpc.server",
 				cfg.serverServiceName(),
-				cfg.startSpanOptions(tracer.Measured())...,
+				cfg.startSpanOptions(tracer.Measured(),
+					tracer.Tag(ext.Component, "google.golang.org/grpc"),
+					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 			)
 			switch {
 			case info.IsServerStream && info.IsClientStream:
@@ -121,7 +136,9 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryServerInterceptor: %#v", cfg)
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if _, ok := cfg.ignoredMethods[info.FullMethod]; ok {
+		_, im := cfg.ignoredMethods[info.FullMethod]
+		_, um := cfg.untracedMethods[info.FullMethod]
+		if im || um {
 			return handler(ctx, req)
 		}
 		span, ctx := startSpanFromContext(
@@ -129,31 +146,40 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			info.FullMethod,
 			"grpc.server",
 			cfg.serverServiceName(),
-			cfg.startSpanOptions(tracer.Measured())...,
+			cfg.startSpanOptions(tracer.Measured(),
+				tracer.Tag(ext.Component, "google.golang.org/grpc"),
+				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
-
-		if cfg.withMetadataTags {
-			md, _ := metadata.FromIncomingContext(ctx) // nil is ok
-			for k, v := range md {
-				if _, ok := cfg.ignoredMetadata[k]; !ok {
-					span.SetTag(tagMetadataPrefix+k, v)
-				}
-			}
-		}
-		if cfg.withRequestTags {
-			var m jsonpb.Marshaler
-			if p, ok := req.(proto.Message); ok {
-				if s, err := m.MarshalToString(p); err == nil {
-					span.SetTag(tagRequest, s)
-				}
-			}
-		}
+		withMetadataTags(ctx, cfg, span)
+		withRequestTags(cfg, req, span)
 		if appsec.Enabled() {
 			handler = appsecUnaryHandlerMiddleware(span, handler)
 		}
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)
 		return resp, err
+	}
+}
+
+func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
+	if cfg.withMetadataTags {
+		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
+		for k, v := range md {
+			if _, ok := cfg.ignoredMetadata[k]; !ok {
+				span.SetTag(tagMetadataPrefix+k, v)
+			}
+		}
+	}
+}
+
+func withRequestTags(cfg *config, req interface{}, span ddtrace.Span) {
+	if cfg.withRequestTags {
+		var m jsonpb.Marshaler
+		if p, ok := req.(proto.Message); ok {
+			if s, err := m.MarshalToString(p); err == nil {
+				span.SetTag(tagRequest, s)
+			}
+		}
 	}
 }

@@ -58,3 +58,11 @@ git update-index --no-assume-unchanged go.*
 ### Milestones
 
 The maintainers of this repository assign milestones to pull requests to classify them. `Triage` indicates that it is yet to be decided which version the change will go into. Pull requests that are ready get the upcoming release version assigned.
+
+### Benchmarks
+
+Some benchmarks will run on any new PR commits, the results will be commented into the PR on completion.
+
+#### Adding a new benchmark
+To add additional benchmarks that should run for every PR go to `.gitlab/scripts/run-benchmarks.sh`.
+Add the name of your benchmark to the list in `-bench "BenchmarkConcurrentTracing|BenchmarkStartSpan"` using pipe character separators. Note that your new benchmark must already exist in the `main` branch, for that reason it is best for new benchmarks to be added in their own PR and a second PR opened afterwards to add them to the PR benchmark script.

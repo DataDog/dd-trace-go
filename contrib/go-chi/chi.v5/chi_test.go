@@ -68,6 +68,8 @@ func TestTrace200(t *testing.T) {
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+		assert.Equal("go-chi/chi.v5", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	}
 
 	t.Run("response written", func(t *testing.T) {
@@ -102,6 +104,32 @@ func TestTrace200(t *testing.T) {
 		})
 		assertDoRequest(assert, mt, router)
 	})
+}
+
+func TestWithModifyResourceName(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware(WithModifyResourceName(func(r string) string { return strings.TrimSuffix(r, "/") })))
+	router.Get("/user/{id}/", func(w http.ResponseWriter, r *http.Request) {})
+
+	r := httptest.NewRequest("GET", "/user/123/", nil)
+	w := httptest.NewRecorder()
+
+	// do and verify the request
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	assert.Equal(t, response.StatusCode, 200)
+
+	// verify traces look good
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	if len(spans) < 1 {
+		t.Fatalf("no spans")
+	}
+	span := spans[0]
+	assert.Equal(t, "GET /user/{id}", span.Tag(ext.ResourceName))
 }
 
 func TestError(t *testing.T) {

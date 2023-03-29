@@ -170,6 +170,27 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
+// Root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+func (s *span) Root() Span {
+	return s.root()
+}
+
+// root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+// As opposed to the public Root method, this one returns the actual span type
+// when internal usage requires it (to avoid type assertions from Root's return
+// value).
+func (s *span) root() *span {
+	if s == nil || s.context == nil {
+		return nil
+	}
+	if s.context.trace == nil {
+		return nil
+	}
+	return s.context.trace.root
+}
+
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
 // bit of information gets monitored. In case of distributed traces,
@@ -180,23 +201,32 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	root := s.context.trace.root
+	root := s.root()
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if root.finished {
+		return
+	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(root.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+		s.context.updated = true
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 		trace.unsetPropagatingTag(keyPropagatedUserID)
+		if _, ok := trace.propagatingTags[keyPropagatedUserID]; ok {
+			s.context.updated = true
+		}
 		delete(root.Meta, keyPropagatedUserID)
-		// setMeta is used since the span is already locked
-		root.setMeta(keyUserID, id)
 	}
 	for k, v := range map[string]string{
+		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -204,6 +234,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	} {
 		if v != "" {
+			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
 		}
 	}
@@ -606,11 +637,13 @@ func (s *span) Format(f fmt.State, c rune) {
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyDecisionMaker           = "_dd.p.dm"
-	keyServiceHash             = "_dd.dm.service_hash"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -629,6 +662,9 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
@@ -639,10 +675,4 @@ const (
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
-)
-
-const (
-	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	samplingMechanismSingleSpan = 8
 )
