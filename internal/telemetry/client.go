@@ -86,7 +86,7 @@ func Reset() {
 	globalClient.Lock()
 	defer globalClient.Unlock()
 	GlobalClient = new(Client)
-	//GlobalClient.fallbackOps()
+	GlobalClient.fallbackOps()
 }
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
@@ -173,7 +173,6 @@ func (c *Client) start(configuration []Configuration, namespace Namespace) {
 		log(err.Error())
 		return
 	}
-
 	c.started = true
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
@@ -187,6 +186,8 @@ func (c *Client) start(configuration []Configuration, namespace Namespace) {
 
 	productInfo.Profiler = ProductDetails{
 		Version: version.Tag,
+		// if the profiler is the one starting the telemetry client,
+		// then profiling is enabled
 		Enabled: namespace == NamespaceProfilers,
 	}
 
