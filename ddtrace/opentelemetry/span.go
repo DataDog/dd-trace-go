@@ -10,14 +10,13 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 var _ oteltrace.Span = (*span)(nil)
@@ -94,10 +93,13 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	parent := strings.Trim(headers["traceparent"], " \t-")
 	if len(parent) > 3 {
 		// checking the length to avoid panic when parsing
-		if f, err := strconv.ParseUint(parent[len(parent)-3:], 16, 8); err != nil {
-			c.TraceFlags = oteltrace.TraceFlags(f)
-		} else {
+		// The format of the traceparent is `-` separated string,
+		// where flags represents the propagated flags in the format of 2 hex-encoded digits at the end of the traceparent.
+		otelFlagLen := 2
+		if f, err := strconv.ParseUint(parent[len(parent)-otelFlagLen:], 16, 8); err != nil {
 			log.Debug("Couldn't parse traceparent: %v", err)
+		} else {
+			c.TraceFlags = oteltrace.TraceFlags(f)
 		}
 	}
 	// Remote indicates a remotely-created Span

@@ -213,13 +213,18 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	defer cleanup()
 
 	startTime := time.Now()
+	duration := time.Second * 5
 	_, sp := tr.Start(
 		ContextWithStartOptions(context.Background(),
-			tracer.ResourceName("ctx_rsc"),
-			tracer.ServiceName("ctx_srv"),
+			tracer.ResourceName("persisted_ctx_rsc"),
+			tracer.ServiceName("persisted_srv"),
 			tracer.StartTime(startTime),
 			tracer.WithSpanID(1234567890),
-		), "op_name")
+		), "op_name",
+		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
+		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
+	)
+	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
 	sp.End()
 
 	tracer.Flush()
@@ -227,10 +232,13 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, "ctx_srv")
-	assert.Contains(p, "ctx_rsc")
+	assert.Contains(p, "persisted_ctx_rsc")
+	assert.Contains(p, "persisted_srv")
+	assert.Contains(p, `"type":"producer"`)
 	assert.Contains(p, "1234567890")
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
+	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
+	assert.NotContains(p, "discarded")
 }
 
 func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
@@ -325,6 +333,10 @@ func TestSpanEndOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	assert.Contains(p, "ctx_srv")
+	assert.Contains(p, "ctx_rsc")
+	assert.Contains(p, "1234567890")
+	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, `"duration":5000000000,`)
 	assert.Contains(p, `persisted_option`)
 }

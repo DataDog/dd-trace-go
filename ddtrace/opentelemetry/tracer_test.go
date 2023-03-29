@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -93,16 +94,21 @@ func TestSpanContext(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 
-	pCtx, parent := tr.Start(context.Background(), "parent")
-	pSpanCtx := parent.SpanContext()
+	ctx, err := tracer.Extract(tracer.TextMapCarrier{
+		"traceparent": "00-000000000000000000000000075bcd15-1234567890123456-01",
+		"tracestate":  "dd=s:2;o:rum;t.usr.id:baz64~~",
+	})
+	if err != nil {
+		t.Fatalf("couldn't propagate headers")
+	}
+	_, s := tr.Start(ContextWithStartOptions(context.Background(), tracer.ChildOf(ctx), tracer.WithSpanID(16)), "parent")
+	sctx := s.SpanContext()
 
-	_, child := tr.Start(pCtx, "child")
-	cSpanCtx := child.SpanContext()
-
-	assert.Equal(cSpanCtx.TraceFlags(), pSpanCtx.TraceFlags())
-	assert.Equal(cSpanCtx.TraceID(), pSpanCtx.TraceID())
-	assert.Equal(cSpanCtx.IsRemote(), pSpanCtx.IsRemote())
-	assert.Equal(cSpanCtx.TraceState().String(), pSpanCtx.TraceState().String())
+	assert.Equal(oteltrace.FlagsSampled, sctx.TraceFlags())
+	assert.Equal("000000000000000000000000075bcd15", sctx.TraceID().String())
+	assert.Equal("0000000000000010", sctx.SpanID().String())
+	assert.Equal("dd=s:2;o:rum;t.usr.id:baz64~~", sctx.TraceState().String())
+	assert.Equal(true, sctx.IsRemote())
 }
 
 func TestForceFlush(t *testing.T) {
@@ -151,19 +157,32 @@ func TestForceFlush(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Flush after shutdown", func(t *testing.T) {
+		tp := NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		testLog := new(log.RecordLogger)
+		defer log.UseLogger(testLog)()
+
+		tp.stopped = 1
+		tp.ForceFlush(time.Second, func(ok bool) {})
+
+		logs := testLog.Logs()
+		assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
+	})
 }
 
-func TestShutdown(t *testing.T) {
+func TestShutdownOnce(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
 	tp.Shutdown()
-
 	// attempt to get the Tracer after shutdown and
 	// start a span. The context and span returned
 	// from calling Start should be nil.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
+	assert.Equal(1, tp.stopped)
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)
 }
