@@ -191,9 +191,7 @@ var profileTypes = map[ProfileType]profileType{
 			if !p.shouldTrace() {
 				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
 			}
-			defer func() {
-				p.lastTrace = time.Now()
-			}()
+			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
 			lt := &limitedTraceCollector{
 				w:     buf,
@@ -578,6 +576,13 @@ func (cdp *comparingDeltaProfiler) reportError(error string, extraTags ...string
 // profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
+//
+// Deprecated: This function was introduced into our public API unintentionally.
+// It will be removed in the next release. If you need this functionality,
+// it can be implemented in two lines:
+//
+//	a.Scale(-1)
+//	return pprofile.Merge([]*pprofile.Profile{a, b})
 func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
 	a.Scale(-1)
 	return pprofile.Merge([]*pprofile.Profile{a, b})

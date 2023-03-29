@@ -205,6 +205,12 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if root.finished {
+		return
+	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(root.Meta, keyUserID)
@@ -631,11 +637,13 @@ func (s *span) Format(f fmt.State, c rune) {
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyDecisionMaker           = "_dd.p.dm"
-	keyServiceHash             = "_dd.dm.service_hash"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -654,6 +662,9 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

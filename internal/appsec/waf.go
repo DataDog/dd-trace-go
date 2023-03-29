@@ -22,9 +22,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 const (
@@ -124,7 +125,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			if len(matches) > 0 {
 				for _, id := range actionIds {
 					if actionHandler.Apply(id, op) {
-						operation.Error = errors.New("Request blocked")
+						operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
 					}
 				}
 				op.AddSecurityEvents(matches)

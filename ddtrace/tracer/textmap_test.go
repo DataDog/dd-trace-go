@@ -22,7 +22,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -970,6 +972,23 @@ func TestEnvVars(t *testing.T) {
 						"_dd.p.usr.id": "baz64==",
 					},
 				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "cc-00000000000000001111111111111111-2222222222222222-01-what-the-future-will-be-like",
+						tracestateHeader:  "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+					},
+					fullTraceID: "00000000000000001111111111111111",
+					traceID:     1229782938247303441,
+					spanID:      2459565876494606882,
+					priority:    1,
+					origin:      "=_=",
+					propagatingTags: map[string]string{
+						"tracestate":   "othervendor=t61rcWkgMzE,dd=o:~_~;s:fake_origin;t.dm:-4;t.usr.id:baz64~~,",
+						"w3cTraceID":   "00000000000000001111111111111111",
+						"_dd.p.dm":     "-4",
+						"_dd.p.usr.id": "baz64==",
+					},
+				},
 			}
 			for i, test := range tests {
 				t.Run(fmt.Sprintf("#%v extract/valid  with env=%q", i, testEnv), func(t *testing.T) {
@@ -1528,6 +1547,27 @@ func TestEnvVars(t *testing.T) {
 	})
 }
 
+func TestW3CExtractsBaggage(t *testing.T) {
+	tracer := newTracer()
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
+		tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
+		"ot-baggage-something": "someVal",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	found := false
+	s.ForeachBaggageItem(func(k, v string) bool {
+		if k == "something" {
+			found = true
+			return false
+		}
+		return true
+	})
+	assert.True(t, found)
+}
+
 func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
@@ -1550,7 +1590,8 @@ func TestNonePropagator(t *testing.T) {
 
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
-		tp := new(testLogger)
+		tp := new(log.RecordLogger)
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithLogger(tp))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
@@ -1569,7 +1610,7 @@ func TestNonePropagator(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
 		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
-		assert.Contains(tp.lines[0], "Propagator \"none\" has no effect when combined with other propagators. "+
+		assert.Contains(tp.Logs()[0], "Propagator \"none\" has no effect when combined with other propagators. "+
 			"To disable the propagator, set to `none`")
 	})
 
@@ -1644,12 +1685,11 @@ func assertTraceTags(t *testing.T, expected, actual string) {
 
 func BenchmarkInjectDatadog(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "datadog")
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 20; i++ {
 		setPropagatingTag(root.Context().(*spanContext), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 	dst := map[string]string{}
@@ -1661,7 +1701,6 @@ func BenchmarkInjectDatadog(b *testing.B) {
 
 func BenchmarkInjectW3C(b *testing.B) {
 	b.Setenv(headerPropagationStyleInject, "tracecontext")
-
 	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.StartSpan("test")

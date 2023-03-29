@@ -183,6 +183,14 @@ jobs:
           discovery.type: single-node
         ports:
           - 9203:9200
+      elasticsearch8:
+        image: elasticsearch:8.6.2
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          discovery.type: single-node
+          xpack.security.enabled: false
+        ports:
+          - 9204:9200
       mongo:
         image: circleci/mongo:latest-ram
         ports:

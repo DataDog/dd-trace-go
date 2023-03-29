@@ -11,7 +11,6 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 import (
 	"errors"
 	"io"
-	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -28,13 +27,15 @@ import (
 var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)
 
 func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
-	if len(cfg.tags) == 0 && math.IsNaN(cfg.analyticsRate) {
+	if len(cfg.tags) == 0 && len(cfg.spanOpts) == 0 {
 		return opts
 	}
 
 	ret := make([]tracer.StartSpanOption, 0, 1+len(cfg.tags)+len(opts))
-	ret = append(ret, tracer.AnalyticsRate(cfg.analyticsRate))
 	for _, opt := range opts {
+		ret = append(ret, opt)
+	}
+	for _, opt := range cfg.spanOpts {
 		ret = append(ret, opt)
 	}
 	for key, tag := range cfg.tags {
@@ -49,10 +50,8 @@ func startSpanFromContext(
 	opts = append(opts,
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
+		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
-		tracer.Tag(ext.RPCMethod, method),
-		tracer.Tag(ext.RPCSystem, "gRPC"),
-		tracer.Tag(ext.RPCService, service),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

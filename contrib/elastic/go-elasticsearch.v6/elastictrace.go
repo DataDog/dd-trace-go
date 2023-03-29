@@ -95,7 +95,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 var (
-	idRegexp         = regexp.MustCompile("/([0-9]+)([/\\?]|$)")
+	idRegexp         = regexp.MustCompile(`/([0-9]+)([/\?]|$)`)
 	idPlaceholder    = []byte("/?$2")
 	indexRegexp      = regexp.MustCompile("[0-9]{2,}")
 	indexPlaceholder = []byte("?")

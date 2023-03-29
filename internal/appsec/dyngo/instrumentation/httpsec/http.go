@@ -93,7 +93,7 @@ func applyActions(op *Operation) http.Handler {
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ipTags, clientIP := ClientIPTags(r.Header, r.RemoteAddr)
+		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
