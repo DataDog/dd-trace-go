@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -61,15 +60,6 @@ var (
 
 	defaultHeartbeatInterval = 60 // seconds
 )
-
-func init() {
-	h, err := os.Hostname()
-	if err == nil {
-		hostname = h
-	}
-	GlobalClient = new(Client)
-	GlobalClient.fallbackOps()
-}
 
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent). Client.Start should be called before any other methods.
