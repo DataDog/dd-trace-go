@@ -15,10 +15,6 @@ import (
 // unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
 // env var.
 func startTelemetry(c *config) {
-	if telemetry.Disabled() {
-		// Do not do extra work populating config data if instrumentation telemetry is disabled.
-		return
-	}
 	telemetry.GlobalClient.ApplyOps(
 		telemetry.WithService(c.serviceName),
 		telemetry.WithEnv(c.env),
