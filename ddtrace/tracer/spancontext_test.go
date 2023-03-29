@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -34,7 +33,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -146,7 +145,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -357,7 +356,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", telemetry.LogPrefix)
+	tp.Ignore("appsec: ")
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 

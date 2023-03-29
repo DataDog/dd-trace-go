@@ -125,10 +125,6 @@ func Start(opts ...StartOption) {
 	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
-		// TODO: instrumentation telemetry client won't get started
-		// if tracing is disabled, but we still want to capture this
-		// telemetry information. Will be fixed when the tracer and profiler
-		// share control of the global telemetry client.
 		return
 	}
 	internal.SetGlobalTracer(t)
@@ -143,9 +139,6 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
 	hostname.Get() // Prime the hostname cache
 }
 
@@ -579,7 +572,6 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
-	stopTelemetry()
 }
 
 // Inject uses the configured or default TextMap Propagator.
