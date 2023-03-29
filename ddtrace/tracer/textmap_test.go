@@ -24,7 +24,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestHTTPHeadersCarrierSet(t *testing.T) {
@@ -1591,7 +1590,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ")
 		tracer := newTracer(WithLogger(tp))
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set

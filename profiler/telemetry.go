@@ -12,10 +12,6 @@ import (
 // startTelemetry notifies the global telemetry client that the profiler has started
 // and enqueues profiler config data to be sent to the telemetry backend.
 func startTelemetry(c *config) {
-	if telemetry.Disabled() {
-		// Do not do extra work populating config data if instrumentation telemetry is disabled.
-		return
-	}
 	profileEnabled := func(t ProfileType) bool {
 		_, ok := c.types[t]
 		return ok

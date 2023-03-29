@@ -60,9 +60,6 @@ var (
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
 	defaultHeartbeatInterval = 60 // seconds
-
-	// LogPrefix specifies the prefix for all telemetry logging
-	LogPrefix = "Instrumentation telemetry: "
 )
 
 func init() {
@@ -134,7 +131,7 @@ type Client struct {
 
 func log(msg string, args ...interface{}) {
 	// Debug level so users aren't spammed with telemetry info.
-	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
+	logger.Debug(fmt.Sprintf(msg, args...))
 }
 
 // Start registers that the app has begun running with the app-started event
