@@ -183,6 +183,11 @@ func doClientRequest(
 		span.SetTag(tagMethodKind, methodKind)
 	}
 
+	if v := ctx.Value("unresolved_target"); v != nil {
+		span.SetTag("grpc.target", v)
+	}
+	span.SetTag("grpc.target", "none found")
+
 	// fill in the peer so we can add it to the tags
 	var p peer.Peer
 	opts = append(opts, grpc.Peer(&p))
