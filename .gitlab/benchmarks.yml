@@ -11,7 +11,7 @@ benchmark:
     refs:
       - branches
   interruptible: true
-  tags: ["runner:apm-k8s-tweaked-metal-test"]
+  tags: ["runner:apm-k8s-tweaked-metal"]
   script:
     - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     - ./.gitlab/scripts/capture-hardware-software-info.sh
