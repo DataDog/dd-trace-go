@@ -14,15 +14,13 @@
 package namingschema
 
 import (
-	"os"
 	"strings"
 	"sync"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
-	envSpanAttributeSchema = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"
+	// SpanAttributeSchemaEnvVar is used to specify the span attribute schema (aka naming schema) version to use.
+	SpanAttributeSchemaEnvVar = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"
 )
 
 // Version represents the available naming schema versions.
@@ -40,17 +38,15 @@ var (
 	sv Version
 )
 
-func init() {
-	mu.Lock()
-	defer mu.Unlock()
-	switch version := strings.ToLower(os.Getenv(envSpanAttributeSchema)); version {
+// ParseVersion attempts to parse the version string.
+func ParseVersion(v string) (Version, bool) {
+	switch strings.ToLower(v) {
 	case "", "v0":
-		sv = SchemaV0
+		return SchemaV0, true
 	case "v1":
-		sv = SchemaV1
+		return SchemaV1, true
 	default:
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v0", version)
-		sv = SchemaV0
+		return SchemaV0, false
 	}
 }
 
@@ -66,6 +62,11 @@ func SetVersion(v Version) {
 	mu.Lock()
 	defer mu.Unlock()
 	sv = v
+}
+
+// SetDefaultVersion sets the default global naming schema version.
+func SetDefaultVersion() {
+	SetVersion(SchemaV0)
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
