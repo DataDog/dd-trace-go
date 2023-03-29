@@ -157,27 +157,32 @@ func TestForceFlush(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Flush after shutdown", func(t *testing.T) {
+		tp := NewTracerProvider()
+		otel.SetTracerProvider(tp)
+		testLog := new(log.RecordLogger)
+		defer log.UseLogger(testLog)()
+
+		tp.stopped = 1
+		tp.ForceFlush(time.Second, func(ok bool) {})
+
+		logs := testLog.Logs()
+		assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
+	})
 }
 
-func TestShutdown(t *testing.T) {
+func TestShutdownOnce(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
-
-	testLog := new(log.RecordLogger)
-	defer log.UseLogger(testLog)()
-
 	tp.Shutdown()
-	tp.ForceFlush(5*time.Second, func(ok bool) {})
-
-	logs := testLog.Logs()
-	assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
-
 	// attempt to get the Tracer after shutdown and
 	// start a span. The context and span returned
 	// from calling Start should be nil.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
+	assert.Equal(1, tp.stopped)
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)
 }
