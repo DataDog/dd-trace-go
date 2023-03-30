@@ -38,8 +38,8 @@ func TestClient(t *testing.T) {
 	client := &Client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
-	client.start(nil, NamespaceTracers) // test idempotence
+	client.Start(nil)
+	client.Start(nil) // test idempotence
 	defer client.Stop()
 
 	timeout := time.After(30 * time.Second)
@@ -98,7 +98,7 @@ func TestMetrics(t *testing.T) {
 		client := &Client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.Start(nil)
 
 		// Gauges should have the most recent value
 		client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
@@ -138,7 +138,7 @@ func TestDisabledClient(t *testing.T) {
 	client := &Client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.Start(nil)
 	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
@@ -206,7 +206,7 @@ func TestConcurrentClient(t *testing.T) {
 		client := &Client{
 			URL: server.URL,
 		}
-		client.start(nil, NamespaceTracers)
+		client.Start(nil)
 		defer client.Stop()
 
 		var wg sync.WaitGroup
@@ -279,7 +279,7 @@ func TestAgentlessRetry(t *testing.T) {
 	client := &Client{
 		URL: brokenServer.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.Start(nil)
 	waitAgentlessEndpoint()
 }
 
@@ -306,7 +306,7 @@ func TestCollectDependencies(t *testing.T) {
 	client := &Client{
 		URL: server.URL,
 	}
-	client.start(nil, NamespaceTracers)
+	client.Start(nil)
 	select {
 	case <-received:
 	case <-ctx.Done():

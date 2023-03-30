@@ -7,41 +7,21 @@ package tracer
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestTelemetryEnabled(t *testing.T) {
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	telemetry.Reset()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	received := make(chan *telemetry.AppStarted, 1)
-	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
-			return
-		}
-		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
-			return
-		}
-		var body telemetry.Body
-		body.Payload = new(telemetry.AppStarted)
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			t.Errorf("bad body: %s", err)
-		}
-		select {
-		case received <- body.Payload.(*telemetry.AppStarted):
-		default:
-		}
-	}))
-	defer server.Close()
+	wantEvents := []telemetry.RequestType{telemetry.RequestTypeAppStarted, telemetry.RequestTypeDependenciesLoaded}
+	client, wait, cleanup := telemetry.TestHTTPClient(t, ctx, wantEvents, nil)
+	defer cleanup()
 
 	Start(
 		WithHTTPClient(client),
@@ -52,27 +32,12 @@ func TestTelemetryEnabled(t *testing.T) {
 	)
 	defer Stop()
 
-	var payload *telemetry.AppStarted
-	select {
-	case <-ctx.Done():
-		t.Fatalf("Time out: waiting for telemetry payload")
-	case payload = <-received:
-	}
+	bodies := wait()
+	assert.Len(t, bodies, len(wantEvents))
+	var startPayload *telemetry.AppStarted = bodies[0].Payload.(*telemetry.AppStarted)
 
-	check := func(key string, expected interface{}) {
-		for _, kv := range payload.Configuration {
-			if kv.Name == key {
-				if kv.Value != expected {
-					t.Errorf("configuration %s: wanted %v, got %v", key, expected, kv.Value)
-				}
-				return
-			}
-		}
-		t.Errorf("missing configuration %s", key)
-	}
-
-	check("trace_debug_enabled", false)
-	check("service", "test-serv")
-	check("env", "test-env")
-	check("runtime_metrics_enabled", true)
+	telemetry.Check(startPayload.Configuration, t, "trace_debug_enabled", false)
+	telemetry.Check(startPayload.Configuration, t, "service", "test-serv")
+	telemetry.Check(startPayload.Configuration, t, "env", "test-env")
+	telemetry.Check(startPayload.Configuration, t, "runtime_metrics_enabled", true)
 }

@@ -32,8 +32,6 @@ var (
 	// GlobalClient acts as a global telemetry client that the
 	// tracer, profiler, and appsec products will use
 	GlobalClient *Client
-	globalClient sync.Mutex
-
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -65,11 +63,6 @@ var (
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "Instrumentation telemetry: "
-
-	// StartedProducts keeps track of how many products are using the global telemetry client
-	// note: this variable is accessed concurrently
-	// TODO: once go 1.18 support is dropped, we can use a atomic.Uint32 here.
-	Started uint32
 )
 
 func init() {
@@ -77,14 +70,6 @@ func init() {
 	if err == nil {
 		hostname = h
 	}
-	Reset()
-}
-
-// Reset erases any previous data from the telemetry client
-// and populates it with fallback options.
-func Reset() {
-	globalClient.Lock()
-	defer globalClient.Unlock()
 	GlobalClient = new(Client)
 	GlobalClient.fallbackOps()
 }
@@ -157,9 +142,10 @@ func log(msg string, args ...interface{}) {
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
-// The client lock needs to be held when calling start.
 // TODO: implement passing in error information about tracer start
-func (c *Client) start(configuration []Configuration, namespace Namespace) {
+func (c *Client) Start(configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if Disabled() {
 		return
 	}
@@ -173,27 +159,27 @@ func (c *Client) start(configuration []Configuration, namespace Namespace) {
 		log(err.Error())
 		return
 	}
+
 	c.started = true
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
-	productInfo := Products{
-		AppSec: ProductDetails{
-			Version: version.Tag,
-			Enabled: appsec.Enabled(),
-		},
-	}
-
-	productInfo.Profiler = ProductDetails{
-		Version: version.Tag,
-		// if the profiler is the one starting the telemetry client,
-		// then profiling is enabled
-		Enabled: namespace == NamespaceProfilers,
-	}
-
 	payload := &AppStarted{
 		Configuration: configuration,
-		Products:      productInfo,
+		Products: Products{
+			AppSec: ProductDetails{
+				Version: version.Tag,
+				Enabled: appsec.Enabled(),
+			},
+			// If the profiler starts, an app-product-change event will be sent
+			// to signal that the profiler is enabled. It is important that we
+			// send the profiler version, since product info is hashed on it's version
+			// when being stored by the instrumentation telemetry backend.
+			Profiler: ProductDetails{
+				Version: version.Tag,
+				Enabled: false,
+			},
+		},
 	}
 
 	appStarted := c.newRequest(RequestTypeAppStarted)
@@ -231,7 +217,6 @@ func (c *Client) start(configuration []Configuration, namespace Namespace) {
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
 // messages will also be sent. No further messages will be sent until the client
 // is started again
-// TODO: hook into OS signal package for sigint and sigquit
 func (c *Client) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
