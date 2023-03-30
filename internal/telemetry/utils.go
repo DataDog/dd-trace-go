@@ -26,7 +26,7 @@ func MockGlobalClient(client Client) func() {
 	}
 }
 
-// Check is a testing utility to assert that a target key value pair
+// Check is a testing utility to assert that a target key in config contains the expected value
 // exists in an array of Configuration
 func Check(t *testing.T, configuration []Configuration, key string, expected interface{}) {
 	for _, kv := range configuration {
