@@ -6,26 +6,19 @@
 package tracer
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 )
 
 func TestTelemetryEnabled(t *testing.T) {
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	wantEvents := []telemetry.RequestType{telemetry.RequestTypeAppStarted, telemetry.RequestTypeDependenciesLoaded}
-	client, wait, cleanup := telemetry.TestHTTPClient(t, ctx, wantEvents, nil)
-	defer cleanup()
+	telemetryClient := new(telemetrytest.MockClient)
+	defer telemetry.MockGlobalClient(telemetryClient)()
 
 	Start(
-		WithHTTPClient(client),
 		WithDebugStack(false),
 		WithService("test-serv"),
 		WithEnv("test-env"),
@@ -33,12 +26,9 @@ func TestTelemetryEnabled(t *testing.T) {
 	)
 	defer Stop()
 
-	bodies := wait()
-	assert.Len(t, bodies, len(wantEvents))
-	var startPayload *telemetry.AppStarted = bodies[0].Payload.(*telemetry.AppStarted)
-
-	telemetry.Check(startPayload.Configuration, t, "trace_debug_enabled", false)
-	telemetry.Check(startPayload.Configuration, t, "service", "test-serv")
-	telemetry.Check(startPayload.Configuration, t, "env", "test-env")
-	telemetry.Check(startPayload.Configuration, t, "runtime_metrics_enabled", true)
+	assert.True(t, telemetryClient.Started)
+	telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
+	telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+	telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
+	telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
 }

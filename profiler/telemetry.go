@@ -14,7 +14,6 @@ import (
 func startTelemetry(c *config) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
-		return
 	}
 	profileEnabled := func(t ProfileType) bool {
 		_, ok := c.types[t]

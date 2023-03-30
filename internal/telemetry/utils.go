@@ -8,89 +8,27 @@
 package telemetry
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"sync"
 	"testing"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
-// TestHTTPClient provides a test http client that waits for a specific sequence of telemetry events.
-// It returns a function that waits for all expected events to be received, as well as a cleanup function.
-func TestHTTPClient(t *testing.T, ctx context.Context, events []RequestType, ignoreEvents []RequestType) (client *http.Client, wait func() []*Body, cleanup func()) {
-	eventsBuffer := make(chan *Body, len(events))
-	done := make(chan struct{})
-	curEvent := 0
-	mu := new(sync.Mutex)
-
-	ignore := make(map[RequestType]struct{})
-	for _, event := range ignoreEvents {
-		ignore[event] = struct{}{}
+// MockGlobalClient replaces the global telemetry client with a custom
+// implementation of TelemetryClient. It returns a function that can be deferred
+// to reset the global telemetry client to its previous value.
+func MockGlobalClient(client TelemetryClient) func() {
+	globalClient.Lock()
+	defer globalClient.Unlock()
+	oldClient := GlobalClient
+	GlobalClient = client
+	return func() {
+		globalClient.Lock()
+		defer globalClient.Unlock()
+		GlobalClient = oldClient
 	}
-
-	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
-			return
-		}
-		rType := RequestType(r.Header.Get("DD-Telemetry-Request-Type"))
-		if _, ok := ignore[rType]; ok {
-			return
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		if curEvent >= len(events) {
-			return
-		} else if rType == events[curEvent] {
-			var body Body
-			switch events[curEvent] {
-			case RequestTypeAppStarted:
-				body.Payload = new(AppStarted)
-			case RequestTypeDependenciesLoaded:
-				body.Payload = new(Dependencies)
-			case RequestTypeAppProductChange:
-				body.Payload = new(Products)
-			case RequestTypeAppClientConfigurationChange:
-				body.Payload = new(ConfigurationChange)
-			}
-			err := json.NewDecoder(r.Body).Decode(&body)
-			if err != nil {
-				t.Errorf("bad body: %s", err)
-			}
-			select {
-			case eventsBuffer <- &body:
-			default:
-			}
-			curEvent++
-			if curEvent == len(events) {
-				done <- struct{}{}
-				return
-			}
-		} else {
-			t.Fatalf("Unexpected order of telemetry events")
-		}
-	}))
-
-	return client, func() []*Body {
-			bodies := []*Body{}
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Time out: waiting for telemetry payload")
-			case <-done:
-			}
-			for range events {
-				bodies = append(bodies, <-eventsBuffer)
-			}
-			return bodies
-		}, func() {
-			server.Close()
-		}
 }
 
 // Check is a testing utility to assert that a target key value pair
 // exists in an array of Configuration
-func Check(configuration []Configuration, t *testing.T, key string, expected interface{}) {
+func Check(t *testing.T, configuration []Configuration, key string, expected interface{}) {
 	for _, kv := range configuration {
 		if kv.Name == key {
 			if kv.Value != expected {

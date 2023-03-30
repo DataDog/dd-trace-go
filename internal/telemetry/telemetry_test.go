@@ -28,7 +28,7 @@ func TestProductChange(t *testing.T) {
 	var configPayload *ConfigurationChange = client.requests[0].Body.Payload.(*ConfigurationChange)
 	assert.Len(t, configPayload.Configuration, 1)
 
-	Check(configPayload.Configuration, t, "delta_profiles", true)
+	Check(t, configPayload.Configuration, "delta_profiles", true)
 
 	secondBody := client.requests[1].Body
 	assert.Equal(t, RequestTypeAppProductChange, secondBody.RequestType)
