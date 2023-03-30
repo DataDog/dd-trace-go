@@ -183,7 +183,7 @@ func TestShutdownOnce(t *testing.T) {
 	// from calling Start should be nil.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
-	assert.Equal(1, tp.stopped)
+	assert.Equal(uint32(1), tp.stopped)
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)
 }
