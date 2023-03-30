@@ -12,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+// MockClient implements TelemetryClient and is used for testing purposes.
 type MockClient struct {
 	mu              sync.Mutex
 	Started         bool
@@ -19,6 +20,7 @@ type MockClient struct {
 	ProfilerEnabled bool
 }
 
+// Start starts and adds configuration data to the mock client.
 func (c *MockClient) Start(configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -26,6 +28,7 @@ func (c *MockClient) Start(configuration []telemetry.Configuration) {
 	c.Configuration = append(c.Configuration, configuration...)
 }
 
+// ProductChange signals that a certain product is enabled or disabled for the mock client.
 func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -33,11 +36,18 @@ func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, 
 	c.Configuration = append(c.Configuration, configuration...)
 }
 
+// Gauge is NOOP for the mock client.
 func (c *MockClient) Gauge(namespace telemetry.Namespace, name string, value float64, tags []string, common bool) {
 }
+
+// Count is NOOP for the mock client.
 func (c *MockClient) Count(namespace telemetry.Namespace, name string, value float64, tags []string, common bool) {
 }
+
+// Stop is NOOP for the mock client.
 func (c *MockClient) Stop() {
 }
+
+// ApplyOps is NOOP for the mock client.
 func (c *MockClient) ApplyOps(ops ...telemetry.Option) {
 }
