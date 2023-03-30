@@ -14,6 +14,7 @@ benchmark:
   tags: ["runner:apm-k8s-tweaked-metal"]
   script:
     - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+    - export GOGC=off GOMEMLIMIT=64GiB
     - ./.gitlab/scripts/capture-hardware-software-info.sh
     - ./.gitlab/scripts/run-benchmarks.sh
     - ./.gitlab/scripts/analyze-results.sh
