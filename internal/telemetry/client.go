@@ -85,7 +85,7 @@ func init() {
 	GlobalClient = new(client)
 }
 
-// Client implements Telemetry. Client.Start should be called before any other methods.
+// client implements Client interface. Client.Start should be called before any other methods.
 //
 // Client is safe to use from multiple goroutines concurrently. The client will
 // send all telemetry requests in the background, in order to avoid blocking the
