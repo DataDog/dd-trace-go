@@ -28,7 +28,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-// Telemetry buffers and sends telemetry messages to Datadog (possibly through an
+// Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
 	Start(configuration []Configuration)
