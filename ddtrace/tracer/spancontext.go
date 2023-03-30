@@ -6,18 +6,73 @@
 package tracer
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
+
+type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+
+var emptyTraceID traceID
+
+func (t *traceID) HexEncoded() string {
+	return hex.EncodeToString(t[:])
+}
+
+func (t *traceID) Lower() uint64 {
+	return binary.BigEndian.Uint64(t[8:])
+}
+
+func (t *traceID) Upper() uint64 {
+	return binary.BigEndian.Uint64(t[:8])
+}
+
+func (t *traceID) SetLower(i uint64) {
+	binary.BigEndian.PutUint64(t[8:], i)
+}
+
+func (t *traceID) SetUpper(i uint64) {
+	binary.BigEndian.PutUint64(t[:8], i)
+}
+
+func (t *traceID) SetUpperFromHex(s string) {
+	u, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
+		log.Debug("Attempted to decode an invalid hex traceID %s", s)
+		return
+	}
+	t.SetUpper(u)
+}
+
+func (t *traceID) Empty() bool {
+	return *t == emptyTraceID
+}
+
+func (t *traceID) HasUpper() bool {
+	//TODO: in go 1.20 we can simplify this
+	for _, b := range t[:8] {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *traceID) UpperHex() string {
+	return hex.EncodeToString(t[:8])
+}
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -34,7 +89,7 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
+	traceID traceID
 	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
@@ -50,11 +105,12 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		spanID: span.SpanID,
+		span:   span,
 	}
+	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
+		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
@@ -62,6 +118,15 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+		// add 128 bit trace id, if enabled, formatted as big-endian:
+		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+		id128 := time.Duration(span.Start) / time.Second
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -83,7 +148,17 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID }
+func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
+
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128() string {
+	return c.traceID.HexEncoded()
+}
+
+// TraceID128Bytes implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128Bytes() [16]byte {
+	return c.traceID
+}
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
@@ -338,6 +413,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
 			s.setMeta(k, v)
 		}
+	}
+	if s.context != nil && s.context.traceID.HasUpper() {
+		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
 	if len(t.spans) != t.finished {
 		return
