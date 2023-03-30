@@ -242,9 +242,8 @@ func TestCustomTransport(t *testing.T) {
 }
 
 func TestWithHTTPClient(t *testing.T) {
-	// disable instrumentation telemetry to prevent flaky number of requests
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -270,9 +269,8 @@ func TestWithHTTPClient(t *testing.T) {
 }
 
 func TestWithUDS(t *testing.T) {
-	// disable instrumentation telemetry to prevent flaky number of requests
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	os.Setenv("DD_TRACE_STARTUP_LOGS", "0")
+	defer os.Unsetenv("DD_TRACE_STARTUP_LOGS")
 	assert := assert.New(t)
 	dir, err := os.MkdirTemp("", "socket")
 	if err != nil {

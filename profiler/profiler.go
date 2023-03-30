@@ -215,7 +215,6 @@ func (p *profiler) run() {
 	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
-	startTelemetry(p.cfg)
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
