@@ -28,9 +28,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
-// TelemetryClient buffers and sends telemetry messages to Datadog (possibly through an
+// Telemetry buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
-type TelemetryClient interface {
+type Telemetry interface {
 	Start(configuration []Configuration)
 	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
@@ -42,7 +42,7 @@ type TelemetryClient interface {
 var (
 	// GlobalClient acts as a global telemetry client that the
 	// tracer, profiler, and appsec products will use
-	GlobalClient TelemetryClient
+	GlobalClient Telemetry
 	globalClient sync.Mutex
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
@@ -85,7 +85,7 @@ func init() {
 	GlobalClient = new(Client)
 }
 
-// Client implements TelemetryClient. Client.Start should be called before any other methods.
+// Client implements Telemetry. Client.Start should be called before any other methods.
 //
 // Client is safe to use from multiple goroutines concurrently. The client will
 // send all telemetry requests in the background, in order to avoid blocking the

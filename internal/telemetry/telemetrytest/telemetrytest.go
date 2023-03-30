@@ -18,6 +18,7 @@ type MockClient struct {
 	Started         bool
 	Configuration   []telemetry.Configuration
 	ProfilerEnabled bool
+	AsmEnabled      bool
 }
 
 // Start starts and adds configuration data to the mock client.
@@ -32,6 +33,7 @@ func (c *MockClient) Start(configuration []telemetry.Configuration) {
 func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.AsmEnabled = (namespace == telemetry.NamespaceASM) && enabled
 	c.ProfilerEnabled = (namespace == telemetry.NamespaceProfilers) && enabled
 	c.Configuration = append(c.Configuration, configuration...)
 }

@@ -14,7 +14,7 @@ import (
 // MockGlobalClient replaces the global telemetry client with a custom
 // implementation of TelemetryClient. It returns a function that can be deferred
 // to reset the global telemetry client to its previous value.
-func MockGlobalClient(client TelemetryClient) func() {
+func MockGlobalClient(client Telemetry) func() {
 	globalClient.Lock()
 	defer globalClient.Unlock()
 	oldClient := GlobalClient
