@@ -62,7 +62,7 @@ func TestHTTPClient(t *testing.T, ctx context.Context, events []RequestType, ign
 			case eventsBuffer <- &body:
 			default:
 			}
-			curEvent += 1
+			curEvent++
 			if curEvent == len(events) {
 				done <- struct{}{}
 				return
