@@ -12,7 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-// MockClient implements TelemetryClient and is used for testing purposes.
+// MockClient implements Client and is used for testing purposes.
 type MockClient struct {
 	mu              sync.Mutex
 	Started         bool

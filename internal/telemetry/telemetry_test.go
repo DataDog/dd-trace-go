@@ -15,7 +15,7 @@ import (
 )
 
 func TestProductChange(t *testing.T) {
-	client := new(Client)
+	client := new(client)
 	client.Start(nil)
 	client.ProductChange(NamespaceProfilers, true,
 		[]Configuration{BoolConfig("delta_profiles", true)})

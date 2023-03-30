@@ -35,7 +35,7 @@ func TestClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
+	client := &client{
 		URL: server.URL,
 	}
 	client.Start(nil)
@@ -95,7 +95,7 @@ func TestMetrics(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		client := &Client{
+		client := &client{
 			URL: server.URL,
 		}
 		client.Start(nil)
@@ -135,7 +135,7 @@ func TestDisabledClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
+	client := &client{
 		URL: server.URL,
 	}
 	client.Start(nil)
@@ -151,7 +151,7 @@ func TestNonStartedClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
+	client := &client{
 		URL: server.URL,
 	}
 	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
@@ -203,7 +203,7 @@ func TestConcurrentClient(t *testing.T) {
 	defer server.Close()
 
 	go func() {
-		client := &Client{
+		client := &client{
 			URL: server.URL,
 		}
 		client.Start(nil)
@@ -276,7 +276,7 @@ func TestAgentlessRetry(t *testing.T) {
 	}))
 	brokenServer.Close()
 
-	client := &Client{
+	client := &client{
 		URL: brokenServer.URL,
 	}
 	client.Start(nil)
@@ -303,7 +303,7 @@ func TestCollectDependencies(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client := &Client{
+	client := &client{
 		URL: server.URL,
 	}
 	client.Start(nil)
