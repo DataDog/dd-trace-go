@@ -209,6 +209,16 @@ func genIPTestCases() []ipTestCase {
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
+			name:       "ip-multi-header-order-0",
+			headers:    map[string]string{"forwarded-for": ipv6Global, "cf-connecting-ip": ipv4Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+		},
+		{
+			name:       "ip-multi-header-order-1",
+			headers:    map[string]string{"forwarded-for": ipv6Global, "x-client-ip": ipv4Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+		},
+		{
 			name:       "ipv4-multi-header-0",
 			headers:    map[string]string{"x-forwarded-for": ipv4Private, "forwarded-for": ipv4Global},
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),

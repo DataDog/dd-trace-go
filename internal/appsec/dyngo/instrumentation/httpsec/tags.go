@@ -142,6 +142,7 @@ func ClientIP(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteA
 
 	// Walk IP-related headers
 	var foundIP instrumentation.NetaddrIP
+headersLoop:
 	for _, headerName := range monitoredHeaders {
 		if hasCanonicalMIMEHeaderKeys {
 			headerName = textproto.CanonicalMIMEHeaderKey(headerName)
@@ -171,7 +172,7 @@ func ClientIP(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteA
 			}
 			if isGlobal(ip) {
 				foundIP = ip
-				break
+				break headersLoop
 			}
 		}
 	}
