@@ -16,19 +16,13 @@ func startTelemetry(c *config) {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
 		return
 	}
-	telemetry.GlobalClient.ApplyOps(
-		telemetry.WithService(c.service),
-		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
-		// c.logToStdout is true if serverless is turned on
-		telemetry.WithURL(c.agentless, c.agentURL),
-	)
 	profileEnabled := func(t ProfileType) bool {
 		_, ok := c.types[t]
 		return ok
 	}
 	configs := []telemetry.Configuration{}
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers, true,
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers,
+		true,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},
