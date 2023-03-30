@@ -7,7 +7,8 @@ package opentelemetry
 
 import (
 	"context"
-
+	"encoding/binary"
+	"encoding/hex"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -17,15 +18,44 @@ import (
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
 type oteltracer struct {
-	cfg      oteltrace.TracerConfig
 	provider *TracerProvider
 	ddtrace.Tracer
+}
+type otelCtxToDDCtx struct {
+	oc oteltrace.SpanContext
+}
+
+func (c *otelCtxToDDCtx) TraceID() uint64 {
+	allTraceID := [16]byte(c.oc.TraceID())
+
+	return binary.BigEndian.Uint64(allTraceID[8:])
+}
+
+func (c *otelCtxToDDCtx) SpanID() uint64 {
+	sid := [8]byte(c.oc.SpanID())
+	return binary.BigEndian.Uint64(sid[:])
+}
+
+func (c *otelCtxToDDCtx) ForeachBaggageItem(handler func(k, v string) bool) {
+	return
+}
+
+func (c *otelCtxToDDCtx) TraceID128() string {
+	allTraceID := [16]byte(c.oc.TraceID())
+	return hex.EncodeToString(allTraceID[:])
+}
+
+func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
+	return c.oc.TraceID()
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	var ddopts []ddtrace.StartSpanOption
 	if !ssConfig.NewRoot() {
+		if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
+			ddopts = append(ddopts, tracer.ChildOf(&otelCtxToDDCtx{sctx}))
+		}
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
 		}
@@ -43,10 +73,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, opts...)
 	}
 	s := tracer.StartSpan(spanName, ddopts...)
-	return tracer.ContextWithSpan(ctx, s), oteltrace.Span(&span{
+	os := oteltrace.Span(&span{
 		Span:       s,
 		oteltracer: t,
 	})
+	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os
 }
 
 var _ oteltrace.Tracer = (*noopOteltracer)(nil)

@@ -14,6 +14,7 @@ import (
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -68,8 +69,13 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.Span.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
-	// todo(dianashevchenko): change ctx.TraceID() to extract 128 traceID from W3C interface
-	uint64ToByte(ctx.TraceID(), traceID[:])
+	w3cCtx, ok := ctx.(ddtrace.SpanContextW3C)
+	if !ok {
+		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
+		uint64ToByte(ctx.TraceID(), traceID[:])
+	} else {
+		traceID = w3cCtx.TraceID128Bytes()
+	}
 	uint64ToByte(ctx.SpanID(), spanID[:])
 	config := oteltrace.SpanContextConfig{
 		TraceID: traceID,
