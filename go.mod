@@ -217,13 +217,15 @@ require (
 )
 
 require (
+	github.com/DataDog/go-libddwaf v0.0.0-20230303104633-7281454880aa
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
-	github.com/DataDog/go-libddwaf v0.0.0-20230303104633-7281454880aa
 )
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 )
