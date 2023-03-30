@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,25 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+func TestHeaderTagsFromRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("header1", "val1")
+	r.Header.Set("header2", " val2 ")
+	r.Header.Set("header3", "v a l 3")
+	headerTags := map[string]string {"header1": "tag1", "header2": "tag2", "header3": "tag3"}
+	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, headerTags))
+	s.Finish()
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	for header, tag := range headerTags {
+		val := strings.TrimSpace(strings.Join(r.Header.Values(header), ","))
+		assert.Equal(t, val, spans[0].Tags()[tag])
+	}
+}
 
 func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
