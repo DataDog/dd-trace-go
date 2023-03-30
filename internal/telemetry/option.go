@@ -133,19 +133,10 @@ func (c *Client) fallbackOps() error {
 			c.Service = name
 		} else {
 			c.Service = filepath.Base(os.Args[0])
+
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
 	return nil
-}
-
-// SetAgentlessEndpoint is used for testing purposes to replace the real agentless
-// endpoint with a custom one
-func SetAgentlessEndpoint(endpoint string) string {
-	agentlessEndpointLock.Lock()
-	defer agentlessEndpointLock.Unlock()
-	prev := agentlessURL
-	agentlessURL = endpoint
-	return prev
 }
