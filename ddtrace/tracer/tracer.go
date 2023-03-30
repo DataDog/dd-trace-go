@@ -452,7 +452,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID
+		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
