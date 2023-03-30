@@ -252,7 +252,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority)
@@ -269,7 +269,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
@@ -292,9 +292,9 @@ func TestNewSpanContext(t *testing.T) {
 		sctx, ok := ctx.(*spanContext)
 		assert.True(ok)
 		span := StartSpan("some-span", ChildOf(ctx))
-		assert.EqualValues(sctx.traceID, 1)
-		assert.EqualValues(sctx.spanID, 2)
-		assert.EqualValues(*sctx.trace.priority, 3)
+		assert.EqualValues(uint64(1), sctx.traceID.Lower())
+		assert.EqualValues(2, sctx.spanID)
+		assert.EqualValues(3, *sctx.trace.priority)
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -336,7 +336,7 @@ func TestSpanContextParent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID, s.TraceID)
+			assert.Equal(ctx.traceID.Lower(), s.TraceID)
 			assert.Equal(ctx.spanID, s.SpanID)
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
@@ -457,4 +457,16 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
+}
+
+func TestTraceIDHexEncoded(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
+}
+
+func TestTraceIDEmpty(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.False(t, tid.Empty())
 }

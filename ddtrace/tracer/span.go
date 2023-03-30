@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -71,7 +72,7 @@ type span struct {
 	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
 	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
 	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
+	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
@@ -589,6 +590,7 @@ func (s *span) String() string {
 		fmt.Sprintf("Service: %s", s.Service),
 		fmt.Sprintf("Resource: %s", s.Resource),
 		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
 		fmt.Sprintf("SpanID: %d", s.SpanID),
 		fmt.Sprintf("ParentID: %d", s.ParentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
@@ -630,7 +632,14 @@ func (s *span) Format(f fmt.State, c rune) {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
-		fmt.Fprintf(f, `dd.trace_id="%d" dd.span_id="%d"`, s.TraceID, s.SpanID)
+		var traceID string
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
+			traceID = s.context.TraceID128()
+		} else {
+			traceID = fmt.Sprintf("%d", s.TraceID)
+		}
+		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
+		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
@@ -662,9 +671,10 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
-
 	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
 	keyTracerHostname = "_dd.tracer_hostname"
+	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
+	keyTraceID128 = "_dd.p.tid"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
