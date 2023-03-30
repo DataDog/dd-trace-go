@@ -108,7 +108,7 @@ func HeaderTagsFromRequest(req *http.Request, headersAsTags map[string]string) d
 		for h, v := range req.Header {
 			h = strings.ToLower(h)
 			if tag, ok := headersAsTags[h]; ok && !strings.HasPrefix(h, "x-datadog-") {
-				cfg.Tags[tag] = strings.Join(v, ",")
+				cfg.Tags[tag] = strings.TrimSpace(strings.Join(v, ","))
 			}
 		}
 	}
