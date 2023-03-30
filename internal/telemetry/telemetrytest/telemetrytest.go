@@ -33,8 +33,11 @@ func (c *MockClient) Start(configuration []telemetry.Configuration) {
 func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.AsmEnabled = (namespace == telemetry.NamespaceASM) && enabled
-	c.ProfilerEnabled = (namespace == telemetry.NamespaceProfilers) && enabled
+	if namespace == telemetry.NamespaceASM {
+		c.AsmEnabled = enabled
+	} else if namespace == telemetry.NamespaceProfilers {
+		c.ProfilerEnabled = enabled
+	}
 	c.Configuration = append(c.Configuration, configuration...)
 }
 
