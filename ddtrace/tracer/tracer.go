@@ -421,6 +421,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				// applyPPROFLabels() below.
 				pprofContext = ctx.span.pprofCtxActive
 			}
+		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
+			context = &spanContext{
+				traceID: p.TraceID128Bytes(),
+				spanID:  p.SpanID(),
+			}
 		}
 	}
 	if pprofContext == nil {

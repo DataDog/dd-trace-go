@@ -66,7 +66,6 @@ func (p *TracerProvider) Tracer(name string, options ...oteltrace.TracerOption) 
 	tracer.Start(p.ddopts...)
 	return &oteltracer{
 		Tracer:   internal.GetGlobalTracer(),
-		cfg:      oteltrace.NewTracerConfig(options...),
 		provider: p,
 	}
 }

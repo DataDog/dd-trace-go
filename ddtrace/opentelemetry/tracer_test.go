@@ -72,7 +72,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
 	var parentBytes oteltrace.TraceID
-	uint64ToByte(parent.Context().TraceID(), parentBytes[:])
+	// TraceID is big-endian so the LOW order bits are at the END of parentBytes
+	uint64ToByte(parent.Context().TraceID(), parentBytes[8:])
 	assert.Equal(parentBytes, child.SpanContext().TraceID())
 }
 
@@ -182,7 +183,7 @@ func TestShutdownOnce(t *testing.T) {
 	// from calling Start should be nil.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
-	assert.Equal(1, tp.stopped)
+	assert.Equal(uint32(1), tp.stopped)
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)
 }
