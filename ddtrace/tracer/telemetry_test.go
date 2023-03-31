@@ -34,7 +34,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
 	})
-	t.Run("tracer start", func(t *testing.T) {
+	t.Run("profiler start, tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 		profiler.Start()
@@ -44,5 +44,12 @@ func TestTelemetryEnabled(t *testing.T) {
 		)
 		defer Stop()
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+	})
+	t.Run("tracer stop", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		Start()
+		Stop()
+		assert.False(t, telemetryClient.AsmEnabled)
 	})
 }

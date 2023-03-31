@@ -75,3 +75,9 @@ func startTelemetry(c *config) {
 	}
 	telemetry.GlobalClient.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
 }
+
+// stopTelemetry is called when the tracer stops. Because appsec stops when the tracer stops,
+// we sent a ProductStop message for appsec.
+func stopTelemetry() {
+	telemetry.GlobalClient.ProductStop(telemetry.NamespaceASM)
+}
