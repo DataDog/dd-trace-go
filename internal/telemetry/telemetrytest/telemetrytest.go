@@ -27,7 +27,10 @@ func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration [
 	defer c.mu.Unlock()
 	c.Started = true
 	c.Configuration = append(c.Configuration, configuration...)
-	c.productChange(namespace, true, nil)
+	c.productChange(namespace, true)
+	if namespace == telemetry.NamespaceTracers {
+		c.productChange(telemetry.NamespaceASM, true)
+	}
 }
 
 // ProductStop signals a product has stopped and disables that product in the mock client.
@@ -38,11 +41,11 @@ func (c *MockClient) ProductStop(namespace telemetry.Namespace) {
 	if namespace == telemetry.NamespaceTracers {
 		return
 	}
-	c.productChange(namespace, false, nil)
+	c.productChange(namespace, false)
 }
 
 // ProductChange signals that a certain product is enabled or disabled for the mock client.
-func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
+func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) {
 	switch namespace {
 	case telemetry.NamespaceASM:
 		c.AsmEnabled = enabled
