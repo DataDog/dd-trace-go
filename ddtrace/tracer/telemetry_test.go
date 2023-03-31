@@ -29,6 +29,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer Stop()
 
 		assert.True(t, telemetryClient.Started)
+		assert.True(t, telemetryClient.AsmEnabled)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
