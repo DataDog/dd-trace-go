@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ec2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ecs"
@@ -114,9 +115,16 @@ var providerCatalog = []provider{
 	},
 }
 
+func isDisabled() bool {
+	return internal.BoolEnv("DD_DISABLE_CLIENT_HOSTNAME", false)
+}
+
 // Get returns the cached hostname for the tracer, empty if we haven't found one yet.
 // Spawning a go routine to update the hostname if it is empty or out of date
 func Get() string {
+	if isDisabled() {
+		return ""
+	}
 	now := time.Now()
 	var (
 		ch      string
