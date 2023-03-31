@@ -21,7 +21,7 @@ type MockClient struct {
 	AsmEnabled      bool
 }
 
-// Start starts and adds configuration data to the mock client.
+// ProductStart starts and adds configuration data to the mock client.
 func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -30,6 +30,8 @@ func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration [
 	c.productChange(namespace, true, nil)
 }
 
+// ProductStop signals a product has stopped and disables that product in the mock client.
+// ProductStop is NOOP for the tracer namespace, since the tracer is not considered a product.
 func (c *MockClient) ProductStop(namespace telemetry.Namespace) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

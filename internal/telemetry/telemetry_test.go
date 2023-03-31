@@ -42,17 +42,25 @@ func TestProductChange(t *testing.T) {
 	assert.Equal(t, productsPayload.Profiler.Enabled, true)
 }
 
-func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func()) (wait func() []string, cleanup func()) {
+// mockServer initializes a server that expects a strict amount of telemetry events. It saves these
+// events in a slice until the expected number of events are reached.
+// the `telemetry` argument accepts a function that should run some sequence of telemetry events.
+// the `expectedHits` argument specifies the number of telemetry events the server should expect.
+func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func(), exclude ...RequestType) (waitForEvents func() []string, cleanup func()) {
 	messages := make([]string, expectedHits)
 	hits := 0
 	done := make(chan struct{})
 	mu := sync.Mutex{}
+	excludeEvent := make(map[RequestType]struct{})
+	for _, event := range exclude {
+		excludeEvent[event] = struct{}{}
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
 			return
 		}
 		rType := RequestType(r.Header.Get("DD-Telemetry-Request-Type"))
-		if rType != RequestTypeAppClientConfigurationChange && rType != RequestTypeAppProductChange && rType != RequestTypeAppStarted && rType != RequestTypeDependenciesLoaded {
+		if _, ok := excludeEvent[rType]; ok {
 			return
 		}
 		mu.Lock()
@@ -61,7 +69,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry f
 			t.Fatalf("too many telemetry messages (expected %d)", expectedHits)
 		}
 		messages[hits] = string(rType)
-		hits += 1
+		hits++
 		if hits == expectedHits {
 			done <- struct{}{}
 		}
@@ -132,14 +140,14 @@ func TestProductStart(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			telemetryClient := new(client)
-			defer MockGlobalClient(telemetryClient)()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			wait, cleanup := mockServer(ctx, t, len(test.wantedMessages), test.telemetry)
+			telemetryClient := new(client)
+			defer MockGlobalClient(telemetryClient)()
+			excludedEvents := []RequestType{RequestTypeAppHeartbeat, RequestTypeGenerateMetrics, RequestTypeAppClosing}
+			waitForEvents, cleanup := mockServer(ctx, t, len(test.wantedMessages), test.telemetry, excludedEvents...)
 			defer cleanup()
-			messages := wait()
+			messages := waitForEvents()
 			for i := range messages {
 				assert.Equal(t, test.wantedMessages[i], messages[i])
 			}
