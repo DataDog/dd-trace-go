@@ -43,7 +43,7 @@ func TestProductChange(t *testing.T) {
 }
 
 // mockServer initializes a server that expects a strict amount of telemetry events. It saves these
-// events in a slice until the expected number of events are reached.
+// events in a slice until the expected number of events is reached.
 // the `telemetry` argument accepts a function that should run some sequence of telemetry events.
 // the `expectedHits` argument specifies the number of telemetry events the server should expect.
 func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func(), exclude ...RequestType) (waitForEvents func() []string, cleanup func()) {
