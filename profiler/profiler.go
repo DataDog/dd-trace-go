@@ -60,6 +60,7 @@ func Stop() {
 		activeProfiler = nil
 	}
 	mu.Unlock()
+	stopTelemetry()
 }
 
 // profiler collects and sends preset profiles to the Datadog API at a given frequency

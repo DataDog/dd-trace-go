@@ -22,26 +22,35 @@ type MockClient struct {
 }
 
 // Start starts and adds configuration data to the mock client.
-func (c *MockClient) Start(configuration []telemetry.Configuration) {
+func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration []telemetry.Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Started = true
 	c.Configuration = append(c.Configuration, configuration...)
+	c.productChange(namespace, true, nil)
+}
+
+func (c *MockClient) ProductStop(namespace telemetry.Namespace) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if namespace == telemetry.NamespaceTracers {
+		return
+	}
+	c.productChange(namespace, false, nil)
 }
 
 // ProductChange signals that a certain product is enabled or disabled for the mock client.
-func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool, configuration []telemetry.Configuration) {
 	switch namespace {
 	case telemetry.NamespaceASM:
 		c.AsmEnabled = enabled
 	case telemetry.NamespaceProfilers:
 		c.ProfilerEnabled = enabled
+	case telemetry.NamespaceTracers:
+		return
 	default:
 		panic("invalid product namespace")
 	}
-	c.Configuration = append(c.Configuration, configuration...)
 }
 
 // Gauge is NOOP for the mock client.

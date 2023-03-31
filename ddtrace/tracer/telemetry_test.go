@@ -12,23 +12,37 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
 func TestTelemetryEnabled(t *testing.T) {
-	telemetryClient := new(telemetrytest.MockClient)
-	defer telemetry.MockGlobalClient(telemetryClient)()
+	t.Run("tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
 
-	Start(
-		WithDebugStack(false),
-		WithService("test-serv"),
-		WithEnv("test-env"),
-		WithRuntimeMetrics(),
-	)
-	defer Stop()
+		Start(
+			WithDebugStack(false),
+			WithService("test-serv"),
+			WithEnv("test-env"),
+			WithRuntimeMetrics(),
+		)
+		defer Stop()
 
-	assert.True(t, telemetryClient.Started)
-	telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
-	telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
-	telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
-	telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+		assert.True(t, telemetryClient.Started)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
+		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+	})
+	t.Run("tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		profiler.Start()
+		defer profiler.Stop()
+		Start(
+			WithService("test-serv"),
+		)
+		defer Stop()
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+	})
 }

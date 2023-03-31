@@ -31,8 +31,8 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	Start(configuration []Configuration)
-	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
+	ProductStart(namespace Namespace, configuration []Configuration)
+	ProductStop(namespace Namespace)
 	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)
@@ -119,8 +119,10 @@ type client struct {
 	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
+	// productSync syncs profiling and tracer start/stop
+	productSync sync.Mutex
 	// mu guards all of the following fields
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// debug enables the debug flag for all requests, see
 	// https://dtdg.co/3bv2MMv.
@@ -153,12 +155,12 @@ func log(msg string, args ...interface{}) {
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *client) Start(configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *client) start(configuration []Configuration, namespace Namespace) {
 	if Disabled() {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.started {
 		log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
@@ -174,24 +176,22 @@ func (c *client) Start(configuration []Configuration) {
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
-	payload := &AppStarted{
-		Configuration: configuration,
-		Products: Products{
-			AppSec: ProductDetails{
-				Version: version.Tag,
-				Enabled: appsec.Enabled(),
-			},
-			// If the profiler starts, an app-product-change event will be sent
-			// to signal that the profiler is enabled. It is important that we
-			// send the profiler version, since product info is hashed on it's version
-			// when being stored by the instrumentation telemetry backend.
-			Profiler: ProductDetails{
-				Version: version.Tag,
-				Enabled: false,
-			},
+	productInfo := Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			Enabled: appsec.Enabled(),
 		},
 	}
-
+	productInfo.Profiler = ProductDetails{
+		Version: version.Tag,
+		// if the profiler is the one starting the telemetry client,
+		// then profiling is enabled
+		Enabled: namespace == NamespaceProfilers,
+	}
+	payload := &AppStarted{
+		Configuration: configuration,
+		Products:      productInfo,
+	}
 	appStarted := c.newRequest(RequestTypeAppStarted)
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
@@ -531,8 +531,8 @@ func (c *client) scheduleSubmit(r *Request) {
 // sending the app-heartbeat event and flushing any outstanding
 // telemetry messages
 func (c *client) backgroundHeartbeat() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if !c.started {
 		return
 	}

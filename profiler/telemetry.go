@@ -21,8 +21,7 @@ func startTelemetry(c *config) {
 		return ok
 	}
 	configs := []telemetry.Configuration{}
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers,
-		true,
+	telemetry.GlobalClient.ProductStart(telemetry.NamespaceProfilers,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},
@@ -44,4 +43,9 @@ func startTelemetry(c *config) {
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
 		}...))
+}
+
+// stopTelemetry notifies the global telemetry client that the profiler has stopped.
+func stopTelemetry() {
+	telemetry.GlobalClient.ProductStop(telemetry.NamespaceProfilers)
 }
