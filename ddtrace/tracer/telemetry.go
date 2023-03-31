@@ -14,6 +14,9 @@ import (
 // startTelemetry starts the global instrumentation telemetry client with tracer data
 // unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
 // env var.
+// If the telemetry client has already been started by the profiler, then
+// an app-product-change event is sent with appsec information and an app-client-configuration-change
+// event is sent with tracer config data.
 func startTelemetry(c *config) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
