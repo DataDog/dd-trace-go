@@ -38,8 +38,10 @@ func TestClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
+	client.mu.Lock()
 	client.start(nil, NamespaceTracers)
 	client.start(nil, NamespaceTracers) // test idempotence
+	client.mu.Unlock()
 	defer client.Stop()
 
 	timeout := time.After(30 * time.Second)

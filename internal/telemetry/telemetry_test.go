@@ -128,7 +128,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "tracer start, tracer stop, profiler start, profiler stop",
-			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-product-change"},
+			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-product-change", "app-product-change"},
 			telemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)

@@ -14,8 +14,8 @@ import "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 // on which product is starting, as well as whether an app-started event
 // has already been sent.
 func (c *client) ProductStart(namespace Namespace, configuration []Configuration) {
-	c.productSync.Lock()
-	defer c.productSync.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.started {
 		switch namespace {
 		case NamespaceProfilers:
@@ -34,8 +34,8 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 // ProductStop signals that a Product had stopped. For the tracer, we do nothing when it stops.
 // Ensure you have called ProductStart before calling ProductStop.
 func (c *client) ProductStop(namespace Namespace) {
-	c.productSync.Lock()
-	defer c.productSync.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if namespace == NamespaceTracers {
 		return
 	}
@@ -51,8 +51,6 @@ func (c *client) ProductStop(namespace Namespace) {
 // Product enablement messages do not apply to the tracer, since the tracer is not considered a product
 // by the instrumentation telemetry API.
 func (c *client) productChange(namespace Namespace, enabled bool, configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if !c.started {
 		log("attempted to send product change event, but telemetry client has not started")
 		return

@@ -119,8 +119,6 @@ type client struct {
 	// http.DefaultTransport and a 5 second timeout will be used.
 	Client *http.Client
 
-	// productSync syncs profiling and tracer start/stop
-	productSync sync.Mutex
 	// mu guards all of the following fields
 	mu sync.RWMutex
 
@@ -159,8 +157,6 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	if Disabled() {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.started {
 		log("attempted to start telemetry client when client has already started - ignoring attempt")
 		return
