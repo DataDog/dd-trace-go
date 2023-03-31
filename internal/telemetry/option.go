@@ -16,10 +16,10 @@ import (
 )
 
 // An Option is used to configure the telemetry client's settings
-type Option func(*Client)
+type Option func(*client)
 
 // ApplyOps sets various fields of the client
-func (c *Client) ApplyOps(opts ...Option) {
+func (c *client) ApplyOps(opts ...Option) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, opt := range opts {
@@ -29,35 +29,35 @@ func (c *Client) ApplyOps(opts ...Option) {
 
 // WithNamespace sets name as the telemetry client's namespace (tracer, profiler, appsec)
 func WithNamespace(name Namespace) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.Namespace = name
 	}
 }
 
 // WithEnv sets the app specific environment for the telemetry client
 func WithEnv(env string) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.Env = env
 	}
 }
 
 // WithService sets the app specific service for the telemetry client
 func WithService(service string) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.Service = service
 	}
 }
 
 // WithVersion sets the app specific version for the telemetry client
 func WithVersion(version string) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.Version = version
 	}
 }
 
 // WithHTTPClient specifies the http client for the telemetry client
 func WithHTTPClient(httpClient *http.Client) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.Client = httpClient
 	}
 }
@@ -68,7 +68,7 @@ func defaultAPIKey() string {
 
 // WithAPIKey sets the DD API KEY for the telemetry client
 func WithAPIKey(v string) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		client.APIKey = v
 	}
 }
@@ -84,7 +84,7 @@ func WithAPIKey(v string) Option {
 //
 // with an API key
 func WithURL(agentless bool, agentURL string) Option {
-	return func(client *Client) {
+	return func(client *client) {
 		if agentless {
 			client.URL = getAgentlessURL()
 		} else {
@@ -117,7 +117,7 @@ func configEnvFallback(key, def string) string {
 
 // fallbackOps populates missing fields of the client with environment variables
 // or default values.
-func (c *Client) fallbackOps() error {
+func (c *client) fallbackOps() error {
 	if c.Client == nil {
 		WithHTTPClient(defaultHTTPClient)(c)
 	}
@@ -133,19 +133,10 @@ func (c *Client) fallbackOps() error {
 			c.Service = name
 		} else {
 			c.Service = filepath.Base(os.Args[0])
+
 		}
 	}
 	c.Env = configEnvFallback("DD_ENV", c.Env)
 	c.Version = configEnvFallback("DD_VERSION", c.Version)
 	return nil
-}
-
-// SetAgentlessEndpoint is used for testing purposes to replace the real agentless
-// endpoint with a custom one
-func SetAgentlessEndpoint(endpoint string) string {
-	agentlessEndpointLock.Lock()
-	defer agentlessEndpointLock.Unlock()
-	prev := agentlessURL
-	agentlessURL = endpoint
-	return prev
 }
