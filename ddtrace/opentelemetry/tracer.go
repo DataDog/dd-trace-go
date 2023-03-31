@@ -22,43 +22,19 @@ type oteltracer struct {
 	provider *TracerProvider
 	ddtrace.Tracer
 }
-type otelCtxToDDCtx struct {
-	oc oteltrace.SpanContext
-}
-
-func (c *otelCtxToDDCtx) TraceID() uint64 {
-	allTraceID := [16]byte(c.oc.TraceID())
-
-	return binary.BigEndian.Uint64(allTraceID[8:])
-}
-
-func (c *otelCtxToDDCtx) SpanID() uint64 {
-	sid := [8]byte(c.oc.SpanID())
-	return binary.BigEndian.Uint64(sid[:])
-}
-
-func (c *otelCtxToDDCtx) ForeachBaggageItem(handler func(k, v string) bool) {
-	return
-}
-
-func (c *otelCtxToDDCtx) TraceID128() string {
-	allTraceID := [16]byte(c.oc.TraceID())
-	return hex.EncodeToString(allTraceID[:])
-}
-
-func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
-	return c.oc.TraceID()
-}
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	var ddopts []ddtrace.StartSpanOption
 	if !ssConfig.NewRoot() {
-		if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
-			ddopts = append(ddopts, tracer.ChildOf(&otelCtxToDDCtx{sctx}))
-		}
 		if s, ok := tracer.SpanFromContext(ctx); ok {
+			// if the span originates from the Datadog tracer,
+			// inherit given span context as a parent
 			ddopts = append(ddopts, tracer.ChildOf(s.Context()))
+		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
+			// if the span doesn't originate from the Datadog tracer,
+			// use SpanContextW3C implementation struct to pass span context information
+			ddopts = append(ddopts, tracer.ChildOf(&otelCtxToDDCtx{sctx}))
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
@@ -79,6 +55,31 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		oteltracer: t,
 	})
 	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os
+}
+
+type otelCtxToDDCtx struct {
+	oc oteltrace.SpanContext
+}
+
+func (c *otelCtxToDDCtx) TraceID() uint64 {
+	id := c.oc.TraceID()
+	return binary.BigEndian.Uint64(id[8:])
+}
+
+func (c *otelCtxToDDCtx) SpanID() uint64 {
+	id := c.oc.SpanID()
+	return binary.BigEndian.Uint64(id[:])
+}
+
+func (c *otelCtxToDDCtx) ForeachBaggageItem(handler func(k, v string) bool) {}
+
+func (c *otelCtxToDDCtx) TraceID128() string {
+	id := c.oc.TraceID()
+	return hex.EncodeToString(id[:])
+}
+
+func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
+	return c.oc.TraceID()
 }
 
 var _ oteltrace.Tracer = (*noopOteltracer)(nil)

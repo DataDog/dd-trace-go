@@ -42,7 +42,6 @@ func TestHttpDistributedTrace(t *testing.T) {
 	resp, err := c.Do(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close()) // Need to close body to cause otel span to end
-	require.NoError(t, err)
 	rootSpan.End()
 
 	p := <-payloads
