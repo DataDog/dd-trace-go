@@ -34,12 +34,14 @@ var (
 	cacheExpiration = 5 * time.Minute
 	m               sync.RWMutex
 	isRefreshing    atomic.Value
+	isDisabled      bool
 )
 
 const fargateName = "fargate"
 
 func init() {
 	isRefreshing.Store(false)
+	isDisabled = internal.BoolEnv("DD_DISABLE_CLIENT_HOSTNAME", false)
 }
 
 // getCached returns the cached hostname, cached provider and a bool indicating if the hostname has expired
@@ -115,14 +117,10 @@ var providerCatalog = []provider{
 	},
 }
 
-func isDisabled() bool {
-	return internal.BoolEnv("DD_DISABLE_CLIENT_HOSTNAME", false)
-}
-
 // Get returns the cached hostname for the tracer, empty if we haven't found one yet.
 // Spawning a go routine to update the hostname if it is empty or out of date
 func Get() string {
-	if isDisabled() {
+	if isDisabled {
 		return ""
 	}
 	now := time.Now()
