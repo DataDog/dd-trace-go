@@ -69,11 +69,11 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.Span.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
-	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); !ok {
+	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); ok {
+		traceID = w3cCtx.TraceID128Bytes()
+	} else {
 		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
 		uint64ToByte(ctx.TraceID(), traceID[:])
-	} else {
-		traceID = w3cCtx.TraceID128Bytes()
 	}
 	uint64ToByte(ctx.SpanID(), spanID[:])
 	config := oteltrace.SpanContextConfig{
