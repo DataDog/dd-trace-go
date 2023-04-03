@@ -46,8 +46,8 @@ func TestProductChange(t *testing.T) {
 // events in a slice until the expected number of events is reached.
 // the `telemetry` argument accepts a function that should run some sequence of telemetry events.
 // the `expectedHits` argument specifies the number of telemetry events the server should expect.
-func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func(), exclude ...RequestType) (waitForEvents func() []string, cleanup func()) {
-	messages := make([]string, expectedHits)
+func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func(), exclude ...RequestType) (waitForEvents func() []RequestType, cleanup func()) {
+	messages := make([]RequestType, expectedHits)
 	hits := 0
 	done := make(chan struct{})
 	mu := sync.Mutex{}
@@ -68,15 +68,14 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry f
 		if hits == expectedHits {
 			t.Fatalf("too many telemetry messages (expected %d)", expectedHits)
 		}
-		messages[hits] = string(rType)
-		hits++
-		if hits == expectedHits {
+		messages[hits] = rType
+		if hits++; hits == expectedHits {
 			done <- struct{}{}
 		}
 	}))
 	GlobalClient.ApplyOps(WithURL(false, server.URL))
 
-	return func() []string {
+	return func() []RequestType {
 			telemetry()
 			select {
 			case <-ctx.Done():
@@ -97,12 +96,12 @@ func TestProductStart(t *testing.T) {
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	tests := []struct {
 		name           string
-		wantedMessages []string
+		wantedMessages []RequestType
 		telemetry      func()
 	}{
 		{
 			name:           "tracer start, profiler start with config",
-			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-client-configuration-change", "app-product-change"},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			telemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
 				GlobalClient.ProductStart(NamespaceProfilers, []Configuration{{Name: "key", Value: "value"}})
@@ -110,7 +109,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "profiler start, tracer start, profiler stop",
-			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-client-configuration-change", "app-product-change", "app-product-change"},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
 			telemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
@@ -119,7 +118,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "profiler start, profiler stop, tracer start",
-			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-client-configuration-change", "app-product-change"},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			telemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)
@@ -128,7 +127,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "tracer start, tracer stop, profiler start, profiler stop",
-			wantedMessages: []string{"app-started", "app-dependencies-loaded", "app-product-change", "app-product-change", "app-product-change"},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
 			telemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)

@@ -120,7 +120,7 @@ type client struct {
 	Client *http.Client
 
 	// mu guards all of the following fields
-	mu sync.RWMutex
+	mu sync.Mutex
 
 	// debug enables the debug flag for all requests, see
 	// https://dtdg.co/3bv2MMv.
@@ -147,7 +147,8 @@ func log(msg string, args ...interface{}) {
 	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
-// Start registers that the app has begun running with the app-started event
+// Start registers that the app has begun running with the app-started event.
+// Should be called with c.mu locked
 // Start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
@@ -527,8 +528,8 @@ func (c *client) scheduleSubmit(r *Request) {
 // sending the app-heartbeat event and flushing any outstanding
 // telemetry messages
 func (c *client) backgroundHeartbeat() {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if !c.started {
 		return
 	}
