@@ -14,7 +14,6 @@ fi
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		-a|--appsec)
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			shift
 			;;
@@ -28,7 +27,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--all)
 			contrib=true
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			export INTEGRATION=true
 			shift

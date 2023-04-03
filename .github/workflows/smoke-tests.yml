@@ -31,6 +31,6 @@ jobs:
           go get -u $PACKAGES
           go mod tidy
       - name: Compile dd-trace-go
-        run: go build -tags appsec $PACKAGES
+        run: go build $PACKAGES
       - name: Test dd-trace-go
-        run: go test -tags appsec $PACKAGES
+        run: go test $PACKAGES
