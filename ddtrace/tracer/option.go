@@ -224,13 +224,12 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 
-	schemaVersionStr := os.Getenv(namingschema.SpanAttributeSchemaEnvVar)
+	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
 		namingschema.SetVersion(v)
 		c.spanAttributeSchemaVersion = int(v)
 	} else {
-		namingschema.SetDefaultVersion()
-		v := namingschema.GetVersion()
+		v := namingschema.SetDefaultVersion()
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}

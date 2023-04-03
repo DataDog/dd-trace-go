@@ -5,22 +5,19 @@
 
 package namingschema
 
-// VersionOverrideFunc overrides the logic for a version.
-type VersionOverrideFunc func() string
-
 // Option represents an option that can be passed to some naming schemas provided in this package.
 type Option func(cfg *config)
 
 type config struct {
-	versionOverrides map[Version]VersionOverrideFunc
+	versionOverrides map[Version]string
 }
 
 // WithVersionOverride allows to override the behavior with a custom logic for the given Version.
-func WithVersionOverride(v Version, f VersionOverrideFunc) Option {
+func WithVersionOverride(v Version, override string) Option {
 	return func(cfg *config) {
 		if cfg.versionOverrides == nil {
-			cfg.versionOverrides = make(map[Version]VersionOverrideFunc)
+			cfg.versionOverrides = make(map[Version]string)
 		}
-		cfg.versionOverrides[v] = f
+		cfg.versionOverrides[v] = override
 	}
 }

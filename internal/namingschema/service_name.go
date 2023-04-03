@@ -37,8 +37,8 @@ func (s *standardServiceNameSchema) V1() string {
 }
 
 func (s *standardServiceNameSchema) getName(v Version) string {
-	if f, ok := s.cfg.versionOverrides[v]; ok {
-		return f()
+	if val, ok := s.cfg.versionOverrides[v]; ok {
+		return val
 	}
 	if s.userOverride != "" {
 		return s.userOverride

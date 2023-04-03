@@ -16,6 +16,8 @@ import (
 
 func TestNewServiceNameSchema(t *testing.T) {
 	defaultServiceName := "default"
+	optOverrideV0 := namingschema.WithVersionOverride(namingschema.SchemaV0, "override-v0")
+	optOverrideV1 := namingschema.WithVersionOverride(namingschema.SchemaV1, "override-v1")
 
 	testCases := []struct {
 		name                string
@@ -23,7 +25,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 		serviceNameOverride string
 		ddService           string
 		opts                []namingschema.Option
-		expected            string
+		want                string
 	}{
 		{
 			name:                "schema v0",
@@ -31,7 +33,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "",
 			ddService:           "",
 			opts:                nil,
-			expected:            "default",
+			want:                "default",
 		},
 		{
 			name:                "schema v0 with DD_SERVICE",
@@ -39,7 +41,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "",
 			ddService:           "dd-service",
 			opts:                nil,
-			expected:            "dd-service",
+			want:                "dd-service",
 		},
 		{
 			name:                "schema v0 with service override",
@@ -47,19 +49,15 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "service-override",
 			ddService:           "dd-service",
 			opts:                nil,
-			expected:            "service-override",
+			want:                "service-override",
 		},
 		{
-			name:                "schema v0 logic override",
+			name:                "schema v0 version override",
 			schemaVersion:       namingschema.SchemaV0,
 			serviceNameOverride: "service-override",
 			ddService:           "dd-service",
-			opts: []namingschema.Option{
-				namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-					return "func-override"
-				}),
-			},
-			expected: "func-override",
+			opts:                []namingschema.Option{optOverrideV0},
+			want:                "override-v0",
 		},
 		{
 			name:                "schema v1",
@@ -67,7 +65,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "",
 			ddService:           "",
 			opts:                nil,
-			expected:            "default",
+			want:                "default",
 		},
 		{
 			name:                "schema v1 with DD_SERVICE",
@@ -75,7 +73,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "",
 			ddService:           "dd-service",
 			opts:                nil,
-			expected:            "dd-service",
+			want:                "dd-service",
 		},
 		{
 			name:                "schema v1 with service override",
@@ -83,19 +81,15 @@ func TestNewServiceNameSchema(t *testing.T) {
 			serviceNameOverride: "service-override",
 			ddService:           "dd-service",
 			opts:                nil,
-			expected:            "service-override",
+			want:                "service-override",
 		},
 		{
 			name:                "schema v1 logic override",
 			schemaVersion:       namingschema.SchemaV1,
 			serviceNameOverride: "service-override",
 			ddService:           "dd-service",
-			opts: []namingschema.Option{
-				namingschema.WithVersionOverride(namingschema.SchemaV1, func() string {
-					return "func-override"
-				}),
-			},
-			expected: "func-override",
+			opts:                []namingschema.Option{optOverrideV1},
+			want:                "override-v1",
 		},
 	}
 	for _, tc := range testCases {
@@ -111,7 +105,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 			}
 
 			s := namingschema.NewServiceNameSchema(tc.serviceNameOverride, defaultServiceName, tc.opts...)
-			assert.Equal(t, tc.expected, s.GetName())
+			assert.Equal(t, tc.want, s.GetName())
 		})
 	}
 }

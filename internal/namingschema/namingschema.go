@@ -18,11 +18,6 @@ import (
 	"sync"
 )
 
-const (
-	// SpanAttributeSchemaEnvVar is used to specify the span attribute schema (aka naming schema) version to use.
-	SpanAttributeSchemaEnvVar = "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"
-)
-
 // Version represents the available naming schema versions.
 type Version int
 
@@ -31,6 +26,10 @@ const (
 	SchemaV0 Version = iota
 	// SchemaV1 represents naming schema v1.
 	SchemaV1
+)
+
+const (
+	defaultSchemaVersion = SchemaV0
 )
 
 var (
@@ -65,8 +64,9 @@ func SetVersion(v Version) {
 }
 
 // SetDefaultVersion sets the default global naming schema version.
-func SetDefaultVersion() {
-	SetVersion(SchemaV0)
+func SetDefaultVersion() Version {
+	SetVersion(defaultSchemaVersion)
+	return defaultSchemaVersion
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
