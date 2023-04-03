@@ -965,7 +965,7 @@ func TestHostnameDisabled(t *testing.T) {
 		assert.True(t, c.enableHostnameDetection)
 	})
 	t.Run("DisableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_ENABLE_CLIENT_HOSTNAME", "false")
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
 		c := newConfig()
 		assert.False(t, c.enableHostnameDetection)
 	})
