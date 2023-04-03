@@ -25,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -150,6 +151,9 @@ type config struct {
 
 	// disableHostnameDetection specifies whether the tracer should disable hostname detection.
 	disableHostnameDetection bool
+
+	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	spanAttributeSchemaVersion int
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -219,6 +223,16 @@ func newConfig(opts ...StartOption) *config {
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
+
+	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
+		namingschema.SetVersion(v)
+		c.spanAttributeSchemaVersion = int(v)
+	} else {
+		v := namingschema.SetDefaultVersion()
+		c.spanAttributeSchemaVersion = int(v)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
 
 	for _, fn := range opts {
 		fn(c)
