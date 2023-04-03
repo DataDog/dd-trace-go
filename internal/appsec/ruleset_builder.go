@@ -6,9 +6,10 @@
 package appsec
 
 import (
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
+	"bytes"
 	"encoding/json"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 type (
@@ -94,7 +95,11 @@ func (e ruleDataEntry) Ident() string {
 
 // Default resets the ruleset to the default embedded security rules
 func (r_ *rulesetFragment) Default() {
-	if err := json.Unmarshal([]byte(staticRecommendedRules), r_); err != nil {
+	buf := new(bytes.Buffer)
+	if err := json.Compact(buf, []byte(staticRecommendedRules)); err != nil {
+		return
+	}
+	if err := json.Unmarshal(buf.Bytes(), r_); err != nil {
 		return
 	}
 }
