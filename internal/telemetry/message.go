@@ -52,6 +52,8 @@ const (
 	RequestTypeAppClientConfigurationChange RequestType = "app-client-configuration-change"
 	// RequestTypeAppProductChange is sent when products are enabled/disabled
 	RequestTypeAppProductChange RequestType = "app-product-change"
+	// RequestTypeAppIntegrationsChange is sent ....
+	RequestTypeAppIntegrationsChange RequestType = "app-integrations-change"
 )
 
 // Namespace describes an APM product to distinguish telemetry coming from
@@ -100,6 +102,22 @@ type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
+}
+
+// IntegrationsChange corresponds to the app-integrations-change requesty type
+type IntegrationsChange struct {
+	Integrations []Integration `json:"integrations"`
+}
+
+// Integration is an integration that is available within the app and applicable
+// to be traced
+type Integration struct {
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	Version     string `json:"version,omitempty"`
+	AutoEnabled bool   `json:"auto_enabled,omitempty"`
+	Compatible  bool   `json:"compatible,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event

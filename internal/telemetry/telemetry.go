@@ -44,3 +44,18 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 	}
 	c.scheduleSubmit(productReq)
 }
+
+func Integrations() []Integration {
+	contrib.Lock()
+	defer contrib.Unlock()
+	return contribPackages
+}
+
+func LoadIntegration(name string) {
+	if Disabled() {
+		return
+	}
+	contrib.Lock()
+	defer contrib.Unlock()
+	contribPackages = append(contribPackages, Integration{Name: name, Enabled: true})
+}
