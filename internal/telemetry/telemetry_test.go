@@ -44,9 +44,9 @@ func TestProductChange(t *testing.T) {
 
 // mockServer initializes a server that expects a strict amount of telemetry events. It saves these
 // events in a slice until the expected number of events is reached.
-// the `telemetry` argument accepts a function that should run some sequence of telemetry events.
+// the `genTelemetry` argument accepts a function that should generate the expected telemetry events via calls to the global client
 // the `expectedHits` argument specifies the number of telemetry events the server should expect.
-func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry func(), exclude ...RequestType) (waitForEvents func() []RequestType, cleanup func()) {
+func mockServer(ctx context.Context, t *testing.T, expectedHits int, genTelemetry func(), exclude ...RequestType) (waitForEvents func() []RequestType, cleanup func()) {
 	messages := make([]RequestType, expectedHits)
 	hits := 0
 	done := make(chan struct{})
@@ -76,7 +76,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, telemetry f
 	GlobalClient.ApplyOps(WithURL(false, server.URL))
 
 	return func() []RequestType {
-			telemetry()
+			genTelemetry()
 			select {
 			case <-ctx.Done():
 				t.Fatal("TestProductStart timed out")
@@ -97,12 +97,12 @@ func TestProductStart(t *testing.T) {
 	tests := []struct {
 		name           string
 		wantedMessages []RequestType
-		telemetry      func()
+		genTelemetry   func()
 	}{
 		{
 			name:           "tracer start, profiler start with config",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
-			telemetry: func() {
+			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
 				GlobalClient.ProductStart(NamespaceProfilers, []Configuration{{Name: "key", Value: "value"}})
 			},
@@ -110,7 +110,7 @@ func TestProductStart(t *testing.T) {
 		{
 			name:           "profiler start, tracer start, profiler stop",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
-			telemetry: func() {
+			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
 				GlobalClient.ProductStop(NamespaceProfilers)
@@ -119,7 +119,7 @@ func TestProductStart(t *testing.T) {
 		{
 			name:           "profiler start, profiler stop, tracer start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
-			telemetry: func() {
+			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)
 				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
@@ -128,7 +128,7 @@ func TestProductStart(t *testing.T) {
 		{
 			name:           "tracer start, tracer stop, profiler start, profiler stop",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
-			telemetry: func() {
+			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
@@ -144,7 +144,7 @@ func TestProductStart(t *testing.T) {
 			telemetryClient := new(client)
 			defer MockGlobalClient(telemetryClient)()
 			excludedEvents := []RequestType{RequestTypeAppHeartbeat, RequestTypeGenerateMetrics, RequestTypeAppClosing}
-			waitForEvents, cleanup := mockServer(ctx, t, len(test.wantedMessages), test.telemetry, excludedEvents...)
+			waitForEvents, cleanup := mockServer(ctx, t, len(test.wantedMessages), test.genTelemetry, excludedEvents...)
 			defer cleanup()
 			messages := waitForEvents()
 			for i := range messages {
