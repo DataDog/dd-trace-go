@@ -24,7 +24,11 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 			// Since appsec is integrated with the tracer, we sent an app-product-change
 			// update about appsec when the tracer starts. Any tracer-related configuration
 			// information can be passed along here as well.
-			c.productChange(NamespaceASM, appsec.Enabled(), configuration)
+			if appsec.Enabled() {
+				c.productChange(NamespaceASM, false, configuration)
+			}
+		case NamespaceASM:
+			c.productChange(NamespaceASM, true, configuration)
 		default:
 			log("unknown product namespace provided to ProductStart")
 		}
