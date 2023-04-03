@@ -146,7 +146,7 @@ func Start(opts ...StartOption) {
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
-	hostname.Get() // Prime the hostname cache
+	_ = t.hostname() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -635,8 +635,8 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 }
 
 func (t *tracer) hostname() string {
-	if !t.config.disableHostnameDetection {
-		return hostname.Get()
+	if !t.config.enableHostnameDetection {
+		return ""
 	}
-	return ""
+	return hostname.Get()
 }
