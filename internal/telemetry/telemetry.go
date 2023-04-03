@@ -15,7 +15,7 @@ package telemetry
 // starts, and another app-product-change message with enabled=false can be sent when the profiler stops.
 // Product enablement messages do not apply to the tracer, since the tracer is not considered a product
 // by the instrumentation telemetry API.
-func (c *Client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
+func (c *client) ProductChange(namespace Namespace, enabled bool, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {

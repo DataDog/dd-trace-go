@@ -4,6 +4,13 @@ set -ex
 
 source ./.gitlab/scripts/config-benchmarks.sh
 
+bench_loop_x10 () {
+  for i in {1..10}
+    do
+      go test -run=XXX -bench $BENCHMARK_TARGETS -benchmem -count 1 -benchtime 2s ./... | tee -a $1
+    done
+}
+
 CANDIDATE_BRANCH=$CI_COMMIT_REF_NAME
 CANDIDATE_COMMIT_SHA=$CI_COMMIT_SHA
 
@@ -14,7 +21,7 @@ git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$
 
 # Run benchmarks for candidate release
 cd "$CANDIDATE_SRC/ddtrace/tracer/"
-go test -run=XXX -bench $BENCHMARK_TARGETS -benchmem -count 10 -benchtime 2s ./... | tee "${ARTIFACTS_DIR}/pr_bench.txt"
+bench_loop_x10 "${ARTIFACTS_DIR}/pr_bench.txt"
 
 BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CANDIDATE_BRANCH" || :)
 
@@ -29,5 +36,5 @@ if [ ! -z "$BASELINE_BRANCH" ]; then
 
   # Run benchmarks for baseline release
   cd "$BASELINE_SRC/ddtrace/tracer/"
-  go test -run=XXX -bench $BENCHMARK_TARGETS -benchmem -count 10 -benchtime 2s ./... | tee "${ARTIFACTS_DIR}/main_bench.txt"
+  bench_loop_x10 "${ARTIFACTS_DIR}/main_bench.txt"
 fi
