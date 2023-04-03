@@ -108,8 +108,9 @@ func NewRuleset() *ruleset {
 	var f rulesetFragment
 	f.Default()
 	return &ruleset{
-		base:  f,
-		edits: map[string]rulesetFragment{},
+		Latest: f,
+		base:   f,
+		edits:  map[string]rulesetFragment{},
 	}
 }
 

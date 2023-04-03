@@ -9,6 +9,7 @@
 package appsec
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -375,7 +376,6 @@ func TestRemoteActivationScenarios(t *testing.T) {
 }
 
 func TestCapabilities(t *testing.T) {
-
 	rcCfg := remoteconfig.DefaultClientConfig()
 	for _, tc := range []struct {
 		name      string
@@ -419,6 +419,146 @@ func TestCapabilities(t *testing.T) {
 			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
 			for _, cap := range tc.expected {
 				require.Contains(t, activeAppSec.rc.Capabilities, cap)
+			}
+		})
+	}
+}
+
+func craftRCUpdates(fragments map[string]rulesetFragment) map[string]remoteconfig.ProductUpdate {
+	update := make(map[string]remoteconfig.ProductUpdate)
+	for path, frag := range fragments {
+		data, err := json.Marshal(frag)
+		if err != nil {
+			panic(err)
+		}
+		if len(frag.Rules) > 0 {
+			if _, ok := update[rc.ProductASMDD]; !ok {
+				update[rc.ProductASMDD] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASMDD][path] = data
+		} else if len(frag.Overrides) > 0 || len(frag.Exclusions) > 0 || len(frag.Actions) > 0 {
+			if _, ok := update[rc.ProductASM]; !ok {
+				update[rc.ProductASM] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASM][path] = data
+		} else if len(frag.RulesData) > 0 {
+			if _, ok := update[rc.ProductASMData]; !ok {
+				update[rc.ProductASMData] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASMData][path] = data
+		}
+	}
+
+	return update
+}
+
+func TestASMUmbrellaCallback(t *testing.T) {
+	baseRuleset := NewRuleset()
+	baseRuleset.Compile()
+
+	rules := rulesetFragment{
+		Rules: ruleEntries{
+			baseRuleset.base.Rules[0],
+		},
+	}
+
+	overrides1 := rulesetFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-941-290",
+				Enabled: false,
+			},
+			{
+				ID:      "crs-930-100",
+				Enabled: false,
+			},
+		},
+	}
+	overrides2 := rulesetFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-941-300",
+				Enabled: false,
+			},
+			{
+				Enabled: false,
+				ID:      "crs-921-160",
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name     string
+		expected *ruleset
+	}{
+		{
+			name:     "no-updates",
+			expected: baseRuleset,
+		},
+		{
+			name: "ASM/overrides/1-config",
+			expected: &ruleset{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesetFragment{
+					"overrides1/path": overrides1,
+				},
+			},
+		},
+		{
+			name: "ASM/overrides/2-configs",
+			expected: &ruleset{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesetFragment{
+					"overrides1/path": overrides1,
+					"overrides2/path": overrides2,
+				},
+			},
+		},
+		{
+			name: "ASM/exclusions",
+		},
+		{
+			name: "ASM_DD",
+			expected: &ruleset{
+				base:     rules,
+				basePath: "rules/path",
+				edits: map[string]rulesetFragment{
+					"rules/path": rules,
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+			defer Stop()
+			if !Enabled() {
+				t.Skip()
+			}
+
+			tc.expected.Compile()
+			// Craft and process the RC updates
+			updates := craftRCUpdates(tc.expected.edits)
+			activeAppSec.asmUmbrellaCallback(updates)
+			// Compare rulesets
+			require.Equal(t, len(tc.expected.Latest.Rules), len(activeAppSec.ruleset.Latest.Rules))
+			require.Equal(t, len(tc.expected.Latest.Overrides), len(activeAppSec.ruleset.Latest.Overrides))
+			require.Equal(t, len(tc.expected.Latest.Exclusions), len(activeAppSec.ruleset.Latest.Exclusions))
+			require.Equal(t, len(tc.expected.Latest.RulesData), len(activeAppSec.ruleset.Latest.RulesData))
+			require.Equal(t, len(tc.expected.Latest.Actions), len(activeAppSec.ruleset.Latest.Actions))
+
+			for _, r := range tc.expected.Latest.Rules {
+				require.Contains(t, activeAppSec.ruleset.Latest.Rules, r)
+			}
+			for _, o := range tc.expected.Latest.Overrides {
+				require.Contains(t, activeAppSec.ruleset.Latest.Overrides, o)
+			}
+			for _, e := range tc.expected.Latest.Exclusions {
+				require.Contains(t, activeAppSec.ruleset.Latest.Overrides, e)
+			}
+			for _, a := range tc.expected.Latest.Actions {
+				require.Contains(t, activeAppSec.ruleset.Latest.Actions, a)
 			}
 		})
 	}
