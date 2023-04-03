@@ -63,18 +63,22 @@ func (s *serverInboundOp) V1() string {
 	return fmt.Sprintf("%s.server.request", s.system)
 }
 
+// NewHTTPClientOp creates a new schema for HTTP client outbound operations.
 func NewHTTPClientOp(opts ...Option) *Schema {
 	return NewClientOutboundOp("http", opts...)
 }
 
+// NewHTTPServerOp creates a new schema for HTTP server inbound operations.
 func NewHTTPServerOp(opts ...Option) *Schema {
 	return NewServerInboundOp("http", opts...)
 }
 
+// NewGRPCClientOp creates a new schema for gRPC client outbound operations.
 func NewGRPCClientOp(opts ...Option) *Schema {
 	return NewClientOutboundOp("grpc", opts...)
 }
 
+// NewGRPCServerOp creates a new schema for gRPC server inbound operations.
 func NewGRPCServerOp(opts ...Option) *Schema {
 	return NewServerInboundOp("grpc", opts...)
 }

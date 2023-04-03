@@ -37,6 +37,7 @@ func (d *dbOutboundOp) V1() string {
 	return fmt.Sprintf("%s.query", d.system)
 }
 
+// NewElasticsearchOutboundOp creates a new schema for Elasticsearch (db) outbound operations.
 func NewElasticsearchOutboundOp(opts ...Option) *Schema {
 	return NewDBOutboundOp("elasticsearch", opts...)
 }
