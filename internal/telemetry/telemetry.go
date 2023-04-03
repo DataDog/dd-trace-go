@@ -9,10 +9,10 @@ package telemetry
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
-// ProductStart signals that the tracer or profiler has started with
-// some configuration information. The telemetry event emitted depends
-// on which product is starting, as well as whether an app-started event
-// has already been sent.
+// ProductStart signals that the product has started with some configuration
+// information. It will start the telemetry client if it is not already started. If it is
+// already started, it will send any necessary app-product-change events to
+// indicate whether the product is enabled.
 func (c *client) ProductStart(namespace Namespace, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
