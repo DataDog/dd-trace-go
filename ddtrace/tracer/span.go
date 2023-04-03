@@ -675,6 +675,8 @@ const (
 	keyTracerHostname = "_dd.tracer_hostname"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceID128 = "_dd.p.tid"
+	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
