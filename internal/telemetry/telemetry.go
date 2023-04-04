@@ -50,7 +50,7 @@ func (c *client) ProductStop(namespace Namespace) {
 	c.productChange(namespace, false)
 }
 
-// configChange enqeues an app-client-configuration-change event to be flushed.
+// configChange enqueues an app-client-configuration-change event to be flushed.
 // Must be called with c.mu locked.
 func (c *client) configChange(configuration []Configuration) {
 	if !c.started {
