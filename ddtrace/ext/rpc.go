@@ -28,8 +28,6 @@ const (
 
 // gRPC specific tags.
 const (
-	// GRPCStatusCode represents the numeric status code of the gRPC request.
-	GRPCStatusCode = "rpc.grpc.status_code"
 	// GRPCFullMethod represents the full name of the logical method being called following the
 	// format: /$package.$service/$method
 	GRPCFullMethod = "rpc.grpc.full_method"

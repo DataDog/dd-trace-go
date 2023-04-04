@@ -71,7 +71,7 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 	if errcode == codes.OK || cfg.nonErrorCodes[errcode] {
 		err = nil
 	}
-	span.SetTag(ext.GRPCStatusCode, errcode.String())
+	span.SetTag(tagCode, errcode.String())
 
 	// only allocate finishOptions if needed, and allocate the exact right size
 	var finishOptions []tracer.FinishOption

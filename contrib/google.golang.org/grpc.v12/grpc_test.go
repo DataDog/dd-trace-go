@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 )
 
 func TestClient(t *testing.T) {
@@ -67,7 +66,6 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
 	assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
-	assert.Equal(codes.OK.String(), clientSpan.Tag(ext.GRPCStatusCode))
 
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
@@ -76,7 +74,6 @@ func TestClient(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 	assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
 	assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
-	assert.Equal(codes.OK.String(), serverSpan.Tag(ext.GRPCStatusCode))
 }
 
 func TestChild(t *testing.T) {
@@ -125,7 +122,6 @@ func TestChild(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 	assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
 	assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
-	assert.Equal(codes.OK.String(), serverSpan.Tag(ext.GRPCStatusCode))
 }
 
 func TestPass(t *testing.T) {

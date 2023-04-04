@@ -9,6 +9,7 @@ package grpc
 const (
 	tagMethodName     = "grpc.method.name"
 	tagMethodKind     = "grpc.method.kind"
+	tagCode           = "grpc.code"
 	tagMetadataPrefix = "grpc.metadata."
 	tagRequest        = "grpc.request"
 )
