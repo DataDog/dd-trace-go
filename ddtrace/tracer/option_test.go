@@ -1010,5 +1010,19 @@ func TestWithHeaderTags(t *testing.T) {
 		tags := globalconfig.GetAllHeaderTags()
 		assert.Equal(1, len(tags))
 		assert.Equal(ext.HTTPRequestHeaders+".header2", tags["header2"])
+func TestHostnameDisabled(t *testing.T) {
+	t.Run("DisabledWithUDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+	t.Run("Default", func(t *testing.T) {
+		c := newConfig()
+		assert.True(t, c.enableHostnameDetection)
+	})
+	t.Run("DisableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
 	})
 }
