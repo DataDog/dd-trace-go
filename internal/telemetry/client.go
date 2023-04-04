@@ -28,10 +28,22 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+// Client buffers and sends telemetry messages to Datadog (possibly through an
+// agent).
+type Client interface {
+	Start(configuration []Configuration)
+	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
+	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
+	Count(namespace Namespace, name string, value float64, tags []string, common bool)
+	ApplyOps(opts ...Option)
+	Stop()
+}
+
 var (
 	// GlobalClient acts as a global telemetry client that the
 	// tracer, profiler, and appsec products will use
-	GlobalClient *Client
+	GlobalClient Client
+	globalClient sync.Mutex
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -70,18 +82,16 @@ func init() {
 	if err == nil {
 		hostname = h
 	}
-	GlobalClient = new(Client)
-	GlobalClient.fallbackOps()
+	GlobalClient = new(client)
 }
 
-// Client buffers and sends telemetry messages to Datadog (possibly through an
-// agent). Client.Start should be called before any other methods.
+// client implements Client interface. Client.Start should be called before any other methods.
 //
 // Client is safe to use from multiple goroutines concurrently. The client will
 // send all telemetry requests in the background, in order to avoid blocking the
 // caller since telemetry should not disrupt an application. Metrics are
 // aggregated by the Client.
-type Client struct {
+type client struct {
 	// URL for the Datadog agent or Datadog telemetry endpoint
 	URL string
 	// APIKey should be supplied if the endpoint is not a Datadog agent,
@@ -143,7 +153,7 @@ func log(msg string, args ...interface{}) {
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *Client) Start(configuration []Configuration) {
+func (c *client) Start(configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if Disabled() {
@@ -217,7 +227,7 @@ func (c *Client) Start(configuration []Configuration) {
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
 // messages will also be sent. No further messages will be sent until the client
 // is started again
-func (c *Client) Stop() {
+func (c *client) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
@@ -277,7 +287,7 @@ func metricKey(name string, tags []string) string {
 
 // Gauge sets the value for a gauge with the given name and tags. If the metric
 // is not language-specific, common should be set to true
-func (c *Client) Gauge(namespace Namespace, name string, value float64, tags []string, common bool) {
+func (c *client) Gauge(namespace Namespace, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
@@ -299,7 +309,7 @@ func (c *Client) Gauge(namespace Namespace, name string, value float64, tags []s
 
 // Count adds the value to a count with the given name and tags. If the metric
 // is not language-specific, common should be set to true
-func (c *Client) Count(namespace Namespace, name string, value float64, tags []string, common bool) {
+func (c *client) Count(namespace Namespace, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
@@ -322,7 +332,7 @@ func (c *Client) Count(namespace Namespace, name string, value float64, tags []s
 // flush sends any outstanding telemetry messages and aggregated metrics to be
 // sent to the backend. Requests are sent in the background. Should be called
 // with c.mu locked
-func (c *Client) flush() {
+func (c *client) flush() {
 	submissions := make([]*Request, 0, len(c.requests)+1)
 	if c.newMetrics {
 		c.newMetrics = false
@@ -385,7 +395,7 @@ func getOSVersion() string {
 
 // newRequests populates a request with the common fields shared by all requests
 // sent through this Client
-func (c *Client) newRequest(t RequestType) *Request {
+func (c *client) newRequest(t RequestType) *Request {
 	c.seqID++
 	body := &Body{
 		APIVersion:  "v2",
@@ -513,14 +523,14 @@ func (e errBadStatus) Error() string { return fmt.Sprintf("bad HTTP response sta
 
 // scheduleSubmit queues a request to be sent to the backend. Should be called
 // with c.mu locked
-func (c *Client) scheduleSubmit(r *Request) {
+func (c *client) scheduleSubmit(r *Request) {
 	c.requests = append(c.requests, r)
 }
 
 // backgroundHeartbeat is invoked at every heartbeat interval,
 // sending the app-heartbeat event and flushing any outstanding
 // telemetry messages
-func (c *Client) backgroundHeartbeat() {
+func (c *client) backgroundHeartbeat() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {

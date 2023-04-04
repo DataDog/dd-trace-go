@@ -146,7 +146,7 @@ func Start(opts ...StartOption) {
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
-	hostname.Get() // Prime the hostname cache
+	_ = t.hostname() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -452,7 +452,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID
+		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
@@ -487,7 +487,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	if context == nil || context.span == nil || context.span.Service != span.Service {
+	isRootSpan := context == nil || context.span == nil
+	if isRootSpan {
+		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	}
+	if isRootSpan || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
@@ -635,8 +639,8 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 }
 
 func (t *tracer) hostname() string {
-	if !t.config.disableHostnameDetection {
-		return hostname.Get()
+	if !t.config.enableHostnameDetection {
+		return ""
 	}
-	return ""
+	return hostname.Get()
 }
