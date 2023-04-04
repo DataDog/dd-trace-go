@@ -22,24 +22,28 @@ import (
 func TestProductChange(t *testing.T) {
 	client := new(client)
 	client.start(nil, NamespaceTracers)
-	client.productChange(NamespaceProfilers, true,
-		[]Configuration{BoolConfig("delta_profiles", true)})
-
+	client.productChange(NamespaceProfilers, true)
 	// should contain app-client-configuration-change and app-product-change
-	assert.Len(t, client.requests, 2)
+	assert.Len(t, client.requests, 1)
+	body := client.requests[0].Body
 
-	firstBody := client.requests[0].Body
-	assert.Equal(t, RequestTypeAppClientConfigurationChange, firstBody.RequestType)
+	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
+	var productsPayload *Products = body.Payload.(*Products)
+	assert.Equal(t, productsPayload.Profiler.Enabled, true)
+}
+
+func TestConfigChange(t *testing.T) {
+	client := new(client)
+	client.start(nil, NamespaceTracers)
+	client.configChange([]Configuration{BoolConfig("delta_profiles", true)})
+	assert.Len(t, client.requests, 1)
+
+	body := client.requests[0].Body
+	assert.Equal(t, RequestTypeAppClientConfigurationChange, body.RequestType)
 	var configPayload *ConfigurationChange = client.requests[0].Body.Payload.(*ConfigurationChange)
 	assert.Len(t, configPayload.Configuration, 1)
 
 	Check(t, configPayload.Configuration, "delta_profiles", true)
-
-	secondBody := client.requests[1].Body
-	assert.Equal(t, RequestTypeAppProductChange, secondBody.RequestType)
-
-	var productsPayload *Products = secondBody.Payload.(*Products)
-	assert.Equal(t, productsPayload.Profiler.Enabled, true)
 }
 
 // mockServer initializes a server that expects a strict amount of telemetry events. It saves these
@@ -109,7 +113,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "profiler start, tracer start, profiler stop",
-			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
@@ -118,7 +122,7 @@ func TestProductStart(t *testing.T) {
 		},
 		{
 			name:           "profiler start, profiler stop, tracer start",
-			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppClientConfigurationChange},
 			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStop(NamespaceProfilers)

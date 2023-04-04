@@ -17,18 +17,19 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.started {
+		c.configChange(configuration)
 		switch namespace {
 		case NamespaceProfilers:
-			c.productChange(NamespaceProfilers, true, configuration)
+			c.productChange(NamespaceProfilers, true)
 		case NamespaceTracers:
 			// Since appsec is integrated with the tracer, we sent an app-product-change
 			// update about appsec when the tracer starts. Any tracer-related configuration
 			// information can be passed along here as well.
 			if appsec.Enabled() {
-				c.productChange(NamespaceASM, false, configuration)
+				c.productChange(NamespaceASM, false)
 			}
 		case NamespaceASM:
-			c.productChange(NamespaceASM, true, configuration)
+			c.productChange(NamespaceASM, true)
 		default:
 			log("unknown product namespace provided to ProductStart")
 		}
@@ -46,18 +47,33 @@ func (c *client) ProductStop(namespace Namespace) {
 	if namespace == NamespaceTracers {
 		return
 	}
-	c.productChange(namespace, false, nil)
+	c.productChange(namespace, false)
+}
+
+// configChange enqeues an app-client-configuration-change event to be flushed.
+// Must be called with c.mu locked.
+func (c *client) configChange(configuration []Configuration) {
+	if !c.started {
+		log("attempted to send config change event, but telemetry client has not started")
+		return
+	}
+	if len(configuration) > 0 {
+		configChange := new(ConfigurationChange)
+		configChange.Configuration = configuration
+		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
+		configReq.Body.Payload = configChange
+		c.scheduleSubmit(configReq)
+	}
 }
 
 // productChange enqueues an app-product-change event that signals a product has been turned on/off.
-// The caller can also specify additional configuration changes (e.g. profiler config info), which
-// will be sent via the app-client-configuration-change event.
+// Must be called with c.mu locked.
 // The enabled field is meant to specify when a product has be enabled/disabled during
 // runtime. For example, an app-product-change message with enabled=true can be sent when the profiler
 // starts, and another app-product-change message with enabled=false can be sent when the profiler stops.
 // Product enablement messages do not apply to the tracer, since the tracer is not considered a product
 // by the instrumentation telemetry API.
-func (c *client) productChange(namespace Namespace, enabled bool, configuration []Configuration) {
+func (c *client) productChange(namespace Namespace, enabled bool) {
 	if !c.started {
 		log("attempted to send product change event, but telemetry client has not started")
 		return
@@ -75,12 +91,5 @@ func (c *client) productChange(namespace Namespace, enabled bool, configuration 
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	productReq.Body.Payload = products
 	c.newRequest(RequestTypeAppClientConfigurationChange)
-	if len(configuration) > 0 {
-		configChange := new(ConfigurationChange)
-		configChange.Configuration = configuration
-		configReq := c.newRequest(RequestTypeAppClientConfigurationChange)
-		configReq.Body.Payload = configChange
-		c.scheduleSubmit(configReq)
-	}
 	c.scheduleSubmit(productReq)
 }
