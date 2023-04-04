@@ -17,6 +17,8 @@ import (
 // If the telemetry client has already been started by the profiler, then
 // an app-product-change event is sent with appsec information and an app-client-configuration-change
 // event is sent with tracer config data.
+// Note that the tracer is not considered as a standalone product by telemetry so we cannot send
+// an app-product-change event for the tracer.
 func startTelemetry(c *config) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
