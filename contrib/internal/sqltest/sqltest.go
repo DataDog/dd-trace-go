@@ -31,7 +31,7 @@ func Prepare(tableName string) func() {
 	}
 	mysql.Exec(queryDrop)
 	mysql.Exec(queryCreate)
-	postgres, err := sql.Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	postgres, err := sql.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	defer postgres.Close()
 	if err != nil {
 		log.Fatal(err)
