@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
@@ -295,7 +294,12 @@ func TestAsyncProducer(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	createSpans := func(t *testing.T, opts ...Option) (producerSpan mocktracer.Span, consumerSpan mocktracer.Span) {
+	generateSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -349,105 +353,17 @@ func TestNamingSchema(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 2)
 
-		return spans[0], spans[1]
+		return spans
 	}
 
-	testCases := []struct {
-		name                      string
-		schemaVersion             namingschema.Version
-		serviceNameOverride       string
-		ddService                 string
-		wantProducerServiceName   string
-		wantConsumerServiceName   string
-		wantProducerOperationName string
-		wantConsumerOperationName string
-	}{
-		{
-			name:                      "schema v0",
-			schemaVersion:             namingschema.SchemaV0,
-			serviceNameOverride:       "",
-			ddService:                 "",
-			wantProducerServiceName:   "kafka",
-			wantConsumerServiceName:   "kafka",
-			wantProducerOperationName: "kafka.produce",
-			wantConsumerOperationName: "kafka.consume",
-		},
-		{
-			name:                      "schema v0 with DD_SERVICE",
-			schemaVersion:             namingschema.SchemaV0,
-			serviceNameOverride:       "",
-			ddService:                 "dd-service",
-			wantProducerServiceName:   "kafka",
-			wantConsumerServiceName:   "dd-service",
-			wantProducerOperationName: "kafka.produce",
-			wantConsumerOperationName: "kafka.consume",
-		},
-		{
-			name:                      "schema v0 with service override",
-			schemaVersion:             namingschema.SchemaV0,
-			serviceNameOverride:       "service-override",
-			ddService:                 "dd-service",
-			wantProducerServiceName:   "service-override",
-			wantConsumerServiceName:   "service-override",
-			wantProducerOperationName: "kafka.produce",
-			wantConsumerOperationName: "kafka.consume",
-		},
-		{
-			name:                      "schema v1",
-			schemaVersion:             namingschema.SchemaV1,
-			serviceNameOverride:       "",
-			ddService:                 "",
-			wantProducerServiceName:   "kafka",
-			wantConsumerServiceName:   "kafka",
-			wantProducerOperationName: "kafka.send",
-			wantConsumerOperationName: "kafka.process",
-		},
-		{
-			name:                      "schema v1 with DD_SERVICE",
-			schemaVersion:             namingschema.SchemaV1,
-			serviceNameOverride:       "",
-			ddService:                 "dd-service",
-			wantProducerServiceName:   "dd-service",
-			wantConsumerServiceName:   "dd-service",
-			wantProducerOperationName: "kafka.send",
-			wantConsumerOperationName: "kafka.process",
-		},
-		{
-			name:                      "schema v1 with service override",
-			schemaVersion:             namingschema.SchemaV1,
-			serviceNameOverride:       "service-override",
-			ddService:                 "dd-service",
-			wantProducerServiceName:   "service-override",
-			wantConsumerServiceName:   "service-override",
-			wantProducerOperationName: "kafka.send",
-			wantConsumerOperationName: "kafka.process",
-		},
+	// first is producer and second is consumer span
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"kafka", "kafka"},
+		WithDDService:            []string{"kafka", namingschematest.TestDDService},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(tc.schemaVersion)
-
-			if tc.ddService != "" {
-				svc := globalconfig.ServiceName()
-				defer globalconfig.SetServiceName(svc)
-				globalconfig.SetServiceName(tc.ddService)
-			}
-
-			var opts []Option
-			if tc.serviceNameOverride != "" {
-				opts = append(opts, WithServiceName(tc.serviceNameOverride))
-			}
-
-			producerSpan, consumerSpan := createSpans(t, opts...)
-			assert.Equal(t, tc.wantProducerServiceName, producerSpan.Tag(ext.ServiceName))
-			assert.Equal(t, tc.wantConsumerServiceName, consumerSpan.Tag(ext.ServiceName))
-
-			assert.Equal(t, tc.wantProducerOperationName, producerSpan.OperationName())
-			assert.Equal(t, tc.wantConsumerOperationName, consumerSpan.OperationName())
-		})
-	}
+	t.Run("service name", namingschematest.NewServiceNameTest(generateSpans, "kafka", wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewKafkaOpNameTest(generateSpans))
 }
 
 func newMockBroker(t *testing.T) *sarama.MockBroker {

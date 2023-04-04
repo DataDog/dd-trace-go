@@ -25,23 +25,11 @@ func defaults(cfg *config) {
 	cfg.producerServiceName = namingschema.NewServiceNameSchema(
 		"",
 		"kafka",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-			return "kafka"
-		}),
+		namingschema.WithVersionOverride(namingschema.SchemaV0, "kafka"),
 	).GetName()
 
-	cfg.consumerOperationName = namingschema.NewMessagingInboundOperationNameSchema(
-		namingschema.MessagingSystemKafka,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-			return "kafka.consume"
-		}),
-	).GetName()
-	cfg.producerOperationName = namingschema.NewMessagingOutboundOperationNameSchema(
-		namingschema.MessagingSystemKafka,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-			return "kafka.produce"
-		}),
-	).GetName()
+	cfg.consumerOperationName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerOperationName = namingschema.NewKafkaOutboundOp().GetName()
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
