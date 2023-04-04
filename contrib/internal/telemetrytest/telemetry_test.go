@@ -17,7 +17,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-func TestIntegration(t *testing.T) {
+// TestIntegrationInfo verifies that an integration leveraging instrumentation telemetry
+// sends the correct data to the telemetry client.
+func TestIntegrationInfo(t *testing.T) {
 	mux.NewRouter()
 	integrations := telemetry.Integrations()
 	assert.Len(t, integrations, 1)
@@ -42,8 +44,8 @@ func (p *contribPkg) hasImport(imp string) bool {
 	return false
 }
 
-// TestTelemetryInit verifies that the expected contrib packages leverage instrumentation telemetry
-func TestTelemetryInit(t *testing.T) {
+// TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
+func TestTelemetryEnabled(t *testing.T) {
 	tracked := map[string]struct{}{"mux": {}}
 	cmd := "go list -json=ImportPath,Name,Imports  ../.././..."
 	body, err := exec.Command("bash", "-c", cmd).Output()
