@@ -149,8 +149,8 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled bool
 
-	// disableHostnameDetection specifies whether the tracer should disable hostname detection.
-	disableHostnameDetection bool
+	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
+	enableHostnameDetection bool
 
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
@@ -223,6 +223,7 @@ func newConfig(opts ...StartOption) *config {
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
+	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -246,7 +247,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.agentURL.Scheme == "unix" {
 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.disableHostnameDetection = true
+		c.enableHostnameDetection = false
 		c.httpClient = udsClient(c.agentURL.Path)
 		c.agentURL = &url.URL{
 			Scheme: "http",
