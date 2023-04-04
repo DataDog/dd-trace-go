@@ -19,13 +19,14 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestServerStatsHandler(t *testing.T) {
 	assert := assert.New(t)
 
 	serviceName := "grpc-service"
-	statsHandler := NewServerStatsHandler(WithServiceName(serviceName))
+	statsHandler := NewServerStatsHandler(WithServiceName(serviceName), WithSpanOptions(tracer.Tag("foo", "bar")))
 	server, err := newServerStatsHandlerTestServer(statsHandler)
 	if err != nil {
 		t.Fatalf("failed to start test server: %s", err)
@@ -51,8 +52,9 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal(codes.OK.String(), tags["grpc.code"])
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
-	assert.Equal("/grpc.Fixture/Ping", tags[ext.RPCMethod])
+	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
 	assert.Equal(1, tags["_dd.measured"])
+	assert.Equal("bar", tags["foo"])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
@@ -124,6 +125,10 @@ func Start(opts ...StartOption) {
 	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
+		// TODO: instrumentation telemetry client won't get started
+		// if tracing is disabled, but we still want to capture this
+		// telemetry information. Will be fixed when the tracer and profiler
+		// share control of the global telemetry client.
 		return
 	}
 	internal.SetGlobalTracer(t)
@@ -138,6 +143,10 @@ func Start(opts ...StartOption) {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
+	// start instrumentation telemetry unless it is disabled through the
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	startTelemetry(t.config)
+	_ = t.hostname() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -443,7 +452,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID
+		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
@@ -478,7 +487,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	if context == nil || context.span == nil || context.span.Service != span.Service {
+	isRootSpan := context == nil || context.span == nil
+	if isRootSpan {
+		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	}
+	if isRootSpan || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
@@ -570,6 +583,7 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
+	stopTelemetry()
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -622,4 +636,11 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	ctx, task := rt.NewTask(ctx, taskName)
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
 	return ctx, task.End
+}
+
+func (t *tracer) hostname() string {
+	if !t.config.enableHostnameDetection {
+		return ""
+	}
+	return hostname.Get()
 }

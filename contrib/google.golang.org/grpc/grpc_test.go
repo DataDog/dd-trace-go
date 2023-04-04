@@ -104,10 +104,6 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
-			assert.Equal(clientSpan.Tag(ext.RPCSystem), "gRPC")
-			assert.Equal(clientSpan.Tag(ext.RPCService), "grpc")
-			assert.Equal(clientSpan.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
-
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
@@ -116,9 +112,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-			assert.Equal(serverSpan.Tag(ext.RPCSystem), "gRPC")
-			assert.Equal(serverSpan.Tag(ext.RPCService), "grpc")
-			assert.Equal(serverSpan.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
+
 		})
 	}
 }
@@ -185,7 +179,7 @@ func TestStreaming(t *testing.T) {
 					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
-				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.RPCMethod),
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
 
@@ -349,7 +343,7 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
+		rig, err := newRig(true, WithRequestTags(), WithMetadataTags())
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
@@ -364,6 +358,7 @@ func TestSpanTree(t *testing.T) {
 			//  -> server receive message -> server send message
 			//  -> client receive message
 			ctx, cancel := context.WithCancel(ctx)
+			ctx = metadata.AppendToOutgoingContext(ctx, "custom_metadata_key", "custom_metadata_value")
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(err)
 			err = stream.SendMsg(&FixtureRequest{Name: "break"})
@@ -408,6 +403,7 @@ func TestSpanTree(t *testing.T) {
 		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
 		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
 		var clientSpans, serverSpans int
+		var reqMsgFound bool
 		for _, ms := range messageSpans {
 			if ms.ParentID() == clientStreamSpan.SpanID() {
 				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
@@ -415,6 +411,13 @@ func TestSpanTree(t *testing.T) {
 			} else {
 				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
 				serverSpans++
+				if !reqMsgFound {
+					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
+					assert.Len(metadataTag, 1)
+					assert.Equal("custom_metadata_value", metadataTag[0])
+					reqMsgFound = true
+				}
 			}
 		}
 		assert.Equal(2, clientSpans)
@@ -725,6 +728,13 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("spanOpts", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.33), WithSpanOptions(tracer.AnalyticsRate(0.23)))
+	})
 }
 
 func TestIgnoredMethods(t *testing.T) {
@@ -914,6 +924,64 @@ func TestIgnoredMetadata(t *testing.T) {
 		rig.Close()
 		mt.Reset()
 	}
+}
+
+func TestSpanOpts(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		rig.Close()
+		mt.Reset()
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+
+		ctx, done := context.WithCancel(context.Background())
+		client := rig.client
+		stream, err := client.StreamPing(ctx)
+		assert.NoError(t, err)
+
+		err = stream.Send(&FixtureRequest{Name: "pass"})
+		assert.NoError(t, err)
+
+		resp, err := stream.Recv()
+		assert.NoError(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		assert.NoError(t, stream.CloseSend())
+		done() // close stream from client side
+		rig.Close()
+
+		waitForSpans(mt, 7, 5*time.Second)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 7)
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		mt.Reset()
+	})
 }
 
 func TestCustomTag(t *testing.T) {

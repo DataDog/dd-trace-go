@@ -66,19 +66,11 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 	assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
-	assert.Equal(clientSpan.Tag(ext.RPCSystem), "gRPC")
-	assert.Equal(clientSpan.Tag(ext.RPCService), "grpc")
-	assert.Equal(clientSpan.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
-
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 	assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 	assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-	assert.Equal(serverSpan.Tag(ext.RPCSystem), "gRPC")
-	assert.Equal(serverSpan.Tag(ext.RPCService), "grpc")
-	assert.Equal(serverSpan.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
-
 }
 
 func TestChild(t *testing.T) {
@@ -125,9 +117,6 @@ func TestChild(t *testing.T) {
 	assert.True(serverSpan.FinishTime().Sub(serverSpan.StartTime()) > 0)
 	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-	assert.Equal(serverSpan.Tag(ext.RPCSystem), "gRPC")
-	assert.Equal(serverSpan.Tag(ext.RPCService), "grpc")
-	assert.Equal(serverSpan.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
 }
 
 func TestPass(t *testing.T) {
@@ -158,9 +147,6 @@ func TestPass(t *testing.T) {
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 	assert.Equal(s.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(s.Tag(ext.SpanKind), ext.SpanKindServer)
-	assert.Equal(s.Tag(ext.RPCSystem), "gRPC")
-	assert.Equal(s.Tag(ext.RPCService), "grpc")
-	assert.Equal(s.Tag(ext.RPCMethod), "/grpc.Fixture/Ping")
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
@@ -309,4 +295,35 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("spanOpts", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.33), WithSpanOptions(tracer.AnalyticsRate(0.23)))
+	})
+}
+
+func TestSpanOpts(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRigWithOpts(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+	if err != nil {
+		t.Fatalf("error setting up rig: %s", err)
+	}
+	defer rig.Close()
+	client := rig.client
+
+	resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	assert.Nil(err)
+	assert.Equal(resp.Message, "passed")
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 2)
+
+	for _, s := range spans {
+		assert.Equal(s.Tags()["foo"], "bar")
+	}
 }

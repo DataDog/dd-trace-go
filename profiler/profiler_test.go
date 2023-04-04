@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"runtime/trace"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,7 +26,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
@@ -130,64 +128,38 @@ func TestStart(t *testing.T) {
 	})
 }
 
-func TestStartStopIdempotency(t *testing.T) {
-	t.Run("linear", func(t *testing.T) {
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
-		Start(WithProfileTypes())
+// TestStartWithoutStopReconfigures verifies that calling Start while the
+// profiler is already running will restart it with the given configuration.
+func TestStartWithoutStopReconfigures(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
 
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-	})
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
+	defer Stop()
 
-	t.Run("parallel", func(t *testing.T) {
-		var wg sync.WaitGroup
+	m := <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; !ok {
+		t.Errorf("did not see a heap profile")
+	}
 
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					// startup logging makes this test very slow
-					//
-					// Also, the CPU profile is really slow
-					// to stop (200ms/iter) and in general
-					// we don't need to actually run any
-					// profiles for this test
-					Start(WithLogStartup(false), WithProfileTypes())
-				}
-			}()
-		}
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 20; j++ {
-					Stop()
-				}
-			}()
-		}
-		wg.Wait()
-	})
+	// Disable the heap profile, verify that we're not sending it
+	err = Start(
+		WithHTTPClient(client),
+		WithProfileTypes(),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
 
-	t.Run("stop", func(t *testing.T) {
-		Start(WithPeriod(time.Minute))
-		defer Stop()
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		mu.Unlock()
-	})
+	m = <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; ok {
+		t.Errorf("unexpectedly saw a heap profile")
+	}
 }
 
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
@@ -306,6 +278,9 @@ type mockBackend struct {
 }
 
 func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
+		return
+	}
 	profile := profileMeta{
 		attachments: make(map[string][]byte),
 	}
@@ -442,62 +417,6 @@ func TestCorrectTags(t *testing.T) {
 	}
 }
 
-func TestTelemetryEnabled(t *testing.T) {
-	received := make(chan *telemetry.AppStarted, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
-			return
-		}
-		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
-			return
-		}
-
-		var body telemetry.Request
-		body.Payload = new(telemetry.AppStarted)
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			t.Errorf("bad body: %s", err)
-		}
-		select {
-		case received <- body.Payload.(*telemetry.AppStarted):
-		default:
-		}
-	}))
-	defer server.Close()
-
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "true")
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(
-			BlockProfile,
-			HeapProfile,
-			MutexProfile,
-		),
-		WithPeriod(10*time.Millisecond),
-		CPUDuration(1*time.Millisecond),
-	)
-	defer Stop()
-	payload := <-received
-	check := func(key string, expected interface{}) {
-		for _, kv := range payload.Configuration {
-			if kv.Name == key {
-				if kv.Value != expected {
-					t.Errorf("configuration %s: wanted %v, got %T", key, expected, kv.Value)
-				}
-				return
-			}
-		}
-		t.Errorf("missing configuration %s", key)
-	}
-
-	check("heap_profile_enabled", true)
-	check("block_profile_enabled", true)
-	check("goroutine_profile_enabled", false)
-	check("mutex_profile_enabled", true)
-	check("profile_period", time.Duration(10*time.Millisecond).String())
-	check("cpu_duration", time.Duration(1*time.Millisecond).String())
-}
-
 func TestImmediateProfile(t *testing.T) {
 	received := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -551,7 +470,7 @@ func TestExecutionTrace(t *testing.T) {
 		return false
 	}
 	seenTraces := 0
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
 		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
@@ -559,7 +478,7 @@ func TestExecutionTrace(t *testing.T) {
 		}
 	}
 	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 5 profile collections: one at
+	// second, we should see 2 traces after 4 profile collections: one at
 	// the start, and one 3 seconds later.
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)

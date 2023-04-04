@@ -109,15 +109,6 @@ const (
 
 	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
 	MessagingSystem = "messaging.system"
-
-	// RPCSystem identifies which rpc system created this span (gRPC, java_rmi, dotnet_wcf, apache_dubbo...)
-	RPCSystem = "rpc.system"
-
-	// RPCService is the full logical name of the service being called
-	RPCService = "rpc.service"
-
-	// RPCMethod is the logical name of the method from the RPC interface perspective
-	RPCMethod = "rpc.method"
 )
 
 // Messaging tags.

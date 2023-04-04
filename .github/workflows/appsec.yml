@@ -9,6 +9,12 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+  merge_group: # on merge groups touching appsec files
+    paths:
+      - '.github/workflows/appsec.yml'
+      - 'internal/appsec/**'
+      - 'appsec/**'
+      - 'contrib/**/appsec.go'
   push:
     branches: release-v*
 env:

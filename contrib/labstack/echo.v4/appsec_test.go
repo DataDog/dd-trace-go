@@ -554,54 +554,71 @@ func TestBlocking(t *testing.T) {
 	// Start and trace an HTTP server
 	e := echo.New()
 	e.Use(Middleware())
-	e.POST("/", func(c echo.Context) error {
-		return c.String(200, "Hello World!\n")
+	e.Any("/ip", func(c echo.Context) error {
+		return c.String(http.StatusOK, "Hello World!\n")
+	})
+	e.Any("/user", func(c echo.Context) error {
+		userID := c.Request().Header.Get("user-id")
+		if err := pappsec.SetUser(c.Request().Context(), userID); err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, "Hello, "+userID)
 	})
 	srv := httptest.NewServer(e)
 	defer srv.Close()
 
-	t.Run("block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	for _, tc := range []struct {
+		name        string
+		endpoint    string
+		headers     map[string]string
+		shouldBlock bool
+	}{
+		{
+			name:        "ip/block",
+			endpoint:    "/ip",
+			headers:     map[string]string{"x-forwarded-for": "1.2.3.4"},
+			shouldBlock: true,
+		},
+		{
+			name:     "ip/no-block",
+			endpoint: "/ip",
+			headers:  map[string]string{"x-forwarded-for": "1.2.3.5"},
+		},
+		{
+			name:        "user/block",
+			endpoint:    "/user",
+			headers:     map[string]string{"user-id": "blocked-user-1"},
+			shouldBlock: true,
+		},
+		{
+			name:     "user/no-block",
+			endpoint: "/user",
+			headers:  map[string]string{"user-id": "legit-user-1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL, nil)
-		if err != nil {
-			panic(err)
-		}
-		// Hardcoded IP header holding an IP that is blocked
-		req.Header.Set("x-forwarded-for", "1.2.3.4")
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-
-		// Check that the request was blocked
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.NotEqual(t, "Hello World!\n", string(b))
-		require.Equal(t, 403, res.StatusCode)
-	})
-
-	t.Run("no-block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		req1, err := http.NewRequest("POST", srv.URL, nil)
-		if err != nil {
-			panic(err)
-		}
-		req2, err := http.NewRequest("POST", srv.URL, nil)
-		if err != nil {
-			panic(err)
-		}
-		req2.Header.Set("x-forwarded-for", "1.2.3.5")
-
-		for _, r := range []*http.Request{req1, req2} {
-			res, err := srv.Client().Do(r)
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
 			require.NoError(t, err)
-			// Check that the request was not blocked
-			b, err := io.ReadAll(res.Body)
+			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
-			require.Equal(t, "Hello World!\n", string(b))
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
-		}
-	})
+			if tc.shouldBlock {
+				require.Equal(t, http.StatusForbidden, res.StatusCode)
+				require.Equal(t, spans[0].Tag("appsec.blocked"), true)
+			} else {
+				require.Equal(t, http.StatusOK, res.StatusCode)
+				require.NotContains(t, spans[0].Tags(), "appsec.blocked")
+			}
+			require.Equal(t, spans[0].Tag("http.status_code"), fmt.Sprintf("%d", res.StatusCode))
+
+		})
+	}
 }

@@ -8,6 +8,7 @@ package httpsec
 import (
 	"encoding/json"
 	"net"
+	"net/textproto"
 	"os"
 	"sort"
 	"strings"
@@ -20,10 +21,6 @@ import (
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
-
-	// multipleIPHeadersTag sets the multiple ip header tag used internally to tell the backend an error occurred when
-	// retrieving an HTTP request client IP.
-	multipleIPHeadersTag = "_dd.multiple-ip-headers"
 )
 
 var (
@@ -32,16 +29,18 @@ var (
 	}
 
 	// List of IP-related headers leveraged to retrieve the public client IP address.
+	// The order matters and is the one in which ClientIPTags will look up the HTTP headers.
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
+		"true-client-ip",
 		"x-client-ip",
 		"x-forwarded",
-		"x-cluster-client-ip",
 		"forwarded-for",
-		"forwarded",
-		"via",
-		"true-client-ip",
+		"x-cluster-client-ip",
+		"fastly-client-ip",
+		"cf-connecting-ip",
+		"cf-connecting-ip6",
 	}
 
 	// List of HTTP headers we collect and send.
@@ -52,6 +51,7 @@ var (
 		"content-encoding",
 		"content-language",
 		"forwarded",
+		"via",
 		"user-agent",
 		"accept",
 		"accept-encoding",
@@ -62,7 +62,6 @@ var (
 
 func init() {
 	// Required by sort.SearchStrings
-	sort.Strings(defaultIPHeaders[:])
 	sort.Strings(collectedHTTPHeaders[:])
 	clientIPHeaderCfg = os.Getenv(envClientIPHeader)
 }
@@ -107,43 +106,56 @@ func ippref(s string) *instrumentation.NetaddrIPPrefix {
 	return nil
 }
 
-// ClientIPTags generates the IP related span tags for a given request headers
-func ClientIPTags(hdrs map[string][]string, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
-	tags = map[string]string{}
+// ClientIPTags returns the resulting Datadog span tags `http.client_ip`
+// containing the client IP and `network.client.ip` containing the remote IP.
+// The tags are present only if a valid ip address has been returned by
+// ClientIP().
+func ClientIPTags(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (tags map[string]string, clientIP instrumentation.NetaddrIP) {
+	remoteIP, clientIP := ClientIP(hdrs, hasCanonicalMIMEHeaderKeys, remoteAddr)
+
+	remoteIPValid := remoteIP.IsValid()
+	clientIPValid := clientIP.IsValid()
+	if !remoteIPValid && !clientIPValid {
+		return nil, instrumentation.NetaddrIP{}
+	}
+
+	tags = make(map[string]string, 2)
+	if remoteIPValid {
+		tags["network.client.ip"] = remoteIP.String()
+	}
+	if clientIPValid {
+		tags[ext.HTTPClientIP] = clientIP.String()
+	}
+
+	return tags, clientIP
+}
+
+// ClientIP returns the first public IP address found in the given headers. If
+// none is present, it returns the first valid IP address present, possibly
+// being a local IP address. The remote address, when valid, is used as fallback
+// when no IP address has been found at all.
+func ClientIP(hdrs map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (remoteIP, clientIP instrumentation.NetaddrIP) {
 	monitoredHeaders := defaultIPHeaders
 	if clientIPHeaderCfg != "" {
 		monitoredHeaders = []string{clientIPHeaderCfg}
 	}
 
-	// Filter the list of headers
-	foundHeaders := map[string][]string{}
-	for k, v := range hdrs {
-		k = strings.ToLower(k)
-		if i := sort.SearchStrings(monitoredHeaders, k); i < len(monitoredHeaders) && monitoredHeaders[i] == k {
-			if len(v) >= 1 && v[0] != "" {
-				foundHeaders[k] = v
-			}
-		}
-	}
-
-	// If more than one IP header is present, report them and don't return any client ip
-	if len(foundHeaders) > 1 {
-		var headers []string
-		for header, ips := range foundHeaders {
-			tags[ext.HTTPRequestHeaders+"."+header] = strings.Join(ips, ",")
-			headers = append(headers, header)
-		}
-		sort.Strings(headers) // produce a predictable value
-		tags[multipleIPHeadersTag] = strings.Join(headers, ",")
-		return tags, instrumentation.NetaddrIP{}
-	}
-
 	// Walk IP-related headers
 	var foundIP instrumentation.NetaddrIP
-	for _, v := range foundHeaders {
-		// Handle multi-value headers by flattening the list of values
+	for _, headerName := range monitoredHeaders {
+		if hasCanonicalMIMEHeaderKeys {
+			headerName = textproto.CanonicalMIMEHeaderKey(headerName)
+		}
+
+		headerValues, exists := hdrs[headerName]
+		if !exists {
+			continue // this monitored header is not present
+		}
+
+		// Assuming a list of comma-separated IP addresses, split them and build
+		// the list of values to try to parse as IP addresses
 		var ips []string
-		for _, ip := range v {
+		for _, ip := range headerValues {
 			ips = append(ips, strings.Split(ip, ",")...)
 		}
 
@@ -165,10 +177,9 @@ func ClientIPTags(hdrs map[string][]string, remoteAddr string) (tags map[string]
 	}
 
 	// Decide which IP address is the client one by starting with the remote IP
-	remoteIP := parseIP(remoteAddr)
-	if remoteIP.IsValid() {
-		tags["network.client.ip"] = remoteIP.String()
-		clientIP = remoteIP
+	if ip := parseIP(remoteAddr); ip.IsValid() {
+		remoteIP = ip
+		clientIP = ip
 	}
 
 	// The IP address found in the headers supersedes a private remote IP address.
@@ -176,11 +187,7 @@ func ClientIPTags(hdrs map[string][]string, remoteAddr string) (tags map[string]
 		clientIP = foundIP
 	}
 
-	if clientIP.IsValid() {
-		tags[ext.HTTPClientIP] = clientIP.String()
-	}
-
-	return tags, clientIP
+	return remoteIP, clientIP
 }
 
 func parseIP(s string) instrumentation.NetaddrIP {
