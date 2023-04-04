@@ -15,12 +15,14 @@ import (
 
 var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]")
 
+// NormalizeHeaderTag accepts a string that contains a header and an optional mapped tag key,
+// e.g, "header" or "header:tag" where `tag` will be the name of the header tag.
+// If multiple colons exist in the input, it splits on the last colon.
+// e.g, "first:second:third" gets split into `header = "first:second` and `tag="third"`
 func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	header = strings.ToLower(strings.TrimSpace(headerAsTag))
-	// If colon was found, and it is neither the first nor last character in the string, split the tag from the last colon
 	if last := strings.LastIndex(header, ":"); last >= 0 {
 		header, tag = header[:last], header[last+1:]
-		// normalize the header to all lowercase, but leave the tag as it was specified
 		header, tag = strings.TrimSpace(header), strings.TrimSpace(tag)
 	} else {
 		tag = ext.HTTPRequestHeaders + "." + headerTagRegexp.ReplaceAllString(header, "_")
