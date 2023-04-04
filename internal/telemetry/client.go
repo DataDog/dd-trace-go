@@ -147,7 +147,7 @@ func log(msg string, args ...interface{}) {
 }
 
 // start registers that the app has begun running with the app-started event.
-// Should be called with c.mu locked
+// Must be called with c.mu locked
 // start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
@@ -326,7 +326,7 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 }
 
 // flush sends any outstanding telemetry messages and aggregated metrics to be
-// sent to the backend. Requests are sent in the background. Should be called
+// sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
 func (c *client) flush() {
 	submissions := make([]*Request, 0, len(c.requests)+1)

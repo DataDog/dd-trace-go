@@ -21,16 +21,16 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 		c.configChange(configuration)
 		switch namespace {
 		case NamespaceProfilers:
-			c.productChange(NamespaceProfilers, true)
+			c.productOn(NamespaceProfilers)
 		case NamespaceTracers:
 			// Since appsec is integrated with the tracer, we sent an app-product-change
 			// update about appsec when the tracer starts. Any tracer-related configuration
 			// information can be passed along here as well.
 			if appsec.Enabled() {
-				c.productChange(NamespaceASM, false)
+				c.productOn(NamespaceASM)
 			}
 		case NamespaceASM:
-			c.productChange(NamespaceASM, true)
+			c.productOn(NamespaceASM)
 		default:
 			log("unknown product namespace provided to ProductStart")
 		}
@@ -55,11 +55,10 @@ func (c *client) configChange(configuration []Configuration) {
 	}
 }
 
-// productChange enqueues an app-product-change event that signals a product has been turned on/off.
-// Must be called with c.mu locked.
-// A productChange message with enabled=true indicates that a certain product has been used for this application.
-// A productChange message with enabled=false indicates this product is inactive/disabled for an application.
-func (c *client) productChange(namespace Namespace, enabled bool) {
+// productOn enqueues an app-product-change event that signals a product has been turned on.
+// Must be called with c.mu locked. An app-product-change event with enabled=true indicates
+// that a certain product has been used for this application.
+func (c *client) productOn(namespace Namespace) {
 	if !c.started {
 		log("attempted to send product change event, but telemetry client has not started")
 		return
@@ -67,9 +66,9 @@ func (c *client) productChange(namespace Namespace, enabled bool) {
 	products := new(Products)
 	switch namespace {
 	case NamespaceProfilers:
-		products.Profiler = ProductDetails{Enabled: enabled}
+		products.Profiler = ProductDetails{Enabled: true}
 	case NamespaceASM:
-		products.AppSec = ProductDetails{Enabled: enabled}
+		products.AppSec = ProductDetails{Enabled: true}
 	default:
 		log("unknown product namespace, app-product-change telemetry event will not send")
 		return
