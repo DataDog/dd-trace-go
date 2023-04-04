@@ -147,7 +147,7 @@ func log(msg string, args ...interface{}) {
 }
 
 // start registers that the app has begun running with the app-started event.
-// Must be called with c.mu locked
+// Must be called with c.mu locked.
 // start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
