@@ -12,7 +12,7 @@ const (
 	// if applicable. Note this is the logical name of the service from the RPC interface perspective,
 	// which can be different from the name of any implementing class.
 	RPCService = "rpc.service"
-	// RPCMethod represents the name of the (logical) method being called. Note This is the logical name of the
+	// RPCMethod represents the name of the (logical) method being called. Note this is the logical name of the
 	// method from the RPC interface perspective, which can be different from the name of
 	// any implementing method/function.
 	RPCMethod = "rpc.method"
