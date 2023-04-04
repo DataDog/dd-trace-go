@@ -216,13 +216,15 @@ require (
 	sigs.k8s.io/yaml v1.1.0 // indirect
 )
 
-require github.com/DataDog/go-libddwaf v1.0.0
+require (
+	github.com/DataDog/go-libddwaf v1.0.0
+	github.com/jackc/pgx/v5 v5.3.1
+	github.com/microsoft/go-mssqldb v0.21.0
+)
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/jackc/pgx/v5 v5.3.1 // indirect
-	github.com/microsoft/go-mssqldb v0.21.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 )

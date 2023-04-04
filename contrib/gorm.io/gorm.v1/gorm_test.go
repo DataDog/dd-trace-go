@@ -20,8 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/jackc/pgx/v4/stdlib"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/stdlib"
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/stretchr/testify/assert"
 	mysqlgorm "gorm.io/driver/mysql"
