@@ -10,8 +10,8 @@ package appsec
 
 import _ "embed"
 
-// Static recommended AppSec rule 1.5.1
-// Source: https://github.com/DataDog/appsec-event-rules/blob/1.5.1/build/recommended.json
+// Static recommended AppSec rule 1.6.0
+// Source: https://github.com/DataDog/appsec-event-rules/blob/1.6.0/build/recommended.json
 //
 //go:embed rules.json
 var staticRecommendedRules string
