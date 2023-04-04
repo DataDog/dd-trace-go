@@ -31,7 +31,7 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	r.Header.Set("header2", " val2 ")
 	r.Header.Set("header3", "v a l 3")
 
-	headerTags := map[string]string {"header1": "tag1", "header2": "tag2", "header3": "tag3"}
+	headerTags := map[string]string{"header1": "tag1", "header2": "tag2", "header3": "tag3"}
 	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, headerTags))
 	s.Finish()
 	spans := mt.FinishedSpans()

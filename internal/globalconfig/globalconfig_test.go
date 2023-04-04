@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
 func TestHeaderTags(t *testing.T) {
 	ClearHeaderTags()
 	SetHeaderTag("header1", "tag1")

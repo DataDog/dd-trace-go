@@ -85,7 +85,7 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
 		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0{
+		if len(cfg.headersAsTags) > 0 {
 			cfg.headersAsTags = make(map[string]string)
 		}
 		for _, h := range headers {

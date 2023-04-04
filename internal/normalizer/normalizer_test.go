@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 package normalizer
 
 import (
@@ -56,7 +61,7 @@ func TestNormalizeHeaderTag(t *testing.T) {
 
 	t.Run("adjacent-special-chars", func(t *testing.T) {
 		_, tag := NormalizeHeaderTag("h**eader")
-		assert.Equal(t, ext.HTTPRequestHeaders + ".h__eader", tag)
+		assert.Equal(t, ext.HTTPRequestHeaders+".h__eader", tag)
 	})
 
 	t.Run("multi-colon", func(t *testing.T) {
@@ -69,7 +74,7 @@ func TestNormalizeHeaderTag(t *testing.T) {
 	t.Run("lowercase-ify header", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("HEADER")
 		assert.Equal(t, "header", header)
-		assert.Equal(t, ext.HTTPRequestHeaders + ".header", tag)
+		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
 
 	t.Run("lowercase-ify tag", func(t *testing.T) {

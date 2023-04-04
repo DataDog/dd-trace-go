@@ -127,7 +127,7 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 func WithHeaderTags(headers []string) RouterOption {
 	return func(cfg *routerConfig) {
 		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0{
+		if len(cfg.headersAsTags) > 0 {
 			cfg.headersAsTags = make(map[string]string)
 		}
 		for _, h := range headers {
