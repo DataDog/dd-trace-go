@@ -14,13 +14,16 @@ import (
 
 type (
 	// ruleset is used to build a full ruleset from a combination of ruleset fragments
+	// The `base` fragment is the default ruleset (either local or received through ASM_DD),
+	// and the `edits` fragments each represent a remote configuration update that affects the rules.
+	// `basePath` is either empty if the local base rules are used, or holds the path of the ASM_DD config.
 	ruleset struct {
 		Latest   rulesetFragment
 		base     rulesetFragment
 		basePath string
 		edits    map[string]rulesetFragment
 	}
-	// rulesetFragment can represent a full ruleset or a fragment of it
+	// rulesetFragment can represent a full ruleset or a fragment of it.
 	rulesetFragment struct {
 		Version    json.RawMessage      `json:"version,omitempty"`
 		Metadata   json.RawMessage      `json:"metadata,omitempty"`
@@ -34,64 +37,38 @@ type (
 	actionEntry struct {
 		ID   string `json:"id"`
 		Type string `json:"type"`
-		//TODO
+		//TODO (Francois): specify when handling user defined actions
 	}
-	actionEntries []actionEntry
 
 	ruleEntry struct {
 		ID           string                     `json:"id"`
 		Name         string                     `json:"name"`
 		Tags         map[string]json.RawMessage `json:"tags"`
-		Conditions   json.RawMessage            `json:"conditions"`
-		Transformers json.RawMessage            `json:"transformers"`
+		Conditions   interface{}                `json:"conditions"`
+		Transformers interface{}                `json:"transformers"`
 	}
-	ruleEntries []ruleEntry
 
 	rulesOverrideEntry struct {
-		Enabled bool   `json:"enabled"`
-		ID      string `json:"id"`
+		ID          string        `json:"id,omitempty"`
+		RulesTarget []interface{} `json:"rules_target,omitempty"`
+		Enabled     bool          `json:"enabled,omitempty"`
+		OnMatch     interface{}   `json:"on_match,omitempty"`
 	}
-	rulesOverrideEntries []rulesOverrideEntry
 
 	exclusionEntry struct {
-		//TODO
-		ID string `json:"id"`
+		ID          string        `json:"id"`
+		Conditions  []interface{} `json:"conditions,omitempty"`
+		Inputs      []interface{} `json:"inputs,omitempty"`
+		RulesTarget []interface{} `json:"rules_target,omitempty"`
 	}
-	exclusionEntries []exclusionEntry
 
 	ruleDataEntry struct {
 		rc.ASMDataRuleData
 	}
-	ruleDataEntries []ruleDataEntry
-	// ASMDataRulesData is a serializable array of rules data entries
 	rulesData struct {
-		RulesData ruleDataEntries `json:"rules_data"`
-	}
-
-	Identifier interface {
-		Ident() string
+		RulesData []ruleDataEntry `json:"rules_data"`
 	}
 )
-
-func (e ruleEntry) Ident() string {
-	return e.ID
-}
-
-func (e actionEntry) Ident() string {
-	return e.ID
-}
-
-func (e rulesOverrideEntry) Ident() string {
-	return e.ID
-}
-
-func (e exclusionEntry) Ident() string {
-	return e.ID
-}
-
-func (e ruleDataEntry) Ident() string {
-	return e.ID
-}
 
 // Default resets the ruleset to the default embedded security rules
 func (r_ *rulesetFragment) Default() {
@@ -104,6 +81,33 @@ func (r_ *rulesetFragment) Default() {
 	}
 }
 
+// validate checks that a rule override entry complies with the rule override RFC
+func (o *rulesOverrideEntry) validate() bool {
+	return len(o.ID) > 0 || o.RulesTarget != nil
+}
+
+// validate checks that an exclusion entry complies with the exclusion filter RFC
+func (e *exclusionEntry) validate() bool {
+	return len(e.Inputs) > 0 || len(e.Conditions) > 0 || len(e.RulesTarget) > 0
+}
+
+// validate checks that the ruleset fragment's fields comply with all relevant RFCs
+func (r_ *rulesetFragment) validate() bool {
+	for _, o := range r_.Overrides {
+		if !o.validate() {
+			return false
+		}
+	}
+	for _, e := range r_.Exclusions {
+		if !e.validate() {
+			return false
+		}
+	}
+	// TODO (Francois): validate more fields once we implement more RC capabilities
+	return true
+}
+
+// NewRuleset initializes and returns a new ruleset using the default security rules
 func NewRuleset() *ruleset {
 	var f rulesetFragment
 	f.Default()
@@ -114,43 +118,19 @@ func NewRuleset() *ruleset {
 	}
 }
 
-// Compile compiles the ruleset fragments together and returns the result as raw data
+// Compile compiles the ruleset fragments together and returns the compound result
 func (r *ruleset) Compile() rulesetFragment {
 	if r.base.Rules == nil || len(r.base.Rules) == 0 {
 		r.base.Default()
 	}
 	r.Latest = r.base
 
+	// Simply concatenate the content of each top level rule field as specified in our RFCs
 	for _, v := range r.edits {
-		r.Latest = mergeRulesetFragments(r.Latest, v)
+		r.Latest.Overrides = append(r.Latest.Overrides, v.Overrides...)
+		r.Latest.Exclusions = append(r.Latest.Exclusions, v.Exclusions...)
+		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 
 	return r.Latest
-}
-
-func mergeIdentifiers[T Identifier](i1, i2 []T) []T {
-	mergeMap := map[string]T{}
-	res := []T{}
-	for _, i := range i1 {
-		mergeMap[i.Ident()] = i
-	}
-	for _, i := range i2 {
-		mergeMap[i.Ident()] = i
-	}
-	for _, v := range mergeMap {
-		res = append(res, v)
-	}
-
-	return res
-}
-
-func mergeRulesetFragments(f1 rulesetFragment, f2 rulesetFragment) rulesetFragment {
-	merged := rulesetFragment{}
-	merged.Rules = mergeIdentifiers(f1.Rules, f2.Rules)
-	merged.Actions = mergeIdentifiers(f1.Actions, f2.Actions)
-	merged.Overrides = mergeIdentifiers(f1.Overrides, f2.Overrides)
-	merged.Exclusions = mergeIdentifiers(f1.Exclusions, f2.Exclusions)
-	merged.RulesData = mergeIdentifiers(f1.RulesData, f2.RulesData)
-
-	return merged
 }

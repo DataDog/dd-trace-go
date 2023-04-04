@@ -457,7 +457,7 @@ func TestASMUmbrellaCallback(t *testing.T) {
 	baseRuleset.Compile()
 
 	rules := rulesetFragment{
-		Rules: ruleEntries{
+		Rules: []ruleEntry{
 			baseRuleset.base.Rules[0],
 		},
 	}
@@ -488,16 +488,16 @@ func TestASMUmbrellaCallback(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		expected *ruleset
+		name    string
+		ruleset *ruleset
 	}{
 		{
-			name:     "no-updates",
-			expected: baseRuleset,
+			name:    "no-updates",
+			ruleset: baseRuleset,
 		},
 		{
 			name: "ASM/overrides/1-config",
-			expected: &ruleset{
+			ruleset: &ruleset{
 				base:     baseRuleset.base,
 				basePath: baseRuleset.basePath,
 				edits: map[string]rulesetFragment{
@@ -507,7 +507,7 @@ func TestASMUmbrellaCallback(t *testing.T) {
 		},
 		{
 			name: "ASM/overrides/2-configs",
-			expected: &ruleset{
+			ruleset: &ruleset{
 				base:     baseRuleset.base,
 				basePath: baseRuleset.basePath,
 				edits: map[string]rulesetFragment{
@@ -517,15 +517,23 @@ func TestASMUmbrellaCallback(t *testing.T) {
 			},
 		},
 		{
-			name: "ASM/exclusions",
-		},
-		{
-			name: "ASM_DD",
-			expected: &ruleset{
+			name: "ASM_DD/1-config",
+			ruleset: &ruleset{
 				base:     rules,
 				basePath: "rules/path",
 				edits: map[string]rulesetFragment{
 					"rules/path": rules,
+				},
+			},
+		},
+		{
+			name: "ASM_DD/2-configs (invalid)",
+			ruleset: &ruleset{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesetFragment{
+					"rules/path1": rules,
+					"rules/path2": rules,
 				},
 			},
 		},
@@ -537,29 +545,15 @@ func TestASMUmbrellaCallback(t *testing.T) {
 				t.Skip()
 			}
 
-			tc.expected.Compile()
+			tc.ruleset.Compile()
 			// Craft and process the RC updates
-			updates := craftRCUpdates(tc.expected.edits)
+			updates := craftRCUpdates(tc.ruleset.edits)
 			activeAppSec.asmUmbrellaCallback(updates)
 			// Compare rulesets
-			require.Equal(t, len(tc.expected.Latest.Rules), len(activeAppSec.ruleset.Latest.Rules))
-			require.Equal(t, len(tc.expected.Latest.Overrides), len(activeAppSec.ruleset.Latest.Overrides))
-			require.Equal(t, len(tc.expected.Latest.Exclusions), len(activeAppSec.ruleset.Latest.Exclusions))
-			require.Equal(t, len(tc.expected.Latest.RulesData), len(activeAppSec.ruleset.Latest.RulesData))
-			require.Equal(t, len(tc.expected.Latest.Actions), len(activeAppSec.ruleset.Latest.Actions))
-
-			for _, r := range tc.expected.Latest.Rules {
-				require.Contains(t, activeAppSec.ruleset.Latest.Rules, r)
-			}
-			for _, o := range tc.expected.Latest.Overrides {
-				require.Contains(t, activeAppSec.ruleset.Latest.Overrides, o)
-			}
-			for _, e := range tc.expected.Latest.Exclusions {
-				require.Contains(t, activeAppSec.ruleset.Latest.Overrides, e)
-			}
-			for _, a := range tc.expected.Latest.Actions {
-				require.Contains(t, activeAppSec.ruleset.Latest.Actions, a)
-			}
+			require.ElementsMatch(t, tc.ruleset.Latest.Rules, activeAppSec.ruleset.Latest.Rules)
+			require.ElementsMatch(t, tc.ruleset.Latest.Overrides, activeAppSec.ruleset.Latest.Overrides)
+			require.ElementsMatch(t, tc.ruleset.Latest.Exclusions, activeAppSec.ruleset.Latest.Exclusions)
+			require.ElementsMatch(t, tc.ruleset.Latest.Actions, activeAppSec.ruleset.Latest.Actions)
 		})
 	}
 }

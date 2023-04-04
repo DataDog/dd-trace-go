@@ -10,6 +10,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -72,12 +73,14 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		case rc.ProductASMFeatures:
 			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
 		case rc.ProductASMData:
-			rulesData, _ := a.mergeRulesData(u)
+			rulesData, status := a.mergeRulesData(u)
+			statuses = mergeMaps(statuses, status)
 			a.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
-			// TODO: track config name
 		case rc.ProductASMDD:
-			if len(u) > 1 {
-				//error
+			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
+				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
+				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, errors.New("More than one config received for ASM_DD")))
+				continue
 			}
 			for path, data := range u {
 				if data == nil {
@@ -86,23 +89,25 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 					break
 				}
 				if err := json.Unmarshal(data, &a.ruleset.base); err != nil {
-					// TODO: update status
+					statuses[path] = genApplyStatus(true, err)
 					break
 				}
 				a.ruleset.basePath = path
+				statuses[path] = genApplyStatus(true, nil)
 			}
 		case rc.ProductASM:
 			for path, data := range u {
+				statuses[path] = genApplyStatus(true, nil)
 				if data == nil {
 					delete(a.ruleset.edits, path)
 					continue
 				}
 				var f rulesetFragment
-				if err := json.Unmarshal(data, &f); err != nil {
-					// TODO: update status
-					continue
+				if err := json.Unmarshal(data, &f); err != nil || !f.validate() {
+					statuses[path] = genApplyStatus(true, err)
+				} else {
+					a.ruleset.edits[path] = f
 				}
-				a.ruleset.edits[path] = f
 			}
 		default:
 			log.Debug("appsec: remote config: unknown product %s. Ignoring", p)
@@ -110,19 +115,22 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 	}
 
 	finalRuleset := a.ruleset.Compile()
-	// TODO: remove marshalling, use for debugging purpose
 	data, err := json.Marshal(finalRuleset)
 	if err != nil {
-		// handle WAF error
-	}
-	if err := a.swapWAF(data); err != nil {
-		// TODO: error status for all products/all configs
+		log.Debug("appsec: Remote config: cannot marshal the compiled ruleset")
+		for k := range statuses {
+			statuses[k] = genApplyStatus(true, err)
+		}
+	} else if err := a.swapWAF(data); err != nil {
+		for k := range statuses {
+			statuses[k] = genApplyStatus(true, err)
+		}
 	}
 	return statuses
 }
 
 // asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
-// and starts/stops appsec accordingly. Used as a callback for the ASM_FEATURES remote config product.
+// and starts/stops appsec accordingly.
 func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	statuses := statusesFromUpdate(u, false, nil)
 	if l := len(u); l > 1 {
