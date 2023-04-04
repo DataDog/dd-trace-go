@@ -10,9 +10,10 @@ package telemetry
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 
 // ProductStart signals that the product has started with some configuration
-// information. It will start the telemetry client if it is not already started. If it is
-// already started, it will send any necessary app-product-change events to
-// indicate whether the product is enabled.
+// information. It will start the telemetry client if it is not already started.
+// If the client is already started, it will send any necessary app-product-change
+// events to indicate whether the product is enabled, as well as an app-client-configuration-change
+// event in case any new configuration information is available.
 func (c *client) ProductStart(namespace Namespace, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -56,11 +57,8 @@ func (c *client) configChange(configuration []Configuration) {
 
 // productChange enqueues an app-product-change event that signals a product has been turned on/off.
 // Must be called with c.mu locked.
-// The enabled field is meant to specify when a product has be enabled/disabled during
-// runtime. For example, an app-product-change message with enabled=true can be sent when the profiler
-// starts, and another app-product-change message with enabled=false can be sent when the profiler stops.
-// Product enablement messages do not apply to the tracer, since the tracer is not considered a product
-// by the instrumentation telemetry API.
+// A productChange message with enabled=true indicates that a certain product has been used for this application.
+// A productChange message with enabled=false indicates this product is inactive/disabled for an application.
 func (c *client) productChange(namespace Namespace, enabled bool) {
 	if !c.started {
 		log("attempted to send product change event, but telemetry client has not started")

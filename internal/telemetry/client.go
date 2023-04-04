@@ -146,9 +146,9 @@ func log(msg string, args ...interface{}) {
 	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
-// Start registers that the app has begun running with the app-started event.
+// start registers that the app has begun running with the app-started event.
 // Should be called with c.mu locked
-// Start also configures the telemetry client based on the following telemetry
+// start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
