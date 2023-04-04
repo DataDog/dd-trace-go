@@ -81,9 +81,9 @@ require (
 	gopkg.in/olivere/elastic.v3 v3.0.75
 	gopkg.in/olivere/elastic.v5 v5.0.84
 	gorm.io/driver/mysql v1.0.1
-	gorm.io/driver/postgres v1.5.0
-	gorm.io/driver/sqlserver v1.0.4
-	gorm.io/gorm v1.24.7-0.20230306060331-85eaf9eeda11
+	gorm.io/driver/postgres v1.4.6
+	gorm.io/driver/sqlserver v1.4.2
+	gorm.io/gorm v1.24.6
 	inet.af/netaddr v0.0.0-20220617031823-097006376321
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
@@ -118,7 +118,7 @@ require (
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-cmp v0.5.7 // indirect
@@ -220,7 +220,9 @@ require github.com/DataDog/go-libddwaf v1.0.0
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/jackc/pgx/v5 v5.3.1 // indirect
+	github.com/microsoft/go-mssqldb v0.21.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 )
