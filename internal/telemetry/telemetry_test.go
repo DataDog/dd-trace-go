@@ -19,10 +19,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestProductOn(t *testing.T) {
+func TestProductEnabled(t *testing.T) {
 	client := new(client)
 	client.start(nil, NamespaceTracers)
-	client.productOn(NamespaceProfilers)
+	client.productEnabled(NamespaceProfilers)
 	// should contain app-client-configuration-change and app-product-change
 	assert.Len(t, client.requests, 1)
 	body := client.requests[0].Body

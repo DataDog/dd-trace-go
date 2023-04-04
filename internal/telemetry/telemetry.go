@@ -21,16 +21,16 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 		c.configChange(configuration)
 		switch namespace {
 		case NamespaceProfilers:
-			c.productOn(NamespaceProfilers)
+			c.productEnabled(NamespaceProfilers)
 		case NamespaceTracers:
 			// Since appsec is integrated with the tracer, we sent an app-product-change
 			// update about appsec when the tracer starts. Any tracer-related configuration
 			// information can be passed along here as well.
 			if appsec.Enabled() {
-				c.productOn(NamespaceASM)
+				c.productEnabled(NamespaceASM)
 			}
 		case NamespaceASM:
-			c.productOn(NamespaceASM)
+			c.productEnabled(NamespaceASM)
 		default:
 			log("unknown product namespace provided to ProductStart")
 		}
@@ -58,7 +58,7 @@ func (c *client) configChange(configuration []Configuration) {
 // productOn enqueues an app-product-change event that signals a product has been turned on.
 // Must be called with c.mu locked. An app-product-change event with enabled=true indicates
 // that a certain product has been used for this application.
-func (c *client) productOn(namespace Namespace) {
+func (c *client) productEnabled(namespace Namespace) {
 	if !c.started {
 		log("attempted to send product change event, but telemetry client has not started")
 		return
