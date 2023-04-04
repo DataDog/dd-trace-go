@@ -32,7 +32,6 @@ import (
 // agent).
 type Client interface {
 	ProductStart(namespace Namespace, configuration []Configuration)
-	ProductStop(namespace Namespace)
 	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)

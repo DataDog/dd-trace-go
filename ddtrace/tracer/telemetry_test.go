@@ -46,11 +46,4 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer Stop()
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 	})
-	t.Run("tracer stop", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
-		Start()
-		Stop()
-		assert.False(t, telemetryClient.AsmEnabled)
-	})
 }

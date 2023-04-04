@@ -48,11 +48,4 @@ func TestTelemetryEnabled(t *testing.T) {
 		assert.True(t, telemetryClient.ProfilerEnabled)
 		telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
 	})
-	t.Run("profiler stop", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
-		Start()
-		Stop()
-		assert.False(t, telemetryClient.ProfilerEnabled)
-	})
 }

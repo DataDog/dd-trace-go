@@ -48,8 +48,3 @@ func startTelemetry(c *config) {
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
 		}...))
 }
-
-// stopTelemetry notifies the global telemetry client that the profiler has stopped.
-func stopTelemetry() {
-	telemetry.GlobalClient.ProductStop(telemetry.NamespaceProfilers)
-}

@@ -104,7 +104,7 @@ func TestProductStart(t *testing.T) {
 		genTelemetry   func()
 	}{
 		{
-			name:           "tracer start, profiler start with config",
+			name:           "tracer start, profiler start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceTracers, nil)
@@ -112,31 +112,11 @@ func TestProductStart(t *testing.T) {
 			},
 		},
 		{
-			name:           "profiler start, tracer start, profiler stop",
-			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
+			name:           "profiler start, tracer start",
+			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange},
 			genTelemetry: func() {
 				GlobalClient.ProductStart(NamespaceProfilers, nil)
 				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
-				GlobalClient.ProductStop(NamespaceProfilers)
-			},
-		},
-		{
-			name:           "profiler start, profiler stop, tracer start",
-			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppClientConfigurationChange},
-			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceProfilers, nil)
-				GlobalClient.ProductStop(NamespaceProfilers)
-				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
-			},
-		},
-		{
-			name:           "tracer start, tracer stop, profiler start, profiler stop",
-			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppProductChange, RequestTypeAppProductChange, RequestTypeAppProductChange},
-			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceTracers, nil)
-				GlobalClient.ProductStop(NamespaceProfilers)
-				GlobalClient.ProductStart(NamespaceProfilers, nil)
-				GlobalClient.ProductStop(NamespaceProfilers)
 			},
 		},
 	}

@@ -38,18 +38,6 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 	}
 }
 
-// ProductStop signals that a Product had stopped. For the tracer, we do nothing when it stops since
-// it is not considered a Product by the telemetry API.
-// Ensure you have called ProductStart before calling ProductStop.
-func (c *client) ProductStop(namespace Namespace) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if namespace == NamespaceTracers {
-		return
-	}
-	c.productChange(namespace, false)
-}
-
 // configChange enqueues an app-client-configuration-change event to be flushed.
 // Must be called with c.mu locked.
 func (c *client) configChange(configuration []Configuration) {
