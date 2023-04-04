@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 func TestClient(t *testing.T) {
@@ -61,6 +62,7 @@ func TestClient(t *testing.T) {
 
 	assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
 	assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
+	assert.Equal(clientSpan.Tag(tagCode), codes.OK.String())
 	assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 	assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)

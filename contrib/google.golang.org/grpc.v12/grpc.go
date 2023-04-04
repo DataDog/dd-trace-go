@@ -115,6 +115,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 				span.SetTag(ext.TargetPort, port)
 			}
 		}
+		span.SetTag(tagCode, grpc.Code(err).String())
 		span.Finish(tracer.WithError(err))
 		return err
 	}
