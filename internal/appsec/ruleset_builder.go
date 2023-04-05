@@ -62,10 +62,8 @@ type (
 		RulesTarget []interface{} `json:"rules_target,omitempty"`
 	}
 
-	ruleDataEntry struct {
-		rc.ASMDataRuleData
-	}
-	rulesData struct {
+	ruleDataEntry rc.ASMDataRuleData
+	rulesData     struct {
 		RulesData []ruleDataEntry `json:"rules_data"`
 	}
 )

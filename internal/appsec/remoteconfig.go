@@ -73,7 +73,7 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		case rc.ProductASMFeatures:
 			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
 		case rc.ProductASMData:
-			rulesData, status := a.mergeRulesData(u)
+			rulesData, status := mergeRulesData(u)
 			statuses = mergeMaps(statuses, status)
 			a.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
 		case rc.ProductASMDD:
@@ -170,7 +170,7 @@ func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc
 	return statuses
 }
 
-func (a *appsec) mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]rc.ApplyStatus) {
+func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]rc.ApplyStatus) {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
 	allRulesData := make(map[string]map[string]ruleDataEntry)

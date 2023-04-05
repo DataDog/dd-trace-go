@@ -108,11 +108,6 @@ func TestASMFeaturesCallback(t *testing.T) {
 	})
 }
 
-// We use the below placeholders to replace a real WAF handle for testing
-type chanUpdater struct {
-	resChan chan []rc.ASMDataRuleData
-}
-
 func rulesDataToMap(rulesData []rc.ASMDataRuleData) map[string]int64 {
 	res := make(map[string]int64)
 	for _, data := range rulesData {
@@ -124,17 +119,11 @@ func rulesDataToMap(rulesData []rc.ASMDataRuleData) map[string]int64 {
 	return res
 }
 
-func (u *chanUpdater) UpdateRulesData(rulesData []rc.ASMDataRuleData) error {
-	u.resChan <- rulesData
-	return nil
-}
-
-/*
-func TestASMDataCallback(t *testing.T) {
+func TestMergeRulesData(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		update   remoteconfig.ProductUpdate
-		expected []rc.ASMDataRuleData
+		expected []ruleDataEntry
 		statuses map[string]rc.ApplyStatus
 	}{
 		{
@@ -154,7 +143,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: []ruleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
 			}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
@@ -164,7 +153,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: []ruleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
 				{Expiration: 3494138441, Value: "user2"},
 			}}},
@@ -175,7 +164,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{
+			expected: []ruleDataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138444, Value: "user3"},
 				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
@@ -190,7 +179,7 @@ func TestASMDataCallback(t *testing.T) {
 				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{
+			expected: []ruleDataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138445, Value: "user3"},
 				}},
@@ -206,15 +195,9 @@ func TestASMDataCallback(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			u := chanUpdater{resChan: make(chan []rc.ASMDataRuleData, 4096)}
-			handle := wafHandleWrapper{&u}
-			defer close(u.resChan)
-			statuses := handle.asmDataCallback(tc.update)
-			// Check results by rule data ID since ordering is not guaranteed
+			merged, statuses := mergeRulesData(tc.update)
 			if tc.expected != nil {
-				res := rulesDataToMap(<-u.resChan)
-				exp := rulesDataToMap(tc.expected)
-				require.Equal(t, exp, res)
+				require.ElementsMatch(t, tc.expected, merged)
 			}
 			for k := range statuses {
 				require.Equal(t, tc.statuses[k].State, statuses[k].State)
@@ -227,10 +210,9 @@ func TestASMDataCallback(t *testing.T) {
 		})
 	}
 }
-*/
 
-// This test makes sure that the merging behavior follows what is described in the ASM blocking RFC
-func TestRuleDataMerging(t *testing.T) {
+// This test makes sure that the merging behavior for rule data entries follows what is described in the ASM blocking RFC
+func TestMergeRulesDataEntries(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		in1  []rc.ASMDataRuleDataEntry
@@ -326,9 +308,7 @@ func TestRuleDataMerging(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := mergeRulesDataEntries(tc.in1, tc.in2)
-			resMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: res}})
-			expMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: tc.out}})
-			require.Equal(t, expMap, resMap)
+			require.ElementsMatch(t, tc.out, res)
 		})
 	}
 
