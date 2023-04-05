@@ -96,7 +96,6 @@ func FooHandler(w http.ResponseWriter, _ *http.Request) {
 		json.Marshal(dummyData.marshal)
 	}
 	fmt.Fprintf(w, "foo (%s)\n", time.Since(start))
-	log.Printf("foo (%s)", time.Since(start))
 }
 
 // BarHandler does half the amount of dummy work per request as FooHandler.
@@ -106,5 +105,4 @@ func BarHandler(w http.ResponseWriter, _ *http.Request) {
 		json.Marshal(dummyData.marshal)
 	}
 	fmt.Fprintf(w, "bar (%s)\n", time.Since(start))
-	log.Printf("bar (%s)", time.Since(start))
 }
