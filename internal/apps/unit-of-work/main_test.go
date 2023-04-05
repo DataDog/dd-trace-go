@@ -137,6 +137,8 @@ func (a *App) Start(t *testing.T) {
 	if a.HostPort == "" {
 		a.HostPort = "localhost:8080"
 	}
+	// Launch test app as its own binary. This produces a more realistic looking
+	// profile than running the workload from a TestXXX func.
 	cmd := fmt.Sprintf(
 		"go build && exec ./unit-of-work -http %s -version %s -period %s",
 		a.HostPort,
