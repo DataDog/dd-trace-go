@@ -8,9 +8,10 @@ package namingschematest
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // NewMemcachedOpNameTest generates a new test for memcached span operation names using the naming schema versioning.
