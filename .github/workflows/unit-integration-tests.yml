@@ -229,7 +229,6 @@ jobs:
         run: go install gotest.tools/gotestsum@latest
       - name: Test Contrib
         run: |
-            go list -json ./contrib/... > contrib/internal/telemetrytest/packageInfo.txt
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
