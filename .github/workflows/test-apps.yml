@@ -24,7 +24,7 @@ jobs:
 
       - uses: datadog/agent-github-action@v1.3
         with:
-            api_key: ${{ secrets[matrix.key_name]] }}
+            api_key: ${{ secrets[matrix.key_name] }}
             datadog_site: datadoghq.com
 
       - uses: actions/setup-go@v3
