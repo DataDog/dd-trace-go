@@ -286,9 +286,9 @@ func newTracer(opts ...StartOption) *tracer {
 // use case described below.
 //
 // Flush is of use in Lambda environments, where starting and stopping
-// the tracer on each invokation may create too much latency. In this
+// the tracer on each invocation may create too much latency. In this
 // scenario, a tracer may be started and stopped by the parent process
-// whereas the invokation can make use of Flush to ensure any created spans
+// whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -421,6 +421,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				// applyPPROFLabels() below.
 				pprofContext = ctx.span.pprofCtxActive
 			}
+		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
+			context = &spanContext{
+				traceID: p.TraceID128Bytes(),
+				spanID:  p.SpanID(),
+			}
 		}
 	}
 	if pprofContext == nil {
@@ -534,7 +539,7 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally this func informs the profiler how
+// found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
