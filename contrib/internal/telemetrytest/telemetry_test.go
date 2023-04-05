@@ -79,8 +79,11 @@ func TestTelemetryEnabled(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	cmd := fmt.Sprintf("go list -json=ImportPath,Name,Imports %s%s", path, "/...")
+	fmt.Println(cmd)
+
 	body, err := exec.Command("bash", "-c", cmd).Output()
 	if err != nil {
+		fmt.Println(string(body))
 		t.Fatalf(err.Error())
 	}
 	var packages []contribPkg
