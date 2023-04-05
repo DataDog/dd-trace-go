@@ -15,10 +15,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - api_key: "DD_TEST_APP_API_KEY"
+          - name: prod
+            api_key: "DD_TEST_APP_API_KEY"
             datadog_site: datadoghq.com
-          - api_key: "DD_TEST_AND_DEMO_API_KEY"
+          - name: staging
+            api_key: "DD_TEST_AND_DEMO_API_KEY"
             datadog_site: datad0g.com
+      name: unit-of-work ${{ matrix.name }}
 
     runs-on: ubuntu-latest
     steps:
