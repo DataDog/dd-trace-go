@@ -6,8 +6,10 @@
 package httpsec
 
 import (
+	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -60,7 +62,6 @@ type ipTestCase struct {
 	remoteAddr     string
 	headers        map[string]string
 	expectedIP     instrumentation.NetaddrIP
-	multiHeaders   string
 	clientIPHeader string
 }
 
@@ -187,6 +188,11 @@ func genIPTestCases() []ipTestCase {
 	// Invalid IPs (or a mix of valid/invalid over a single or multiple headers)
 	tcs = append([]ipTestCase{
 		{
+			name:       "no headers",
+			headers:    nil,
+			expectedIP: instrumentation.NetaddrIP{},
+		},
+		{
 			name:       "invalid-ipv4",
 			headers:    map[string]string{"x-forwarded-for": "127..0.0.1"},
 			expectedIP: instrumentation.NetaddrIP{},
@@ -203,16 +209,24 @@ func genIPTestCases() []ipTestCase {
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
-			name:         "ipv4-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "127.0.0.1", "forwarded-for": ipv4Global},
-			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "forwarded-for,x-forwarded-for",
+			name:       "ipv4-multi-header-0",
+			headers:    map[string]string{"x-forwarded-for": ipv4Private, "forwarded-for": ipv4Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
-			name:         "ipv4-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv4Global, "x-forwarded-for": "127.0.0.1"},
-			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "forwarded-for,x-forwarded-for",
+			name:       "ipv4-multi-header-1",
+			headers:    map[string]string{"x-forwarded-for": ipv4Global, "forwarded-for": ipv4Private},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+		},
+		{
+			name:       "ipv4-multi-header-2",
+			headers:    map[string]string{"x-forwarded-for": "127.0.0.1, " + ipv4Private, "forwarded-for": fmt.Sprintf("%s, %s", ipv4Private, ipv4Global)},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
+		},
+		{
+			name:       "ipv4-multi-header-3",
+			headers:    map[string]string{"x-forwarded-for": "127.0.0.1, " + ipv4Global, "forwarded-for": ipv4Private},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv4Global),
 		},
 		{
 			name:       "invalid-ipv6",
@@ -225,16 +239,24 @@ func genIPTestCases() []ipTestCase {
 			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 		{
-			name:         "ipv6-multi-header-1",
-			headers:      map[string]string{"x-forwarded-for": "2001:0db8:2001:zzzz::", "forwarded-for": ipv6Global},
-			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "forwarded-for,x-forwarded-for",
+			name:       "ipv6-multi-header-0",
+			headers:    map[string]string{"x-forwarded-for": ipv6Private, "forwarded-for": ipv6Global},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 		{
-			name:         "ipv6-multi-header-2",
-			headers:      map[string]string{"forwarded-for": ipv6Global, "x-forwarded-for": "2001:0db8:2001:zzzz::"},
-			expectedIP:   instrumentation.NetaddrIP{},
-			multiHeaders: "forwarded-for,x-forwarded-for",
+			name:       "ipv6-multi-header-1",
+			headers:    map[string]string{"x-forwarded-for": ipv6Global, "forwarded-for": ipv6Private},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+		},
+		{
+			name:       "ipv6-multi-header-2",
+			headers:    map[string]string{"x-forwarded-for": "127.0.0.1, " + ipv6Private, "forwarded-for": fmt.Sprintf("%s, %s", ipv6Private, ipv6Global)},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
+		},
+		{
+			name:       "ipv6-multi-header-3",
+			headers:    map[string]string{"x-forwarded-for": "127.0.0.1, " + ipv6Global, "forwarded-for": ipv6Private},
+			expectedIP: instrumentation.NetaddrMustParseIP(ipv6Global),
 		},
 		{
 			name:       "no-headers",
@@ -262,30 +284,32 @@ func genIPTestCases() []ipTestCase {
 	return tcs
 }
 
-func TestIPHeaders(t *testing.T) {
-	// Make sure to restore the real value of clientIPHeaderCfg at the end of the test
-	defer func(s string) { clientIPHeaderCfg = s }(clientIPHeaderCfg)
-	for _, tc := range genIPTestCases() {
-		t.Run(tc.name, func(t *testing.T) {
-			header := http.Header{}
-			for k, v := range tc.headers {
-				header.Add(k, v)
-			}
-			clientIPHeaderCfg = tc.clientIPHeader
-			tags, clientIP := ClientIPTags(header, tc.remoteAddr)
-			if tc.expectedIP.IsValid() {
-				expectedIP := tc.expectedIP.String()
-				require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
-				require.Equal(t, expectedIP, clientIP.String())
-				require.NotContains(t, tags, multipleIPHeadersTag)
-			} else {
-				require.NotContains(t, tags, ext.HTTPClientIP)
-				if tc.multiHeaders != "" {
-					require.Equal(t, tc.multiHeaders, tags[multipleIPHeadersTag])
-					for hdr, ip := range tc.headers {
-						require.Equal(t, ip, tags[ext.HTTPRequestHeaders+"."+hdr])
+func TestClientIP(t *testing.T) {
+	for _, hasCanonicalMIMEHeaderKeys := range []bool{true, false} {
+		t.Run(fmt.Sprintf("canonical-headers-%t", hasCanonicalMIMEHeaderKeys), func(t *testing.T) {
+			// Make sure to restore the real value of clientIPHeaderCfg at the end of the test
+			defer func(s string) { clientIPHeaderCfg = s }(clientIPHeaderCfg)
+			for _, tc := range genIPTestCases() {
+				t.Run(tc.name, func(t *testing.T) {
+					header := http.Header{}
+					for k, v := range tc.headers {
+						if hasCanonicalMIMEHeaderKeys {
+							header.Add(k, v)
+						} else {
+							k = strings.ToLower(k)
+							header[k] = append(header[k], v)
+						}
 					}
-				}
+					clientIPHeaderCfg = tc.clientIPHeader
+					tags, clientIP := ClientIPTags(header, hasCanonicalMIMEHeaderKeys, tc.remoteAddr)
+					if tc.expectedIP.IsValid() {
+						expectedIP := tc.expectedIP.String()
+						require.Equal(t, expectedIP, tags[ext.HTTPClientIP])
+						require.Equal(t, expectedIP, clientIP.String())
+					} else {
+						require.NotContains(t, tags, ext.HTTPClientIP)
+					}
+				})
 			}
 		})
 	}

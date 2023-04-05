@@ -50,7 +50,11 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, "google.golang.org/grpc")
-		defer func() { finishWithError(span, err, ss.cfg) }()
+		defer func() {
+			withMetadataTags(ss.ctx, ss.cfg, span)
+			withRequestTags(ss.cfg, m, span)
+			finishWithError(span, err, ss.cfg)
+		}()
 	}
 	err = ss.ServerStream.RecvMsg(m)
 	return err
@@ -147,27 +151,35 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)
-		if cfg.withMetadataTags {
-			md, _ := metadata.FromIncomingContext(ctx) // nil is ok
-			for k, v := range md {
-				if _, ok := cfg.ignoredMetadata[k]; !ok {
-					span.SetTag(tagMetadataPrefix+k, v)
-				}
-			}
-		}
-		if cfg.withRequestTags {
-			var m jsonpb.Marshaler
-			if p, ok := req.(proto.Message); ok {
-				if s, err := m.MarshalToString(p); err == nil {
-					span.SetTag(tagRequest, s)
-				}
-			}
-		}
+		withMetadataTags(ctx, cfg, span)
+		withRequestTags(cfg, req, span)
 		if appsec.Enabled() {
 			handler = appsecUnaryHandlerMiddleware(span, handler)
 		}
 		resp, err := handler(ctx, req)
 		finishWithError(span, err, cfg)
 		return resp, err
+	}
+}
+
+func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
+	if cfg.withMetadataTags {
+		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
+		for k, v := range md {
+			if _, ok := cfg.ignoredMetadata[k]; !ok {
+				span.SetTag(tagMetadataPrefix+k, v)
+			}
+		}
+	}
+}
+
+func withRequestTags(cfg *config, req interface{}, span ddtrace.Span) {
+	if cfg.withRequestTags {
+		var m jsonpb.Marshaler
+		if p, ok := req.(proto.Message); ok {
+			if s, err := m.MarshalToString(p); err == nil {
+				span.SetTag(tagRequest, s)
+			}
+		}
 	}
 }

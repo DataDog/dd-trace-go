@@ -24,13 +24,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		var remoteAddr string
-		if p, ok := peer.FromContext(ctx); ok {
-			remoteAddr = p.Addr.String()
-		}
-		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
-		instrumentation.SetStringTags(span, ipTags)
-
+		clientIP := setClientIP(ctx, span, md)
 		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
@@ -54,15 +48,11 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
-		md, _ := metadata.FromIncomingContext(stream.Context())
-		var remoteAddr string
-		if p, ok := peer.FromContext(stream.Context()); ok {
-			remoteAddr = p.Addr.String()
-		}
-		ipTags, clientIP := httpsec.ClientIPTags(md, remoteAddr)
-		instrumentation.SetStringTags(span, ipTags)
+		ctx := stream.Context()
+		md, _ := metadata.FromIncomingContext(ctx)
+		clientIP := setClientIP(ctx, span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(stream.Context(), grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,
@@ -109,4 +99,16 @@ func (ss appsecServerStream) Context() context.Context {
 func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	grpcsec.SetSecurityEventTags(span, events, md)
+}
+
+func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) instrumentation.NetaddrIP {
+	var remoteAddr string
+	if p, ok := peer.FromContext(ctx); ok {
+		remoteAddr = p.Addr.String()
+	}
+	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	if len(ipTags) > 0 {
+		instrumentation.SetStringTags(span, ipTags)
+	}
+	return clientIP
 }
