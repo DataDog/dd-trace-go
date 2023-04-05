@@ -27,7 +27,7 @@ If the value is determined to be `internal`, then omit the tag as that is the as
 Each integration comes with thorough documentation and usage examples. A good overview can be seen on our 
 [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib) page.
 
-## Instrumentation telemetry
+### Instrumentation telemetry
 
 Every integration is expected to import instrumentation telemetry to track integration usage (more info [here](https://docs.datadoghq.com/tracing/configure_data_security/#telemetry-collection)).
 
