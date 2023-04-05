@@ -378,44 +378,41 @@ func TestRemoteActivationScenarios(t *testing.T) {
 func TestCapabilities(t *testing.T) {
 	rcCfg := remoteconfig.DefaultClientConfig()
 	for _, tc := range []struct {
-		name      string
-		startOpts []StartOption
-		env       map[string]string
-		noAppsec  bool
-		expected  []remoteconfig.Capability
+		name     string
+		env      map[string]string
+		expected []remoteconfig.Capability
 	}{
 		{
-			name: "default/no-rc",
+			name:     "appsec-unspecified",
+			expected: []remoteconfig.Capability{remoteconfig.ASMActivation},
 		},
 		{
-			name:      "default/rc",
-			startOpts: []StartOption{WithRCConfig(rcCfg)},
+			name: "appsec-enabled/default-ruleset",
+			env:  map[string]string{enabledEnvVar: "1"},
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
 				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking,
 			},
 		},
 		{
-			name:      "ruleset-from-env",
-			env:       map[string]string{rulesEnvVar: "testdata/blocking.json"},
-			startOpts: []StartOption{WithRCConfig(rcCfg)},
-			expected:  []remoteconfig.Capability{remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking},
+			name:     "appsec-enabled/ruleset-from-env",
+			env:      map[string]string{enabledEnvVar: "1", rulesEnvVar: "testdata/blocking.json"},
+			expected: []remoteconfig.Capability{remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking},
 		},
 	} {
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(enabledEnvVar, "")
+			os.Unsetenv(enabledEnvVar)
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			Start(tc.startOpts...)
+			Start(WithRCConfig(rcCfg))
 			defer Stop()
-
-			require.Equal(t, tc.noAppsec, !Enabled())
-			if tc.noAppsec || len(tc.startOpts) == 0 {
-				return
+			if !Enabled() && activeAppSec == nil {
+				t.Skip()
 			}
 			require.NotNil(t, activeAppSec.rc)
-
 			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
 			for _, cap := range tc.expected {
 				require.Contains(t, activeAppSec.rc.Capabilities, cap)
