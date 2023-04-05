@@ -26,17 +26,17 @@ func TestIntegrationInfo(t *testing.T) {
 	assert.True(t, integrations[0].Enabled)
 }
 
-var TELEMETRY_IMPORT = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 type contribPkg struct {
 	ImportPath string
 	Name       string
 	Imports    []string
 }
 
-func (p *contribPkg) hasImport(imp string) bool {
+var TelemetryImport = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+func (p *contribPkg) hasTelemetryImport() bool {
 	for _, imp := range p.Imports {
-		if imp == TELEMETRY_IMPORT {
+		if imp == TelemetryImport {
 			return true
 		}
 	}
@@ -67,7 +67,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			continue
 		}
 		if _, ok := tracked[pkg.Name]; ok {
-			if !pkg.hasImport(TELEMETRY_IMPORT) {
+			if !pkg.hasTelemetryImport() {
 				t.Fatalf(`package '%s' is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md`, pkg.Name)
 			}
 		}
