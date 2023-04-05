@@ -217,7 +217,7 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v0.0.0-20230329215518-ef81aa3be344
+	github.com/DataDog/appsec-internal-go v0.0.0-20230405124834-70a4fdb896e3
 	github.com/DataDog/go-libddwaf v1.0.0
 )
 
