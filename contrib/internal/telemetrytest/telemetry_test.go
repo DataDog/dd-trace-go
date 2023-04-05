@@ -74,11 +74,11 @@ func TestTelemetryEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	// path, err = parseContribPath(path)
-	// if err != nil {
-	// 	t.Fatalf(err.Error())
-	// }
-	path = "./contrib/..."
+	path, err = parseContribPath(path)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	path = fmt.Sprintf("%s%s", path, "/...")
 	jsonFlags := "-json=ImportPath,Name,Imports"
 	body, err := exec.Command("go", "list", jsonFlags, path).Output()
 	if err != nil {
