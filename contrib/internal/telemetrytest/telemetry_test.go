@@ -7,8 +7,8 @@ package telemetrytest
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,28 +71,31 @@ func parseContribPath(path string) (string, error) {
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
 	tracked := map[string]struct{}{"mux": {}}
-	path, err := os.Getwd()
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	path, err = parseContribPath(path)
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	path = "/" + path
-	bod, er := exec.Command("ls", path).Output()
-	fmt.Println(string(bod))
-	fmt.Println(er)
-	path = fmt.Sprintf("%s%s", path, "/...")
-	fmt.Println(path)
 
-	jsonFlags := "-json=ImportPath,Name,Imports"
-	body, err := exec.Command("go", "list", jsonFlags, path).Output()
+	pkgInfo, err := os.Open("packageInfo.txt")
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	defer pkgInfo.Close()
+
+	byteValue, _ := ioutil.ReadAll(pkgInfo)
+
+	// path, err := os.Getwd()
+	// if err != nil {
+	// 	t.Fatalf(err.Error())
+	// }
+	// path, err = parseContribPath(path)
+	// if err != nil {
+	// 	t.Fatalf(err.Error())
+	// }
+	// path = fmt.Sprintf("%s%s", path, "/...")
+	// jsonFlags := "-json=ImportPath,Name,Imports"
+	// body, err := exec.Command("go", "list", jsonFlags, path).Output()
+	// if err != nil {
+	// 	t.Fatalf(err.Error())
+	// }
 	var packages []contribPkg
-	stream := json.NewDecoder(strings.NewReader(string(body)))
+	stream := json.NewDecoder(strings.NewReader(string(byteValue)))
 	for stream.More() {
 		var out contribPkg
 		err := stream.Decode(&out)
