@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,29 +16,15 @@ import (
 
 // NewKafkaOpNameTest generates a new test for span kafka operation names using the naming schema versioning.
 func NewKafkaOpNameTest(genSpans GenSpansFn) func(t *testing.T) {
-	getKafkaSpans := func(t *testing.T, serviceOverride string) (mocktracer.Span, mocktracer.Span) {
-		spans := genSpans(t, "")
+	assertV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 2)
-		return spans[0], spans[1]
+		assert.Equal(t, "kafka.produce", spans[0].OperationName())
+		assert.Equal(t, "kafka.consume", spans[1].OperationName())
 	}
-	return func(t *testing.T) {
-		t.Run("v0", func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(namingschema.SchemaV0)
-
-			producerSpan, consumerSpan := getKafkaSpans(t, "")
-			assert.Equal(t, "kafka.produce", producerSpan.OperationName())
-			assert.Equal(t, "kafka.consume", consumerSpan.OperationName())
-		})
-		t.Run("v1", func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(namingschema.SchemaV1)
-
-			producerSpan, consumerSpan := getKafkaSpans(t, "")
-			assert.Equal(t, "kafka.send", producerSpan.OperationName())
-			assert.Equal(t, "kafka.process", consumerSpan.OperationName())
-		})
+	assertV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "kafka.send", spans[0].OperationName())
+		assert.Equal(t, "kafka.process", spans[1].OperationName())
 	}
+	return NewOpNameTest(genSpans, assertV0, assertV1)
 }

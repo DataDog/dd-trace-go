@@ -56,28 +56,28 @@ func NewServiceNameTest(generateSpans GenSpansFn, defaultName string, wantV0 Ser
 			serviceNameOverride string
 			ddService           string
 			wantV0              []string
-			wantV1              []string
+			wantV1              string
 		}{
 			{
 				name:                "with defaults",
 				serviceNameOverride: "",
 				ddService:           "",
 				wantV0:              wantV0.WithDefaults,
-				wantV1:              []string{defaultName, defaultName},
+				wantV1:              defaultName,
 			},
 			{
 				name:                "with DD_SERVICE",
 				serviceNameOverride: "",
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDService,
-				wantV1:              []string{TestDDService, TestDDService},
+				wantV1:              TestDDService,
 			},
 			{
 				name:                "with DD_SERVICE and service override",
 				serviceNameOverride: TestServiceOverride,
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDServiceAndOverride,
-				wantV1:              []string{TestServiceOverride, TestServiceOverride},
+				wantV1:              TestServiceOverride,
 			},
 		}
 		for _, tc := range testCases {
@@ -105,12 +105,34 @@ func NewServiceNameTest(generateSpans GenSpansFn, defaultName string, wantV0 Ser
 					namingschema.SetVersion(namingschema.SchemaV1)
 
 					spans := generateSpans(t, tc.serviceNameOverride)
-					require.Len(t, spans, len(tc.wantV1), "the number of spans and number of assertions for v1 don't match")
 					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName))
+						assert.Equal(t, tc.wantV1, spans[i].Tag(ext.ServiceName))
 					}
 				})
 			})
 		}
+	}
+}
+
+type AssertSpansFn func(t *testing.T, spans []mocktracer.Span)
+
+func NewOpNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 AssertSpansFn) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Run("v0", func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(namingschema.SchemaV0)
+
+			spans := genSpans(t, "")
+			assertV0(t, spans)
+		})
+		t.Run("v1", func(t *testing.T) {
+			version := namingschema.GetVersion()
+			defer namingschema.SetVersion(version)
+			namingschema.SetVersion(namingschema.SchemaV1)
+
+			spans := genSpans(t, "")
+			assertV1(t, spans)
+		})
 	}
 }

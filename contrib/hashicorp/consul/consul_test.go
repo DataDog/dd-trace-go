@@ -7,6 +7,7 @@ package consul
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"os"
 	"strings"
 	"testing"
@@ -17,8 +18,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 func TestMain(m *testing.M) {
@@ -107,9 +106,13 @@ func TestKV(t *testing.T) {
 		})
 	}
 }
-
 func TestNamingSchema(t *testing.T) {
-	createSpan := func(t *testing.T, opts ...ClientOption) mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []ClientOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		client, err := NewClient(consul.DefaultConfig(), opts...)
@@ -122,86 +125,21 @@ func TestNamingSchema(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
-		return spans[0]
+		return spans
 	}
-
-	testCases := []struct {
-		name                string
-		schemaVersion       namingschema.Version
-		serviceNameOverride string
-		ddService           string
-		wantServiceName     string
-		wantOperationName   string
-	}{
-		{
-			name:                "schema v0",
-			schemaVersion:       namingschema.SchemaV0,
-			serviceNameOverride: "",
-			ddService:           "",
-			wantServiceName:     "consul",
-			wantOperationName:   "consul.command",
-		},
-		{
-			name:                "schema v0 with DD_SERVICE",
-			schemaVersion:       namingschema.SchemaV0,
-			serviceNameOverride: "",
-			ddService:           "dd-service",
-			wantServiceName:     "consul",
-			wantOperationName:   "consul.command",
-		},
-		{
-			name:                "schema v0 with service override",
-			schemaVersion:       namingschema.SchemaV0,
-			serviceNameOverride: "service-override",
-			ddService:           "dd-service",
-			wantServiceName:     "service-override",
-			wantOperationName:   "consul.command",
-		},
-		{
-			name:                "schema v1",
-			schemaVersion:       namingschema.SchemaV1,
-			serviceNameOverride: "",
-			ddService:           "",
-			wantServiceName:     "consul",
-			wantOperationName:   "consul.query",
-		},
-		{
-			name:                "schema v1 with DD_SERVICE",
-			schemaVersion:       namingschema.SchemaV1,
-			serviceNameOverride: "",
-			ddService:           "dd-service",
-			wantServiceName:     "consul",
-			wantOperationName:   "consul.query",
-		},
-		{
-			name:                "schema v1 with service override",
-			schemaVersion:       namingschema.SchemaV1,
-			serviceNameOverride: "service-override",
-			ddService:           "dd-service",
-			wantServiceName:     "service-override",
-			wantOperationName:   "consul.query",
-		},
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "consul.command", spans[0].OperationName())
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(tc.schemaVersion)
-
-			if tc.ddService != "" {
-				svc := globalconfig.ServiceName()
-				defer globalconfig.SetServiceName(svc)
-				globalconfig.SetServiceName(tc.ddService)
-			}
-
-			var opts []ClientOption
-			if tc.serviceNameOverride != "" {
-				opts = append(opts, WithServiceName(tc.serviceNameOverride))
-			}
-
-			span := createSpan(t, opts...)
-			assert.Equal(t, tc.wantServiceName, span.Tag(ext.ServiceName))
-			assert.Equal(t, tc.wantOperationName, span.OperationName())
-		})
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "consul.query", spans[0].OperationName())
 	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"consul"},
+		WithDDService:            []string{"consul"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "consul", wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }

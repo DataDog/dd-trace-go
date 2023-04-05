@@ -6,6 +6,7 @@
 package consul
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -25,8 +26,16 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = newServiceNameSchema().GetName()
-	cfg.operationName = newOutboundOperationNameSchema().GetName()
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+	).GetName()
+	cfg.operationName = namingschema.NewDBOutboundOp(
+		"consul",
+		namingschema.WithVersionOverride(namingschema.SchemaV0, "consul.command"),
+	).GetName()
+
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
