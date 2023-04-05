@@ -107,8 +107,8 @@ func (r_ *rulesetFragment) validate() bool {
 	return true
 }
 
-// NewRuleset initializes and returns a new ruleset using the default security rules
-func NewRuleset() *ruleset {
+// newRuleset initializes and returns a new ruleset using the default security rules
+func newRuleset() *ruleset {
 	var f rulesetFragment
 	f.Default()
 	return &ruleset{

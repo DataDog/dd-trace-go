@@ -453,7 +453,7 @@ func craftRCUpdates(fragments map[string]rulesetFragment) map[string]remoteconfi
 }
 
 func TestASMUmbrellaCallback(t *testing.T) {
-	baseRuleset := NewRuleset()
+	baseRuleset := newRuleset()
 	baseRuleset.Compile()
 
 	rules := rulesetFragment{
