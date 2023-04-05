@@ -57,3 +57,12 @@ func Example_pipeliner() {
 	// execute with trace
 	pipe.Exec(ctx)
 }
+
+// You can create a traced ClusterClient using WrapClient
+func Example_wrapClient() {
+	c := redis.NewClusterClient(&redis.ClusterOptions{})
+	redistrace.WrapClient(c)
+
+	//Do something, passing in any relevant context
+	c.Incr(context.TODO(), "my_counter")
+}

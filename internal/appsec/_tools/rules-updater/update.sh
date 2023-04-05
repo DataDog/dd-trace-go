@@ -11,14 +11,14 @@
 # Example: ./update.sh 1.2.5
 #
 
-set -e
+set -ex
 
 [ $# -ne 1 ] && echo "Usage: $0 \"version\"" >&2 && exit 1
 
 echo "================ Minifying ================"
 
 tmpDir=$(mktemp -d /tmp/rule-update-XXXXXXXXX)
-scriptDir=$PWD/$(dirname $0)
+scriptDir=$(dirname $0)
 
 trap "rm -rf $tmpDir" EXIT
 

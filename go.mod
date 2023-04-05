@@ -84,7 +84,7 @@ require (
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
 	gorm.io/gorm v1.20.6
-	inet.af/netaddr v0.0.0-20220811202034-502d2d690317 // indirect
+	inet.af/netaddr v0.0.0-20220617031823-097006376321
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
@@ -121,7 +121,7 @@ require (
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/go-cmp v0.5.7 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.0.5 // indirect
 	github.com/googleapis/gnostic v0.0.0-20170729233727-0c5108395e2d // indirect
@@ -217,12 +217,18 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v0.0.0-20230405124834-70a4fdb896e3
-	github.com/DataDog/go-libddwaf v1.0.0
+	github.com/DataDog/go-libddwaf v0.0.0-20230303104633-7281454880aa
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
+	go.opentelemetry.io/otel v1.14.0
+	go.opentelemetry.io/otel/trace v1.14.0
 )
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
+	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 )
