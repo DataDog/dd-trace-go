@@ -146,7 +146,7 @@ func Start(opts ...StartOption) {
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
-	hostname.Get() // Prime the hostname cache
+	_ = t.hostname() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -286,9 +286,9 @@ func newTracer(opts ...StartOption) *tracer {
 // use case described below.
 //
 // Flush is of use in Lambda environments, where starting and stopping
-// the tracer on each invokation may create too much latency. In this
+// the tracer on each invocation may create too much latency. In this
 // scenario, a tracer may be started and stopped by the parent process
-// whereas the invokation can make use of Flush to ensure any created spans
+// whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -421,6 +421,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				// applyPPROFLabels() below.
 				pprofContext = ctx.span.pprofCtxActive
 			}
+		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
+			context = &spanContext{
+				traceID: p.TraceID128Bytes(),
+				spanID:  p.SpanID(),
+			}
 		}
 	}
 	if pprofContext == nil {
@@ -487,7 +492,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	if context == nil || context.span == nil || context.span.Service != span.Service {
+	isRootSpan := context == nil || context.span == nil
+	if isRootSpan {
+		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	}
+	if isRootSpan || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
@@ -530,7 +539,7 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally this func informs the profiler how
+// found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
@@ -634,8 +643,8 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 }
 
 func (t *tracer) hostname() string {
-	if !t.config.disableHostnameDetection {
-		return hostname.Get()
+	if !t.config.enableHostnameDetection {
+		return ""
 	}
-	return ""
+	return hostname.Get()
 }

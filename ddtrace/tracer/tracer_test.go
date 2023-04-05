@@ -297,6 +297,39 @@ func TestTracerStartSpan(t *testing.T) {
 		child := tracer.StartSpan("home/user", Measured(), ChildOf(parent.context)).(*span)
 		assert.Equal(t, 1.0, child.Metrics[keyMeasured])
 	})
+
+	t.Run("attribute_schema_is_set_v0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+		tracer := newTracer()
+		defer tracer.Stop()
+		parent := tracer.StartSpan("/home/user").(*span)
+		child := tracer.StartSpan("home/user", ChildOf(parent.context)).(*span)
+		assert.Contains(t, parent.Metrics, "_dd.trace_span_attribute_schema")
+		assert.Equal(t, 0.0, parent.Metrics["_dd.trace_span_attribute_schema"])
+		assert.NotContains(t, child.Metrics, "_dd.trace_span_attribute_schema")
+	})
+
+	t.Run("attribute_schema_is_set_v1", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+		tracer := newTracer()
+		defer tracer.Stop()
+		parent := tracer.StartSpan("/home/user").(*span)
+		child := tracer.StartSpan("home/user", ChildOf(parent.context)).(*span)
+		assert.Contains(t, parent.Metrics, "_dd.trace_span_attribute_schema")
+		assert.Equal(t, 1.0, parent.Metrics["_dd.trace_span_attribute_schema"])
+		assert.NotContains(t, child.Metrics, "_dd.trace_span_attribute_schema")
+	})
+
+	t.Run("attribute_schema_is_set_wrong_value", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "bad-version")
+		tracer := newTracer()
+		defer tracer.Stop()
+		parent := tracer.StartSpan("/home/user").(*span)
+		child := tracer.StartSpan("home/user", ChildOf(parent.context)).(*span)
+		assert.Contains(t, parent.Metrics, "_dd.trace_span_attribute_schema")
+		assert.Equal(t, 0.0, parent.Metrics["_dd.trace_span_attribute_schema"])
+		assert.NotContains(t, child.Metrics, "_dd.trace_span_attribute_schema")
+	})
 }
 
 func TestSamplingDecision(t *testing.T) {
