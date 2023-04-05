@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NewKafkaOpNameTest generates a new test for span kafka operation names using the naming schema versioning.
-func NewKafkaOpNameTest(genSpans GenSpansFn) func(t *testing.T) {
-	getKafkaSpans := func(t *testing.T, serviceOverride string) (mocktracer.Span, mocktracer.Span) {
-		spans := genSpans(t, serviceOverride)
-		require.Len(t, spans, 2)
-		return spans[0], spans[1]
+// NewMemcachedOpNameTest generates a new test for memcached span operation names using the naming schema versioning.
+func NewMemcachedOpNameTest(genSpans GenSpansFn) func(t *testing.T) {
+	getSpan := func(t *testing.T) mocktracer.Span {
+		spans := genSpans(t, "")
+		require.Len(t, spans, 1)
+		return spans[0]
 	}
 	return func(t *testing.T) {
 		t.Run("v0", func(t *testing.T) {
@@ -28,18 +28,16 @@ func NewKafkaOpNameTest(genSpans GenSpansFn) func(t *testing.T) {
 			defer namingschema.SetVersion(version)
 			namingschema.SetVersion(namingschema.SchemaV0)
 
-			producerSpan, consumerSpan := getKafkaSpans(t, "")
-			assert.Equal(t, "kafka.produce", producerSpan.OperationName())
-			assert.Equal(t, "kafka.consume", consumerSpan.OperationName())
+			span := getSpan(t)
+			assert.Equal(t, "memcached.query", span.OperationName())
 		})
 		t.Run("v1", func(t *testing.T) {
 			version := namingschema.GetVersion()
 			defer namingschema.SetVersion(version)
 			namingschema.SetVersion(namingschema.SchemaV1)
 
-			producerSpan, consumerSpan := getKafkaSpans(t, "")
-			assert.Equal(t, "kafka.send", producerSpan.OperationName())
-			assert.Equal(t, "kafka.process", consumerSpan.OperationName())
+			span := getSpan(t)
+			assert.Equal(t, "memcached.command", span.OperationName())
 		})
 	}
 }

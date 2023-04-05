@@ -29,17 +29,9 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceName = namingschema.NewServiceNameSchema(
 		"",
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-			return defaultServiceName
-		}),
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
 	).GetName()
-
-	cfg.operationName = namingschema.NewCacheOutboundOperationNameSchema(
-		namingschema.CacheSystemMemcached,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, func() string {
-			return "memcached.query"
-		}),
-	).GetName()
+	cfg.operationName = namingschema.NewMemcachedOutboundOp().GetName()
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
