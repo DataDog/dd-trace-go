@@ -2,7 +2,9 @@ version: '3'
 services:
   app:
     build:
-      context: ../../.. # repository root
+      # Make repository root available so replace directive in go.mod can point
+      # to the local version of dd-trace-go.
+      context: ../../..
       dockerfile: internal/apps/unit-of-work/Dockerfile
     network_mode: host
     depends_on:
