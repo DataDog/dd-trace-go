@@ -14,7 +14,12 @@ jobs:
   unit-of-work:
     strategy:
       matrix:
-        key_name: ["DD_TEST_APP_API_KEY", "DD_TEST_AND_DEMO_API_KEY"]
+        include:
+          - api_key: "DD_TEST_APP_API_KEY"
+            datadog_site: datadoghq.com
+          - api_key: "DD_TEST_AND_DEMO_API_KEY"
+            datadog_site: datad0g.com
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,8 +29,8 @@ jobs:
 
       - uses: datadog/agent-github-action@v1.3
         with:
-            api_key: ${{ secrets[matrix.key_name] }}
-            datadog_site: datadoghq.com
+            api_key: ${{ secrets[matrix.api_key] }}
+            datadog_site: ${{ matrix.datadog_site }}
 
       - uses: actions/setup-go@v3
         with:
