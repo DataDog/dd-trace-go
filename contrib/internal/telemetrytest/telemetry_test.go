@@ -85,7 +85,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	fmt.Println(er)
 	path = fmt.Sprintf("%s%s", path, "/...")
 	fmt.Println(path)
-	os.Exit(1)
+
 	jsonFlags := "-json=ImportPath,Name,Imports"
 	body, err := exec.Command("go", "list", jsonFlags, path).Output()
 	if err != nil {
