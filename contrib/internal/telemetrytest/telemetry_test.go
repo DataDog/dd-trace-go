@@ -6,7 +6,6 @@ package telemetrytest
 
 import (
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -53,12 +52,16 @@ func TestTelemetryEnabled(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	var packages []contribPkg
-	// need to reformat the output of the go list command to be a valid json
-	formatted := fmt.Sprintf("[%s]", strings.TrimRight(strings.Replace(string(body), "}", "},", -1), ",\n"))
-	err = json.Unmarshal([]byte(formatted), &packages)
-	if err != nil {
-		t.Fatalf(err.Error())
+	stream := json.NewDecoder(strings.NewReader(string(body)))
+	for stream.More() {
+		var out contribPkg
+		err := stream.Decode(&out)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		packages = append(packages, out)
 	}
+	// need to reformat the output of the go list command to be a valid json
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
