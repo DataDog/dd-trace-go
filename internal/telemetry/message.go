@@ -33,8 +33,7 @@ type RequestType string
 
 const (
 	// RequestTypeAppStarted is the first message sent by the telemetry
-	// client, containing the configuration, and integrations and
-	// dependencies loaded at startup
+	// client, containing the configuration loaded at startup
 	RequestTypeAppStarted RequestType = "app-started"
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
@@ -52,7 +51,8 @@ const (
 	RequestTypeAppClientConfigurationChange RequestType = "app-client-configuration-change"
 	// RequestTypeAppProductChange is sent when products are enabled/disabled
 	RequestTypeAppProductChange RequestType = "app-product-change"
-	// RequestTypeAppIntegrationsChange is sent ....
+	// RequestTypeAppIntegrationsChange is sent when the telemetry client starts
+	// with info on which integrations are used.
 	RequestTypeAppIntegrationsChange RequestType = "app-integrations-change"
 )
 
