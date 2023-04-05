@@ -57,11 +57,12 @@ func parseContribPath(path string) (string, error) {
 	for i, dir := range dirs {
 		if dir == "contrib" {
 			contribPath := filepath.Join(dirs[:i+1]...)
-			rel, err := filepath.Rel(strings.TrimPrefix(path, "/"), contribPath)
-			if err != nil {
-				return "", err
-			}
-			return rel, nil
+			return contribPath, nil
+			// rel, err := filepath.Rel(strings.TrimPrefix(path, "/"), contribPath)
+			// if err != nil {
+			// 	return "", err
+			// }
+			// return rel, nil
 		}
 	}
 	return "", fmt.Errorf("contrib was not found as a parent folder and current working directory is not dd-trace-go")
@@ -78,7 +79,13 @@ func TestTelemetryEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	path = "/" + path
+	bod, er := exec.Command("ls", path).Output()
+	fmt.Println(string(bod))
+	fmt.Println(er)
 	path = fmt.Sprintf("%s%s", path, "/...")
+	fmt.Println(path)
+	os.Exit(1)
 	jsonFlags := "-json=ImportPath,Name,Imports"
 	body, err := exec.Command("go", "list", jsonFlags, path).Output()
 	if err != nil {
