@@ -84,7 +84,7 @@ require (
 	gorm.io/driver/postgres v1.0.0
 	gorm.io/driver/sqlserver v1.0.4
 	gorm.io/gorm v1.20.6
-	inet.af/netaddr v0.0.0-20220617031823-097006376321
+	inet.af/netaddr v0.0.0-20220811202034-502d2d690317 // indirect
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
@@ -217,6 +217,7 @@ require (
 )
 
 require (
+	github.com/DataDog/appsec-internal-go v0.0.0-20230405124834-70a4fdb896e3
 	github.com/DataDog/go-libddwaf v0.0.0-20230303104633-7281454880aa
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
 	go.opentelemetry.io/otel v1.14.0
