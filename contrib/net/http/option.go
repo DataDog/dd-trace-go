@@ -122,21 +122,29 @@ type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 
 type roundTripperConfig struct {
-	before        RoundTripperBeforeFunc
-	after         RoundTripperAfterFunc
-	analyticsRate float64
-	serviceName   string
-	resourceNamer func(req *http.Request) string
-	ignoreRequest func(*http.Request) bool
-	spanOpts      []ddtrace.StartSpanOption
-	errCheck      func(err error) bool
+	before         RoundTripperBeforeFunc
+	after          RoundTripperAfterFunc
+	analyticsRate  float64
+	serviceName    string
+	resourceNamer  func(req *http.Request) string
+	operationNamer func(req *http.Request) string
+	ignoreRequest  func(*http.Request) bool
+	spanOpts       []ddtrace.StartSpanOption
+	errCheck       func(err error) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
+	defaultResourceNamer := func(_ *http.Request) string {
+		return "http.request"
+	}
+	defaultOperationNamer := func(_ *http.Request) string {
+		return "http.request"
+	}
 	return &roundTripperConfig{
-		analyticsRate: globalconfig.AnalyticsRate(),
-		resourceNamer: defaultResourceNamer,
-		ignoreRequest: func(_ *http.Request) bool { return false },
+		analyticsRate:  globalconfig.AnalyticsRate(),
+		resourceNamer:  defaultResourceNamer,
+		operationNamer: defaultOperationNamer,
+		ignoreRequest:  func(_ *http.Request) bool { return false },
 	}
 }
 
@@ -168,16 +176,20 @@ func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOptio
 	}
 }
 
+// RTWithOperationNamer specifies a function which will be used to
+// obtain the span operation name for a given request.
+func RTWithOperationNamer(namer func(req *http.Request) string) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.operationNamer = namer
+	}
+}
+
 // RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
 func RTWithSpanOptions(opts ...ddtrace.StartSpanOption) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
-}
-
-func defaultResourceNamer(_ *http.Request) string {
-	return "http.request"
 }
 
 // RTWithServiceName sets the given service name for the RoundTripper.
