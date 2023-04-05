@@ -109,8 +109,7 @@ type IntegrationsChange struct {
 	Integrations []Integration `json:"integrations"`
 }
 
-// Integration is an integration that is available within the app and applicable
-// to be traced
+// Integration is an integration that is configured to be traced automatically.
 type Integration struct {
 	Name        string `json:"name"`
 	Enabled     bool   `json:"enabled"`
