@@ -40,7 +40,9 @@ func TestUnitOfWork(t *testing.T) {
 	// | profile 1 | profile 2 | ... | profile 1 | profile 2 | ...|
 	// ------------------------------------------> time
 
-	totalDuration := 70 * time.Second // default
+	// Enough time to capture six 10s profiles
+	// TODO: Implement profiler.StopFlush() to avoid this workaround
+	totalDuration := 70 * time.Second
 	if s := os.Getenv("DD_TEST_APPS_TOTAL_DURATION"); s != "" {
 		totalDuration, err = time.ParseDuration(s)
 		require.NoError(t, err)
