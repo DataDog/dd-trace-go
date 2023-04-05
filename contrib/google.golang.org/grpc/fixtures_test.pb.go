@@ -10,9 +10,11 @@
 Package grpc is a generated protocol buffer package.
 
 It is generated from these files:
+
 	fixtures_test.proto
 
 It has these top-level messages:
+
 	FixtureRequest
 	FixtureReply
 */
