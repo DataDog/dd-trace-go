@@ -6,7 +6,10 @@ package telemetrytest
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,10 +46,39 @@ func (p *contribPkg) hasTelemetryImport() bool {
 	return false
 }
 
+// parseContribPath takes the current path and returns the relative path
+// to the contrib folder. The current path must be a sub-directory of the
+// contrib folder or the parent dd-trace-go directory.
+func parseContribPath(path string) (string, error) {
+	if filepath.Base(path) == "dd-trace-go" {
+		return "./contrib", nil
+	}
+	dirs := strings.Split(path, "/")
+	for i, dir := range dirs {
+		if dir == "contrib" {
+			contribPath := filepath.Join(dirs[:i+1]...)
+			rel, err := filepath.Rel(strings.TrimPrefix(path, "/"), contribPath)
+			if err != nil {
+				return "", err
+			}
+			return rel, nil
+		}
+	}
+	return "", fmt.Errorf("contrib was not found as a parent folder and current working directory is not dd-trace-go")
+}
+
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
 	tracked := map[string]struct{}{"mux": {}}
-	cmd := "go list -json=ImportPath,Name,Imports  ../.././..."
+	path, err := os.Getwd()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	path, err = parseContribPath(path)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	cmd := fmt.Sprintf("go list -json=ImportPath,Name,Imports %s%s", path, "/...")
 	body, err := exec.Command("bash", "-c", cmd).Output()
 	if err != nil {
 		t.Fatalf(err.Error())
