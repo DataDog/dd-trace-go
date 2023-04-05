@@ -8,36 +8,20 @@ package namingschematest
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // NewMemcachedOpNameTest generates a new test for memcached span operation names using the naming schema versioning.
 func NewMemcachedOpNameTest(genSpans GenSpansFn) func(t *testing.T) {
-	getSpan := func(t *testing.T) mocktracer.Span {
-		spans := genSpans(t, "")
+	assertV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 1)
-		return spans[0]
+		assert.Equal(t, "memcached.query", spans[0].OperationName())
 	}
-	return func(t *testing.T) {
-		t.Run("v0", func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(namingschema.SchemaV0)
-
-			span := getSpan(t)
-			assert.Equal(t, "memcached.query", span.OperationName())
-		})
-		t.Run("v1", func(t *testing.T) {
-			version := namingschema.GetVersion()
-			defer namingschema.SetVersion(version)
-			namingschema.SetVersion(namingschema.SchemaV1)
-
-			span := getSpan(t)
-			assert.Equal(t, "memcached.command", span.OperationName())
-		})
+	assertV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "memcached.command", spans[0].OperationName())
 	}
+	return NewOpNameTest(genSpans, assertV0, assertV1)
 }
