@@ -12,6 +12,9 @@ env:
 
 jobs:
   unit-of-work:
+    strategy:
+      matrix:
+        key_name: ["DD_TEST_APP_API_KEY", "DD_TEST_AND_DEMO_API_KEY"]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,7 +24,7 @@ jobs:
 
       - uses: datadog/agent-github-action@v1.3
         with:
-            api_key: ${{ secrets.DD_TEST_APP_API_KEY }}
+            api_key: ${{ secrets[matrix.key_name]] }}
             datadog_site: datadoghq.com
 
       - uses: actions/setup-go@v3
@@ -30,7 +33,7 @@ jobs:
           check-latest: true
           cache: true
 
-      - name: "Setup nightly run to last 10 minutes and add nightly:true tag"
+      - name: "Configure nightly run to last 10 minutes and add nightly:true tag"
         if: (github.event_name == 'schedule')
         run: |
           # 660s is enough time to capture 10 profiles without missing the last one
