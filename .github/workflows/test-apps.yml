@@ -21,7 +21,7 @@ jobs:
           - name: staging
             api_key: "DD_TEST_AND_DEMO_API_KEY"
             datadog_site: datad0g.com
-      name: unit-of-work ${{ matrix.name }}
+      name: "unit-of-work ${{ matrix.name }}"
 
     runs-on: ubuntu-latest
     steps:
