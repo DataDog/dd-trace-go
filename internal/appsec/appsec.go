@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build !noappsec
+
 package appsec
 
 import (
@@ -108,8 +110,8 @@ func newAppSec(cfg *Config) *appsec {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
-		cfg: cfg,
-		rc:  client,
+		cfg:     cfg,
+		rc:      client,
 	}
 }
 

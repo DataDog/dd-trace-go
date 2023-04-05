@@ -1,0 +1,6 @@
+{
+    "go.testEnvVars": {
+        "DD_APPSEC_ENABLED": "true"
+    },
+    "go.buildFlags": ["-tags=noappsec"]
+}

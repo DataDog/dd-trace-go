@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build !noappsec
+
 package appsec
 
 import (
@@ -256,7 +258,7 @@ func cleanEnv() func() {
 		obfuscatorKeyEnvVar:   os.Getenv(obfuscatorKeyEnvVar),
 		obfuscatorValueEnvVar: os.Getenv(obfuscatorValueEnvVar),
 	}
-	for k, _ := range env {
+	for k := range env {
 		if err := os.Unsetenv(k); err != nil {
 			panic(err)
 		}

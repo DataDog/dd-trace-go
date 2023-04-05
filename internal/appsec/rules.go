@@ -3,9 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build !noappsec
+
 package appsec
 
-import _ "embed"
+import _ "embed" // Needed for go:embed
 
 // Static recommended AppSec rule 1.7.1
 // Source: https://github.com/DataDog/appsec-event-rules/blob/1.7.1/build/recommended.json
