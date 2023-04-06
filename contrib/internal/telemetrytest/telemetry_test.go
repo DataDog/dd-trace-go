@@ -67,7 +67,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		if _, ok := tracked[pkg.Name]; ok {
 			if !pkg.hasTelemetryImport() {
-				t.Fatalf(`package '%s' is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md`, pkg.Name)
+				t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 			}
 		}
 	}
