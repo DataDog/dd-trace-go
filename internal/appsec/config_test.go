@@ -18,7 +18,7 @@ import (
 
 func TestConfig(t *testing.T) {
 	expectedDefaultConfig := &Config{
-		rules:          []byte(staticRecommendedRules),
+		ruleset:        newRuleset(nil),
 		wafTimeout:     defaultWAFTimeout,
 		traceRateLimit: defaultTraceRate,
 		obfuscator: ObfuscatorConfig{
@@ -123,10 +123,9 @@ func TestConfig(t *testing.T) {
 				file.Close()
 				os.Remove(file.Name())
 			}()
-			expectedRules := `custom rule file content`
 			expCfg := *expectedDefaultConfig
-			expCfg.rules = []byte(expectedRules)
-			_, err = file.WriteString(expectedRules)
+			expCfg.ruleset = newRuleset([]byte(staticRecommendedRules))
+			_, err = file.WriteString(staticRecommendedRules)
 			require.NoError(t, err)
 			os.Setenv(rulesEnvVar, file.Name())
 			cfg, err := newConfig()

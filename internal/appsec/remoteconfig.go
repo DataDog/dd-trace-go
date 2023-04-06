@@ -75,7 +75,7 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		case rc.ProductASMData:
 			rulesData, status := mergeRulesData(u)
 			statuses = mergeMaps(statuses, status)
-			a.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
+			a.cfg.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
 		case rc.ProductASMDD:
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
@@ -84,29 +84,29 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 			}
 			for path, data := range u {
 				if data == nil {
-					a.ruleset.base.Default()
-					a.ruleset.basePath = ""
+					a.cfg.ruleset.base.Default()
+					a.cfg.ruleset.basePath = ""
 					break
 				}
-				if err := json.Unmarshal(data, &a.ruleset.base); err != nil {
+				if err := json.Unmarshal(data, &a.cfg.ruleset.base); err != nil {
 					statuses[path] = genApplyStatus(true, err)
 					break
 				}
-				a.ruleset.basePath = path
+				a.cfg.ruleset.basePath = path
 				statuses[path] = genApplyStatus(true, nil)
 			}
 		case rc.ProductASM:
 			for path, data := range u {
 				statuses[path] = genApplyStatus(true, nil)
 				if data == nil {
-					delete(a.ruleset.edits, path)
+					delete(a.cfg.ruleset.edits, path)
 					continue
 				}
 				var f rulesetFragment
 				if err := json.Unmarshal(data, &f); err != nil || !f.validate() {
 					statuses[path] = genApplyStatus(true, err)
 				} else {
-					a.ruleset.edits[path] = f
+					a.cfg.ruleset.edits[path] = f
 				}
 			}
 		default:
@@ -114,7 +114,7 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 		}
 	}
 
-	finalRuleset := a.ruleset.Compile()
+	finalRuleset := a.cfg.ruleset.compile()
 	data, err := json.Marshal(finalRuleset)
 	if err != nil {
 		log.Debug("appsec: Remote config: cannot marshal the compiled ruleset")

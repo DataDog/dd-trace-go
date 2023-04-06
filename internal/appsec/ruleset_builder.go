@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"encoding/json"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
@@ -18,26 +20,20 @@ type (
 	// and the `edits` fragments each represent a remote configuration update that affects the rules.
 	// `basePath` is either empty if the local base rules are used, or holds the path of the ASM_DD config.
 	ruleset struct {
-		Latest   rulesetFragment
+		latest   rulesetFragment
 		base     rulesetFragment
 		basePath string
 		edits    map[string]rulesetFragment
 	}
 	// rulesetFragment can represent a full ruleset or a fragment of it.
 	rulesetFragment struct {
-		Version    json.RawMessage      `json:"version,omitempty"`
-		Metadata   json.RawMessage      `json:"metadata,omitempty"`
+		Version    string               `json:"version,omitempty"`
+		Metadata   interface{}          `json:"metadata,omitempty"`
 		Rules      []ruleEntry          `json:"rules,omitempty"`
 		Overrides  []rulesOverrideEntry `json:"rules_override,omitempty"`
 		Exclusions []exclusionEntry     `json:"exclusions,omitempty"`
 		RulesData  []ruleDataEntry      `json:"rules_data,omitempty"`
-		Actions    []actionEntry        `json:"actions,omitempty"`
-	}
-
-	actionEntry struct {
-		ID   string `json:"id"`
-		Type string `json:"type"`
-		//TODO (Francois): specify when handling user defined actions
+		Actions    []interface{}        `json:"actions,omitempty"`
 	}
 
 	ruleEntry struct {
@@ -46,6 +42,7 @@ type (
 		Tags         map[string]json.RawMessage `json:"tags"`
 		Conditions   interface{}                `json:"conditions"`
 		Transformers interface{}                `json:"transformers"`
+		OnMatch      []interface{}              `json:"on_match,omitempty"`
 	}
 
 	rulesOverrideEntry struct {
@@ -105,30 +102,43 @@ func (r_ *rulesetFragment) validate() bool {
 	return true
 }
 
-// newRuleset initializes and returns a new ruleset using the default security rules
-func newRuleset() *ruleset {
+// newRuleset initializes and returns a new ruleset using the provided rules.
+// If no rules are provided (nil), or the provided rules are invalid, the default rules are used instead
+func newRuleset(rules []byte) *ruleset {
 	var f rulesetFragment
 	f.Default()
+	buf := new(bytes.Buffer)
+	json.Compact(buf, rules)
+	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
+		log.Debug("appsec: cannot create ruleset from specified rules. Using default rules instead")
+	}
 	return &ruleset{
-		Latest: f,
+		latest: f,
 		base:   f,
 		edits:  map[string]rulesetFragment{},
 	}
 }
 
-// Compile compiles the ruleset fragments together and returns the compound result
-func (r *ruleset) Compile() rulesetFragment {
+// compile compiles the ruleset fragments together and returns the compound result
+func (r *ruleset) compile() rulesetFragment {
 	if r.base.Rules == nil || len(r.base.Rules) == 0 {
 		r.base.Default()
 	}
-	r.Latest = r.base
+	r.latest = r.base
 
 	// Simply concatenate the content of each top level rule field as specified in our RFCs
 	for _, v := range r.edits {
-		r.Latest.Overrides = append(r.Latest.Overrides, v.Overrides...)
-		r.Latest.Exclusions = append(r.Latest.Exclusions, v.Exclusions...)
+		r.latest.Overrides = append(r.latest.Overrides, v.Overrides...)
+		r.latest.Exclusions = append(r.latest.Exclusions, v.Exclusions...)
+		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 
-	return r.Latest
+	return r.latest
+}
+
+// raw returns a compact json version of the ruleset
+func (r *ruleset) raw() []byte {
+	data, _ := json.Marshal(r.latest)
+	return data
 }

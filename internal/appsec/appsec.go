@@ -95,7 +95,6 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg           *Config
-	ruleset       *ruleset
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
 	rc            *remoteconfig.Client
@@ -113,9 +112,8 @@ func newAppSec(cfg *Config) *appsec {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
-		cfg:     cfg,
-		rc:      client,
-		ruleset: newRuleset(),
+		cfg: cfg,
+		rc:  client,
 	}
 }
 
@@ -124,7 +122,7 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	if err := a.swapWAF(a.cfg.rules); err != nil {
+	if err := a.swapWAF(a.cfg.ruleset.raw()); err != nil {
 		return err
 	}
 	if err := a.enableRCBlocking(); err != nil {

@@ -108,17 +108,6 @@ func TestASMFeaturesCallback(t *testing.T) {
 	})
 }
 
-func rulesDataToMap(rulesData []rc.ASMDataRuleData) map[string]int64 {
-	res := make(map[string]int64)
-	for _, data := range rulesData {
-		for _, v := range data.Data {
-			res[data.ID+v.Value] = v.Expiration
-		}
-	}
-
-	return res
-}
-
 func TestMergeRulesData(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -430,8 +419,8 @@ func craftRCUpdates(fragments map[string]rulesetFragment) map[string]remoteconfi
 }
 
 func TestASMUmbrellaCallback(t *testing.T) {
-	baseRuleset := newRuleset()
-	baseRuleset.Compile()
+	baseRuleset := newRuleset(nil)
+	baseRuleset.compile()
 
 	rules := rulesetFragment{
 		Rules: []ruleEntry{
@@ -522,15 +511,15 @@ func TestASMUmbrellaCallback(t *testing.T) {
 				t.Skip()
 			}
 
-			tc.ruleset.Compile()
+			tc.ruleset.compile()
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.ruleset.edits)
 			activeAppSec.asmUmbrellaCallback(updates)
 			// Compare rulesets
-			require.ElementsMatch(t, tc.ruleset.Latest.Rules, activeAppSec.ruleset.Latest.Rules)
-			require.ElementsMatch(t, tc.ruleset.Latest.Overrides, activeAppSec.ruleset.Latest.Overrides)
-			require.ElementsMatch(t, tc.ruleset.Latest.Exclusions, activeAppSec.ruleset.Latest.Exclusions)
-			require.ElementsMatch(t, tc.ruleset.Latest.Actions, activeAppSec.ruleset.Latest.Actions)
+			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.ruleset.latest.Rules)
+			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.ruleset.latest.Overrides)
+			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.ruleset.latest.Exclusions)
+			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.ruleset.latest.Actions)
 		})
 	}
 }
