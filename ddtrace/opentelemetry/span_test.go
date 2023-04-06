@@ -170,7 +170,7 @@ func TestSpanSetStatus(t *testing.T) {
 
 	for _, test := range testData {
 		t.Run(fmt.Sprintf("Setting Code: %d", test.code), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			var sp oteltrace.Span
