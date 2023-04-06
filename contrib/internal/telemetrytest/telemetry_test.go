@@ -60,7 +60,6 @@ func TestTelemetryEnabled(t *testing.T) {
 		}
 		packages = append(packages, out)
 	}
-	// need to reformat the output of the go list command to be a valid json
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
