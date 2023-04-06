@@ -10,15 +10,14 @@ package lists
 //
 // an example:
 //
-//     Combinations([cat, dog, bird], 2):
-//       [cat] -> Combinations([dog, bird], 1)
-//         [cat, dog]
-//         [cat, bird]
-//       [dog] -> Combinations([bird], 1)
-//         [dog, bird]
-//       [bird] -> Combinations([], 0)
-//         n/a
-//
+//	Combinations([cat, dog, bird], 2):
+//	  [cat] -> Combinations([dog, bird], 1)
+//	    [cat, dog]
+//	    [cat, bird]
+//	  [dog] -> Combinations([bird], 1)
+//	    [dog, bird]
+//	  [bird] -> Combinations([], 0)
+//	    n/a
 func Combinations(list []string, pick int) (all [][]string) {
 	switch pick {
 	case 0:
