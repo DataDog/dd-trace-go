@@ -1,0 +1,16 @@
+unit-of-work:
+  stage: test-apps
+  when: manual
+  image: $BASE_CI_IMAGE
+  timeout: 1h
+  interruptible: true
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  script:
+    - ./.gitlab/scripts/run-test-apps.sh
+  variables:
+    DD_ENV: "gitlab"
+    # 660s is enough time to capture 10 profiles without missing the last one
+    # (TODO: Implement profiler.StopFlush())
+    DD_TEST_APPS_TOTAL_DURATION: "660s"
+    DD_TEST_APPS_PROFILE_PERIOD: "60s"
+    DD_TEST_APPS_REQUESTS_PER_SECOND: 25
