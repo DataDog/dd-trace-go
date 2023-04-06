@@ -83,7 +83,7 @@ require (
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.24.6
-	inet.af/netaddr v0.0.0-20220617031823-097006376321
+	inet.af/netaddr v0.0.0-20220811202034-502d2d690317 // indirect
 	k8s.io/apimachinery v0.17.0
 	k8s.io/client-go v0.17.0
 )
@@ -211,6 +211,7 @@ require (
 )
 
 require (
+	github.com/DataDog/appsec-internal-go v1.0.0
 	github.com/DataDog/go-libddwaf v1.0.0
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/microsoft/go-mssqldb v0.21.0
