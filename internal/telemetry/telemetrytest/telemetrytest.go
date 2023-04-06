@@ -19,6 +19,7 @@ type MockClient struct {
 	Configuration   []telemetry.Configuration
 	ProfilerEnabled bool
 	AsmEnabled      bool
+	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
 // Start starts and adds configuration data to the mock client.
@@ -27,6 +28,7 @@ func (c *MockClient) Start(configuration []telemetry.Configuration) {
 	defer c.mu.Unlock()
 	c.Started = true
 	c.Configuration = append(c.Configuration, configuration...)
+	c.Metrics = make(map[telemetry.Namespace]map[string]float64)
 }
 
 // ProductChange signals that a certain product is enabled or disabled for the mock client.
@@ -44,8 +46,12 @@ func (c *MockClient) ProductChange(namespace telemetry.Namespace, enabled bool, 
 	c.Configuration = append(c.Configuration, configuration...)
 }
 
-// Gauge is NOOP for the mock client.
+// stores the value for the given namespace and metric name
 func (c *MockClient) Gauge(namespace telemetry.Namespace, name string, value float64, tags []string, common bool) {
+	if _, ok := c.Metrics[namespace]; !ok {
+		c.Metrics[namespace] = map[string]float64{}
+	}
+	c.Metrics[namespace][name] = value
 }
 
 // Count is NOOP for the mock client.

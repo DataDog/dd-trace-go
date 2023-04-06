@@ -7,6 +7,8 @@
 // Datadog regarding usage of an APM library such as tracing or profiling.
 package telemetry
 
+import "time"
+
 // ProductChange enqueues an app-product-change event that signals a product has been turned on/off.
 // The caller can also specify additional configuration changes (e.g. profiler config info), which
 // will be sent via the app-client-configuration-change event.
@@ -43,4 +45,18 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 		c.scheduleSubmit(configReq)
 	}
 	c.scheduleSubmit(productReq)
+}
+
+// TimeGauge is used to track a metric that gauges the time (ms) of some portion of code.
+// It returns a function that should be called when the desired code finishes executing.
+// For example, by adding:
+// defer TimeGauge(namespace, "tracer_init_time", nil, true)()
+// at the beginning of the tracer Start function, the tracer start time is measured
+// and stored as a metric to be flushed by the global telemetry client.
+func TimeGauge(namespace Namespace, name string, tags []string, common bool) (finish func()) {
+	start := time.Now()
+	return func() {
+		elapsed := time.Since(start)
+		GlobalClient.Gauge(namespace, name, float64(elapsed.Milliseconds()), tags, common)
+	}
 }
