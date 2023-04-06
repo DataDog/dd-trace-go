@@ -108,8 +108,8 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 // containing the client IP and `network.client.ip` containing the remote IP.
 // The tags are present only if a valid ip address has been returned by
 // ClientIP().
-func ClientIPTags(headers map[string][]string, hasCanonicalMIMEHeaderKeys bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
-	remoteIP, clientIP := httpsec.ClientIP(headers, hasCanonicalMIMEHeaderKeys, remoteAddr, monitoredClientIPHeadersCfg)
+func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
+	remoteIP, clientIP := httpsec.ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
 	tags = httpsec.ClientIPTags(remoteIP, clientIP)
 	return tags, clientIP
 }
