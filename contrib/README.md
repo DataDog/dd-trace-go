@@ -29,7 +29,8 @@ Each integration comes with thorough documentation and usage examples. A good ov
 
 ### Instrumentation telemetry
 
-Every integration is expected to import instrumentation telemetry to track integration usage (more info [here](https://docs.datadoghq.com/tracing/configure_data_security/#telemetry-collection)). Instrumentation telemetry can be enabled by adding the following line to the contrib package's `init` function:
+Every integration is expected to import instrumentation telemetry to gather integration usage (more info [here](https://docs.datadoghq.com/tracing/configure_data_security/#telemetry-collection)). Instrumentation telemetry can be enabled by adding the following `init` function to the new contrib package:
 ```golang
-telemetry.LoadIntegration("<integration name>")
-```
+func init() {
+    telemetry.LoadIntegration("package/import/path")
+}
