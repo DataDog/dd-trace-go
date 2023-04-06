@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -67,6 +68,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		assert.NotNil(t, s.Tag(tagAWSRequestID))
+		assert.NotNil(t, s.Tag(ext.Error))
 	})
 
 	t.Run("ec2", func(t *testing.T) {
@@ -94,7 +96,39 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "http://ec2.us-west-2.amazonaws.com/", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		assert.NotNil(t, s.Tag(ext.Error))
 	})
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials)
+
+	session := WrapSession(session.Must(session.NewSession(cfg)), WithErrorCheck(func(err error) bool {
+		if aerr, ok := err.(awserr.Error); ok {
+			return aerr.Code() != "AccessDenied"
+		}
+		return true
+	}))
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	s3api := s3.New(session)
+	s3api.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String("BUCKET"),
+	})
+	root.Finish()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2)
+	assert.Equal(t, spans[1].TraceID(), spans[0].TraceID())
+
+	s := spans[0]
+	assert.Nil(t, s.Tag(ext.Error))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

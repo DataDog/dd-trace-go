@@ -8,6 +8,8 @@ package aws
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"github.com/aws/smithy-go"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -130,6 +132,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 		opts                []Option
 		expectedServiceName string
 		expectedRate        interface{}
+		testError           error
 	}{
 		{
 			name:                "with defaults",
@@ -167,6 +170,21 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			expectedServiceName: "aws.SQS",
 			expectedRate:        nil,
 		},
+		{
+			name: "with error check",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				var awsErr *smithy.GenericAPIError
+				if errors.As(err, &awsErr) {
+					return awsErr.ErrorCode() != "NotFound"
+				}
+				return true
+			})},
+			expectedServiceName: "aws.SQS",
+			expectedRate:        nil,
+			testError: &smithy.GenericAPIError{
+				Code: "NotFound",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -181,7 +199,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 					PartitionID:   "aws",
 					URL:           server.URL,
 					SigningRegion: "eu-west-1",
-				}, nil
+				}, tt.testError
 			})
 
 			awsCfg := aws.Config{
@@ -200,6 +218,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			s := spans[0]
 			assert.Equal(t, tt.expectedServiceName, s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedRate, s.Tag(ext.EventSampleRate))
+			assert.Nil(t, s.Tag(ext.Error))
 		})
 	}
 }
