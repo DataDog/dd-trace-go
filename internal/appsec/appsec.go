@@ -122,7 +122,7 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	if err := a.swapWAF(a.cfg.ruleset.raw()); err != nil {
+	if err := a.swapWAF(a.cfg.rulesManager.raw()); err != nil {
 		return err
 	}
 	if err := a.enableRCBlocking(); err != nil {

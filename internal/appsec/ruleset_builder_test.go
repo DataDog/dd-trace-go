@@ -15,7 +15,7 @@ func TestValidation(t *testing.T) {
 
 	for _, tc := range []struct {
 		name  string
-		f     rulesetFragment
+		f     rulesFragment
 		valid bool
 	}{
 		{
@@ -24,13 +24,13 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "overrides/empty",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{{}},
 			},
 		},
 		{
 			name: "overrides/valid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{
 					{
 						ID: "rule-id",
@@ -64,7 +64,7 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "overrides/invalid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{
 					{
 						Enabled: false,
@@ -74,7 +74,7 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "overrides/invalid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{
 					{
 						Enabled: true,
@@ -84,7 +84,7 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "overrides/invalid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{
 					{
 						OnMatch: []interface{}{nil, nil, nil},
@@ -94,7 +94,7 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "overrides/invalid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Overrides: []rulesOverrideEntry{
 					{
 						Enabled: false,
@@ -105,13 +105,13 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "exclusions/empty",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Exclusions: []exclusionEntry{{}},
 			},
 		},
 		{
 			name: "exclusions/valid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Exclusions: []exclusionEntry{
 					{
 						ID:         "filter-id",
@@ -146,7 +146,7 @@ func TestValidation(t *testing.T) {
 		},
 		{
 			name: "exclusions/invalid",
-			f: rulesetFragment{
+			f: rulesFragment{
 				Exclusions: []exclusionEntry{{
 					ID: "filter-id",
 				}},

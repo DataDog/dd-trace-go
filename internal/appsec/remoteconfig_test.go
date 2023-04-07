@@ -83,7 +83,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 				a.start()
 			}
 			require.Equal(t, tc.startBefore, a.started)
-			a.asmFeaturesCallback(tc.update)
+			a.handleASMFeatures(tc.update)
 			require.Equal(t, tc.startedAfter, a.started)
 		})
 	}
@@ -92,18 +92,18 @@ func TestASMFeaturesCallback(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.True(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.True(t, a.started)
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.False(t, a.started)
 	})
 }
@@ -356,7 +356,7 @@ func TestCapabilities(t *testing.T) {
 			expected: []remoteconfig.Capability{remoteconfig.ASMActivation},
 		},
 		{
-			name: "appsec-enabled/default-ruleset",
+			name: "appsec-enabled/default-rulesManager",
 			env:  map[string]string{enabledEnvVar: "1"},
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
@@ -364,7 +364,7 @@ func TestCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name:     "appsec-enabled/ruleset-from-env",
+			name:     "appsec-enabled/rulesManager-from-env",
 			env:      map[string]string{enabledEnvVar: "1", rulesEnvVar: "testdata/blocking.json"},
 			expected: []remoteconfig.Capability{remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking},
 		},
@@ -390,7 +390,7 @@ func TestCapabilities(t *testing.T) {
 	}
 }
 
-func craftRCUpdates(fragments map[string]rulesetFragment) map[string]remoteconfig.ProductUpdate {
+func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.ProductUpdate {
 	update := make(map[string]remoteconfig.ProductUpdate)
 	for path, frag := range fragments {
 		data, err := json.Marshal(frag)
@@ -419,16 +419,17 @@ func craftRCUpdates(fragments map[string]rulesetFragment) map[string]remoteconfi
 }
 
 func TestASMUmbrellaCallback(t *testing.T) {
-	baseRuleset := newRuleset(nil)
+	baseRuleset := newRulesManager(nil)
 	baseRuleset.compile()
 
-	rules := rulesetFragment{
+	rules := rulesFragment{
+		Version: baseRuleset.latest.Version,
 		Rules: []ruleEntry{
 			baseRuleset.base.Rules[0],
 		},
 	}
 
-	overrides1 := rulesetFragment{
+	overrides1 := rulesFragment{
 		Overrides: []rulesOverrideEntry{
 			{
 				ID:      "crs-941-290",
@@ -440,7 +441,7 @@ func TestASMUmbrellaCallback(t *testing.T) {
 			},
 		},
 	}
-	overrides2 := rulesetFragment{
+	overrides2 := rulesFragment{
 		Overrides: []rulesOverrideEntry{
 			{
 				ID:      "crs-941-300",
@@ -455,7 +456,7 @@ func TestASMUmbrellaCallback(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
-		ruleset *ruleset
+		ruleset *rulesManager
 	}{
 		{
 			name:    "no-updates",
@@ -463,20 +464,20 @@ func TestASMUmbrellaCallback(t *testing.T) {
 		},
 		{
 			name: "ASM/overrides/1-config",
-			ruleset: &ruleset{
+			ruleset: &rulesManager{
 				base:     baseRuleset.base,
 				basePath: baseRuleset.basePath,
-				edits: map[string]rulesetFragment{
+				edits: map[string]rulesFragment{
 					"overrides1/path": overrides1,
 				},
 			},
 		},
 		{
 			name: "ASM/overrides/2-configs",
-			ruleset: &ruleset{
+			ruleset: &rulesManager{
 				base:     baseRuleset.base,
 				basePath: baseRuleset.basePath,
-				edits: map[string]rulesetFragment{
+				edits: map[string]rulesFragment{
 					"overrides1/path": overrides1,
 					"overrides2/path": overrides2,
 				},
@@ -484,20 +485,20 @@ func TestASMUmbrellaCallback(t *testing.T) {
 		},
 		{
 			name: "ASM_DD/1-config",
-			ruleset: &ruleset{
+			ruleset: &rulesManager{
 				base:     rules,
 				basePath: "rules/path",
-				edits: map[string]rulesetFragment{
+				edits: map[string]rulesFragment{
 					"rules/path": rules,
 				},
 			},
 		},
 		{
 			name: "ASM_DD/2-configs (invalid)",
-			ruleset: &ruleset{
+			ruleset: &rulesManager{
 				base:     baseRuleset.base,
 				basePath: baseRuleset.basePath,
-				edits: map[string]rulesetFragment{
+				edits: map[string]rulesFragment{
 					"rules/path1": rules,
 					"rules/path2": rules,
 				},
@@ -516,10 +517,10 @@ func TestASMUmbrellaCallback(t *testing.T) {
 			updates := craftRCUpdates(tc.ruleset.edits)
 			activeAppSec.asmUmbrellaCallback(updates)
 			// Compare rulesets
-			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.ruleset.latest.Rules)
-			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.ruleset.latest.Overrides)
-			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.ruleset.latest.Exclusions)
-			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.ruleset.latest.Actions)
+			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.rulesManager.latest.Rules)
+			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)
+			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.rulesManager.latest.Exclusions)
+			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.rulesManager.latest.Actions)
 		})
 	}
 }

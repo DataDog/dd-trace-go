@@ -54,28 +54,24 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 	return merged
 }
 
-func isInSlice(strings []string, str string) bool {
-	for _, s := range strings {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
+// TODO: debug log + comments to explain
 func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	r := a.cfg.rulesManager.clone()
 	statuses := map[string]rc.ApplyStatus{}
+	// Process remote activation update separately
+	// This makes it easier to short circuit the following loop that focuses on rules related updates
+	if u, ok := updates[rc.ProductASMFeatures]; ok {
+		statuses = mergeMaps(statuses, a.handleASMFeatures(u))
+		delete(updates, rc.ProductASMFeatures)
+	}
+
+	// Process rules related updates
 	for p, u := range updates {
-		if !isInSlice(a.cfg.rc.Products, p) {
-			continue
-		}
 		switch p {
-		case rc.ProductASMFeatures:
-			statuses = mergeMaps(statuses, a.asmFeaturesCallback(u))
 		case rc.ProductASMData:
 			rulesData, status := mergeRulesData(u)
 			statuses = mergeMaps(statuses, status)
-			a.cfg.ruleset.edits["asmdata"] = rulesetFragment{RulesData: rulesData}
+			r.addEdit("asmdata", rulesFragment{RulesData: rulesData})
 		case rc.ProductASMDD:
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
@@ -84,54 +80,52 @@ func (a *appsec) asmUmbrellaCallback(updates map[string]remoteconfig.ProductUpda
 			}
 			for path, data := range u {
 				if data == nil {
-					a.cfg.ruleset.base.Default()
-					a.cfg.ruleset.basePath = ""
+					r.changeBase(defaultRulesFragment(), "")
 					break
 				}
-				if err := json.Unmarshal(data, &a.cfg.ruleset.base); err != nil {
+				var newBase rulesFragment
+				if err := json.Unmarshal(data, &newBase); err != nil {
 					statuses[path] = genApplyStatus(true, err)
 					break
 				}
-				a.cfg.ruleset.basePath = path
+				r.changeBase(newBase, path)
 				statuses[path] = genApplyStatus(true, nil)
 			}
 		case rc.ProductASM:
 			for path, data := range u {
 				statuses[path] = genApplyStatus(true, nil)
 				if data == nil {
-					delete(a.cfg.ruleset.edits, path)
+					r.removeEdit(path)
 					continue
 				}
-				var f rulesetFragment
+				var f rulesFragment
 				if err := json.Unmarshal(data, &f); err != nil || !f.validate() {
 					statuses[path] = genApplyStatus(true, err)
 				} else {
-					a.cfg.ruleset.edits[path] = f
+					r.addEdit(path, f)
 				}
 			}
 		default:
-			log.Debug("appsec: remote config: unknown product %s. Ignoring", p)
+			log.Debug("appsec: Remote config: unsubscribed product %s. Ignoring", p)
 		}
 	}
 
-	finalRuleset := a.cfg.ruleset.compile()
-	data, err := json.Marshal(finalRuleset)
-	if err != nil {
-		log.Debug("appsec: Remote config: cannot marshal the compiled ruleset")
+	r.compile()
+	data := r.raw()
+	log.Debug("appsec: Remote config: final compiled rulesManager: %v", data)
+	if err := a.swapWAF(data); err != nil {
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
-	} else if err := a.swapWAF(data); err != nil {
-		for k := range statuses {
-			statuses[k] = genApplyStatus(true, err)
-		}
+	} else {
+		*a.cfg.rulesManager = *r
 	}
 	return statuses
 }
 
-// asmFeaturesCallback deserializes an ASM_FEATURES configuration received through remote config
+// handleASMFeatures deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly.
-func (a *appsec) asmFeaturesCallback(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	statuses := statusesFromUpdate(u, false, nil)
 	if l := len(u); l > 1 {
 		log.Error("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)

@@ -184,7 +184,6 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				}
 			}
 		}
-		// TODO: suspicious request blocking by moving here all the addresses available when the request begins
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
@@ -478,7 +477,7 @@ func addRulesMonitoringTags(th tagsHolder, rInfo waf.RulesetInfo) {
 	}
 	rulesetErrors, err := json.Marshal(rInfo.Errors)
 	if err != nil {
-		log.Error("appsec: could not marshal ruleset info errors to json")
+		log.Error("appsec: could not marshal rulesManager info errors to json")
 	}
 	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
 	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))

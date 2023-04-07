@@ -15,18 +15,18 @@ import (
 )
 
 type (
-	// ruleset is used to build a full ruleset from a combination of ruleset fragments
-	// The `base` fragment is the default ruleset (either local or received through ASM_DD),
+	// rulesManager is used to build a full rules file from a combination of rules fragments
+	// The `base` fragment is the default rules (either local or received through ASM_DD),
 	// and the `edits` fragments each represent a remote configuration update that affects the rules.
 	// `basePath` is either empty if the local base rules are used, or holds the path of the ASM_DD config.
-	ruleset struct {
-		latest   rulesetFragment
-		base     rulesetFragment
+	rulesManager struct {
+		latest   rulesFragment
+		base     rulesFragment
 		basePath string
-		edits    map[string]rulesetFragment
+		edits    map[string]rulesFragment
 	}
-	// rulesetFragment can represent a full ruleset or a fragment of it.
-	rulesetFragment struct {
+	// rulesFragment can represent a full ruleset or a fragment of it.
+	rulesFragment struct {
 		Version    string               `json:"version,omitempty"`
 		Metadata   interface{}          `json:"metadata,omitempty"`
 		Rules      []ruleEntry          `json:"rules,omitempty"`
@@ -37,12 +37,12 @@ type (
 	}
 
 	ruleEntry struct {
-		ID           string                     `json:"id"`
-		Name         string                     `json:"name"`
-		Tags         map[string]json.RawMessage `json:"tags"`
-		Conditions   interface{}                `json:"conditions"`
-		Transformers interface{}                `json:"transformers"`
-		OnMatch      []interface{}              `json:"on_match,omitempty"`
+		ID           string                 `json:"id"`
+		Name         string                 `json:"name"`
+		Tags         map[string]interface{} `json:"tags"`
+		Conditions   interface{}            `json:"conditions"`
+		Transformers interface{}            `json:"transformers"`
+		OnMatch      []interface{}          `json:"on_match,omitempty"`
 	}
 
 	rulesOverrideEntry struct {
@@ -65,15 +65,15 @@ type (
 	}
 )
 
-// Default resets the ruleset to the default embedded security rules
-func (r_ *rulesetFragment) Default() {
+// defaultRulesFragment returns a rulesFragment created using the default static recommended rules
+func defaultRulesFragment() rulesFragment {
+	var f rulesFragment
 	buf := new(bytes.Buffer)
-	if err := json.Compact(buf, []byte(staticRecommendedRules)); err != nil {
-		return
+	json.Compact(buf, []byte(staticRecommendedRules))
+	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
+		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
-	if err := json.Unmarshal(buf.Bytes(), r_); err != nil {
-		return
-	}
+	return f
 }
 
 // validate checks that a rule override entry complies with the rule override RFC
@@ -86,8 +86,8 @@ func (e *exclusionEntry) validate() bool {
 	return len(e.Inputs) > 0 || len(e.Conditions) > 0 || len(e.RulesTarget) > 0
 }
 
-// validate checks that the ruleset fragment's fields comply with all relevant RFCs
-func (r_ *rulesetFragment) validate() bool {
+// validate checks that the rules fragment's fields comply with all relevant RFCs
+func (r_ *rulesFragment) validate() bool {
 	for _, o := range r_.Overrides {
 		if !o.validate() {
 			return false
@@ -102,27 +102,61 @@ func (r_ *rulesetFragment) validate() bool {
 	return true
 }
 
-// newRuleset initializes and returns a new ruleset using the provided rules.
+func (r_ *rulesFragment) clone() rulesFragment {
+	var f rulesFragment
+	f.Version = r_.Version
+	f.Metadata = r_.Metadata
+	f.Overrides = append(f.Overrides, r_.Overrides...)
+	f.Exclusions = append(f.Exclusions, r_.Exclusions...)
+	f.RulesData = append(f.RulesData, r_.RulesData...)
+	// TODO (Francois Mazeau): copy more fields once we handle them
+	return f
+}
+
+// newRulesManager initializes and returns a new rulesManager using the provided rules.
 // If no rules are provided (nil), or the provided rules are invalid, the default rules are used instead
-func newRuleset(rules []byte) *ruleset {
-	var f rulesetFragment
-	f.Default()
+func newRulesManager(rules []byte) *rulesManager {
+	f := defaultRulesFragment()
 	buf := new(bytes.Buffer)
 	json.Compact(buf, rules)
 	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
-		log.Debug("appsec: cannot create ruleset from specified rules. Using default rules instead")
+		log.Debug("appsec: cannot create rulesManager from specified rules. Using default rules instead")
 	}
-	return &ruleset{
+	return &rulesManager{
 		latest: f,
 		base:   f,
-		edits:  map[string]rulesetFragment{},
+		edits:  map[string]rulesFragment{},
 	}
 }
 
-// compile compiles the ruleset fragments together and returns the compound result
-func (r *ruleset) compile() rulesetFragment {
+func (r *rulesManager) clone() *rulesManager {
+	var clone rulesManager
+	clone.edits = make(map[string]rulesFragment, len(r.edits))
+	for k, v := range r.edits {
+		clone.edits[k] = v
+	}
+	clone.base = r.base.clone()
+	clone.latest = r.latest.clone()
+	return &clone
+}
+
+func (r *rulesManager) addEdit(cfgPath string, f rulesFragment) {
+	r.edits[cfgPath] = f
+}
+
+func (r *rulesManager) removeEdit(cfgPath string) {
+	delete(r.edits, cfgPath)
+}
+
+func (r *rulesManager) changeBase(f rulesFragment, basePath string) {
+	r.base = f
+	r.basePath = basePath
+}
+
+// compile compiles the rulesManager fragments together stores the result in r.latest
+func (r *rulesManager) compile() {
 	if r.base.Rules == nil || len(r.base.Rules) == 0 {
-		r.base.Default()
+		r.base = defaultRulesFragment()
 	}
 	r.latest = r.base
 
@@ -133,12 +167,10 @@ func (r *ruleset) compile() rulesetFragment {
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
-
-	return r.latest
 }
 
-// raw returns a compact json version of the ruleset
-func (r *ruleset) raw() []byte {
+// raw returns a compact json version of the rules
+func (r *rulesManager) raw() []byte {
 	data, _ := json.Marshal(r.latest)
 	return data
 }
