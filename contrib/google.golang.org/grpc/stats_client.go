@@ -36,7 +36,7 @@ func (h *clientStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		rti.FullMethodName,
 		"grpc.client",
 		h.cfg.clientServiceName(),
-		tracer.AnalyticsRate(h.cfg.analyticsRate),
+		h.cfg.spanOpts...,
 	)
 	ctx = injectSpanIntoContext(ctx)
 	return ctx

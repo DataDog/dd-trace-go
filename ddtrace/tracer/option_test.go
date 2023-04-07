@@ -953,3 +953,20 @@ func TestWithLogStartup(t *testing.T) {
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
 }
+
+func TestHostnameDisabled(t *testing.T) {
+	t.Run("DisabledWithUDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+	t.Run("Default", func(t *testing.T) {
+		c := newConfig()
+		assert.True(t, c.enableHostnameDetection)
+	})
+	t.Run("DisableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+}

@@ -11,14 +11,14 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestSetSecurityEventTags(t *testing.T) {
@@ -158,8 +158,8 @@ func TestClientIP(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := httpsec.ClientIPTags(tc.md, tc.addr.String())
-			expectedClientIP, _ := instrumentation.NetaddrParseIP(tc.expectedClientIP)
+			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
+			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})
 	}

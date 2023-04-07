@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -375,7 +376,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
-			spanCtx := &spanContext{traceID: 42, spanID: 42}
+			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
 			span.SetTag(scenario.tag, true)
@@ -426,7 +427,7 @@ const (
 func TestSpanSetMetric(t *testing.T) {
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(4, len(span.Metrics))
+			assert.Equal(5, len(span.Metrics))
 			_, ok := span.Metrics[keySamplingPriority]
 			assert.True(ok)
 			_, ok = span.Metrics[keySamplingPriorityRate]
@@ -461,7 +462,7 @@ func TestSpanSetMetric(t *testing.T) {
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
 			span.SetTag("finished.test", 1337)
-			assert.Equal(4, len(span.Metrics))
+			assert.Equal(5, len(span.Metrics))
 			_, ok := span.Metrics["finished.test"]
 			assert.False(ok)
 		},
@@ -567,6 +568,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 		span.SetTag("race_test2", 133.7)
 		span.SetTag("race_test3", 133.7)
 		span.SetTag(ext.Error, errors.New("t"))
+		span.SetUser("race_test_user_1")
 		done <- struct{}{}
 	}()
 
@@ -707,6 +709,70 @@ func TestSpanLog(t *testing.T) {
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
+
+	t.Run("128-bit-generation-only", func(t *testing.T) {
+		// Generate 128 bit trace ids, but don't log them. So only the lower
+		// 64 bits should be logged in decimal form.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		// DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED is false by default
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		span.TraceID = 12345678
+		span.SpanID = 87654321
+		span.Finish()
+		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321"`
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("128-bit-logging-only", func(t *testing.T) {
+		// Logging 128-bit trace ids is enabled, but it's not present in
+		// the span. So only the lower 64 bits should be logged in decimal form.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is false by default
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		span.TraceID = 12345678
+		span.SpanID = 87654321
+		span.Finish()
+		expect := `dd.service=tracer.test dd.env=testenv dd.trace_id="12345678" dd.span_id="87654321"`
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	})
+
+	t.Run("128-bit-logging-with-generation", func(t *testing.T) {
+		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
+		// a quoted 32 byte hex string should be printed for the dd.trace_id.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		span.SpanID = 87654321
+		span.Finish()
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321"`, span.context.TraceID128())
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+		v, _ := span.context.meta(keyTraceID128)
+		assert.NotEmpty(v)
+	})
+
+	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
+		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
+		// a quoted 32 byte hex string should be printed for the dd.trace_id.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
+		span.context.traceID.SetUpper(1)
+		span.Finish()
+		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
+		v, _ := span.context.meta(keyTraceID128)
+		assert.Equal("0000000000000001", v)
+	})
 }
 
 func TestRootSpanAccessor(t *testing.T) {
@@ -767,6 +833,30 @@ func TestRootSpanAccessor(t *testing.T) {
 		require.Equal(t, root, child21.(*span).Root())
 		require.Equal(t, root, child211.(*span).Root())
 	})
+}
+
+func TestSpanStartAndFinishLogs(t *testing.T) {
+	tp := new(log.RecordLogger)
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugMode(true))
+	defer stop()
+
+	span := tracer.StartSpan("op")
+	time.Sleep(time.Millisecond * 2)
+	span.Finish()
+	started, finished := false, false
+	for _, l := range tp.Logs() {
+		if !started {
+			started = strings.Contains(l, "DEBUG: Started Span")
+		}
+		if !finished {
+			finished = strings.Contains(l, "DEBUG: Finished Span")
+		}
+		if started && finished {
+			break
+		}
+	}
+	require.True(t, started)
+	require.True(t, finished)
 }
 
 func BenchmarkSetTagMetric(b *testing.B) {
