@@ -192,7 +192,7 @@ var profileTypes = map[ProfileType]profileType{
 			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			lt := newLimitedTraceCollector(buf, p.cfg.traceConfig.Limit)
+			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
@@ -217,17 +217,13 @@ const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
 
 type limitedTraceCollector struct {
 	w       io.Writer
-	limit   int
-	written int
-	// stopped indicates that the limit has been exceeded, and must be
-	// checked before closing done to avoid a panic from closing a closed
-	// channel.
-	stopped bool
+	limit   int64
+	written int64
 	// done is closed to signal that the limit has been exceeded
 	done chan struct{}
 }
 
-func newLimitedTraceCollector(w io.Writer, limit int) *limitedTraceCollector {
+func newLimitedTraceCollector(w io.Writer, limit int64) *limitedTraceCollector {
 	return &limitedTraceCollector{w: w, limit: limit, done: make(chan struct{})}
 }
 
@@ -239,10 +235,13 @@ func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
 		// TODO: still count n against the limit?
 		return
 	}
-	l.written += n
-	if l.written >= l.limit && !l.stopped {
-		l.stopped = true
-		close(l.done)
+	l.written += int64(n)
+	if l.written >= l.limit {
+		select {
+		case <-l.done:
+		default:
+			close(l.done)
+		}
 	}
 	return
 }
