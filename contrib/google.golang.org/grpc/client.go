@@ -183,8 +183,8 @@ func doClientRequest(
 		span.SetTag(tagMethodKind, methodKind)
 	}
 	// check the old ctx, because it's smaller & less expensive to check
-	if v := ctx.Value("grpc.target"); v != nil {
-		span.SetTag("grpc.target", v)
+	if v := ctx.Value(tagTarget); v != nil {
+		span.SetTag(tagTarget, v)
 	}
 
 	// fill in the peer so we can add it to the tags

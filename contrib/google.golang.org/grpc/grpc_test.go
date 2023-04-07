@@ -66,6 +66,7 @@ func TestUnary(t *testing.T) {
 			defer mt.Stop()
 
 			span, ctx := tracer.StartSpanFromContext(context.Background(), "a", tracer.ServiceName("b"), tracer.ResourceName("c"))
+			ctx = context.WithValue(ctx, tagTarget, "dns:///127:0:0:1:8080")
 
 			resp, err := client.Ping(ctx, &FixtureRequest{Name: tt.message})
 			span.Finish()
@@ -102,6 +103,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
+			assert.Equal(clientSpan.Tag(tagTarget), "dns:///127:0:0:1:8080")
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -162,6 +164,8 @@ func TestStreaming(t *testing.T) {
 					"expected target host tag to be set in span: %v", span)
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
+				assert.Equal(t, "dns:///127:0:0:1:8080", span.Tag(tagTarget),
+					"expected target to be set in span: %v", span)
 				fallthrough
 			case "grpc.server":
 				assert.Equal(t, methodKindBidiStream, span.Tag(tagMethodKind),
@@ -217,6 +221,7 @@ func TestStreaming(t *testing.T) {
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
 			tracer.ResourceName("c"))
+		ctx = context.WithValue(ctx, tagTarget, "dns:///127:0:0:1:8080")
 
 		runPings(t, ctx, rig.client)
 
@@ -244,6 +249,7 @@ func TestStreaming(t *testing.T) {
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
 			tracer.ResourceName("c"))
+		ctx = context.WithValue(ctx, tagTarget, "dns:///127:0:0:1:8080")
 
 		runPings(t, ctx, rig.client)
 
@@ -271,6 +277,7 @@ func TestStreaming(t *testing.T) {
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
 			tracer.ServiceName("b"),
 			tracer.ResourceName("c"))
+		ctx = context.WithValue(ctx, tagTarget, "dns:///127:0:0:1:8080")
 
 		runPings(t, ctx, rig.client)
 
