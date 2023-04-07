@@ -42,7 +42,7 @@ func TestConfigChange(t *testing.T) {
 	body := client.requests[0].Body
 	assert.Equal(t, RequestTypeAppClientConfigurationChange, body.RequestType)
 	var configPayload *ConfigurationChange = client.requests[0].Body.Payload.(*ConfigurationChange)
-	assert.Len(t, configPayload.Configuration, 1)
+	require.Len(t, configPayload.Configuration, 1)
 
 	Check(t, configPayload.Configuration, "delta_profiles", true)
 }
