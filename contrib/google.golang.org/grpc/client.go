@@ -170,7 +170,7 @@ func doClientRequest(
 	handler func(ctx context.Context, opts []grpc.CallOption) error,
 ) (ddtrace.Span, context.Context, error) {
 	// inject the trace id into the metadata
-	span, ctx := startSpanFromContext(
+	span, newctx := startSpanFromContext(
 		ctx,
 		method,
 		"grpc.client",
@@ -182,17 +182,21 @@ func doClientRequest(
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)
 	}
+	// check the old ctx, because it's smaller & less expensive to check
+	if v := ctx.Value("grpc.target"); v != nil {
+		span.SetTag("grpc.target", v)
+	}
 
 	// fill in the peer so we can add it to the tags
 	var p peer.Peer
 	opts = append(opts, grpc.Peer(&p))
 
-	handlerCtx := injectSpanIntoContext(ctx)
+	handlerCtx := injectSpanIntoContext(newctx)
 	err := handler(handlerCtx, opts)
 
 	setSpanTargetFromPeer(span, p)
 
-	return span, ctx, err
+	return span, newctx, err
 }
 
 // setSpanTargetFromPeer sets the target tags in a span based on the gRPC peer.
