@@ -498,6 +498,11 @@ func (s *span) finish(finishTime int64) {
 		s.context.trace.keep()
 	}
 	s.context.finish()
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			s, s.Name, s.Resource, s.Meta, s.Metrics)
+	}
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application

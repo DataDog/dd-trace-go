@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -832,6 +833,30 @@ func TestRootSpanAccessor(t *testing.T) {
 		require.Equal(t, root, child21.(*span).Root())
 		require.Equal(t, root, child211.(*span).Root())
 	})
+}
+
+func TestSpanStartAndFinishLogs(t *testing.T) {
+	tp := new(log.RecordLogger)
+	tracer := newTracer(WithLogger(tp), WithDebugMode(true))
+	defer tracer.Stop()
+
+	span := tracer.StartSpan("op")
+	time.Sleep(time.Millisecond * 2)
+	span.Finish()
+	started, finished := false, false
+	for _, l := range tp.Logs() {
+		if !started {
+			started = strings.Contains(l, "DEBUG: Started Span")
+		}
+		if !finished {
+			finished = strings.Contains(l, "DEBUG: Finished Span")
+		}
+		if started && finished {
+			break
+		}
+	}
+	require.True(t, started)
+	require.True(t, finished)
 }
 
 func BenchmarkSetTagMetric(b *testing.B) {
