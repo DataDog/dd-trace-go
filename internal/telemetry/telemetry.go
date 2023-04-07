@@ -55,7 +55,7 @@ func (c *client) configChange(configuration []Configuration) {
 	}
 }
 
-// productOn enqueues an app-product-change event that signals a product has been turned on.
+// productEnabled enqueues an app-product-change event that signals a product has been turned on.
 // Must be called with c.mu locked. An app-product-change event with enabled=true indicates
 // that a certain product has been used for this application.
 func (c *client) productEnabled(namespace Namespace) {
