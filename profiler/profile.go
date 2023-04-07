@@ -13,7 +13,6 @@ import (
 	"io"
 	"runtime"
 	"runtime/trace"
-	"sync"
 	"time"
 
 	"github.com/DataDog/gostackparse"
@@ -193,15 +192,16 @@ var profileTypes = map[ProfileType]profileType{
 			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			lt := &limitedTraceCollector{
-				w:     buf,
-				limit: p.cfg.traceConfig.Limit,
-			}
+			lt := newLimitedTraceCollector(buf, p.cfg.traceConfig.Limit)
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
-			p.interruptibleSleep(p.cfg.period)
-			lt.Stop()
+			select {
+			case <-p.exit: // Profiling was stopped
+			case <-time.After(p.cfg.period): // The profiling cycle has ended
+			case <-lt.done: // The trace size limit was exceeded
+			}
+			trace.Stop()
 			return buf.Bytes(), nil
 		},
 	},
@@ -219,12 +219,16 @@ type limitedTraceCollector struct {
 	w       io.Writer
 	limit   int
 	written int
-	// stop is used to control stopping the execution tracer. Since stopping
-	// tracing incurs a STW pause to even attempt(*), we'd like to only do
-	// it once.
-	//
-	// *: see https://cs.opensource.google/go/go/+/refs/tags/go1.20.1:src/runtime/trace.go;l=330;drc=40ed3591829f67e7a116180aec543dd15bfcf5f9
-	stop sync.Once
+	// stopped indicates that the limit has been exceeded, and must be
+	// checked before closing done to avoid a panic from closing a closed
+	// channel.
+	stopped bool
+	// done is closed to signal that the limit has been exceeded
+	done chan struct{}
+}
+
+func newLimitedTraceCollector(w io.Writer, limit int) *limitedTraceCollector {
+	return &limitedTraceCollector{w: w, limit: limit, done: make(chan struct{})}
 }
 
 // Write calls the underlying writer's Write method, and stops tracing if the
@@ -236,20 +240,11 @@ func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
 		return
 	}
 	l.written += n
-	if l.written >= l.limit {
-		// We can't stop tracing within this method, because trace.Stop
-		// won't return until all pending events are written, which
-		// requires calling this function, meaning we'll deadlock.
-		go l.Stop()
+	if l.written >= l.limit && !l.stopped {
+		l.stopped = true
+		close(l.done)
 	}
 	return
-}
-
-// Stop stops tracing
-func (l *limitedTraceCollector) Stop() {
-	l.stop.Do(func() {
-		trace.Stop()
-	})
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
