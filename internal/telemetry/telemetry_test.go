@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProductEnabled(t *testing.T) {
@@ -24,7 +25,7 @@ func TestProductEnabled(t *testing.T) {
 	client.start(nil, NamespaceTracers)
 	client.productEnabled(NamespaceProfilers)
 	// should contain app-client-configuration-change and app-product-change
-	assert.Len(t, client.requests, 1)
+	require.Len(t, client.requests, 1)
 	body := client.requests[0].Body
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
@@ -36,7 +37,7 @@ func TestConfigChange(t *testing.T) {
 	client := new(client)
 	client.start(nil, NamespaceTracers)
 	client.configChange([]Configuration{BoolConfig("delta_profiles", true)})
-	assert.Len(t, client.requests, 1)
+	require.Len(t, client.requests, 1)
 
 	body := client.requests[0].Body
 	assert.Equal(t, RequestTypeAppClientConfigurationChange, body.RequestType)
