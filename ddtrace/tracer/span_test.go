@@ -837,8 +837,8 @@ func TestRootSpanAccessor(t *testing.T) {
 
 func TestSpanStartAndFinishLogs(t *testing.T) {
 	tp := new(log.RecordLogger)
-	tracer := newTracer(WithLogger(tp), WithDebugMode(true))
-	defer tracer.Stop()
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugMode(true))
+	defer stop()
 
 	span := tracer.StartSpan("op")
 	time.Sleep(time.Millisecond * 2)
