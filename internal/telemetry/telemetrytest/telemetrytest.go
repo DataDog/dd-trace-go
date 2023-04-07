@@ -17,6 +17,7 @@ type MockClient struct {
 	mu              sync.Mutex
 	Started         bool
 	Configuration   []telemetry.Configuration
+	Integrations    []string
 	ProfilerEnabled bool
 	AsmEnabled      bool
 }
