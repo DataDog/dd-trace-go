@@ -75,7 +75,6 @@ func (c *client) productEnabled(namespace Namespace) {
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)
 	productReq.Body.Payload = products
-	c.newRequest(RequestTypeAppClientConfigurationChange)
 	c.scheduleSubmit(productReq)
 }
 

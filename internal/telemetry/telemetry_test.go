@@ -24,13 +24,13 @@ func TestProductEnabled(t *testing.T) {
 	client := new(client)
 	client.start(nil, NamespaceTracers)
 	client.productEnabled(NamespaceProfilers)
-	// should contain app-client-configuration-change and app-product-change
+	// should just contain app-product-change
 	require.Len(t, client.requests, 1)
 	body := client.requests[0].Body
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
 	var productsPayload *Products = body.Payload.(*Products)
-	assert.Equal(t, productsPayload.Profiler.Enabled, true)
+	assert.True(t, productsPayload.Profiler.Enabled)
 }
 
 func TestConfigChange(t *testing.T) {
