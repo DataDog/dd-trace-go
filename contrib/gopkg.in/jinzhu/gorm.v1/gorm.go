@@ -21,8 +21,10 @@ import (
 	"gopkg.in/jinzhu/gorm.v1"
 )
 
+const componentName = "gopkg.in/jinzhu/gorm.v1"
+
 func init() {
-	telemetry.LoadIntegration("gopkg.in/jinzhu/gorm.v1")
+	telemetry.LoadIntegration(componentName)
 }
 
 const (
@@ -127,7 +129,7 @@ func after(scope *gorm.Scope, operationName string) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(scope.SQL),
-		tracer.Tag(ext.Component, "gopkg.in/jinzhu/gorm.v1"),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

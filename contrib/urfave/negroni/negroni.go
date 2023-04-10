@@ -20,8 +20,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "urfave/negroni"
+
 func init() {
-	telemetry.LoadIntegration("urfave/negroni")
+	telemetry.LoadIntegration(componentName)
 }
 
 // DatadogMiddleware returns middleware that will trace incoming requests.
@@ -62,7 +64,7 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "urfave/negroni"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
 

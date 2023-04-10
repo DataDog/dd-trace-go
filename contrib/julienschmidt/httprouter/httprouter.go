@@ -20,8 +20,10 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+const componentName = "jinzhu/gorm"
+
 func init() {
-	telemetry.LoadIntegration("julienschmidt/httprouter")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Router is a traced version of httprouter.Router.
@@ -42,7 +44,7 @@ func New(opts ...RouterOption) *Router {
 	}
 
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "julienschmidt/httprouter"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}

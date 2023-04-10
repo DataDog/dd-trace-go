@@ -25,8 +25,10 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+const componentName = "google.golang.org/grpc.v12"
+
 func init() {
-	telemetry.LoadIntegration("google.golang.org/grpc.v12")
+	telemetry.LoadIntegration(componentName)
 }
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
@@ -63,7 +65,7 @@ func startSpanFromContext(ctx context.Context, method, service string, opts ...t
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 		tracer.Measured(),
-		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
 	md, _ := metadata.FromContext(ctx) // nil is ok
@@ -93,7 +95,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		spanopts = append(spanopts,
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
-			tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)

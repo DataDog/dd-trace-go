@@ -99,7 +99,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				"grpc.server",
 				cfg.serverServiceName(),
 				cfg.startSpanOptions(tracer.Measured(),
-					tracer.Tag(ext.Component, "google.golang.org/grpc"),
+					tracer.Tag(ext.Component, componentName),
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 			)
 			switch {
@@ -147,7 +147,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			"grpc.server",
 			cfg.serverServiceName(),
 			cfg.startSpanOptions(tracer.Measured(),
-				tracer.Tag(ext.Component, "google.golang.org/grpc"),
+				tracer.Tag(ext.Component, componentName),
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)

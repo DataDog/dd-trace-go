@@ -20,8 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
+const componentName = "gorm.io/gorm.v1"
+
 func init() {
-	telemetry.LoadIntegration("gorm.io/gorm.v1")
+	telemetry.LoadIntegration(componentName)
 }
 
 type key string
@@ -128,7 +130,7 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(db.Statement.SQL.String()),
-		tracer.Tag(ext.Component, "gorm.io/gorm.v1"),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

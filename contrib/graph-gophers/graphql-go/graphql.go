@@ -27,16 +27,18 @@ import (
 	"github.com/graph-gophers/graphql-go/trace"
 )
 
+const componentName = "graph-gophers/graphql-go"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
+
 const (
 	tagGraphqlField         = "graphql.field"
 	tagGraphqlQuery         = "graphql.query"
 	tagGraphqlType          = "graphql.type"
 	tagGraphqlOperationName = "graphql.operation.name"
 )
-
-func init() {
-	telemetry.LoadIntegration("graph-gophers/graphql-go")
-}
 
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
 // to the Datadog tracer.
@@ -52,7 +54,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 		tracer.Tag(tagGraphqlOperationName, operationName),
-		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
@@ -83,7 +85,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
-		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {

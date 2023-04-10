@@ -22,8 +22,10 @@ import (
 	"github.com/go-chi/chi/middleware"
 )
 
+const componentName = "go-chi/chi"
+
 func init() {
-	telemetry.LoadIntegration("go-chi/chi")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -35,7 +37,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "go-chi/chi"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

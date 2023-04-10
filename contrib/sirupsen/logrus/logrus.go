@@ -13,8 +13,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const componentName = "sirupsen/logrus"
+
 func init() {
-	telemetry.LoadIntegration("sirupsen/logrus")
+	telemetry.LoadIntegration(componentName)
 }
 
 // DDContextLogHook ensures that any span in the log context is correlated to log output.

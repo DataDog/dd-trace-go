@@ -21,8 +21,10 @@ import (
 	"github.com/zenazn/goji/web"
 )
 
+const componentName = "zenazn/goji.v1/web"
+
 func init() {
-	telemetry.LoadIntegration("zenazn/goji.v1/web")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Middleware returns a goji middleware function that will trace incoming requests.
@@ -41,7 +43,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "zenazn/goji.v1/web"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 	log.Debug("contrib/zenazn/goji.v1/web: Configuring Middleware: %#v", cfg)

@@ -22,8 +22,10 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+const componentName = "google.golang.org/api"
+
 func init() {
-	telemetry.LoadIntegration("google.golang.org/api")
+	telemetry.LoadIntegration(componentName)
 }
 
 // apiEndpoints are all of the defined endpoints for the Google API; it is populated

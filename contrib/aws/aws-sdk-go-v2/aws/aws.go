@@ -22,8 +22,10 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
+const componentName = "aws/aws-sdk-go-v2/aws"
+
 func init() {
-	telemetry.LoadIntegration("aws/aws-sdk-go-v2/aws")
+	telemetry.LoadIntegration(componentName)
 }
 
 const (
@@ -83,7 +85,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(tagAWSOperation, operation),
 			tracer.Tag(tagAWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
-			tracer.Tag(ext.Component, "aws/aws-sdk-go-v2/aws"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {

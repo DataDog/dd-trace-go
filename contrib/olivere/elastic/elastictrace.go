@@ -25,8 +25,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "olivere/elastic"
+
 func init() {
-	telemetry.LoadIntegration("olivere/elastic")
+	telemetry.LoadIntegration(componentName)
 }
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
@@ -60,7 +62,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
-		tracer.Tag(ext.Component, "olivere/elastic"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
 	}

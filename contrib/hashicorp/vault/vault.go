@@ -29,8 +29,10 @@ import (
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
 
+const componentName = "hashicorp/vault"
+
 func init() {
-	telemetry.LoadIntegration("hashicorp/vault")
+	telemetry.LoadIntegration(componentName)
 }
 
 // NewHTTPClient returns an http.Client for use in the Vault API config

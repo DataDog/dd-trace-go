@@ -18,8 +18,10 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
+const componentName = "hashicorp/consul"
+
 func init() {
-	telemetry.LoadIntegration("hashicorp/consul")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
@@ -75,7 +77,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
-		tracer.Tag(ext.Component, "hashicorp/consul"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}

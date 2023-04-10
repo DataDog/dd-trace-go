@@ -20,8 +20,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
+const componentName = "aws/aws-sdk-go/aws"
+
 func init() {
-	telemetry.LoadIntegration("aws/aws-sdk-go/aws")
+	telemetry.LoadIntegration(componentName)
 }
 
 const (
@@ -77,7 +79,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
-		tracer.Tag(ext.Component, "aws/aws-sdk-go/aws"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {

@@ -18,8 +18,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "k8s.io/client-go/kubernetes"
+
 func init() {
-	telemetry.LoadIntegration("k8s.io/client-go/kubernetes")
+	telemetry.LoadIntegration(componentName)
 }
 
 const (

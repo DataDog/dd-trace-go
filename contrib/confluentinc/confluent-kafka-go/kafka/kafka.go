@@ -19,8 +19,10 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
+const componentName = "confluentinc/confluent-kafka-go/kafka"
+
 func init() {
-	telemetry.LoadIntegration("confluentinc/confluent-kafka-go/kafka")
+	telemetry.LoadIntegration(componentName)
 }
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
@@ -101,7 +103,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
-		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
@@ -213,7 +215,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),

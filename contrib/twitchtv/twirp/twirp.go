@@ -22,8 +22,10 @@ import (
 	"github.com/twitchtv/twirp"
 )
 
+const componentName = "twitchtv/twirp"
+
 func init() {
-	telemetry.LoadIntegration("twitchtv/twirp")
+	telemetry.LoadIntegration(componentName)
 }
 
 type (
@@ -60,7 +62,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		tracer.ServiceName(wc.cfg.clientServiceName()),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
-		tracer.Tag(ext.Component, "twitchtv/twirp"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 	}
 	ctx := req.Context()
@@ -117,7 +119,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
-			tracer.Tag(ext.Component, "twitchtv/twirp"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Measured(),
 		}
@@ -168,7 +170,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Measured(),
-			tracer.Tag(ext.Component, "twitchtv/twirp"),
+			tracer.Tag(ext.Component, componentName),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.package", pkg))

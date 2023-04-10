@@ -23,8 +23,10 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+const componentName = "syndtr/goleveldb/leveldb"
+
 func init() {
-	telemetry.LoadIntegration("syndtr/goleveldb/leveldb")
+	telemetry.LoadIntegration(componentName)
 }
 
 // A DB wraps a leveldb.DB and traces all queries.
@@ -276,7 +278,7 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),
-		tracer.Tag(ext.Component, "syndtr/goleveldb/leveldb"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemLevelDB),
 	}

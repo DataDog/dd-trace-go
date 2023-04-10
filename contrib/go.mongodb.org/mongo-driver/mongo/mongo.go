@@ -26,8 +26,10 @@ import (
 	"go.mongodb.org/mongo-driver/event"
 )
 
+const componentName = "go.mongodb.org/mongo-driver/mongo"
+
 func init() {
-	telemetry.LoadIntegration("go.mongodb.org/mongo-driver/mongo")
+	telemetry.LoadIntegration(componentName)
 }
 
 type spanKey struct {
@@ -53,7 +55,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
-		tracer.Tag(ext.Component, "go.mongodb.org/mongo-driver/mongo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}

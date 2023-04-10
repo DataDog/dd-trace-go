@@ -18,8 +18,10 @@ import (
 	"github.com/go-pg/pg/v10"
 )
 
+const componentName = "go-pg/pg.v10"
+
 func init() {
-	telemetry.LoadIntegration("go-pg/pg.v10")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Wrap augments the given DB with tracing.
@@ -48,7 +50,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),
-		tracer.Tag(ext.Component, "go-pg/pg.v10"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {

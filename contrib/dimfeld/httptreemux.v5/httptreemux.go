@@ -19,8 +19,10 @@ import (
 	"github.com/dimfeld/httptreemux/v5"
 )
 
+const componentName = "dimfeld/httptreemux.v5"
+
 func init() {
-	telemetry.LoadIntegration("dimfeld/httptreemux.v5")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Router is a traced version of httptreemux.TreeMux.
@@ -38,7 +40,7 @@ func New(opts ...RouterOption) *Router {
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring Router: %#v", cfg)
 	return &Router{httptreemux.New(), cfg}
 }
@@ -71,7 +73,7 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }

@@ -176,7 +176,7 @@ func doClientRequest(
 		"grpc.client",
 		cfg.clientServiceName(),
 		cfg.startSpanOptions(
-			tracer.Tag(ext.Component, "google.golang.org/grpc"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
 	)
 	if methodKind != "" {

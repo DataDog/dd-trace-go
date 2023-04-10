@@ -20,8 +20,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const componentName = "gin-gonic/gin"
+
 func init() {
-	telemetry.LoadIntegration("gin-gonic/gin")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
@@ -34,7 +36,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "gin-gonic/gin"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(c *gin.Context) {

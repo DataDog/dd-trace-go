@@ -19,8 +19,10 @@ import (
 	"github.com/tidwall/buntdb"
 )
 
+const componentName = "tidwall/buntdb"
+
 func init() {
-	telemetry.LoadIntegration("tidwall/buntdb")
+	telemetry.LoadIntegration(componentName)
 }
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
@@ -103,7 +105,7 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
-		tracer.Tag(ext.Component, "tidwall/buntdb"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemBuntDB),
 	}

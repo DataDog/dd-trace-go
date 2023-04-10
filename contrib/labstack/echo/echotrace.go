@@ -23,8 +23,10 @@ import (
 	"github.com/labstack/echo"
 )
 
+const componentName = "labstack/echo"
+
 func init() {
-	telemetry.LoadIntegration("labstack/echo")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
@@ -37,7 +39,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "labstack/echo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {

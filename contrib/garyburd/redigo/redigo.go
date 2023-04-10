@@ -24,8 +24,10 @@ import (
 	redis "github.com/garyburd/redigo/redis"
 )
 
+const componentName = "garyburd/redigo"
+
 func init() {
-	telemetry.LoadIntegration("garyburd/redigo/redis")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -108,7 +110,7 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.Tag(ext.Component, "garyburd/redigo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}

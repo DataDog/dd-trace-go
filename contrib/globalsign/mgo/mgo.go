@@ -19,8 +19,10 @@ import (
 	"github.com/globalsign/mgo"
 )
 
+const componentName = "globalsign/mgo"
+
 func init() {
-	telemetry.LoadIntegration("globalsign/mgo")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Dial opens a connection to a MongoDB server and configures it
@@ -61,7 +63,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName("mongodb.query"),
-		tracer.Tag(ext.Component, "globalsign/mgo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
 

@@ -24,8 +24,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "bradfitz/gomemcache/memcache"
+
 func init() {
-	telemetry.LoadIntegration("bradfitz/gomemcache/memcache")
+	telemetry.LoadIntegration(componentName)
 }
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
@@ -74,7 +76,7 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.Component, "bradfitz/gomemcache/memcache"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMemcached),
 	}

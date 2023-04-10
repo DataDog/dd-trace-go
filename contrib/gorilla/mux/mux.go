@@ -20,8 +20,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "gorilla/mux"
+
 func init() {
-	telemetry.LoadIntegration("gorilla/mux")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Router registers routes to be matched and dispatches a handler.
@@ -125,7 +127,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg := newConfig(opts)
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "gorilla/mux"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{

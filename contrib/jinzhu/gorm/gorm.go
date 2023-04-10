@@ -21,8 +21,10 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
+const componentName = "jinzhu/gorm"
+
 func init() {
-	telemetry.LoadIntegration("jinzhu/gorm")
+	telemetry.LoadIntegration(componentName)
 }
 
 const (
@@ -130,7 +132,7 @@ func after(scope *gorm.Scope, operationName string) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(scope.SQL),
-		tracer.Tag(ext.Component, "jinzhu/gorm"),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

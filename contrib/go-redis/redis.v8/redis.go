@@ -24,8 +24,10 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+const componentName = "go-redis/redis.v8"
+
 func init() {
-	telemetry.LoadIntegration("go-redis/redis.v8")
+	telemetry.LoadIntegration(componentName)
 }
 
 type datadogHook struct {
@@ -113,7 +115,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)
@@ -151,7 +153,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)

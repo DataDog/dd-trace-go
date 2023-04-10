@@ -18,8 +18,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "segmentio/kafka.go.v0"
+
 func init() {
-	telemetry.LoadIntegration("segmentio/kafka.go.v0")
+	telemetry.LoadIntegration(componentName)
 }
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
@@ -56,7 +58,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 		tracer.Tag("offset", msg.Offset),
-		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
@@ -136,7 +138,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 	}

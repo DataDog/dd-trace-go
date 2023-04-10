@@ -18,8 +18,10 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+const componentName = "jinzhu/gorm"
+
 func init() {
-	telemetry.LoadIntegration("jmoiron/sqlx")
+	telemetry.LoadIntegration(componentName)
 }
 
 // Open opens a new (traced) connection to the database using the given driver and source.

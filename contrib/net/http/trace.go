@@ -19,8 +19,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "net/http"
+
 func init() {
-	telemetry.LoadIntegration("net/http")
+	telemetry.LoadIntegration(componentName)
 }
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
