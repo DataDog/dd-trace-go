@@ -13,9 +13,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	consul "github.com/hashicorp/consul/api"
 )
+
+const componentName = "hashicorp/consul"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
 type Client struct {
@@ -70,7 +77,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),
 		tracer.Tag("consul.key", key),
-		tracer.Tag(ext.Component, "hashicorp/consul"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}
