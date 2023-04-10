@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -21,7 +22,7 @@ import (
 func TestIntegrationInfo(t *testing.T) {
 	mux.NewRouter()
 	integrations := telemetry.Integrations()
-	assert.Len(t, integrations, 1)
+	require.Len(t, integrations, 1)
 	assert.Equal(t, integrations[0].Name, "gorilla/mux")
 	assert.True(t, integrations[0].Enabled)
 }
