@@ -588,7 +588,6 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
-	stopTelemetry()
 }
 
 // Inject uses the configured or default TextMap Propagator.

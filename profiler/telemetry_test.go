@@ -17,19 +17,35 @@ import (
 
 // Test that the profiler sends the correct telemetry information
 func TestTelemetryEnabled(t *testing.T) {
-	telemetryClient := new(telemetrytest.MockClient)
-	defer telemetry.MockGlobalClient(telemetryClient)()
 
-	tracer.Start()
-	defer tracer.Stop()
+	t.Run("tracer start, profiler start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
 
-	Start(
-		WithProfileTypes(
-			HeapProfile,
-		),
-	)
-	defer Stop()
+		tracer.Start()
+		defer tracer.Stop()
 
-	assert.True(t, telemetryClient.ProfilerEnabled)
-	telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
+		Start(
+			WithProfileTypes(
+				HeapProfile,
+			),
+		)
+		defer Stop()
+
+		assert.True(t, telemetryClient.ProfilerEnabled)
+		telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
+	})
+	t.Run("only profiler start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		Start(
+			WithProfileTypes(
+				HeapProfile,
+			),
+		)
+		defer Stop()
+
+		assert.True(t, telemetryClient.ProfilerEnabled)
+		telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
+	})
 }
