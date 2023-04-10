@@ -26,7 +26,7 @@ import (
 )
 
 func init() {
-	telemetry.LoadIntegration("gomodule/redigo/redis")
+	telemetry.LoadIntegration("gomodule/redigo")
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
