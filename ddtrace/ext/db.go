@@ -39,14 +39,20 @@ const (
 	DBSystemBuntDB        = "buntdb"
 )
 
-// MicrosoftSQLServer specific tags.
+// MicrosoftSQLServer tags.
 const (
 	// MicrosoftSQLServerInstanceName indicates the Microsoft SQL Server instance name connecting to.
 	MicrosoftSQLServerInstanceName = "db.mssql.instance_name"
 )
 
-// MongoDB specific tags.
+// MongoDB tags.
 const (
 	// MongoDBCollection indicates the collection being accessed.
 	MongoDBCollection = "db.mongodb.collection"
+)
+
+// Redis tags.
+const (
+	// RedisDatabaseIndex indicates the Redis database index connected to.
+	RedisDatabaseIndex = "db.redis.database_index"
 )
