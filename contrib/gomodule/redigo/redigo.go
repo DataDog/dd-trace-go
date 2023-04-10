@@ -20,9 +20,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	redis "github.com/gomodule/redigo/redis"
 )
+
+func init() {
+	telemetry.LoadIntegration("gomodule/redigo/redis")
+}
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
 type Conn struct {

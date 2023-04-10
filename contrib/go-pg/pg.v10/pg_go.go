@@ -13,9 +13,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-pg/pg/v10"
 )
+
+func init() {
+	telemetry.LoadIntegration("go-pg/pg.v10")
+}
 
 // Wrap augments the given DB with tracing.
 func Wrap(db *pg.DB, opts ...Option) {

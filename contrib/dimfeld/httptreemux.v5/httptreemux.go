@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/dimfeld/httptreemux/v5"
 )
+
+func init() {
+	telemetry.LoadIntegration("dimfeld/httptreemux.v5")
+}
 
 // Router is a traced version of httptreemux.TreeMux.
 type Router struct {

@@ -17,7 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("miekg/dns")
+}
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.
 func ListenAndServe(addr string, network string, handler dns.Handler) error {

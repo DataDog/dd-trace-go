@@ -28,7 +28,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("database/sql")
+}
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
 var registeredDrivers = &driverRegistry{

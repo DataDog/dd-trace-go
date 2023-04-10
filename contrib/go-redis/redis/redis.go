@@ -20,9 +20,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-redis/redis"
 )
+
+func init() {
+	telemetry.LoadIntegration("go-redis/redis")
+}
 
 // Client is used to trace requests to a redis server.
 type Client struct {

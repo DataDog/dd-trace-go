@@ -15,9 +15,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gorm.io/gorm"
 )
+
+func init() {
+	telemetry.LoadIntegration("gorm.io/gorm.v1")
+}
 
 type key string
 

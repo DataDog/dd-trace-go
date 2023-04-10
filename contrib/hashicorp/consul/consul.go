@@ -13,9 +13,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	consul "github.com/hashicorp/consul/api"
 )
+
+func init() {
+	telemetry.LoadIntegration("hashicorp/consul")
+}
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
 type Client struct {

@@ -53,7 +53,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("99designs/gqlgen")
+}
 
 const (
 	defaultGraphqlOperation = "graphql.request"

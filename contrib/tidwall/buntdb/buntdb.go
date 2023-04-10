@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/tidwall/buntdb"
 )
+
+func init() {
+	telemetry.LoadIntegration("tidwall/buntdb")
+}
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
 type DB struct {

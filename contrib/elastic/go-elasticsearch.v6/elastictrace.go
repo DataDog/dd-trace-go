@@ -21,7 +21,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("elastic/go-elasticsearch.v6")
+}
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.
 func NewRoundTripper(opts ...ClientOption) http.RoundTripper {

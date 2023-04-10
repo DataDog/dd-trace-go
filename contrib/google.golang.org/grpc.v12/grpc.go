@@ -17,12 +17,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 )
+
+func init() {
+	telemetry.LoadIntegration("google.golang.org/grpc.v12")
+}
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
 func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerInterceptor {

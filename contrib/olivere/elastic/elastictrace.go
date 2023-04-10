@@ -22,7 +22,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("olivere/elastic")
+}
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
 func NewHTTPClient(opts ...ClientOption) *http.Client {

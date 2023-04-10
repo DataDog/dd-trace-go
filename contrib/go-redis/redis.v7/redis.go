@@ -18,9 +18,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-redis/redis/v7"
 )
+
+func init() {
+	telemetry.LoadIntegration("go-redis/redis.v7")
+}
 
 type datadogHook struct {
 	*params

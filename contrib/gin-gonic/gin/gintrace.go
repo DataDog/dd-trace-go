@@ -15,9 +15,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	telemetry.LoadIntegration("gin-gonic/gin")
+}
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
 // default service name will be used.

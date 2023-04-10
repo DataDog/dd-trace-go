@@ -17,9 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/gocql/gocql"
 )
+
+func init() {
+	telemetry.LoadIntegration("gocql/gocql")
+}
 
 // Query inherits from gocql.Query, it keeps the tracer and the context.
 type Query struct {

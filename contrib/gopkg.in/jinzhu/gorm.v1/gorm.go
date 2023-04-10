@@ -16,9 +16,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
+
+func init() {
+	telemetry.LoadIntegration("gopkg.in/jinzhu/gorm.v1")
+}
 
 const (
 	gormContextKey       = "dd-trace-go:context"

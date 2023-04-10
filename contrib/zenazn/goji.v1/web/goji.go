@@ -16,9 +16,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/zenazn/goji/web"
 )
+
+func init() {
+	telemetry.LoadIntegration("zenazn/goji.v1/web")
+}
 
 // Middleware returns a goji middleware function that will trace incoming requests.
 // If goji's Router middleware is also installed, the tracer will be able to determine

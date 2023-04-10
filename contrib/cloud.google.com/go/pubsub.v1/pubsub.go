@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"cloud.google.com/go/pubsub"
 )
+
+func init() {
+	telemetry.LoadIntegration("cloud.google.com/go/pubsub.v1")
+}
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
 // This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish

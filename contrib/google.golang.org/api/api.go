@@ -17,9 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"golang.org/x/oauth2/google"
 )
+
+func init() {
+	telemetry.LoadIntegration("google.golang.org/api")
+}
 
 // apiEndpoints are all of the defined endpoints for the Google API; it is populated
 // by "go generate".

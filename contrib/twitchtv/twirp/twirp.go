@@ -17,9 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/twitchtv/twirp"
 )
+
+func init() {
+	telemetry.LoadIntegration("twitchtv/twirp")
+}
 
 type (
 	twirpErrorKey struct{}

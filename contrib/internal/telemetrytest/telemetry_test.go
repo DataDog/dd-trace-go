@@ -30,6 +30,7 @@ type contribPkg struct {
 	ImportPath string
 	Name       string
 	Imports    []string
+	Dir        string
 }
 
 var TelemetryImport = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -45,7 +46,6 @@ func (p *contribPkg) hasTelemetryImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	tracked := map[string]struct{}{"mux": {}}
 	body, err := exec.Command("go", "list", "-json", "../../...").Output()
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -64,10 +64,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
-		if _, ok := tracked[pkg.Name]; ok {
-			if !pkg.hasTelemetryImport() {
-				t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
-			}
+		if !pkg.hasTelemetryImport() {
+			t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
 	}
 }

@@ -21,7 +21,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("bradfitz/gomemcache/memcache")
+}
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
 // default tracer with the service name "memcached".

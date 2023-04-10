@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
@@ -32,6 +33,10 @@ const (
 	tagGraphqlType          = "graphql.type"
 	tagGraphqlOperationName = "graphql.operation.name"
 )
+
+func init() {
+	telemetry.LoadIntegration("graph-gophers/graphql-go")
+}
 
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
 // to the Datadog tracer.

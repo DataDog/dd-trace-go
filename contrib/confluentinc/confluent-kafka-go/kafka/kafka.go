@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
+
+func init() {
+	telemetry.LoadIntegration("confluentinc/confluent-kafka-go/kafka")
+}
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
 func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {

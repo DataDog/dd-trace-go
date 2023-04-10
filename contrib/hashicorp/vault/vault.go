@@ -23,10 +23,15 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
+
+func init() {
+	telemetry.LoadIntegration("hashicorp/vault")
+}
 
 // NewHTTPClient returns an http.Client for use in the Vault API config
 // Client. A set of options can be passed in for further configuration.

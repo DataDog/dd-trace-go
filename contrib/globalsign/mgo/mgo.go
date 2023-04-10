@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/globalsign/mgo"
 )
+
+func init() {
+	telemetry.LoadIntegration("globalsign/mgo")
+}
 
 // Dial opens a connection to a MongoDB server and configures it
 // for tracing.

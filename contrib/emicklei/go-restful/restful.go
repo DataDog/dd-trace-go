@@ -14,9 +14,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/emicklei/go-restful"
 )
+
+func init() {
+	telemetry.LoadIntegration("emicklei/go-restful")
+}
 
 // FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.
 func FilterFunc(configOpts ...Option) restful.FilterFunction {
