@@ -18,7 +18,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-const componentName = "jinzhu/gorm"
+const componentName = "jmoiron/sqlx"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
