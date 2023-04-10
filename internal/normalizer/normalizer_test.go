@@ -13,31 +13,26 @@ import (
 )
 
 func TestNormalizeHeaderTag(t *testing.T) {
-
 	t.Run("single", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("header")
 		assert.Equal(t, header, "header")
 		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
-
 	t.Run("mapped", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("header:tag")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "tag", tag)
 	})
-
 	t.Run("whitespaces leading-trailing", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("  header : tag   ")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "tag", tag)
 	})
-
 	t.Run("whitespaces tag", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("header:t a g")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "t a g", tag)
 	})
-
 	t.Run("header special-chars", func(t *testing.T) {
 		// when no target tag is specified, the header tag gets normalized
 		// on all special chars except '-'
@@ -51,38 +46,32 @@ func TestNormalizeHeaderTag(t *testing.T) {
 		assert.Equal(t, "h!e@a*d/e)r", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".h_e_a_d_e_r", tag)
 	})
-
 	t.Run("tag special-chars", func(t *testing.T) {
 		// no normalization shoul occur on the tag when a target has been specified
 		header, tag := NormalizeHeaderTag("header:t*a.g!")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "t*a.g!", tag)
 	})
-
 	t.Run("adjacent-special-chars", func(t *testing.T) {
 		_, tag := NormalizeHeaderTag("h**eader")
 		assert.Equal(t, ext.HTTPRequestHeaders+".h__eader", tag)
 	})
-
 	t.Run("multi-colon", func(t *testing.T) {
 		// split on the last colon; span tag keys cannot contain colons
 		header, tag := NormalizeHeaderTag("header:tag:extra")
 		assert.Equal(t, "header:tag", header)
 		assert.Equal(t, "extra", tag)
 	})
-
 	t.Run("lowercase-ify header", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("HEADER")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
-
 	t.Run("lowercase-ify tag", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag("header:TAG")
 		assert.Equal(t, "header", header)
 		assert.Equal(t, "tag", tag)
 	})
-
 	t.Run("leading colon", func(t *testing.T) {
 		header, tag := NormalizeHeaderTag(":header")
 		assert.Equal(t, "", header)

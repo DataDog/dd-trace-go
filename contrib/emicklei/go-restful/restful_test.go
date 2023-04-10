@@ -61,7 +61,7 @@ func TestWithHeaderTags(t *testing.T) {
 			header, tag := normalizer.NormalizeHeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
-		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestWithHeaderTags(t *testing.T) {
 			header, tag := normalizer.NormalizeHeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
-		assert.NotContains(s.Tags(), "http.headers.X-Datadog-Header")
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
 	})
 }

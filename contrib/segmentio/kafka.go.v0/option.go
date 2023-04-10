@@ -9,13 +9,15 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
-	consumerServiceName string
-	producerServiceName string
-	analyticsRate       float64
+	consumerServiceName   string
+	producerServiceName   string
+	consumerOperationName string
+	producerOperationName string
+	analyticsRate         float64
 }
 
 // An Option customizes the config.
@@ -23,17 +25,23 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		consumerServiceName: "kafka",
-		producerServiceName: "kafka",
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.consumerServiceName = svc
-	}
+
+	cfg.consumerServiceName = namingschema.NewServiceNameSchema("", "kafka").GetName()
+	cfg.producerServiceName = namingschema.NewServiceNameSchema(
+		"",
+		"kafka",
+		namingschema.WithVersionOverride(namingschema.SchemaV0, "kafka"),
+	).GetName()
+
+	cfg.consumerOperationName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerOperationName = namingschema.NewKafkaOutboundOp().GetName()
+
 	for _, opt := range opts {
 		opt(cfg)
 	}

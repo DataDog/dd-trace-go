@@ -26,3 +26,11 @@ If the value is determined to be `internal`, then omit the tag as that is the as
 
 Each integration comes with thorough documentation and usage examples. A good overview can be seen on our 
 [godoc](https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib) page.
+
+### Instrumentation telemetry
+
+Every integration is expected to import instrumentation telemetry to gather integration usage (more info [here](https://docs.datadoghq.com/tracing/configure_data_security/#telemetry-collection)). Instrumentation telemetry can be enabled by adding the following `init` function to the new contrib package:
+```golang
+func init() {
+    telemetry.LoadIntegration("package/import/path")
+}

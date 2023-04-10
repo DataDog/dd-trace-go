@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
+// headerTagRegexp is used to replace all invalid characters in the config. Only alphanumerics, whitespaces and dashes allowed.
 var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]")
 
 // NormalizeHeaderTag accepts a string that contains a header and an optional mapped tag key,
@@ -21,6 +22,7 @@ var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]")
 // e.g, "first:second:third" gets split into `header = "first:second` and `tag="third"`
 func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	header = strings.ToLower(strings.TrimSpace(headerAsTag))
+	// if a colon is found in `headerAsTag`
 	if last := strings.LastIndex(header, ":"); last >= 0 {
 		header, tag = header[:last], header[last+1:]
 		header, tag = strings.TrimSpace(header), strings.TrimSpace(tag)

@@ -9,7 +9,6 @@
 //
 // For more information on registering and why this needs to happen, please check the
 // github.com/DataDog/dd-trace-go/contrib/database/sql package.
-//
 package sqlx // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 
 import (

@@ -17,7 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+func init() {
+	telemetry.LoadIntegration("gorilla/mux")
+}
 
 // Router registers routes to be matched and dispatches a handler.
 type Router struct {
