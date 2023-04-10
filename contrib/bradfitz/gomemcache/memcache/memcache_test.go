@@ -183,12 +183,11 @@ func TestNamingSchema(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 
-	generateSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
 		}
-
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -201,14 +200,13 @@ func TestNamingSchema(t *testing.T) {
 		require.Len(t, spans, 1)
 		return spans
 	}
-
 	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
 		WithDefaults:             []string{"memcached"},
 		WithDDService:            []string{"memcached"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(generateSpans, "memcached", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewMemcachedOpNameTest(generateSpans))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "memcached", wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewMemcachedOpNameTest(genSpans))
 }
 
 func makeFakeServer(t *testing.T) net.Listener {
