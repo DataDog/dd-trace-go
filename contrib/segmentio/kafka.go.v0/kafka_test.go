@@ -46,7 +46,10 @@ to setup the integration test locally run:
 	docker-compose -f local_testing.yaml up
 */
 
-func generateIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *Writer), readerOp func(t *testing.T, r *Reader), writerOpts []Option, readerOpts []Option) (mocktracer.Span, mocktracer.Span) {
+type readerOpFn func(t *testing.T, r *Reader)
+
+func genIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *Writer), readerOp readerOpFn, writerOpts []Option, readerOpts []Option) []mocktracer.Span {
+	skipIntegrationTest(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -55,10 +58,8 @@ func generateIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *W
 		Topic:        testTopic,
 		RequiredAcks: kafka.RequireOne,
 	}
-
 	w := WrapWriter(kw, writerOpts...)
 	writerOp(t, w)
-
 	err := w.Close()
 	require.NoError(t, err)
 
@@ -69,24 +70,18 @@ func generateIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *W
 		MaxWait: testReaderMaxWait,
 	}, readerOpts...)
 	readerOp(t, r)
-
 	err = r.Close()
 	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
-
-	producerSpan, consumerSpan := spans[0], spans[1]
-
 	// they should be linked via headers
-	assert.Equal(t, producerSpan.TraceID(), consumerSpan.TraceID(), "Trace IDs should match")
-	return producerSpan, consumerSpan
+	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID(), "Trace IDs should match")
+	return spans
 }
 
 func TestReadMessageFunctional(t *testing.T) {
-	skipIntegrationTest(t)
-
-	s0, s1 := generateIntegrationTestSpans(
+	spans := genIntegrationTestSpans(
 		t,
 		func(t *testing.T, w *Writer) {
 			err := w.WriteMessages(context.Background(), testMessages...)
@@ -107,6 +102,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	)
 
 	// producer span
+	s0 := spans[0]
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
@@ -118,6 +114,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 
 	// consumer span
+	s1 := spans[1]
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
 	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
@@ -130,9 +127,7 @@ func TestReadMessageFunctional(t *testing.T) {
 }
 
 func TestFetchMessageFunctional(t *testing.T) {
-	skipIntegrationTest(t)
-
-	s0, s1 := generateIntegrationTestSpans(
+	spans := genIntegrationTestSpans(
 		t,
 		func(t *testing.T, w *Writer) {
 			err := w.WriteMessages(context.Background(), testMessages...)
@@ -153,6 +148,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	)
 
 	// producer span
+	s0 := spans[0]
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
@@ -164,6 +160,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 
 	// consumer span
+	s1 := spans[1]
 	assert.Equal(t, "kafka.consume", s1.OperationName())
 	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
 	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
@@ -176,14 +173,12 @@ func TestFetchMessageFunctional(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	skipIntegrationTest(t)
-
-	generateSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
 		}
-		s0, s1 := generateIntegrationTestSpans(
+		return genIntegrationTestSpans(
 			t,
 			func(t *testing.T, w *Writer) {
 				err := w.WriteMessages(context.Background(), testMessages...)
@@ -202,15 +197,13 @@ func TestNamingSchema(t *testing.T) {
 			opts,
 			opts,
 		)
-		return []mocktracer.Span{s0, s1}
 	}
-
 	// first is producer and second is consumer span
 	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
 		WithDefaults:             []string{"kafka", "kafka"},
 		WithDDService:            []string{"kafka", namingschematest.TestDDService},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(generateSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(generateSpans))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "kafka", wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genSpans))
 }
