@@ -48,7 +48,7 @@ var _ redis.Pipeliner = (*Pipeliner)(nil)
 type params struct {
 	host   string
 	port   string
-	db     string
+	db     int
 	config *clientConfig
 }
 
@@ -75,7 +75,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	params := &params{
 		host:   host,
 		port:   port,
-		db:     strconv.Itoa(opt.DB),
+		db:     opt.DB,
 		config: cfg,
 	}
 	tc := &Client{Client: c, params: params}
@@ -122,10 +122,11 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.ResourceName("redis"),
 		tracer.Tag(ext.TargetHost, p.host),
 		tracer.Tag(ext.TargetPort, p.port),
-		tracer.Tag("out.db", p.db),
+		tracer.Tag("out.db", strconv.Itoa(p.db)),
 		tracer.Tag(ext.Component, "go-redis/redis"),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+		tracer.Tag(ext.RedisDatabaseIndex, p.db),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -193,12 +194,13 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.ResourceName(parts[0]),
 				tracer.Tag(ext.TargetHost, p.host),
 				tracer.Tag(ext.TargetPort, p.port),
-				tracer.Tag("out.db", p.db),
+				tracer.Tag("out.db", strconv.Itoa(p.db)),
 				tracer.Tag("redis.raw_command", raw),
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
 				tracer.Tag(ext.Component, "go-redis/redis"),
 				tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 				tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+				tracer.Tag(ext.RedisDatabaseIndex, p.db),
 			}
 			if !math.IsNaN(p.config.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
