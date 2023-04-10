@@ -75,7 +75,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
 	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html")
 	span.SetTag("go.template", name)
-	span.SetTag(ext.Component, "gin-gonic/gin")
+	span.SetTag(ext.Component, componentName)
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)

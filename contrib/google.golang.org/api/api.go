@@ -63,7 +63,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 			if cfg.serviceName != "" {
 				span.SetTag(ext.ServiceName, cfg.serviceName)
 			}
-			span.SetTag(ext.Component, "google.golang.org/api")
+			span.SetTag(ext.Component, componentName)
 			span.SetTag(ext.SpanKind, ext.SpanKindClient)
 
 		}),
