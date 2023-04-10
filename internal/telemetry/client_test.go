@@ -38,8 +38,10 @@ func TestClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Start(nil)
-	client.Start(nil) // test idempotence
+	client.mu.Lock()
+	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers) // test idempotence
+	client.mu.Unlock()
 	defer client.Stop()
 
 	timeout := time.After(30 * time.Second)
@@ -98,7 +100,7 @@ func TestMetrics(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.Start(nil)
+		client.start(nil, NamespaceTracers)
 
 		// Gauges should have the most recent value
 		client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
@@ -138,7 +140,7 @@ func TestDisabledClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Start(nil)
+	client.start(nil, NamespaceTracers)
 	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
@@ -206,7 +208,7 @@ func TestConcurrentClient(t *testing.T) {
 		client := &client{
 			URL: server.URL,
 		}
-		client.Start(nil)
+		client.start(nil, NamespaceTracers)
 		defer client.Stop()
 
 		var wg sync.WaitGroup
@@ -241,11 +243,13 @@ func TestConcurrentClient(t *testing.T) {
 //  2. a cleanup function that closes the server and resets the agentless endpoint to
 //     its original value
 func fakeAgentless(ctx context.Context, t *testing.T) (wait func(), cleanup func()) {
-	received := make(chan struct{})
+	received := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("DD-Telemetry-Request-Type")
-		if len(h) > 0 {
-			received <- struct{}{}
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppStarted) {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
 		}
 	}))
 	prevEndpoint := SetAgentlessEndpoint(server.URL)
@@ -279,7 +283,7 @@ func TestAgentlessRetry(t *testing.T) {
 	client := &client{
 		URL: brokenServer.URL,
 	}
-	client.Start(nil)
+	client.start(nil, NamespaceTracers)
 	waitAgentlessEndpoint()
 }
 
@@ -306,7 +310,7 @@ func TestCollectDependencies(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Start(nil)
+	client.start(nil, NamespaceTracers)
 	select {
 	case <-received:
 	case <-ctx.Done():
