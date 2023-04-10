@@ -33,8 +33,7 @@ type RequestType string
 
 const (
 	// RequestTypeAppStarted is the first message sent by the telemetry
-	// client, containing the configuration, and integrations and
-	// dependencies loaded at startup
+	// client, containing the configuration loaded at startup
 	RequestTypeAppStarted RequestType = "app-started"
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
@@ -52,6 +51,9 @@ const (
 	RequestTypeAppClientConfigurationChange RequestType = "app-client-configuration-change"
 	// RequestTypeAppProductChange is sent when products are enabled/disabled
 	RequestTypeAppProductChange RequestType = "app-product-change"
+	// RequestTypeAppIntegrationsChange is sent when the telemetry client starts
+	// with info on which integrations are used.
+	RequestTypeAppIntegrationsChange RequestType = "app-integrations-change"
 )
 
 // Namespace describes an APM product to distinguish telemetry coming from
@@ -100,6 +102,21 @@ type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
+}
+
+// IntegrationsChange corresponds to the app-integrations-change requesty type
+type IntegrationsChange struct {
+	Integrations []Integration `json:"integrations"`
+}
+
+// Integration is an integration that is configured to be traced automatically.
+type Integration struct {
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	Version     string `json:"version,omitempty"`
+	AutoEnabled bool   `json:"auto_enabled,omitempty"`
+	Compatible  bool   `json:"compatible,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event

@@ -25,6 +25,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // Abstract HTTP handler operation definition.
@@ -41,8 +43,8 @@ type (
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
 		PathParams map[string]string
-		// ClientIP corresponds to the addres `http.client_ip`
-		ClientIP instrumentation.NetaddrIP
+		// ClientIP corresponds to the address `http.client_ip`
+		ClientIP netip.Addr
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -128,7 +130,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request, clientIP instrumentation.NetaddrIP, pathParams map[string]string) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)

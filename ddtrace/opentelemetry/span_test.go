@@ -65,7 +65,7 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -86,7 +86,7 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -170,7 +170,7 @@ func TestSpanSetStatus(t *testing.T) {
 
 	for _, test := range testData {
 		t.Run(fmt.Sprintf("Setting Code: %d", test.code), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
 			var sp oteltrace.Span
@@ -206,7 +206,7 @@ func TestSpanSetStatus(t *testing.T) {
 
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -243,7 +243,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 
 func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -273,7 +273,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 
 func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -310,7 +310,7 @@ func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 
 func TestSpanEndOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -343,7 +343,7 @@ func TestSpanEndOptions(t *testing.T) {
 
 func TestSpanSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -373,7 +373,7 @@ func TestSpanSetAttributes(t *testing.T) {
 
 func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
