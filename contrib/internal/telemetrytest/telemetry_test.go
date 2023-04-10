@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -19,11 +20,14 @@ import (
 // TestIntegrationInfo verifies that an integration leveraging instrumentation telemetry
 // sends the correct data to the telemetry client.
 func TestIntegrationInfo(t *testing.T) {
+	// mux.NewRouter() uses the net/http and gorilla/mux integration
 	mux.NewRouter()
 	integrations := telemetry.Integrations()
-	assert.Len(t, integrations, 1)
-	assert.Equal(t, integrations[0].Name, "gorilla/mux")
+	require.Len(t, integrations, 2)
+	assert.Equal(t, integrations[0].Name, "net/http")
 	assert.True(t, integrations[0].Enabled)
+	assert.Equal(t, integrations[1].Name, "gorilla/mux")
+	assert.True(t, integrations[1].Enabled)
 }
 
 type contribPkg struct {
