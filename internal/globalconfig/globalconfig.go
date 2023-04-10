@@ -65,15 +65,17 @@ func RuntimeID() string {
 	return cfg.runtimeID
 }
 
+// SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
+// GetHeaderTag returns tag representation of header `header`
 func GetHeaderTag(header string) (tag string) {
 	return cfg.headersAsTags[header]
 }
 
-// Returns a copy of the header tags held in the global config (or empty map)
+// GetAllHeaderTags returns a copy of the header tags held in the global config (or empty map)
 func GetAllHeaderTags() map[string]string {
 	headersAsTags := make(map[string]string)
 	for header, tag := range cfg.headersAsTags {
@@ -82,6 +84,7 @@ func GetAllHeaderTags() map[string]string {
 	return headersAsTags
 }
 
+// ClearHeaderTags clears config of any header tags
 func ClearHeaderTags() {
 	cfg.headersAsTags = make(map[string]string)
 }
