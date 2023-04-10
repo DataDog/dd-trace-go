@@ -16,6 +16,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+
+	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -47,7 +49,7 @@ type (
 		// Message received by the gRPC handler.
 		// Corresponds to the address `grpc.server.request.metadata`.
 		Metadata map[string][]string
-		ClientIP instrumentation.NetaddrIP
+		ClientIP netip.Addr
 	}
 	// HandlerOperationRes is the grpc handler results. Empty as of today.
 	HandlerOperationRes struct{}
