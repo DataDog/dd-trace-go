@@ -20,7 +20,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-const componentName = "jinzhu/gorm"
+const componentName = "julienschmidt/httprouter"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
