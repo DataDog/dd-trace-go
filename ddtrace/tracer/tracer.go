@@ -516,6 +516,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(pprofContext, span)
+	} else {
+		// Still propagate the context even without code hotspots, so
+		// that parent/child relationships between spans are still
+		// reflected in execution trace tasks.
+		span.pprofCtxActive = pprofContext
 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
