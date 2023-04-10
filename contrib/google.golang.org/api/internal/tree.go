@@ -111,7 +111,6 @@ func (n *treeNode) add(segments []string, e Endpoint) {
 // the segments.
 //
 // For example: `/api/v1/users/1234` might return `/api/v1/users/`
-//
 func (n *treeNode) getLongestPrefixMatch(segments []string) []Endpoint {
 	if len(segments) > 0 {
 		child, ok := n.Children[segments[0]]

@@ -32,7 +32,7 @@ func getTagsFromBinary() map[string]string {
 		}
 	}
 	if vcs != "git" {
-		log.Info("Unknown VCS: '%s', skip source code metadata extracting", vcs)
+		log.Debug("Unknown VCS: '%s', skip source code metadata extracting", vcs)
 		return res
 	}
 	res[TagCommitSha] = commitSha

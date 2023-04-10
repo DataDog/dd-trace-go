@@ -27,10 +27,6 @@ jobs:
         with:
           repository: 'DataDog/system-tests'
           path: system-tests
-          # TODO: this pins the tests to a commit which doesn't use the
-          # opentelemetry package, which hasn't yet been merged to main. Unpin
-          # when those changes are merged.
-          ref: 9edeb7e92dcf4576cad27b6af6fee2f05836d245
 
       - name: Checkout Go
         uses: actions/checkout@v3

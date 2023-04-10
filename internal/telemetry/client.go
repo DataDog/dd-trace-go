@@ -44,6 +44,11 @@ var (
 	// tracer, profiler, and appsec products will use
 	GlobalClient Client
 	globalClient sync.Mutex
+
+	// integrations tracks the the integrations enabled
+	contribPackages []Integration
+	contrib         sync.Mutex
+
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -211,6 +216,12 @@ func (c *client) Start(configuration []Configuration) {
 		dep := c.newRequest(RequestTypeDependenciesLoaded)
 		dep.Body.Payload = depPayload
 		c.scheduleSubmit(dep)
+	}
+
+	if len(contribPackages) > 0 {
+		req := c.newRequest(RequestTypeAppIntegrationsChange)
+		req.Body.Payload = IntegrationsChange{Integrations: contribPackages}
+		c.scheduleSubmit(req)
 	}
 
 	c.flush()
