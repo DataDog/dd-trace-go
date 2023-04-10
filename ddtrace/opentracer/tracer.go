@@ -16,7 +16,8 @@
 // Opentracing operation name is what is called resource in Datadog's terms and the Opentracing "component"
 // tag is Datadog's operation name. Meaning that in order to define (in Opentracing terms) a span that
 // has the operation name "/user/profile" and the component "http.request", one would do:
-//  opentracing.StartSpan("http.request", opentracer.ResourceName("/user/profile"))
+//
+//	opentracing.StartSpan("http.request", opentracer.ResourceName("/user/profile"))
 //
 // Some libraries and frameworks are supported out-of-the-box by using our integrations. You can see a list
 // of supported integrations here: https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib. They are fully

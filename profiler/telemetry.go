@@ -9,8 +9,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-// startTelemetry notifies the global telemetry client that the profiler has started
-// and enqueues profiler config data to be sent to the telemetry backend.
+// startTelemetry starts the global instrumentation telemetry client with profiler data
+// unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
+// env var.
+// If the telemetry client has already been started by the tracer, then
+// app-product-change event is queued to signal the profiler is enabled, and an
+// app-client-configuration-change event is also queued with profiler config data.
 func startTelemetry(c *config) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
@@ -21,8 +25,7 @@ func startTelemetry(c *config) {
 		return ok
 	}
 	configs := []telemetry.Configuration{}
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceProfilers,
-		true,
+	telemetry.GlobalClient.ProductStart(telemetry.NamespaceProfilers,
 		append(configs, []telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},

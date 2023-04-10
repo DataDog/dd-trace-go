@@ -10,7 +10,6 @@ package redis
 import (
 	"bytes"
 	"context"
-
 	"math"
 	"net"
 	"strconv"
@@ -54,7 +53,6 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		additionalTags: additionalTagOptions(client),
 		config:         cfg,
 	}
-
 	client.AddHook(&datadogHook{params: hookParams})
 }
 
@@ -73,6 +71,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 		if opt.Addr == "FailoverClient" {
 			additionalTags = []ddtrace.StartSpanOption{
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		} else {
 			host, port, err := net.SplitHostPort(opt.Addr)
@@ -84,6 +83,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 				tracer.Tag(ext.TargetHost, host),
 				tracer.Tag(ext.TargetPort, port),
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		}
 	} else if clientOptions, ok := client.(clusterOptions); ok {
