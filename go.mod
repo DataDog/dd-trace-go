@@ -12,10 +12,9 @@ require (
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
 	github.com/aws/aws-sdk-go v1.34.28
-	github.com/aws/aws-sdk-go-v2 v1.0.0
+	github.com/aws/aws-sdk-go-v2 v1.17.8
 	github.com/aws/aws-sdk-go-v2/config v1.0.0
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.0.0
-	github.com/aws/smithy-go v1.11.0
+	github.com/aws/smithy-go v1.13.5
 	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/denisenkom/go-mssqldb v0.11.0
@@ -98,7 +97,7 @@ require (
 	github.com/armon/go-metrics v0.3.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.0.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.0.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.26 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -222,6 +221,13 @@ require (
 
 require (
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.19.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.18.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.17.10 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.17.9 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sns v1.20.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.20.8 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
