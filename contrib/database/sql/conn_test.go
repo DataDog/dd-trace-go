@@ -131,6 +131,8 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 	testcases := []struct {
 		name        string
 		sqlRegister sqlRegister
+		dbOp func(t *testing.T, db *sql.DB)
+		wantNumSpans int
 	}{
 		{
 			name: "mysql",
