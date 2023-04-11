@@ -167,13 +167,36 @@ func (c *Client) RegisterCallback(f Callback) {
 	c.callbacks = append(c.callbacks, f)
 }
 
+// RegisterProduct adds a product to the list of products listened by the client
+func (c *Client) RegisterProduct(p string) {
+	c.Products[p] = struct{}{}
+}
+
+// UnregisterProduct removes a product from the list of products listened by the client
+func (c *Client) UnregisterProduct(p string) {
+	delete(c.Products, p)
+}
+
+// RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) RegisterCapability(cap Capability) {
+	c.Capabilities[cap] = struct{}{}
+}
+
+// UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) UnregisterCapability(cap Capability) {
+	delete(c.Capabilities, cap)
+}
+
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	productUpdates := make(map[string]ProductUpdate, len(c.Products))
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for _, p := range c.Products {
+		for p := range c.Products {
 			productUpdates[p] = make(ProductUpdate)
+			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
 			}
@@ -292,8 +315,12 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	cap := big.NewInt(0)
-	for _, i := range c.Capabilities {
+	for i := range c.Capabilities {
 		cap.SetBit(cap, int(i), 1)
+	}
+	products := make([]string, len(c.Products))
+	for p := range c.Products {
+		products = append(products, p)
 	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
@@ -305,7 +332,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: c.Products,
+			Products: products,
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,

@@ -39,7 +39,8 @@ type StartOption func(c *Config)
 
 // Config is the AppSec configuration.
 type Config struct {
-	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
+	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
+	// and live-updated with remote configuration.
 	rulesManager *rulesManager
 	// Maximum WAF execution time
 	wafTimeout time.Duration

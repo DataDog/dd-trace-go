@@ -11,8 +11,6 @@ package appsec
 import (
 	"sync"
 
-	waf "github.com/DataDog/go-libddwaf"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -98,7 +96,6 @@ type appsec struct {
 	unregisterWAF dyngo.UnregisterFunc
 	limiter       *TokenTicker
 	rc            *remoteconfig.Client
-	wafHandle     *waf.Handle
 	started       bool
 }
 
@@ -125,9 +122,7 @@ func (a *appsec) start() error {
 	if err := a.swapWAF(a.cfg.rulesManager.raw()); err != nil {
 		return err
 	}
-	if err := a.enableRCBlocking(); err != nil {
-		log.Error(err.Error())
-	}
+	a.enableRCBlocking()
 	a.started = true
 	return nil
 }
@@ -138,5 +133,6 @@ func (a *appsec) stop() {
 		a.started = false
 		a.unregisterWAF()
 		a.limiter.Stop()
+		a.disableRCBlocking()
 	}
 }

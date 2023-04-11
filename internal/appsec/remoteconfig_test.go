@@ -11,6 +11,8 @@ package appsec
 import (
 	"encoding/json"
 	"os"
+	"sort"
+	"strings"
 	"testing"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -185,8 +187,20 @@ func TestMergeRulesData(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			merged, statuses := mergeRulesData(tc.update)
-			if tc.expected != nil {
-				require.ElementsMatch(t, tc.expected, merged)
+			// Sort the compared elements since ordering is not guaranteed and the slice hold types that embed
+			// more slices
+			require.Len(t, merged, len(tc.expected))
+			sort.Slice(merged, func(i, j int) bool {
+				return strings.Compare(merged[i].ID, merged[j].ID) < 0
+			})
+			sort.Slice(tc.expected, func(i, j int) bool {
+				return strings.Compare(merged[i].ID, merged[j].ID) < 0
+			})
+
+			for i := range tc.expected {
+				require.Equal(t, tc.expected[i].ID, merged[i].ID)
+				require.Equal(t, tc.expected[i].Type, merged[i].Type)
+				require.ElementsMatch(t, tc.expected[i].Data, merged[i].Data)
 			}
 			for k := range statuses {
 				require.Equal(t, tc.statuses[k].State, statuses[k].State)
@@ -345,7 +359,6 @@ func TestRemoteActivationScenarios(t *testing.T) {
 }
 
 func TestCapabilities(t *testing.T) {
-	rcCfg := remoteconfig.DefaultClientConfig()
 	for _, tc := range []struct {
 		name     string
 		env      map[string]string
@@ -376,7 +389,7 @@ func TestCapabilities(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			Start(WithRCConfig(rcCfg))
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 			defer Stop()
 			if !Enabled() && activeAppSec == nil {
 				t.Skip()
@@ -384,7 +397,8 @@ func TestCapabilities(t *testing.T) {
 			require.NotNil(t, activeAppSec.rc)
 			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
 			for _, cap := range tc.expected {
-				require.Contains(t, activeAppSec.rc.Capabilities, cap)
+				_, contained := activeAppSec.rc.Capabilities[cap]
+				require.True(t, contained)
 			}
 		})
 	}
@@ -515,7 +529,7 @@ func TestASMUmbrellaCallback(t *testing.T) {
 			tc.ruleset.compile()
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.ruleset.edits)
-			activeAppSec.asmUmbrellaCallback(updates)
+			activeAppSec.onRCUpdate(updates)
 			// Compare rulesets
 			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.rulesManager.latest.Rules)
 			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)

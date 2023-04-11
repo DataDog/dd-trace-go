@@ -67,7 +67,6 @@ func (a *appsec) swapWAF(rules []byte) error {
 		defer waf.Close()
 		unreg()
 	}
-	a.wafHandle = waf
 	return nil
 }
 
@@ -477,7 +476,7 @@ func addRulesMonitoringTags(th tagsHolder, rInfo waf.RulesetInfo) {
 	}
 	rulesetErrors, err := json.Marshal(rInfo.Errors)
 	if err != nil {
-		log.Error("appsec: could not marshal rulesManager info errors to json")
+		log.Error("appsec: could not marshal the waf ruleset info errors to json")
 	}
 	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
 	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
