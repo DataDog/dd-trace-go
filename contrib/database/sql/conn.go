@@ -20,6 +20,7 @@ import (
 
 var _ driver.Conn = (*TracedConn)(nil)
 
+// QueryType represents the different available traced db queries.
 type QueryType string
 
 const (
