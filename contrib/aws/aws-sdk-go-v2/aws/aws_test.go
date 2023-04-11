@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAppendMiddleware(t *testing.T) {
+func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	tests := []struct {
 		name               string
 		responseStatus     int
@@ -65,17 +65,175 @@ func TestAppendMiddleware(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
+
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+				MessageBody: aws.String("foobar"),
+				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+			})
 
 			spans := mt.FinishedSpans()
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
 			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "ListQueues", s.Tag(tagAWSOperation))
+			assert.Equal(t, "SendMessage", s.Tag(tagAWSOperation))
+			assert.Equal(t, "SQS", s.Tag(tagAWSService))
+			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
+			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+
+
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "SQS.ListQueues", s.Tag(ext.ResourceName))
+			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
+			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
+			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			if tt.expectedStatusCode == 200 {
+				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
+			}
+			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
+			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		})
+	}
+}
+
+func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
+	tests := []struct {
+		name               string
+		responseStatus     int
+		responseBody       []byte
+		expectedStatusCode int
+	}{
+		{
+			name:               "test mocked sqs failure request",
+			responseStatus:     400,
+			expectedStatusCode: 400,
+		},
+		{
+			name:               "test mocked sqs success request",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(tt.expectedStatusCode)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg)
+
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
+				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+				ReceiptHandle: aws.String("foobar"),
+			})
+
+			spans := mt.FinishedSpans()
+
+			s := spans[0]
+			assert.Equal(t, "SQS.request", s.OperationName())
+			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
+			assert.Equal(t, "DeleteMessage", s.Tag(tagAWSOperation))
+			assert.Equal(t, "SQS", s.Tag(tagAWSService))
+			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
+			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+
+
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
+			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
+			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			if tt.expectedStatusCode == 200 {
+				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
+			}
+			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
+			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		})
+	}
+}
+func TestAppendMiddlewareSqsDeleteMessageBatch(t *testing.T) {
+	tests := []struct {
+		name               string
+		responseStatus     int
+		responseBody       []byte
+		expectedStatusCode int
+	}{
+		{
+			name:               "test mocked sqs failure request",
+			responseStatus:     400,
+			expectedStatusCode: 400,
+		},
+		{
+			name:               "test mocked sqs success request",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(tt.expectedStatusCode)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg)
+
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.DeleteMessageBatch(context.Background(), &sqs.DeleteMessageBatchInput{
+				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+				ReceiptHandle: aws.String("foobar"),
+			})
+
+			spans := mt.FinishedSpans()
+
+			s := spans[0]
+			assert.Equal(t, "SQS.request", s.OperationName())
+			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
+			assert.Equal(t, "DeleteMessageBatch", s.Tag(tagAWSOperation))
+			assert.Equal(t, "SQS", s.Tag(tagAWSService))
+			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
+			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+
+
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "SQS.DeleteMessageBatch", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
