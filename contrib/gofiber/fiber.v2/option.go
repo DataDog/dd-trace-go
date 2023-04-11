@@ -11,12 +11,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/gofiber/fiber/v2"
 )
 
+const defaultServiceName = "fiber"
+
 type config struct {
 	serviceName   string
+	spanName      string
 	isStatusError func(statusCode int) bool
 	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
 	analyticsRate float64
@@ -27,13 +31,11 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "fiber"
+	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
+	cfg.spanName = namingschema.NewHTTPServerOp().GetName()
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
 	if internal.BoolEnv("DD_TRACE_FIBER_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

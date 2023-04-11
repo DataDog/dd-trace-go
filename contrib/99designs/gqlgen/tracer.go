@@ -47,17 +47,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const (
-	defaultGraphqlOperation = "graphql.request"
+const componentName = "99designs/gqlgen"
 
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
+
+const (
 	readOp       = "graphql.read"
 	parsingOp    = "graphql.parse"
 	validationOp = "graphql.validate"
@@ -83,7 +89,7 @@ func (t *gqlTracer) ExtensionName() string {
 	return "DatadogTracing"
 }
 
-func (t *gqlTracer) Validate(schema graphql.ExecutableSchema) error {
+func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 	return nil // unimplemented
 }
 
@@ -91,7 +97,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(ext.Component, "99designs/gqlgen"),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
@@ -99,7 +105,6 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	var (
 		octx *graphql.OperationContext
 	)
-	name := defaultGraphqlOperation
 	if graphql.HasOperationContext(ctx) {
 		// Variables in the operation will be left out of the tags
 		// until obfuscation is implemented in the agent.
@@ -111,7 +116,6 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 				// Return early and do not create these spans.
 				return next(ctx)
 			}
-			name = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 		}
 		if octx.RawQuery != "" {
 			opts = append(opts, tracer.ResourceName(octx.RawQuery))
@@ -119,7 +123,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
 	var span ddtrace.Span
-	span, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
+	span, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(octx), opts...)
 	defer func() {
 		var errs []string
 		for _, err := range graphql.GetErrors(ctx) {
@@ -138,7 +142,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			var childOpts []ddtrace.StartSpanOption
 			childOpts = append(childOpts, tracer.StartTime(start))
 			childOpts = append(childOpts, tracer.ResourceName(name))
-			childOpts = append(childOpts, tracer.Tag(ext.Component, "99designs/gqlgen"))
+			childOpts = append(childOpts, tracer.Tag(ext.Component, componentName))
 			var childSpan ddtrace.Span
 			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))
@@ -148,6 +152,16 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		createChildSpan(validationOp, octx.Stats.Validation.Start, octx.Stats.Validation.End)
 	}
 	return next(ctx)
+}
+
+func serverSpanName(octx *graphql.OperationContext) string {
+	nameV0 := "graphql.request"
+	if octx != nil && octx.Operation != nil {
+		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+	}
+	return namingschema.NewGraphqlServerOp(
+		namingschema.WithVersionOverride(namingschema.SchemaV0, nameV0),
+	).GetName()
 }
 
 // Ensure all of these interfaces are implemented.

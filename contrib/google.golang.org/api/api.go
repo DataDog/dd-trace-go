@@ -17,9 +17,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"golang.org/x/oauth2/google"
 )
+
+const componentName = "google.golang.org/api"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // apiEndpoints are all of the defined endpoints for the Google API; it is populated
 // by "go generate".
@@ -56,7 +63,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 			if cfg.serviceName != "" {
 				span.SetTag(ext.ServiceName, cfg.serviceName)
 			}
-			span.SetTag(ext.Component, "google.golang.org/api")
+			span.SetTag(ext.Component, componentName)
 			span.SetTag(ext.SpanKind, ext.SpanKindClient)
 
 		}),

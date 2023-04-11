@@ -6,17 +6,21 @@
 package sql
 
 import (
+	"fmt"
 	"math"
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
 	serviceName        string
+	spanName           string
 	analyticsRate      float64
 	dsn                string
+	ignoreQueryTypes   map[QueryType]struct{}
 	childSpansOnly     bool
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
@@ -31,8 +35,7 @@ type registerConfig = config
 // RegisterOption has been deprecated in favor of Option.
 type RegisterOption = Option
 
-func defaults(cfg *config) {
-	// default cfg.serviceName set in Register based on driver name
+func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -44,6 +47,45 @@ func defaults(cfg *config) {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
+	cfg.serviceName = getServiceName(driverName, rc)
+	cfg.spanName = getSpanName(driverName)
+	if rc != nil {
+		// use registered config as the default value for some options
+		if math.IsNaN(cfg.analyticsRate) {
+			cfg.analyticsRate = rc.analyticsRate
+		}
+		if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
+			cfg.dbmPropagationMode = rc.dbmPropagationMode
+		}
+		cfg.errCheck = rc.errCheck
+		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
+		cfg.childSpansOnly = rc.childSpansOnly
+	}
+}
+
+func getServiceName(driverName string, rc *registerConfig) string {
+	defaultServiceName := fmt.Sprintf("%s.db", driverName)
+	if rc != nil {
+		// if service name was set during Register, we use that value as default instead of
+		// the one calculated above.
+		defaultServiceName = rc.serviceName
+	}
+	return namingschema.NewServiceNameSchema(
+		"",
+		defaultServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+	).GetName()
+}
+
+func getSpanName(driverName string) string {
+	dbSystem := driverName
+	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
+		dbSystem = normalizedDBSystem
+	}
+	return namingschema.NewDBOutboundOp(
+		dbSystem,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, fmt.Sprintf("%s.query", driverName)),
+	).GetName()
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -83,6 +125,19 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDSN(name string) Option {
 	return func(cfg *config) {
 		cfg.dsn = name
+	}
+}
+
+// WithIgnoreQueryTypes specifies the query types for which spans should not be
+// created.
+func WithIgnoreQueryTypes(qtypes ...QueryType) Option {
+	return func(cfg *config) {
+		if cfg.ignoreQueryTypes == nil {
+			cfg.ignoreQueryTypes = make(map[QueryType]struct{})
+		}
+		for _, qt := range qtypes {
+			cfg.ignoreQueryTypes[qt] = struct{}{}
+		}
 	}
 }
 

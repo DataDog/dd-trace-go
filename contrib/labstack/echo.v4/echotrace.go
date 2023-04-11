@@ -19,9 +19,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/labstack/echo/v4"
 )
+
+const componentName = "labstack/echo.v4"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
@@ -33,7 +40,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "labstack/echo.v4"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {

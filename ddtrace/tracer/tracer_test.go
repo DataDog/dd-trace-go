@@ -1056,11 +1056,15 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 		// the resource is not inherited and defaults to the name
 		assert.Equal("redis.command", child.Resource)
 
-		child.Finish() // Meta[keyTraceID128] gets set upon Finish
+		// Meta[keyTraceID128] gets set upon Finish
+		parent.Finish()
+		child.Finish()
 		if is128 {
-			assert.Equal(id[:16], child.Meta[keyTraceID128])
+			assert.Equal(id[:16], parent.Meta[keyTraceID128])
+			assert.Empty(child.Meta[keyTraceID128])
 		} else {
 			assert.Empty(child.Meta[keyTraceID128])
+			assert.Empty(parent.Meta[keyTraceID128])
 		}
 	})
 }
@@ -1536,12 +1540,12 @@ func TestPushTrace(t *testing.T) {
 	tracer := newUnstartedTracer()
 	defer tracer.statsd.Close()
 	trace := []*span{
-		&span{
+		{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/",
 		},
-		&span{
+		{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/foo",

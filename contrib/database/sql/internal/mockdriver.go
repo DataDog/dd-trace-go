@@ -18,7 +18,7 @@ type MockDriver struct {
 }
 
 // Open implements the Conn interface
-func (d *MockDriver) Open(name string) (driver.Conn, error) {
+func (d *MockDriver) Open(_ string) (driver.Conn, error) {
 	return &mockConn{driver: d}, nil
 }
 
@@ -33,13 +33,13 @@ func (m *mockConn) Prepare(query string) (driver.Stmt, error) {
 }
 
 // QueryContext implements the QueryerContext interface
-func (m *mockConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+func (m *mockConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	m.driver.Executed = append(m.driver.Executed, query)
 	return &rows{}, nil
 }
 
 // ExecContext implements the ExecerContext interface
-func (m *mockConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+func (m *mockConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
 	m.driver.Executed = append(m.driver.Executed, query)
 	return &mockResult{}, nil
 }
@@ -67,7 +67,7 @@ func (r *rows) Close() error {
 }
 
 // Next implements the Rows interface
-func (r *rows) Next(dest []driver.Value) error {
+func (r *rows) Next(_ []driver.Value) error {
 	return io.EOF
 }
 
@@ -101,25 +101,25 @@ func (s *mockStmt) NumInput() int {
 }
 
 // Exec implements the Stmt interface
-func (s *mockStmt) Exec(args []driver.Value) (driver.Result, error) {
+func (s *mockStmt) Exec(_ []driver.Value) (driver.Result, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &mockResult{}, nil
 }
 
 // Query implements the Stmt interface
-func (s *mockStmt) Query(args []driver.Value) (driver.Rows, error) {
+func (s *mockStmt) Query(_ []driver.Value) (driver.Rows, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &rows{}, nil
 }
 
 // ExecContext implements the StmtExecContext interface
-func (s *mockStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
+func (s *mockStmt) ExecContext(_ context.Context, _ []driver.NamedValue) (driver.Result, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &mockResult{}, nil
 }
 
 // QueryContext implements the StmtQueryContext interface
-func (s *mockStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
+func (s *mockStmt) QueryContext(_ context.Context, _ []driver.NamedValue) (driver.Rows, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
 	return &rows{}, nil
 }

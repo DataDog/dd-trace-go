@@ -16,10 +16,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+const componentName = "go-chi/chi.v5"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
@@ -30,7 +37,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	}
 	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "go-chi/chi.v5"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

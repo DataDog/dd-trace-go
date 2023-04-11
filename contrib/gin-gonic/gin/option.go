@@ -9,11 +9,14 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	"github.com/gin-gonic/gin"
 )
+
+const defaultServiceName = "gin.router"
 
 type config struct {
 	analyticsRate float64
@@ -22,12 +25,9 @@ type config struct {
 	ignoreRequest func(c *gin.Context) bool
 }
 
-func newConfig(service string) *config {
-	if service == "" {
-		service = "gin.router"
-		if svc := globalconfig.ServiceName(); svc != "" {
-			service = svc
-		}
+func newConfig(serviceName string) *config {
+	if serviceName == "" {
+		serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
 	}
 	rate := globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
@@ -36,7 +36,7 @@ func newConfig(service string) *config {
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
-		serviceName:   service,
+		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
 	}
 }

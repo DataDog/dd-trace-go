@@ -14,6 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -92,11 +94,11 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg           *Config
-	unregisterWAF dyngo.UnregisterFunc
-	limiter       *TokenTicker
-	rc            *remoteconfig.Client
-	started       bool
+	cfg       *Config
+	limiter   *TokenTicker
+	rc        *remoteconfig.Client
+	wafHandle *waf.Handle
+	started   bool
 }
 
 func newAppSec(cfg *Config) *appsec {
@@ -119,20 +121,29 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	unregisterWAF, err := a.registerWAF()
-	if err != nil {
+	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
 		return err
 	}
-	a.unregisterWAF = unregisterWAF
+	a.enableRCBlocking()
 	a.started = true
 	return nil
 }
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
-	if a.started {
-		a.started = false
-		a.unregisterWAF()
-		a.limiter.Stop()
+	if !a.started {
+		return
 	}
+	a.started = false
+	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
+	a.disableRCBlocking()
+
+	// Disable the currently applied instrumentation
+	dyngo.SwapRootOperation(nil)
+	if a.wafHandle != nil {
+		a.wafHandle.Close()
+	}
+	// TODO: block until no more requests are using dyngo operations
+
+	a.limiter.Stop()
 }
