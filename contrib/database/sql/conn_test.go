@@ -7,6 +7,7 @@ package sql
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"log"
 	"strings"
@@ -129,13 +130,13 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 		opts   []RegisterOption
 	}
 	testcases := []struct {
-		name        string
-		sqlRegister sqlRegister
-		dbOp func(t *testing.T, db *sql.DB)
+		name         string
+		sqlRegister  sqlRegister
+		dbOp         func(t *testing.T, db *sql.DB)
 		wantNumSpans int
 	}{
 		{
-			name: "mysql",
+			name: "mysql/select/ignore-connect",
 			sqlRegister: sqlRegister{
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
@@ -144,9 +145,16 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
+			dbOp: func(t *testing.T, db *sql.DB) {
+				ctx := context.Background()
+				rows, err := db.QueryContext(ctx, "SELECT 1")
+				require.NoError(t, err)
+				rows.Close()
+			},
+			wantNumSpans: 1,
 		},
 		{
-			name: "postgres",
+			name: "postgres/select/ignore-connect",
 			sqlRegister: sqlRegister{
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
@@ -155,6 +163,13 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
+			dbOp: func(t *testing.T, db *sql.DB) {
+				ctx := context.Background()
+				rows, err := db.QueryContext(ctx, "SELECT 1")
+				require.NoError(t, err)
+				rows.Close()
+			},
+			wantNumSpans: 1,
 		},
 	}
 	mt := mocktracer.Start()
@@ -168,14 +183,10 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 			defer db.Close()
 			mt.Reset()
 
-			ctx := context.Background()
-
-			rows, err := db.QueryContext(ctx, "SELECT 1")
-			require.NoError(t, err)
-			rows.Close()
+			tt.dbOp(t, db)
 
 			spans := mt.FinishedSpans()
-			assert.Len(t, spans, 1)
+			assert.Len(t, spans, tt.wantNumSpans)
 		})
 	}
 }
