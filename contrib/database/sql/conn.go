@@ -24,6 +24,7 @@ var _ driver.Conn = (*TracedConn)(nil)
 type QueryType string
 
 const (
+        // QueryTypeConnect is used for Connect traces.
 	QueryTypeConnect  QueryType = "Connect"
 	QueryTypeQuery              = "Query"
 	QueryTypePing               = "Ping"
