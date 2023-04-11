@@ -55,6 +55,8 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
 	assert.Equal(1, tags["_dd.measured"])
 	assert.Equal("bar", tags["foo"])
+	assert.Equal("grpc", tags[ext.RPCSystem])
+	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
