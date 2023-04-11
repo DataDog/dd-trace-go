@@ -20,17 +20,21 @@ import (
 // TestIntegrationInfo verifies that an integration leveraging instrumentation telemetry
 // sends the correct data to the telemetry client.
 func TestIntegrationInfo(t *testing.T) {
+	// mux.NewRouter() uses the net/http and gorilla/mux integration
 	mux.NewRouter()
 	integrations := telemetry.Integrations()
-	require.Len(t, integrations, 1)
-	assert.Equal(t, integrations[0].Name, "gorilla/mux")
+	require.Len(t, integrations, 2)
+	assert.Equal(t, integrations[0].Name, "net/http")
 	assert.True(t, integrations[0].Enabled)
+	assert.Equal(t, integrations[1].Name, "gorilla/mux")
+	assert.True(t, integrations[1].Enabled)
 }
 
 type contribPkg struct {
 	ImportPath string
 	Name       string
 	Imports    []string
+	Dir        string
 }
 
 var TelemetryImport = "gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -46,7 +50,6 @@ func (p *contribPkg) hasTelemetryImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	tracked := map[string]struct{}{"mux": {}}
 	body, err := exec.Command("go", "list", "-json", "../../...").Output()
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -65,10 +68,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
-		if _, ok := tracked[pkg.Name]; ok {
-			if !pkg.hasTelemetryImport() {
-				t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
-			}
+		if !pkg.hasTelemetryImport() {
+			t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
 	}
 }
