@@ -99,6 +99,7 @@ func (c *Client) Start() {
 		for {
 			select {
 			case <-c.stop:
+				close(c.stop)
 				return
 			case <-ticker.C:
 				c.updateState()
@@ -109,7 +110,14 @@ func (c *Client) Start() {
 
 // Stop stops the client's update poll loop
 func (c *Client) Stop() {
-	close(c.stop)
+	log.Debug("remoteconfig: gracefully stopping the client")
+	c.stop <- struct{}{}
+	select {
+	case <-c.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
 }
 
 func (c *Client) updateState() {

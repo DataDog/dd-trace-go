@@ -87,7 +87,6 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
-		activeAppSec.stopRC()
 		activeAppSec.stop()
 	}
 	activeAppSec = a
@@ -131,10 +130,12 @@ func (a *appsec) start() error {
 
 // Stop AppSec by unregistering the security protections.
 func (a *appsec) stop() {
-	if a.started {
-		a.started = false
-		dyngo.SwapRootOperation(nil)
-		a.limiter.Stop()
-		a.disableRCBlocking()
+	if !a.started {
+		return
 	}
+	a.started = false
+	a.stopRC()
+	dyngo.SwapRootOperation(nil)
+	a.limiter.Stop()
+	a.disableRCBlocking()
 }
