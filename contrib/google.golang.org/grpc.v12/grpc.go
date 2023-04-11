@@ -17,12 +17,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 )
+
+const componentName = "google.golang.org/grpc.v12"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
 func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerInterceptor {
@@ -48,19 +55,22 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startSpanFromContext(ctx context.Context, method, service string, opts ...tracer.StartSpanOption) (ddtrace.Span, context.Context) {
-	// copy opts in case the caller reuses the slice in parallel
-	// we will add at least 5, at most 6 items
-	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+6)
-	copy(optsLocal, opts)
-	optsLocal = append(optsLocal,
+	extraOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(service),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethod, method),
 		tracer.SpanType(ext.AppTypeRPC),
 		tracer.Measured(),
-		tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-	)
+		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+		tracer.Tag(ext.GRPCFullMethod, method),
+	}
+	// copy opts in case the caller reuses the slice in parallel
+	// we will add the items in extraOpts
+	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+len(extraOpts))
+	copy(optsLocal, opts)
+	optsLocal = append(optsLocal, extraOpts...)
 	md, _ := metadata.FromContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
 		optsLocal = append(optsLocal, tracer.ChildOf(sctx))
@@ -88,8 +98,10 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 		spanopts = append(spanopts,
 			tracer.Tag(tagMethod, method),
 			tracer.SpanType(ext.AppTypeRPC),
-			tracer.Tag(ext.Component, "google.golang.org/grpc.v12"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+			tracer.Tag(ext.GRPCFullMethod, method),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, "grpc.client", spanopts...)
 		md, ok := metadata.FromContext(ctx)

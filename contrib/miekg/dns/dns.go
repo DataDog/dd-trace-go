@@ -17,7 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "miekg/dns"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.
 func ListenAndServe(addr string, network string, handler dns.Handler) error {
@@ -115,7 +122,7 @@ func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) 
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
 		tracer.SpanType(ext.SpanTypeDNS),
-		tracer.Tag(ext.Component, "miekg/dns"))
+		tracer.Tag(ext.Component, componentName))
 }
 
 func startClientSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
