@@ -11,7 +11,6 @@ import (
 	"math"
 	"strings"
 	"time"
-	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -87,29 +86,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
-		// Get the value of the struct using reflection
-		val := reflect.ValueOf(in)
-
-		// If in is not a pointer, try to get the address of it
-			if val.Kind() != reflect.Ptr {
-				val = reflect.ValueOf(&in)
-			}
-
-			// If val is still not a pointer to a struct, panic
-			if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
-				panic("printStructValues: input is not a pointer to a struct")
-			}
-
-			// Dereference the pointer to get the struct value
-			val = val.Elem()
-			fmt.Println("printing reflected values")
-			// Iterate over the fields of the struct and print out their values
-			for i := 0; i < val.NumField(); i++ {
-				fmt.Printf("%v: %v\n", val.Type().Field(i).Name, val.Field(i).Interface())
-			}
-			fmt.Println("printing reflected values")
 		
-
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
@@ -148,20 +125,21 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 	switch awsService {
 	case "SQS":
 		// Extract queueName
-		fmt.Println("got in sqs case")
 		resourceNameKey, resourceNameValue = extractQueueName(requestInput)
-	case "s3": 
+	case "S3":
+		fmt.Println("got in s3 case")
+ 
 		// Extract bucketName
 		resourceNameKey, resourceNameValue = extractBucketName(requestInput)
-	case "sns":
+	case "SNS":
 		resourceNameKey, resourceNameValue = extractTopicName(requestInput)
-	case "dynamodb":
+	case "DynamoDB":
 		resourceNameKey, resourceNameValue = extractTableName(requestInput)
-	case "kinesis":
+	case "Kinesis":
 		resourceNameKey, resourceNameValue = extractStreamName(requestInput)
-	case "eventbridge":
+	case "EventBridge":
 		resourceNameKey, resourceNameValue = extractRuleName(requestInput)
-	case "states":
+	case "SFN":
 		resourceNameKey, resourceNameValue = extractStateMachineName(requestInput)
 	} 
     return resourceNameKey, resourceNameValue
@@ -373,7 +351,7 @@ func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey
 }
 
 func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractStreamName")
+	fmt.Println("got in extractRuleName")
 	ruleNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 		case *eventbridge.PutRuleInput:
@@ -406,7 +384,7 @@ func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey s
 			}
 	}
 	
-	return tagStateMachineName, ruleNameValue
+	return tagRuleName, ruleNameValue
 }
 
 func extractStateMachineName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
@@ -494,6 +472,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		out, metadata, err = next.HandleDeserialize(ctx, in)
 
 		// Get values out of the response.
+		fmt.Println("getting status code")
 		if res, ok := out.RawResponse.(*smithyhttp.Response); ok {
 			span.SetTag(ext.HTTPCode, res.StatusCode)
 		}
