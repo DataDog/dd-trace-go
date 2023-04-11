@@ -272,7 +272,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
-		tracer.Tag(ext.Component, "database/sql"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		// set a default value for this tag which will be overwritten later if set in the metadata.
 		tracer.Tag(ext.DBSystem, ext.DBSystemOtherSQL),

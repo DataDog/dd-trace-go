@@ -20,11 +20,18 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/trace"
 )
+
+const componentName = "graph-gophers/graphql-go"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 const (
 	tagGraphqlField         = "graphql.field"
@@ -47,7 +54,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 		tracer.Tag(tagGraphqlOperationName, operationName),
-		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
@@ -78,7 +85,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
-		tracer.Tag(ext.Component, "graph-gophers/graphql-go"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
