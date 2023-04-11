@@ -84,7 +84,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(k.ctx, "consul.command", opts...)
+	span, _ := tracer.StartSpanFromContext(k.ctx, k.config.operationName, opts...)
 	return span
 }
 
