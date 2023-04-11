@@ -14,6 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -92,11 +94,11 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg           *Config
-	unregisterWAF dyngo.UnregisterFunc
-	limiter       *TokenTicker
-	rc            *remoteconfig.Client
-	started       bool
+	cfg       *Config
+	limiter   *TokenTicker
+	rc        *remoteconfig.Client
+	wafHandle *waf.Handle
+	started   bool
 }
 
 func newAppSec(cfg *Config) *appsec {
@@ -131,7 +133,7 @@ func (a *appsec) start() error {
 func (a *appsec) stop() {
 	if a.started {
 		a.started = false
-		a.unregisterWAF()
+		dyngo.SwapRootOperation(nil)
 		a.limiter.Stop()
 		a.disableRCBlocking()
 	}

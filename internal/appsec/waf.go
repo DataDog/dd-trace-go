@@ -67,7 +67,9 @@ func (a *appsec) swapWAF(rules []byte) error {
 	oldHandle := a.wafHandle
 	a.wafHandle = newHandle
 	dyngo.SwapRootOperation(root)
-	oldHandle.Close()
+	if oldHandle != nil {
+		oldHandle.Close()
+	}
 
 	return nil
 }

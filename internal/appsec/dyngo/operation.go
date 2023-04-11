@@ -21,11 +21,12 @@
 package dyngo
 
 import (
-	"go.uber.org/atomic"
 	"reflect"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"go.uber.org/atomic"
 )
 
 // Operation interface type allowing to register event listeners to the
@@ -70,14 +71,18 @@ type EventListener interface {
 	Call(op Operation, v interface{})
 }
 
+// Atomic *Operation so we can atomically read or swap it.
 var rootOperation atomic.Pointer[Operation]
 
-func NewRootOperation() Operation {
-	return newOperation(nil)
-}
-
+// SwapRootOperation allows to atomically swap the current root operation with
+// the given new one. Concurrent uses of the old root operation on already
+// existing and running operation are still valid.
 func SwapRootOperation(new Operation) {
 	rootOperation.Swap(&new)
+	// Note: calling FinishOperation(old) could result into mem leaks because
+	// some finish event listeners, possibly releasing memory and resources,
+	// wouldn't be called anymore (because finish() disables the operation and
+	// removes the event listeners).
 }
 
 // operation structure allowing to subscribe to operation events and to
@@ -92,7 +97,16 @@ type operation struct {
 	mu       sync.RWMutex
 }
 
-// NewOperation creates and returns a new operationIt must be started by calling
+// NewRootOperation creates and returns a new root operation, with no parent
+// operation. Root operations are meant to be the top-level operation of an
+// operation stack, therefore receiving all the operation events. It allows to
+// prepare a new set of event listeners, to then atomically swap it with the
+// current one.
+func NewRootOperation() Operation {
+	return newOperation(nil)
+}
+
+// NewOperation creates and returns a new operation. It must be started by calling
 // StartOperation, and finished by calling FinishOperation. The returned
 // operation should be used in wrapper types to provide statically typed start
 // and finish functions. The following example shows how to wrap an operation
@@ -177,9 +191,7 @@ func (o *operation) disable() {
 	o.eventRegister.clear()
 }
 
-// Register allows to register the given event listeners to the operation. An
-// unregistration function is returned allowing to unregister the event
-// listeners from the operation.
+// Add the given event listeners to the operation.
 func (o *operation) add(l ...EventListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
