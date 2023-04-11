@@ -6,6 +6,7 @@
 package kubernetes_test
 
 import (
+	"context"
 	"fmt"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +30,7 @@ func Example() {
 		panic(err.Error())
 	}
 
-	pods, err := client.CoreV1().Pods("default").List(meta_v1.ListOptions{})
+	pods, err := client.CoreV1().Pods("default").List(context.TODO(), meta_v1.ListOptions{})
 	if err != nil {
 		panic(err)
 	}
