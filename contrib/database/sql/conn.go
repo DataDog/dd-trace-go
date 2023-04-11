@@ -24,16 +24,24 @@ var _ driver.Conn = (*TracedConn)(nil)
 type QueryType string
 
 const (
-        // QueryTypeConnect is used for Connect traces.
-	QueryTypeConnect  QueryType = "Connect"
-	QueryTypeQuery              = "Query"
-	QueryTypePing               = "Ping"
-	QueryTypePrepare            = "Prepare"
-	QueryTypeExec               = "Exec"
-	QueryTypeBegin              = "Begin"
-	QueryTypeClose              = "Close"
-	QueryTypeCommit             = "Commit"
-	QueryTypeRollback           = "Rollback"
+	// QueryTypeConnect is used for Connect traces.
+	QueryTypeConnect QueryType = "Connect"
+	// QueryTypeQuery is used for Query traces.
+	QueryTypeQuery = "Query"
+	// QueryTypePing is used for Ping traces.
+	QueryTypePing = "Ping"
+	// QueryTypePrepare is used for Prepare traces.
+	QueryTypePrepare = "Prepare"
+	// QueryTypeExec is used for Exec traces.
+	QueryTypeExec = "Exec"
+	// QueryTypeBegin is used for Begin traces.
+	QueryTypeBegin = "Begin"
+	// QueryTypeClose is used for Close traces.
+	QueryTypeClose = "Close"
+	// QueryTypeCommit is used for Commit traces.
+	QueryTypeCommit = "Commit"
+	// QueryTypeRollback is used for Rollback traces.
+	QueryTypeRollback = "Rollback"
 )
 
 const (
