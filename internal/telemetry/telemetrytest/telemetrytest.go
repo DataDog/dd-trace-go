@@ -64,7 +64,7 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 	}
 }
 
-// stores the value for the given namespace and metric name
+// Gauge stores the value for the given metric
 func (c *MockClient) Gauge(namespace telemetry.Namespace, name string, value float64, tags []string, common bool) {
 	if _, ok := c.Metrics[namespace]; !ok {
 		c.Metrics[namespace] = map[string]float64{}
