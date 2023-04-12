@@ -27,7 +27,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		return rt.base.RoundTrip(req)
 	}
 	resourceName := rt.cfg.resourceNamer(req)
-	opName := rt.cfg.operationNamer(req)
+	spanName := rt.cfg.spanNamer(req)
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
