@@ -48,7 +48,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
 	}
-	span, ctx := tracer.StartSpanFromContext(req.Context(), opName, opts...)
+	span, ctx := tracer.StartSpanFromContext(req.Context(), spanName, opts...)
 	defer func() {
 		if rt.cfg.after != nil {
 			rt.cfg.after(res, span)
