@@ -31,8 +31,7 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	Start(configuration []Configuration)
-	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
+	ProductStart(namespace Namespace, configuration []Configuration)
 	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)
@@ -152,15 +151,14 @@ func log(msg string, args ...interface{}) {
 	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
-// Start registers that the app has begun running with the app-started event
-// Start also configures the telemetry client based on the following telemetry
+// start registers that the app has begun running with the app-started event.
+// Must be called with c.mu locked.
+// start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *client) Start(configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *client) start(configuration []Configuration, namespace Namespace) {
 	if Disabled() {
 		return
 	}
@@ -179,24 +177,22 @@ func (c *client) Start(configuration []Configuration) {
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
-	payload := &AppStarted{
-		Configuration: configuration,
-		Products: Products{
-			AppSec: ProductDetails{
-				Version: version.Tag,
-				Enabled: appsec.Enabled(),
-			},
-			// If the profiler starts, an app-product-change event will be sent
-			// to signal that the profiler is enabled. It is important that we
-			// send the profiler version, since product info is hashed on it's version
-			// when being stored by the instrumentation telemetry backend.
-			Profiler: ProductDetails{
-				Version: version.Tag,
-				Enabled: false,
-			},
+	productInfo := Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			Enabled: appsec.Enabled(),
 		},
 	}
-
+	productInfo.Profiler = ProductDetails{
+		Version: version.Tag,
+		// if the profiler is the one starting the telemetry client,
+		// then profiling is enabled
+		Enabled: namespace == NamespaceProfilers,
+	}
+	payload := &AppStarted{
+		Configuration: configuration,
+		Products:      productInfo,
+	}
 	appStarted := c.newRequest(RequestTypeAppStarted)
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
@@ -341,7 +337,7 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 }
 
 // flush sends any outstanding telemetry messages and aggregated metrics to be
-// sent to the backend. Requests are sent in the background. Should be called
+// sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
 func (c *client) flush() {
 	submissions := make([]*Request, 0, len(c.requests)+1)
