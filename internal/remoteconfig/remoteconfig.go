@@ -259,10 +259,22 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		return nil
 	}
 	// Performs the callbacks registered and update the application status in the repository (RCTE2)
+	// In case of several callbacks handling the same config, statuses take precedence in this order:
+	// 1 - ApplyStateError
+	// 2 - ApplyStateUnacknowledged
+	// 3 - ApplyStateAcknowledged
+	// This makes sure that any product that would need to re-receive the config in a subsequent update will be allowed to
+	statuses := make(map[string]rc.ApplyStatus)
 	for _, fn := range c.callbacks {
 		for path, status := range fn(productUpdates) {
-			c.repository.UpdateApplyStatus(path, status)
+			if s, ok := statuses[path]; !ok || status.State == rc.ApplyStateError ||
+				s.State == rc.ApplyStateAcknowledged && status.State == rc.ApplyStateUnacknowledged {
+				statuses[path] = status
+			}
 		}
+	}
+	for p, s := range statuses {
+		c.repository.UpdateApplyStatus(p, s)
 	}
 
 	return nil
