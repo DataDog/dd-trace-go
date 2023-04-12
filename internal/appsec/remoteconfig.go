@@ -58,6 +58,10 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	r := a.cfg.rulesManager.clone()
 	statuses := map[string]rc.ApplyStatus{}
+	// Set the default statuses for all updates to unacknowledged
+	for _, u := range updates {
+		statuses = mergeMaps(statuses, statusesFromUpdate(u, false, nil))
+	}
 	// Process remote activation update separately
 	// This makes it easier to short circuit the following loop that focuses on rules related updates
 	if u, ok := updates[rc.ProductASMFeatures]; ok {
@@ -65,6 +69,8 @@ func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[s
 		delete(updates, rc.ProductASMFeatures)
 	}
 
+	var err error
+updateLoop:
 	// Process rules related updates
 	for p, u := range updates {
 		switch p {
@@ -78,8 +84,9 @@ func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[s
 			// If the config was removed, switch back to the static recommended rules
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, errors.New("More than one config received for ASM_DD")))
-				continue
+				err = errors.New("More than one config received for ASM_DD")
+				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
+				break updateLoop
 			}
 			for path, data := range u {
 				if data == nil {
@@ -88,14 +95,13 @@ func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[s
 					break
 				}
 				var newBase rulesFragment
-				if err := json.Unmarshal(data, &newBase); err != nil {
+				if err = json.Unmarshal(data, &newBase); err != nil {
 					log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
 					statuses[path] = genApplyStatus(true, err)
-					break
+					break updateLoop
 				}
 				log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
 				r.changeBase(newBase, path)
-				statuses[path] = genApplyStatus(true, nil)
 			}
 		case rc.ProductASM:
 			// Store each config received through ASM as an edit entry in the rulesManager
@@ -103,16 +109,16 @@ func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[s
 			// If a config gets removed, the rulesManager edit entry gets removed as well
 			for path, data := range u {
 				log.Debug("appsec: Remote config: processing the %s ASM config", path)
-				statuses[path] = genApplyStatus(true, nil)
 				if data == nil {
 					log.Debug("appsec: Remote config: ASM config %s was removed", path)
 					r.removeEdit(path)
 					continue
 				}
 				var f rulesFragment
-				if err := json.Unmarshal(data, &f); err != nil || !f.validate() {
+				if err = json.Unmarshal(data, &f); err != nil || !f.validate() {
 					log.Debug("appsec: Remote config: error processing ASM config %s: %v", path, err)
 					statuses[path] = genApplyStatus(true, err)
+					break updateLoop
 				} else {
 					r.addEdit(path, f)
 				}
@@ -122,11 +128,23 @@ func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[s
 		}
 	}
 
+	if err != nil {
+		log.Debug("appsec: Remote config: not applying any updates because of error: %v", err)
+		return statuses
+	}
+
+	// Set all statuses to ack
+	for _, u := range updates {
+		statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
+	}
+
 	// Compile the final rules once all updates have been processed
 	r.compile()
 	data := r.raw()
 	log.Debug("appsec: Remote config: final compiled rules: %s", data)
-	if err := a.swapWAF(data); err != nil {
+	// If an error occurs updating the WAF handle, don't swap the rulesManager and propagate the error
+	// to all config statuses since we can't know which config is the faulty one
+	if err = a.swapWAF(data); err != nil {
 		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
