@@ -8,7 +8,6 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 import (
 	"context"
 	"database/sql/driver"
-	"fmt"
 	"math"
 	"time"
 
@@ -252,7 +251,6 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	name := fmt.Sprintf("%s.query", tp.driverName)
 	opts := append(spanOpts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
@@ -270,7 +268,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.operationName, opts...)
 	resource := string(qtype)
 	if query != "" {
 		resource = query

@@ -28,6 +28,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
@@ -130,6 +131,8 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if cfg.serviceName == "" {
 		cfg.serviceName = driverName + ".db"
 	}
+	cfg.operationName = namingschema.NewDBOutboundOp(driverName).GetName()
+
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
@@ -205,6 +208,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.serviceName == "" {
 		cfg.serviceName = rc.serviceName
 	}
+	cfg.operationName = rc.operationName
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}

@@ -11,10 +11,12 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
 	serviceName        string
+	operationName      string
 	analyticsRate      float64
 	dsn                string
 	childSpansOnly     bool
@@ -44,6 +46,11 @@ func defaults(cfg *config) {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		"",
+		namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
+	).GetName()
 }
 
 // WithServiceName sets the given service name when registering a driver,
