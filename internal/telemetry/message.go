@@ -213,15 +213,17 @@ type Metrics struct {
 
 // Series is a sequence of observations for a single named metric
 type Series struct {
-	Metric string       `json:"metric"`
-	Points [][2]float64 `json:"points"`
-	Type   string       `json:"type"`
-	Tags   []string     `json:"tags"`
+	Metric   string       `json:"metric"`
+	Points   [][2]float64 `json:"points"`
+	Interval int          `json:"interval"`
+	Type     string       `json:"type"`
+	Tags     []string     `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
 	// assumed the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
-	Common bool `json:"common"`
+	Common    bool   `json:"common"`
+	Namespace string `json:"namespace"`
 }

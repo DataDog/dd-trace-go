@@ -144,6 +144,8 @@ type client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
+	// flush interval incremented every time flush() is called
+	interval int
 }
 
 func log(msg string, args ...interface{}) {
