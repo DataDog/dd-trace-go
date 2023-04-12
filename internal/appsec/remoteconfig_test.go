@@ -10,7 +10,9 @@ package appsec
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -432,7 +434,7 @@ func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.
 	return update
 }
 
-func TestASMUmbrellaCallback(t *testing.T) {
+func TestOnRCUpdate(t *testing.T) {
 	baseRuleset := newRulesManager(nil)
 	baseRuleset.compile()
 
@@ -535,6 +537,103 @@ func TestASMUmbrellaCallback(t *testing.T) {
 			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)
 			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.rulesManager.latest.Exclusions)
 			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.rulesManager.latest.Actions)
+		})
+	}
+}
+
+func TestOnRCUpdateStatuses(t *testing.T) {
+	invalidRuleset := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	invalidRules := invalidRuleset.base
+	overrides := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "rule-1",
+				Enabled: true,
+			},
+			{
+				ID:      "rule-2",
+				Enabled: false,
+			},
+		},
+	}
+	overrides2 := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "rule-3",
+				Enabled: true,
+			},
+			{
+				ID:      "rule-4",
+				Enabled: false,
+			},
+		},
+	}
+	invalidOverrides := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				Enabled: false,
+			},
+			{
+				ID:      "crs-930-100",
+				Enabled: false,
+			},
+		},
+	}
+	ackStatus := genApplyStatus(true, nil)
+
+	for _, tc := range []struct {
+		name        string
+		updates     map[string]remoteconfig.ProductUpdate
+		expected    map[string]rc.ApplyStatus
+		updateError bool
+	}{
+		{
+			name:     "single/ack",
+			updates:  craftRCUpdates(map[string]rulesFragment{"overrides": overrides}),
+			expected: map[string]rc.ApplyStatus{"overrides": ackStatus},
+		},
+		{
+			name:     "single/error",
+			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("invalid configuration payload"))},
+		},
+		{
+			name:     "multiple/ack",
+			updates:  craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "overrides2": overrides2}),
+			expected: map[string]rc.ApplyStatus{"overrides": ackStatus, "overrides2": ackStatus},
+		},
+		{
+			name:    "multiple/single-error",
+			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
+			expected: map[string]rc.ApplyStatus{
+				"overrides": genApplyStatus(false, nil),
+				"invalid":   genApplyStatus(true, errors.New("invalid configuration payload")),
+			},
+		},
+		{
+			name:        "multiple/all-errors",
+			updates:     craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidRules}),
+			updateError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+			defer Stop()
+
+			if !Enabled() {
+				t.Skip("AppSec needs to be enabled for this test")
+			}
+
+			statuses := activeAppSec.onRCUpdate(tc.updates)
+			if tc.updateError {
+				for _, status := range statuses {
+					require.NotEmpty(t, status.Error)
+					require.Equal(t, rc.ApplyStateError, status.State)
+				}
+			} else {
+				require.Len(t, statuses, len(tc.expected))
+				require.True(t, reflect.DeepEqual(tc.expected, statuses))
+			}
 		})
 	}
 }
