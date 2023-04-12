@@ -44,16 +44,16 @@ func TestMain(m *testing.M) {
 }
 
 func TestSqlServer(t *testing.T) {
-	Register("sqlserver", &mssql.Driver{})
-	db, err := Open("sqlserver", "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master")
-	if err != nil {
-		log.Fatal(err)
-	}
+	driverName := "sqlserver"
+	Register(driverName, &mssql.Driver{})
+	defer unregister(driverName)
+	db, err := Open(driverName, "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master")
+	require.NoError(t, err)
 	defer db.Close()
 
 	testConfig := &sqltest.Config{
 		DB:         db,
-		DriverName: "sqlserver",
+		DriverName: driverName,
 		TableName:  tableName,
 		ExpectName: "sqlserver.query",
 		ExpectTags: map[string]interface{}{
@@ -71,16 +71,16 @@ func TestSqlServer(t *testing.T) {
 }
 
 func TestMySQL(t *testing.T) {
-	Register("mysql", &mysql.MySQLDriver{})
-	db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
-	if err != nil {
-		log.Fatal(err)
-	}
+	driverName := "mysql"
+	Register(driverName, &mysql.MySQLDriver{})
+	defer unregister(driverName)
+	db, err := Open(driverName, "test:test@tcp(127.0.0.1:3306)/test")
+	require.NoError(t, err)
 	defer db.Close()
 
 	testConfig := &sqltest.Config{
 		DB:         db,
-		DriverName: "mysql",
+		DriverName: driverName,
 		TableName:  tableName,
 		ExpectName: "mysql.query",
 		ExpectTags: map[string]interface{}{
@@ -98,16 +98,16 @@ func TestMySQL(t *testing.T) {
 }
 
 func TestPostgres(t *testing.T) {
-	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
-	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
+	driverName := "postgres"
+	Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+	defer unregister(driverName)
+	db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	require.NoError(t, err)
 	defer db.Close()
 
 	testConfig := &sqltest.Config{
 		DB:         db,
-		DriverName: "postgres",
+		DriverName: driverName,
 		TableName:  tableName,
 		ExpectName: "postgres.query",
 		ExpectTags: map[string]interface{}{
@@ -125,10 +125,12 @@ func TestPostgres(t *testing.T) {
 }
 
 func TestOpenOptions(t *testing.T) {
-	Register("postgres", &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+	driverName := "postgres"
+	Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+	defer unregister(driverName)
 
 	t.Run("Open", func(t *testing.T) {
-		db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+		db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 			WithServiceName("override-test"),
 			WithAnalytics(true),
 		)
@@ -139,7 +141,7 @@ func TestOpenOptions(t *testing.T) {
 
 		testConfig := &sqltest.Config{
 			DB:         db,
-			DriverName: "postgres",
+			DriverName: driverName,
 			TableName:  tableName,
 			ExpectName: "postgres.query",
 			ExpectTags: map[string]interface{}{
@@ -166,7 +168,7 @@ func TestOpenOptions(t *testing.T) {
 
 		testConfig := &sqltest.Config{
 			DB:         db,
-			DriverName: "postgres",
+			DriverName: driverName,
 			TableName:  tableName,
 			ExpectName: "postgres.query",
 			ExpectTags: map[string]interface{}{
@@ -194,7 +196,7 @@ func TestOpenOptions(t *testing.T) {
 
 		testConfig := &sqltest.Config{
 			DB:         db,
-			DriverName: "postgres",
+			DriverName: driverName,
 			TableName:  tableName,
 			ExpectName: "postgres.query",
 			ExpectTags: map[string]interface{}{
@@ -214,10 +216,9 @@ func TestOpenOptions(t *testing.T) {
 
 func TestMySQLUint64(t *testing.T) {
 	Register("mysql", &mysql.MySQLDriver{})
+	defer unregister("mysql")
 	db, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer db.Close()
 
 	assert := assert.New(t)
@@ -251,10 +252,13 @@ func TestConnectCancelledCtx(t *testing.T) {
 	mockTracer := mocktracer.Start()
 	defer mockTracer.Stop()
 	assert := assert.New(t)
+	driverName := "hangingConnector"
+	cfg := new(config)
+	defaults(cfg, driverName, nil)
 	tc := tracedConnector{
 		connector:  &hangingConnector{},
-		driverName: "hangingConnector",
-		cfg:        new(config),
+		driverName: driverName,
+		cfg:        cfg,
 	}
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
@@ -284,6 +288,10 @@ func TestRegister(t *testing.T) {
 	}
 
 	wg.Wait()
+	// cleanup registered drivers
+	for i := 1; i < 10; i++ {
+		unregister("test" + strconv.FormatInt(int64(i), 10))
+	}
 }
 
 func TestNamingSchema(t *testing.T) {
@@ -318,6 +326,7 @@ func TestNamingSchema(t *testing.T) {
 				t.Fatal("unknown driver: ", driverName)
 			}
 			Register(driverName, dv, registerOpts...)
+			defer unregister(driverName)
 			db, err := Open(driverName, dsn, openOpts...)
 			require.NoError(t, err)
 

@@ -268,7 +268,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.spanName, opts...)
 	resource := string(qtype)
 	if query != "" {
 		resource = query

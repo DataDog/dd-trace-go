@@ -17,9 +17,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestDBMPropagation(t *testing.T) {
+	// Ensure the global service name is set to the previous value after we finish the test, since the
+	// tracer.WithService option overrides it.
+	prevServiceName := globalconfig.ServiceName()
+	defer globalconfig.SetServiceName(prevServiceName)
+
 	testCases := []struct {
 		name     string
 		opts     []RegisterOption

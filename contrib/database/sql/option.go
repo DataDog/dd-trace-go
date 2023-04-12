@@ -6,6 +6,7 @@
 package sql
 
 import (
+	"fmt"
 	"math"
 	"os"
 
@@ -16,7 +17,7 @@ import (
 
 type config struct {
 	serviceName        string
-	operationName      string
+	spanName           string
 	analyticsRate      float64
 	dsn                string
 	childSpansOnly     bool
@@ -33,7 +34,7 @@ type registerConfig = config
 // RegisterOption has been deprecated in favor of Option.
 type RegisterOption = Option
 
-func defaults(cfg *config) {
+func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// default cfg.serviceName set in Register based on driver name
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
@@ -46,11 +47,19 @@ func defaults(cfg *config) {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
+
+	defaultServiceName := fmt.Sprintf("%s.db", driverName)
+	serviceNameV0 := defaultServiceName
+	// for v0, if service name was set during Register, we use that value as default
+	if rc != nil && rc.serviceName != "" {
+		serviceNameV0 = rc.serviceName
+	}
 	cfg.serviceName = namingschema.NewServiceNameSchema(
 		"",
-		"",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
+		defaultServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, serviceNameV0),
 	).GetName()
+	cfg.spanName = namingschema.NewDBOutboundOp(driverName).GetName()
 }
 
 // WithServiceName sets the given service name when registering a driver,
