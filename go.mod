@@ -5,7 +5,7 @@ go 1.18
 require (
 	cloud.google.com/go/pubsub v1.4.0
 	github.com/99designs/gqlgen v0.16.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.43.0
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.43.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.43.1
 	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/gostackparse v0.5.0
