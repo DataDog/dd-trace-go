@@ -61,21 +61,21 @@ func NewServiceNameTest(genSpans GenSpansFn, defaultName string, wantV0 ServiceN
 			wantV1 string
 		}{
 			{
-				name:                "with defaults",
+				name:                "WithDefaults",
 				serviceNameOverride: "",
 				ddService:           "",
 				wantV0:              wantV0.WithDefaults,
 				wantV1:              defaultName,
 			},
 			{
-				name:                "with DD_SERVICE",
+				name:                "WithGlobalDDService",
 				serviceNameOverride: "",
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDService,
 				wantV1:              TestDDService,
 			},
 			{
-				name:                "with DD_SERVICE and service override",
+				name:                "WithGlobalDDServiceAndOverride",
 				serviceNameOverride: TestServiceOverride,
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDServiceAndOverride,
