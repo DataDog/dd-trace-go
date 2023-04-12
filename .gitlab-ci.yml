@@ -9,5 +9,6 @@ variables:
   KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
 
-include: ".gitlab/benchmarks.yml"
-include: ".gitlab/test-apps.yml"
+include:
+  - ".gitlab/benchmarks.yml"
+  - ".gitlab/test-apps.yml"
