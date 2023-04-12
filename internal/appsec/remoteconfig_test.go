@@ -637,3 +637,56 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		})
 	}
 }
+
+// TestWafUpdate tests that the WAF behaves correctly after the WAF handle gets updated with a new set of security rules
+// through remote configuration
+func TestWafRCUpdate(t *testing.T) {
+	override := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-913-120",
+				Enabled: true,
+				OnMatch: []string{"block"},
+			},
+		},
+	}
+
+	Start()
+	defer Stop()
+
+	if !Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	t.Run("toggle-blocking", func(t *testing.T) {
+		cfg := activeAppSec.cfg
+		wafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		require.NoError(t, err)
+		defer wafHandle.Close()
+		wafCtx := waf.NewContext(wafHandle)
+		defer wafCtx.Close()
+		values := map[string]interface{}{
+			serverRequestPathParamsAddr: "/rfiinc.txt",
+		}
+		// Make sure the rule matches as expected
+		matches, actions := runWAF(wafCtx, values, cfg.wafTimeout)
+		require.Contains(t, string(matches), "crs-913-120")
+		require.Empty(t, actions)
+		// Simulate an RC update that disables the rule
+		statuses := activeAppSec.onRCUpdate(craftRCUpdates(map[string]rulesFragment{"override": override}))
+		for _, status := range statuses {
+			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
+		}
+		// Retrieve the new appsec cfg and instantiate a new waf handle form it to prepare the next run
+		cfg = activeAppSec.cfg
+		newWafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		require.NoError(t, err)
+		defer newWafHandle.Close()
+		newWafCtx := waf.NewContext(newWafHandle)
+		defer newWafCtx.Close()
+		// Make sure the rule returns a blocking action when matching
+		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
+		require.NotEmpty(t, matches)
+		require.Contains(t, actions, "block")
+	})
+}
