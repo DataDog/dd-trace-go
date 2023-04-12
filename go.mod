@@ -209,7 +209,7 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/go-libddwaf v1.0.0
+	github.com/DataDog/go-libddwaf v1.1.0
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/microsoft/go-mssqldb v0.21.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
