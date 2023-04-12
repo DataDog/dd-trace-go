@@ -44,14 +44,10 @@ func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[s
 }
 
 func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
-	merged := make(map[K]V)
-	for key, value := range m1 {
-		merged[key] = value
-	}
 	for key, value := range m2 {
-		merged[key] = value
+		m1[key] = value
 	}
-	return merged
+	return m1
 }
 
 // onRCUpdate is called when one or several remote configuration updates are available
