@@ -31,29 +31,33 @@ func TestRCClient(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("registerCallback", func(t *testing.T) {
-		client.callbacks = map[string][]Callback{}
-		nilCallback := func(ProductUpdate) map[string]rc.ApplyStatus { return nil }
-		defer func() { client.callbacks = map[string][]Callback{} }()
+		client.callbacks = []Callback{}
+		nilCallback := func(map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+		defer func() { client.callbacks = []Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
-		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
-		require.Equal(t, 1, len(client.callbacks[rc.ProductASMFeatures]))
+		client.RegisterCallback(nilCallback)
 		require.Equal(t, 1, len(client.callbacks))
-		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
-		require.Equal(t, 2, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
+		client.RegisterCallback(nilCallback)
+		require.Equal(t, 2, len(client.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
-		client.callbacks = map[string][]Callback{}
+		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
-		client.Products = append(client.Products, rc.ProductASMFeatures)
-
-		client.RegisterCallback(func(u ProductUpdate) map[string]rc.ApplyStatus {
-			require.NotNil(t, u)
-			require.NotNil(t, u[cfgPath])
-			require.Equal(t, string(u[cfgPath]), "test")
-			return map[string]rc.ApplyStatus{cfgPath: {State: rc.ApplyStateAcknowledged}}
-		}, rc.ProductASMFeatures)
+		client.RegisterProduct(rc.ProductASMFeatures)
+		client.RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
+			statuses := map[string]rc.ApplyStatus{}
+			for p, u := range updates {
+				if p == rc.ProductASMFeatures {
+					require.NotNil(t, u)
+					require.NotNil(t, u[cfgPath])
+					require.Equal(t, string(u[cfgPath]), "test")
+					statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+				}
+			}
+			return statuses
+		})
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
 		err := client.applyUpdate(resp)
