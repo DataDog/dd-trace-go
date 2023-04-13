@@ -109,6 +109,6 @@ func TimeGauge(namespace Namespace, name string, tags []string, common bool) (fi
 	start := time.Now()
 	return func() {
 		elapsed := time.Since(start)
-		GlobalClient.Gauge(namespace, name, float64(elapsed.Milliseconds()), tags, common)
+		GlobalClient.Record(namespace, MetricKindDist, name, float64(elapsed.Milliseconds()), tags, common)
 	}
 }

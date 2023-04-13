@@ -38,9 +38,12 @@ const (
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
 	RequestTypeAppHeartbeat RequestType = "app-heartbeat"
-	// RequestTypeGenerateMetrics contains all metrics accumulated by the
+	// RequestTypeGenerateMetrics contains count, gauge, or rate metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
+	// RequestTypeDistributions is meant to send distribution type metrics accumulated by the
+	// client, and is sent periodically along with the heartbeat
+	RequestTypeDistributions RequestType = "distributions"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
@@ -205,7 +208,7 @@ type AdditionalPayload struct {
 	Value interface{} `json:"value"`
 }
 
-// Metrics corresponds to the "generate-metrics" request type
+// Metrics corresponds to the "generate-metrics" and "distributions" request type
 type Metrics struct {
 	Namespace Namespace `json:"namespace"`
 	Series    []Series  `json:"series"`
@@ -213,11 +216,12 @@ type Metrics struct {
 
 // Series is a sequence of observations for a single named metric
 type Series struct {
-	Metric   string       `json:"metric"`
-	Points   [][2]float64 `json:"points"`
-	Interval int          `json:"interval"`
-	Type     string       `json:"type"`
-	Tags     []string     `json:"tags"`
+	Metric string       `json:"metric"`
+	Points [][2]float64 `json:"points"`
+	// Interval is required for gauge and rate metrics
+	Interval int      `json:"interval,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Tags     []string `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//

@@ -77,7 +77,7 @@ func TestMetrics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if req.RequestType != RequestTypeGenerateMetrics {
+		if !(req.RequestType == RequestTypeGenerateMetrics || req.RequestType == RequestTypeDistributions) {
 			return
 		}
 		v, ok := req.Payload.(*Metrics)
@@ -102,9 +102,12 @@ func TestMetrics(t *testing.T) {
 		}
 		client.start(nil, NamespaceTracers)
 
-		// Gauges should have the most recent value
-		client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
-		client.Gauge(NamespaceTracers, "foobar", 2, nil, false)
+		// Records should have the most recent value
+		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 2, nil, false)
+		// Records should have the most recent value
+		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
+		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
 		// Counts should be aggregated
 		client.Count(NamespaceTracers, "baz", 3, nil, true)
 		client.Count(NamespaceTracers, "baz", 1, nil, true)
@@ -116,9 +119,11 @@ func TestMetrics(t *testing.T) {
 	<-closed
 
 	want := []Series{
-		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
-		{Metric: "bonk", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
-		{Metric: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}, Tags: []string{}},
+		{Metric: "baz", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
+		{Metric: "bonk", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
+		{Metric: "foobar", Type: "gauge", Interval: 0, Points: [][2]float64{{0, 2}}, Tags: []string{}},
+		// Distributions do not record metric types since it is it's own event
+		{Metric: "soobar", Points: [][2]float64{{0, 3}}, Tags: []string{}},
 	}
 	sort.Slice(got, func(i, j int) bool {
 		return got[i].Metric < got[j].Metric
@@ -141,7 +146,7 @@ func TestDisabledClient(t *testing.T) {
 		URL: server.URL,
 	}
 	client.start(nil, NamespaceTracers)
-	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
+	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
@@ -156,7 +161,7 @@ func TestNonStartedClient(t *testing.T) {
 	client := &client{
 		URL: server.URL,
 	}
-	client.Gauge(NamespaceTracers, "foobar", 1, nil, false)
+	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
 	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
 	client.Stop()
 }
