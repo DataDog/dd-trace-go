@@ -59,6 +59,8 @@ jobs:
           go-version: ${{ inputs.go-version }}
           cache: true
       - uses: actions/checkout@v3
+        with:
+          repository: 'DataDog/dd-trace-go'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
 
