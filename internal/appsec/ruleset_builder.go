@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -173,6 +174,5 @@ func (r *rulesManager) raw() []byte {
 
 // String returns the string representation of the json rules.
 func (r *rulesManager) String() string {
-	data, _ := json.Marshal(r.latest)
-	return string(data)
+	return fmt.Sprintf("%+v", r.latest)
 }
