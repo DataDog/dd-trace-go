@@ -28,11 +28,12 @@ import (
 // AppSec is disabled or the given context is incorrect.
 // Note that passing the raw bytes of the HTTP request body is not expected and would
 // result in inaccurate attack detection.
-func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
-	if appsec.Enabled() {
-		httpsec.MonitorParsedBody(ctx, body)
+func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
+	if !appsec.Enabled() {
+		// bonus: use sync.Once to log a debug message once if AppSec is disabled
+
 	}
-	// bonus: use sync.Once to log a debug message once if AppSec is disabled
+	return httpsec.MonitorParsedBody(ctx, body)
 }
 
 // SetUser wraps tracer.SetUser() and extends it with user blocking.

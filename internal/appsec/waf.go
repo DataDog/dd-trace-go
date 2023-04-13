@@ -124,7 +124,6 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 	actionHandler := httpsec.NewActionsHandler()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		var body any
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
@@ -135,13 +134,11 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			values := map[string]interface{}{}
-			for _, addr := range addresses {
-				if addr == userIDAddr {
-					values[userIDAddr] = args.UserID
-				}
+			if !addressesContains(addresses, userIDAddr) {
+				return
 			}
-			matches, actionIds := runWAF(wafCtx, values, timeout)
+
+			matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
 			if len(matches) > 0 {
 				for _, id := range actionIds {
 					if actionHandler.Apply(id, op) {
@@ -197,29 +194,33 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			}
 		}
 
-		op.On(httpsec.OnSDKBodyOperationStart(func(op *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
-			body = args.Body
+		op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
+			if !addressesContains(addresses, serverRequestBodyAddr) {
+				return
+			}
+
+			matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
+			if len(matches) > 0 {
+				for _, id := range actionIds {
+					if actionHandler.Apply(id, op) {
+						sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
+					}
+				}
+				op.AddSecurityEvents(matches)
+				log.Debug("appsec: WAF detected a suspicious request body")
+			}
 		}))
 
 		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
 		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
-			// Run the WAF on the rule addresses available in the request args
-			values := make(map[string]interface{}, len(addresses))
-			for _, addr := range addresses {
-				switch addr {
-				case serverRequestBodyAddr:
-					if body != nil {
-						values[serverRequestBodyAddr] = body
-					}
-				case serverResponseStatusAddr:
-					values[serverResponseStatusAddr] = res.Status
-				}
+			if !addressesContains(addresses, serverResponseStatusAddr) {
+				return
 			}
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			matches, _ := runWAF(wafCtx, values, timeout)
+			matches, _ := runWAF(wafCtx, map[string]interface{}{serverResponseStatusAddr: res.Status}, timeout)
 
 			// Add WAF metrics.
 			rInfo := handle.RulesetInfo()
@@ -492,4 +493,14 @@ func addWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafTimeoutTag, float64(timeouts))
 	th.AddTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
+}
+
+func addressesContains(addresses []string, address string) bool {
+	for _, i := range addresses {
+		if i == address {
+			return true
+		}
+	}
+
+	return false
 }

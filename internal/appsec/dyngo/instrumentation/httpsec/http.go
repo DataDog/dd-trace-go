@@ -12,6 +12,7 @@ package httpsec
 
 import (
 	"context"
+	"errors"
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
@@ -63,17 +64,30 @@ type (
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
+
+	// BodyMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
+	BodyMonitoringError struct {
+		error
+	}
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
-func MonitorParsedBody(ctx context.Context, body interface{}) {
-	if parent := fromContext(ctx); parent != nil {
-		op := StartSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
-		op.Finish()
-	} else {
+func MonitorParsedBody(ctx context.Context, body interface{}) error {
+	parent := fromContext(ctx)
+	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
+		return nil
+	}
+
+	return ExecuteSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
+}
+
+// NewBodyMonitoringError creates a new body sdk monitoring error that returns `msg` upon calling `Error()`
+func NewBodyMonitoringError(msg string) *BodyMonitoringError {
+	return &BodyMonitoringError{
+		errors.New(msg),
 	}
 }
 
@@ -90,6 +104,15 @@ func applyActions(op *Operation) http.Handler {
 		}
 	}
 	return nil
+}
+
+// ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
+// An error is returned if the body associated to that operation must be blocked
+func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
+	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
+	dyngo.StartOperation(op, args)
+	dyngo.FinishOperation(op, SDKBodyOperationRes{})
+	return op.Error
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -186,6 +209,7 @@ type (
 	// StartSDKBodyOperation() and finished with its Finish() method.
 	SDKBodyOperation struct {
 		dyngo.Operation
+		Error error
 	}
 )
 
