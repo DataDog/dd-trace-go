@@ -381,7 +381,7 @@ func TestCapabilities(t *testing.T) {
 		{
 			name:     "appsec-enabled/rulesManager-from-env",
 			env:      map[string]string{enabledEnvVar: "1", rulesEnvVar: "testdata/blocking.json"},
-			expected: []remoteconfig.Capability{remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking},
+			expected: []remoteconfig.Capability{},
 		},
 	} {
 
@@ -531,7 +531,7 @@ func TestOnRCUpdate(t *testing.T) {
 			tc.ruleset.compile()
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.ruleset.edits)
-			activeAppSec.onRCUpdate(updates)
+			activeAppSec.onRCRulesUpdate(updates)
 			// Compare rulesets
 			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.rulesManager.latest.Rules)
 			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)
@@ -624,7 +624,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				t.Skip("AppSec needs to be enabled for this test")
 			}
 
-			statuses := activeAppSec.onRCUpdate(tc.updates)
+			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
 			if tc.updateError {
 				for _, status := range statuses {
 					require.NotEmpty(t, status.Error)
@@ -651,15 +651,13 @@ func TestWafRCUpdate(t *testing.T) {
 		},
 	}
 
-	Start()
-	defer Stop()
-
-	if !Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
+	if waf.Health() != nil {
+		t.Skip("WAF needs to be available for this test")
 	}
 
 	t.Run("toggle-blocking", func(t *testing.T) {
-		cfg := activeAppSec.cfg
+		cfg, err := newConfig()
+		require.NoError(t, err)
 		wafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer wafHandle.Close()
@@ -673,12 +671,11 @@ func TestWafRCUpdate(t *testing.T) {
 		require.Contains(t, string(matches), "crs-913-120")
 		require.Empty(t, actions)
 		// Simulate an RC update that disables the rule
-		statuses := activeAppSec.onRCUpdate(craftRCUpdates(map[string]rulesFragment{"override": override}))
+		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
 		for _, status := range statuses {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
 		}
-		// Retrieve the new appsec cfg and instantiate a new waf handle form it to prepare the next run
-		cfg = activeAppSec.cfg
+		cfg.rulesManager.compile()
 		newWafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer newWafHandle.Close()

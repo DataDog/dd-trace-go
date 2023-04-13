@@ -50,21 +50,13 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 	return m1
 }
 
-// onRCUpdate is called when one or several remote configuration updates are available
-func (a *appsec) onRCUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-	r := a.cfg.rulesManager.clone()
+// combineRCRulesUpdates updates the state of the given rulesManager with the combination of all the provided rules updates
+func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.ProductUpdate) (map[string]rc.ApplyStatus, error) {
 	statuses := map[string]rc.ApplyStatus{}
 	// Set the default statuses for all updates to unacknowledged
 	for _, u := range updates {
 		statuses = mergeMaps(statuses, statusesFromUpdate(u, false, nil))
 	}
-	// Process remote activation update separately
-	// This makes it easier to short circuit the following loop that focuses on rules related updates
-	if u, ok := updates[rc.ProductASMFeatures]; ok {
-		statuses = mergeMaps(statuses, a.handleASMFeatures(u))
-		delete(updates, rc.ProductASMFeatures)
-	}
-
 	var err error
 updateLoop:
 	// Process rules related updates
@@ -112,36 +104,60 @@ updateLoop:
 				}
 				var f rulesFragment
 				if err = json.Unmarshal(data, &f); err != nil || !f.validate() {
-					if err == nil { //
+					if err == nil {
 						err = errors.New("invalid configuration payload")
 					}
 					log.Debug("appsec: Remote config: error processing ASM config %s: %v", path, err)
 					statuses[path] = genApplyStatus(true, err)
 					break updateLoop
-				} else {
-					r.addEdit(path, f)
 				}
+				r.addEdit(path, f)
 			}
 		default:
 			log.Debug("appsec: Remote config: ignoring unsubscribed product %s", p)
 		}
 	}
 
+	// Set all statuses to ack if no error occured
+	if err == nil {
+		for _, u := range updates {
+			statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
+		}
+	}
+
+	return statuses, err
+
+}
+
+// onRemoteActivation is the RC callback called when an update is received for ASM_FEATURES
+func (a *appsec) onRemoteActivation(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	statuses := map[string]rc.ApplyStatus{}
+	if u, ok := updates[rc.ProductASMFeatures]; ok {
+		statuses = a.handleASMFeatures(u)
+	}
+	return statuses
+
+}
+
+// onRCRulesUpdate is the RC callback called when security rules related RC updates are available
+func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	// If appsec was deactivated through RC, stop here
+	if !a.started {
+		return map[string]rc.ApplyStatus{}
+	}
+
+	r := a.cfg.rulesManager.clone()
+	statuses, err := combineRCRulesUpdates(r, updates)
 	if err != nil {
 		log.Debug("appsec: Remote config: not applying any updates because of error: %v", err)
 		return statuses
 	}
 
-	// Set all statuses to ack
-	for _, u := range updates {
-		statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
-	}
-
-	// Compile the final rules once all updates have been processed
+	// Compile the final rules once all updates have been processed and no error occurred
 	r.compile()
 	data := r.raw()
 	log.Debug("appsec: Remote config: final compiled rules: %s", data)
-	// If an error occurs updating the WAF handle, don't swap the rulesManager and propagate the error
+	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
 	if err = a.swapWAF(data); err != nil {
 		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
@@ -272,7 +288,8 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 
 func (a *appsec) startRC() {
 	if a.rc != nil {
-		a.rc.RegisterCallback(a.onRCUpdate)
+		a.rc.RegisterCallback(a.onRCRulesUpdate)
+		a.rc.RegisterCallback(a.onRemoteActivation)
 		a.rc.Start()
 	}
 }
@@ -344,10 +361,10 @@ func (a *appsec) enableRCBlocking() {
 	a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
-	a.registerRCCapability(remoteconfig.ASMUserBlocking)
-	a.registerRCCapability(remoteconfig.ASMRequestBlocking)
 
 	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
+		a.registerRCCapability(remoteconfig.ASMUserBlocking)
+		a.registerRCCapability(remoteconfig.ASMRequestBlocking)
 		a.registerRCCapability(remoteconfig.ASMIPBlocking)
 		a.registerRCCapability(remoteconfig.ASMDDRules)
 		a.registerRCCapability(remoteconfig.ASMExclusions)

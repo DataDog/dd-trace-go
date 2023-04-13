@@ -6,7 +6,6 @@
 package appsec
 
 import (
-	"bytes"
 	"encoding/json"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -68,9 +67,7 @@ type (
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {
 	var f rulesFragment
-	buf := new(bytes.Buffer)
-	json.Compact(buf, []byte(staticRecommendedRules))
-	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
+	if err := json.Unmarshal([]byte(staticRecommendedRules), &f); err != nil {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f
@@ -116,10 +113,9 @@ func (r_ *rulesFragment) clone() rulesFragment {
 // newRulesManager initializes and returns a new rulesManager using the provided rules.
 // If no rules are provided (nil), or the provided rules are invalid, the default rules are used instead
 func newRulesManager(rules []byte) *rulesManager {
-	f := defaultRulesFragment()
-	buf := new(bytes.Buffer)
-	json.Compact(buf, rules)
-	if err := json.Unmarshal(buf.Bytes(), &f); err != nil {
+	var f rulesFragment
+	if err := json.Unmarshal(rules, &f); err != nil {
+		f = defaultRulesFragment()
 		log.Debug("appsec: cannot create rulesManager from specified rules. Using default rules instead")
 	}
 	return &rulesManager{
