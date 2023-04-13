@@ -780,7 +780,7 @@ func TestRootSpanAccessor(t *testing.T) {
 	defer stop()
 
 	t.Run("nil-span", func(t *testing.T) {
-		var s *span = nil
+		var s *span
 		require.Nil(t, s.Root())
 	})
 

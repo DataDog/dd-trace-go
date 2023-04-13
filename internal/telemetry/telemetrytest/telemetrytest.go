@@ -73,7 +73,7 @@ func (c *MockClient) Record(namespace telemetry.Namespace, MetricKind telemetry.
 }
 
 // Count is NOOP for the mock client.
-func (c *MockClient) Count(namespace telemetry.Namespace, name string, value float64, tags []string, common bool) {
+func (c *MockClient) Count(_ telemetry.Namespace, _ string, _ float64, _ []string, _ bool) {
 }
 
 // Stop is NOOP for the mock client.
@@ -81,5 +81,5 @@ func (c *MockClient) Stop() {
 }
 
 // ApplyOps is NOOP for the mock client.
-func (c *MockClient) ApplyOps(ops ...telemetry.Option) {
+func (c *MockClient) ApplyOps(_ ...telemetry.Option) {
 }

@@ -207,8 +207,8 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.DropP0s)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
-			"a": struct{}{},
-			"b": struct{}{},
+			"a": {},
+			"b": {},
 		})
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))

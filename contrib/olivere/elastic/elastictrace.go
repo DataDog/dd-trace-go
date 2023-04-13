@@ -69,7 +69,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
+	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.operationName, opts...)
 	defer span.Finish()
 
 	contentEncoding := req.Header.Get("Content-Encoding")
