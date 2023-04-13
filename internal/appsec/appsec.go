@@ -120,7 +120,7 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	if err := a.swapWAF(a.cfg.rulesManager.raw()); err != nil {
+	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
 		return err
 	}
 	a.enableRCBlocking()
@@ -134,8 +134,18 @@ func (a *appsec) stop() {
 		return
 	}
 	a.started = false
+
+	// Stop RC first so that the following is guaranteed not to be concurrent
+	// anymore.
 	a.stopRC()
-	dyngo.SwapRootOperation(nil)
-	a.limiter.Stop()
 	a.disableRCBlocking()
+
+	// Disable the currently applied instrumentation
+	dyngo.SwapRootOperation(nil)
+	if a.wafHandle != nil {
+		a.wafHandle.Close()
+	}
+	// TODO: block until no more requests are using dyngo operations
+
+	a.limiter.Stop()
 }

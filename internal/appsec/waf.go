@@ -39,34 +39,43 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-func (a *appsec) swapWAF(rules []byte) error {
-	// 1 - Instantiate a new WAF handle and verify its state
-	newHandle, err := freshWAFHandle(rules, a.cfg)
+func (a *appsec) swapWAF(rules rulesFragment) (err error) {
+	// Instantiate a new WAF handle and verify its state
+	newHandle, err := newWAFHandle(rules, a.cfg)
 	if err != nil {
 		return err
 	}
 
-	if newHandle == nil { // Nil handle but no error means the handle was not updated (ddwaf_update, not supported yet)
-		return nil
-	}
-
-	// Close the WAF in case of an error in what's following
+	// Close the WAF handle in case of an error in what's following
 	defer func() {
 		if err != nil {
 			newHandle.Close()
 		}
 	}()
 
-	// 2 - Register dyngo listeners now that we know that the new handle is valid
-	root := dyngo.NewRootOperation()
-	if err := registerDyngoListeners(root, newHandle, a.cfg, a.limiter); err != nil {
+	listeners, err := newWAFEventListeners(newHandle, a.cfg, a.limiter)
+	if err != nil {
 		return err
 	}
 
-	// 3 - Hot-swap dyngo's root operation and instrumentation
+	// Register the event listeners now that we know that the new handle is valid
+	newRoot := dyngo.NewRootOperation()
+	for _, l := range listeners {
+		newRoot.On(l)
+	}
+
+	// Hot-swap dyngo's root operation
+	dyngo.SwapRootOperation(newRoot)
+
+	// Close old handle.
+	// Note that concurrent requests are still using it, and it will be released
+	// only when no more requests use it.
+	// TODO: implement in dyngo ref-counting of the root operation so we can
+	//   rely on a Finish event listener on the root operation instead?
+	//   Avoiding saving the current WAF handle would guarantee no one is
+	//   accessing a.wafHandle while we swap
 	oldHandle := a.wafHandle
 	a.wafHandle = newHandle
-	dyngo.SwapRootOperation(root)
 	if oldHandle != nil {
 		oldHandle.Close()
 	}
@@ -74,42 +83,39 @@ func (a *appsec) swapWAF(rules []byte) error {
 	return nil
 }
 
-func freshWAFHandle(rules []byte, cfg *Config) (*waf.Handle, error) {
-	if err := waf.Health(); err != nil {
-		return nil, err
-	}
-	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
+	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 }
 
-func registerDyngoListeners(root dyngo.Operation, waf *waf.Handle, cfg *Config, l Limiter) error {
+func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
-		return errors.New("no addresses found in the rule")
+		return nil, errors.New("no addresses found in the rule")
 	}
 
 	// Check there are supported addresses in the rule
 	httpAddresses, grpcAddresses, notSupported := supportedAddresses(ruleAddresses)
 	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 {
-		return fmt.Errorf("the addresses present in the rule are not supported: %v", notSupported)
+		return nil, fmt.Errorf("the addresses present in the rules are not supported: %v", notSupported)
 	}
 
 	if len(notSupported) > 0 {
-		log.Debug("appsec: the addresses present in the rule are partially supported: not supported=%v", notSupported)
+		log.Debug("appsec: the addresses present in the rules are partially supported: not supported=%v", notSupported)
 	}
 
 	// Register the WAF event listeners
 	if len(httpAddresses) > 0 {
-		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		root.On(newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
+		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
+		listeners = append(listeners, newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(grpcAddresses) > 0 {
-		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		root.On(newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
+		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
+		listeners = append(listeners, newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
 	}
 
-	return nil
+	return listeners, nil
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.

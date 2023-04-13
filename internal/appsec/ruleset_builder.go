@@ -170,3 +170,9 @@ func (r *rulesManager) raw() []byte {
 	data, _ := json.Marshal(r.latest)
 	return data
 }
+
+// String returns the string representation of the json rules.
+func (r *rulesManager) String() string {
+	data, _ := json.Marshal(r.latest)
+	return string(data)
+}
