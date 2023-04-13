@@ -19,6 +19,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAllowAfterStop(t *testing.T) {
+	l := NewTokenTicker(0, 100)
+	l.Start()
+	l.Stop()
+	require.False(t, l.Allow())
+	require.False(t, l.Allow())
+	require.False(t, l.Allow())
+	require.False(t, l.Allow())
+	require.False(t, l.Allow())
+	require.False(t, l.Allow())
+}
+
 func TestLimiterUnit(t *testing.T) {
 	startTime := time.Now()
 
