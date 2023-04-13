@@ -146,6 +146,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return map[string]rc.ApplyStatus{}
 	}
 
+	// Create a new local rulesManager
 	r := a.cfg.rulesManager.clone()
 	statuses, err := combineRCRulesUpdates(r, updates)
 	if err != nil {
@@ -156,6 +157,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	// Compile the final rules once all updates have been processed and no error occurred
 	r.compile()
 	log.Debug("appsec: Remote config: final compiled rules: %s", r)
+
 	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
 	if err = a.swapWAF(r.latest); err != nil {
@@ -164,6 +166,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			statuses[k] = genApplyStatus(true, err)
 		}
 	} else {
+		// Replace the rulesManager with the new one holding the new state
 		a.cfg.rulesManager = r
 	}
 	return statuses
