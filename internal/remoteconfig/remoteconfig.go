@@ -326,9 +326,9 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		}
 	}
 
-	cap := big.NewInt(0)
+	capa := big.NewInt(0)
 	for i := range c.Capabilities {
-		cap.SetBit(cap, int(i), 1)
+		capa.SetBit(capa, int(i), 1)
 	}
 	products := make([]string, len(c.Products))
 	for p := range c.Products {
@@ -354,7 +354,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
-			Capabilities: cap.Bytes(),
+			Capabilities: capa.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

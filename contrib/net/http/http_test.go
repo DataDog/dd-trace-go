@@ -302,10 +302,10 @@ func router(muxOpts ...Option) http.Handler {
 	return mux
 }
 
-func handler200(w http.ResponseWriter, r *http.Request) {
+func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, r *http.Request) {
+func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
