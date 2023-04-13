@@ -636,7 +636,7 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
-func TestRulesSamplerConcurrency(t *testing.T) {
+func TestRulesSamplerConcurrency(_ *testing.T) {
 	rules := []SamplingRule{
 		ServiceRule("test-service", 1.0),
 		NameServiceRule("db.query", "postgres.db", 1.0),

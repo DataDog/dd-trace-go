@@ -225,10 +225,10 @@ func router() http.Handler {
 	return router
 }
 
-func handler200(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+func handler200(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+func handler500(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }

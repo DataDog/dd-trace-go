@@ -50,8 +50,7 @@ jobs:
           curl https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
 
-  golangci:
-    name: lint
+  golangci-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-go@v4
@@ -63,6 +62,8 @@ jobs:
           repository: 'DataDog/dd-trace-go'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
 
   test-core:
     runs-on: ubuntu-latest
