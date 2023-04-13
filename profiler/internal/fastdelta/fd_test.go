@@ -576,7 +576,7 @@ func vt(vtype, vunit string) pprofutils.ValueType {
 
 type badWriter struct{}
 
-func (badWriter) Write(p []byte) (int, error) {
+func (badWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("fail")
 }
 

@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestImplementsHook(t *testing.T) {
+func TestImplementsHook(_ *testing.T) {
 	var _ pg.QueryHook = (*queryHook)(nil)
 }
 

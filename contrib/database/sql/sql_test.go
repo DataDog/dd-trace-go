@@ -270,7 +270,7 @@ func TestConnectCancelledCtx(t *testing.T) {
 	assert.Equal("Connect", s.Tag("sql.query_type"))
 }
 
-func TestRegister(t *testing.T) {
+func TestRegister(_ *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := 1; i < 10; i++ {

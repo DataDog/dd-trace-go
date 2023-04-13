@@ -1536,12 +1536,12 @@ func TestPushTrace(t *testing.T) {
 	tracer := newUnstartedTracer()
 	defer tracer.statsd.Close()
 	trace := []*span{
-		&span{
+		{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/",
 		},
-		&span{
+		{
 			Name:     "pylons.request",
 			Service:  "pylons",
 			Resource: "/foo",

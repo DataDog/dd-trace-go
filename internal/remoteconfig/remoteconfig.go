@@ -284,9 +284,9 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		}
 	}
 
-	cap := big.NewInt(0)
+	capa := big.NewInt(0)
 	for _, i := range c.Capabilities {
-		cap.SetBit(cap, int(i), 1)
+		capa.SetBit(capa, int(i), 1)
 	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
@@ -308,7 +308,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
-			Capabilities: cap.Bytes(),
+			Capabilities: capa.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

@@ -64,7 +64,7 @@ func TestClientEvalSha(t *testing.T) {
 }
 
 // https://github.com/DataDog/dd-trace-go/issues/387
-func TestIssue387(t *testing.T) {
+func TestIssue387(_ *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	client := NewClient(opts, WithServiceName("my-redis"))
 	n := 1000
