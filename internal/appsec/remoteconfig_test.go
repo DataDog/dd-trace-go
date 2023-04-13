@@ -539,6 +539,38 @@ func TestOnRCUpdate(t *testing.T) {
 			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.rulesManager.latest.Actions)
 		})
 	}
+
+	t.Run("post-stop", func(t *testing.T) {
+		if waf.Health() != nil {
+			t.Skip("WAF needs to be available for this test (remote activation requirement)")
+		}
+
+		t.Setenv(enabledEnvVar, "")
+		os.Unsetenv(enabledEnvVar)
+		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+		require.False(t, Enabled())
+
+		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
+		// Activate appsec
+		updates := map[string]remoteconfig.ProductUpdate{rc.ProductASMFeatures: map[string][]byte{"features/config": enabledPayload}}
+		activeAppSec.onRemoteActivation(updates)
+		require.True(t, Enabled())
+
+		// Deactivate and try to update the rules. The rules update should not happen
+		updates = map[string]remoteconfig.ProductUpdate{
+			rc.ProductASMFeatures: map[string][]byte{"features/config": nil},
+			rc.ProductASM:         map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
+		}
+		activeAppSec.onRemoteActivation(updates)
+		require.False(t, Enabled())
+		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
+		rulesManager := activeAppSec.cfg.rulesManager
+		statuses := activeAppSec.onRCRulesUpdate(updates)
+		require.Empty(t, statuses)
+		require.True(t, reflect.DeepEqual(rulesManager, activeAppSec.cfg.rulesManager))
+
+	})
 }
 
 func TestOnRCUpdateStatuses(t *testing.T) {

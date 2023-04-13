@@ -288,8 +288,8 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 
 func (a *appsec) startRC() {
 	if a.rc != nil {
-		a.rc.RegisterCallback(a.onRCRulesUpdate)
 		a.rc.RegisterCallback(a.onRemoteActivation)
+		a.rc.RegisterCallback(a.onRCRulesUpdate)
 		a.rc.Start()
 	}
 }
