@@ -113,7 +113,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
-		context.errors = parent.errors
+		context.errors = atomic.LoadInt32(&parent.errors)
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
