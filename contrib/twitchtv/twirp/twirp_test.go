@@ -376,7 +376,7 @@ func (n *notifyListener) Accept() (c net.Conn, err error) {
 
 type haberdasher int32
 
-func (h haberdasher) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, error) {
+func (h haberdasher) MakeHat(_ context.Context, size *example.Size) (*example.Hat, error) {
 	if size.Inches != int32(h) {
 		return nil, twirp.InvalidArgumentError("Inches", "Only size of %d is allowed")
 	}
