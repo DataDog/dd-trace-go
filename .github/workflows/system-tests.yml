@@ -59,6 +59,20 @@ jobs:
       - name: Run
         run: ./run.sh
 
+      - name: Run APM E2E default tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E
+
+      - name: Run APM E2E Single Span tests
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
+
       - name: Run ASM blocking scenario
         env:
           DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
@@ -73,19 +87,19 @@ jobs:
           DD_SITE: "datadoghq.com"
         run: ./run.sh APPSEC_REQUEST_BLOCKING
 
-      - name: Run APM E2E default tests
+      - name: Run ASM_FEATURES remote configuration test
         env:
           DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
           DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
           DD_SITE: "datadoghq.com"
-        run: ./run.sh APM_TRACING_E2E
+        run: ./run.sh REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
 
-      - name: Run APM E2E Single Span tests
+      - name: Run ASM_DD remote configuration test
         env:
           DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
           DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
           DD_SITE: "datadoghq.com"
-        run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
+        run: ./run.sh REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
 
       - name: Compress artifact
         if: ${{ always() }}
