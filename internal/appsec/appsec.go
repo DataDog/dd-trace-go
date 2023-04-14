@@ -87,6 +87,7 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
+		activeAppSec.stopRC()
 		activeAppSec.stop()
 	}
 	activeAppSec = a
@@ -134,10 +135,7 @@ func (a *appsec) stop() {
 		return
 	}
 	a.started = false
-
-	// Stop RC first so that the following is guaranteed not to be concurrent
-	// anymore.
-	a.stopRC()
+	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
 
 	// Disable the currently applied instrumentation

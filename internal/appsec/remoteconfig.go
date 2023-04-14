@@ -290,8 +290,6 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 
 func (a *appsec) startRC() {
 	if a.rc != nil {
-		a.rc.RegisterCallback(a.onRemoteActivation)
-		a.rc.RegisterCallback(a.onRCRulesUpdate)
 		a.rc.Start()
 	}
 }
@@ -351,6 +349,7 @@ func (a *appsec) enableRemoteActivation() error {
 	}
 	a.registerRCProduct(rc.ProductASMFeatures)
 	a.registerRCCapability(remoteconfig.ASMActivation)
+	a.rc.RegisterCallback(a.onRemoteActivation)
 	return nil
 }
 
@@ -363,6 +362,7 @@ func (a *appsec) enableRCBlocking() {
 	a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
+	a.rc.RegisterCallback(a.onRCRulesUpdate)
 
 	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
 		a.registerRCCapability(remoteconfig.ASMUserBlocking)
@@ -382,4 +382,5 @@ func (a *appsec) disableRCBlocking() {
 	a.unregisterRCCapability(remoteconfig.ASMIPBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMRequestBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMUserBlocking)
+	a.rc.UnregisterCallback(a.onRCRulesUpdate)
 }

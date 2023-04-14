@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -173,6 +174,17 @@ func (c *Client) updateState() {
 // depending on the product related to the configuration update.
 func (c *Client) RegisterCallback(f Callback) {
 	c.callbacks = append(c.callbacks, f)
+}
+
+// UnregisterCallback removes a previously registered callback from the active callbacks list
+// This remove operation preserves ordering
+func (c *Client) UnregisterCallback(f Callback) {
+	fValue := reflect.ValueOf(f)
+	for i, callback := range c.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+		}
+	}
 }
 
 // RegisterProduct adds a product to the list of products listened by the client
