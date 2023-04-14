@@ -176,7 +176,7 @@ func (r *rulesManager) raw() []byte {
 	return data
 }
 
-// String returns the string representation of the json rules.
+// String returns the string representation of the latest compiled json rules.
 func (r *rulesManager) String() string {
 	return fmt.Sprintf("%+v", r.latest)
 }
