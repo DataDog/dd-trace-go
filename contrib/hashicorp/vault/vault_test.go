@@ -13,11 +13,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const secretMountPath = "/ns1/ns2/secret"
@@ -401,4 +403,51 @@ func TestOption(t *testing.T) {
 			tt.test(assert, span)
 		})
 	}
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ts, cleanup := setupServer(t)
+		defer cleanup()
+
+		client, err := api.NewClient(&api.Config{
+			HttpClient: NewHTTPClient(opts...),
+			Address:    ts.URL,
+		})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer mountKV(client, t)()
+
+		// Write key with namespace first
+		data := map[string]interface{}{"Key1": "Val1", "Key2": "Val2"}
+		_, err = client.Logical().Write("/some/path", data)
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	}
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "http.request", spans[0].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "vault.query", spans[0].OperationName())
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"vault", "vault"},
+		WithDDService:            []string{"vault", "vault"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
+	}
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "vault", wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
