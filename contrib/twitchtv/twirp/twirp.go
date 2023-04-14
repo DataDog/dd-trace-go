@@ -159,10 +159,10 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	log.Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
 	return &twirp.ServerHooks{
 		RequestReceived:  requestReceivedHook(cfg),
-		RequestRouted:    requestRoutedHook(cfg),
-		ResponsePrepared: responsePreparedHook(cfg),
-		ResponseSent:     responseSentHook(cfg),
-		Error:            errorHook(cfg),
+		RequestRouted:    requestRoutedHook(),
+		ResponsePrepared: responsePreparedHook(),
+		ResponseSent:     responseSentHook(),
+		Error:            errorHook(),
 	}
 }
 
@@ -203,7 +203,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 	}
 }
 
-func requestRoutedHook(cfg *config) func(context.Context) (context.Context, error) {
+func requestRoutedHook() func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
 		maybeSpan := ctx.Value(twirpSpanKey{})
 		if maybeSpan == nil {
@@ -224,13 +224,13 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 	}
 }
 
-func responsePreparedHook(cfg *config) func(context.Context) context.Context {
+func responsePreparedHook() func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
 		return ctx
 	}
 }
 
-func responseSentHook(cfg *config) func(context.Context) {
+func responseSentHook() func(context.Context) {
 	return func(ctx context.Context) {
 		maybeSpan := ctx.Value(twirpSpanKey{})
 		if maybeSpan == nil {
@@ -248,7 +248,7 @@ func responseSentHook(cfg *config) func(context.Context) {
 	}
 }
 
-func errorHook(cfg *config) func(context.Context, twirp.Error) context.Context {
+func errorHook() func(context.Context, twirp.Error) context.Context {
 	return func(ctx context.Context, err twirp.Error) context.Context {
 		return context.WithValue(ctx, twirpErrorKey{}, err)
 	}

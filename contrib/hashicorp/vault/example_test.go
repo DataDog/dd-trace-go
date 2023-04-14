@@ -51,7 +51,7 @@ func ExampleWrapHTTPClient() {
 	c := &http.Client{
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
-				return fmt.Errorf("Won't perform more that 5 redirects.")
+				return fmt.Errorf("won't perform more that 5 redirects")
 			}
 			return nil
 		},
@@ -74,7 +74,7 @@ func ExampleWrapHTTPClient_withOptions() {
 	c := &http.Client{
 		CheckRedirect: func(r *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
-				return fmt.Errorf("Won't perform more that 5 redirects.")
+				return fmt.Errorf("won't perform more that 5 redirects")
 			}
 			return nil
 		},
