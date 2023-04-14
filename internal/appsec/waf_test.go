@@ -260,7 +260,6 @@ func TestBlocking(t *testing.T) {
 		io.Copy(buf, r.Body)
 		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
 			return
-			return
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
