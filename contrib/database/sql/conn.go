@@ -11,6 +11,7 @@ import (
 	"math"
 	"time"
 
+	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -251,14 +252,14 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
+	dbSystem, _ := sqlinternal.NormalizeDBSystem(tp.driverName)
 	opts := append(spanOpts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		// set a default value for this tag which will be overwritten later if set in the metadata.
-		tracer.Tag(ext.DBSystem, ext.DBSystemOtherSQL),
+		tracer.Tag(ext.DBSystem, dbSystem),
 	)
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {

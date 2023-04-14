@@ -179,7 +179,7 @@ func TestOpenOptions(t *testing.T) {
 				ext.DBUser:          nil,
 				ext.DBName:          nil,
 				ext.EventSampleRate: 0.2,
-				ext.DBSystem:        "other_sql",
+				ext.DBSystem:        "postgresql",
 			},
 		}
 		sqltest.RunAll(t, testConfig)
@@ -347,8 +347,8 @@ func TestNamingSchema(t *testing.T) {
 		}
 		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
-			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
-			assert.Equal(t, "sqlserver.query", spans[1].OperationName())
+			assert.Equal(t, "mssql.query", spans[0].OperationName())
+			assert.Equal(t, "mssql.query", spans[1].OperationName())
 		}
 		wantServiceNameV0 := namingschematest.ServiceNameAssertions{
 			WithDefaults:             []string{"sqlserver.db", "sqlserver.db"},
@@ -367,8 +367,8 @@ func TestNamingSchema(t *testing.T) {
 		}
 		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
-			assert.Equal(t, "postgres.query", spans[0].OperationName())
-			assert.Equal(t, "postgres.query", spans[1].OperationName())
+			assert.Equal(t, "postgresql.query", spans[0].OperationName())
+			assert.Equal(t, "postgresql.query", spans[1].OperationName())
 		}
 		wantServiceNameV0 := namingschematest.ServiceNameAssertions{
 			WithDefaults:             []string{"postgres.db", "postgres.db"},

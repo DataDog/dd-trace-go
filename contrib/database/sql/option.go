@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 
+	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -47,19 +48,33 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
+	cfg.serviceName = getServiceName(driverName, rc)
+	cfg.spanName = getSpanName(driverName)
+}
 
+func getServiceName(driverName string, rc *registerConfig) string {
 	defaultServiceName := fmt.Sprintf("%s.db", driverName)
 	serviceNameV0 := defaultServiceName
-	// for v0, if service name was set during Register, we use that value as default
-	if rc != nil && rc.serviceName != "" {
+	if rc != nil {
+		// for v0, if service name was set during Register, we use that value as default
 		serviceNameV0 = rc.serviceName
 	}
-	cfg.serviceName = namingschema.NewServiceNameSchema(
+	return namingschema.NewServiceNameSchema(
 		"",
 		defaultServiceName,
 		namingschema.WithVersionOverride(namingschema.SchemaV0, serviceNameV0),
 	).GetName()
-	cfg.spanName = namingschema.NewDBOutboundOp(driverName).GetName()
+}
+
+func getSpanName(driverName string) string {
+	dbSystem := driverName
+	if normalizedDBSystem, ok := sqlinternal.NormalizeDBSystem(driverName); ok {
+		dbSystem = normalizedDBSystem
+	}
+	return namingschema.NewDBOutboundOp(
+		dbSystem,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, fmt.Sprintf("%s.query", driverName)),
+	).GetName()
 }
 
 // WithServiceName sets the given service name when registering a driver,
