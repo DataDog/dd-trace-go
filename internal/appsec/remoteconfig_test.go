@@ -435,7 +435,8 @@ func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.
 }
 
 func TestOnRCUpdate(t *testing.T) {
-	baseRuleset := newRulesManager(nil)
+	baseRuleset, err := newRulesManager(nil)
+	require.NoError(t, err)
 	baseRuleset.compile()
 
 	rules := rulesFragment{
@@ -574,7 +575,8 @@ func TestOnRCUpdate(t *testing.T) {
 }
 
 func TestOnRCUpdateStatuses(t *testing.T) {
-	invalidRuleset := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	invalidRuleset, err := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	require.NoError(t, err)
 	invalidRules := invalidRuleset.base
 	overrides := rulesFragment{
 		Overrides: []rulesOverrideEntry{
