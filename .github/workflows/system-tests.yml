@@ -59,6 +59,20 @@ jobs:
       - name: Run
         run: ./run.sh
 
+      - name: Run ASM blocking scenario
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_BLOCKING
+
+      - name: Run ASM request blocking scenario
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_REQUEST_BLOCKING
+
       - name: Run APM E2E default tests
         env:
           DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
