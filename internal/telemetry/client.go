@@ -262,12 +262,18 @@ func collectDependencies() bool {
 }
 
 // MetricKind specifies the type of metric being reported.
+// Metric types mirror Datadog metric types - for a more detailed
+// description of metric types, see:
+// https://docs.datadoghq.com/metrics/types/?tab=count#metric-types
 type MetricKind string
 
 var (
+	// MetricKindGauge represents gauge type metric
 	MetricKindGauge MetricKind = "gauge"
+	// MetricKindCount represents count type metric
 	MetricKindCount MetricKind = "count"
-	MetricKindDist  MetricKind = "distribution"
+	// MetricKindDist represents distribution type metric
+	MetricKindDist MetricKind = "distribution"
 )
 
 type metric struct {
@@ -344,7 +350,16 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 // sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
 func (c *client) flush() {
-	submissions := make([]*Request, 0, len(c.requests)+1)
+	submissions := make([]*Request, 0, len(c.requests)+2)
+
+	// copy over requests so we can do the actual submission without holding
+	// the lock. Zero out the old stuff so we don't leak references
+	for i, r := range c.requests {
+		submissions = append(submissions, r)
+		c.requests[i] = nil
+	}
+	c.requests = c.requests[:0]
+
 	if c.newMetrics {
 		c.newMetrics = false
 		for namespace := range c.metrics {
@@ -387,13 +402,6 @@ func (c *client) flush() {
 			}
 		}
 	}
-	// copy over requests so we can do the actual submission without holding
-	// the lock. Zero out the old stuff so we don't leak references
-	for i, r := range c.requests {
-		submissions = append(submissions, r)
-		c.requests[i] = nil
-	}
-	c.requests = c.requests[:0]
 
 	go func() {
 		for _, r := range submissions {

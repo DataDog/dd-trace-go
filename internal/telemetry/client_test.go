@@ -61,14 +61,10 @@ func TestMetrics(t *testing.T) {
 	)
 	closed := make(chan struct{}, 1)
 
+	// we will try to set four metrics that the server must receive
+	expectedMetrics := 4
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppClosing) {
-			select {
-			case closed <- struct{}{}:
-			default:
-			}
-			return
-		}
 		req := Body{
 			Payload: new(Metrics),
 		}
@@ -91,8 +87,15 @@ func TestMetrics(t *testing.T) {
 			}
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		got = append(got, v.Series...)
-		mu.Unlock()
+		if len(got) == expectedMetrics {
+			select {
+			case closed <- struct{}{}:
+			default:
+			}
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -113,6 +116,10 @@ func TestMetrics(t *testing.T) {
 		client.Count(NamespaceTracers, "baz", 1, nil, true)
 		// Tags should be passed through
 		client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
+
+		client.mu.Lock()
+		client.flush()
+		client.mu.Unlock()
 		client.Stop()
 	}()
 
