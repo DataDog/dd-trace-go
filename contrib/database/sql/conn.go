@@ -11,7 +11,6 @@ import (
 	"math"
 	"time"
 
-	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -252,7 +251,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	dbSystem, _ := sqlinternal.NormalizeDBSystem(tp.driverName)
+	dbSystem, _ := normalizeDBSystem(tp.driverName)
 	opts := append(spanOpts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
@@ -288,4 +287,17 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query stri
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()
+}
+
+func normalizeDBSystem(driverName string) (string, bool) {
+	dbSystemMap := map[string]string{
+		"mysql":     ext.DBSystemMySQL,
+		"postgres":  ext.DBSystemPostgreSQL,
+		"pgx":       ext.DBSystemPostgreSQL,
+		"sqlserver": ext.DBSystemMicrosoftSQLServer,
+	}
+	if dbSystem, ok := dbSystemMap[driverName]; ok {
+		return dbSystem, true
+	}
+	return ext.DBSystemOtherSQL, false
 }

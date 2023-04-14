@@ -37,20 +37,6 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	return reduceKeys(meta), nil
 }
 
-// NormalizeDBSystem returns the correct value for the db.system tag based on the driver name.
-func NormalizeDBSystem(driverName string) (string, bool) {
-	dbSystemMap := map[string]string{
-		"mysql":     ext.DBSystemMySQL,
-		"postgres":  ext.DBSystemPostgreSQL,
-		"pgx":       ext.DBSystemPostgreSQL,
-		"sqlserver": ext.DBSystemMicrosoftSQLServer,
-	}
-	if dbSystem, ok := dbSystemMap[driverName]; ok {
-		return dbSystem, true
-	}
-	return ext.DBSystemOtherSQL, false
-}
-
 // reduceKeys takes a map containing parsed DSN information and returns a new
 // map containing only the keys relevant as tracing tags, if any.
 func reduceKeys(meta map[string]string) map[string]string {
@@ -60,7 +46,6 @@ func reduceKeys(meta map[string]string) map[string]string {
 		"dbname":                           ext.DBName,
 		"host":                             ext.TargetHost,
 		"port":                             ext.TargetPort,
-		ext.DBSystem:                       ext.DBSystem,
 		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)

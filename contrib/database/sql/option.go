@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 
-	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -68,7 +67,7 @@ func getServiceName(driverName string, rc *registerConfig) string {
 
 func getSpanName(driverName string) string {
 	dbSystem := driverName
-	if normalizedDBSystem, ok := sqlinternal.NormalizeDBSystem(driverName); ok {
+	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
 		dbSystem = normalizedDBSystem
 	}
 	return namingschema.NewDBOutboundOp(
