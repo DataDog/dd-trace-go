@@ -349,8 +349,6 @@ func (c *client) flush() {
 		c.newMetrics = false
 		for namespace := range c.metrics {
 			// metrics can either be request type generate-metrics or distributions
-			generateMetrics := c.newRequest(RequestTypeGenerateMetrics)
-			distributions := c.newRequest(RequestTypeDistributions)
 			gPayload := &Metrics{
 				Namespace: namespace,
 			}
@@ -378,10 +376,12 @@ func (c *client) flush() {
 				}
 			}
 			if len(dPayload.Series) > 0 {
+				distributions := c.newRequest(RequestTypeDistributions)
 				distributions.Body.Payload = dPayload
 				submissions = append(submissions, distributions)
 			}
 			if len(gPayload.Series) > 0 {
+				generateMetrics := c.newRequest(RequestTypeGenerateMetrics)
 				generateMetrics.Body.Payload = gPayload
 				submissions = append(submissions, generateMetrics)
 			}
