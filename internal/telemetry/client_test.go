@@ -182,13 +182,6 @@ func TestConcurrentClient(t *testing.T) {
 	closed := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Log("foo")
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppClosing) {
-			select {
-			case closed <- struct{}{}:
-			default:
-				return
-			}
-		}
 		req := Body{
 			Payload: new(Metrics),
 		}
@@ -211,8 +204,13 @@ func TestConcurrentClient(t *testing.T) {
 			}
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		got = append(got, v.Series...)
-		mu.Unlock()
+		select {
+		case closed <- struct{}{}:
+		default:
+			return
+		}
 	}))
 	defer server.Close()
 
