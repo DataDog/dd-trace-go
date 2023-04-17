@@ -284,8 +284,8 @@ func (t *trace) samplingPriorityLocked() (p int, ok bool) {
 }
 
 func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	// t.mu.RLock()
+	// defer t.mu.RUnlock()
 	return t.samplingPriorityLocked()
 }
 

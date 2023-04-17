@@ -67,9 +67,9 @@ func SetLevel(lvl Level) {
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
-	mu.RLock()
+	// mu.RLock()
 	lvl := level
-	mu.RUnlock()
+	// mu.RUnlock()
 	return lvl == LevelDebug
 }
 

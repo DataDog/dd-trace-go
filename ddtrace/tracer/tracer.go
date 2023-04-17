@@ -464,9 +464,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 		if context.span != nil {
 			// local parent, inherit service
-			context.span.RLock()
+			// context.span.RLock()
 			span.Service = context.span.Service
-			context.span.RUnlock()
+			// context.span.RUnlock()
 		} else {
 			// remote parent
 			if context.origin != "" {
