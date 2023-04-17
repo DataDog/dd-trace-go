@@ -163,7 +163,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	start := time.Now()
 	conn, err := t.connector.Connect(ctx)
-	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
+	tp.tryTrace(ctx, QueryTypeConnect, "", start, err)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +214,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
 		cfg.dbmPropagationMode = rc.dbmPropagationMode
 	}
+	cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
