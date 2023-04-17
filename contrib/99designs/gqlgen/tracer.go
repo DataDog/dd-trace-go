@@ -90,7 +90,7 @@ func (t *gqlTracer) ExtensionName() string {
 	return "DatadogTracing"
 }
 
-func (t *gqlTracer) Validate(schema graphql.ExecutableSchema) error {
+func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 	return nil // unimplemented
 }
 

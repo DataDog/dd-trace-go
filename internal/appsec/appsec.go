@@ -119,11 +119,10 @@ func (a *appsec) start() error {
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	unregisterWAF, err := a.registerWAF()
-	if err != nil {
+	if err := a.swapWAF(a.cfg.rulesManager.raw()); err != nil {
 		return err
 	}
-	a.unregisterWAF = unregisterWAF
+	a.enableRCBlocking()
 	a.started = true
 	return nil
 }
@@ -134,5 +133,6 @@ func (a *appsec) stop() {
 		a.started = false
 		a.unregisterWAF()
 		a.limiter.Stop()
+		a.disableRCBlocking()
 	}
 }

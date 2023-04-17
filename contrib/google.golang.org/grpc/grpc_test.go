@@ -228,7 +228,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 13, 5*time.Second)
+		waitForSpans(mt, 13)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 13,
@@ -255,7 +255,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 3, 5*time.Second)
+		waitForSpans(mt, 3)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3,
@@ -282,7 +282,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 11, 5*time.Second)
+		waitForSpans(mt, 11)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 11,
@@ -378,7 +378,7 @@ func TestSpanTree(t *testing.T) {
 
 			// Wait until the client stream tracer goroutine gets awoken by the context
 			// cancellation and finishes its span
-			waitForSpans(mt, 6, time.Second)
+			waitForSpans(mt, 6)
 
 			rootSpan.Finish()
 		}
@@ -648,7 +648,7 @@ func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 
 // waitForSpans polls the mock tracer until the expected number of spans
 // appears
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -810,7 +810,7 @@ func TestIgnoredMethods(t *testing.T) {
 			done() // close stream from client side
 			rig.Close()
 
-			waitForSpans(mt, c.exp, 5*time.Second)
+			waitForSpans(mt, c.exp)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -883,7 +883,7 @@ func TestUntracedMethods(t *testing.T) {
 			done() // close stream from client side
 			rig.Close()
 
-			waitForSpans(mt, c.exp, 5*time.Second)
+			waitForSpans(mt, c.exp)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -982,7 +982,7 @@ func TestSpanOpts(t *testing.T) {
 		done() // close stream from client side
 		rig.Close()
 
-		waitForSpans(mt, 7, 5*time.Second)
+		waitForSpans(mt, 7)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 7)

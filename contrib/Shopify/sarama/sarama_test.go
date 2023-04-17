@@ -296,7 +296,7 @@ func TestAsyncProducer(t *testing.T) {
 		}
 		producer.Input() <- msg1
 
-		waitForSpans(mt, 1, time.Second*10)
+		waitForSpans(mt, 1)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -385,7 +385,7 @@ func newMockBroker(t *testing.T) *sarama.MockBroker {
 
 // waitForSpans polls the mock tracer until the expected number of spans
 // appear
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
