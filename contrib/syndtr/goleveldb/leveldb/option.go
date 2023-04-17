@@ -10,18 +10,27 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "leveldb"
 
 type config struct {
 	ctx           context.Context
 	serviceName   string
+	spanName      string
 	analyticsRate float64
 }
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		serviceName: "leveldb",
-		ctx:         context.Background(),
+		serviceName: namingschema.NewServiceNameSchema(
+			"",
+			defaultServiceName,
+			namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		).GetName(),
+		spanName: namingschema.NewDBOutboundOp("leveldb").GetName(),
+		ctx:      context.Background(),
 		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
