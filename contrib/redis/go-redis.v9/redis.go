@@ -146,7 +146,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		startOpts = append(startOpts,
 			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
-			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+			tracer.ResourceName("redis.pipeline"),
 			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 			tracer.Tag(ext.Component, "redis/go-redis.v9"),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
