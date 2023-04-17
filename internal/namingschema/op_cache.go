@@ -38,11 +38,12 @@ func (c *cacheOutboundOp) V1() string {
 }
 
 // NewMemcachedOutboundOp creates a new schema for Memcached (cache) outbound operations.
-func NewMemcachedOutboundOp() *Schema {
-	return NewCacheOutboundOp("memcached", WithVersionOverride(SchemaV0, "memcached.query"))
+func NewMemcachedOutboundOp(opts ...Option) *Schema {
+	newOpts := append([]Option{WithVersionOverride(SchemaV0, "memcached.query")}, opts...)
+	return NewCacheOutboundOp("memcached", newOpts...)
 }
 
 // NewRedisOutboundOp creates a new schema for Redis (cache) outbound operations.
-func NewRedisOutboundOp() *Schema {
-	return NewCacheOutboundOp("redis")
+func NewRedisOutboundOp(opts ...Option) *Schema {
+	return NewCacheOutboundOp("redis", opts...)
 }
