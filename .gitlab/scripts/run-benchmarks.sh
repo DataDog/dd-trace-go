@@ -15,11 +15,11 @@ CANDIDATE_BRANCH=main
 
 for CANDIDATE_COMMIT_SHA in ${BACKFILL_SHAS[@]}; do
   # Clone candidate release
-  git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$CANDIDATE_SRC" && \
-    cd "$CANDIDATE_SRC" && \
+  git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$CANDIDATE_SRC/$CANDIDATE_COMMIT_SHA" && \
+    cd "$CANDIDATE_SRC/$CANDIDATE_COMMIT_SHA" && \
     git checkout $CANDIDATE_COMMIT_SHA
 
   # Run benchmarks for candidate release
-  cd "$CANDIDATE_SRC/ddtrace/tracer/"
+  cd "$CANDIDATE_SRC/$CANDIDATE_COMMIT_SHA/ddtrace/tracer/"
   bench_loop_x10 "${ARTIFACTS_DIR}/pr_bench_${CANDIDATE_COMMIT_SHA}.txt"
 done
