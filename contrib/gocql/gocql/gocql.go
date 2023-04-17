@@ -116,7 +116,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraQuery, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
 	return span
 }
 
@@ -270,7 +270,7 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, ext.CassandraBatch, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.batchSpanName, opts...)
 	return span
 }
 

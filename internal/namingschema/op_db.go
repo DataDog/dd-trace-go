@@ -41,3 +41,8 @@ func (d *dbOutboundOp) V1() string {
 func NewElasticsearchOutboundOp(opts ...Option) *Schema {
 	return NewDBOutboundOp("elasticsearch", opts...)
 }
+
+// NewCassandraOutboundOp creates a new schema for Cassandra (db) outbound operations.
+func NewCassandraOutboundOp(opts ...Option) *Schema {
+	return NewDBOutboundOp("cassandra", opts...)
+}
