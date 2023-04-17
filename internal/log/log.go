@@ -40,7 +40,7 @@ type Logger interface {
 }
 
 var (
-	level  atomic.Int32
+	level  atomic.Int32 = atomic.Int32{}
 	mu     sync.RWMutex // guards logger instance
 	logger Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
