@@ -64,21 +64,21 @@ func (s *serverInboundOp) V1() string {
 }
 
 // NewHTTPClientOp creates a new schema for HTTP client outbound operations.
-func NewHTTPClientOp(opts ...Option) *Schema {
-	return NewClientOutboundOp("http", opts...)
+func NewHTTPClientOp() *Schema {
+	return NewClientOutboundOp("http")
 }
 
 // NewHTTPServerOp creates a new schema for HTTP server inbound operations.
-func NewHTTPServerOp(opts ...Option) *Schema {
-	return NewServerInboundOp("http", opts...)
+func NewHTTPServerOp() *Schema {
+	return NewServerInboundOp("http")
 }
 
 // NewGRPCClientOp creates a new schema for gRPC client outbound operations.
-func NewGRPCClientOp(opts ...Option) *Schema {
-	return NewClientOutboundOp("grpc", opts...)
+func NewGRPCClientOp() *Schema {
+	return NewClientOutboundOp("grpc")
 }
 
 // NewGRPCServerOp creates a new schema for gRPC server inbound operations.
-func NewGRPCServerOp(opts ...Option) *Schema {
-	return NewServerInboundOp("grpc", opts...)
+func NewGRPCServerOp() *Schema {
+	return NewServerInboundOp("grpc")
 }

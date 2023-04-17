@@ -38,6 +38,6 @@ func (d *dbOutboundOp) V1() string {
 }
 
 // NewElasticsearchOutboundOp creates a new schema for Elasticsearch (db) outbound operations.
-func NewElasticsearchOutboundOp(opts ...Option) *Schema {
-	return NewDBOutboundOp("elasticsearch", opts...)
+func NewElasticsearchOutboundOp() *Schema {
+	return NewDBOutboundOp("elasticsearch")
 }

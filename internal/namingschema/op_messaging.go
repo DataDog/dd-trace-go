@@ -66,13 +66,11 @@ func (m *messagingInboundOp) V1() string {
 }
 
 // NewKafkaOutboundOp creates a new schema for Kafka (messaging) outbound operations.
-func NewKafkaOutboundOp(opts ...Option) *Schema {
-	newOpts := append([]Option{WithVersionOverride(SchemaV0, "kafka.produce")}, opts...)
-	return NewMessagingOutboundOp("kafka", newOpts...)
+func NewKafkaOutboundOp() *Schema {
+	return NewMessagingOutboundOp("kafka", WithVersionOverride(SchemaV0, "kafka.produce"))
 }
 
 // NewKafkaInboundOp creates a new schema for Kafka (messaging) inbound operations.
-func NewKafkaInboundOp(opts ...Option) *Schema {
-	newOpts := append([]Option{WithVersionOverride(SchemaV0, "kafka.consume")}, opts...)
-	return NewMessagingInboundOp("kafka", newOpts...)
+func NewKafkaInboundOp() *Schema {
+	return NewMessagingInboundOp("kafka", WithVersionOverride(SchemaV0, "kafka.consume"))
 }
