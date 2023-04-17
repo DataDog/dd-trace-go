@@ -190,7 +190,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypePrepare,
+			spanType:                QueryTypePrepare,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -200,7 +200,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -210,7 +210,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -220,7 +220,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: true,
 		},
 		{
@@ -230,7 +230,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -240,7 +240,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -250,7 +250,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: true,
 		},
 	}

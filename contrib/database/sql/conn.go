@@ -19,18 +19,28 @@ import (
 
 var _ driver.Conn = (*TracedConn)(nil)
 
-type queryType string
+// QueryType represents the different available traced db queries.
+type QueryType string
 
 const (
-	queryTypeConnect  queryType = "Connect"
-	queryTypeQuery              = "Query"
-	queryTypePing               = "Ping"
-	queryTypePrepare            = "Prepare"
-	queryTypeExec               = "Exec"
-	queryTypeBegin              = "Begin"
-	queryTypeClose              = "Close"
-	queryTypeCommit             = "Commit"
-	queryTypeRollback           = "Rollback"
+	// QueryTypeConnect is used for Connect traces.
+	QueryTypeConnect QueryType = "Connect"
+	// QueryTypeQuery is used for Query traces.
+	QueryTypeQuery = "Query"
+	// QueryTypePing is used for Ping traces.
+	QueryTypePing = "Ping"
+	// QueryTypePrepare is used for Prepare traces.
+	QueryTypePrepare = "Prepare"
+	// QueryTypeExec is used for Exec traces.
+	QueryTypeExec = "Exec"
+	// QueryTypeBegin is used for Begin traces.
+	QueryTypeBegin = "Begin"
+	// QueryTypeClose is used for Close traces.
+	QueryTypeClose = "Close"
+	// QueryTypeCommit is used for Commit traces.
+	QueryTypeCommit = "Commit"
+	// QueryTypeRollback is used for Rollback traces.
+	QueryTypeRollback = "Rollback"
 )
 
 const (
@@ -62,14 +72,14 @@ func (tc *TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 	start := time.Now()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
 		tx, err = connBeginTx.BeginTx(ctx, opts)
-		tc.tryTrace(ctx, queryTypeBegin, "", start, err)
+		tc.tryTrace(ctx, QueryTypeBegin, "", start, err)
 		if err != nil {
 			return nil, err
 		}
 		return &tracedTx{tx, tc.traceParams, ctx}, nil
 	}
 	tx, err = tc.Conn.Begin()
-	tc.tryTrace(ctx, queryTypeBegin, "", start, err)
+	tc.tryTrace(ctx, QueryTypeBegin, "", start, err)
 	if err != nil {
 		return nil, err
 	}
@@ -94,14 +104,14 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	cquery, spanID := tc.injectComments(ctx, query, mode)
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
 		stmt, err := connPrepareCtx.PrepareContext(ctx, cquery)
-		tc.tryTrace(ctx, queryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, QueryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
 		if err != nil {
 			return nil, err
 		}
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 	}
 	stmt, err = tc.Prepare(cquery)
-	tc.tryTrace(ctx, queryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
+	tc.tryTrace(ctx, QueryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +125,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		r, err := execContext.ExecContext(ctx, cquery, args)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
 	if execer, ok := tc.Conn.(driver.Execer); ok {
@@ -130,7 +140,7 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		}
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		r, err = execer.Exec(cquery, dargs)
-		tc.tryTrace(ctx, queryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
 	}
 	return nil, driver.ErrSkip
@@ -142,7 +152,7 @@ func (tc *TracedConn) Ping(ctx context.Context) (err error) {
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
 		err = pinger.Ping(ctx)
 	}
-	tc.tryTrace(ctx, queryTypePing, "", start, err)
+	tc.tryTrace(ctx, QueryTypePing, "", start, err)
 	return err
 }
 
@@ -153,7 +163,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		rows, err := queryerContext.QueryContext(ctx, cquery, args)
-		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
 	if queryer, ok := tc.Conn.(driver.Queryer); ok {
@@ -168,7 +178,7 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		}
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
 		rows, err = queryer.Query(cquery, dargs)
-		tc.tryTrace(ctx, queryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
+		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
 	}
 	return nil, driver.ErrSkip
@@ -240,13 +250,18 @@ func withDBMTraceInjectedTag(mode tracer.DBMPropagationMode) []tracer.StartSpanO
 }
 
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
-func (tp *traceParams) tryTrace(ctx context.Context, qtype queryType, query string, startTime time.Time, err error, spanOpts ...ddtrace.StartSpanOption) {
+func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query string, startTime time.Time, err error, spanOpts ...ddtrace.StartSpanOption) {
 	if err == driver.ErrSkip {
 		// Not a user error: driver is telling sql package that an
 		// optional interface method is not implemented. There is
 		// nothing to trace here.
 		// See: https://github.com/DataDog/dd-trace-go/issues/270
 		return
+	}
+	if tp.cfg.ignoreQueryTypes != nil {
+		if _, ok := tp.cfg.ignoreQueryTypes[qtype]; ok {
+			return
+		}
 	}
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
