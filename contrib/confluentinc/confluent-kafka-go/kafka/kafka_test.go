@@ -38,7 +38,6 @@ func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, prod
 
 	// first write a message to the topic
 	p, err := NewProducer(&kafka.ConfigMap{
-		"group.id":            testGroupID,
 		"bootstrap.servers":   "127.0.0.1:9092",
 		"go.delivery.reports": true,
 	}, producerOpts...)
@@ -62,8 +61,9 @@ func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, prod
 	c, err := NewConsumer(&kafka.ConfigMap{
 		"group.id":                 testGroupID,
 		"bootstrap.servers":        "127.0.0.1:9092",
-		"socket.timeout.ms":        1000,
-		"session.timeout.ms":       1000,
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
@@ -351,12 +351,5 @@ func TestNamingSchema(t *testing.T) {
 		})
 		return genIntegrationTestSpans(t, consumerAction, opts, opts)
 	}
-	// first is producer and second is consumer span
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"kafka", "kafka"},
-		WithDDService:            []string{"kafka", namingschematest.TestDDService},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genSpans))
+	namingschematest.NewKafkaTest(genSpans)(t)
 }
