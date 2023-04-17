@@ -118,16 +118,17 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
-		// add 128 bit trace id, if enabled, formatted as big-endian:
-		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-		id128 := time.Duration(span.Start) / time.Second
-		// casting from int64 -> uint32 should be safe since the start time won't be
-		// negative, and the seconds should fit within 32-bits for the foreseeable future.
-		// (We only want 32 bits of time, then the rest is zero)
-		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
-		context.traceID.SetUpper(tUp)
-	}
+	} 
+	// else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+	// 	// add 128 bit trace id, if enabled, formatted as big-endian:
+	// 	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+	// 	id128 := time.Duration(span.Start) / time.Second
+	// 	// casting from int64 -> uint32 should be safe since the start time won't be
+	// 	// negative, and the seconds should fit within 32-bits for the foreseeable future.
+	// 	// (We only want 32 bits of time, then the rest is zero)
+	// 	tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+	// 	context.traceID.SetUpper(tUp)
+	// }
 	if context.trace == nil {
 		context.trace = newTrace()
 	}
