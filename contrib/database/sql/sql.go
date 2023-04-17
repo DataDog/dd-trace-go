@@ -123,12 +123,9 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	}
 
 	cfg := new(config)
-	defaults(cfg)
+	defaults(cfg, driverName, nil)
 	for _, fn := range opts {
 		fn(cfg)
-	}
-	if cfg.serviceName == "" {
-		cfg.serviceName = driverName + ".db"
 	}
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
@@ -191,20 +188,17 @@ func (t dsnConnector) Driver() driver.Driver {
 // OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
-	name, ok := registeredDrivers.name(c.Driver())
+	driverName, ok := registeredDrivers.name(c.Driver())
 	if !ok {
 		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
 	}
-	rc, _ := registeredDrivers.config(name)
+	rc, _ := registeredDrivers.config(driverName)
 	cfg := new(config)
-	defaults(cfg)
+	defaults(cfg, driverName, rc)
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	// use registered config for unset options
-	if cfg.serviceName == "" {
-		cfg.serviceName = rc.serviceName
-	}
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
@@ -218,7 +212,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
-		driverName: name,
+		driverName: driverName,
 		cfg:        cfg,
 	}
 	return sql.OpenDB(tc)

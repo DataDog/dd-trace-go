@@ -8,7 +8,6 @@ package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 import (
 	"context"
 	"database/sql/driver"
-	"fmt"
 	"math"
 	"time"
 
@@ -267,15 +266,14 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	name := fmt.Sprintf("%s.query", tp.driverName)
+	dbSystem, _ := normalizeDBSystem(tp.driverName)
 	opts := append(spanOpts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		// set a default value for this tag which will be overwritten later if set in the metadata.
-		tracer.Tag(ext.DBSystem, ext.DBSystemOtherSQL),
+		tracer.Tag(ext.DBSystem, dbSystem),
 	)
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {
@@ -285,7 +283,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, name, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.spanName, opts...)
 	resource := string(qtype)
 	if query != "" {
 		resource = query
@@ -304,4 +302,17 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()
+}
+
+func normalizeDBSystem(driverName string) (string, bool) {
+	dbSystemMap := map[string]string{
+		"mysql":     ext.DBSystemMySQL,
+		"postgres":  ext.DBSystemPostgreSQL,
+		"pgx":       ext.DBSystemPostgreSQL,
+		"sqlserver": ext.DBSystemMicrosoftSQLServer,
+	}
+	if dbSystem, ok := dbSystemMap[driverName]; ok {
+		return dbSystem, true
+	}
+	return ext.DBSystemOtherSQL, false
 }

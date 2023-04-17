@@ -21,13 +21,13 @@ func TestAnalyticsSettings(t *testing.T) {
 		globalconfig.SetAnalyticsRate(0.4)
 
 		cfg := new(registerConfig)
-		defaults(cfg)
+		defaults(cfg, "", nil)
 		assert.Equal(t, 0.4, cfg.analyticsRate)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
 		cfg := new(registerConfig)
-		defaults(cfg)
+		defaults(cfg, "", nil)
 		WithAnalytics(true)(cfg)
 		assert.Equal(t, 1.0, cfg.analyticsRate)
 	})
@@ -38,7 +38,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		globalconfig.SetAnalyticsRate(0.4)
 
 		cfg := new(registerConfig)
-		defaults(cfg)
+		defaults(cfg, "", nil)
 		WithAnalyticsRate(0.2)(cfg)
 		assert.Equal(t, 0.2, cfg.analyticsRate)
 	})

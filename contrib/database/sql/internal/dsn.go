@@ -21,19 +21,16 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 		if err != nil {
 			return
 		}
-		meta[ext.DBSystem] = ext.DBSystemMySQL
 	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
 			return
 		}
-		meta[ext.DBSystem] = ext.DBSystemPostgreSQL
 	case "sqlserver":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
 			return
 		}
-		meta[ext.DBSystem] = ext.DBSystemMicrosoftSQLServer
 	default:
 		// not supported
 	}
@@ -49,7 +46,6 @@ func reduceKeys(meta map[string]string) map[string]string {
 		"dbname":                           ext.DBName,
 		"host":                             ext.TargetHost,
 		"port":                             ext.TargetPort,
-		ext.DBSystem:                       ext.DBSystem,
 		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)
