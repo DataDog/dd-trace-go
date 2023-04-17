@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -39,10 +40,14 @@ type Logger interface {
 }
 
 var (
-	mu     sync.RWMutex // guards below fields
-	level               = LevelWarn
+	level  atomic.Int32
+	mu     sync.RWMutex // guards logger instance
 	logger Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
+
+func init() {
+	level.Store(int32(LevelWarn))
+}
 
 // UseLogger sets l as the active logger and returns a function to restore the
 // previous logger. The return value is mostly useful when testing.
@@ -59,18 +64,14 @@ func UseLogger(l Logger) (undo func()) {
 
 // SetLevel sets the given lvl for logging.
 func SetLevel(lvl Level) {
-	mu.Lock()
-	defer mu.Unlock()
-	level = lvl
+	level.Store(int32(lvl))
 }
 
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
-	// mu.RLock()
-	lvl := level
-	// mu.RUnlock()
-	return lvl == LevelDebug
+	lvl := level.Load()
+	return lvl == int32(LevelDebug)
 }
 
 // Debug prints the given message if the level is LevelDebug.
