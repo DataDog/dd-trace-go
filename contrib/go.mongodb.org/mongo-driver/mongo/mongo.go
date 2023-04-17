@@ -20,10 +20,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/event"
 )
+
+const componentName = "go.mongodb.org/mongo-driver/mongo"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 type spanKey struct {
 	ConnectionID string
@@ -48,7 +55,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
-		tracer.Tag(ext.Component, "go.mongodb.org/mongo-driver/mongo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
@@ -65,11 +72,11 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	m.Unlock()
 }
 
-func (m *monitor) Succeeded(ctx context.Context, evt *event.CommandSucceededEvent) {
+func (m *monitor) Succeeded(_ context.Context, evt *event.CommandSucceededEvent) {
 	m.Finished(&evt.CommandFinishedEvent, nil)
 }
 
-func (m *monitor) Failed(ctx context.Context, evt *event.CommandFailedEvent) {
+func (m *monitor) Failed(_ context.Context, evt *event.CommandFailedEvent) {
 	m.Finished(&evt.CommandFinishedEvent, fmt.Errorf("%s", evt.Failure))
 }
 

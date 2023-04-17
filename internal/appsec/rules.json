@@ -1,7 +1,7 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.5.1"
+    "rules_version": "1.6.0"
   },
   "rules": [
     {
@@ -1351,16 +1351,11 @@
               "etc/timezone",
               "etc/modules",
               "etc/passwd",
-              "etc/passwd~",
-              "etc/passwd-",
               "etc/shadow",
-              "etc/shadow~",
-              "etc/shadow-",
               "etc/fstab",
               "etc/motd",
               "etc/hosts",
               "etc/group",
-              "etc/group-",
               "etc/alias",
               "etc/crontab",
               "etc/crypttab",
@@ -1871,11 +1866,8 @@
               "dev/tcp/",
               "dev/udp/",
               "dev/zero",
-              "etc/group",
               "etc/master.passwd",
-              "etc/passwd",
               "etc/pwd.db",
-              "etc/shadow",
               "etc/shells",
               "etc/spwd.db",
               "proc/self/",
@@ -2915,7 +2907,8 @@
         }
       ],
       "transformers": [
-        "removeNulls"
+        "removeNulls",
+        "urlDecodeUni"
       ]
     },
     {
@@ -2965,7 +2958,8 @@
         }
       ],
       "transformers": [
-        "removeNulls"
+        "removeNulls",
+        "urlDecodeUni"
       ]
     },
     {
@@ -3015,7 +3009,8 @@
         }
       ],
       "transformers": [
-        "removeNulls"
+        "removeNulls",
+        "urlDecodeUni"
       ]
     },
     {
@@ -3062,7 +3057,8 @@
         }
       ],
       "transformers": [
-        "removeNulls"
+        "removeNulls",
+        "urlDecodeUni"
       ]
     },
     {
@@ -3096,8 +3092,7 @@
               ".parentnode",
               ".innerhtml",
               "window.location",
-              "-moz-binding",
-              "<![cdata["
+              "-moz-binding"
             ]
           },
           "operator": "phrase_match"
@@ -3553,7 +3548,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "\\b(?i:eval|settimeout|setinterval|new\\s+Function|alert|prompt)\\s*\\([^\\)]",
+            "regex": "\\b(?i:eval|settimeout|setinterval|new\\s+Function|alert|prompt)[\\s+]*\\([^\\)]",
             "options": {
               "case_sensitive": true,
               "min_length": 5
@@ -4090,9 +4085,7 @@
               "java.lang.number",
               "java.lang.object",
               "java.lang.process",
-              "java.lang.processbuilder",
               "java.lang.reflect",
-              "java.lang.runtime",
               "java.lang.string",
               "java.lang.stringbuilder",
               "java.lang.system",
@@ -4448,6 +4441,44 @@
             "options": {
               "case_sensitive": false,
               "min_length": 24
+            }
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-942-001",
+      "name": "Blind XSS callback domains",
+      "tags": {
+        "type": "xss",
+        "category": "attack_attempt",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "https?:\\/\\/(?:.*\\.)?(?:bxss\\.in|xss\\.ht|js\\.rip)",
+            "options": {
+              "case_sensitive": false
             }
           },
           "operator": "match_regex"
@@ -5084,36 +5115,6 @@
       ]
     },
     {
-      "id": "sqr-000-007",
-      "name": "NoSQL: Detect common exploitation strategy",
-      "tags": {
-        "type": "nosql_injection",
-        "category": "attack_attempt"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.query"
-              },
-              {
-                "address": "server.request.body"
-              },
-              {
-                "address": "server.request.path_params"
-              }
-            ],
-            "regex": "^\\$(eq|ne|(l|g)te?|n?in|not|(n|x|)or|and|regex|where|expr|exists)$"
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": [
-        "keys_only"
-      ]
-    },
-    {
       "id": "sqr-000-008",
       "name": "Windows: Detect attempts to exfiltrate .ini files",
       "tags": {
@@ -5312,7 +5313,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "^(jar:)?(http|https):\\/\\/((\\[)?[:0-9a-f\\.x]{2,}(\\])?)(:[0-9]{1,5})?(\\/.*)?$"
+            "regex": "^(jar:)?(http|https):\\/\\/((\\[)?[:0-9a-f\\.x]{2,}(\\])?)(:[0-9]{1,5})?(\\/[^:@]*)?$"
           },
           "operator": "match_regex"
         }
@@ -5349,14 +5350,12 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "(http|https):\\/\\/(?:.*\\.)?(?:burpcollaborator\\.net|localtest\\.me|mail\\.ebc\\.apple\\.com|bugbounty\\.dod\\.network|.*\\.[nx]ip\\.io|oastify\\.com|oast\\.(?:pro|live|site|online|fun|me)|sslip\\.io|requestbin\\.com|requestbin\\.net|hookbin\\.com|webhook\\.site|canarytokens\\.com|interact\\.sh|ngrok\\.io|bugbounty\\.click)"
+            "regex": "(http|https):\\/\\/(?:.*\\.)?(?:burpcollaborator\\.net|localtest\\.me|mail\\.ebc\\.apple\\.com|bugbounty\\.dod\\.network|.*\\.[nx]ip\\.io|oastify\\.com|oast\\.(?:pro|live|site|online|fun|me)|sslip\\.io|requestbin\\.com|requestbin\\.net|hookbin\\.com|webhook\\.site|canarytokens\\.com|interact\\.sh|ngrok\\.io|bugbounty\\.click|prbly\\.win|qualysperiscope\\.com|vii.one|act1on3.ru)"
           },
           "operator": "match_regex"
         }
       ],
-      "transformers": [
-        "lowercase"
-      ]
+      "transformers": []
     },
     {
       "id": "sqr-000-015",
@@ -5431,7 +5430,9 @@
           "operator": "match_regex"
         }
       ],
-      "transformers": []
+      "transformers": [
+        "unicode_normalize"
+      ]
     },
     {
       "id": "ua0-600-0xx",
@@ -5907,7 +5908,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
-        "confidence": "1"
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -6617,6 +6618,32 @@
       "on_match": [
         "block"
       ]
+    },
+    {
+      "id": "ua0-600-57x",
+      "name": "AlertLogic",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "\\bAlertLogic-MDR-"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
     },
     {
       "id": "ua0-600-5xx",

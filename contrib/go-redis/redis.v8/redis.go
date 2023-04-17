@@ -10,7 +10,6 @@ package redis
 import (
 	"bytes"
 	"context"
-
 	"math"
 	"net"
 	"strconv"
@@ -19,9 +18,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-redis/redis/v8"
 )
+
+const componentName = "go-redis/redis.v8"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 type datadogHook struct {
 	*params
@@ -54,7 +60,6 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		additionalTags: additionalTagOptions(client),
 		config:         cfg,
 	}
-
 	client.AddHook(&datadogHook{params: hookParams})
 }
 
@@ -73,6 +78,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 		if opt.Addr == "FailoverClient" {
 			additionalTags = []ddtrace.StartSpanOption{
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		} else {
 			host, port, err := net.SplitHostPort(opt.Addr)
@@ -84,6 +90,7 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 				tracer.Tag(ext.TargetHost, host),
 				tracer.Tag(ext.TargetPort, port),
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
+				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
 		}
 	} else if clientOptions, ok := client.(clusterOptions); ok {
@@ -108,7 +115,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)
@@ -146,7 +153,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-		tracer.Tag(ext.Component, "go-redis/redis.v8"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	)

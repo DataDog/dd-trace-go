@@ -38,6 +38,11 @@ jobs:
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
     steps:
+      - name: Setup python 3.9
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
       - name: Checkout system tests
         uses: actions/checkout@v2
         with:
@@ -67,6 +72,34 @@ jobs:
           DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
           DD_SITE: "datadoghq.com"
         run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
+
+      - name: Run ASM blocking scenario
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_BLOCKING
+
+      - name: Run ASM request blocking scenario
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_REQUEST_BLOCKING
+
+      - name: Run ASM_FEATURES remote configuration test
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+
+      - name: Run ASM_DD remote configuration test
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
 
       - name: Compress artifact
         if: ${{ always() }}

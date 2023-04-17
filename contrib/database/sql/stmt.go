@@ -26,7 +26,7 @@ type tracedStmt struct {
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
 	err = s.Stmt.Close()
-	s.tryTrace(s.ctx, queryTypeClose, "", start, err)
+	s.tryTrace(s.ctx, QueryTypeClose, "", start, err)
 	return err
 }
 
@@ -35,7 +35,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
 		res, err := stmtExecContext.ExecContext(ctx, args)
-		s.tryTrace(ctx, queryTypeExec, s.query, start, err)
+		s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
 		return res, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -48,7 +48,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 	default:
 	}
 	res, err = s.Exec(dargs)
-	s.tryTrace(ctx, queryTypeExec, s.query, start, err)
+	s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
 	return res, err
 }
 
@@ -57,7 +57,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
 		rows, err := stmtQueryContext.QueryContext(ctx, args)
-		s.tryTrace(ctx, queryTypeQuery, s.query, start, err)
+		s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
 		return rows, err
 	}
 	dargs, err := namedValueToValue(args)
@@ -70,7 +70,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 	default:
 	}
 	rows, err = s.Query(dargs)
-	s.tryTrace(ctx, queryTypeQuery, s.query, start, err)
+	s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
 	return rows, err
 }
 
