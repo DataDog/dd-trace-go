@@ -185,7 +185,8 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+	priority := c.trace.priority.Load()
+	if priority != nil && *priority != float64(p) {
 		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
@@ -244,15 +245,15 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex      // guards below fields
-	spans            []*span           // all the spans that are part of this trace
-	tags             map[string]string // trace level tags
-	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
-	finished         int               // the number of finished spans
-	full             bool              // signifies that the span buffer is full
-	priority         *float64          // sampling priority
-	locked           bool              // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	mu               sync.RWMutex            // guards below fields
+	spans            []*span                 // all the spans that are part of this trace
+	tags             map[string]string       // trace level tags
+	propagatingTags  map[string]string       // trace level tags that will be propagated across service boundaries
+	finished         int                     // the number of finished spans
+	full             bool                    // signifies that the span buffer is full
+	priority         atomic.Pointer[float64] // sampling priority
+	locked           bool                    // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision        // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -280,18 +281,12 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	priority := t.priority
+func (t *trace) samplingPriority() (p int, ok bool) {
+	priority := t.priority.Load()
 	if priority == nil {
 		return 0, false
 	}
 	return int(*priority), true
-}
-
-func (t *trace) samplingPriority() (p int, ok bool) {
-	// t.mu.RLock()
-	// defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
 }
 
 func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
@@ -342,10 +337,12 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if t.locked {
 		return
 	}
-	if t.priority == nil {
-		t.priority = new(float64)
+	priority := t.priority.Load()
+	if priority == nil {
+		priority = new(float64)
 	}
-	*t.priority = float64(p)
+	*priority = float64(p)
+	t.priority.Store(priority)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -399,11 +396,12 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	if s == t.root && t.priority != nil {
+	priority := t.priority.Load()
+	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		t.root.setMetric(keySamplingPriority, *priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
