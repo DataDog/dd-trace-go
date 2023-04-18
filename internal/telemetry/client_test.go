@@ -118,7 +118,6 @@ func TestMetrics(t *testing.T) {
 		client.mu.Lock()
 		client.flush()
 		client.mu.Unlock()
-		client.Stop()
 	}()
 
 	<-closed
@@ -188,7 +187,6 @@ func TestDistributionMetrics(t *testing.T) {
 		client.mu.Lock()
 		client.flush()
 		client.mu.Unlock()
-		client.Stop()
 	}()
 
 	<-closed
