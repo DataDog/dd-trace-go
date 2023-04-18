@@ -6,19 +6,17 @@
 package grpc
 
 import (
-	"fmt"
-	"net"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestClientStatsHandler(t *testing.T) {
@@ -62,27 +60,11 @@ func TestClientStatsHandler(t *testing.T) {
 }
 
 func newClientStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
-	server := grpc.NewServer()
-	fixtureServer := new(fixtureServer)
-	RegisterFixtureServer(server, fixtureServer)
-
-	li, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-	_, port, _ := net.SplitHostPort(li.Addr().String())
-	go server.Serve(li)
-
-	conn, err := grpc.Dial(li.Addr().String(), grpc.WithInsecure(), grpc.WithStatsHandler(statsHandler))
-	if err != nil {
-		return nil, fmt.Errorf("error dialing: %s", err)
-	}
-	return &rig{
-		fixtureServer: fixtureServer,
-		listener:      li,
-		port:          port,
-		server:        server,
-		conn:          conn,
-		client:        NewFixtureClient(conn),
-	}, nil
+	return newRigWithInterceptors(
+		nil,
+		[]grpc.DialOption{
+			grpc.WithInsecure(),
+			grpc.WithStatsHandler(statsHandler),
+		},
+	)
 }

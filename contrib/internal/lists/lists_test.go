@@ -42,3 +42,13 @@ func TestCombinations(t *testing.T) {
 		}, combos)
 	}
 }
+
+func TestConcatStringSlices(t *testing.T) {
+	sl := ConcatStringSlices([]string{"a", "b"}, []string{}, []string{"c", "d"})
+	assert.Equal(t, []string{"a", "b", "c", "d"}, sl)
+}
+
+func TestRepeatedStringSlice(t *testing.T) {
+	sl := RepeatedStringSlice("abc", 3)
+	assert.Equal(t, []string{"abc", "abc", "abc"}, sl)
+}

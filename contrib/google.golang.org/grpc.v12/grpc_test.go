@@ -10,12 +10,14 @@ import (
 	"net"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -333,4 +335,42 @@ func TestSpanOpts(t *testing.T) {
 	for _, s := range spans {
 		assert.Equal(s.Tags()["foo"], "bar")
 	}
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []InterceptorOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithOpts(true, opts...)
+		require.NoError(t, err)
+		defer rig.Close()
+		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "grpc.server", spans[0].OperationName())
+		assert.Equal(t, "grpc.client", spans[1].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "grpc.server.request", spans[0].OperationName())
+		assert.Equal(t, "grpc.client.request", spans[1].OperationName())
+	}
+	ddService := namingschematest.TestDDService
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"grpc.server", "grpc.client"},
+		WithDDService:            []string{ddService, "grpc.client"},
+		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
