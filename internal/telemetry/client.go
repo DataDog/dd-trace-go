@@ -272,7 +272,7 @@ var (
 	MetricKindGauge MetricKind = "gauge"
 	// MetricKindCount represents a count type metric
 	MetricKindCount MetricKind = "count"
-	// MetricKindDist represents distribution type metric
+	// MetricKindDist represents a distribution type metric
 	MetricKindDist MetricKind = "distribution"
 )
 
