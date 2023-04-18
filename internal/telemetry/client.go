@@ -144,8 +144,6 @@ type client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
-	// flush interval incremented every time flush() is called
-	interval int
 }
 
 func log(msg string, args ...interface{}) {
@@ -289,7 +287,7 @@ type metric struct {
 // TODO: Can there be identically named/tagged metrics with a "common" and "not
 // common" variant?
 
-func newmetric(name string, kind MetricKind, tags []string, common bool) *metric {
+func newMetric(name string, kind MetricKind, tags []string, common bool) *metric {
 	return &metric{
 		name:   name,
 		kind:   kind,
@@ -316,7 +314,7 @@ func (c *client) Record(namespace Namespace, kind MetricKind, name string, value
 	key := metricKey(name, tags, kind)
 	m, ok := c.metrics[namespace][key]
 	if !ok {
-		m = newmetric(name, kind, tags, common)
+		m = newMetric(name, kind, tags, common)
 		c.metrics[namespace][key] = m
 	}
 	m.value = value
@@ -335,10 +333,10 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 	if _, ok := c.metrics[namespace]; !ok {
 		c.metrics[namespace] = map[string]*metric{}
 	}
-	key := metricKey(name, tags, "")
+	key := metricKey(name, tags, MetricKindCount)
 	m, ok := c.metrics[namespace][key]
 	if !ok {
-		m = newmetric(name, MetricKindCount, tags, common)
+		m = newMetric(name, MetricKindCount, tags, common)
 		c.metrics[namespace][key] = m
 	}
 	m.value += value
@@ -350,6 +348,8 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 // sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
 func (c *client) flush() {
+	// initialize submissions slice of capacity len(c.requests) + 2
+	// to hold all the new events, plus two potential metric events
 	submissions := make([]*Request, 0, len(c.requests)+2)
 
 	// copy over requests so we can do the actual submission without holding
@@ -372,22 +372,20 @@ func (c *client) flush() {
 			}
 			for _, m := range c.metrics[namespace] {
 				if m.kind == MetricKindDist {
-					s := Series{
+					dPayload.Series = append(dPayload.Series, Series{
 						Metric: m.name,
 						Tags:   m.tags,
 						Common: m.common,
-					}
-					s.Points = [][2]float64{{m.ts, m.value}}
-					dPayload.Series = append(dPayload.Series, s)
+						Points: [][2]float64{{m.ts, m.value}},
+					})
 				} else {
-					s := Series{
+					gPayload.Series = append(gPayload.Series, Series{
 						Metric: m.name,
 						Type:   string(m.kind),
 						Tags:   m.tags,
 						Common: m.common,
-					}
-					s.Points = [][2]float64{{m.ts, m.value}}
-					gPayload.Series = append(gPayload.Series, s)
+						Points: [][2]float64{{m.ts, m.value}},
+					})
 				}
 			}
 			if len(dPayload.Series) > 0 {
