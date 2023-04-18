@@ -129,7 +129,7 @@ func TestMetrics(t *testing.T) {
 		{Metric: "baz", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
 		{Metric: "bonk", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
 		{Metric: "foobar", Type: "gauge", Interval: 0, Points: [][2]float64{{0, 2}}, Tags: []string{}},
-		// Distributions do not record metric types since it is it's own event
+		// Distributions do not record metric types since it is its own event
 		{Metric: "soobar", Points: [][2]float64{{0, 3}}, Tags: []string{}},
 	}
 	sort.Slice(got, func(i, j int) bool {
