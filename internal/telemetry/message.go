@@ -233,7 +233,7 @@ type Series struct {
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
-	// assumed the metric is common. So we can't "omitempty" even though the
+	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
 	Common    bool   `json:"common"`
 	Namespace string `json:"namespace"`
@@ -249,7 +249,7 @@ type DistributionSeries struct {
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
-	// assumed the metric is common. So we can't "omitempty" even though the
+	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
 	Common bool `json:"common"`
 }
