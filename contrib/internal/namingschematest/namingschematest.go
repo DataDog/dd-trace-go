@@ -9,6 +9,7 @@ package namingschematest
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -49,37 +50,37 @@ const (
 )
 
 // NewServiceNameTest generates a new test for span service names using the naming schema versioning.
-func NewServiceNameTest(genSpans GenSpansFn, defaultName string, wantV0 ServiceNameAssertions) func(t *testing.T) {
+// TODO(rarguelloF): remove the 2nd parameter as it's unused.
+func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAssertions) func(t *testing.T) {
 	return func(t *testing.T) {
 		testCases := []struct {
 			name                string
 			serviceNameOverride string
 			ddService           string
-			// wantV0 is a list because the expected service name for v0 could be different for each of the integration
-			// generated spans.
+			// the assertions are a slice that should match the number of spans returned by the genSpans function.
 			wantV0 []string
-			wantV1 string
+			wantV1 []string
 		}{
 			{
 				name:                "WithDefaults",
 				serviceNameOverride: "",
 				ddService:           "",
 				wantV0:              wantV0.WithDefaults,
-				wantV1:              defaultName,
+				wantV1:              wantV0.WithDefaults, // defaults should be the same for v1
 			},
 			{
 				name:                "WithGlobalDDService",
 				serviceNameOverride: "",
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDService,
-				wantV1:              TestDDService,
+				wantV1:              lists.RepeatedStringSlice(TestDDService, len(wantV0.WithDDService)),
 			},
 			{
 				name:                "WithGlobalDDServiceAndOverride",
 				serviceNameOverride: TestServiceOverride,
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDServiceAndOverride,
-				wantV1:              TestServiceOverride,
+				wantV1:              lists.RepeatedStringSlice(TestServiceOverride, len(wantV0.WithDDServiceAndOverride)),
 			},
 		}
 		for _, tc := range testCases {
@@ -107,8 +108,9 @@ func NewServiceNameTest(genSpans GenSpansFn, defaultName string, wantV0 ServiceN
 					namingschema.SetVersion(namingschema.SchemaV1)
 
 					spans := genSpans(t, tc.serviceNameOverride)
+					require.Len(t, spans, len(tc.wantV1), "the number of spans and number of assertions for v1 don't match")
 					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1, spans[i].Tag(ext.ServiceName))
+						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName))
 					}
 				})
 			})

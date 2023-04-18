@@ -18,7 +18,7 @@ import (
 // NewClientStatsHandler returns a gRPC client stats.Handler to trace RPC calls.
 func NewClientStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -34,8 +34,8 @@ func (h *clientStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 	_, ctx = startSpanFromContext(
 		ctx,
 		rti.FullMethodName,
-		"grpc.client",
-		h.cfg.clientServiceName(),
+		h.cfg.spanName,
+		h.cfg.serviceName,
 		h.cfg.spanOpts...,
 	)
 	ctx = injectSpanIntoContext(ctx)
