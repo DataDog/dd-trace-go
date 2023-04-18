@@ -220,7 +220,8 @@ type DistributionMetrics struct {
 	Series    []DistributionSeries `json:"series"`
 }
 
-// Series is a sequence of observations for a single named metric
+// Series is a sequence of observations for a single named metric.
+// The `Points` field will store a timestamp and value.
 type Series struct {
 	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
@@ -238,7 +239,8 @@ type Series struct {
 	Namespace string `json:"namespace"`
 }
 
-// Series is a sequence of observations for a single named metric
+// DistributionSeries is a sequence of observations for a distribution metric.
+// Unlike `Series`, DistributionSeries does not store timestamps in `Points`
 type DistributionSeries struct {
 	Metric string    `json:"metric"`
 	Points []float64 `json:"points"`
