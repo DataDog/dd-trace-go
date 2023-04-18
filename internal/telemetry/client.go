@@ -268,7 +268,7 @@ func collectDependencies() bool {
 type MetricKind string
 
 var (
-	// MetricKindGauge represents gauge type metric
+	// MetricKindGauge represents a gauge type metric
 	MetricKindGauge MetricKind = "gauge"
 	// MetricKindCount represents count type metric
 	MetricKindCount MetricKind = "count"
