@@ -41,7 +41,7 @@ const (
 	// RequestTypeGenerateMetrics contains count, gauge, or rate metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
-	// RequestTypeDistributions is meant to send distribution type metrics accumulated by the
+	// RequestTypeDistributions is to send distribution type metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeDistributions RequestType = "distributions"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
