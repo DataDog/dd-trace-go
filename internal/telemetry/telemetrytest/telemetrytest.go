@@ -9,12 +9,15 @@ package telemetrytest
 import (
 	"sync"
 
+	"github.com/stretchr/testify/mock"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 // MockClient implements Client and is used for testing purposes outside of the telemetry package,
 // e.g. the tracer and profiler.
 type MockClient struct {
+	mock.Mock
 	mu              sync.Mutex
 	Started         bool
 	Configuration   []telemetry.Configuration
@@ -65,15 +68,21 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 }
 
 // Record stores the value for the given metric
-func (c *MockClient) Record(namespace telemetry.Namespace, _ telemetry.MetricKind, name string, value float64, _ []string, _ bool) {
-	if _, ok := c.Metrics[namespace]; !ok {
-		c.Metrics[namespace] = map[string]float64{}
+func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name string, val float64, tags []string, common bool) {
+	c.On("Gauge", ns, name, val, tags, common).Return()
+	c.On("Record", ns, name, val, tags, common).Return()
+	_ = c.Called(ns, name, val, tags, common)
+	// record the val for tests that assert based on the value
+	if _, ok := c.Metrics[ns]; !ok {
+		c.Metrics[ns] = map[string]float64{}
 	}
-	c.Metrics[namespace][name] = value
+	c.Metrics[ns][name] = val
 }
 
-// Count is NOOP for the mock client.
-func (c *MockClient) Count(_ telemetry.Namespace, _ string, _ float64, _ []string, _ bool) {
+// Count counts the value for the given metric
+func (c *MockClient) Count(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
+	c.On("Count", ns, name, val, tags, common).Return()
+	_ = c.Called(ns, name, val, tags, common)
 }
 
 // Stop is NOOP for the mock client.

@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -226,6 +227,51 @@ func TestConfig(t *testing.T) {
 				require.Equal(t, tc.expected, duration)
 
 			})
+		}
+	})
+}
+
+func dummyCallback1(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return nil
+}
+func dummyCallback2(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func dummyCallback3(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func dummyCallback4(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func TestRegistration(t *testing.T) {
+	t.Run("callbacks", func(t *testing.T) {
+		client, err := NewClient(DefaultClientConfig())
+		require.NoError(t, err)
+
+		client.RegisterCallback(dummyCallback1)
+		require.Len(t, client.callbacks, 1)
+		client.UnregisterCallback(dummyCallback1)
+		require.Empty(t, client.callbacks)
+
+		client.RegisterCallback(dummyCallback2)
+		client.RegisterCallback(dummyCallback3)
+		client.RegisterCallback(dummyCallback1)
+		client.RegisterCallback(dummyCallback4)
+		require.Len(t, client.callbacks, 4)
+
+		client.UnregisterCallback(dummyCallback1)
+		require.Len(t, client.callbacks, 3)
+		for _, c := range client.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(c))
+		}
+
+		client.UnregisterCallback(dummyCallback3)
+		require.Len(t, client.callbacks, 2)
+		for _, c := range client.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
 		}
 	})
 }
