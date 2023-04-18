@@ -364,19 +364,19 @@ func (c *client) flush() {
 		c.newMetrics = false
 		for namespace := range c.metrics {
 			// metrics can either be request type generate-metrics or distributions
-			gPayload := &Metrics{
+			dPayload := &DistributionMetrics{
 				Namespace: namespace,
 			}
-			dPayload := &Metrics{
+			gPayload := &Metrics{
 				Namespace: namespace,
 			}
 			for _, m := range c.metrics[namespace] {
 				if m.kind == MetricKindDist {
-					dPayload.Series = append(dPayload.Series, Series{
+					dPayload.Series = append(dPayload.Series, DistributionSeries{
 						Metric: m.name,
 						Tags:   m.tags,
 						Common: m.common,
-						Points: [][2]float64{{m.ts, m.value}},
+						Points: []float64{m.value},
 					})
 				} else {
 					gPayload.Series = append(gPayload.Series, Series{

@@ -208,10 +208,16 @@ type AdditionalPayload struct {
 	Value interface{} `json:"value"`
 }
 
-// Metrics corresponds to the "generate-metrics" and "distributions" request type
+// Metrics corresponds to the "generate-metrics" request type
 type Metrics struct {
 	Namespace Namespace `json:"namespace"`
 	Series    []Series  `json:"series"`
+}
+
+// DistributionMetrics corresponds to the "distributions" request type
+type DistributionMetrics struct {
+	Namespace Namespace            `json:"namespace"`
+	Series    []DistributionSeries `json:"series"`
 }
 
 // Series is a sequence of observations for a single named metric
@@ -230,4 +236,18 @@ type Series struct {
 	// field is technically optional.
 	Common    bool   `json:"common"`
 	Namespace string `json:"namespace"`
+}
+
+// Series is a sequence of observations for a single named metric
+type DistributionSeries struct {
+	Metric string    `json:"metric"`
+	Points []float64 `json:"points"`
+	Tags   []string  `json:"tags"`
+	// Common distinguishes metrics which are cross-language vs.
+	// language-specific.
+	//
+	// NOTE: If this field isn't present in the request, the API assumes
+	// assumed the metric is common. So we can't "omitempty" even though the
+	// field is technically optional.
+	Common bool `json:"common"`
 }
