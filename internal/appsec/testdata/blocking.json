@@ -55,6 +55,47 @@
             ]
         },
         {
+            "id": "crs-933-200-block",
+            "name": "PHP Injection Attack: Wrapper scheme detected",
+            "tags": {
+              "type": "php_code_injection",
+              "crs_id": "933200",
+              "category": "attack_attempt"
+            },
+            "conditions": [
+              {
+                "parameters": {
+                  "inputs": [
+                    {
+                      "address": "server.request.query"
+                    },
+                    {
+                      "address": "server.request.body"
+                    },
+                    {
+                      "address": "server.request.path_params"
+                    },
+                    {
+                      "address": "grpc.server.request.message"
+                    }
+                  ],
+                  "regex": "(?:(?:bzip|ssh)2|z(?:lib|ip)|(?:ph|r)ar|expect|glob|ogg)://",
+                  "options": {
+                    "case_sensitive": true,
+                    "min_length": 6
+                  }
+                },
+                "operator": "match_regex"
+              }
+            ],
+            "transformers": [
+              "removeNulls"
+            ],
+            "on_match": [
+                "block"
+            ]
+          },
+        {
             "id": "crs-941-110",
             "name": "XSS Filter - Category 1: Script Tag Vector",
             "tags": {

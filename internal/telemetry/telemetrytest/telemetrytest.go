@@ -9,12 +9,15 @@ package telemetrytest
 import (
 	"sync"
 
+	"github.com/stretchr/testify/mock"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 // MockClient implements Client and is used for testing purposes outside of the telemetry package,
 // e.g. the tracer and profiler.
 type MockClient struct {
+	mock.Mock
 	mu              sync.Mutex
 	Started         bool
 	Configuration   []telemetry.Configuration
@@ -61,11 +64,15 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 }
 
 // Gauge is NOOP for the mock client.
-func (c *MockClient) Gauge(_ telemetry.Namespace, _ string, _ float64, _ []string, _ bool) {
+func (c *MockClient) Gauge(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
+	c.On("Gauge", ns, name, val, tags, common).Return()
+	_ = c.Called(ns, name, val, tags, common)
 }
 
 // Count is NOOP for the mock client.
-func (c *MockClient) Count(_ telemetry.Namespace, _ string, _ float64, _ []string, _ bool) {
+func (c *MockClient) Count(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
+	c.On("Count", ns, name, val, tags, common).Return()
+	_ = c.Called(ns, name, val, tags, common)
 }
 
 // Stop is NOOP for the mock client.
