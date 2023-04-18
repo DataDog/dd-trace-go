@@ -896,6 +896,11 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // `origin` = `o`
 // `_dd.p.` prefix = `t.`
 func parseTracestate(ctx *spanContext, header string) error {
+	if header == "" {
+		// The W3C spec says tracestate can be empty but should avoid sending it.
+		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
+		return nil
+	}
 	// if multiple headers are present, they must be combined and stored
 	setPropagatingTag(ctx, tracestateHeader, header)
 	list := strings.Split(strings.Trim(header, "\t "), ",")
