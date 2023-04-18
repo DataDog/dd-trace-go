@@ -55,46 +55,65 @@
             ]
         },
         {
-            "id": "crs-933-200-block",
-            "name": "PHP Injection Attack: Wrapper scheme detected",
+            "id": "crs-933-130-block",
+            "name": "PHP Injection Attack: Global Variables Found",
             "tags": {
-              "type": "php_code_injection",
-              "crs_id": "933200",
-              "category": "attack_attempt"
+                "type": "php_code_injection",
+                "crs_id": "933130",
+                "category": "attack_attempt",
+                "confidence": "1"
             },
             "conditions": [
-              {
-                "parameters": {
-                  "inputs": [
-                    {
-                      "address": "server.request.query"
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            }
+                        ],
+                        "list": [
+                            "$globals",
+                            "$_cookie",
+                            "$_env",
+                            "$_files",
+                            "$_get",
+                            "$_post",
+                            "$_request",
+                            "$_server",
+                            "$_session",
+                            "$argc",
+                            "$argv",
+                            "$http_\\u200bresponse_\\u200bheader",
+                            "$php_\\u200berrormsg",
+                            "$http_cookie_vars",
+                            "$http_env_vars",
+                            "$http_get_vars",
+                            "$http_post_files",
+                            "$http_post_vars",
+                            "$http_raw_post_data",
+                            "$http_request_vars",
+                            "$http_server_vars"
+                        ]
                     },
-                    {
-                      "address": "server.request.body"
-                    },
-                    {
-                      "address": "server.request.path_params"
-                    },
-                    {
-                      "address": "grpc.server.request.message"
-                    }
-                  ],
-                  "regex": "(?:(?:bzip|ssh)2|z(?:lib|ip)|(?:ph|r)ar|expect|glob|ogg)://",
-                  "options": {
-                    "case_sensitive": true,
-                    "min_length": 6
-                  }
-                },
-                "operator": "match_regex"
-              }
+                    "operator": "phrase_match"
+                }
             ],
             "transformers": [
-              "removeNulls"
+                "lowercase"
             ],
             "on_match": [
                 "block"
             ]
-          },
+        },
         {
             "id": "crs-941-110",
             "name": "XSS Filter - Category 1: Script Tag Vector",

@@ -142,9 +142,9 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 							operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
 						}
 					}
+					op.AddSecurityEvents(matches)
+					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
-				op.AddSecurityEvents(matches)
-				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 			}))
 		}
 
