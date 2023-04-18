@@ -99,10 +99,10 @@ type spanContext struct {
 }
 
 // TODO - this is just a temporary hack to avoid accessing mutex locked resource in a hotpath
-var DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED bool
+var TraceID128BitEnabled atomic.Bool = atomic.Bool{}
 
 func init() {
-	DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED = sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false)
+	TraceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false))
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -125,7 +125,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED {
+	} else if TraceID128BitEnabled.Load() {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.Start) / time.Second

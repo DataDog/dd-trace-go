@@ -713,7 +713,7 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-generation-only", func(t *testing.T) {
 		// Generate 128 bit trace ids, but don't log them. So only the lower
 		// 64 bits should be logged in decimal form.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 		// DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED is false by default
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
@@ -745,7 +745,7 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-generation", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))

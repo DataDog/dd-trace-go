@@ -126,9 +126,8 @@ func Test128(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
 	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
-
 	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+	defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
 	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)

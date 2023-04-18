@@ -724,7 +724,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
 		// Enable 128 bit trace ids
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 		opts128 := []StartSpanOption{
 			WithSpanID(987654),
 			StartTime(time.Unix(123456, 0)),
@@ -1038,7 +1038,7 @@ func TestNewSpanChild(t *testing.T) {
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
 		if is128 {
-			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+			defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 		}
 		assert := assert.New(t)
 
