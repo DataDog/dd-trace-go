@@ -119,7 +119,7 @@ func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	actionHandler := httpsec.NewActionsHandler()
 
@@ -130,28 +130,26 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			return
 		}
 
-		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
-		// see if the associated user should be blocked. Since we don't control the execution flow in this case
-		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			if !addressesContains(addresses, userIDAddr) {
-				return
-			}
-
-			matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
-			if len(matches) > 0 {
-				for _, id := range actionIds {
-					if actionHandler.Apply(id, op) {
-						operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
+		if _, ok := addresses[userIDAddr]; ok {
+			// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
+			// see if the associated user should be blocked. Since we don't control the execution flow in this case
+			// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
+			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+				matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
+				if len(matches) > 0 {
+					for _, id := range actionIds {
+						if actionHandler.Apply(id, op) {
+							operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
+						}
 					}
 				}
 				op.AddSecurityEvents(matches)
 				log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
-			}
-		}))
+			}))
+		}
 
 		values := map[string]interface{}{}
-		for _, addr := range addresses {
+		for addr, _ := range addresses {
 			switch addr {
 			case httpClientIPAddr:
 				if args.ClientIP.IsValid() {
@@ -194,33 +192,34 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 			}
 		}
 
-		op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
-			if !addressesContains(addresses, serverRequestBodyAddr) {
-				return
-			}
-
-			matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
-			if len(matches) > 0 {
-				for _, id := range actionIds {
-					if actionHandler.Apply(id, op) {
-						sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
+		if _, ok := addresses[serverRequestBodyAddr]; ok {
+			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
+				matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
+				if len(matches) > 0 {
+					for _, id := range actionIds {
+						if actionHandler.Apply(id, op) {
+							sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
+						}
 					}
+					op.AddSecurityEvents(matches)
+					log.Debug("appsec: WAF detected a suspicious request body")
 				}
-				op.AddSecurityEvents(matches)
-				log.Debug("appsec: WAF detected a suspicious request body")
-			}
-		}))
+			}))
+		}
 
 		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
 		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
-			if !addressesContains(addresses, serverResponseStatusAddr) {
-				return
+
+			values := make(map[string]interface{}, 1)
+			if _, ok := addresses[serverResponseStatusAddr]; ok {
+				values[serverResponseStatusAddr] = res.Status
 			}
+
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			matches, _ := runWAF(wafCtx, map[string]interface{}{serverResponseStatusAddr: res.Status}, timeout)
+			matches, _ := runWAF(wafCtx, values, timeout)
 
 			// Add WAF metrics.
 			rInfo := handle.RulesetInfo()
@@ -247,7 +246,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	actionHandler := grpcsec.NewActionsHandler()
 
@@ -277,7 +276,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]interface{}{}
-			for _, addr := range addresses {
+			for addr, _ := range addresses {
 				if addr == userIDAddr {
 					values[userIDAddr] = args.UserID
 				}
@@ -295,7 +294,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 
 		// The same address is used for gRPC and http when it comes to client ip
 		values := map[string]interface{}{}
-		for _, addr := range addresses {
+		for addr, _ := range addresses {
 			if addr == httpClientIPAddr && handlerArgs.ClientIP.IsValid() {
 				values[httpClientIPAddr] = handlerArgs.ClientIP.String()
 			}
@@ -448,23 +447,27 @@ func init() {
 
 // supportedAddresses returns the list of addresses we actually support from the
 // given rule addresses.
-func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, notSupported []string) {
+func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC map[string]struct{}, notSupported []string) {
 	// Filter the supported addresses only
+	supportedHTTP = map[string]struct{}{}
+	supportedGRPC = map[string]struct{}{}
 	for _, addr := range ruleAddresses {
 		supported := false
 		if i := sort.SearchStrings(httpAddresses, addr); i < len(httpAddresses) && httpAddresses[i] == addr {
-			supportedHTTP = append(supportedHTTP, addr)
+			supportedHTTP[addr] = struct{}{}
 			supported = true
 		}
 		if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
-			supportedGRPC = append(supportedGRPC, addr)
+			supportedGRPC[addr] = struct{}{}
 			supported = true
 		}
+
 		if !supported {
 			notSupported = append(notSupported, addr)
 		}
 	}
-	return
+
+	return supportedHTTP, supportedGRPC, notSupported
 }
 
 type tagsHolder interface {
@@ -493,14 +496,4 @@ func addWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafTimeoutTag, float64(timeouts))
 	th.AddTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
-}
-
-func addressesContains(addresses []string, address string) bool {
-	for _, i := range addresses {
-		if i == address {
-			return true
-		}
-	}
-
-	return false
 }
