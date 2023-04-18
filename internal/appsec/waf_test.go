@@ -241,7 +241,7 @@ func TestBlocking(t *testing.T) {
 	const (
 		ipBlockingRule   = "blk-001-001"
 		userBlockingRule = "blk-001-002"
-		bodyBlockingRule = "crs-933-200-block"
+		bodyBlockingRule = "crs-933-130-block"
 	)
 
 	// Start and trace an HTTP server
