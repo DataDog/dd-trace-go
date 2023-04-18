@@ -270,7 +270,7 @@ type MetricKind string
 var (
 	// MetricKindGauge represents a gauge type metric
 	MetricKindGauge MetricKind = "gauge"
-	// MetricKindCount represents count type metric
+	// MetricKindCount represents a count type metric
 	MetricKindCount MetricKind = "count"
 	// MetricKindDist represents distribution type metric
 	MetricKindDist MetricKind = "distribution"
