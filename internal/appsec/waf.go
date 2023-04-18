@@ -148,7 +148,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		}
 
 		values := map[string]interface{}{}
-		for addr, _ := range addresses {
+		for addr := range addresses {
 			switch addr {
 			case httpClientIPAddr:
 				if args.ClientIP.IsValid() {
@@ -271,7 +271,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]interface{}{}
-			for addr, _ := range addresses {
+			for addr := range addresses {
 				if addr == userIDAddr {
 					values[userIDAddr] = args.UserID
 				}
@@ -289,7 +289,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 
 		// The same address is used for gRPC and http when it comes to client ip
 		values := map[string]interface{}{}
-		for addr, _ := range addresses {
+		for addr := range addresses {
 			if addr == httpClientIPAddr && handlerArgs.ClientIP.IsValid() {
 				values[httpClientIPAddr] = handlerArgs.ClientIP.String()
 			}

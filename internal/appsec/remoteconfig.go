@@ -71,7 +71,7 @@ updateLoop:
 			// If the config was removed, switch back to the static recommended rules
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				err = errors.New("More than one config received for ASM_DD")
+				err = errors.New("more than one config received for ASM_DD")
 				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
 				break updateLoop
 			}

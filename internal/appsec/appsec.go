@@ -110,8 +110,8 @@ func newAppSec(cfg *Config) *appsec {
 		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
 	}
 	return &appsec{
-		cfg:     cfg,
-		rc:      client,
+		cfg: cfg,
+		rc:  client,
 	}
 }
 
