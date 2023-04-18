@@ -463,10 +463,39 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
+			// Performance note: 
+			//  during span creation - the usage of any mutex or other synchronization primitives 
+			//  should be minimized. 
+			//
+			//	This mutex lock will involve mandatory synchronization of state across CPUs
+			//  Spans for the vast majority of applications will inherently be created across many goroutines
+			//  Running on multiple CPU Cores
+			//  
+			//  Even for a read lock like below - which will mostly not run into a writer holding a lock.
+			//  those 3 operation in worst case will require 3 separate loads from memory/LLC
+			//   
+			//  LLC is shared across all Cores in a Socket(*latest AMD consumer CPUs can have two LLC)
+			//  If multiple CPUs attempt to access the same memory segment at the same time
+			//  their execution will essentially be serialized at least at 2 points. 
+			//  
+			//  Turning this innocous memory read into Performance bottleneck for a highly tuned code.
+			//  * the other part of performance bottleneck here is that other CPU optimizations are 
+			//  * also thrown out of the window e.g. code prefetching, out of order execution
+			//  * in most cases the CPU will sit idle waiting for memory operation to complete
+			//  * this is where systems without SMT (Hyperthreading) like ARM or Benchmarking Platform
+			//  * will make this problem more visible - as with SMT the other sibling core will be able to work
+			//  * at full potential when the first sibling is stalled.
+			//
+			//  While in the current architecture of span creation, this lock is necessary
+			//  any further access to parent span, should be done in a single lock (iow minimizing locking)
+			// 
+			//  Even Copying most of Span struct (*YMMV for strings and hashmaps which are unbounded in size and fragmented across the heap)
+			//  Will be faster than accessing the lock more than once
+			//
 			// local parent, inherit service
-			// context.span.RLock()
+			context.span.RLock()
 			span.Service = context.span.Service
-			// context.span.RUnlock()
+			context.span.RUnlock()
 		} else {
 			// remote parent
 			if context.origin != "" {
