@@ -39,86 +39,83 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
-func (a *appsec) swapWAF(rules []byte) error {
-	// 1 - Instantiate a new WAF handle and verify its state
-	waf, err := freshWAFHandle(rules, a.cfg)
+func (a *appsec) swapWAF(rules rulesFragment) (err error) {
+	// Instantiate a new WAF handle and verify its state
+	newHandle, err := newWAFHandle(rules, a.cfg)
 	if err != nil {
 		return err
-	} else if waf == nil { // Nil handle but no error means the handle was not updated (ddwaf_update, not supported yet)
-		return nil
 	}
-	// Close the WAF in case of an error in what's following
+
+	// Close the WAF handle in case of an error in what's following
 	defer func() {
 		if err != nil {
-			waf.Close()
+			newHandle.Close()
 		}
 	}()
-	// 2 - Register dyngo listeners now that we know that the new handle is valid
-	unreg, err := registerDyngoListeners(waf, a.cfg, a.limiter)
+
+	listeners, err := newWAFEventListeners(newHandle, a.cfg, a.limiter)
 	if err != nil {
 		return err
 	}
-	// 3 - Unregister current WAF, if any
-	if a.unregisterWAF != nil {
-		a.unregisterWAF()
+
+	// Register the event listeners now that we know that the new handle is valid
+	newRoot := dyngo.NewRootOperation()
+	for _, l := range listeners {
+		newRoot.On(l)
 	}
-	// 4 - Update appsec state
-	a.unregisterWAF = func() {
-		defer waf.Close()
-		unreg()
+
+	// Hot-swap dyngo's root operation
+	dyngo.SwapRootOperation(newRoot)
+
+	// Close old handle.
+	// Note that concurrent requests are still using it, and it will be released
+	// only when no more requests use it.
+	// TODO: implement in dyngo ref-counting of the root operation so we can
+	//   rely on a Finish event listener on the root operation instead?
+	//   Avoiding saving the current WAF handle would guarantee no one is
+	//   accessing a.wafHandle while we swap
+	oldHandle := a.wafHandle
+	a.wafHandle = newHandle
+	if oldHandle != nil {
+		oldHandle.Close()
 	}
+
 	return nil
 }
 
-// Register the WAF and dyngo event listeners by invoking swapWAF().
-func (a *appsec) registerWAF(rules []byte) (dyngo.UnregisterFunc, error) {
-	if err := a.swapWAF(rules); err != nil {
-		return nil, err
-	}
-
-	return a.unregisterWAF, nil
+func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
+	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 }
 
-func freshWAFHandle(rules []byte, cfg *Config) (*waf.Handle, error) {
-	if err := waf.Health(); err != nil {
-		return nil, err
-	}
-	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
-}
-
-func registerDyngoListeners(waf *waf.Handle, cfg *Config, l Limiter) (dyngo.UnregisterFunc, error) {
+func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
 		return nil, errors.New("no addresses found in the rule")
 	}
+
 	// Check there are supported addresses in the rule
 	httpAddresses, grpcAddresses, notSupported := supportedAddresses(ruleAddresses)
 	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 {
-		return nil, fmt.Errorf("the addresses present in the rule are not supported: %v", notSupported)
-	} else if len(notSupported) > 0 {
-		log.Debug("appsec: the addresses present in the rule are partially supported: not supported=%v", notSupported)
+		return nil, fmt.Errorf("the addresses present in the rules are not supported: %v", notSupported)
 	}
 
-	// Register the WAF event listener
-	var unregisterHTTP, unregisterGRPC dyngo.UnregisterFunc
+	if len(notSupported) > 0 {
+		log.Debug("appsec: the addresses present in the rules are partially supported: not supported=%v", notSupported)
+	}
+
+	// Register the WAF event listeners
 	if len(httpAddresses) > 0 {
-		log.Debug("appsec: registering http waf listening to addresses %v", httpAddresses)
-		unregisterHTTP = dyngo.Register(newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
-	}
-	if len(grpcAddresses) > 0 {
-		log.Debug("appsec: registering grpc waf listening to addresses %v", grpcAddresses)
-		unregisterGRPC = dyngo.Register(newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
+		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
+		listeners = append(listeners, newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
 	}
 
-	return func() {
-		if unregisterHTTP != nil {
-			unregisterHTTP()
-		}
-		if unregisterGRPC != nil {
-			unregisterGRPC()
-		}
-	}, nil
+	if len(grpcAddresses) > 0 {
+		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
+		listeners = append(listeners, newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
+	}
+
+	return listeners, nil
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
@@ -127,7 +124,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 	actionHandler := httpsec.NewActionsHandler()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		var body interface{}
+		var body any
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
@@ -163,6 +160,8 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses []string, timeout tim
 				if args.ClientIP.IsValid() {
 					values[httpClientIPAddr] = args.ClientIP.String()
 				}
+			case serverRequestMethodAddr:
+				values[serverRequestMethodAddr] = args.Method
 			case serverRequestRawURIAddr:
 				values[serverRequestRawURIAddr] = args.RequestURI
 			case serverRequestHeadersNoCookiesAddr:
@@ -400,6 +399,7 @@ func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Dur
 
 // HTTP rule addresses currently supported by the WAF
 const (
+	serverRequestMethodAddr           = "server.request.method"
 	serverRequestRawURIAddr           = "server.request.uri.raw"
 	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
 	serverRequestCookiesAddr          = "server.request.cookies"
@@ -413,6 +413,7 @@ const (
 
 // List of HTTP rule addresses currently supported by the WAF
 var httpAddresses = []string{
+	serverRequestMethodAddr,
 	serverRequestRawURIAddr,
 	serverRequestHeadersNoCookiesAddr,
 	serverRequestCookiesAddr,

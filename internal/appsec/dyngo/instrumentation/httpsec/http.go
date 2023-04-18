@@ -33,6 +33,8 @@ import (
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
+		// Method is the http method verb of the request, address is `server.request.method`
+		Method string
 		// RequestURI corresponds to the address `server.request.uri.raw`
 		RequestURI string
 		// Headers corresponds to the address `server.request.headers.no_cookies`
@@ -143,6 +145,7 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
+		Method:     r.Method,
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,

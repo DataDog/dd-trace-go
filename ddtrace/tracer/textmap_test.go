@@ -902,6 +902,16 @@ func TestEnvVars(t *testing.T) {
 				{
 					in: TextMapCarrier{
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+						// no tracestate header, shouldn't put an empty tracestate in propagatingTags
+					},
+					tid:             traceIDFrom64Bits(1229782938247303441),
+					out:             []uint64{2459565876494606882, 1},
+					origin:          "",
+					propagatingTags: *(new(map[string]string)),
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 						tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
 					tid:    traceIDFrom64Bits(1229782938247303441),

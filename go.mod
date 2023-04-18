@@ -5,8 +5,8 @@ go 1.18
 require (
 	cloud.google.com/go/pubsub v1.4.0
 	github.com/99designs/gqlgen v0.16.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.43.1
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.44.0-rc.4.0.20230328124545-8df2c0eb545f
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.45.0-rc.1
 	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
@@ -215,6 +215,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
+	go.uber.org/atomic v1.10.0
 )
 
 require (
@@ -225,7 +226,6 @@ require (
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
-	go.uber.org/atomic v1.10.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
