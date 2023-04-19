@@ -8,6 +8,7 @@ package grpc
 import (
 	"fmt"
 	"net"
+	"sort"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
@@ -352,7 +353,12 @@ func TestNamingSchema(t *testing.T) {
 		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 		require.NoError(t, err)
 
-		return mt.FinishedSpans()
+		spans := mt.FinishedSpans()
+		// ensure spans are in the expected order
+		sort.Slice(spans, func(i, j int) bool {
+			return spans[i].Tag(ext.SpanKind) == ext.SpanKindServer
+		})
+		return spans
 	})
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 2)
