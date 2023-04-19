@@ -37,18 +37,18 @@ type (
 	}
 
 	ruleEntry struct {
-		ID           string                 `json:"id"`
-		Name         string                 `json:"name"`
-		Tags         map[string]interface{} `json:"tags"`
-		Conditions   interface{}            `json:"conditions"`
-		Transformers interface{}            `json:"transformers"`
-		OnMatch      []interface{}          `json:"on_match,omitempty"`
+		ID           string        `json:"id"`
+		Name         interface{}   `json:"name,omitempty"`
+		Tags         interface{}   `json:"tags"`
+		Conditions   interface{}   `json:"conditions"`
+		Transformers interface{}   `json:"transformers"`
+		OnMatch      []interface{} `json:"on_match,omitempty"`
 	}
 
 	rulesOverrideEntry struct {
 		ID          string        `json:"id,omitempty"`
 		RulesTarget []interface{} `json:"rules_target,omitempty"`
-		Enabled     bool          `json:"enabled,omitempty"`
+		Enabled     interface{}   `json:"enabled,omitempty"`
 		OnMatch     interface{}   `json:"on_match,omitempty"`
 	}
 

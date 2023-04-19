@@ -7,7 +7,11 @@
 // Datadog regarding usage of an APM library such as tracing or profiling.
 package telemetry
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+import (
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+)
 
 // ProductStart signals that the product has started with some configuration
 // information. It will start the telemetry client if it is not already started.
@@ -93,4 +97,19 @@ func LoadIntegration(name string) {
 	contrib.Lock()
 	defer contrib.Unlock()
 	contribPackages = append(contribPackages, Integration{Name: name, Enabled: true})
+}
+
+// Time is used to track a distribution metric that measures the time (ms)
+// of some portion of code. It returns a function that should be called when
+// the desired code finishes executing.
+// For example, by adding:
+// defer Time(namespace, "tracer_init_time", nil, true)()
+// at the beginning of the tracer Start function, the tracer start time is measured
+// and stored as a metric to be flushed by the global telemetry client.
+func Time(namespace Namespace, name string, tags []string, common bool) (finish func()) {
+	start := time.Now()
+	return func() {
+		elapsed := time.Since(start)
+		GlobalClient.Record(namespace, MetricKindDist, name, float64(elapsed.Milliseconds()), tags, common)
+	}
 }
