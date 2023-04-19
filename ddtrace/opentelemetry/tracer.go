@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -49,6 +50,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.spans_created", 1.0, nil, true)
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
