@@ -48,7 +48,7 @@ type (
 	rulesOverrideEntry struct {
 		ID          string        `json:"id,omitempty"`
 		RulesTarget []interface{} `json:"rules_target,omitempty"`
-		Enabled     bool          `json:"enabled,omitempty"`
+		Enabled     interface{}   `json:"enabled,omitempty"`
 		OnMatch     interface{}   `json:"on_match,omitempty"`
 	}
 
