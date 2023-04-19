@@ -676,10 +676,10 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 // through remote configuration
 func TestWafRCUpdate(t *testing.T) {
 	override := rulesFragment{
+		// Override the already existing and enabled rule crs-913-120 with the "block" action
 		Overrides: []rulesOverrideEntry{
 			{
 				ID:      "crs-913-120",
-				Enabled: true,
 				OnMatch: []string{"block"},
 			},
 		},
