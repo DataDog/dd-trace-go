@@ -679,7 +679,6 @@ func TestWafRCUpdate(t *testing.T) {
 		Overrides: []rulesOverrideEntry{
 			{
 				ID:      "crs-913-120",
-				Enabled: true,
 				OnMatch: []string{"block"},
 			},
 		},
