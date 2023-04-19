@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -36,18 +37,18 @@ type (
 	}
 
 	ruleEntry struct {
-		ID           string                 `json:"id"`
-		Name         string                 `json:"name"`
-		Tags         map[string]interface{} `json:"tags"`
-		Conditions   interface{}            `json:"conditions"`
-		Transformers interface{}            `json:"transformers"`
-		OnMatch      []interface{}          `json:"on_match,omitempty"`
+		ID           string        `json:"id"`
+		Name         interface{}   `json:"name,omitempty"`
+		Tags         interface{}   `json:"tags"`
+		Conditions   interface{}   `json:"conditions"`
+		Transformers interface{}   `json:"transformers"`
+		OnMatch      []interface{} `json:"on_match,omitempty"`
 	}
 
 	rulesOverrideEntry struct {
 		ID          string        `json:"id,omitempty"`
 		RulesTarget []interface{} `json:"rules_target,omitempty"`
-		Enabled     bool          `json:"enabled,omitempty"`
+		Enabled     interface{}   `json:"enabled,omitempty"`
 		OnMatch     interface{}   `json:"on_match,omitempty"`
 	}
 
@@ -111,18 +112,22 @@ func (r_ *rulesFragment) clone() rulesFragment {
 }
 
 // newRulesManager initializes and returns a new rulesManager using the provided rules.
-// If no rules are provided (nil), or the provided rules are invalid, the default rules are used instead
-func newRulesManager(rules []byte) *rulesManager {
+// If no rules are provided (nil), the default rules are used instead.
+// If the provided rules are invalid, an error is returned
+func newRulesManager(rules []byte) (*rulesManager, error) {
 	var f rulesFragment
-	if err := json.Unmarshal(rules, &f); err != nil {
+	if rules == nil {
 		f = defaultRulesFragment()
-		log.Debug("appsec: cannot create rulesManager from specified rules. Using default rules instead")
+		log.Debug("appsec: rulesManager: using default rules configuration")
+	} else if err := json.Unmarshal(rules, &f); err != nil {
+		log.Debug("appsec: cannot create rulesManager from specified rules")
+		return nil, err
 	}
 	return &rulesManager{
 		latest: f,
 		base:   f,
 		edits:  map[string]rulesFragment{},
-	}
+	}, nil
 }
 
 func (r *rulesManager) clone() *rulesManager {
@@ -169,4 +174,9 @@ func (r *rulesManager) compile() {
 func (r *rulesManager) raw() []byte {
 	data, _ := json.Marshal(r.latest)
 	return data
+}
+
+// String returns the string representation of the latest compiled json rules.
+func (r *rulesManager) String() string {
+	return fmt.Sprintf("%+v", r.latest)
 }

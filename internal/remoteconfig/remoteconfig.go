@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -99,6 +100,7 @@ func (c *Client) Start() {
 		for {
 			select {
 			case <-c.stop:
+				close(c.stop)
 				return
 			case <-ticker.C:
 				c.updateState()
@@ -109,7 +111,14 @@ func (c *Client) Start() {
 
 // Stop stops the client's update poll loop
 func (c *Client) Stop() {
-	close(c.stop)
+	log.Debug("remoteconfig: gracefully stopping the client")
+	c.stop <- struct{}{}
+	select {
+	case <-c.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
 }
 
 func (c *Client) updateState() {
@@ -165,6 +174,17 @@ func (c *Client) updateState() {
 // depending on the product related to the configuration update.
 func (c *Client) RegisterCallback(f Callback) {
 	c.callbacks = append(c.callbacks, f)
+}
+
+// UnregisterCallback removes a previously registered callback from the active callbacks list
+// This remove operation preserves ordering
+func (c *Client) UnregisterCallback(f Callback) {
+	fValue := reflect.ValueOf(f)
+	for i, callback := range c.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+		}
+	}
 }
 
 // RegisterProduct adds a product to the list of products listened by the client
