@@ -76,7 +76,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a SQLi attack
-		err = stream.Send(&FixtureRequest{Name: "something UNION SELECT * from users"})
+		err = stream.Send(&FixtureRequest{Name: "-1' and 1=1 union/* foo */select load_file('/etc/passwd')--"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called

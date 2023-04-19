@@ -241,6 +241,7 @@ func TestBlocking(t *testing.T) {
 	const (
 		ipBlockingRule   = "blk-001-001"
 		userBlockingRule = "blk-001-002"
+		bodyBlockingRule = "crs-933-130-block"
 	)
 
 	// Start and trace an HTTP server
@@ -254,6 +255,14 @@ func TestBlocking(t *testing.T) {
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
+	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -263,6 +272,7 @@ func TestBlocking(t *testing.T) {
 		endpoint  string
 		status    int
 		ruleMatch string
+		reqBody   string
 	}{
 		{
 			name:     "ip/no-block/no-ip",
@@ -309,11 +319,24 @@ func TestBlocking(t *testing.T) {
 			status:    403,
 			ruleMatch: ipBlockingRule,
 		},
+		{
+			name:     "body/no-block",
+			endpoint: "/body",
+			status:   200,
+			reqBody:  "Happy body existing",
+		},
+		{
+			name:      "body/block",
+			endpoint:  "/body",
+			status:    403,
+			reqBody:   "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
