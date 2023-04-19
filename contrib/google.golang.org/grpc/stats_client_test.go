@@ -57,6 +57,7 @@ func TestClientStatsHandler(t *testing.T) {
 	assert.Equal("bar", tags["foo"])
 	assert.Equal("grpc", tags[ext.RPCSystem])
 	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
+	assert.Equal(ext.SpanKindClient, tags[ext.SpanKind])
 }
 
 func newClientStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

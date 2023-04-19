@@ -8,6 +8,7 @@ package grpc
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1063,39 +1064,39 @@ func TestNamingSchema(t *testing.T) {
 		_, _ = stream.Recv()
 
 		waitForSpans(mt, 8)
-		return mt.FinishedSpans()
+		spans := mt.FinishedSpans()
+		// ensure spans are in the expected order
+		sort.Slice(spans, func(i, j int) bool {
+			return spans[i].Tag(ext.SpanKind) == ext.SpanKindServer
+		})
+		return spans
 	})
-	serverSpans, clientSpans := []int{0, 1, 4, 5}, []int{2, 3, 6, 7}
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 8)
-		for _, i := range serverSpans {
+		for i := 0; i <= 3; i++ {
 			assert.Equal(t, "grpc.server", spans[i].OperationName())
 		}
-		for _, i := range clientSpans {
+		for i := 4; i <= 7; i++ {
 			assert.Equal(t, "grpc.client", spans[i].OperationName())
 		}
 	}
 	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 8)
-		for _, i := range serverSpans {
+		for i := 0; i <= 3; i++ {
 			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
 		}
-		for _, i := range clientSpans {
+		for i := 4; i <= 7; i++ {
 			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
 		}
 	}
 	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
 		WithDefaults: lists.ConcatStringSlices(
-			lists.RepeatedStringSlice("grpc.server", 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-			lists.RepeatedStringSlice("grpc.server", 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
+			lists.RepeatedStringSlice("grpc.server", 4),
+			lists.RepeatedStringSlice("grpc.client", 4),
 		),
 		WithDDService: lists.ConcatStringSlices(
-			lists.RepeatedStringSlice(namingschematest.TestDDService, 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-			lists.RepeatedStringSlice(namingschematest.TestDDService, 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
+			lists.RepeatedStringSlice(namingschematest.TestDDService, 4),
+			lists.RepeatedStringSlice("grpc.client", 4),
 		),
 		WithDDServiceAndOverride: lists.RepeatedStringSlice(namingschematest.TestServiceOverride, 8),
 	}
