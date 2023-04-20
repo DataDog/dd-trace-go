@@ -80,8 +80,10 @@ func Example_mocking() {
 	spans := mt.FinishedSpans()
 	if len(spans) != 1 {
 		// fail
+		panic("expected 1 span")
 	}
 	if spans[0].OperationName() != "test.span" {
 		// fail
+		panic("unexpected operation name")
 	}
 }

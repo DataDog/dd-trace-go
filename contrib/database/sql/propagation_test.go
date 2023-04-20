@@ -17,9 +17,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 func TestDBMPropagation(t *testing.T) {
+	// Ensure the global service name is set to the previous value after we finish the test, since the
+	// tracer.WithService option overrides it.
+	prevServiceName := globalconfig.ServiceName()
+	defer globalconfig.SetServiceName(prevServiceName)
+
 	testCases := []struct {
 		name     string
 		opts     []RegisterOption
@@ -184,7 +190,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypePrepare,
+			spanType:                QueryTypePrepare,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -194,7 +200,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -204,7 +210,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -214,7 +220,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeQuery,
+			spanType:                QueryTypeQuery,
 			traceContextInjectedTag: true,
 		},
 		{
@@ -224,7 +230,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -234,7 +240,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: false,
 		},
 		{
@@ -244,7 +250,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
 			},
-			spanType:                queryTypeExec,
+			spanType:                QueryTypeExec,
 			traceContextInjectedTag: true,
 		},
 	}

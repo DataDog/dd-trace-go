@@ -17,9 +17,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/gocql/gocql"
 )
+
+const componentName = "gocql/gocql"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Query inherits from gocql.Query, it keeps the tracer and the context.
 type Query struct {
@@ -102,7 +109,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraPaginated, fmt.Sprintf("%t", p.paginated)),
 		tracer.Tag(ext.CassandraKeyspace, p.keyspace),
-		tracer.Tag(ext.Component, "gocql/gocql"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}
@@ -256,7 +263,7 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 		tracer.ResourceName(p.config.resourceName),
 		tracer.Tag(ext.CassandraConsistencyLevel, tb.Cons.String()),
 		tracer.Tag(ext.CassandraKeyspace, tb.Keyspace()),
-		tracer.Tag(ext.Component, "gocql/gocql"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}

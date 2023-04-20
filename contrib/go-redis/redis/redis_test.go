@@ -59,10 +59,12 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
 // https://github.com/DataDog/dd-trace-go/issues/387
-func TestIssue387(t *testing.T) {
+func TestIssue387(_ *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
 	client := NewClient(opts, WithServiceName("my-redis"))
 	n := 1000
@@ -83,7 +85,7 @@ func TestIssue387(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	opts := &redis.Options{Addr: "127.0.0.1:6379", DB: 15}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -105,6 +107,8 @@ func TestClient(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("15", span.Tag("out.db"))
+	assert.Equal(15, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipeline(t *testing.T) {
@@ -134,6 +138,8 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -154,6 +160,8 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipelined(t *testing.T) {
@@ -183,6 +191,8 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	_, err = client.Pipelined(func(p redis.Pipeliner) error {
@@ -204,6 +214,8 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -289,6 +301,8 @@ func TestError(t *testing.T) {
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
+		assert.Equal("0", span.Tag("out.db"))
+		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -313,6 +327,8 @@ func TestError(t *testing.T) {
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
+		assert.Equal("0", span.Tag("out.db"))
+		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {

@@ -9,7 +9,12 @@
 package appsec
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -82,7 +87,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 				a.start()
 			}
 			require.Equal(t, tc.startBefore, a.started)
-			a.asmFeaturesCallback(tc.update)
+			a.handleASMFeatures(tc.update)
 			require.Equal(t, tc.startedAfter, a.started)
 		})
 	}
@@ -91,48 +96,27 @@ func TestASMFeaturesCallback(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.True(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.True(t, a.started)
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.False(t, a.started)
-		a.asmFeaturesCallback(update)
+		a.handleASMFeatures(update)
 		require.False(t, a.started)
 	})
 }
 
-// We use the below placeholders to replace a real WAF handle for testing
-type chanUpdater struct {
-	resChan chan []rc.ASMDataRuleData
-}
-
-func rulesDataToMap(rulesData []rc.ASMDataRuleData) map[string]int64 {
-	res := make(map[string]int64)
-	for _, data := range rulesData {
-		for _, v := range data.Data {
-			res[data.ID+v.Value] = v.Expiration
-		}
-	}
-
-	return res
-}
-
-func (u *chanUpdater) UpdateRulesData(rulesData []rc.ASMDataRuleData) error {
-	u.resChan <- rulesData
-	return nil
-}
-
-func TestASMDataCallback(t *testing.T) {
+func TestMergeRulesData(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		update   remoteconfig.ProductUpdate
-		expected []rc.ASMDataRuleData
+		expected []ruleDataEntry
 		statuses map[string]rc.ApplyStatus
 	}{
 		{
@@ -152,7 +136,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: []ruleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
 			}}},
 			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
@@ -162,7 +146,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
+			expected: []ruleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 				{Expiration: 3494138481, Value: "user1"},
 				{Expiration: 3494138441, Value: "user2"},
 			}}},
@@ -173,7 +157,7 @@ func TestASMDataCallback(t *testing.T) {
 			update: map[string][]byte{
 				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{
+			expected: []ruleDataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138444, Value: "user3"},
 				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
@@ -188,7 +172,7 @@ func TestASMDataCallback(t *testing.T) {
 				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
 				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
 			},
-			expected: []rc.ASMDataRuleData{
+			expected: []ruleDataEntry{
 				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
 					{Expiration: 3494138445, Value: "user3"},
 				}},
@@ -204,15 +188,21 @@ func TestASMDataCallback(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			u := chanUpdater{resChan: make(chan []rc.ASMDataRuleData, 4096)}
-			handle := wafHandleWrapper{&u}
-			defer close(u.resChan)
-			statuses := handle.asmDataCallback(tc.update)
-			// Check results by rule data ID since ordering is not guaranteed
-			if tc.expected != nil {
-				res := rulesDataToMap(<-u.resChan)
-				exp := rulesDataToMap(tc.expected)
-				require.Equal(t, exp, res)
+			merged, statuses := mergeRulesData(tc.update)
+			// Sort the compared elements since ordering is not guaranteed and the slice hold types that embed
+			// more slices
+			require.Len(t, merged, len(tc.expected))
+			sort.Slice(merged, func(i, j int) bool {
+				return strings.Compare(merged[i].ID, merged[j].ID) < 0
+			})
+			sort.Slice(tc.expected, func(i, j int) bool {
+				return strings.Compare(merged[i].ID, merged[j].ID) < 0
+			})
+
+			for i := range tc.expected {
+				require.Equal(t, tc.expected[i].ID, merged[i].ID)
+				require.Equal(t, tc.expected[i].Type, merged[i].Type)
+				require.ElementsMatch(t, tc.expected[i].Data, merged[i].Data)
 			}
 			for k := range statuses {
 				require.Equal(t, tc.statuses[k].State, statuses[k].State)
@@ -226,8 +216,8 @@ func TestASMDataCallback(t *testing.T) {
 	}
 }
 
-// This test makes sure that the merging behavior follows what is described in the ASM blocking RFC
-func TestRuleDataMerging(t *testing.T) {
+// This test makes sure that the merging behavior for rule data entries follows what is described in the ASM blocking RFC
+func TestMergeRulesDataEntries(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		in1  []rc.ASMDataRuleDataEntry
@@ -323,9 +313,7 @@ func TestRuleDataMerging(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := mergeRulesDataEntries(tc.in1, tc.in2)
-			resMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: res}})
-			expMap := rulesDataToMap([]rc.ASMDataRuleData{{ID: "test", Data: tc.out}})
-			require.Equal(t, expMap, resMap)
+			require.ElementsMatch(t, tc.out, res)
 		})
 	}
 
@@ -369,5 +357,367 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		defer Stop()
 		require.Nil(t, activeAppSec)
 		require.False(t, Enabled())
+	})
+}
+
+func TestCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		env      map[string]string
+		expected []remoteconfig.Capability
+	}{
+		{
+			name:     "appsec-unspecified",
+			expected: []remoteconfig.Capability{remoteconfig.ASMActivation},
+		},
+		{
+			name: "appsec-enabled/default-rulesManager",
+			env:  map[string]string{enabledEnvVar: "1"},
+			expected: []remoteconfig.Capability{
+				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
+				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking,
+			},
+		},
+		{
+			name:     "appsec-enabled/rulesManager-from-env",
+			env:      map[string]string{enabledEnvVar: "1", rulesEnvVar: "testdata/blocking.json"},
+			expected: []remoteconfig.Capability{},
+		},
+	} {
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(enabledEnvVar, "")
+			os.Unsetenv(enabledEnvVar)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+			defer Stop()
+			if !Enabled() && activeAppSec == nil {
+				t.Skip()
+			}
+			require.NotNil(t, activeAppSec.rc)
+			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
+			for _, cap := range tc.expected {
+				_, contained := activeAppSec.rc.Capabilities[cap]
+				require.True(t, contained)
+			}
+		})
+	}
+}
+
+func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.ProductUpdate {
+	update := make(map[string]remoteconfig.ProductUpdate)
+	for path, frag := range fragments {
+		data, err := json.Marshal(frag)
+		if err != nil {
+			panic(err)
+		}
+		if len(frag.Rules) > 0 {
+			if _, ok := update[rc.ProductASMDD]; !ok {
+				update[rc.ProductASMDD] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASMDD][path] = data
+		} else if len(frag.Overrides) > 0 || len(frag.Exclusions) > 0 || len(frag.Actions) > 0 {
+			if _, ok := update[rc.ProductASM]; !ok {
+				update[rc.ProductASM] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASM][path] = data
+		} else if len(frag.RulesData) > 0 {
+			if _, ok := update[rc.ProductASMData]; !ok {
+				update[rc.ProductASMData] = make(remoteconfig.ProductUpdate)
+			}
+			update[rc.ProductASMData][path] = data
+		}
+	}
+
+	return update
+}
+
+func TestOnRCUpdate(t *testing.T) {
+	baseRuleset, err := newRulesManager(nil)
+	require.NoError(t, err)
+	baseRuleset.compile()
+
+	rules := rulesFragment{
+		Version: baseRuleset.latest.Version,
+		Rules: []ruleEntry{
+			baseRuleset.base.Rules[0],
+		},
+	}
+
+	overrides1 := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-941-290",
+				Enabled: false,
+			},
+			{
+				ID:      "crs-930-100",
+				Enabled: false,
+			},
+		},
+	}
+	overrides2 := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-941-300",
+				Enabled: false,
+			},
+			{
+				Enabled: false,
+				ID:      "crs-921-160",
+			},
+		},
+	}
+
+	for _, tc := range []struct {
+		name    string
+		ruleset *rulesManager
+	}{
+		{
+			name:    "no-updates",
+			ruleset: baseRuleset,
+		},
+		{
+			name: "ASM/overrides/1-config",
+			ruleset: &rulesManager{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesFragment{
+					"overrides1/path": overrides1,
+				},
+			},
+		},
+		{
+			name: "ASM/overrides/2-configs",
+			ruleset: &rulesManager{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesFragment{
+					"overrides1/path": overrides1,
+					"overrides2/path": overrides2,
+				},
+			},
+		},
+		{
+			name: "ASM_DD/1-config",
+			ruleset: &rulesManager{
+				base:     rules,
+				basePath: "rules/path",
+				edits: map[string]rulesFragment{
+					"rules/path": rules,
+				},
+			},
+		},
+		{
+			name: "ASM_DD/2-configs (invalid)",
+			ruleset: &rulesManager{
+				base:     baseRuleset.base,
+				basePath: baseRuleset.basePath,
+				edits: map[string]rulesFragment{
+					"rules/path1": rules,
+					"rules/path2": rules,
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+			defer Stop()
+			if !Enabled() {
+				t.Skip()
+			}
+
+			tc.ruleset.compile()
+			// Craft and process the RC updates
+			updates := craftRCUpdates(tc.ruleset.edits)
+			activeAppSec.onRCRulesUpdate(updates)
+			// Compare rulesets
+			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.rulesManager.latest.Rules)
+			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)
+			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.rulesManager.latest.Exclusions)
+			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.rulesManager.latest.Actions)
+		})
+	}
+
+	t.Run("post-stop", func(t *testing.T) {
+		if waf.Health() != nil {
+			t.Skip("WAF needs to be available for this test (remote activation requirement)")
+		}
+
+		t.Setenv(enabledEnvVar, "")
+		os.Unsetenv(enabledEnvVar)
+		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+		require.False(t, Enabled())
+
+		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
+		// Activate appsec
+		updates := map[string]remoteconfig.ProductUpdate{rc.ProductASMFeatures: map[string][]byte{"features/config": enabledPayload}}
+		activeAppSec.onRemoteActivation(updates)
+		require.True(t, Enabled())
+
+		// Deactivate and try to update the rules. The rules update should not happen
+		updates = map[string]remoteconfig.ProductUpdate{
+			rc.ProductASMFeatures: map[string][]byte{"features/config": nil},
+			rc.ProductASM:         map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
+		}
+		activeAppSec.onRemoteActivation(updates)
+		require.False(t, Enabled())
+		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
+		rulesManager := activeAppSec.cfg.rulesManager
+		statuses := activeAppSec.onRCRulesUpdate(updates)
+		require.Empty(t, statuses)
+		require.True(t, reflect.DeepEqual(rulesManager, activeAppSec.cfg.rulesManager))
+
+	})
+}
+
+func TestOnRCUpdateStatuses(t *testing.T) {
+	invalidRuleset, err := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	require.NoError(t, err)
+	invalidRules := invalidRuleset.base
+	overrides := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "rule-1",
+				Enabled: true,
+			},
+			{
+				ID:      "rule-2",
+				Enabled: false,
+			},
+		},
+	}
+	overrides2 := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "rule-3",
+				Enabled: true,
+			},
+			{
+				ID:      "rule-4",
+				Enabled: false,
+			},
+		},
+	}
+	invalidOverrides := rulesFragment{
+		Overrides: []rulesOverrideEntry{
+			{
+				Enabled: false,
+			},
+			{
+				ID:      "crs-930-100",
+				Enabled: false,
+			},
+		},
+	}
+	ackStatus := genApplyStatus(true, nil)
+
+	for _, tc := range []struct {
+		name        string
+		updates     map[string]remoteconfig.ProductUpdate
+		expected    map[string]rc.ApplyStatus
+		updateError bool
+	}{
+		{
+			name:     "single/ack",
+			updates:  craftRCUpdates(map[string]rulesFragment{"overrides": overrides}),
+			expected: map[string]rc.ApplyStatus{"overrides": ackStatus},
+		},
+		{
+			name:     "single/error",
+			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("invalid configuration payload"))},
+		},
+		{
+			name:     "multiple/ack",
+			updates:  craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "overrides2": overrides2}),
+			expected: map[string]rc.ApplyStatus{"overrides": ackStatus, "overrides2": ackStatus},
+		},
+		{
+			name:    "multiple/single-error",
+			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
+			expected: map[string]rc.ApplyStatus{
+				"overrides": genApplyStatus(false, nil),
+				"invalid":   genApplyStatus(true, errors.New("invalid configuration payload")),
+			},
+		},
+		{
+			name:        "multiple/all-errors",
+			updates:     craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidRules}),
+			updateError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
+			defer Stop()
+
+			if !Enabled() {
+				t.Skip("AppSec needs to be enabled for this test")
+			}
+
+			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
+			if tc.updateError {
+				for _, status := range statuses {
+					require.NotEmpty(t, status.Error)
+					require.Equal(t, rc.ApplyStateError, status.State)
+				}
+			} else {
+				require.Len(t, statuses, len(tc.expected))
+				require.True(t, reflect.DeepEqual(tc.expected, statuses))
+			}
+		})
+	}
+}
+
+// TestWafUpdate tests that the WAF behaves correctly after the WAF handle gets updated with a new set of security rules
+// through remote configuration
+func TestWafRCUpdate(t *testing.T) {
+	override := rulesFragment{
+		// Override the already existing and enabled rule crs-913-120 with the "block" action
+		Overrides: []rulesOverrideEntry{
+			{
+				ID:      "crs-913-120",
+				OnMatch: []string{"block"},
+			},
+		},
+	}
+
+	if waf.Health() != nil {
+		t.Skip("WAF needs to be available for this test")
+	}
+
+	t.Run("toggle-blocking", func(t *testing.T) {
+		cfg, err := newConfig()
+		require.NoError(t, err)
+		wafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		require.NoError(t, err)
+		defer wafHandle.Close()
+		wafCtx := waf.NewContext(wafHandle)
+		defer wafCtx.Close()
+		values := map[string]interface{}{
+			serverRequestPathParamsAddr: "/rfiinc.txt",
+		}
+		// Make sure the rule matches as expected
+		matches, actions := runWAF(wafCtx, values, cfg.wafTimeout)
+		require.Contains(t, string(matches), "crs-913-120")
+		require.Empty(t, actions)
+		// Simulate an RC update that disables the rule
+		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
+		for _, status := range statuses {
+			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
+		}
+		cfg.rulesManager.compile()
+		newWafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		require.NoError(t, err)
+		defer newWafHandle.Close()
+		newWafCtx := waf.NewContext(newWafHandle)
+		defer newWafCtx.Close()
+		// Make sure the rule returns a blocking action when matching
+		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
+		require.Contains(t, string(matches), "crs-913-120")
+		require.Contains(t, actions, "block")
 	})
 }

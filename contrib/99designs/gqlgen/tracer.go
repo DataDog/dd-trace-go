@@ -53,7 +53,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "99designs/gqlgen"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 const (
 	defaultGraphqlOperation = "graphql.request"
@@ -83,7 +90,7 @@ func (t *gqlTracer) ExtensionName() string {
 	return "DatadogTracing"
 }
 
-func (t *gqlTracer) Validate(schema graphql.ExecutableSchema) error {
+func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 	return nil // unimplemented
 }
 
@@ -91,7 +98,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(ext.Component, "99designs/gqlgen"),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
@@ -138,7 +145,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			var childOpts []ddtrace.StartSpanOption
 			childOpts = append(childOpts, tracer.StartTime(start))
 			childOpts = append(childOpts, tracer.ResourceName(name))
-			childOpts = append(childOpts, tracer.Tag(ext.Component, "99designs/gqlgen"))
+			childOpts = append(childOpts, tracer.Tag(ext.Component, componentName))
 			var childSpan ddtrace.Span
 			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))

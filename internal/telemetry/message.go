@@ -33,15 +33,17 @@ type RequestType string
 
 const (
 	// RequestTypeAppStarted is the first message sent by the telemetry
-	// client, containing the configuration, and integrations and
-	// dependencies loaded at startup
+	// client, containing the configuration loaded at startup
 	RequestTypeAppStarted RequestType = "app-started"
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
 	RequestTypeAppHeartbeat RequestType = "app-heartbeat"
-	// RequestTypeGenerateMetrics contains all metrics accumulated by the
+	// RequestTypeGenerateMetrics contains count, gauge, or rate metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
+	// RequestTypeDistributions is to send distribution type metrics accumulated by the
+	// client, and is sent periodically along with the heartbeat
+	RequestTypeDistributions RequestType = "distributions"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
@@ -52,6 +54,9 @@ const (
 	RequestTypeAppClientConfigurationChange RequestType = "app-client-configuration-change"
 	// RequestTypeAppProductChange is sent when products are enabled/disabled
 	RequestTypeAppProductChange RequestType = "app-product-change"
+	// RequestTypeAppIntegrationsChange is sent when the telemetry client starts
+	// with info on which integrations are used.
+	RequestTypeAppIntegrationsChange RequestType = "app-integrations-change"
 )
 
 // Namespace describes an APM product to distinguish telemetry coming from
@@ -100,6 +105,21 @@ type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
+}
+
+// IntegrationsChange corresponds to the app-integrations-change requesty type
+type IntegrationsChange struct {
+	Integrations []Integration `json:"integrations"`
+}
+
+// Integration is an integration that is configured to be traced automatically.
+type Integration struct {
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	Version     string `json:"version,omitempty"`
+	AutoEnabled bool   `json:"auto_enabled,omitempty"`
+	Compatible  bool   `json:"compatible,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event
@@ -194,17 +214,42 @@ type Metrics struct {
 	Series    []Series  `json:"series"`
 }
 
-// Series is a sequence of observations for a single named metric
+// DistributionMetrics corresponds to the "distributions" request type
+type DistributionMetrics struct {
+	Namespace Namespace            `json:"namespace"`
+	Series    []DistributionSeries `json:"series"`
+}
+
+// Series is a sequence of observations for a single named metric.
+// The `Points` field will store a timestamp and value.
 type Series struct {
 	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
-	Type   string       `json:"type"`
-	Tags   []string     `json:"tags"`
+	// Interval is required for gauge and rate metrics
+	Interval int      `json:"interval,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Tags     []string `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
-	// assumed the metric is common. So we can't "omitempty" even though the
+	// the metric is common. So we can't "omitempty" even though the
+	// field is technically optional.
+	Common    bool   `json:"common"`
+	Namespace string `json:"namespace"`
+}
+
+// DistributionSeries is a sequence of observations for a distribution metric.
+// Unlike `Series`, DistributionSeries does not store timestamps in `Points`
+type DistributionSeries struct {
+	Metric string    `json:"metric"`
+	Points []float64 `json:"points"`
+	Tags   []string  `json:"tags"`
+	// Common distinguishes metrics which are cross-language vs.
+	// language-specific.
+	//
+	// NOTE: If this field isn't present in the request, the API assumes
+	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
 	Common bool `json:"common"`
 }

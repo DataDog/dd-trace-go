@@ -17,9 +17,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/twitchtv/twirp"
 )
+
+const componentName = "twitchtv/twirp"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 type (
 	twirpErrorKey struct{}
@@ -55,18 +62,27 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 		tracer.ServiceName(wc.cfg.clientServiceName()),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
-		tracer.Tag(ext.Component, "twitchtv/twirp"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 	}
 	ctx := req.Context()
 	if pkg, ok := twirp.PackageName(ctx); ok {
 		opts = append(opts, tracer.Tag("twirp.package", pkg))
 	}
 	if svc, ok := twirp.ServiceName(ctx); ok {
-		opts = append(opts, tracer.Tag("twirp.service", svc))
+		opts = append(
+			opts,
+			tracer.Tag("twirp.service", svc),
+			tracer.Tag(ext.RPCService, svc),
+		)
 	}
 	if method, ok := twirp.MethodName(ctx); ok {
-		opts = append(opts, tracer.Tag("twirp.method", method))
+		opts = append(
+			opts,
+			tracer.Tag("twirp.method", method),
+			tracer.Tag(ext.RPCMethod, method),
+		)
 	}
 	if !math.IsNaN(wc.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, wc.cfg.analyticsRate))
@@ -112,8 +128,9 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
-			tracer.Tag(ext.Component, "twitchtv/twirp"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 			tracer.Measured(),
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
@@ -142,10 +159,10 @@ func NewServerHooks(opts ...Option) *twirp.ServerHooks {
 	log.Debug("contrib/twitchtv/twirp: Creating Server Hooks: %#v", cfg)
 	return &twirp.ServerHooks{
 		RequestReceived:  requestReceivedHook(cfg),
-		RequestRouted:    requestRoutedHook(cfg),
-		ResponsePrepared: responsePreparedHook(cfg),
-		ResponseSent:     responseSentHook(cfg),
-		Error:            errorHook(cfg),
+		RequestRouted:    requestRoutedHook(),
+		ResponsePrepared: responsePreparedHook(),
+		ResponseSent:     responseSentHook(),
+		Error:            errorHook(),
 	}
 }
 
@@ -163,13 +180,18 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serverServiceName()),
 			tracer.Measured(),
-			tracer.Tag(ext.Component, "twitchtv/twirp"),
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),
 		}
 		if pkg, ok := twirp.PackageName(ctx); ok {
 			opts = append(opts, tracer.Tag("twirp.package", pkg))
 		}
 		if svc, ok := twirp.ServiceName(ctx); ok {
-			opts = append(opts, tracer.Tag("twirp.service", svc))
+			opts = append(
+				opts,
+				tracer.Tag("twirp.service", svc),
+				tracer.Tag(ext.RPCService, svc),
+			)
 		}
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -181,7 +203,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 	}
 }
 
-func requestRoutedHook(cfg *config) func(context.Context) (context.Context, error) {
+func requestRoutedHook() func(context.Context) (context.Context, error) {
 	return func(ctx context.Context) (context.Context, error) {
 		maybeSpan := ctx.Value(twirpSpanKey{})
 		if maybeSpan == nil {
@@ -196,18 +218,19 @@ func requestRoutedHook(cfg *config) func(context.Context) (context.Context, erro
 		if method, ok := twirp.MethodName(ctx); ok {
 			span.SetTag(ext.ResourceName, method)
 			span.SetTag("twirp.method", method)
+			span.SetTag(ext.RPCMethod, method)
 		}
 		return ctx, nil
 	}
 }
 
-func responsePreparedHook(cfg *config) func(context.Context) context.Context {
+func responsePreparedHook() func(context.Context) context.Context {
 	return func(ctx context.Context) context.Context {
 		return ctx
 	}
 }
 
-func responseSentHook(cfg *config) func(context.Context) {
+func responseSentHook() func(context.Context) {
 	return func(ctx context.Context) {
 		maybeSpan := ctx.Value(twirpSpanKey{})
 		if maybeSpan == nil {
@@ -225,7 +248,7 @@ func responseSentHook(cfg *config) func(context.Context) {
 	}
 }
 
-func errorHook(cfg *config) func(context.Context, twirp.Error) context.Context {
+func errorHook() func(context.Context, twirp.Error) context.Context {
 	return func(ctx context.Context, err twirp.Error) context.Context {
 		return context.WithValue(ctx, twirpErrorKey{}, err)
 	}

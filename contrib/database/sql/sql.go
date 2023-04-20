@@ -28,7 +28,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "database/sql"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
 var registeredDrivers = &driverRegistry{
@@ -116,12 +123,9 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	}
 
 	cfg := new(config)
-	defaults(cfg)
+	defaults(cfg, driverName, nil)
 	for _, fn := range opts {
 		fn(cfg)
-	}
-	if cfg.serviceName == "" {
-		cfg.serviceName = driverName + ".db"
 	}
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
@@ -156,7 +160,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	start := time.Now()
 	conn, err := t.connector.Connect(ctx)
-	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
+	tp.tryTrace(ctx, QueryTypeConnect, "", start, err)
 	if err != nil {
 		return nil, err
 	}
@@ -184,20 +188,17 @@ func (t dsnConnector) Driver() driver.Driver {
 // OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
 // to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
-	name, ok := registeredDrivers.name(c.Driver())
+	driverName, ok := registeredDrivers.name(c.Driver())
 	if !ok {
 		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
 	}
-	rc, _ := registeredDrivers.config(name)
+	rc, _ := registeredDrivers.config(driverName)
 	cfg := new(config)
-	defaults(cfg)
+	defaults(cfg, driverName, rc)
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	// use registered config for unset options
-	if cfg.serviceName == "" {
-		cfg.serviceName = rc.serviceName
-	}
 	if math.IsNaN(cfg.analyticsRate) {
 		cfg.analyticsRate = rc.analyticsRate
 	}
@@ -207,10 +208,11 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
 		cfg.dbmPropagationMode = rc.dbmPropagationMode
 	}
+	cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
-		driverName: name,
+		driverName: driverName,
 		cfg:        cfg,
 	}
 	return sql.OpenDB(tc)

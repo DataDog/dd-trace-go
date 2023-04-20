@@ -104,6 +104,9 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
+
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
@@ -112,7 +115,8 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
-
+			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
 }
@@ -155,6 +159,8 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
 					"expected service name to be grpc in span: %v",
 					span)
+				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem))
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
 			}
 			switch span.OperationName() {
 			case "grpc.client":
@@ -222,7 +228,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 13, 5*time.Second)
+		waitForSpans(mt, 13)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 13,
@@ -249,7 +255,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 3, 5*time.Second)
+		waitForSpans(mt, 3)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3,
@@ -276,7 +282,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 11, 5*time.Second)
+		waitForSpans(mt, 11)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 11,
@@ -372,7 +378,7 @@ func TestSpanTree(t *testing.T) {
 
 			// Wait until the client stream tracer goroutine gets awoken by the context
 			// cancellation and finishes its span
-			waitForSpans(mt, 6, time.Second)
+			waitForSpans(mt, 6)
 
 			rootSpan.Finish()
 		}
@@ -456,6 +462,9 @@ func TestPass(t *testing.T) {
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
+	assert.Equal("grpc", s.Tag(ext.RPCSystem))
+	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.GRPCFullMethod))
+	assert.Equal(codes.OK.String(), s.Tag(tagCode))
 }
 
 func TestPreservesMetadata(t *testing.T) {
@@ -639,7 +648,7 @@ func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 
 // waitForSpans polls the mock tracer until the expected number of spans
 // appears
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -801,7 +810,7 @@ func TestIgnoredMethods(t *testing.T) {
 			done() // close stream from client side
 			rig.Close()
 
-			waitForSpans(mt, c.exp, 5*time.Second)
+			waitForSpans(mt, c.exp)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -874,7 +883,7 @@ func TestUntracedMethods(t *testing.T) {
 			done() // close stream from client side
 			rig.Close()
 
-			waitForSpans(mt, c.exp, 5*time.Second)
+			waitForSpans(mt, c.exp)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -973,7 +982,7 @@ func TestSpanOpts(t *testing.T) {
 		done() // close stream from client side
 		rig.Close()
 
-		waitForSpans(mt, 7, 5*time.Second)
+		waitForSpans(mt, 7)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 7)

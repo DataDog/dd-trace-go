@@ -31,9 +31,8 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	Start(configuration []Configuration)
-	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
-	Gauge(namespace Namespace, name string, value float64, tags []string, common bool)
+	ProductStart(namespace Namespace, configuration []Configuration)
+	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)
 	Stop()
@@ -44,6 +43,11 @@ var (
 	// tracer, profiler, and appsec products will use
 	GlobalClient Client
 	globalClient sync.Mutex
+
+	// integrations tracks the the integrations enabled
+	contribPackages []Integration
+	contrib         sync.Mutex
+
 	// copied from dd-trace-go/profiler
 	defaultHTTPClient = &http.Client{
 		// We copy the transport to avoid using the default one, as it might be
@@ -147,15 +151,14 @@ func log(msg string, args ...interface{}) {
 	logger.Debug(fmt.Sprintf(LogPrefix+msg, args...))
 }
 
-// Start registers that the app has begun running with the app-started event
-// Start also configures the telemetry client based on the following telemetry
+// start registers that the app has begun running with the app-started event.
+// Must be called with c.mu locked.
+// start also configures the telemetry client based on the following telemetry
 // environment variables: DD_INSTRUMENTATION_TELEMETRY_ENABLED,
 // DD_TELEMETRY_HEARTBEAT_INTERVAL, DD_INSTRUMENTATION_TELEMETRY_DEBUG,
 // and DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED.
 // TODO: implement passing in error information about tracer start
-func (c *client) Start(configuration []Configuration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *client) start(configuration []Configuration, namespace Namespace) {
 	if Disabled() {
 		return
 	}
@@ -174,24 +177,22 @@ func (c *client) Start(configuration []Configuration) {
 	c.metrics = make(map[Namespace]map[string]*metric)
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
-	payload := &AppStarted{
-		Configuration: configuration,
-		Products: Products{
-			AppSec: ProductDetails{
-				Version: version.Tag,
-				Enabled: appsec.Enabled(),
-			},
-			// If the profiler starts, an app-product-change event will be sent
-			// to signal that the profiler is enabled. It is important that we
-			// send the profiler version, since product info is hashed on it's version
-			// when being stored by the instrumentation telemetry backend.
-			Profiler: ProductDetails{
-				Version: version.Tag,
-				Enabled: false,
-			},
+	productInfo := Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			Enabled: appsec.Enabled(),
 		},
 	}
-
+	productInfo.Profiler = ProductDetails{
+		Version: version.Tag,
+		// if the profiler is the one starting the telemetry client,
+		// then profiling is enabled
+		Enabled: namespace == NamespaceProfilers,
+	}
+	payload := &AppStarted{
+		Configuration: configuration,
+		Products:      productInfo,
+	}
 	appStarted := c.newRequest(RequestTypeAppStarted)
 	appStarted.Body.Payload = payload
 	c.scheduleSubmit(appStarted)
@@ -211,6 +212,12 @@ func (c *client) Start(configuration []Configuration) {
 		dep := c.newRequest(RequestTypeDependenciesLoaded)
 		dep.Body.Payload = depPayload
 		c.scheduleSubmit(dep)
+	}
+
+	if len(contribPackages) > 0 {
+		req := c.newRequest(RequestTypeAppIntegrationsChange)
+		req.Body.Payload = IntegrationsChange{Integrations: contribPackages}
+		c.scheduleSubmit(req)
 	}
 
 	c.flush()
@@ -252,16 +259,24 @@ func collectDependencies() bool {
 	return internal.BoolEnv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", true)
 }
 
-type metricKind string
+// MetricKind specifies the type of metric being reported.
+// Metric types mirror Datadog metric types - for a more detailed
+// description of metric types, see:
+// https://docs.datadoghq.com/metrics/types/?tab=count#metric-types
+type MetricKind string
 
 var (
-	metricKindGauge metricKind = "gauge"
-	metricKindCount metricKind = "count"
+	// MetricKindGauge represents a gauge type metric
+	MetricKindGauge MetricKind = "gauge"
+	// MetricKindCount represents a count type metric
+	MetricKindCount MetricKind = "count"
+	// MetricKindDist represents a distribution type metric
+	MetricKindDist MetricKind = "distribution"
 )
 
 type metric struct {
 	name  string
-	kind  metricKind
+	kind  MetricKind
 	value float64
 	// Unix timestamp
 	ts     float64
@@ -272,7 +287,7 @@ type metric struct {
 // TODO: Can there be identically named/tagged metrics with a "common" and "not
 // common" variant?
 
-func newmetric(name string, kind metricKind, tags []string, common bool) *metric {
+func newMetric(name string, kind MetricKind, tags []string, common bool) *metric {
 	return &metric{
 		name:   name,
 		kind:   kind,
@@ -281,13 +296,13 @@ func newmetric(name string, kind metricKind, tags []string, common bool) *metric
 	}
 }
 
-func metricKey(name string, tags []string) string {
-	return name + strings.Join(tags, "-")
+func metricKey(name string, tags []string, kind MetricKind) string {
+	return name + string(kind) + strings.Join(tags, "-")
 }
 
-// Gauge sets the value for a gauge with the given name and tags. If the metric
-// is not language-specific, common should be set to true
-func (c *client) Gauge(namespace Namespace, name string, value float64, tags []string, common bool) {
+// Record sets the value for a gauge or distribution metric type
+// with the given name and tags. If the metric is not language-specific, common should be set to true
+func (c *client) Record(namespace Namespace, kind MetricKind, name string, value float64, tags []string, common bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
@@ -296,10 +311,10 @@ func (c *client) Gauge(namespace Namespace, name string, value float64, tags []s
 	if _, ok := c.metrics[namespace]; !ok {
 		c.metrics[namespace] = map[string]*metric{}
 	}
-	key := metricKey(name, tags)
+	key := metricKey(name, tags, kind)
 	m, ok := c.metrics[namespace][key]
 	if !ok {
-		m = newmetric(name, metricKindGauge, tags, common)
+		m = newMetric(name, kind, tags, common)
 		c.metrics[namespace][key] = m
 	}
 	m.value = value
@@ -318,10 +333,10 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 	if _, ok := c.metrics[namespace]; !ok {
 		c.metrics[namespace] = map[string]*metric{}
 	}
-	key := metricKey(name, tags)
+	key := metricKey(name, tags, MetricKindCount)
 	m, ok := c.metrics[namespace][key]
 	if !ok {
-		m = newmetric(name, metricKindCount, tags, common)
+		m = newMetric(name, MetricKindCount, tags, common)
 		c.metrics[namespace][key] = m
 	}
 	m.value += value
@@ -330,31 +345,13 @@ func (c *client) Count(namespace Namespace, name string, value float64, tags []s
 }
 
 // flush sends any outstanding telemetry messages and aggregated metrics to be
-// sent to the backend. Requests are sent in the background. Should be called
+// sent to the backend. Requests are sent in the background. Must be called
 // with c.mu locked
 func (c *client) flush() {
-	submissions := make([]*Request, 0, len(c.requests)+1)
-	if c.newMetrics {
-		c.newMetrics = false
-		r := c.newRequest(RequestTypeGenerateMetrics)
-		for namespace := range c.metrics {
-			payload := &Metrics{
-				Namespace: namespace,
-			}
-			for _, m := range c.metrics[namespace] {
-				s := Series{
-					Metric: m.name,
-					Type:   string(m.kind),
-					Tags:   m.tags,
-					Common: m.common,
-				}
-				s.Points = [][2]float64{{m.ts, m.value}}
-				payload.Series = append(payload.Series, s)
-			}
-			r.Body.Payload = payload
-			submissions = append(submissions, r)
-		}
-	}
+	// initialize submissions slice of capacity len(c.requests) + 2
+	// to hold all the new events, plus two potential metric events
+	submissions := make([]*Request, 0, len(c.requests)+2)
+
 	// copy over requests so we can do the actual submission without holding
 	// the lock. Zero out the old stuff so we don't leak references
 	for i, r := range c.requests {
@@ -362,6 +359,47 @@ func (c *client) flush() {
 		c.requests[i] = nil
 	}
 	c.requests = c.requests[:0]
+
+	if c.newMetrics {
+		c.newMetrics = false
+		for namespace := range c.metrics {
+			// metrics can either be request type generate-metrics or distributions
+			dPayload := &DistributionMetrics{
+				Namespace: namespace,
+			}
+			gPayload := &Metrics{
+				Namespace: namespace,
+			}
+			for _, m := range c.metrics[namespace] {
+				if m.kind == MetricKindDist {
+					dPayload.Series = append(dPayload.Series, DistributionSeries{
+						Metric: m.name,
+						Tags:   m.tags,
+						Common: m.common,
+						Points: []float64{m.value},
+					})
+				} else {
+					gPayload.Series = append(gPayload.Series, Series{
+						Metric: m.name,
+						Type:   string(m.kind),
+						Tags:   m.tags,
+						Common: m.common,
+						Points: [][2]float64{{m.ts, m.value}},
+					})
+				}
+			}
+			if len(dPayload.Series) > 0 {
+				distributions := c.newRequest(RequestTypeDistributions)
+				distributions.Body.Payload = dPayload
+				submissions = append(submissions, distributions)
+			}
+			if len(gPayload.Series) > 0 {
+				generateMetrics := c.newRequest(RequestTypeGenerateMetrics)
+				generateMetrics.Body.Payload = gPayload
+				submissions = append(submissions, generateMetrics)
+			}
+		}
+	}
 
 	go func() {
 		for _, r := range submissions {

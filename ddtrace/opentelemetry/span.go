@@ -30,9 +30,9 @@ type span struct {
 	*oteltracer
 }
 
-func (s *span) TracerProvider() oteltrace.TracerProvider                { return s.oteltracer.provider }
-func (s *span) AddEvent(name string, options ...oteltrace.EventOption)  { /*	no-op */ }
-func (s *span) RecordError(err error, options ...oteltrace.EventOption) { /*	no-op */ }
+func (s *span) TracerProvider() oteltrace.TracerProvider        { return s.oteltracer.provider }
+func (s *span) AddEvent(_ string, _ ...oteltrace.EventOption)   { /*	no-op */ }
+func (s *span) RecordError(_ error, _ ...oteltrace.EventOption) { /*	no-op */ }
 
 func (s *span) SetName(name string) { s.SetOperationName(name) }
 

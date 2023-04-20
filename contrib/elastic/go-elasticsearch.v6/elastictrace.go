@@ -21,7 +21,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "elastic/go-elasticsearch.v6"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.
 func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
@@ -57,14 +64,14 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
-		tracer.Tag(ext.Component, "elastic/go-elasticsearch.v6"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
+	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.operationName, opts...)
 	defer span.Finish()
 
 	contentEncoding := req.Header.Get("Content-Encoding")

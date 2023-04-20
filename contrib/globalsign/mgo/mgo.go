@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/globalsign/mgo"
 )
+
+const componentName = "globalsign/mgo"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Dial opens a connection to a MongoDB server and configures it
 // for tracing.
@@ -55,8 +62,8 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
-		tracer.ResourceName("mongodb.query"),
-		tracer.Tag(ext.Component, "globalsign/mgo"),
+		tracer.ResourceName(cfg.spanName),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
 
@@ -67,7 +74,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	for key, value := range tags {
 		span.SetTag(key, value)
 	}

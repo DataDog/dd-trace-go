@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -31,29 +32,33 @@ func TestRCClient(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("registerCallback", func(t *testing.T) {
-		client.callbacks = map[string][]Callback{}
-		nilCallback := func(ProductUpdate) map[string]rc.ApplyStatus { return nil }
-		defer func() { client.callbacks = map[string][]Callback{} }()
+		client.callbacks = []Callback{}
+		nilCallback := func(map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+		defer func() { client.callbacks = []Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
-		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
-		require.Equal(t, 1, len(client.callbacks[rc.ProductASMFeatures]))
+		client.RegisterCallback(nilCallback)
 		require.Equal(t, 1, len(client.callbacks))
-		client.RegisterCallback(nilCallback, rc.ProductASMFeatures)
-		require.Equal(t, 2, len(client.callbacks[rc.ProductASMFeatures]))
 		require.Equal(t, 1, len(client.callbacks))
+		client.RegisterCallback(nilCallback)
+		require.Equal(t, 2, len(client.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
-		client.callbacks = map[string][]Callback{}
+		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
-		client.Products = append(client.Products, rc.ProductASMFeatures)
-
-		client.RegisterCallback(func(u ProductUpdate) map[string]rc.ApplyStatus {
-			require.NotNil(t, u)
-			require.NotNil(t, u[cfgPath])
-			require.Equal(t, string(u[cfgPath]), "test")
-			return map[string]rc.ApplyStatus{cfgPath: {State: rc.ApplyStateAcknowledged}}
-		}, rc.ProductASMFeatures)
+		client.RegisterProduct(rc.ProductASMFeatures)
+		client.RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
+			statuses := map[string]rc.ApplyStatus{}
+			for p, u := range updates {
+				if p == rc.ProductASMFeatures {
+					require.NotNil(t, u)
+					require.NotNil(t, u[cfgPath])
+					require.Equal(t, string(u[cfgPath]), "test")
+					statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+				}
+			}
+			return statuses
+		})
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
 		err := client.applyUpdate(resp)
@@ -222,6 +227,51 @@ func TestConfig(t *testing.T) {
 				require.Equal(t, tc.expected, duration)
 
 			})
+		}
+	})
+}
+
+func dummyCallback1(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return nil
+}
+func dummyCallback2(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func dummyCallback3(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func dummyCallback4(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+	return map[string]rc.ApplyStatus{}
+}
+
+func TestRegistration(t *testing.T) {
+	t.Run("callbacks", func(t *testing.T) {
+		client, err := NewClient(DefaultClientConfig())
+		require.NoError(t, err)
+
+		client.RegisterCallback(dummyCallback1)
+		require.Len(t, client.callbacks, 1)
+		client.UnregisterCallback(dummyCallback1)
+		require.Empty(t, client.callbacks)
+
+		client.RegisterCallback(dummyCallback2)
+		client.RegisterCallback(dummyCallback3)
+		client.RegisterCallback(dummyCallback1)
+		client.RegisterCallback(dummyCallback4)
+		require.Len(t, client.callbacks, 4)
+
+		client.UnregisterCallback(dummyCallback1)
+		require.Len(t, client.callbacks, 3)
+		for _, c := range client.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(c))
+		}
+
+		client.UnregisterCallback(dummyCallback3)
+		require.Len(t, client.callbacks, 2)
+		for _, c := range client.callbacks {
+			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
 		}
 	})
 }
