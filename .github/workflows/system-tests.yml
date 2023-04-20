@@ -88,7 +88,8 @@ jobs:
         run: ./build.sh
 
       - name: Run
-        env: {{ matrix.specific-env }}
+        env:
+          {{ matrix.specific-env }}
         run: ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
