@@ -31,7 +31,6 @@ jobs:
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_IP_BLOCKING
-          - APPSEC_USER_BLOCKING
           - APPSEC_REQUEST_BLOCKING
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
@@ -60,6 +59,8 @@ jobs:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+      DD_SITE: "datadoghq.com"
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Setup python 3.9
