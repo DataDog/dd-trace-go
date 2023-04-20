@@ -285,6 +285,6 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	return span
 }

@@ -142,7 +142,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 							operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
 						}
 					}
-					op.AddSecurityEvents(matches)
+					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
 			}))
@@ -184,7 +184,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			for _, id := range actionIds {
 				interrupt = actionHandler.Apply(id, op) || interrupt
 			}
-			op.AddSecurityEvents(matches)
+			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
 				wafCtx.Close()
@@ -201,14 +201,12 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 							sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
 						}
 					}
-					op.AddSecurityEvents(matches)
+					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
 			}))
 		}
 
-		// At the moment, AppSec doesn't block the requests, and so we can use the fact we are in monitoring-only mode
-		// to call the WAF only once at the end of the handler operation.
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
@@ -237,9 +235,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 				return
 			}
 			log.Debug("appsec: attack detected by the waf")
-			if limiter.Allow() {
-				op.AddSecurityEvents(matches)
-			}
+			addSecurityEvents(op, limiter, matches)
 		}))
 	})
 }
@@ -287,7 +283,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 					actionHandler.Apply(id, op)
 				}
 				operation.Error = op.Error
-				op.AddSecurityEvents(matches)
+				addSecurityEvents(op, limiter, matches)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		}))
@@ -306,7 +302,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			for _, id := range actionIds {
 				interrupt = actionHandler.Apply(id, op) || interrupt
 			}
-			op.AddSecurityEvents(matches)
+			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
 				wafCtx.Close()
@@ -376,10 +372,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
-			// Log the events if any
-			if len(events) > 0 && limiter.Allow() {
-				op.AddSecurityEvents(events...)
-			}
+			addSecurityEvents(op, limiter, events...)
 		}))
 	})
 }
@@ -496,4 +489,15 @@ func addWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafTimeoutTag, float64(timeouts))
 	th.AddTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
+}
+
+type securityEventsAdder interface {
+	AddSecurityEvents(events ...json.RawMessage)
+}
+
+// Helper function to add sec events to an operation taking into account the rate limiter.
+func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches ...json.RawMessage) {
+	if len(matches) > 0 && limiter.Allow() {
+		op.AddSecurityEvents(matches...)
+	}
 }
