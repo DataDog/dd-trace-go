@@ -85,8 +85,13 @@ func newConfig() (*Config, error) {
 		return nil, err
 	}
 
+	r, err := newRulesManager(rules)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
-		rulesManager:   newRulesManager(rules),
+		rulesManager:   r,
 		wafTimeout:     readWAFTimeoutConfig(),
 		traceRateLimit: readRateLimitConfig(),
 		obfuscator:     readObfuscatorConfig(),

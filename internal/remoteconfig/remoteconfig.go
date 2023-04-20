@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -99,6 +100,7 @@ func (c *Client) Start() {
 		for {
 			select {
 			case <-c.stop:
+				close(c.stop)
 				return
 			case <-ticker.C:
 				c.updateState()
@@ -109,7 +111,14 @@ func (c *Client) Start() {
 
 // Stop stops the client's update poll loop
 func (c *Client) Stop() {
-	close(c.stop)
+	log.Debug("remoteconfig: gracefully stopping the client")
+	c.stop <- struct{}{}
+	select {
+	case <-c.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
 }
 
 func (c *Client) updateState() {
@@ -167,6 +176,17 @@ func (c *Client) RegisterCallback(f Callback) {
 	c.callbacks = append(c.callbacks, f)
 }
 
+// UnregisterCallback removes a previously registered callback from the active callbacks list
+// This remove operation preserves ordering
+func (c *Client) UnregisterCallback(f Callback) {
+	fValue := reflect.ValueOf(f)
+	for i, callback := range c.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+		}
+	}
+}
+
 // RegisterProduct adds a product to the list of products listened by the client
 func (c *Client) RegisterProduct(p string) {
 	c.Products[p] = struct{}{}
@@ -192,10 +212,12 @@ func (c *Client) UnregisterCapability(cap Capability) {
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	productUpdates := make(map[string]ProductUpdate, len(c.Products))
+	for p := range c.Products {
+		productUpdates[p] = make(ProductUpdate)
+	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
 		for p := range c.Products {
-			productUpdates[p] = make(ProductUpdate)
 			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
@@ -330,7 +352,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	for i := range c.Capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, len(c.Products))
+	products := make([]string, 0, len(c.Products))
 	for p := range c.Products {
 		products = append(products, p)
 	}
