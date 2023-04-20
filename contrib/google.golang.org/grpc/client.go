@@ -7,11 +7,13 @@ package grpc
 
 import (
 	"net"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	context "golang.org/x/net/context"
@@ -174,10 +176,13 @@ func doClientRequest(
 		ctx,
 		method,
 		"grpc.client",
-		cfg.clientServiceName(),
+		globalconfig.ServiceName(),
 		cfg.startSpanOptions(
 			tracer.Tag(ext.Component, componentName),
-			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.PeerService, peerServiceFromMethod(method)),
+			tracer.Measured(),
+		)...,
 	)
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)
@@ -228,4 +233,18 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 		grpclog.Warningf("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
 	}
 	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func peerServiceFromMethod(method string) string {
+	if len(method) == 0 {
+		return ""
+	}
+	if method[0] == '/' {
+		method = method[1:]
+	}
+	idx := strings.IndexByte(method, '/')
+	if idx < 0 {
+		return method
+	}
+	return method[:idx]
 }

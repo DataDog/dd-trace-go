@@ -122,6 +122,9 @@ func TestUnary(t *testing.T) {
 }
 
 func TestStreaming(t *testing.T) {
+	globalconfig.SetServiceName("global-service")
+	defer globalconfig.SetServiceName("")
+
 	// creates a stream, then sends/recvs two pings, then closes the stream
 	runPings := func(t *testing.T, ctx context.Context, client FixtureClient) {
 		stream, err := client.StreamPing(ctx)
@@ -156,9 +159,6 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, ext.AppTypeRPC, span.Tag(ext.SpanType),
 					"expected span type to be rpc in span: %v",
 					span)
-				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
-					"expected service name to be grpc in span: %v",
-					span)
 				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem))
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
 			}
@@ -191,11 +191,20 @@ func TestStreaming(t *testing.T) {
 
 			switch span.OperationName() { //checks spankind and component without fallthrough
 			case "grpc.client":
+				assert.Equal(t, "global-service", span.Tag(ext.ServiceName),
+					"expected service name to be global-service in span: %v",
+					span)
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 					" expected spankind to be client in span %v", span)
 			case "grpc.server":
+				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
+					"expected service name to be grpc in span: %v",
+					span)
+				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
+					"expected service name to be grpc in span: %v",
+					span)
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
 				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
@@ -206,7 +215,6 @@ func TestStreaming(t *testing.T) {
 				assert.NotContains(t, span.Tags(), ext.SpanKind,
 					" expected no spankind tag to be in span %v", span)
 			}
-
 		}
 	}
 
@@ -293,11 +301,14 @@ func TestStreaming(t *testing.T) {
 }
 
 func TestSpanTree(t *testing.T) {
-	assertSpan := func(t *testing.T, span, parent mocktracer.Span, operationName, resourceName string) {
+	globalconfig.SetServiceName("global-service")
+	defer globalconfig.SetServiceName("")
+
+	assertSpan := func(t *testing.T, span, parent mocktracer.Span, serviceName, operationName, resourceName string) {
 		require.NotNil(t, span)
 		assert.Nil(t, span.Tag(ext.Error))
 		assert.Equal(t, operationName, span.OperationName())
-		assert.Equal(t, "grpc", span.Tag(ext.ServiceName))
+		assert.Equal(t, serviceName, span.Tag(ext.ServiceName))
 		assert.Equal(t, span.Tag(ext.ResourceName), resourceName)
 		assert.True(t, span.FinishTime().Sub(span.StartTime()) >= 0)
 
@@ -339,9 +350,9 @@ func TestSpanTree(t *testing.T) {
 		serverPingChildSpan := spans[0]
 
 		assert.Zero(0, rootSpan.ParentID())
-		assertSpan(t, serverPingChildSpan, serverPingSpan, "child", "child")
-		assertSpan(t, serverPingSpan, clientPingSpan, "grpc.server", "/grpc.Fixture/Ping")
-		assertSpan(t, clientPingSpan, rootSpan, "grpc.client", "/grpc.Fixture/Ping")
+		assertSpan(t, serverPingChildSpan, serverPingSpan, "grpc", "child", "child")
+		assertSpan(t, serverPingSpan, clientPingSpan, "grpc", "grpc.server", "/grpc.Fixture/Ping")
+		assertSpan(t, clientPingSpan, rootSpan, "global-service", "grpc.client", "/grpc.Fixture/Ping")
 	})
 
 	t.Run("stream", func(t *testing.T) {
@@ -406,16 +417,16 @@ func TestSpanTree(t *testing.T) {
 		require.NotNil(t, serverStreamSpan)
 
 		assert.Zero(rootSpan.ParentID())
-		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
+		assertSpan(t, clientStreamSpan, rootSpan, "global-service", "grpc.client", "/grpc.Fixture/StreamPing")
+		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc", "grpc.server", "/grpc.Fixture/StreamPing")
 		var clientSpans, serverSpans int
 		var reqMsgFound bool
 		for _, ms := range messageSpans {
 			if ms.ParentID() == clientStreamSpan.SpanID() {
-				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				assertSpan(t, ms, clientStreamSpan, "grpc", "grpc.message", "/grpc.Fixture/StreamPing")
 				clientSpans++
 			} else {
-				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				assertSpan(t, ms, serverStreamSpan, "grpc", "grpc.message", "/grpc.Fixture/StreamPing")
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
