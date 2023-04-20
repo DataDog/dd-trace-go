@@ -6,6 +6,7 @@
 package httprouter
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -190,4 +191,24 @@ func handler200Parameter(w http.ResponseWriter, _ *http.Request, p httprouter.Pa
 
 func handler500(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []RouterOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := New(opts...)
+		mux.GET("/200", handler200)
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }

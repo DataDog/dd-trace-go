@@ -6,6 +6,7 @@
 package http
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -289,6 +290,26 @@ func TestIgnoreRequestOption(t *testing.T) {
 			assert.Equal(t, test.spanCount, len(spans))
 		})
 	}
+}
+
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := NewServeMux(opts...)
+		mux.HandleFunc("/200", handler200)
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }
 
 func router(muxOpts ...Option) http.Handler {

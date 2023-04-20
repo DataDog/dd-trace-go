@@ -7,6 +7,7 @@ package mux
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -436,4 +437,24 @@ func TestAppSec(t *testing.T) {
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []RouterOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := NewRouter(opts...)
+		mux.Handle("/200", okHandler())
+		req := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "mux.router")(t)
 }

@@ -6,11 +6,13 @@
 package echo
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
+
+const defaultServiceName = "echo"
 
 type config struct {
 	serviceName   string
@@ -23,10 +25,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "echo"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
 	if internal.BoolEnv("DD_TRACE_ECHO_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

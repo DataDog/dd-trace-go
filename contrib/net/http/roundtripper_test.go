@@ -8,6 +8,7 @@ package http
 import (
 	"encoding/base64"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -492,4 +493,41 @@ func TestSpanOptions(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []RoundTripperOption
+		if serviceOverride != "" {
+			opts = append(opts, RTWithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
+		defer srv.Close()
+
+		c := WrapClient(&http.Client{}, opts...)
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/200", nil)
+		require.NoError(t, err)
+		_, err = c.Do(req)
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "http.request", spans[0].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "http.client.request", spans[0].OperationName())
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{""},
+		WithDDService:            []string{""},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
