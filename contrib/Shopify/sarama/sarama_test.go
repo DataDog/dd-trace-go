@@ -357,14 +357,7 @@ func TestAsyncProducer(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	// first is producer and second is consumer span
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"kafka", "kafka"},
-		WithDDService:            []string{"kafka", namingschematest.TestDDService},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genTestSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genTestSpans))
+	namingschematest.NewKafkaTest(genTestSpans)(t)
 }
 
 func newMockBroker(t *testing.T) *sarama.MockBroker {
