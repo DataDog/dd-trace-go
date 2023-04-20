@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
@@ -19,13 +18,14 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestServerStatsHandler(t *testing.T) {
 	assert := assert.New(t)
 
 	serviceName := "grpc-service"
-	statsHandler := NewServerStatsHandler(WithServiceName(serviceName))
+	statsHandler := NewServerStatsHandler(WithServiceName(serviceName), WithSpanOptions(tracer.Tag("foo", "bar")))
 	server, err := newServerStatsHandlerTestServer(statsHandler)
 	if err != nil {
 		t.Fatalf("failed to start test server: %s", err)
@@ -37,7 +37,7 @@ func TestServerStatsHandler(t *testing.T) {
 	_, err = server.client.Ping(context.Background(), &FixtureRequest{Name: "name"})
 	assert.NoError(err)
 
-	waitForSpans(mt, 1, 1*time.Second)
+	waitForSpans(mt, 1)
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 
@@ -53,6 +53,9 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
 	assert.Equal(1, tags["_dd.measured"])
+	assert.Equal("bar", tags["foo"])
+	assert.Equal("grpc", tags[ext.RPCSystem])
+	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

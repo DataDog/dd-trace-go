@@ -15,7 +15,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "k8s.io/client-go/kubernetes"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 const (
 	prefixCoreAPI  = "/api/v1/"
@@ -41,7 +48,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
 	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
-		span.SetTag(ext.Component, "k8s.io/client-go/kubernetes")
+		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
 		if traceID == 0 {

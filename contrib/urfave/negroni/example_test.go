@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func handler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(200)
 	w.Write([]byte("Hello World!\n"))
 }

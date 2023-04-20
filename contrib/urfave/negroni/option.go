@@ -98,6 +98,6 @@ func WithResourceNamer(namer func(r *http.Request) string) Option {
 	}
 }
 
-func defaultResourceNamer(r *http.Request) string {
+func defaultResourceNamer(_ *http.Request) string {
 	return ""
 }

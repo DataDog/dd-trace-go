@@ -33,7 +33,7 @@ func ExampleTraceAndServe() {
 	http.ListenAndServe(":8080", mux)
 }
 
-func Index(w http.ResponseWriter, r *http.Request) {
+func Index(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("Hello World!\n"))
 }
 

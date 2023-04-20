@@ -8,19 +8,6 @@ on:
         type: string
 
 jobs:
-  milestone:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - name: Milestone
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          go run checkmilestone.go
   copyright:
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +18,9 @@ jobs:
       - name: Copyright
         run: |
           go run checkcopyright.go
+
+  # Deprecated
+  # TODO remove this once the golangci-lint job is stable.
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -57,8 +47,23 @@ jobs:
       - name: lint
         run: |
           go install golang.org/x/lint/golint@latest
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
+          curl https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | sh # https://github.com/alecthomas/gometalinter#binary-releases
           ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
+
+  golangci-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+      - uses: actions/checkout@v3
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
 
   test-core:
     runs-on: ubuntu-latest

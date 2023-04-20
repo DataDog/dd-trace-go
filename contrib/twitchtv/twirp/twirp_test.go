@@ -82,6 +82,9 @@ func TestClient(t *testing.T) {
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 	})
 
 	t.Run("server-error", func(t *testing.T) {
@@ -111,6 +114,9 @@ func TestClient(t *testing.T) {
 		assert.Equal(true, span.Tag(ext.Error).(bool))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -139,6 +145,9 @@ func TestClient(t *testing.T) {
 		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 	})
 }
 
@@ -186,6 +195,9 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 	})
 
 	t.Run("error", func(t *testing.T) {
@@ -206,6 +218,9 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 	})
 
 	t.Run("chained", func(t *testing.T) {
@@ -239,6 +254,9 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal("twirp", span.Tag(ext.RPCSystem))
+		assert.Equal("Example", span.Tag(ext.RPCService))
+		assert.Equal("Method", span.Tag(ext.RPCMethod))
 
 		span = spans[1]
 		assert.Equal("other.span.name", span.OperationName())
@@ -358,7 +376,7 @@ func (n *notifyListener) Accept() (c net.Conn, err error) {
 
 type haberdasher int32
 
-func (h haberdasher) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, error) {
+func (h haberdasher) MakeHat(_ context.Context, size *example.Size) (*example.Hat, error) {
 	if size.Inches != int32(h) {
 		return nil, twirp.InvalidArgumentError("Inches", "Only size of %d is allowed")
 	}

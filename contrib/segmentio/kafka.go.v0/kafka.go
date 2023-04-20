@@ -15,7 +15,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "segmentio/kafka.go.v0"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
 func NewReader(conf kafka.ReaderConfig, opts ...Option) *Reader {
@@ -51,7 +58,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 		tracer.Tag("offset", msg.Offset),
-		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
@@ -64,7 +71,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "kafka.consume", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, r.cfg.consumerOperationName, opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
@@ -131,7 +138,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "segmentio/kafka.go.v0"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 	}
@@ -144,7 +151,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
 	}
 	carrier := messageCarrier{msg}
-	span, _ := tracer.StartSpanFromContext(ctx, "kafka.produce", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, w.cfg.producerOperationName, opts...)
 	err := tracer.Inject(span.Context(), carrier)
 	log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier, %v", err)
 	return span

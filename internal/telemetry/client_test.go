@@ -3,26 +3,22 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package telemetry_test
+package telemetry
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"sort"
 	"sync"
 	"testing"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 func TestClient(t *testing.T) {
-	os.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
-	defer os.Unsetenv("DD_TELEMETRY_HEARTBEAT_INTERVAL")
-
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	heartbeat := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +26,7 @@ func TestClient(t *testing.T) {
 		if len(h) == 0 {
 			t.Fatal("didn't get telemetry request type header")
 		}
-		if telemetry.RequestType(h) == telemetry.RequestTypeAppHeartbeat {
+		if RequestType(h) == RequestTypeAppHeartbeat {
 			select {
 			case heartbeat <- struct{}{}:
 			default:
@@ -39,12 +35,13 @@ func TestClient(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
+	client := &client{
+		URL: server.URL,
 	}
-	client.Start(nil, nil)
-	client.Start(nil, nil) // test idempotence
+	client.mu.Lock()
+	client.start(nil, NamespaceTracers)
+	client.start(nil, NamespaceTracers) // test idempotence
+	client.mu.Unlock()
 	defer client.Stop()
 
 	timeout := time.After(30 * time.Second)
@@ -57,32 +54,30 @@ func TestClient(t *testing.T) {
 }
 
 func TestMetrics(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	var (
 		mu  sync.Mutex
-		got []telemetry.Series
+		got []Series
 	)
 	closed := make(chan struct{}, 1)
 
+	// we will try to set three metrics that the server must receive
+	expectedMetrics := 3
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppClosing) {
-			select {
-			case closed <- struct{}{}:
-			default:
-			}
+		rType := RequestType(r.Header.Get("DD-Telemetry-Request-Type"))
+		if rType != RequestTypeGenerateMetrics {
 			return
 		}
-		req := telemetry.Request{
-			Payload: new(telemetry.Metrics),
+		req := Body{
+			Payload: new(Metrics),
 		}
 		dec := json.NewDecoder(r.Body)
 		err := dec.Decode(&req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if req.RequestType != telemetry.RequestTypeGenerateMetrics {
-			return
-		}
-		v, ok := req.Payload.(*telemetry.Metrics)
+		v, ok := req.Payload.(*Metrics)
 		if !ok {
 			t.Fatal("payload set metrics but didn't get metrics")
 		}
@@ -93,34 +88,44 @@ func TestMetrics(t *testing.T) {
 			}
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		got = append(got, v.Series...)
-		mu.Unlock()
+		if len(got) == expectedMetrics {
+			select {
+			case closed <- struct{}{}:
+			default:
+			}
+			return
+		}
 	}))
 	defer server.Close()
 
 	go func() {
-		client := &telemetry.Client{
+		client := &client{
 			URL: server.URL,
 		}
-		client.Start(nil, nil)
+		client.start(nil, NamespaceTracers)
 
-		// Gauges should have the most recent value
-		client.Gauge("foobar", 1, nil, false)
-		client.Gauge("foobar", 2, nil, false)
+		// Records should have the most recent value
+		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+		client.Record(NamespaceTracers, MetricKindGauge, "foobar", 2, nil, false)
 		// Counts should be aggregated
-		client.Count("baz", 3, nil, true)
-		client.Count("baz", 1, nil, true)
+		client.Count(NamespaceTracers, "baz", 3, nil, true)
+		client.Count(NamespaceTracers, "baz", 1, nil, true)
 		// Tags should be passed through
-		client.Count("bonk", 4, []string{"org:1"}, false)
-		client.Stop()
+		client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
+
+		client.mu.Lock()
+		client.flush()
+		client.mu.Unlock()
 	}()
 
 	<-closed
 
-	want := []telemetry.Series{
-		{Metric: "baz", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
-		{Metric: "bonk", Type: "count", Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
-		{Metric: "foobar", Type: "gauge", Points: [][2]float64{{0, 2}}, Tags: []string{}},
+	want := []Series{
+		{Metric: "baz", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{}, Common: true},
+		{Metric: "bonk", Type: "count", Interval: 0, Points: [][2]float64{{0, 4}}, Tags: []string{"org:1"}},
+		{Metric: "foobar", Type: "gauge", Interval: 0, Points: [][2]float64{{0, 2}}, Tags: []string{}},
 	}
 	sort.Slice(got, func(i, j int) bool {
 		return got[i].Metric < got[j].Metric
@@ -130,65 +135,125 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
-func TestDisabledClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("shouldn't have got any requests")
-	}))
-	defer server.Close()
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
-
-	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
-	}
-	client.Start(nil, nil)
-	client.Gauge("foobar", 1, nil, false)
-	client.Count("bonk", 4, []string{"org:1"}, false)
-	client.Stop()
-}
-
-func TestNonStartedClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("shouldn't have got any requests")
-	}))
-	defer server.Close()
-
-	client := &telemetry.Client{
-		URL:                server.URL,
-		SubmissionInterval: time.Millisecond,
-	}
-	client.Gauge("foobar", 1, nil, false)
-	client.Count("bonk", 4, []string{"org:1"}, false)
-	client.Stop()
-}
-
-func TestConcurrentClient(t *testing.T) {
+func TestDistributionMetrics(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
 	var (
 		mu  sync.Mutex
-		got []telemetry.Series
+		got []DistributionSeries
 	)
 	closed := make(chan struct{}, 1)
+
+	// we will try to set one metric that the server must receive
+	expectedMetrics := 1
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Log("foo")
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(telemetry.RequestTypeAppClosing) {
-			select {
-			case closed <- struct{}{}:
-			default:
-				return
-			}
+		rType := RequestType(r.Header.Get("DD-Telemetry-Request-Type"))
+		if rType != RequestTypeDistributions {
+			return
 		}
-		req := telemetry.Request{
-			Payload: new(telemetry.Metrics),
+		req := Body{
+			Payload: new(DistributionMetrics),
 		}
 		dec := json.NewDecoder(r.Body)
 		err := dec.Decode(&req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if req.RequestType != telemetry.RequestTypeGenerateMetrics {
+		v, ok := req.Payload.(*DistributionMetrics)
+		if !ok {
+			t.Fatal("payload set metrics but didn't get metrics")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, v.Series...)
+		if len(got) == expectedMetrics {
+			select {
+			case closed <- struct{}{}:
+			default:
+			}
 			return
 		}
-		v, ok := req.Payload.(*telemetry.Metrics)
+	}))
+	defer server.Close()
+
+	go func() {
+		client := &client{
+			URL: server.URL,
+		}
+		client.start(nil, NamespaceTracers)
+		// Records should have the most recent value
+		client.Record(NamespaceTracers, MetricKindDist, "soobar", 1, nil, false)
+		client.Record(NamespaceTracers, MetricKindDist, "soobar", 3, nil, false)
+		client.mu.Lock()
+		client.flush()
+		client.mu.Unlock()
+	}()
+
+	<-closed
+
+	want := []DistributionSeries{
+		// Distributions do not record metric types since it is its own event
+		{Metric: "soobar", Points: []float64{3}, Tags: []string{}},
+	}
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
+func TestDisabledClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("shouldn't have got any requests")
+	}))
+	defer server.Close()
+
+	client := &client{
+		URL: server.URL,
+	}
+	client.start(nil, NamespaceTracers)
+	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
+	client.Stop()
+}
+
+func TestNonStartedClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("shouldn't have got any requests")
+	}))
+	defer server.Close()
+
+	client := &client{
+		URL: server.URL,
+	}
+	client.Record(NamespaceTracers, MetricKindGauge, "foobar", 1, nil, false)
+	client.Count(NamespaceTracers, "bonk", 4, []string{"org:1"}, false)
+	client.Stop()
+}
+
+func TestConcurrentClient(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
+	var (
+		mu  sync.Mutex
+		got []Series
+	)
+	closed := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Log("foo")
+		req := Body{
+			Payload: new(Metrics),
+		}
+		dec := json.NewDecoder(r.Body)
+		err := dec.Decode(&req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if req.RequestType != RequestTypeGenerateMetrics {
+			return
+		}
+		v, ok := req.Payload.(*Metrics)
 		if !ok {
 			t.Fatal("payload set metrics but didn't get metrics")
 		}
@@ -199,16 +264,21 @@ func TestConcurrentClient(t *testing.T) {
 			}
 		}
 		mu.Lock()
+		defer mu.Unlock()
 		got = append(got, v.Series...)
-		mu.Unlock()
+		select {
+		case closed <- struct{}{}:
+		default:
+			return
+		}
 	}))
 	defer server.Close()
 
 	go func() {
-		client := &telemetry.Client{
+		client := &client{
 			URL: server.URL,
 		}
-		client.Start(nil, nil)
+		client.start(nil, NamespaceTracers)
 		defer client.Stop()
 
 		var wg sync.WaitGroup
@@ -217,7 +287,7 @@ func TestConcurrentClient(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < 10; j++ {
-					client.Count("foobar", 1, []string{"tag"}, false)
+					client.Count(NamespaceTracers, "foobar", 1, []string{"tag"}, false)
 				}
 			}()
 		}
@@ -226,7 +296,7 @@ func TestConcurrentClient(t *testing.T) {
 
 	<-closed
 
-	want := []telemetry.Series{
+	want := []Series{
 		{Metric: "foobar", Type: "count", Points: [][2]float64{{0, 80}}, Tags: []string{"tag"}},
 	}
 	sort.Slice(got, func(i, j int) bool {
@@ -234,5 +304,86 @@ func TestConcurrentClient(t *testing.T) {
 	})
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("want %+v, got %+v", want, got)
+	}
+}
+
+// fakeAgentless is a helper function for TestAgentlessRetry. It replaces the agentless
+// endpoint in the telemetry package with a custom server URL and returns
+//  1. a function that waits for a telemetry request to that server
+//  2. a cleanup function that closes the server and resets the agentless endpoint to
+//     its original value
+func fakeAgentless(ctx context.Context, t *testing.T) (wait func(), cleanup func()) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppStarted) {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
+		}
+	}))
+	prevEndpoint := SetAgentlessEndpoint(server.URL)
+	return func() {
+			select {
+			case <-ctx.Done():
+				t.Fatalf("fake agentless endpoint timed out waiting for telemetry")
+			case <-received:
+				return
+			}
+		}, func() {
+			server.Close()
+			SetAgentlessEndpoint(prevEndpoint)
+		}
+}
+
+// TestAgentlessRetry tests the behavior of the telemetry client in the case where
+// the client cannot connect to the agent. The client should re-try the request
+// with the agentless endpoint.
+func TestAgentlessRetry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	waitAgentlessEndpoint, cleanup := fakeAgentless(ctx, t)
+	defer cleanup()
+
+	brokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}))
+	brokenServer.Close()
+
+	client := &client{
+		URL: brokenServer.URL,
+	}
+	client.start(nil, NamespaceTracers)
+	waitAgentlessEndpoint()
+}
+
+func TestCollectDependencies(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	received := make(chan *Dependencies)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeDependenciesLoaded) {
+			var body Body
+			body.Payload = new(Dependencies)
+			err := json.NewDecoder(r.Body).Decode(&body)
+			if err != nil {
+				t.Errorf("bad body: %s", err)
+			}
+			select {
+			case received <- body.Payload.(*Dependencies):
+			default:
+			}
+		}
+	}))
+	defer server.Close()
+	client := &client{
+		URL: server.URL,
+	}
+	client.start(nil, NamespaceTracers)
+	select {
+	case <-received:
+	case <-ctx.Done():
+		t.Fatalf("Timed out waiting for dependency payload")
 	}
 }
