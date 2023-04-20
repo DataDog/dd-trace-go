@@ -201,7 +201,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 							sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
 						}
 					}
-					op.AddSecurityEvents(matches)
+					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
 			}))
