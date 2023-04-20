@@ -52,7 +52,6 @@ jobs:
             scenario: APPSEC_LOW_WAF_TIMEOUT
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
-
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E
             env:
@@ -93,9 +92,7 @@ jobs:
         run: ./build.sh
 
       - name: Run
-        env:
-          ${{ matrix.env }}
-        run: ./run.sh ${{ matrix.scenario }}
+        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
         if: ${{ always() }}
