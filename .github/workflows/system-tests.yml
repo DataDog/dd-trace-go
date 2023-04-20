@@ -32,8 +32,6 @@ jobs:
           - APPSEC_BLOCKING
           - APPSEC_IP_BLOCKING
           - APPSEC_REQUEST_BLOCKING
-          - APM_TRACING_E2E
-          - APM_TRACING_E2E_SINGLE_SPAN
         include:
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
@@ -53,14 +51,22 @@ jobs:
             scenario: APPSEC_LOW_WAF_TIMEOUT
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
+          - scenario: APM_TRACING_E2E
+            specific-env:
+              DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+              DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+              DD_SITE: "datadoghq.com"
+          - scenario: APM_TRACING_E2E_SINGLE_SPAN
+            specific-env:
+              DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+              DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+              DD_SITE: "datadoghq.com"
 
       fail-fast: false
     env:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-      DD_SITE: "datadoghq.com"
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Setup python 3.9
@@ -82,6 +88,7 @@ jobs:
         run: ./build.sh
 
       - name: Run
+        env: {{ matrix.specific-env }}
         run: ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
