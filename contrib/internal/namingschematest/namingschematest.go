@@ -99,7 +99,13 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 					spans := genSpans(t, tc.serviceNameOverride)
 					require.Len(t, spans, len(tc.wantV0), "the number of spans and number of assertions for v0 don't match")
 					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV0[i], spans[i].Tag(ext.ServiceName))
+						want := tc.wantV0[i]
+						got := spans[i].Tag(ext.ServiceName)
+						if want == "" {
+							assert.Empty(t, got)
+						} else {
+							assert.Equal(t, want, got)
+						}
 					}
 				})
 				t.Run("v1", func(t *testing.T) {
@@ -110,7 +116,13 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 					spans := genSpans(t, tc.serviceNameOverride)
 					require.Len(t, spans, len(tc.wantV1), "the number of spans and number of assertions for v1 don't match")
 					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName))
+						want := tc.wantV1[i]
+						got := spans[i].Tag(ext.ServiceName)
+						if want == "" {
+							assert.Empty(t, got)
+						} else {
+							assert.Equal(t, want, got)
+						}
 					}
 				})
 			})
