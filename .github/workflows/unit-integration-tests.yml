@@ -233,6 +233,10 @@ jobs:
           KAFKA_BROKER_ID: 1
         ports:
           - 9092:9092
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
     steps:
       - name: Checkout
         uses: actions/checkout@v2
