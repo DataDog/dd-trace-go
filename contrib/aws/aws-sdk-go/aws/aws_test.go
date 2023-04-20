@@ -9,12 +9,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -127,8 +128,7 @@ func TestWithErrorCheck(t *testing.T) {
 	assert.Len(t, spans, 2)
 	assert.Equal(t, spans[1].TraceID(), spans[0].TraceID())
 
-	s := spans[0]
-	assert.Nil(t, s.Tag(ext.Error))
+	assert.Nil(t, spans[0].Tag(ext.Error))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

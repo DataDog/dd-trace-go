@@ -9,12 +9,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"github.com/aws/smithy-go"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/aws/smithy-go"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
