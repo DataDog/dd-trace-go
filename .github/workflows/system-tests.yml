@@ -52,9 +52,9 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_CUSTOM_OBFUSCATION
           - scenario: APM_TRACING_E2E
-            specific-env: { DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}, DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}, DD_SITE: "datadoghq.com" }
+            specific-env: DD_API_KEY=${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }} DD_APPLICATION_KEY=${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }} DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
-            specific-env: { DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}, DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}, DD_SITE: "datadoghq.com" }
+            specific-env: DD_API_KEY=${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }} DD_APPLICATION_KEY=${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }} DD_SITE="datadoghq.com"
 
       fail-fast: false
     env:
@@ -82,8 +82,7 @@ jobs:
         run: ./build.sh
 
       - name: Run
-        env: ${{ matrix.specific-env }}
-        run: ./run.sh ${{ matrix.scenario }}
+        run: env ${{ matrix.specific-env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
         if: ${{ always() }}
