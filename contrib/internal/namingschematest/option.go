@@ -17,8 +17,10 @@ func newConfig() *config {
 	}
 }
 
+// Option is a type used to customize behavior of functions in this package.
 type Option func(*config)
 
+// WithServiceNameAssertions allows you to override the service name assertions for a specific naming schema version.
 func WithServiceNameAssertions(v namingschema.Version, s ServiceNameAssertions) Option {
 	return func(cfg *config) {
 		cfg.wantServiceName[v] = s
