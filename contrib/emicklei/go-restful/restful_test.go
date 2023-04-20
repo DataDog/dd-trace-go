@@ -7,7 +7,6 @@ package restful
 
 import (
 	"errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/emicklei/go-restful"
 	"github.com/stretchr/testify/assert"

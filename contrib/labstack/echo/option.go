@@ -6,10 +6,10 @@
 package echo
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 const defaultServiceName = "echo"

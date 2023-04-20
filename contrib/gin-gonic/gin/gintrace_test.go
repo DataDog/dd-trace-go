@@ -8,12 +8,12 @@ package gin
 import (
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"html/template"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
