@@ -2,8 +2,9 @@ package awsnamingschema
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type GetV0SpanNameFunc func(awsService string) string
