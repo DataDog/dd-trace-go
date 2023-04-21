@@ -24,6 +24,7 @@ type MockClient struct {
 	Integrations    []string
 	ProfilerEnabled bool
 	AsmEnabled      bool
+	Metrics         map[telemetry.Namespace]map[string]float64
 }
 
 // ProductStart starts and adds configuration data to the mock client.
@@ -32,6 +33,9 @@ func (c *MockClient) ProductStart(namespace telemetry.Namespace, configuration [
 	defer c.mu.Unlock()
 	c.Started = true
 	c.Configuration = append(c.Configuration, configuration...)
+	if len(c.Metrics) == 0 {
+		c.Metrics = make(map[telemetry.Namespace]map[string]float64)
+	}
 	c.productChange(namespace, true)
 	if namespace == telemetry.NamespaceTracers {
 		c.productChange(telemetry.NamespaceASM, true)
@@ -63,13 +67,19 @@ func (c *MockClient) productChange(namespace telemetry.Namespace, enabled bool) 
 	}
 }
 
-// Gauge is NOOP for the mock client.
-func (c *MockClient) Gauge(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
+// Record stores the value for the given metric. It is currently mocked for `Gauge` and `Distribution` metric types.
+func (c *MockClient) Record(ns telemetry.Namespace, _ telemetry.MetricKind, name string, val float64, tags []string, common bool) {
 	c.On("Gauge", ns, name, val, tags, common).Return()
+	c.On("Record", ns, name, val, tags, common).Return()
 	_ = c.Called(ns, name, val, tags, common)
+	// record the val for tests that assert based on the value
+	if _, ok := c.Metrics[ns]; !ok {
+		c.Metrics[ns] = map[string]float64{}
+	}
+	c.Metrics[ns][name] = val
 }
 
-// Count is NOOP for the mock client.
+// Count counts the value for the given metric
 func (c *MockClient) Count(ns telemetry.Namespace, name string, val float64, tags []string, common bool) {
 	c.On("Count", ns, name, val, tags, common).Return()
 	_ = c.Called(ns, name, val, tags, common)

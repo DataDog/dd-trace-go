@@ -51,7 +51,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName("mongo." + evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
-		tracer.Tag("mongodb.query", string(b)),
+		tracer.Tag(m.cfg.spanName, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.PeerPort, port),
@@ -62,7 +62,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName, opts...)
 	key := spanKey{
 		ConnectionID: evt.ConnectionID,
 		RequestID:    evt.RequestID,
