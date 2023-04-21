@@ -330,6 +330,14 @@ func (t *trace) unsetPropagatingTag(key string) {
 	delete(t.propagatingTags, key)
 }
 
+// hasPropagatingTag performs a thread-safe lookup for propagating tags.
+func (t *trace) hasPropagatingTag(key string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	_, found := t.propagatingTags[key]
+	return found
+}
+
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
 	if t.locked {
 		return
