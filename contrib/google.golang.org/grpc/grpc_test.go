@@ -1022,8 +1022,54 @@ func TestCustomTag(t *testing.T) {
 	}
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(false, true)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.server", 4),
+		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(true, false)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.client", 4),
+		WithDDService:            lists.RepeatString("grpc.client", 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
+	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -1033,19 +1079,23 @@ func TestNamingSchema(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRigWithInterceptors(
-			[]grpc.ServerOption{
+		var serverInterceptors []grpc.ServerOption
+		if traceServer {
+			serverInterceptors = append(serverInterceptors,
 				grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
 				grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
 				grpc.StatsHandler(NewServerStatsHandler(opts...)),
-			},
-			[]grpc.DialOption{
-				grpc.WithInsecure(),
+			)
+		}
+		clientInterceptors := []grpc.DialOption{grpc.WithInsecure()}
+		if traceClient {
+			clientInterceptors = append(clientInterceptors,
 				grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
 				grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
 				grpc.WithStatsHandler(NewClientStatsHandler(opts...)),
-			},
-		)
+			)
+		}
+		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
 		require.NoError(t, err)
 		defer rig.Close()
 		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
@@ -1062,45 +1112,9 @@ func TestNamingSchema(t *testing.T) {
 		// to flush the spans
 		_, _ = stream.Recv()
 
-		waitForSpans(mt, 8)
+		waitForSpans(mt, 4)
 		return mt.FinishedSpans()
-	})
-	serverSpans, clientSpans := []int{0, 1, 4, 5}, []int{2, 3, 6, 7}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 8)
-		for _, i := range serverSpans {
-			assert.Equal(t, "grpc.server", spans[i].OperationName())
-		}
-		for _, i := range clientSpans {
-			assert.Equal(t, "grpc.client", spans[i].OperationName())
-		}
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 8)
-		for _, i := range serverSpans {
-			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
-		}
-		for _, i := range clientSpans {
-			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
-		}
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults: lists.ConcatStringSlices(
-			lists.RepeatedStringSlice("grpc.server", 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-			lists.RepeatedStringSlice("grpc.server", 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-		),
-		WithDDService: lists.ConcatStringSlices(
-			lists.RepeatedStringSlice(namingschematest.TestDDService, 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-			lists.RepeatedStringSlice(namingschematest.TestDDService, 2),
-			lists.RepeatedStringSlice("grpc.client", 2),
-		),
-		WithDDServiceAndOverride: lists.RepeatedStringSlice(namingschematest.TestServiceOverride, 8),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func BenchmarkUnaryServerInterceptor(b *testing.B) {

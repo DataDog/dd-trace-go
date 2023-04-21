@@ -48,7 +48,7 @@ type (
 	rulesOverrideEntry struct {
 		ID          string        `json:"id,omitempty"`
 		RulesTarget []interface{} `json:"rules_target,omitempty"`
-		Enabled     bool          `json:"enabled,omitempty"`
+		Enabled     interface{}   `json:"enabled,omitempty"`
 		OnMatch     interface{}   `json:"on_match,omitempty"`
 	}
 
@@ -166,6 +166,7 @@ func (r *rulesManager) compile() {
 		r.latest.Overrides = append(r.latest.Overrides, v.Overrides...)
 		r.latest.Exclusions = append(r.latest.Exclusions, v.Exclusions...)
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
+		r.latest.RulesData = append(r.latest.RulesData, v.RulesData...)
 		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 }

@@ -73,14 +73,14 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 				serviceNameOverride: "",
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDService,
-				wantV1:              lists.RepeatedStringSlice(TestDDService, len(wantV0.WithDDService)),
+				wantV1:              lists.RepeatString(TestDDService, len(wantV0.WithDDService)),
 			},
 			{
 				name:                "WithGlobalDDServiceAndOverride",
 				serviceNameOverride: TestServiceOverride,
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDServiceAndOverride,
-				wantV1:              lists.RepeatedStringSlice(TestServiceOverride, len(wantV0.WithDDServiceAndOverride)),
+				wantV1:              lists.RepeatString(TestServiceOverride, len(wantV0.WithDDServiceAndOverride)),
 			},
 		}
 		for _, tc := range testCases {
@@ -110,7 +110,7 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 					spans := genSpans(t, tc.serviceNameOverride)
 					require.Len(t, spans, len(tc.wantV1), "the number of spans and number of assertions for v1 don't match")
 					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName), "incorrect service name for span: %s", spans[i].OperationName())
+						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName))
 					}
 				})
 			})
