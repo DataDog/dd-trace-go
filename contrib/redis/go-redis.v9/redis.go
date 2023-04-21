@@ -100,6 +100,12 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 			tracer.Tag("addrs", strings.Join(addrs, ", ")),
 		}
 	}
+	additionalTags = append(additionalTags,
+		tracer.SpanType(ext.SpanTypeRedis),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+	)
 	return additionalTags
 }
 
@@ -115,15 +121,11 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		raw := cmd.String()
 		length := strings.Count(raw, " ")
 		p := ddh.params
-		startOpts := make([]ddtrace.StartSpanOption, 0, 7+1+len(ddh.additionalTags)+1) // 7 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts := make([]ddtrace.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
-			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
 			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 			tracer.Tag("redis.args_length", strconv.Itoa(length)),
-			tracer.Tag(ext.Component, componentName),
-			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		)
 		if !p.config.skipRaw {
 			startOpts = append(startOpts, tracer.Tag("redis.raw_command", raw))
@@ -148,15 +150,11 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
 		p := ddh.params
-		startOpts := make([]ddtrace.StartSpanOption, 0, 7+1+len(ddh.additionalTags)+1) // 7 options below + redis.raw_command + ddh.additionalTags + analyticsRate
+		startOpts := make([]ddtrace.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
-			tracer.SpanType(ext.SpanTypeRedis),
 			tracer.ServiceName(p.config.serviceName),
 			tracer.ResourceName("redis.pipeline"),
 			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-			tracer.Tag(ext.Component, componentName),
-			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		)
 		if !p.config.skipRaw {
 			raw := commandsToString(cmds)

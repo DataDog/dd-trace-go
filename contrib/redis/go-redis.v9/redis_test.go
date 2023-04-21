@@ -206,9 +206,13 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
 		config := &ddtrace.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"out.db":   "0",
-			"out.host": "127.0.0.1",
-			"out.port": "6379",
+			"component": "redis/go-redis.v9",
+			"db.system": "redis",
+			"out.db":    "0",
+			"out.host":  "127.0.0.1",
+			"out.port":  "6379",
+			"span.kind": "client",
+			"span.type": "redis",
 		}
 
 		additionalTagOptions := additionalTagOptions(simpleClient)
@@ -228,7 +232,11 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		failoverClient := redis.NewUniversalClient(failoverClientOpts)
 		config := &ddtrace.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"out.db": "0",
+			"out.db":    "0",
+			"component": "redis/go-redis.v9",
+			"db.system": "redis",
+			"span.kind": "client",
+			"span.type": "redis",
 		}
 
 		additionalTagOptions := additionalTagOptions(failoverClient)
@@ -248,7 +256,11 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		clusterClient := redis.NewUniversalClient(clusterClientOpts)
 		config := &ddtrace.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"addrs": "127.0.0.1:6379, 127.0.0.2:6379",
+			"addrs":     "127.0.0.1:6379, 127.0.0.2:6379",
+			"component": "redis/go-redis.v9",
+			"db.system": "redis",
+			"span.kind": "client",
+			"span.type": "redis",
 		}
 
 		additionalTagOptions := additionalTagOptions(clusterClient)
