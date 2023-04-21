@@ -146,6 +146,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return map[string]rc.ApplyStatus{}
 	}
 
+	// Create a new local rulesManager
 	r := a.cfg.rulesManager.clone()
 	statuses, err := combineRCRulesUpdates(r, updates)
 	if err != nil {
@@ -155,16 +156,17 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 
 	// Compile the final rules once all updates have been processed and no error occurred
 	r.compile()
-	data := r.raw()
-	log.Debug("appsec: Remote config: final compiled rules: %s", data)
+	log.Debug("appsec: Remote config: final compiled rules: %s", r)
+
 	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
-	if err = a.swapWAF(data); err != nil {
+	if err = a.swapWAF(r.latest); err != nil {
 		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
 	} else {
+		// Replace the rulesManager with the new one holding the new state
 		a.cfg.rulesManager = r
 	}
 	return statuses
@@ -288,8 +290,6 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 
 func (a *appsec) startRC() {
 	if a.rc != nil {
-		a.rc.RegisterCallback(a.onRemoteActivation)
-		a.rc.RegisterCallback(a.onRCRulesUpdate)
 		a.rc.Start()
 	}
 }
@@ -349,6 +349,7 @@ func (a *appsec) enableRemoteActivation() error {
 	}
 	a.registerRCProduct(rc.ProductASMFeatures)
 	a.registerRCCapability(remoteconfig.ASMActivation)
+	a.rc.RegisterCallback(a.onRemoteActivation)
 	return nil
 }
 
@@ -361,6 +362,7 @@ func (a *appsec) enableRCBlocking() {
 	a.registerRCProduct(rc.ProductASM)
 	a.registerRCProduct(rc.ProductASMDD)
 	a.registerRCProduct(rc.ProductASMData)
+	a.rc.RegisterCallback(a.onRCRulesUpdate)
 
 	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
 		a.registerRCCapability(remoteconfig.ASMUserBlocking)
@@ -380,4 +382,5 @@ func (a *appsec) disableRCBlocking() {
 	a.unregisterRCCapability(remoteconfig.ASMIPBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMRequestBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMUserBlocking)
+	a.rc.UnregisterCallback(a.onRCRulesUpdate)
 }

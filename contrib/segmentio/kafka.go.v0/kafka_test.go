@@ -198,12 +198,5 @@ func TestNamingSchema(t *testing.T) {
 			opts,
 		)
 	}
-	// first is producer and second is consumer span
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"kafka", "kafka"},
-		WithDDService:            []string{"kafka", namingschematest.TestDDService},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genSpans))
+	namingschematest.NewKafkaTest(genSpans)(t)
 }

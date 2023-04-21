@@ -73,6 +73,13 @@ jobs:
           DD_SITE: "datadoghq.com"
         run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
 
+      - name: Run ASM IP blocking scenario
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_IP_BLOCKING
+
       - name: Run ASM blocking scenario
         env:
           DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
@@ -100,6 +107,13 @@ jobs:
           DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
           DD_SITE: "datadoghq.com"
         run: ./run.sh REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
+
+      - name: Run APPSEC_RATE_LIMITER remote configuration test
+        env:
+          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+          DD_SITE: "datadoghq.com"
+        run: ./run.sh APPSEC_RATE_LIMITER
 
       - name: Compress artifact
         if: ${{ always() }}

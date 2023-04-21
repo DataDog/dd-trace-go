@@ -21,6 +21,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -186,6 +188,17 @@ func TestShutdownOnce(t *testing.T) {
 	assert.Equal(uint32(1), tp.stopped)
 	assert.Equal(sp, nil)
 	assert.Equal(ctx, nil)
+}
+
+func TestSpanTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.MockClient)
+	defer telemetry.MockGlobalClient(telemetryClient)()
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	_, _ = tr.Start(context.Background(), "otel.span")
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.spans_created", 1.0, *new([]string), true)
+	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
 func BenchmarkApiWithNoTags(b *testing.B) {
