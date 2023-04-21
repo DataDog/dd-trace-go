@@ -86,43 +86,53 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				if tc.ddService != "" {
-					svc := globalconfig.ServiceName()
-					defer globalconfig.SetServiceName(svc)
-					globalconfig.SetServiceName(tc.ddService)
+					reset := withDDService(t, tc.ddService)
+					defer reset()
 				}
-
 				t.Run("v0", func(t *testing.T) {
-					version := namingschema.GetVersion()
-					defer namingschema.SetVersion(version)
-					namingschema.SetVersion(namingschema.SchemaV0)
-
+					reset := withNamingSchemaVersion(t, namingschema.SchemaV0)
+					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
-					require.Len(t, spans, len(tc.wantV0), "the number of spans and number of assertions for v0 don't match")
-					for i := 0; i < len(spans); i++ {
-						want := tc.wantV0[i]
-						got := spans[i].Tag(ext.ServiceName)
-						spanName := spans[i].OperationName()
-						if want == "" {
-							assert.Empty(t, got, "expected empty service name tag for span: %s", spanName)
-						} else {
-							assert.Equal(t, want, got, "incorrect service name for span: %s", spanName)
-						}
-					}
+					assertServiceNames(t, spans, tc.wantV0)
 				})
 				t.Run("v1", func(t *testing.T) {
-					version := namingschema.GetVersion()
-					defer namingschema.SetVersion(version)
-					namingschema.SetVersion(namingschema.SchemaV1)
-
+					reset := withNamingSchemaVersion(t, namingschema.SchemaV1)
+					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
-					require.Len(t, spans, len(tc.wantV1), "the number of spans and number of assertions for v1 don't match")
-					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1[i], spans[i].Tag(ext.ServiceName))
-					}
+					assertServiceNames(t, spans, tc.wantV1)
 				})
 			})
 		}
 	}
+}
+
+func assertServiceNames(t *testing.T, spans []mocktracer.Span, wantServiceNames []string) {
+	t.Helper()
+	require.Len(t, spans, len(wantServiceNames), "the number of spans and number of assertions should be the same")
+	for i := 0; i < len(spans); i++ {
+		want, got, spanName := wantServiceNames[i], spans[i].Tag(ext.ServiceName), spans[i].OperationName()
+		if want == "" {
+			assert.Empty(t, got, "expected empty service name tag for span: %s", spanName)
+		} else {
+			assert.Equal(t, want, got, "incorrect service name for span: %s", spanName)
+		}
+	}
+}
+
+func withNamingSchemaVersion(t *testing.T, version namingschema.Version) func() {
+	t.Helper()
+	prevVersion := namingschema.GetVersion()
+	reset := func() { namingschema.SetVersion(prevVersion) }
+	namingschema.SetVersion(version)
+	return reset
+}
+
+func withDDService(t *testing.T, ddService string) func() {
+	t.Helper()
+	prevName := globalconfig.ServiceName()
+	reset := func() { globalconfig.SetServiceName(prevName) }
+	globalconfig.SetServiceName(ddService)
+	return reset
 }
 
 // AssertSpansFn allows to make assertions on the generated spans.
