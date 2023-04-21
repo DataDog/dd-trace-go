@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/twitchtv/twirp"
 	"github.com/twitchtv/twirp/ctxsetters"
 	"github.com/twitchtv/twirp/example"
@@ -374,6 +376,64 @@ func (n *notifyListener) Accept() (c net.Conn, err error) {
 	return n.Listener.Accept()
 }
 
+func TestHaberdash(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	client, cleanup := startIntegrationTestServer(t)
+	defer cleanup()
+
+	hat, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
+	require.NoError(t, err)
+	assert.Equal("purple", hat.Color)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3)
+	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
+	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
+	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client, cleanup := startIntegrationTestServer(t, opts...)
+		defer cleanup()
+		_, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 3)
+		assert.Equal(t, "twirp.Haberdasher", spans[0].OperationName())
+		assert.Equal(t, "twirp.handler", spans[1].OperationName())
+		assert.Equal(t, "twirp.request", spans[2].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 3)
+		assert.Equal(t, "twirp.server.request", spans[0].OperationName())
+		assert.Equal(t, "twirp.handler", spans[1].OperationName())
+		assert.Equal(t, "twirp.client.request", spans[2].OperationName())
+	}
+	ddService := namingschematest.TestDDService
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"twirp-server", "twirp-server", "twirp-client"},
+		WithDDService:            []string{ddService, ddService, ddService},
+		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
 type haberdasher int32
 
 func (h haberdasher) MakeHat(_ context.Context, size *example.Size) (*example.Hat, error) {
@@ -388,19 +448,15 @@ func (h haberdasher) MakeHat(_ context.Context, size *example.Size) (*example.Ha
 	return hat, nil
 }
 
-func TestHaberdash(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	assert := assert.New(t)
-
+func startIntegrationTestServer(t *testing.T, opts ...Option) (example.Haberdasher, func()) {
 	l, err := net.Listen("tcp4", "127.0.0.1:0")
-	assert.NoError(err)
-	defer l.Close()
+	require.NoError(t, err)
 
 	readyCh := make(chan struct{})
 	nl := &notifyListener{Listener: l, ch: readyCh}
 
-	server := WrapServer(example.NewHaberdasherServer(haberdasher(6), NewServerHooks()))
+	hooks := NewServerHooks(opts...)
+	server := WrapServer(example.NewHaberdasherServer(haberdasher(6), hooks), opts...)
 	errCh := make(chan error)
 	go func() {
 		err := http.Serve(nl, server)
@@ -409,22 +465,15 @@ func TestHaberdash(t *testing.T) {
 		}
 		close(errCh)
 	}()
-
 	select {
 	case <-readyCh:
 		break
 	case err := <-errCh:
-		assert.FailNow("server not started", err)
+		l.Close()
+		assert.FailNow(t, "server not started", err)
 	}
-
-	client := example.NewHaberdasherJSONClient("http://"+nl.Addr().String(), WrapClient(&http.Client{}))
-	hat, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
-	assert.NoError(err)
-	assert.Equal("purple", hat.Color)
-
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 3)
-	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
-	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
-	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
+	client := example.NewHaberdasherJSONClient("http://"+nl.Addr().String(), WrapClient(http.DefaultClient, opts...))
+	return client, func() {
+		assert.NoError(t, l.Close())
+	}
 }
