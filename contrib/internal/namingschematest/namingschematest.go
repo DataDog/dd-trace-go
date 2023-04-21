@@ -86,17 +86,17 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				if tc.ddService != "" {
-					reset := withDDService(t, tc.ddService)
+					reset := withDDService(tc.ddService)
 					defer reset()
 				}
 				t.Run("v0", func(t *testing.T) {
-					reset := withNamingSchemaVersion(t, namingschema.SchemaV0)
+					reset := withNamingSchemaVersion(namingschema.SchemaV0)
 					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
 					assertServiceNames(t, spans, tc.wantV0)
 				})
 				t.Run("v1", func(t *testing.T) {
-					reset := withNamingSchemaVersion(t, namingschema.SchemaV1)
+					reset := withNamingSchemaVersion(namingschema.SchemaV1)
 					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
 					assertServiceNames(t, spans, tc.wantV1)
@@ -119,16 +119,14 @@ func assertServiceNames(t *testing.T, spans []mocktracer.Span, wantServiceNames 
 	}
 }
 
-func withNamingSchemaVersion(t *testing.T, version namingschema.Version) func() {
-	t.Helper()
+func withNamingSchemaVersion(version namingschema.Version) func() {
 	prevVersion := namingschema.GetVersion()
 	reset := func() { namingschema.SetVersion(prevVersion) }
 	namingschema.SetVersion(version)
 	return reset
 }
 
-func withDDService(t *testing.T, ddService string) func() {
-	t.Helper()
+func withDDService(ddService string) func() {
 	prevName := globalconfig.ServiceName()
 	reset := func() { globalconfig.SetServiceName(prevName) }
 	globalconfig.SetServiceName(ddService)
