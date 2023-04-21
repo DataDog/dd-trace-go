@@ -17,9 +17,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/redis/go-redis/v9"
 )
+
+const componentName = "redis/go-redis.v9"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 type datadogHook struct {
 	*params
@@ -114,7 +121,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 			tracer.ServiceName(p.config.serviceName),
 			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 			tracer.Tag("redis.args_length", strconv.Itoa(length)),
-			tracer.Tag(ext.Component, "redis/go-redis.v9"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		)
@@ -147,7 +154,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 			tracer.ServiceName(p.config.serviceName),
 			tracer.ResourceName("redis.pipeline"),
 			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-			tracer.Tag(ext.Component, "redis/go-redis.v9"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 			tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		)
