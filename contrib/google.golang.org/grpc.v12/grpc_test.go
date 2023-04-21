@@ -10,12 +10,14 @@ import (
 	"net"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,7 +28,7 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(true)
+	rig, err := newRig(true, true)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -83,7 +85,7 @@ func TestChild(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(false)
+	rig, err := newRig(true, false)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -131,7 +133,7 @@ func TestPass(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(false)
+	rig, err := newRig(true, false)
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -193,12 +195,16 @@ func (r *rig) Close() {
 	r.listener.Close()
 }
 
-func newRig(traceClient bool) (*rig, error) {
-	return newRigWithOpts(traceClient, WithServiceName("grpc"))
+func newRig(traceServer, traceClient bool) (*rig, error) {
+	return newRigWithOpts(traceServer, traceClient, WithServiceName("grpc"))
 }
 
-func newRigWithOpts(traceClient bool, iopts ...InterceptorOption) (*rig, error) {
-	server := grpc.NewServer(grpc.UnaryInterceptor(UnaryServerInterceptor(iopts...)))
+func newRigWithOpts(traceServer, traceClient bool, iopts ...InterceptorOption) (*rig, error) {
+	var serverOpts []grpc.ServerOption
+	if traceServer {
+		serverOpts = append(serverOpts, grpc.UnaryInterceptor(UnaryServerInterceptor(iopts...)))
+	}
+	server := grpc.NewServer(serverOpts...)
 
 	RegisterFixtureServer(server, new(fixtureServer))
 
@@ -229,7 +235,7 @@ func newRigWithOpts(traceClient bool, iopts ...InterceptorOption) (*rig, error) 
 
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...InterceptorOption) {
-		rig, err := newRigWithOpts(true, opts...)
+		rig, err := newRigWithOpts(true, true, opts...)
 		if err != nil {
 			t.Fatalf("error setting up rig: %s", err)
 		}
@@ -316,7 +322,7 @@ func TestSpanOpts(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRigWithOpts(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+	rig, err := newRigWithOpts(true, true, WithSpanOptions(tracer.Tag("foo", "bar")))
 	if err != nil {
 		t.Fatalf("error setting up rig: %s", err)
 	}
@@ -333,4 +339,75 @@ func TestSpanOpts(t *testing.T) {
 	for _, s := range spans {
 		assert.Equal(s.Tags()["foo"], "bar")
 	}
+}
+
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []InterceptorOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithOpts(true, false, opts...)
+		require.NoError(t, err)
+		defer rig.Close()
+		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "grpc.server", spans[0].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "grpc.server.request", spans[0].OperationName())
+	}
+	ddService := namingschematest.TestDDService
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"grpc.server"},
+		WithDDService:            []string{ddService},
+		WithDDServiceAndOverride: []string{serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []InterceptorOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithOpts(false, true, opts...)
+		require.NoError(t, err)
+		defer rig.Close()
+		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "grpc.client", spans[0].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "grpc.client.request", spans[0].OperationName())
+	}
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"grpc.client"},
+		WithDDService:            []string{"grpc.client"},
+		WithDDServiceAndOverride: []string{serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
