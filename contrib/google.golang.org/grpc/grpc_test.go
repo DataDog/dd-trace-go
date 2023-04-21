@@ -1026,13 +1026,13 @@ func TestServerNamingSchema(t *testing.T) {
 	genSpans := getGenSpansFn(false, true)
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 4)
-		for i := 0; i <= 3; i++ {
+		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.server", spans[i].OperationName())
 		}
 	}
 	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 4)
-		for i := 0; i <= 3; i++ {
+		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
 		}
 	}
@@ -1049,13 +1049,13 @@ func TestClientNamingSchema(t *testing.T) {
 	genSpans := getGenSpansFn(true, false)
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 4)
-		for i := 0; i <= 3; i++ {
+		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.client", spans[i].OperationName())
 		}
 	}
 	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 4)
-		for i := 0; i <= 3; i++ {
+		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
 		}
 	}
