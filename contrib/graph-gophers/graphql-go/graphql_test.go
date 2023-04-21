@@ -216,9 +216,9 @@ func TestNamingSchema(t *testing.T) {
 	ddService := namingschematest.TestDDService
 	serviceOverride := namingschematest.TestServiceOverride
 	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatedStringSlice("graphql.server", 2),
-		WithDDService:            lists.RepeatedStringSlice(ddService, 2),
-		WithDDServiceAndOverride: lists.RepeatedStringSlice(serviceOverride, 2),
+		WithDefaults:             lists.RepeatString("graphql.server", 2),
+		WithDDService:            lists.RepeatString(ddService, 2),
+		WithDDServiceAndOverride: lists.RepeatString(serviceOverride, 2),
 	}
 	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
 	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
