@@ -8,7 +8,6 @@ package grpc
 import (
 	"fmt"
 	"net"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
