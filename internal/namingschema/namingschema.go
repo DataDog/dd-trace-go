@@ -83,7 +83,7 @@ type Schema struct {
 
 // New initializes a new Schema.
 func New(vSchema VersionSupportSchema) *Schema {
-	return &Schema{selectedVersion: GetVersion(), vSchema: vSchema}
+	return &Schema{selectedVersion: sv, vSchema: vSchema}
 }
 
 // GetName returns the proper name for this Schema for the user selected version.
