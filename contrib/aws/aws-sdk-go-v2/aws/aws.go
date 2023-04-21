@@ -83,7 +83,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(getServiceName(mw.cfg, awsService)),
-			tracer.ResourceName(fmt.Sprintf("%s.%s", awsOperation, awsOperation)),
+			tracer.ResourceName(fmt.Sprintf("%s.%s", awsService, awsOperation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tagAWSOperation, awsOperation),
 			tracer.Tag(tagAWSService, awsOperation),
