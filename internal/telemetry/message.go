@@ -38,9 +38,12 @@ const (
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
 	RequestTypeAppHeartbeat RequestType = "app-heartbeat"
-	// RequestTypeGenerateMetrics contains all metrics accumulated by the
+	// RequestTypeGenerateMetrics contains count, gauge, or rate metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
+	// RequestTypeDistributions is to send distribution type metrics accumulated by the
+	// client, and is sent periodically along with the heartbeat
+	RequestTypeDistributions RequestType = "distributions"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
@@ -211,17 +214,42 @@ type Metrics struct {
 	Series    []Series  `json:"series"`
 }
 
-// Series is a sequence of observations for a single named metric
+// DistributionMetrics corresponds to the "distributions" request type
+type DistributionMetrics struct {
+	Namespace Namespace            `json:"namespace"`
+	Series    []DistributionSeries `json:"series"`
+}
+
+// Series is a sequence of observations for a single named metric.
+// The `Points` field will store a timestamp and value.
 type Series struct {
 	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
-	Type   string       `json:"type"`
-	Tags   []string     `json:"tags"`
+	// Interval is required for gauge and rate metrics
+	Interval int      `json:"interval,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Tags     []string `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
-	// assumed the metric is common. So we can't "omitempty" even though the
+	// the metric is common. So we can't "omitempty" even though the
+	// field is technically optional.
+	Common    bool   `json:"common"`
+	Namespace string `json:"namespace"`
+}
+
+// DistributionSeries is a sequence of observations for a distribution metric.
+// Unlike `Series`, DistributionSeries does not store timestamps in `Points`
+type DistributionSeries struct {
+	Metric string    `json:"metric"`
+	Points []float64 `json:"points"`
+	Tags   []string  `json:"tags"`
+	// Common distinguishes metrics which are cross-language vs.
+	// language-specific.
+	//
+	// NOTE: If this field isn't present in the request, the API assumes
+	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
 	Common bool `json:"common"`
 }
