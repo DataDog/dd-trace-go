@@ -10,10 +10,12 @@ import (
 	"math"
 	"strconv"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -75,7 +77,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(h.resourceName(req)),
 		tracer.Tag(tagAWSAgent, h.awsAgent(req)),
-		tracer.Tag(tagAWSOperation, h.awsOperation(req)),
+		tracer.Tag(tagAWSOperation, awsOperationFromRequest(req)),
 		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
@@ -85,7 +87,7 @@ func (h *handlers) Send(req *request.Request) {
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
-	_, ctx := tracer.StartSpanFromContext(req.Context(), h.operationName(req), opts...)
+	_, ctx := tracer.StartSpanFromContext(req.Context(), getSpanName(req), opts...)
 	req.SetContext(ctx)
 }
 
@@ -102,19 +104,20 @@ func (h *handlers) Complete(req *request.Request) {
 	span.Finish(tracer.WithError(req.Error))
 }
 
-func (h *handlers) operationName(req *request.Request) string {
-	return h.awsService(req) + ".command"
-}
-
 func (h *handlers) resourceName(req *request.Request) string {
-	return h.awsService(req) + "." + req.Operation.Name
+	return awsServiceFromRequest(req) + "." + req.Operation.Name
 }
 
 func (h *handlers) serviceName(req *request.Request) string {
 	if h.cfg.serviceName != "" {
 		return h.cfg.serviceName
 	}
-	return "aws." + h.awsService(req)
+	defaultName := "aws." + awsServiceFromRequest(req)
+	return namingschema.NewServiceNameSchema(
+		"",
+		defaultName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+	).GetName()
 }
 
 func (h *handlers) awsAgent(req *request.Request) string {
@@ -124,14 +127,21 @@ func (h *handlers) awsAgent(req *request.Request) string {
 	return "aws-sdk-go"
 }
 
-func (h *handlers) awsOperation(req *request.Request) string {
-	return req.Operation.Name
-}
-
 func (h *handlers) awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
 }
 
-func (h *handlers) awsService(req *request.Request) string {
+func getSpanName(req *request.Request) string {
+	awsService := awsServiceFromRequest(req)
+	awsOperation := awsOperationFromRequest(req)
+	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
+	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, getSpanNameV0).GetName()
+}
+
+func awsServiceFromRequest(req *request.Request) string {
 	return req.ClientInfo.ServiceName
+}
+
+func awsOperationFromRequest(req *request.Request) string {
+	return req.Operation.Name
 }

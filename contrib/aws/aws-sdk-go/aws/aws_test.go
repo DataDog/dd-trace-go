@@ -285,14 +285,18 @@ func TestNamingSchema(t *testing.T) {
 		defer mt.Stop()
 
 		s := newIntegrationTestSession(t, opts...)
+		ec2Client := ec2.New(s)
+		s3Client := s3.New(s)
+		sqsClient := sqs.New(s)
+		snsClient := sns.New(s)
 
-		_, err := ec2.New(s).DescribeInstances(&ec2.DescribeInstancesInput{})
+		_, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{})
 		require.NoError(t, err)
-		_, err = s3.New(s).ListBuckets(&s3.ListBucketsInput{})
+		_, err = s3Client.ListBuckets(&s3.ListBucketsInput{})
 		require.NoError(t, err)
-		_, err = sqs.New(s).ListQueues(&sqs.ListQueuesInput{})
+		_, err = sqsClient.ListQueues(&sqs.ListQueuesInput{})
 		require.NoError(t, err)
-		_, err = sns.New(s).ListTopics(&sns.ListTopicsInput{})
+		_, err = snsClient.ListTopics(&sns.ListTopicsInput{})
 		require.NoError(t, err)
 
 		return mt.FinishedSpans()
@@ -332,26 +336,28 @@ func TestMessagingNamingSchema(t *testing.T) {
 
 		s := newIntegrationTestSession(t, opts...)
 		resourceName := "test-naming-schema-aws-v1"
+		sqsClient := sqs.New(s)
+		snsClient := sns.New(s)
 
 		// create a SQS queue
-		sqsResp, err := sqs.New(s).CreateQueue(&sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
+		sqsResp, err := sqsClient.CreateQueue(&sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
 		require.NoError(t, err)
 
 		msg := &sqs.SendMessageInput{QueueUrl: sqsResp.QueueUrl, MessageBody: aws.String("body")}
-		_, err = sqs.New(s).SendMessage(msg)
+		_, err = sqsClient.SendMessage(msg)
 		require.NoError(t, err)
 
 		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl}
 		entry := &sqs.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
 		batchMsg.SetEntries([]*sqs.SendMessageBatchRequestEntry{entry})
-		_, err = sqs.New(s).SendMessageBatch(batchMsg)
+		_, err = sqsClient.SendMessageBatch(batchMsg)
 		require.NoError(t, err)
 
 		// create an SNS topic
-		snsResp, err := sns.New(s).CreateTopic(&sns.CreateTopicInput{Name: aws.String(resourceName)})
+		snsResp, err := snsClient.CreateTopic(&sns.CreateTopicInput{Name: aws.String(resourceName)})
 		require.NoError(t, err)
 
-		_, err = sns.New(s).Publish(&sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
+		_, err = snsClient.Publish(&sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
 		require.NoError(t, err)
 
 		return mt.FinishedSpans()

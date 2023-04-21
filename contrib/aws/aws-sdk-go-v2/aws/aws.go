@@ -11,9 +11,11 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -74,16 +76,17 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 	) {
-		operation := awsmiddleware.GetOperationName(ctx)
-		serviceID := awsmiddleware.GetServiceID(ctx)
+		awsOperation := awsmiddleware.GetOperationName(ctx)
+		awsService := awsmiddleware.GetServiceID(ctx)
+		spanName := getSpanName(awsService, awsOperation)
 
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
-			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
+			tracer.ServiceName(getServiceName(mw.cfg, awsService)),
+			tracer.ResourceName(fmt.Sprintf("%s.%s", awsOperation, awsOperation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tagAWSOperation, operation),
-			tracer.Tag(tagAWSService, serviceID),
+			tracer.Tag(tagAWSOperation, awsOperation),
+			tracer.Tag(tagAWSService, awsOperation),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -91,7 +94,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, fmt.Sprintf("%s.request", serviceID), opts...)
+		span, spanctx := tracer.StartSpanFromContext(ctx, spanName, opts...)
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
@@ -136,10 +139,19 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 	}), middleware.Before)
 }
 
-func serviceName(cfg *config, serviceID string) string {
+func getSpanName(awsService, awsOperation string) string {
+	getSpanNameV0 := func(awsService string) string { return awsService + ".request" }
+	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, getSpanNameV0).GetName()
+}
+
+func getServiceName(cfg *config, awsService string) string {
 	if cfg.serviceName != "" {
 		return cfg.serviceName
 	}
-
-	return fmt.Sprintf("aws.%s", serviceID)
+	defaultName := fmt.Sprintf("aws.%s", awsService)
+	return namingschema.NewServiceNameSchema(
+		"",
+		defaultName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+	).GetName()
 }
