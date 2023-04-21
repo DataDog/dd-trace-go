@@ -101,10 +101,11 @@ func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAsserti
 					for i := 0; i < len(spans); i++ {
 						want := tc.wantV0[i]
 						got := spans[i].Tag(ext.ServiceName)
+						spanName := spans[i].OperationName()
 						if want == "" {
-							assert.Empty(t, got)
+							assert.Empty(t, got, "expected empty service name tag for span: %s", spanName)
 						} else {
-							assert.Equal(t, want, got)
+							assert.Equal(t, want, got, "incorrect service name for span: %s", spanName)
 						}
 					}
 				})
