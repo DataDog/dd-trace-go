@@ -8,7 +8,6 @@ package grpc
 import (
 	"fmt"
 	"net"
-	"sort"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
