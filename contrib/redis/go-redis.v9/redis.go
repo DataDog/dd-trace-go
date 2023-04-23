@@ -111,7 +111,22 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		p := ddh.params
+		startOpts := make([]ddtrace.StartSpanOption, 0, 1+len(ddh.additionalTags)+1) // serviceName + ddh.additionalTags + analyticsRate
+		startOpts = append(startOpts, tracer.ServiceName(p.config.serviceName))
+		startOpts = append(startOpts, ddh.additionalTags...)
+		if !math.IsNaN(p.config.analyticsRate) {
+			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+		}
+		span, ctx := tracer.StartSpanFromContext(ctx, "redis.dial", startOpts...)
+
 		conn, err := hook(ctx, network, addr)
+
+		var finishOpts []ddtrace.FinishOption
+		if err != nil {
+			finishOpts = append(finishOpts, tracer.WithError(err))
+		}
+		span.Finish(finishOpts...)
 		return conn, err
 	}
 }
