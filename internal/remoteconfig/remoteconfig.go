@@ -212,10 +212,12 @@ func (c *Client) UnregisterCapability(cap Capability) {
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	productUpdates := make(map[string]ProductUpdate, len(c.Products))
+	for p := range c.Products {
+		productUpdates[p] = make(ProductUpdate)
+	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
 		for p := range c.Products {
-			productUpdates[p] = make(ProductUpdate)
 			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
@@ -350,7 +352,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	for i := range c.Capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, len(c.Products))
+	products := make([]string, 0, len(c.Products))
 	for p := range c.Products {
 		products = append(products, p)
 	}

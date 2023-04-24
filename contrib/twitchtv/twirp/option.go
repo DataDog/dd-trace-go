@@ -10,10 +10,17 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+)
+
+const (
+	defaultClientServiceName = "twirp-client"
+	defaultServerServiceName = "twirp-server"
 )
 
 type config struct {
 	serviceName   string
+	spanName      string
 	analyticsRate float64
 }
 
@@ -26,23 +33,24 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
 }
 
-func (cfg *config) serverServiceName() string {
-	if cfg.serviceName == "" {
-		return "twirp-server"
-	}
-	return cfg.serviceName
+func clientDefaults(cfg *config) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultClientServiceName,
+	).GetName()
+	cfg.spanName = namingschema.NewClientOutboundOp("twirp").GetName()
+	defaults(cfg)
 }
 
-func (cfg *config) clientServiceName() string {
-	if cfg.serviceName == "" {
-		return "twirp-client"
-	}
-	return cfg.serviceName
+func serverDefaults(cfg *config) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultServerServiceName,
+	).GetName()
+	// spanName is calculated dynamically since V0 span names are generated based on the twirp service name.
+	defaults(cfg)
 }
 
 // WithServiceName sets the given service name for the dialled connection.
