@@ -92,7 +92,6 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 			c.prev = nil
 		}
 	}()
-
 	return out
 }
 
