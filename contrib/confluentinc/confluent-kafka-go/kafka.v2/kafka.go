@@ -19,7 +19,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
-const componentName = "confluentinc/confluent-kafka-go/kafka"
+const componentName = "confluentinc/confluent-kafka-go/kafka.v2"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
