@@ -795,14 +795,10 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 	}); err != nil {
 		return nil, err
 	}
-
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
-	if err := parseTracestate(&ctx, stateHeader); err != nil {
-		return nil, err
-	}
-
+	parseTracestate(&ctx, stateHeader)
 	return &ctx, nil
 }
 
@@ -895,46 +891,66 @@ func parseTraceparent(ctx *spanContext, header string) error {
 // `sampling_priority` = `s`
 // `origin` = `o`
 // `_dd.p.` prefix = `t.`
-func parseTracestate(ctx *spanContext, header string) error {
+func parseTracestate(ctx *spanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
-		return nil
+		return
 	}
 	// if multiple headers are present, they must be combined and stored
 	setPropagatingTag(ctx, tracestateHeader, header)
-	list := strings.Split(strings.Trim(header, "\t "), ",")
-	for _, s := range list {
-		if !strings.HasPrefix(s, "dd=") {
+	combined := strings.Split(strings.Trim(header, "\t "), ",")
+	for _, group := range combined {
+		if !strings.HasPrefix(group, "dd=") {
 			continue
 		}
-		dd := strings.Split(s[len("dd="):], ";")
-		for _, val := range dd {
-			x := strings.SplitN(val, ":", 2)
-			if len(x) != 2 {
+		ddMembers := strings.Split(group[len("dd="):], ";")
+		dropDM := false
+		for _, member := range ddMembers {
+			keyVal := strings.SplitN(member, ":", 2)
+			if len(keyVal) != 2 {
 				continue
 			}
-			k, v := x[0], x[1]
-			if k == "o" {
-				ctx.origin = strings.ReplaceAll(v, "~", "=")
-			} else if k == "s" {
-				p, err := strconv.Atoi(v)
+			key, val := keyVal[0], keyVal[1]
+			if key == "o" {
+				ctx.origin = strings.ReplaceAll(val, "~", "=")
+			} else if key == "s" {
+				stateP, err := strconv.Atoi(val)
 				if err != nil {
-					// if the tracestate priority is absent, relying on traceparent value
+					// If the tracestate priority is absent,
+					// we rely on the traceparent sampled flag
+					// set in the parseTraceparent function.
 					continue
 				}
-				flagPriority, _ := ctx.samplingPriority()
-				if (flagPriority == 1 && p > 0) || (flagPriority == 0 && p <= 0) {
-					ctx.setSamplingPriority(p, samplernames.Unknown)
+				// The sampling priority and decision maker values are set based on
+				// the specification in the internal W3C context propagation RFC.
+				// See the document for more details.
+				parentP, _ := ctx.samplingPriority()
+				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
+					// As extracted from tracestate
+					ctx.setSamplingPriority(stateP, samplernames.Unknown)
 				}
-			} else if strings.HasPrefix(k, "t.") {
-				k = k[len("t."):]
-				v = strings.ReplaceAll(v, "~", "=")
-				setPropagatingTag(ctx, "_dd.p."+k, v)
+				if parentP == 1 && stateP <= 0 {
+					// Auto keep (1) and set the decision maker to default
+					ctx.setSamplingPriority(1, samplernames.Default)
+				}
+				if parentP == 0 && stateP > 0 {
+					// Auto drop (0) and drop the decision maker
+					ctx.setSamplingPriority(0, samplernames.Unknown)
+					dropDM = true
+				}
+			} else if strings.HasPrefix(key, "t.dm") {
+				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
+					continue
+				}
+				setPropagatingTag(ctx, keyDecisionMaker, val)
+			} else if strings.HasPrefix(key, "t.") {
+				keySuffix := key[len("t."):]
+				val = strings.ReplaceAll(val, "~", "=")
+				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
 			}
 		}
 	}
-	return nil
 }
 
 // extractTraceID128 extracts the trace id from v and populates the traceID
