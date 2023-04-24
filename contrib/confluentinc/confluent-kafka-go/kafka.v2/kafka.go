@@ -197,7 +197,6 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 	if out == nil {
 		return out
 	}
-
 	in := make(chan *kafka.Message, 1)
 	go func() {
 		for msg := range in {
