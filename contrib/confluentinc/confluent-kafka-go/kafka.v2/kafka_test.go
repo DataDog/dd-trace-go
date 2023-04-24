@@ -145,7 +145,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
 		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
-		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s.Tag(ext.Component))
+		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
