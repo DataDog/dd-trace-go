@@ -21,7 +21,6 @@ var (
 
 // This example shows how a span context can be passed from a producer to a consumer.
 func Example() {
-
 	tracer.Start()
 	defer tracer.Stop()
 
