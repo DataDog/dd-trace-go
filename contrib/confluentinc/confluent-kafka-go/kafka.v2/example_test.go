@@ -31,7 +31,6 @@ func Example() {
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
 	})
-
 	err = c.Subscribe(testTopic, nil)
 	if err != nil {
 		panic(err)
