@@ -57,8 +57,8 @@ func TestPrioritySampler(t *testing.T) {
 			{
 				in: `{}`,
 				out: map[key]float64{
-					key{"some-service", ""}:       1,
-					key{"obfuscate.http", "none"}: 1,
+					{"some-service", ""}:       1,
+					{"obfuscate.http", "none"}: 1,
 				},
 			},
 			{
@@ -70,10 +70,10 @@ func TestPrioritySampler(t *testing.T) {
 					}
 				}`,
 				out: map[key]float64{
-					key{"obfuscate.http", ""}:      0.9,
-					key{"obfuscate.http", "none"}:  0.9,
-					key{"obfuscate.http", "other"}: 0.8,
-					key{"some-service", ""}:        0.8,
+					{"obfuscate.http", ""}:      0.9,
+					{"obfuscate.http", "none"}:  0.9,
+					{"obfuscate.http", "other"}: 0.8,
+					{"some-service", ""}:        0.8,
 				},
 			},
 			{
@@ -84,12 +84,12 @@ func TestPrioritySampler(t *testing.T) {
 					}
 				}`,
 				out: map[key]float64{
-					key{"my-service", ""}:          0.2,
-					key{"my-service", "none"}:      0.2,
-					key{"obfuscate.http", ""}:      0.8,
-					key{"obfuscate.http", "none"}:  0.8,
-					key{"obfuscate.http", "other"}: 0.8,
-					key{"some-service", ""}:        0.8,
+					{"my-service", ""}:          0.2,
+					{"my-service", "none"}:      0.2,
+					{"obfuscate.http", ""}:      0.8,
+					{"obfuscate.http", "none"}:  0.8,
+					{"obfuscate.http", "other"}: 0.8,
+					{"some-service", ""}:        0.8,
 				},
 			},
 		} {
@@ -636,7 +636,7 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
-func TestRulesSamplerConcurrency(t *testing.T) {
+func TestRulesSamplerConcurrency(_ *testing.T) {
 	rules := []SamplingRule{
 		ServiceRule("test-service", 1.0),
 		NameServiceRule("db.query", "postgres.db", 1.0),

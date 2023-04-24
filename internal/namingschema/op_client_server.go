@@ -75,10 +75,12 @@ func NewHTTPServerOp(opts ...Option) *Schema {
 
 // NewGRPCClientOp creates a new schema for gRPC client outbound operations.
 func NewGRPCClientOp(opts ...Option) *Schema {
-	return NewClientOutboundOp("grpc", opts...)
+	newOpts := append(opts, WithVersionOverride(SchemaV0, "grpc.client"))
+	return NewClientOutboundOp("grpc", newOpts...)
 }
 
 // NewGRPCServerOp creates a new schema for gRPC server inbound operations.
 func NewGRPCServerOp(opts ...Option) *Schema {
-	return NewServerInboundOp("grpc", opts...)
+	newOpts := append(opts, WithVersionOverride(SchemaV0, "grpc.server"))
+	return NewServerInboundOp("grpc", newOpts...)
 }

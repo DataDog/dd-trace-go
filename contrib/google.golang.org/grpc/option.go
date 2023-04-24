@@ -9,9 +9,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"google.golang.org/grpc/codes"
+)
+
+const (
+	defaultClientServiceName = "grpc.client"
+	defaultServerServiceName = "grpc.server"
 )
 
 // Option specifies a configuration option for the grpc package. Not all options apply
@@ -20,6 +25,7 @@ type Option func(*config)
 
 type config struct {
 	serviceName         string
+	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
@@ -33,30 +39,12 @@ type config struct {
 	tags                map[string]interface{}
 }
 
-func (cfg *config) serverServiceName() string {
-	if cfg.serviceName != "" {
-		return cfg.serviceName
-	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		return svc
-	}
-	return "grpc.server"
-}
-
-func (cfg *config) clientServiceName() string {
-	if cfg.serviceName == "" {
-		return "grpc.client"
-	}
-	return cfg.serviceName
-}
-
 // InterceptorOption represents an option that can be passed to the grpc unary
 // client and server interceptors.
 // InterceptorOption is deprecated in favor of Option.
 type InterceptorOption = Option
 
 func defaults(cfg *config) {
-	// cfg.serviceName defaults are set in interceptors
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
@@ -69,6 +57,25 @@ func defaults(cfg *config) {
 		"x-datadog-parent-id":         {},
 		"x-datadog-sampling-priority": {},
 	}
+}
+
+func clientDefaults(cfg *config) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultClientServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultClientServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	defaults(cfg)
+}
+
+func serverDefaults(cfg *config) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultServerServiceName,
+	).GetName()
+	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	defaults(cfg)
 }
 
 // WithServiceName sets the given service name for the intercepted client.

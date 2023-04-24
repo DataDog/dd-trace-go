@@ -296,7 +296,7 @@ func TestAsyncProducer(t *testing.T) {
 		}
 		producer.Input() <- msg1
 
-		waitForSpans(mt, 1, time.Second*10)
+		waitForSpans(mt, 1)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -357,14 +357,7 @@ func TestAsyncProducer(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	// first is producer and second is consumer span
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"kafka", "kafka"},
-		WithDDService:            []string{"kafka", namingschematest.TestDDService},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genTestSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genTestSpans))
+	namingschematest.NewKafkaTest(genTestSpans)(t)
 }
 
 func newMockBroker(t *testing.T) *sarama.MockBroker {
@@ -385,7 +378,7 @@ func newMockBroker(t *testing.T) *sarama.MockBroker {
 
 // waitForSpans polls the mock tracer until the expected number of spans
 // appear
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 

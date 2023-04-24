@@ -68,7 +68,7 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCClientOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.client",
 			wantV1: "grpc.client.request",
 		},
 		{
@@ -76,7 +76,7 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCServerOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.server",
 			wantV1: "grpc.server.request",
 		},
 		{

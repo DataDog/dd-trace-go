@@ -30,6 +30,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	opentracing "github.com/opentracing/opentracing-go"
 )
@@ -64,6 +65,7 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	for k, v := range sso.Tags {
 		opts = append(opts, tracer.Tag(k, v))
 	}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "opentracing.spans_created", 1.0, nil, true)
 	return &span{
 		Span:       t.Tracer.StartSpan(operationName, opts...),
 		opentracer: t,

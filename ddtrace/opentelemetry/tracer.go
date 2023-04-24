@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -49,6 +50,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.spans_created", 1.0, nil, true)
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
@@ -71,7 +73,7 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 	return binary.BigEndian.Uint64(id[:])
 }
 
-func (c *otelCtxToDDCtx) ForeachBaggageItem(handler func(k, v string) bool) {}
+func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
 
 func (c *otelCtxToDDCtx) TraceID128() string {
 	id := c.oc.TraceID()
@@ -86,6 +88,6 @@ var _ oteltrace.Tracer = (*noopOteltracer)(nil)
 
 type noopOteltracer struct{}
 
-func (n *noopOteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+func (n *noopOteltracer) Start(_ context.Context, _ string, _ ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	return nil, nil
 }
