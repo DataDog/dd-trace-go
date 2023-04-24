@@ -66,7 +66,6 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
-
 	parentContext := parentSpan.Context()
 
 	// Validate that the context passed is the context sent via the message
