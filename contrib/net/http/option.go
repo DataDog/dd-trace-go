@@ -14,7 +14,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "http.router"
 
 type config struct {
 	serviceName   string
@@ -37,10 +40,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = "http.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -137,10 +137,16 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
 	}
+	spanName := namingschema.NewHTTPClientOp().GetName()
 	defaultSpanNamer := func(_ *http.Request) string {
-		return "http.request"
+		return spanName
 	}
 	return &roundTripperConfig{
+		serviceName: namingschema.NewServiceNameSchema(
+			"",
+			"",
+			namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
+		).GetName(),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		spanNamer:     defaultSpanNamer,

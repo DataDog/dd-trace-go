@@ -11,12 +11,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/zenazn/goji/web"
 )
 
@@ -226,4 +229,37 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal(t, "<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
 	assert.Equal(t, "zenazn/goji.v1/web", spans[0].Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindServer, spans[0].Tag(ext.SpanKind))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := web.New()
+		mux.Use(Middleware(opts...))
+		mux.Get("/200", func(w http.ResponseWriter, r *http.Request) {
+			_, err := w.Write([]byte("ok"))
+			require.NoError(t, err)
+		})
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"http.router"},
+		WithDDService:            []string{"http.router"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	namingschematest.NewHTTPServerTest(
+		genSpans,
+		"http.router",
+		namingschematest.WithServiceNameAssertions(namingschema.SchemaV0, wantServiceNameV0),
+	)(t)
 }
