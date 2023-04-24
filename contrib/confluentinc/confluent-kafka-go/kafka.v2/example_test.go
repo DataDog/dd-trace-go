@@ -56,7 +56,6 @@ func Example() {
 		tracer.Inject(parentSpan.Context(), carrier)
 
 		c.Consumer.Events() <- msg
-
 	}()
 
 	msg := (<-c.Events()).(*kafka.Message)
