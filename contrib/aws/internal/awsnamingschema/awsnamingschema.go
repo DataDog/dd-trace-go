@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
 package awsnamingschema
 
 import (
@@ -7,6 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+// GetV0SpanNameFunc is used to generate the AWS span names for naming schema V0.
 type GetV0SpanNameFunc func(awsService string) string
 
 type opSchema struct {
