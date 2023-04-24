@@ -12,13 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
-	"github.com/stretchr/testify/assert"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/gomodule/redigo/redis"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -390,4 +392,23 @@ func TestDoContext(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.True(len(spans) > 0)
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []interface{}
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c, err := Dial("tcp", "127.0.0.1:6379", opts...)
+		require.NoError(t, err)
+		_, err = c.Do("SET", "test_key", "test_value")
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewRedisTest(genSpans, "redis.conn")(t)
 }
