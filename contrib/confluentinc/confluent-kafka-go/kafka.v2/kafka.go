@@ -259,7 +259,6 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 			oldDeliveryChan <- evt
 		}()
 	}
-
 	err := p.Producer.Produce(msg, deliveryChan)
 	// with no delivery channel, finish immediately
 	if deliveryChan == nil {
