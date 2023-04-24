@@ -205,7 +205,6 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 			span.Finish()
 		}
 	}()
-
 	return in
 }
 
