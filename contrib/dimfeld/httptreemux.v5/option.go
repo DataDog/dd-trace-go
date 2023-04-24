@@ -9,11 +9,13 @@ package httptreemux
 import (
 	"net/http"
 
-	"github.com/dimfeld/httptreemux/v5"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	"github.com/dimfeld/httptreemux/v5"
 )
+
+const defaultServiceName = "http.router"
 
 type routerConfig struct {
 	serviceName   string
@@ -25,10 +27,7 @@ type routerConfig struct {
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
-	cfg.serviceName = "http.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
 	cfg.resourceNamer = defaultResourceNamer
 }
 
