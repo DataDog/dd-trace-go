@@ -9,14 +9,17 @@ package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org
 //go:generate go run make_endpoints.go
 
 import (
+	"fmt"
 	"math"
 	"net/http"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"golang.org/x/oauth2/google"
@@ -52,24 +55,55 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+			serviceName := cfg.serviceName
 			e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 			if ok {
-				span.SetTag(ext.ServiceName, e.ServiceName)
+				if serviceName == "" {
+					serviceName = e.ServiceName
+				}
 				span.SetTag(ext.ResourceName, e.ResourceName)
 			} else {
-				span.SetTag(ext.ServiceName, "google")
+				if serviceName == "" {
+					serviceName = "google"
+				}
 				span.SetTag(ext.ResourceName, req.Method+" "+req.URL.Hostname())
 			}
-			if cfg.serviceName != "" {
-				span.SetTag(ext.ServiceName, cfg.serviceName)
-			}
+			span.SetTag(ext.ServiceName, serviceName)
 			span.SetTag(ext.Component, componentName)
 			span.SetTag(ext.SpanKind, ext.SpanKindClient)
-
 		}),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
 	}
+	rtOpts = append(rtOpts, httptrace.RTWithSpanNamer(func(req *http.Request) string {
+		gcpService := ""
+		e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
+		if ok {
+			gcpService = e.ServiceName
+		}
+		return newGCPOutboundOp(gcpService).GetName()
+	}))
 	return httptrace.WrapRoundTripper(transport, rtOpts...)
+}
+
+type opSchema struct {
+	gcpService string
+}
+
+// NewAWSOutboundOp creates a new naming schema for AWS client outbound operations.
+func newGCPOutboundOp(gcpService string) *namingschema.Schema {
+	return namingschema.New(&opSchema{gcpService: gcpService})
+}
+
+func (o *opSchema) V0() string {
+	return "http.request"
+}
+
+func (o *opSchema) V1() string {
+	svc := o.gcpService
+	if svc == "" {
+		svc = "api"
+	}
+	return fmt.Sprintf("gcp.%s.request", strings.TrimPrefix(strings.ToLower(svc), "google."))
 }

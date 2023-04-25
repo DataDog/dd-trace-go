@@ -6,19 +6,23 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	books "google.golang.org/api/books/v1"
-	civicinfo "google.golang.org/api/civicinfo/v2"
-	urlshortener "google.golang.org/api/urlshortener/v1"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/books/v1"
+	"google.golang.org/api/civicinfo/v2"
+	"google.golang.org/api/option"
+	"google.golang.org/api/urlshortener/v1"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -80,8 +84,8 @@ func TestCivicInfo(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "http.request", s0.OperationName())
 	assert.Equal(t, "http", s0.Tag(ext.SpanType))
-	assert.Equal(t, "google", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "google.civicinfo", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "civicinfo.representatives.representativeInfoByAddress", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
@@ -172,4 +176,47 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := &http.Client{Transport: WrapRoundTripper(badRequestTransport, opts...)}
+
+		ctx := context.Background()
+		urlshortenerSvc, err := urlshortener.NewService(ctx, option.WithHTTPClient(client))
+		require.NoError(t, err)
+
+		_, _ = urlshortenerSvc.Url.List().Do()
+
+		booksSvc, err := books.NewService(ctx, option.WithHTTPClient(client))
+		assert.NoError(t, err)
+		_, _ = booksSvc.Bookshelves.List("montana.banana").Do()
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "http.request", spans[0].OperationName())
+		assert.Equal(t, "http.request", spans[1].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "gcp.urlshortener.request", spans[0].OperationName())
+		assert.Equal(t, "gcp.books.request", spans[1].OperationName())
+	}
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"google.urlshortener", "google.books"},
+		WithDDService:            []string{"google.urlshortener", "google.books"},
+		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

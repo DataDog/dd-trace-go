@@ -10,6 +10,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
@@ -28,6 +29,10 @@ func newConfig(options ...Option) *config {
 		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: rate,
+		serviceName: namingschema.NewDefaultServiceName(
+			"",
+			namingschema.WithOverrideV0(""),
+		).GetName(),
 	}
 	for _, opt := range options {
 		opt(cfg)
