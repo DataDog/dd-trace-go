@@ -121,7 +121,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, c.cfg.consumerOperationName, opts...)
+	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, c.cfg.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span
@@ -229,7 +229,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
-	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerOperationName, opts...)
+	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerSpanName, opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span

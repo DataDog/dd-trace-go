@@ -40,7 +40,7 @@ func NewHTTPServerTest(genSpans GenSpansFn, defaultName string, opts ...Option) 
 			httptrace.InitServerSpanName()
 			return genSpans(t, serviceOverride)
 		})
-		t.Run("ServiceName", NewServiceNameTest(genSpansWithInit, "", cfg.wantServiceName[namingschema.SchemaV0]))
-		t.Run("SpanName", NewOpNameTest(genSpansWithInit, assertOpV0, assertOpV1))
+		t.Run("ServiceName", NewServiceNameTest(genSpansWithInit, cfg.wantServiceName[namingschema.SchemaV0]))
+		t.Run("SpanName", NewSpanNameTest(genSpansWithInit, assertOpV0, assertOpV1))
 	}
 }

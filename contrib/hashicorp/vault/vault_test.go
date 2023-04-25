@@ -448,6 +448,6 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"vault", "vault"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "vault", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

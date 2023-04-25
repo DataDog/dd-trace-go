@@ -50,8 +50,7 @@ const (
 )
 
 // NewServiceNameTest generates a new test for span service names using the naming schema versioning.
-// TODO(rarguelloF): remove the 2nd parameter as it's unused.
-func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAssertions) func(t *testing.T) {
+func NewServiceNameTest(genSpans GenSpansFn, wantV0 ServiceNameAssertions) func(t *testing.T) {
 	return func(t *testing.T) {
 		testCases := []struct {
 			name                string
@@ -136,8 +135,8 @@ func withDDService(ddService string) func() {
 // AssertSpansFn allows to make assertions on the generated spans.
 type AssertSpansFn func(t *testing.T, spans []mocktracer.Span)
 
-// NewOpNameTest returns a new test that runs the provided assertion functions for each schema version.
-func NewOpNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 AssertSpansFn) func(t *testing.T) {
+// NewSpanNameTest returns a new test that runs the provided assertion functions for each schema version.
+func NewSpanNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 AssertSpansFn) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Run("v0", func(t *testing.T) {
 			version := namingschema.GetVersion()

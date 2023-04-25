@@ -18,7 +18,7 @@ const (
 
 type clientConfig struct {
 	serviceName   string
-	operationName string
+	spanName      string
 	analyticsRate float64
 }
 
@@ -26,14 +26,13 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
-	cfg.operationName = namingschema.NewDBOutboundOp(
+	cfg.spanName = namingschema.NewDBOutboundOp(
 		"consul",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "consul.command"),
+		namingschema.WithOverrideV0("consul.command"),
 	).GetName()
 
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {

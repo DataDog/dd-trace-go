@@ -7,44 +7,39 @@ package namingschema
 
 import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
-// NewServiceNameSchema returns a Schema with the standard logic to be used for contrib span service names
+// NewDefaultServiceName returns a Schema with the standard logic to be used for contrib span service names
 // (in-code override > DD_SERVICE environment variable > integration default name).
-// If you need to support older versions not following this logic, you can use WithVersionOverride option to override this behavior.
-func NewServiceNameSchema(userOverride, defaultName string, opts ...Option) *Schema {
+// If you need to support older versions not following this logic, you can use WithV0Override option to override this behavior.
+func NewDefaultServiceName(fallbackName string, opts ...Option) *Schema {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
 	return New(&standardServiceNameSchema{
-		userOverride: userOverride,
-		defaultName:  defaultName,
+		fallbackName: fallbackName,
 		cfg:          cfg,
 	})
 }
 
 type standardServiceNameSchema struct {
-	userOverride string
-	defaultName  string
+	fallbackName string
 	cfg          *config
 }
 
 func (s *standardServiceNameSchema) V0() string {
-	return s.getName(SchemaV0)
+	if s.cfg.overrideV0 != "" {
+		return s.cfg.overrideV0
+	}
+	return s.getName()
 }
 
 func (s *standardServiceNameSchema) V1() string {
-	return s.getName(SchemaV1)
+	return s.getName()
 }
 
-func (s *standardServiceNameSchema) getName(v Version) string {
-	if val, ok := s.cfg.versionOverrides[v]; ok {
-		return val
-	}
-	if s.userOverride != "" {
-		return s.userOverride
-	}
+func (s *standardServiceNameSchema) getName() string {
 	if svc := globalconfig.ServiceName(); svc != "" {
 		return svc
 	}
-	return s.defaultName
+	return s.fallbackName
 }

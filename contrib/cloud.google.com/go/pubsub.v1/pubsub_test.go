@@ -239,7 +239,6 @@ func TestPropagationNoPubsliherSpan(t *testing.T) {
 func setup(t *testing.T) (context.Context, *pubsub.Topic, *pubsub.Subscription, mocktracer.Tracer, func()) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
-
 	srv := pstest.NewServer()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())

@@ -355,8 +355,8 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"sqlserver.db", "sqlserver.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "sqlserver.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("Postgres", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "postgres")
@@ -375,8 +375,8 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"postgres.db", "postgres.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "postgres.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("MySQL", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "mysql")
@@ -395,7 +395,7 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"mysql.db", "mysql.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "mysql.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 }

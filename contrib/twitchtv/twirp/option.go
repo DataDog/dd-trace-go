@@ -36,20 +36,14 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
-		defaultClientServiceName,
-	).GetName()
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultClientServiceName).GetName()
 	cfg.spanName = namingschema.NewClientOutboundOp("twirp").GetName()
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
-		defaultServerServiceName,
-	).GetName()
-	// spanName is calculated dynamically since V0 span names are generated based on the twirp service name.
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+	// spanName is calculated dynamically since V0 span names are based on the twirp service name.
 	defaults(cfg)
 }
 

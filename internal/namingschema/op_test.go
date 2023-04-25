@@ -14,8 +14,7 @@ import (
 )
 
 func TestOpContribSchemas(t *testing.T) {
-	optOverrideV0 := namingschema.WithVersionOverride(namingschema.SchemaV0, "override-v0")
-	optOverrideV1 := namingschema.WithVersionOverride(namingschema.SchemaV1, "override-v1")
+	optOverrideV0 := namingschema.WithOverrideV0("override-v0")
 
 	testCases := []struct {
 		name      string
@@ -32,14 +31,6 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.send",
 		},
 		{
-			name: "messaging outbound override",
-			newSchema: func() *namingschema.Schema {
-				return namingschema.NewMessagingOutboundOp("test", optOverrideV0, optOverrideV1)
-			},
-			wantV0: "override-v0",
-			wantV1: "override-v1",
-		},
-		{
 			name: "kafka inbound",
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewKafkaInboundOp()
@@ -48,12 +39,20 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.process",
 		},
 		{
-			name: "messaging inbound override",
+			name: "messaging outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewMessagingInboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewMessagingOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.send",
+		},
+		{
+			name: "messaging inbound override",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewMessagingInboundOp("test", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "test.process",
 		},
 		{
 			name: "http client",
@@ -90,18 +89,18 @@ func TestOpContribSchemas(t *testing.T) {
 		{
 			name: "client outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewClientOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewClientOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.client.request",
 		},
 		{
 			name: "server inbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewServerInboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewServerInboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.server.request",
 		},
 		{
 			name: "memcached outbound",
@@ -122,10 +121,10 @@ func TestOpContribSchemas(t *testing.T) {
 		{
 			name: "cache outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewCacheOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewCacheOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.command",
 		},
 		{
 			name: "elasticsearch outbound",
@@ -138,10 +137,10 @@ func TestOpContribSchemas(t *testing.T) {
 		{
 			name: "db outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewDBOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewDBOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.query",
 		},
 	}
 	for _, tc := range testCases {

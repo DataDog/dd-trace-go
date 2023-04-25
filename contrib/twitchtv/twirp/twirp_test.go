@@ -430,8 +430,8 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{ddService, ddService, ddService},
 		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 type haberdasher int32
