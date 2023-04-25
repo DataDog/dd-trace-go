@@ -29,9 +29,10 @@ func newConfig(options ...Option) *config {
 		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: rate,
-		serviceName: namingschema.NewDefaultServiceName(
+		serviceName: namingschema.NewServiceNameSchema(
 			"",
-			namingschema.WithOverrideV0(""),
+			"",
+			namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
 		).GetName(),
 	}
 	for _, opt := range options {

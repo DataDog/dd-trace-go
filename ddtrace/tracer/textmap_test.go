@@ -942,14 +942,37 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
 						tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out: []uint64{2459565876494606882, 1},
-					tid: traceIDFrom64Bits(1229782938247303441),
-
+					out:    []uint64{2459565876494606882, 1},
+					tid:    traceIDFrom64Bits(1229782938247303441),
 					origin: "rum",
 					propagatingTags: map[string]string{
-						"_dd.p.dm":     "-2",
+						"_dd.p.dm":     "-0",
 						"_dd.p.usr.id": "baz64==",
 						"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 				},
 				{
 					in: TextMapCarrier{
