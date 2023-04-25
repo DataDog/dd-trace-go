@@ -62,7 +62,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
-		tracer.ResourceName("mongodb.query"),
+		tracer.ResourceName(cfg.spanName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
@@ -74,7 +74,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	for key, value := range tags {
 		span.SetTag(key, value)
 	}

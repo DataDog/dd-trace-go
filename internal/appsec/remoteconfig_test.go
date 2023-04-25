@@ -435,7 +435,8 @@ func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.
 }
 
 func TestOnRCUpdate(t *testing.T) {
-	baseRuleset := newRulesManager(nil)
+	baseRuleset, err := newRulesManager(nil)
+	require.NoError(t, err)
 	baseRuleset.compile()
 
 	rules := rulesFragment{
@@ -574,7 +575,8 @@ func TestOnRCUpdate(t *testing.T) {
 }
 
 func TestOnRCUpdateStatuses(t *testing.T) {
-	invalidRuleset := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	invalidRuleset, err := newRulesManager([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
+	require.NoError(t, err)
 	invalidRules := invalidRuleset.base
 	overrides := rulesFragment{
 		Overrides: []rulesOverrideEntry{
@@ -674,10 +676,10 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 // through remote configuration
 func TestWafRCUpdate(t *testing.T) {
 	override := rulesFragment{
+		// Override the already existing and enabled rule crs-913-120 with the "block" action
 		Overrides: []rulesOverrideEntry{
 			{
 				ID:      "crs-913-120",
-				Enabled: true,
 				OnMatch: []string{"block"},
 			},
 		},
@@ -690,7 +692,7 @@ func TestWafRCUpdate(t *testing.T) {
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := newConfig()
 		require.NoError(t, err)
-		wafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		wafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer wafHandle.Close()
 		wafCtx := waf.NewContext(wafHandle)
@@ -708,14 +710,14 @@ func TestWafRCUpdate(t *testing.T) {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
 		}
 		cfg.rulesManager.compile()
-		newWafHandle, err := waf.NewHandle(cfg.rulesManager.raw(), cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		newWafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer newWafHandle.Close()
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
 		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
-		require.NotEmpty(t, matches)
+		require.Contains(t, string(matches), "crs-913-120")
 		require.Contains(t, actions, "block")
 	})
 }

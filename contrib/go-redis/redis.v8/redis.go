@@ -126,7 +126,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	return ctx, nil
 }
 
@@ -164,7 +164,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	return ctx, nil
 }
 

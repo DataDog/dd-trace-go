@@ -32,6 +32,14 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.send",
 		},
 		{
+			name: "messaging outbound override",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewMessagingOutboundOp("test", optOverrideV0, optOverrideV1)
+			},
+			wantV0: "override-v0",
+			wantV1: "override-v1",
+		},
+		{
 			name: "kafka inbound",
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewKafkaInboundOp()
@@ -40,9 +48,9 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.process",
 		},
 		{
-			name: "db outbound override",
+			name: "messaging inbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewDBOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewMessagingInboundOp("test", optOverrideV0, optOverrideV1)
 			},
 			wantV0: "override-v0",
 			wantV1: "override-v1",
@@ -68,7 +76,7 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCClientOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.client",
 			wantV1: "grpc.client.request",
 		},
 		{
@@ -76,7 +84,7 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCServerOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.server",
 			wantV1: "grpc.server.request",
 		},
 		{
@@ -102,6 +110,14 @@ func TestOpContribSchemas(t *testing.T) {
 			},
 			wantV0: "memcached.query",
 			wantV1: "memcached.command",
+		},
+		{
+			name: "redis outbound",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewRedisOutboundOp()
+			},
+			wantV0: "redis.command",
+			wantV1: "redis.command",
 		},
 		{
 			name: "cache outbound override",
