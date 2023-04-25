@@ -152,6 +152,7 @@ func TestOpenOptions(t *testing.T) {
 		}
 		sqltest.RunAll(t, testConfig)
 	})
+
 	t.Run("OpenDB", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
 		defer unregister(driverName)
@@ -178,6 +179,7 @@ func TestOpenOptions(t *testing.T) {
 		}
 		sqltest.RunAll(t, testConfig)
 	})
+
 	t.Run("WithDSN", func(t *testing.T) {
 		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
 		defer unregister(driverName)
@@ -204,6 +206,7 @@ func TestOpenOptions(t *testing.T) {
 		}
 		sqltest.RunAll(t, testConfig)
 	})
+
 	t.Run("WithChildSpansOnly", func(t *testing.T) {
 		Register(driverName, &pq.Driver{})
 		defer unregister(driverName)
@@ -220,13 +223,10 @@ func TestOpenOptions(t *testing.T) {
 		// the number of spans should be 0 since we specified the WithChildSpansOnly option
 		assert.Len(t, spans, 0)
 	})
+
 	t.Run("WithIgnoreQueryTypes", func(t *testing.T) {
-		registerOpts := []RegisterOption{
-			WithIgnoreQueryTypes(QueryTypeConnect),
-		}
-		openDBOpts := []Option{
-			WithIgnoreQueryTypes(QueryTypeConnect, QueryTypePing),
-		}
+		registerOpts := []RegisterOption{WithIgnoreQueryTypes(QueryTypeConnect)}
+		openDBOpts := []Option{WithIgnoreQueryTypes(QueryTypeConnect, QueryTypePing)}
 		Register(driverName, &pq.Driver{}, registerOpts...)
 		defer unregister(driverName)
 		db, err := Open(driverName, dsn, openDBOpts...)
@@ -242,6 +242,7 @@ func TestOpenOptions(t *testing.T) {
 		// the number of spans should be 0 since we are ignoring Connect and Ping spans.
 		assert.Len(t, spans, 0)
 	})
+
 	t.Run("RegisterOptionsAsDefault", func(t *testing.T) {
 		registerOpts := []RegisterOption{
 			WithServiceName("register-override"),
