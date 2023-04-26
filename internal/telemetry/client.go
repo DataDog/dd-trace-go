@@ -14,10 +14,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -144,6 +146,8 @@ type client struct {
 	// metrics are sent
 	metrics    map[Namespace]map[string]*metric
 	newMetrics bool
+
+	sigc chan os.Signal
 }
 
 func log(msg string, args ...interface{}) {
@@ -229,6 +233,16 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	}
 	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
 	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
+
+	// app closing should be sent when the app closes gracefully
+	c.sigc = make(chan os.Signal, 1)
+	signal.Notify(c.sigc, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go c.appClose()
+}
+
+func (c *client) appClose() {
+	<-c.sigc
+	c.Stop()
 }
 
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding

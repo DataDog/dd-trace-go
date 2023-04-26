@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"sort"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -381,6 +382,33 @@ func TestCollectDependencies(t *testing.T) {
 		URL: server.URL,
 	}
 	client.start(nil, NamespaceTracers)
+	select {
+	case <-received:
+	case <-ctx.Done():
+		t.Fatalf("Timed out waiting for dependency payload")
+	}
+}
+
+func TestAppClosing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	received := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppClosing) {
+			select {
+			case received <- struct{}{}:
+			default:
+			}
+		}
+	}))
+
+	c := &client{
+		URL: server.URL,
+	}
+	c.start(nil, NamespaceTracers)
+	c.sigc <- syscall.SIGINT
+
 	select {
 	case <-received:
 	case <-ctx.Done():
