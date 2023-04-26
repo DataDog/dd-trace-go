@@ -8,6 +8,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -392,26 +393,34 @@ func TestCollectDependencies(t *testing.T) {
 func TestAppClosing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	received := make(chan struct{})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppClosing) {
-			select {
-			case received <- struct{}{}:
-			default:
+	sigs := []syscall.Signal{syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM}
+
+	for _, sig := range sigs {
+		t.Run(fmt.Sprintf("app-closing via %v", sig.String()), func(t *testing.T) {
+			received := make(chan struct{})
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("DD-Telemetry-Request-Type") == string(RequestTypeAppClosing) {
+					select {
+					case received <- struct{}{}:
+					default:
+					}
+				}
+			}))
+
+			c := &client{
+				URL: server.URL,
 			}
-		}
-	}))
+			c.start(nil, NamespaceTracers)
+			c.sigc <- syscall.SIGINT
 
-	c := &client{
-		URL: server.URL,
-	}
-	c.start(nil, NamespaceTracers)
-	c.sigc <- syscall.SIGINT
+			select {
+			case <-received:
+			case <-ctx.Done():
+				t.Fatalf("Timed out waiting for dependency payload")
+			}
 
-	select {
-	case <-received:
-	case <-ctx.Done():
-		t.Fatalf("Timed out waiting for dependency payload")
+		})
 	}
 }
