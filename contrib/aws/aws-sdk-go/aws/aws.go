@@ -75,10 +75,10 @@ func (h *handlers) Send(req *request.Request) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
-		tracer.ResourceName(h.resourceName(req)),
-		tracer.Tag(tagAWSAgent, h.awsAgent(req)),
-		tracer.Tag(tagAWSOperation, awsOperationFromRequest(req)),
-		tracer.Tag(tagAWSRegion, h.awsRegion(req)),
+		tracer.ResourceName(resourceName(req)),
+		tracer.Tag(tagAWSAgent, awsAgent(req)),
+		tracer.Tag(tagAWSOperation, awsOperation(req)),
+		tracer.Tag(tagAWSRegion, awsRegion(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
@@ -104,15 +104,11 @@ func (h *handlers) Complete(req *request.Request) {
 	span.Finish(tracer.WithError(req.Error))
 }
 
-func (h *handlers) resourceName(req *request.Request) string {
-	return awsServiceFromRequest(req) + "." + req.Operation.Name
-}
-
 func (h *handlers) serviceName(req *request.Request) string {
 	if h.cfg.serviceName != "" {
 		return h.cfg.serviceName
 	}
-	defaultName := "aws." + awsServiceFromRequest(req)
+	defaultName := "aws." + awsService(req)
 	return namingschema.NewServiceNameSchema(
 		"",
 		defaultName,
@@ -120,28 +116,32 @@ func (h *handlers) serviceName(req *request.Request) string {
 	).GetName()
 }
 
-func (h *handlers) awsAgent(req *request.Request) string {
+func getSpanName(req *request.Request) string {
+	svc := awsService(req)
+	op := awsOperation(req)
+	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
+	return awsnamingschema.NewAWSOutboundOp(svc, op, getSpanNameV0).GetName()
+}
+
+func awsService(req *request.Request) string {
+	return req.ClientInfo.ServiceName
+}
+
+func awsOperation(req *request.Request) string {
+	return req.Operation.Name
+}
+
+func resourceName(req *request.Request) string {
+	return awsService(req) + "." + awsOperation(req)
+}
+
+func awsAgent(req *request.Request) string {
 	if agent := req.HTTPRequest.Header.Get("User-Agent"); agent != "" {
 		return agent
 	}
 	return "aws-sdk-go"
 }
 
-func (h *handlers) awsRegion(req *request.Request) string {
+func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
-}
-
-func getSpanName(req *request.Request) string {
-	awsService := awsServiceFromRequest(req)
-	awsOperation := awsOperationFromRequest(req)
-	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
-	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, getSpanNameV0).GetName()
-}
-
-func awsServiceFromRequest(req *request.Request) string {
-	return req.ClientInfo.ServiceName
-}
-
-func awsOperationFromRequest(req *request.Request) string {
-	return req.Operation.Name
 }
