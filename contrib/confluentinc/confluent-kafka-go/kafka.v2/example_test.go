@@ -8,10 +8,10 @@ package kafka_test
 import (
 	"fmt"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-
 	kafkatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka.v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 var (
