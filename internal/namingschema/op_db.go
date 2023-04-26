@@ -43,6 +43,11 @@ func NewElasticsearchOutboundOp(opts ...Option) *Schema {
 }
 
 // NewMongoDBOutboundOp creates a new schema for MongoDB (db) outbound operations.
-func NewMongoDBOutboundOp() *Schema {
-	return NewDBOutboundOp("mongodb")
+func NewMongoDBOutboundOp(opts ...Option) *Schema {
+	return NewDBOutboundOp("mongodb", opts...)
+}
+
+// NewCassandraOutboundOp creates a new schema for Cassandra (db) outbound operations.
+func NewCassandraOutboundOp(opts ...Option) *Schema {
+	return NewDBOutboundOp("cassandra", opts...)
 }
