@@ -63,10 +63,11 @@ func checkEndpoint(c *http.Client, endpoint string) error {
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
-	_, err = c.Do(req)
+	res, err := c.Do(req)
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 	return nil
 }
 

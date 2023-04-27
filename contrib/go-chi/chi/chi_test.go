@@ -53,6 +53,7 @@ func TestTrace200(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -141,6 +142,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -170,6 +172,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -191,6 +194,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 }
 
@@ -347,6 +351,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the server behaved as intended
 		require.Equal(t, http.StatusOK, res.StatusCode)
 		b, err := io.ReadAll(res.Body)
@@ -374,6 +379,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -400,6 +406,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
