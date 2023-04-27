@@ -86,7 +86,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.ResourceName(fmt.Sprintf("%s.%s", awsService, awsOperation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tagAWSOperation, awsOperation),
-			tracer.Tag(tagAWSService, awsOperation),
+			tracer.Tag(tagAWSService, awsService),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),

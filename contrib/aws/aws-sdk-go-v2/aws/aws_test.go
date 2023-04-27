@@ -112,6 +112,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
 			assert.Equal(t, "ListQueues", s.Tag(tagAWSOperation))
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "SQS", s.Tag(tagAWSService))
 			assert.Equal(t, "SQS.ListQueues", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
