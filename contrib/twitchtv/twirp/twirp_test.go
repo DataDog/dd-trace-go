@@ -69,7 +69,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 		req = req.WithContext(ctx)
 
-		_, err = wc.Do(req)
+		_, err = wc.Do(req) //nolint:bodyclose
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
@@ -100,7 +100,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 		req = req.WithContext(ctx)
 
-		_, err = wc.Do(req)
+		_, err = wc.Do(req) //nolint:bodyclose
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
@@ -132,7 +132,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 		req = req.WithContext(ctx)
 
-		_, err = wc.Do(req)
+		_, err = wc.Do(req) //nolint:bodyclose
 		assert.Equal(context.DeadlineExceeded, err)
 
 		spans := mt.FinishedSpans()
