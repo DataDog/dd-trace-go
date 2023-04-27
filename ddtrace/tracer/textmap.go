@@ -321,9 +321,8 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 	if ctx.trace == nil {
 		return ""
 	}
-	ctx.trace.mu.Lock()
-	defer ctx.trace.mu.Unlock()
-	for k, v := range ctx.trace.propagatingTags {
+
+	for k, v := range ctx.trace.allPropagatingTags() {
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
 			ctx.trace.setTag(keyPropagationError, "encoding_error")
@@ -394,7 +393,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	}
 	if ctx.trace != nil {
 		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTags[keyTraceID128])
+		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128))
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
@@ -407,19 +406,17 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
 	}
-	ctx.trace.mu.Lock()
-	defer ctx.trace.mu.Unlock()
 	if len(v) > propagationExtractMaxSize {
 		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
 		ctx.trace.setTag(keyPropagationError, "extract_max_size")
 		return
 	}
-	var err error
-	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
+	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
 		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
 		ctx.trace.setTag(keyPropagationError, "decoding_error")
 	}
+	ctx.trace.replacePropagatingTags(tags)
 }
 
 // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
@@ -671,11 +668,11 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
-		(ctx.trace != nil && ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) ||
-		len(ctx.trace.propagatingTags[tracestateHeader]) == 0 {
-		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
+		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
+		ctx.trace.propagatingTagsLen() == 0 {
+		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
-		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
+		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	}
 	return nil
 }
@@ -728,7 +725,7 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
-	for k, v := range ctx.trace.propagatingTags {
+	for k, v := range ctx.trace.allPropagatingTags() {
 		if !strings.HasPrefix(k, "_dd.p.") {
 			continue
 		}

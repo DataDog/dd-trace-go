@@ -301,41 +301,16 @@ func (t *trace) drop() {
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-// setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
-}
-
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
-// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
-	if t.propagatingTags == nil {
-		t.propagatingTags = make(map[string]string, 1)
-	}
-	t.propagatingTags[key] = value
-}
-
-// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.propagatingTags, key)
-}
-
-// hasPropagatingTag performs a thread-safe lookup for propagating tags.
-func (t *trace) hasPropagatingTag(key string) bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	_, found := t.propagatingTags[key]
-	return found
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
@@ -346,14 +321,14 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	_, ok := t.propagatingTags[keyDecisionMaker]
+	_, ok := t.propagatingTags[keyDecisionMaker] // Safe to access propagatingTags here since we hold t.mu
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
 		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
-		delete(t.propagatingTags, keyDecisionMaker)
+		delete(t.propagatingTags, keyDecisionMaker) // Safe to access propagatingTags here since we hold t.mu
 	}
 }
 
@@ -415,7 +390,7 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.tags {
 			s.setMeta(k, v)
 		}
-		for k, v := range t.propagatingTags {
+		for k, v := range t.propagatingTags { // Safe to access propagatingTags here because we hold t.mu
 			s.setMeta(k, v)
 		}
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
