@@ -149,7 +149,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		if !math.IsNaN(p.config.analyticsRate) {
 			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, "redis.command", startOpts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName, startOpts...)
 
 		err := hook(ctx, cmd)
 
@@ -179,7 +179,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		if !math.IsNaN(p.config.analyticsRate) {
 			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, "redis.command", startOpts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName, startOpts...)
 
 		err := hook(ctx, cmds)
 

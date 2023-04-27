@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -655,4 +656,32 @@ func TestDial(t *testing.T) {
 	assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []ClientOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
+		st := client.Set(context.Background(), "test_key", "test_value", 0)
+		require.NoError(t, st.Err())
+
+		spans := mt.FinishedSpans()
+		var span mocktracer.Span
+		for _, s := range spans {
+			// pick up the redis.command span except dial
+			if s.OperationName() == "redis.command" {
+				span = s
+			}
+		}
+		assert.NotNil(t, span)
+		return []mocktracer.Span{span}
+	})
+
+	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }
