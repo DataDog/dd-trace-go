@@ -66,6 +66,7 @@ func TestTrace200(t *testing.T) {
 	// do and verify the request
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
@@ -104,6 +105,7 @@ func TestTraceDefaultResponse(t *testing.T) {
 	// do and verify the request
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 
 	// verify traces look good
@@ -145,6 +147,7 @@ func TestTraceMultipleResponses(t *testing.T) {
 	// do and verify the request
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 142)
 
 	// verify traces look good
@@ -186,6 +189,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 500)
 
 		// verify the errors and status are correct
@@ -216,6 +220,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 418)
 
 		// verify the errors and status are correct
@@ -257,6 +262,7 @@ func TestHTML(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 	assert.Equal("hello world", w.Body.String())
 
@@ -296,6 +302,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 }
 
@@ -479,6 +486,7 @@ func TestServiceName(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -511,6 +519,7 @@ func TestServiceName(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -540,6 +549,7 @@ func TestServiceName(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good

@@ -43,10 +43,12 @@ func Test(t *testing.T) {
 		srv := httptest.NewServer(&relay.Handler{Schema: schema})
 		defer srv.Close()
 
-		http.Post(srv.URL, "application/json", strings.NewReader(`{
+		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(`{
 		"query": "query TestQuery() { hello, helloNonTrivial }",
 		"operationName": "TestQuery"
 	}`))
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 	}
 
 	t.Run("defaults", func(t *testing.T) {
@@ -155,9 +157,11 @@ func TestAnalyticsSettings(t *testing.T) {
 			graphql.Tracer(NewTracer(opts...)))
 		srv := httptest.NewServer(&relay.Handler{Schema: schema})
 		defer srv.Close()
-		http.Post(srv.URL, "application/json", strings.NewReader(`{
+		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(`{
 			"query": "{ hello }"
 		}`))
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
