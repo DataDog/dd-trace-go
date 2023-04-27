@@ -35,11 +35,12 @@ func TestChildSpan(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "/user/123", nil)
 	resp, err := router.Test(r)
+	assert.Equal(nil, err)
+	defer resp.Body.Close()
 
 	finishedSpans := mt.FinishedSpans()
 
 	assert.Equal(1, len(finishedSpans))
-	assert.Equal(nil, err)
 	assert.Equal(resp.StatusCode, 200)
 }
 
@@ -50,6 +51,7 @@ func TestTrace200(t *testing.T) {
 		// do and verify the request
 		resp, err := router.Test(r)
 		assert.Equal(nil, err)
+		defer resp.Body.Close()
 		assert.Equal(resp.StatusCode, 200)
 
 		// verify traces look good
@@ -117,6 +119,7 @@ func TestStatusError(t *testing.T) {
 
 	response, err := router.Test(r)
 	assert.Equal(nil, err)
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 500)
 
 	// verify the errors and status are correct
@@ -148,6 +151,7 @@ func TestCustomError(t *testing.T) {
 
 	response, err := router.Test(r)
 	assert.Equal(nil, err)
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 400)
 
 	spans := mt.FinishedSpans()
@@ -182,7 +186,9 @@ func TestUserContext(t *testing.T) {
 	})
 	r := httptest.NewRequest("GET", "/", nil)
 
-	router.Test(r)
+	resp, err := router.Test(r)
+	assert.Nil(err)
+	defer resp.Body.Close()
 
 	// verify both middleware span and router span finished
 	spans := mt.FinishedSpans()
@@ -200,6 +206,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 
 	response, err := router.Test(r)
 	assert.Equal(nil, err)
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 }
 
@@ -227,11 +234,13 @@ func TestPropagation(t *testing.T) {
 		return c.SendString(c.Params("span does not exist"))
 	})
 
-	_, withoutErr := router.Test(requestWithoutSpan)
+	resp, withoutErr := router.Test(requestWithoutSpan)
 	assert.Equal(nil, withoutErr)
+	defer resp.Body.Close()
 
-	_, withErr := router.Test(requestWithSpan)
+	resp, withErr := router.Test(requestWithSpan)
 	assert.Equal(nil, withErr)
+	defer resp.Body.Close()
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -243,7 +252,9 @@ func TestAnalyticsSettings(t *testing.T) {
 		})
 
 		r := httptest.NewRequest("GET", "/user/123", nil)
-		router.Test(r)
+		resp, err := router.Test(r)
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -310,8 +321,9 @@ func TestNamingSchema(t *testing.T) {
 			return c.SendString("ok")
 		})
 		req := httptest.NewRequest("GET", "/200", nil)
-		_, err := mux.Test(req)
+		resp, err := mux.Test(req)
 		require.NoError(t, err)
+		defer resp.Body.Close()
 
 		return mt.FinishedSpans()
 	})
