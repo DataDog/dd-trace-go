@@ -321,14 +321,14 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	_, ok := t.propagatingTags[keyDecisionMaker] // Safe to access propagatingTags here since we hold t.mu
+	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
 		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
 	}
 	if p <= 0 && ok {
-		delete(t.propagatingTags, keyDecisionMaker) // Safe to access propagatingTags here since we hold t.mu
+		delete(t.propagatingTags, keyDecisionMaker)
 	}
 }
 
@@ -390,7 +390,7 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.tags {
 			s.setMeta(k, v)
 		}
-		for k, v := range t.propagatingTags { // Safe to access propagatingTags here because we hold t.mu
+		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
