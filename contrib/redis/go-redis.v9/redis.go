@@ -195,9 +195,11 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 // commandsToString returns a string representation of a slice of redis Commands, separated by newlines.
 func commandsToString(cmds []redis.Cmder) string {
 	var b bytes.Buffer
-	for _, cmd := range cmds {
+	for idx, cmd := range cmds {
+		if idx > 0 {
+			b.WriteString("\n")
+		}
 		b.WriteString(cmd.String())
-		b.WriteString("\n")
 	}
 	return b.String()
 }

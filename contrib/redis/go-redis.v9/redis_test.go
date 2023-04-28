@@ -81,7 +81,7 @@ func TestSkipRaw(t *testing.T) {
 		assert.Equal(t, "set test_key test_value: ", raw)
 		raw, ok = spans[1].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "expire pipeline_counter 3600: false\n", raw)
+		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
 
 	t.Run("false", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestSkipRaw(t *testing.T) {
 		assert.Equal(t, "set test_key test_value: ", raw)
 		raw, ok = spans[1].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "expire pipeline_counter 3600: false\n", raw)
+		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
 }
 
