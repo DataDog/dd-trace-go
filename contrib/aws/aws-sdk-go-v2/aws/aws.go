@@ -109,8 +109,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		}
 		resourceNameKey, resourceNameValue := extractResourceNameFromParams(in, serviceID)
 		//queueURL := *in.Parameters.(*sqs.SendMessageInput).QueueUrl
-		fmt.Println("resourceNameKey: ", resourceNameKey)
-		fmt.Println("resourceNameValue: ", resourceNameValue)
 		opts = append(opts, tracer.Tag(resourceNameKey, resourceNameValue))
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -126,17 +124,10 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 }
 
 func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (resourceNameKey string, resourceNameValue string) {
-	//resourceNameKey := ""
-	fmt.Println("awsService: ", awsService)
-
 	switch awsService {
 	case "SQS":
-		// Extract queueName
 		resourceNameKey, resourceNameValue = extractQueueName(requestInput)
 	case "S3":
-		fmt.Println("got in s3 case")
-
-		// Extract bucketName
 		resourceNameKey, resourceNameValue = extractBucketName(requestInput)
 	case "SNS":
 		resourceNameKey, resourceNameValue = extractTopicName(requestInput)
@@ -153,7 +144,6 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 }
 
 func extractQueueName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractQueueName")
 	queueNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
@@ -186,7 +176,6 @@ func extractQueueName(requestInput middleware.InitializeInput) (resourceNameKey 
 }
 
 func extractBucketName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractBucketName")
 	bucketNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
@@ -220,7 +209,6 @@ func extractBucketName(requestInput middleware.InitializeInput) (resourceNameKey
 }
 
 func extractTopicName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractTopicName")
 	topicNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
@@ -280,7 +268,6 @@ func extractTopicName(requestInput middleware.InitializeInput) (resourceNameKey 
 }
 
 func extractTableName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractTableName")
 	tableNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
@@ -309,7 +296,6 @@ func extractTableName(requestInput middleware.InitializeInput) (resourceNameKey 
 }
 
 func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractStreamName")
 	streamNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
@@ -358,7 +344,6 @@ func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey
 }
 
 func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractRuleName")
 	ruleNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
@@ -395,7 +380,6 @@ func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey s
 }
 
 func extractStateMachineName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
-	fmt.Println("got in extractStateMachineName")
 	stateMachineNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
@@ -479,7 +463,6 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		out, metadata, err = next.HandleDeserialize(ctx, in)
 
 		// Get values out of the response.
-		fmt.Println("getting status code")
 		if res, ok := out.RawResponse.(*smithyhttp.Response); ok {
 			span.SetTag(ext.HTTPCode, res.StatusCode)
 		}
