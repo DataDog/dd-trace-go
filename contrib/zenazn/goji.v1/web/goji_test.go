@@ -73,6 +73,7 @@ func TestTraceWithRouter(t *testing.T) {
 	w := httptest.NewRecorder()
 	m.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 
 	spans := mt.FinishedSpans()
@@ -108,6 +109,7 @@ func TestError(t *testing.T) {
 	w := httptest.NewRecorder()
 	m.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 500)
 
 	spans := mt.FinishedSpans()
@@ -142,7 +144,9 @@ func TestPropagation(t *testing.T) {
 	})
 
 	m.ServeHTTP(w, r)
-	assert.Equal(200, w.Result().StatusCode)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
 }
 
 func TestOptions(t *testing.T) {
