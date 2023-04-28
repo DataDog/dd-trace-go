@@ -321,19 +321,19 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 	if ctx.trace == nil {
 		return ""
 	}
-	ctx.trace.mu.Lock()
-	defer ctx.trace.mu.Unlock()
-	for k, v := range ctx.trace.propagatingTags {
+
+	var properr string
+	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
-			ctx.trace.setTag(keyPropagationError, "encoding_error")
-			continue
+			properr = "encoding_error"
+			return true
 		}
 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
 			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
-			ctx.trace.setTag(keyPropagationError, "inject_max_size")
-			break
+			properr = "inject_max_size"
+			return false
 		}
 		if sb.Len() > 0 {
 			sb.WriteByte(',')
@@ -341,6 +341,10 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 		sb.WriteString(k)
 		sb.WriteByte('=')
 		sb.WriteString(v)
+		return true
+	})
+	if properr != "" {
+		ctx.trace.setTag(keyPropagationError, properr)
 	}
 	return sb.String()
 }
@@ -394,7 +398,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	}
 	if ctx.trace != nil {
 		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTags[keyTraceID128])
+		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128))
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
@@ -407,19 +411,17 @@ func unmarshalPropagatingTags(ctx *spanContext, v string) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
 	}
-	ctx.trace.mu.Lock()
-	defer ctx.trace.mu.Unlock()
 	if len(v) > propagationExtractMaxSize {
 		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
 		ctx.trace.setTag(keyPropagationError, "extract_max_size")
 		return
 	}
-	var err error
-	ctx.trace.propagatingTags, err = parsePropagatableTraceTags(v)
+	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
 		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
 		ctx.trace.setTag(keyPropagationError, "decoding_error")
 	}
+	ctx.trace.replacePropagatingTags(tags)
 }
 
 // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
@@ -671,11 +673,11 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 	// or the tracestateHeader doesn't start with `dd=`
 	// we need to recreate tracestate
 	if ctx.updated ||
-		(ctx.trace != nil && ctx.trace.propagatingTags != nil && !strings.HasPrefix(ctx.trace.propagatingTags[tracestateHeader], "dd=")) ||
-		len(ctx.trace.propagatingTags[tracestateHeader]) == 0 {
-		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTags[tracestateHeader]))
+		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
+		ctx.trace.propagatingTagsLen() == 0 {
+		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
-		writer.Set(tracestateHeader, ctx.trace.propagatingTags[tracestateHeader])
+		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
 	}
 	return nil
 }
@@ -728,9 +730,9 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
-	for k, v := range ctx.trace.propagatingTags {
+	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
-			continue
+			return true
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
@@ -738,11 +740,12 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
 		if b.Len()+len(tag) > 256 {
-			break
+			return false
 		}
 		b.WriteString(";")
 		b.WriteString(tag)
-	}
+		return true
+	})
 	// the old state is split by vendors, must be concatenated with a `,`
 	if len(oldState) == 0 {
 		return b.String()

@@ -221,7 +221,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	} else {
 		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
 		trace.unsetPropagatingTag(keyPropagatedUserID)
-		if _, ok := trace.propagatingTags[keyPropagatedUserID]; ok {
+		if trace.hasPropagatingTag(keyPropagatedUserID) {
 			s.context.updated = true
 		}
 		delete(root.Meta, keyPropagatedUserID)
