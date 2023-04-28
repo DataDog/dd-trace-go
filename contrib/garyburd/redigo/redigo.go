@@ -117,7 +117,7 @@ func (tc Conn) newChildSpan(ctx context.Context) ddtrace.Span {
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	span.SetTag("out.network", p.network)
 	span.SetTag(ext.TargetPort, p.port)
 	span.SetTag(ext.TargetHost, p.host)

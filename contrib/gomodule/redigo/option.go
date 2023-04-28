@@ -9,13 +9,17 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type dialConfig struct {
 	serviceName    string
+	spanName       string
 	analyticsRate  float64
 	connectionType int
 }
+
+const defaultServiceName = "redis.conn"
 
 const (
 	connectionTypeWithTimeout = iota
@@ -27,7 +31,12 @@ const (
 type DialOption func(*dialConfig)
 
 func defaults(cfg *dialConfig) {
-	cfg.serviceName = "redis.conn"
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewRedisOutboundOp().GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_REDIGO_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

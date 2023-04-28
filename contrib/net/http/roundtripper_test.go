@@ -15,14 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWrapRoundTripperAllowNilTransport(t *testing.T) {
@@ -65,7 +66,9 @@ func TestRoundTripper(t *testing.T) {
 		Transport: rt,
 	}
 
-	client.Get(s.URL + "/hello/world")
+	resp, err := client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
@@ -116,7 +119,9 @@ func TestRoundTripperServerError(t *testing.T) {
 		Transport: rt,
 	}
 
-	client.Get(s.URL + "/hello/world")
+	resp, err := client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 2)
@@ -165,7 +170,8 @@ func TestRoundTripperNetworkError(t *testing.T) {
 		Timeout:   1 * time.Millisecond,
 	}
 
-	client.Get(s.URL + "/hello/world")
+	_, err := client.Get(s.URL + "/hello/world") //nolint:bodyclose
+	assert.NotNil(t, err)
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -204,7 +210,8 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 			Timeout:   1 * time.Millisecond,
 		}
 
-		client.Get(s.URL + "/hello/world")
+		_, err := client.Get(s.URL + "/hello/world") //nolint:bodyclose
+		assert.NotNil(t, err)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -262,7 +269,9 @@ func TestRoundTripperCredentials(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("myuser", "mypassword")
 
-	client.Get(u.String() + "/hello/world")
+	resp, err := client.Get(u.String() + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -294,7 +303,9 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		rt := WrapRoundTripper(http.DefaultTransport, opts...)
 
 		client := &http.Client{Transport: rt}
-		client.Get(srv.URL + "/hello/world")
+		resp, err := client.Get(srv.URL + "/hello/world")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		s := spans[0]
@@ -365,8 +376,9 @@ func TestRoundTripperCopy(t *testing.T) {
 	req, err := http.NewRequest("GET", s.URL+"/hello/world", nil)
 	assert.NoError(t, err)
 	rt := WrapRoundTripper(http.DefaultTransport).(*roundTripper)
-	_, err = rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
 	assert.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Len(t, req.Header, 0)
 	assert.Equal(t, initialReq, req)
 }
@@ -388,13 +400,15 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 
 	ignoreReq, err := http.NewRequest("GET", s.URL+"/ignore", nil)
 	assert.NoError(t, err)
-	_, err = rt.RoundTrip(ignoreReq)
+	resp1, err := rt.RoundTrip(ignoreReq)
 	assert.NoError(t, err)
+	defer resp1.Body.Close()
 
 	req, err := http.NewRequest("GET", s.URL+"/hello", nil)
 	assert.NoError(t, err)
-	_, err = rt.RoundTrip(req)
+	resp2, err := rt.RoundTrip(req)
 	assert.NoError(t, err)
+	defer resp2.Body.Close()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -414,7 +428,9 @@ func TestServiceName(t *testing.T) {
 		client := &http.Client{
 			Transport: rt,
 		}
-		client.Get(s.URL + "/hello/world")
+		resp, err := client.Get(s.URL + "/hello/world")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		assert.Equal(t, serviceName, spans[0].Tag(ext.ServiceName))
@@ -433,7 +449,9 @@ func TestServiceName(t *testing.T) {
 		client := &http.Client{
 			Transport: rt,
 		}
-		client.Get(s.URL + "/hello/world")
+		resp, err := client.Get(s.URL + "/hello/world")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		assert.Equal(t, serviceName, spans[0].Tag(ext.ServiceName))
@@ -453,7 +471,9 @@ func TestResourceNamer(t *testing.T) {
 		client := &http.Client{
 			Transport: rt,
 		}
-		client.Get(s.URL + "/hello/world")
+		resp, err := client.Get(s.URL + "/hello/world")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
@@ -469,7 +489,9 @@ func TestResourceNamer(t *testing.T) {
 		client := &http.Client{
 			Transport: rt,
 		}
-		client.Get(s.URL + "/hello/world")
+		resp, err := client.Get(s.URL + "/hello/world")
+		assert.Nil(t, err)
+		defer resp.Body.Close()
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 		assert.Equal(t, "GET /hello/world", spans[0].Tag(ext.ResourceName))
@@ -487,9 +509,49 @@ func TestSpanOptions(t *testing.T) {
 	rt := WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
 	client := &http.Client{Transport: rt}
 
-	client.Get(s.URL)
+	resp, err := client.Get(s.URL)
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []RoundTripperOption
+		if serviceOverride != "" {
+			opts = append(opts, RTWithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("")) }))
+		defer srv.Close()
+
+		c := WrapClient(&http.Client{}, opts...)
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/200", nil)
+		require.NoError(t, err)
+		resp, err := c.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "http.request", spans[0].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "http.client.request", spans[0].OperationName())
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{""},
+		WithDDService:            []string{""},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }

@@ -49,8 +49,9 @@ func Test(t *testing.T) {
 		srv := newTestServer(opts...)
 		defer srv.Close()
 		q := `{"query": "query TestQuery() { hello, helloNonTrivial }", "operationName": "TestQuery"}`
-		_, err := http.Post(srv.URL, "application/json", strings.NewReader(q))
+		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(q))
 		assert.NoError(t, err)
+		defer resp.Body.Close()
 	}
 	t.Run("defaults", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -137,8 +138,10 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
 		srv := newTestServer(opts...)
 		defer srv.Close()
-		_, err := http.Post(srv.URL, "application/json", strings.NewReader(`{"query": "{ hello }"}`))
+
+		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(`{"query": "{ hello }"}`))
 		assert.NoError(t, err)
+		defer resp.Body.Close()
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
