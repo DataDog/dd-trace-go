@@ -161,6 +161,10 @@ type config struct {
 
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
+
+	// partialFlushMinSpans the number of finished spans in a single trace to flush at. Disabled when 0.
+	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, currently defaults to 0 but may be enabled by default in the future.
+	partialFlushMinSpans int
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -234,6 +238,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -839,6 +844,17 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
+	}
+}
+
+// WithPartialFlushing enables flushing of partially finished traces.
+// This is done after "numSpans" have finished in a single local trace at
+// which point all finished spans in that trace will be flushed, freeing up
+// any memory they were consuming. This feature is currently disabled by
+// default but may be enabled in the future.
+func WithPartialFlushing(numSpans int) StartOption {
+	return func(c *config) {
+		c.partialFlushMinSpans = numSpans
 	}
 }
 
