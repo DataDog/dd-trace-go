@@ -41,16 +41,6 @@ func (t *trace) unsetPropagatingTag(key string) {
 	delete(t.propagatingTags, key)
 }
 
-// func (t *trace) allPropagatingTags() map[string]string {
-// 	t.mu.RLock()
-// 	defer t.mu.RUnlock()
-// 	m := make(map[string]string)
-// 	for k, v := range t.propagatingTags {
-// 		m[k] = v
-// 	}
-// 	return m
-// }
-
 // iteratePropagatingTags allows safe iteration through the propagating tags of a trace.
 // the trace must not be modified during this call, as it is locked for reading.
 //
