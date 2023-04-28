@@ -1972,7 +1972,7 @@ func TestPropagatingTagsConcurrency(t *testing.T) {
 	defer trc.Stop()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 1_000; i++ {
 		root := trc.StartSpan("test")
 		wg.Add(5)
 		for i := 0; i < 5; i++ {
