@@ -88,6 +88,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -161,6 +162,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -232,6 +234,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -304,6 +307,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "MyBucketName", s.Tag(tagBucketName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -374,6 +378,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "MyTopicName", s.Tag(tagTopicName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -443,6 +448,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "MyTableName", s.Tag(tagTableName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -514,6 +520,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "my-kinesis-stream", s.Tag(tagStreamName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -583,6 +590,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "my-event-rule-name", s.Tag(tagRuleName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -652,6 +660,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "HelloWorld-StateMachine", s.Tag(tagStateMachineName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
