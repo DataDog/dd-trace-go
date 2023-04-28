@@ -387,7 +387,8 @@ func (t *trace) push(sp *span) {
 
 // finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
-// the given priority, if non-nil, to mark the root span.
+// the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
+// if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -425,6 +426,32 @@ func (t *trace) finishedOne(s *span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return
+	}
+	// we have a tracer that can receive completed traces.
+	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
+	if tr.config.partialFlushMinSpans > 0 && t.finished >= tr.config.partialFlushMinSpans && len(t.spans) != t.finished {
+		log.Debug("Partial flush triggered with %d finished spans", t.finished)
+		//TODO: is there a metric we should bump when doing this?
+		finishedSpans := make([]*span, 0, t.finished)
+		leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+		for _, s2 := range t.spans {
+			if s2.finished {
+				s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
+				finishedSpans = append(finishedSpans, s2)
+			} else {
+				leftoverSpans = append(leftoverSpans, s2)
+			}
+		}
+		t.spans = leftoverSpans
+		t.finished = 0
+		tr.pushTrace(&finishedTrace{
+			spans:    finishedSpans,
+			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		})
+	}
 	if len(t.spans) != t.finished {
 		return
 	}
@@ -432,15 +459,10 @@ func (t *trace) finishedOne(s *span) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 	}()
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
-		return
-	}
+	//TODO: should this be a tag on the trace? Should this be sent for partial chunks? (probably)
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	// we have a tracer that can receive completed traces.
-	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
