@@ -201,8 +201,9 @@ func TestNamingSchema(t *testing.T) {
 
 		srv := newTestServer(opts...)
 		defer srv.Close()
-		_, err := http.Post(srv.URL, "application/json", strings.NewReader(`{"query": "{ hello }"}`))
+		resp, err := http.Post(srv.URL, "application/json", strings.NewReader(`{"query": "{ hello }"}`))
 		require.NoError(t, err)
+		defer resp.Body.Close()
 
 		return mt.FinishedSpans()
 	})
