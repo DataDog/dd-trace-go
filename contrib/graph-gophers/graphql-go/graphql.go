@@ -49,7 +49,7 @@ type Tracer struct {
 var _ trace.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
-func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, varTypes map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
+func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, _ map[string]interface{}, _ map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
@@ -77,7 +77,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 }
 
 // TraceField traces a GraphQL field access.
-func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
+func (t *Tracer) TraceField(ctx context.Context, _ string, typeName string, fieldName string, trivial bool, _ map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
 	if t.cfg.omitTrivial && trivial {
 		return ctx, func(queryError *errors.QueryError) {}
 	}

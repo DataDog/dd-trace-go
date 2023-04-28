@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates. This function returns the configuration processing status
 // for each config file received through the update.
-type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
+type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -40,8 +41,14 @@ const (
 	ASMIPBlocking
 	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
 	ASMDDRules
+	// ASMExclusions represents the capabilty for ASM to exclude traffic from its protections
+	ASMExclusions
+	// ASMRequestBlocking represents the capability for ASM to block requests based on the HTTP request related WAF addresses
+	ASMRequestBlocking
+	// ASMResponseBlocking represents the capability for ASM to block requests based on the HTTP response related WAF addresses
+	ASMResponseBlocking
 	// ASMUserBlocking represents the capability for ASM to block requests based on user ID
-	ASMUserBlocking = 7
+	ASMUserBlocking
 )
 
 // ProductUpdate represents an update for a specific product.
@@ -58,7 +65,7 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks map[string][]Callback
+	callbacks []Callback
 
 	lastError error
 }
@@ -80,7 +87,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,
-		callbacks:    map[string][]Callback{},
+		callbacks:    []Callback{},
 	}, nil
 }
 
@@ -93,6 +100,7 @@ func (c *Client) Start() {
 		for {
 			select {
 			case <-c.stop:
+				close(c.stop)
 				return
 			case <-ticker.C:
 				c.updateState()
@@ -103,7 +111,14 @@ func (c *Client) Start() {
 
 // Stop stops the client's update poll loop
 func (c *Client) Stop() {
-	close(c.stop)
+	log.Debug("remoteconfig: gracefully stopping the client")
+	c.stop <- struct{}{}
+	select {
+	case <-c.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
 }
 
 func (c *Client) updateState() {
@@ -155,19 +170,56 @@ func (c *Client) updateState() {
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
-// receives a configuration update for the specified product.
-func (c *Client) RegisterCallback(f Callback, product string) {
-	c.callbacks[product] = append(c.callbacks[product], f)
+// receives configuration updates. It is up to that callback to then decide what to do
+// depending on the product related to the configuration update.
+func (c *Client) RegisterCallback(f Callback) {
+	c.callbacks = append(c.callbacks, f)
+}
+
+// UnregisterCallback removes a previously registered callback from the active callbacks list
+// This remove operation preserves ordering
+func (c *Client) UnregisterCallback(f Callback) {
+	fValue := reflect.ValueOf(f)
+	for i, callback := range c.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+		}
+	}
+}
+
+// RegisterProduct adds a product to the list of products listened by the client
+func (c *Client) RegisterProduct(p string) {
+	c.Products[p] = struct{}{}
+}
+
+// UnregisterProduct removes a product from the list of products listened by the client
+func (c *Client) UnregisterProduct(p string) {
+	delete(c.Products, p)
+}
+
+// RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) RegisterCapability(cap Capability) {
+	c.Capabilities[cap] = struct{}{}
+}
+
+// UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) UnregisterCapability(cap Capability) {
+	delete(c.Capabilities, cap)
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	productUpdates := make(map[string]ProductUpdate, len(c.Products))
+	for p := range c.Products {
+		productUpdates[p] = make(ProductUpdate)
+	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for _, p := range c.Products {
-			productUpdates[p] = make(ProductUpdate)
-			if strings.Contains(f.Path, p) {
+		for p := range c.Products {
+			// Check the config file path to make sure it belongs to the right product
+			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
 			}
 		}
@@ -225,14 +277,26 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		updatedProducts[p] = struct{}{}
 	}
 
-	// Performs the callbacks registered for all updated products and update the application status in the repository
-	// (RCTE2)
-	for p := range updatedProducts {
-		for _, fn := range c.callbacks[p] {
-			for path, status := range fn(productUpdates[p]) {
-				c.repository.UpdateApplyStatus(path, status)
+	if len(updatedProducts) == 0 {
+		return nil
+	}
+	// Performs the callbacks registered and update the application status in the repository (RCTE2)
+	// In case of several callbacks handling the same config, statuses take precedence in this order:
+	// 1 - ApplyStateError
+	// 2 - ApplyStateUnacknowledged
+	// 3 - ApplyStateAcknowledged
+	// This makes sure that any product that would need to re-receive the config in a subsequent update will be allowed to
+	statuses := make(map[string]rc.ApplyStatus)
+	for _, fn := range c.callbacks {
+		for path, status := range fn(productUpdates) {
+			if s, ok := statuses[path]; !ok || status.State == rc.ApplyStateError ||
+				s.State == rc.ApplyStateAcknowledged && status.State == rc.ApplyStateUnacknowledged {
+				statuses[path] = status
 			}
 		}
+	}
+	for p, s := range statuses {
+		c.repository.UpdateApplyStatus(p, s)
 	}
 
 	return nil
@@ -284,9 +348,13 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		}
 	}
 
-	cap := big.NewInt(0)
-	for _, i := range c.Capabilities {
-		cap.SetBit(cap, int(i), 1)
+	capa := big.NewInt(0)
+	for i := range c.Capabilities {
+		capa.SetBit(capa, int(i), 1)
+	}
+	products := make([]string, 0, len(c.Products))
+	for p := range c.Products {
+		products = append(products, p)
 	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
@@ -298,7 +366,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: c.Products,
+			Products: products,
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
@@ -308,7 +376,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
-			Capabilities: cap.Bytes(),
+			Capabilities: capa.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

@@ -101,16 +101,16 @@ func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, re
 	}
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
-		old := "/" + v + "/"
-		new := "/:" + k + "/"
-		if strings.Contains(route, old) {
-			route = strings.Replace(route, old, new, 1)
+		oldP := "/" + v + "/"
+		newP := "/:" + k + "/"
+		if strings.Contains(route, oldP) {
+			route = strings.Replace(route, oldP, newP, 1)
 			continue
 		}
 		// replace parameter at end of the path, i.e. "../:param"
-		old = "/" + v
-		new = "/:" + k
-		route = strings.Replace(route, old, new, 1)
+		oldP = "/" + v
+		newP = "/:" + k
+		route = strings.Replace(route, oldP, newP, 1)
 	}
 	return req.Method + " " + route
 }

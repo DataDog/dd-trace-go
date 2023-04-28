@@ -196,7 +196,7 @@ func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
 type DiscardLogger struct{}
 
 // Log implements Logger.
-func (d DiscardLogger) Log(msg string) {}
+func (d DiscardLogger) Log(_ string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {

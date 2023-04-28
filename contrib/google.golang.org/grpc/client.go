@@ -38,7 +38,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.clientServiceName(),
+			cs.cfg.serviceName,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -57,7 +57,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.clientServiceName(),
+			cs.cfg.serviceName,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -74,7 +74,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 // streams using the given set of options.
 func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -145,7 +145,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 // the given set of options.
 func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -173,8 +173,8 @@ func doClientRequest(
 	span, ctx := startSpanFromContext(
 		ctx,
 		method,
-		"grpc.client",
-		cfg.clientServiceName(),
+		cfg.spanName,
+		cfg.serviceName,
 		cfg.startSpanOptions(
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,

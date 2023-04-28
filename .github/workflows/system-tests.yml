@@ -21,22 +21,59 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        weblog-variant:
+          - net-http
+          - echo
+          - chi
+          - gin
+        scenario:
+          - DEFAULT
+          - APPSEC_DISABLED
+          - APPSEC_BLOCKING
+          - APPSEC_IP_BLOCKING
+          - APPSEC_REQUEST_BLOCKING
+          - APM_TRACING_E2E
+          - APM_TRACING_E2E_SINGLE_SPAN
         include:
-          - library: golang
-            weblog-variant: net-http
-          - library: golang
-            weblog-variant: gorilla
-          - library: golang
-            weblog-variant: echo
-          - library: golang
-            weblog-variant: chi
-          - library: golang
-            weblog-variant: gin
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
+          # AppSec scenarios that don't depend on the integrations, so we just run on the net/http variant
+          - weblog-variant: net-http
+            scenario: APPSEC_RATE_LIMITER
+          - weblog-variant: net-http
+            scenario: APPSEC_CUSTOM_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_MISSING_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_CORRUPTED_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_LOW_WAF_TIMEOUT
+          - weblog-variant: net-http
+            scenario: APPSEC_CUSTOM_OBFUSCATION
+          # APM scenarios requiring specific environment settings
+          - scenario: APM_TRACING_E2E
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+          - scenario: APM_TRACING_E2E_SINGLE_SPAN
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+
       fail-fast: false
     env:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+      SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+    name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Setup python 3.9
         uses: actions/setup-python@v4
@@ -57,21 +94,7 @@ jobs:
         run: ./build.sh
 
       - name: Run
-        run: ./run.sh
-
-      - name: Run APM E2E default tests
-        env:
-          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
-          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-          DD_SITE: "datadoghq.com"
-        run: ./run.sh APM_TRACING_E2E
-
-      - name: Run APM E2E Single Span tests
-        env:
-          DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
-          DD_APPLICATION_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-          DD_SITE: "datadoghq.com"
-        run: ./run.sh APM_TRACING_E2E_SINGLE_SPAN
+        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -81,5 +104,5 @@ jobs:
         uses: actions/upload-artifact@v2
         if: ${{ always() }}
         with:
-          name: logs_${{ matrix.weblog-variant }}
+          name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz

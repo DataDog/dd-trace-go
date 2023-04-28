@@ -42,3 +42,8 @@ func NewMemcachedOutboundOp(opts ...Option) *Schema {
 	newOpts := append([]Option{WithVersionOverride(SchemaV0, "memcached.query")}, opts...)
 	return NewCacheOutboundOp("memcached", newOpts...)
 }
+
+// NewRedisOutboundOp creates a new schema for Redis (cache) outbound operations.
+func NewRedisOutboundOp(opts ...Option) *Schema {
+	return NewCacheOutboundOp("redis", opts...)
+}

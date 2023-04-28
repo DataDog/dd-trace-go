@@ -5,8 +5,8 @@ go 1.18
 require (
 	cloud.google.com/go/pubsub v1.4.0
 	github.com/99designs/gqlgen v0.16.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.43.1
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.43.1
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.45.0-rc.1
 	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
@@ -98,7 +98,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.26 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.0.0 // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
@@ -208,12 +208,14 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/go-libddwaf v1.0.0
+	github.com/DataDog/go-libddwaf v1.1.0
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/microsoft/go-mssqldb v0.21.0
+	github.com/redis/go-redis/v9 v9.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
+	go.uber.org/atomic v1.10.0
 )
 
 require (
@@ -230,8 +232,8 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.1 // indirect
+	github.com/stretchr/objx v0.5.0 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
-	go.uber.org/atomic v1.10.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
