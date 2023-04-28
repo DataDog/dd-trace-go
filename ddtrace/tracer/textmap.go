@@ -322,17 +322,18 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 		return ""
 	}
 
-	for k, v := range ctx.trace.allPropagatingTags() {
+	var properr string
+	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
-			ctx.trace.setTag(keyPropagationError, "encoding_error")
-			continue
+			properr = "encoding_error"
+			return true
 		}
 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
 			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
-			ctx.trace.setTag(keyPropagationError, "inject_max_size")
-			break
+			properr = "inject_max_size"
+			return false
 		}
 		if sb.Len() > 0 {
 			sb.WriteByte(',')
@@ -340,6 +341,10 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 		sb.WriteString(k)
 		sb.WriteByte('=')
 		sb.WriteString(v)
+		return true
+	})
+	if properr != "" {
+		ctx.trace.setTag(keyPropagationError, properr)
 	}
 	return sb.String()
 }
@@ -725,9 +730,9 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			strings.ReplaceAll(oWithSub, "=", "~")))
 	}
 
-	for k, v := range ctx.trace.allPropagatingTags() {
+	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
 		if !strings.HasPrefix(k, "_dd.p.") {
-			continue
+			return true
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
@@ -735,11 +740,12 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
 		if b.Len()+len(tag) > 256 {
-			break
+			return false
 		}
 		b.WriteString(";")
 		b.WriteString(tag)
-	}
+		return true
+	})
 	// the old state is split by vendors, must be concatenated with a `,`
 	if len(oldState) == 0 {
 		return b.String()
