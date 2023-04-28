@@ -1967,7 +1967,8 @@ func FuzzExtractTraceID128(f *testing.F) {
 }
 
 // Regression test for https://github.com/DataDog/dd-trace-go/issues/1944
-func TestPropagatingTagsConcurrency(t *testing.T) {
+func TestPropagatingTagsConcurrency(_ *testing.T) {
+	// This test ensures Injection can be done concurrently.
 	trc := newTracer()
 	defer trc.Stop()
 
