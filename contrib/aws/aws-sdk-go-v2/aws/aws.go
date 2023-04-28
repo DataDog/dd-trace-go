@@ -44,13 +44,13 @@ const (
 	tagAWSRegion          = "aws.region"
 	tagTopLevelRegion     = "region"
 	tagAWSRequestID       = "aws.request_id"
-	tagQueueName 		  = "queuename"
-	tagTopicName		  = "topicname"
-	tagTableName		  = "tablename"
-	tagStreamName		  = "streamname"
-	tagBucketName		  = "bucketname"
-	tagRuleName		  	  = "rulename"
-	tagStateMachineName	  = "statemachinename"
+	tagQueueName          = "queuename"
+	tagTopicName          = "topicname"
+	tagTableName          = "tablename"
+	tagStreamName         = "streamname"
+	tagBucketName         = "bucketname"
+	tagRuleName           = "rulename"
+	tagStateMachineName   = "statemachinename"
 )
 
 type spanTimestampKey struct{}
@@ -93,7 +93,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
-		
+
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
@@ -135,7 +135,7 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 		resourceNameKey, resourceNameValue = extractQueueName(requestInput)
 	case "S3":
 		fmt.Println("got in s3 case")
- 
+
 		// Extract bucketName
 		resourceNameKey, resourceNameValue = extractBucketName(requestInput)
 	case "SNS":
@@ -148,8 +148,8 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 		resourceNameKey, resourceNameValue = extractRuleName(requestInput)
 	case "SFN":
 		resourceNameKey, resourceNameValue = extractStateMachineName(requestInput)
-	} 
-    return resourceNameKey, resourceNameValue
+	}
+	return resourceNameKey, resourceNameValue
 }
 
 func extractQueueName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
@@ -213,7 +213,7 @@ func extractBucketName(requestInput middleware.InitializeInput) (resourceNameKey
 		if params.Bucket != nil {
 			bucketNameValue = *params.Bucket
 		}
-	
+
 	}
 
 	return tagBucketName, bucketNameValue
@@ -223,59 +223,59 @@ func extractTopicName(requestInput middleware.InitializeInput) (resourceNameKey 
 	fmt.Println("got in extractTopicName")
 	topicNameValue := ""
 	switch params := requestInput.Parameters.(type) {
-		case *sns.PublishInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.PublishBatchInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.GetTopicAttributesInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.ListSubscriptionsByTopicInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.RemovePermissionInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.SetTopicAttributesInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.SubscribeInput:
-			if params.TopicArn != nil {
-				topicArnValue := *params.TopicArn
-				//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-				parts := strings.Split(topicArnValue, ":")
-				topicNameValue = parts[len(parts)-1]
-			}
-		case *sns.CreateTopicInput:
-			topicNameValue = *params.Name
+	case *sns.PublishInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.PublishBatchInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.GetTopicAttributesInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.ListSubscriptionsByTopicInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.RemovePermissionInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.SetTopicAttributesInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.SubscribeInput:
+		if params.TopicArn != nil {
+			topicArnValue := *params.TopicArn
+			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
+			parts := strings.Split(topicArnValue, ":")
+			topicNameValue = parts[len(parts)-1]
+		}
+	case *sns.CreateTopicInput:
+		topicNameValue = *params.Name
 	}
-	
+
 	return tagTopicName, topicNameValue
 }
 
@@ -283,28 +283,28 @@ func extractTableName(requestInput middleware.InitializeInput) (resourceNameKey 
 	fmt.Println("got in extractTableName")
 	tableNameValue := ""
 	switch params := requestInput.Parameters.(type) {
-		case *dynamodb.GetItemInput:
-			if params.TableName != nil {
-				tableNameValue = *params.TableName
-			}
-		case *dynamodb.PutItemInput:
-			if params.TableName != nil {
-				tableNameValue = *params.TableName
-			}
-		case *dynamodb.QueryInput:
-			if params.TableName != nil {
-				tableNameValue = *params.TableName
-			}
-		case *dynamodb.ScanInput:
-			if params.TableName != nil {
-				tableNameValue = *params.TableName
-			}
-		case *dynamodb.UpdateItemInput:
-			if params.TableName != nil {
-				tableNameValue = *params.TableName
-			}
+	case *dynamodb.GetItemInput:
+		if params.TableName != nil {
+			tableNameValue = *params.TableName
+		}
+	case *dynamodb.PutItemInput:
+		if params.TableName != nil {
+			tableNameValue = *params.TableName
+		}
+	case *dynamodb.QueryInput:
+		if params.TableName != nil {
+			tableNameValue = *params.TableName
+		}
+	case *dynamodb.ScanInput:
+		if params.TableName != nil {
+			tableNameValue = *params.TableName
+		}
+	case *dynamodb.UpdateItemInput:
+		if params.TableName != nil {
+			tableNameValue = *params.TableName
+		}
 	}
-	
+
 	return tagTableName, tableNameValue
 }
 
@@ -313,47 +313,47 @@ func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey
 	streamNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
-		case *kinesis.PutRecordInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.PutRecordsInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.AddTagsToStreamInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.RemoveTagsFromStreamInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.CreateStreamInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.DeleteStreamInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.DescribeStreamInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.DescribeStreamSummaryInput:
-			if params.StreamName != nil {
-				streamNameValue = *params.StreamName
-			}
-		case *kinesis.GetRecordsInput:
-			if params.StreamARN != nil {
-				streamArnValue := *params.StreamARN //TODO WRITE TESTS IN CASE OF A PANIC
-				//example stream_arn: arn:aws:kinesis:us-east-1:123456789012:stream/my-stream
-				parts := strings.Split(streamArnValue, "/")
-				streamNameValue = parts[len(parts)-1]
-			}
+	case *kinesis.PutRecordInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.PutRecordsInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.AddTagsToStreamInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.RemoveTagsFromStreamInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.CreateStreamInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.DeleteStreamInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.DescribeStreamInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.DescribeStreamSummaryInput:
+		if params.StreamName != nil {
+			streamNameValue = *params.StreamName
+		}
+	case *kinesis.GetRecordsInput:
+		if params.StreamARN != nil {
+			streamArnValue := *params.StreamARN //TODO WRITE TESTS IN CASE OF A PANIC
+			//example stream_arn: arn:aws:kinesis:us-east-1:123456789012:stream/my-stream
+			parts := strings.Split(streamArnValue, "/")
+			streamNameValue = parts[len(parts)-1]
+		}
 	}
-	
+
 	return tagStreamName, streamNameValue
 }
 
@@ -361,36 +361,36 @@ func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey s
 	fmt.Println("got in extractRuleName")
 	ruleNameValue := ""
 	switch params := requestInput.Parameters.(type) {
-		case *eventbridge.PutRuleInput:
-			if params.Name != nil {
-				ruleNameValue = *params.Name
-			}
-		case *eventbridge.DescribeRuleInput:
-			if params.Name != nil {
-				ruleNameValue = *params.Name
-			}
-		case *eventbridge.DeleteRuleInput:
-			if params.Name != nil {
-				ruleNameValue = *params.Name
-			}
-		case *eventbridge.DisableRuleInput:
-			if params.Name != nil {
-				ruleNameValue = *params.Name
-			}
-		case *eventbridge.EnableRuleInput:
-			if params.Name != nil {
-				ruleNameValue = *params.Name
-			}
-		case *eventbridge.PutTargetsInput:
-			if params.Rule != nil {
-				ruleNameValue = *params.Rule
-			}
-		case *eventbridge.RemoveTargetsInput:
-			if params.Rule != nil {
-				ruleNameValue = *params.Rule
-			}
+	case *eventbridge.PutRuleInput:
+		if params.Name != nil {
+			ruleNameValue = *params.Name
+		}
+	case *eventbridge.DescribeRuleInput:
+		if params.Name != nil {
+			ruleNameValue = *params.Name
+		}
+	case *eventbridge.DeleteRuleInput:
+		if params.Name != nil {
+			ruleNameValue = *params.Name
+		}
+	case *eventbridge.DisableRuleInput:
+		if params.Name != nil {
+			ruleNameValue = *params.Name
+		}
+	case *eventbridge.EnableRuleInput:
+		if params.Name != nil {
+			ruleNameValue = *params.Name
+		}
+	case *eventbridge.PutTargetsInput:
+		if params.Rule != nil {
+			ruleNameValue = *params.Rule
+		}
+	case *eventbridge.RemoveTargetsInput:
+		if params.Rule != nil {
+			ruleNameValue = *params.Rule
+		}
 	}
-	
+
 	return tagRuleName, ruleNameValue
 }
 
@@ -399,61 +399,61 @@ func extractStateMachineName(requestInput middleware.InitializeInput) (resourceN
 	stateMachineNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
-		case *sfn.CreateStateMachineInput:
-			if params.Name != nil {
-				stateMachineNameValue = *params.Name
-			}
-		case *sfn.DescribeStateMachineInput:
-			if params.StateMachineArn != nil {
-				stateMachineArnValue := *params.StateMachineArn
-				//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-				parts := strings.Split(stateMachineArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-1]
-			}
-		case *sfn.StartExecutionInput:
-			if params.StateMachineArn != nil {
-				stateMachineArnValue := *params.StateMachineArn
-				//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-				parts := strings.Split(stateMachineArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-1]
-			}
-		case *sfn.StopExecutionInput:
-			if params.ExecutionArn != nil {
-				executionArnValue := *params.ExecutionArn
-				//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
-				parts := strings.Split(executionArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-2]
-			}
-		case *sfn.DescribeExecutionInput:
-			if params.ExecutionArn != nil {
-				executionArnValue := *params.ExecutionArn
-				//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
-				parts := strings.Split(executionArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-2]
-			}
-		case *sfn.ListExecutionsInput:
-			if params.StateMachineArn != nil {
-				stateMachineArnValue := *params.StateMachineArn
-				//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-				parts := strings.Split(stateMachineArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-1]
-			}
-		case *sfn.UpdateStateMachineInput:
-			if params.StateMachineArn != nil {
-				stateMachineArnValue := *params.StateMachineArn
-				//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-				parts := strings.Split(stateMachineArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-1]
-			}
-		case *sfn.DeleteStateMachineInput:
-			if params.StateMachineArn != nil {
-				stateMachineArnValue := *params.StateMachineArn
-				//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-				parts := strings.Split(stateMachineArnValue, ":")
-				stateMachineNameValue = parts[len(parts)-1]
-			}
-	}	
-	
+	case *sfn.CreateStateMachineInput:
+		if params.Name != nil {
+			stateMachineNameValue = *params.Name
+		}
+	case *sfn.DescribeStateMachineInput:
+		if params.StateMachineArn != nil {
+			stateMachineArnValue := *params.StateMachineArn
+			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
+			parts := strings.Split(stateMachineArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-1]
+		}
+	case *sfn.StartExecutionInput:
+		if params.StateMachineArn != nil {
+			stateMachineArnValue := *params.StateMachineArn
+			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
+			parts := strings.Split(stateMachineArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-1]
+		}
+	case *sfn.StopExecutionInput:
+		if params.ExecutionArn != nil {
+			executionArnValue := *params.ExecutionArn
+			//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
+			parts := strings.Split(executionArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-2]
+		}
+	case *sfn.DescribeExecutionInput:
+		if params.ExecutionArn != nil {
+			executionArnValue := *params.ExecutionArn
+			//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
+			parts := strings.Split(executionArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-2]
+		}
+	case *sfn.ListExecutionsInput:
+		if params.StateMachineArn != nil {
+			stateMachineArnValue := *params.StateMachineArn
+			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
+			parts := strings.Split(stateMachineArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-1]
+		}
+	case *sfn.UpdateStateMachineInput:
+		if params.StateMachineArn != nil {
+			stateMachineArnValue := *params.StateMachineArn
+			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
+			parts := strings.Split(stateMachineArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-1]
+		}
+	case *sfn.DeleteStateMachineInput:
+		if params.StateMachineArn != nil {
+			stateMachineArnValue := *params.StateMachineArn
+			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
+			parts := strings.Split(stateMachineArnValue, ":")
+			stateMachineNameValue = parts[len(parts)-1]
+		}
+	}
+
 	return tagStateMachineName, stateMachineNameValue
 }
 

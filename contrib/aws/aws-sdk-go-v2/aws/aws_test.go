@@ -71,7 +71,6 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			sqsClient := sqs.NewFromConfig(awsCfg)
 			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
@@ -87,7 +86,6 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag(tagAWSService))
 			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
@@ -146,10 +144,9 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			sqsClient := sqs.NewFromConfig(awsCfg)
 			sqsClient.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
-				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+				QueueUrl:      aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 				ReceiptHandle: aws.String("foobar"),
 			})
 
@@ -162,7 +159,6 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag(tagAWSService))
 			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
@@ -220,10 +216,9 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			sqsClient := sqs.NewFromConfig(awsCfg)
 			sqsClient.ReceiveMessage(context.Background(), &sqs.ReceiveMessageInput{
-				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+				QueueUrl: aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
 
 			spans := mt.FinishedSpans()
@@ -235,7 +230,6 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag(tagAWSService))
 			assert.Equal(t, "SQS", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
@@ -294,10 +288,9 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			s3Client := s3.NewFromConfig(awsCfg)
 			s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
-				Bucket:    aws.String("MyBucketName"),
+				Bucket: aws.String("MyBucketName"),
 			})
 
 			spans := mt.FinishedSpans()
@@ -309,7 +302,6 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "S3", s.Tag(tagAWSService))
 			assert.Equal(t, "S3", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyBucketName", s.Tag(tagBucketName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
@@ -365,10 +357,9 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			snsClient := sns.NewFromConfig(awsCfg)
 			snsClient.Publish(context.Background(), &sns.PublishInput{
-				Message: aws.String("Hello world!"),
+				Message:  aws.String("Hello world!"),
 				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
 			})
 
@@ -381,7 +372,6 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "SNS", s.Tag(tagAWSService))
 			assert.Equal(t, "SNS", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyTopicName", s.Tag(tagTopicName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
@@ -437,7 +427,6 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			dynamoClient := dynamodb.NewFromConfig(awsCfg)
 			dynamoClient.Query(context.Background(), &dynamodb.QueryInput{
 				TableName: aws.String("MyTableName"),
@@ -452,7 +441,6 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "DynamoDB", s.Tag(tagAWSService))
 			assert.Equal(t, "DynamoDB", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "MyTableName", s.Tag(tagTableName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
@@ -508,11 +496,10 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			kinesisClient := kinesis.NewFromConfig(awsCfg)
 			kinesisClient.PutRecord(context.Background(), &kinesis.PutRecordInput{
-				StreamName: aws.String("my-kinesis-stream"),
-				Data: []byte("Hello, Kinesis!"),
+				StreamName:   aws.String("my-kinesis-stream"),
+				Data:         []byte("Hello, Kinesis!"),
 				PartitionKey: aws.String("my-partition-key"),
 			})
 
@@ -525,7 +512,6 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "Kinesis", s.Tag(tagAWSService))
 			assert.Equal(t, "Kinesis", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "my-kinesis-stream", s.Tag(tagStreamName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
@@ -581,10 +567,9 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			eventbridgeClient := eventbridge.NewFromConfig(awsCfg)
 			eventbridgeClient.PutRule(context.Background(), &eventbridge.PutRuleInput{
-					Name: aws.String("my-event-rule-name"),
+				Name: aws.String("my-event-rule-name"),
 			})
 
 			spans := mt.FinishedSpans()
@@ -596,7 +581,6 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "EventBridge", s.Tag(tagAWSService))
 			assert.Equal(t, "EventBridge", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "my-event-rule-name", s.Tag(tagRuleName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
@@ -652,7 +636,6 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 
 			AppendMiddleware(&awsCfg)
 
-
 			sfnClient := sfn.NewFromConfig(awsCfg)
 			sfnClient.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
 				StateMachineArn: aws.String("arn:aws:states:us-west-2:123456789012:stateMachine:HelloWorld-StateMachine"),
@@ -667,7 +650,6 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "SFN", s.Tag(tagAWSService))
 			assert.Equal(t, "SFN", s.Tag(tagTopLevelAWSService))
 			assert.Equal(t, "HelloWorld-StateMachine", s.Tag(tagStateMachineName))
-
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
