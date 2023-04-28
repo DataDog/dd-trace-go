@@ -418,20 +418,14 @@ func (t *trace) finishedOne(s *span) {
 		//TODO: is there a metric we should bump when doing this?
 		finishedSpans := make([]*span, 0, t.finished)
 		leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
-		foundFinished := false
 		for _, s2 := range t.spans {
 			if s2.finished {
-				if !foundFinished && t.priority != nil { // Only need to set sampling priority on the first span in the chunk
-					foundFinished = true
-					s2.setMetric(keySamplingPriority, *t.priority)
-				}
+				s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
 				finishedSpans = append(finishedSpans, s2)
 			} else {
 				leftoverSpans = append(leftoverSpans, s2)
 			}
 		}
-		// Copy over all the trace level tags to the first span in the chunk
-		t.setTraceTags(finishedSpans[0])
 		t.spans = leftoverSpans
 		t.finished = 0
 		tr.pushTrace(&flushableTraceChunk{
