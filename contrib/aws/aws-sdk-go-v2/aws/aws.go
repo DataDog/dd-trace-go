@@ -8,6 +8,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -107,8 +108,10 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		resourceNameKey, resourceNameValue := extractResourceNameFromParams(in, serviceID)
-		//queueURL := *in.Parameters.(*sqs.SendMessageInput).QueueUrl
+		resourceNameKey, resourceNameValue, err := extractResourceNameFromParams(in, serviceID)
+		if err != nil {
+			log.Printf("Error: %v", err)
+		}
 		opts = append(opts, tracer.Tag(resourceNameKey, resourceNameValue))
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -123,7 +126,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (resourceNameKey string, resourceNameValue string) {
+func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
+	var resourceNameKey, resourceNameValue string
+
 	switch awsService {
 	case "SQS":
 		resourceNameKey, resourceNameValue = extractQueueName(requestInput)
@@ -139,8 +144,11 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 		resourceNameKey, resourceNameValue = extractRuleName(requestInput)
 	case "SFN":
 		resourceNameKey, resourceNameValue = extractStateMachineName(requestInput)
+	default:
+		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
-	return resourceNameKey, resourceNameValue
+
+	return resourceNameKey, resourceNameValue, nil
 }
 
 func extractQueueName(requestInput middleware.InitializeInput) (string, string) {
