@@ -131,19 +131,26 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 
 	switch awsService {
 	case "SQS":
-		resourceNameKey, resourceNameValue = extractQueueName(requestInput)
+		resourceNameKey = tagQueueName
+		resourceNameValue = extractQueueName(requestInput)
 	case "S3":
-		resourceNameKey, resourceNameValue = extractBucketName(requestInput)
+		resourceNameKey = tagBucketName
+		resourceNameValue = extractBucketName(requestInput)
 	case "SNS":
-		resourceNameKey, resourceNameValue = extractTopicName(requestInput)
+		resourceNameKey = tagTopicName
+		resourceNameValue = extractTopicName(requestInput)
 	case "DynamoDB":
-		resourceNameKey, resourceNameValue = extractTableName(requestInput)
+		resourceNameKey = tagTableName
+		resourceNameValue = extractTableName(requestInput)
 	case "Kinesis":
-		resourceNameKey, resourceNameValue = extractStreamName(requestInput)
+		resourceNameKey = tagStreamName
+		resourceNameValue = extractStreamName(requestInput)
 	case "EventBridge":
-		resourceNameKey, resourceNameValue = extractRuleName(requestInput)
+		resourceNameKey = tagRuleName
+		resourceNameValue = extractRuleName(requestInput)
 	case "SFN":
-		resourceNameKey, resourceNameValue = extractStateMachineName(requestInput)
+		resourceNameKey = tagStateMachineName
+		resourceNameValue = extractStateMachineName(requestInput)
 	default:
 		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
@@ -151,7 +158,7 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 	return resourceNameKey, resourceNameValue, nil
 }
 
-func extractQueueName(requestInput middleware.InitializeInput) (string, string) {
+func extractQueueName(requestInput middleware.InitializeInput) string {
 	queueNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
@@ -180,10 +187,10 @@ func extractQueueName(requestInput middleware.InitializeInput) (string, string) 
 			queueNameValue = parts[len(parts)-1]
 		}
 	}
-	return tagQueueName, queueNameValue
+	return queueNameValue
 }
 
-func extractBucketName(requestInput middleware.InitializeInput) (string, string) {
+func extractBucketName(requestInput middleware.InitializeInput) string {
 	bucketNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
@@ -213,10 +220,10 @@ func extractBucketName(requestInput middleware.InitializeInput) (string, string)
 
 	}
 
-	return tagBucketName, bucketNameValue
+	return bucketNameValue
 }
 
-func extractTopicName(requestInput middleware.InitializeInput) (string, string) {
+func extractTopicName(requestInput middleware.InitializeInput) string {
 	topicNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
@@ -272,10 +279,10 @@ func extractTopicName(requestInput middleware.InitializeInput) (string, string) 
 		topicNameValue = *params.Name
 	}
 
-	return tagTopicName, topicNameValue
+	return topicNameValue
 }
 
-func extractTableName(requestInput middleware.InitializeInput) (string, string) {
+func extractTableName(requestInput middleware.InitializeInput) string {
 	tableNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
@@ -300,10 +307,10 @@ func extractTableName(requestInput middleware.InitializeInput) (string, string) 
 		}
 	}
 
-	return tagTableName, tableNameValue
+	return tableNameValue
 }
 
-func extractStreamName(requestInput middleware.InitializeInput) (string, string) {
+func extractStreamName(requestInput middleware.InitializeInput) string {
 	streamNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
@@ -348,10 +355,10 @@ func extractStreamName(requestInput middleware.InitializeInput) (string, string)
 		}
 	}
 
-	return tagStreamName, streamNameValue
+	return streamNameValue
 }
 
-func extractRuleName(requestInput middleware.InitializeInput) (string, string) {
+func extractRuleName(requestInput middleware.InitializeInput) string {
 	ruleNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
@@ -384,10 +391,10 @@ func extractRuleName(requestInput middleware.InitializeInput) (string, string) {
 		}
 	}
 
-	return tagRuleName, ruleNameValue
+	return ruleNameValue
 }
 
-func extractStateMachineName(requestInput middleware.InitializeInput) (string, string) {
+func extractStateMachineName(requestInput middleware.InitializeInput) string {
 	stateMachineNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
@@ -446,7 +453,7 @@ func extractStateMachineName(requestInput middleware.InitializeInput) (string, s
 		}
 	}
 
-	return tagStateMachineName, stateMachineNameValue
+	return stateMachineNameValue
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
