@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -1930,4 +1931,24 @@ func FuzzExtractTraceID128(f *testing.F) {
 		ctx := new(spanContext)
 		extractTraceID128(ctx, v) // make sure it doesn't panic
 	})
+}
+
+// Regression test for https://github.com/DataDog/dd-trace-go/issues/1944
+func TestPropagatingTagsConcurrency(_ *testing.T) {
+	// This test ensures Injection can be done concurrently.
+	trc := newTracer()
+	defer trc.Stop()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 1_000; i++ {
+		root := trc.StartSpan("test")
+		wg.Add(5)
+		for i := 0; i < 5; i++ {
+			go func() {
+				defer wg.Done()
+				trc.Inject(root.Context(), TextMapCarrier(make(map[string]string)))
+			}()
+		}
+		wg.Wait()
+	}
 }
