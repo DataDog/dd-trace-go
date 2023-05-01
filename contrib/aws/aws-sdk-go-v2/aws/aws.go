@@ -143,7 +143,7 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 	return resourceNameKey, resourceNameValue
 }
 
-func extractQueueName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractQueueName(requestInput middleware.InitializeInput) (string, string) {
 	queueNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
@@ -175,7 +175,7 @@ func extractQueueName(requestInput middleware.InitializeInput) (resourceNameKey 
 	return tagQueueName, queueNameValue
 }
 
-func extractBucketName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractBucketName(requestInput middleware.InitializeInput) (string, string) {
 	bucketNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
@@ -208,7 +208,7 @@ func extractBucketName(requestInput middleware.InitializeInput) (resourceNameKey
 	return tagBucketName, bucketNameValue
 }
 
-func extractTopicName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractTopicName(requestInput middleware.InitializeInput) (string, string) {
 	topicNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
@@ -267,7 +267,7 @@ func extractTopicName(requestInput middleware.InitializeInput) (resourceNameKey 
 	return tagTopicName, topicNameValue
 }
 
-func extractTableName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractTableName(requestInput middleware.InitializeInput) (string, string) {
 	tableNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
@@ -295,7 +295,7 @@ func extractTableName(requestInput middleware.InitializeInput) (resourceNameKey 
 	return tagTableName, tableNameValue
 }
 
-func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractStreamName(requestInput middleware.InitializeInput) (string, string) {
 	streamNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
@@ -333,7 +333,7 @@ func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey
 		}
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
-			streamArnValue := *params.StreamARN //TODO WRITE TESTS IN CASE OF A PANIC
+			streamArnValue := *params.StreamARN
 			//example stream_arn: arn:aws:kinesis:us-east-1:123456789012:stream/my-stream
 			parts := strings.Split(streamArnValue, "/")
 			streamNameValue = parts[len(parts)-1]
@@ -343,7 +343,7 @@ func extractStreamName(requestInput middleware.InitializeInput) (resourceNameKey
 	return tagStreamName, streamNameValue
 }
 
-func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractRuleName(requestInput middleware.InitializeInput) (string, string) {
 	ruleNameValue := ""
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
@@ -379,7 +379,7 @@ func extractRuleName(requestInput middleware.InitializeInput) (resourceNameKey s
 	return tagRuleName, ruleNameValue
 }
 
-func extractStateMachineName(requestInput middleware.InitializeInput) (resourceNameKey string, resourceNameValue string) {
+func extractStateMachineName(requestInput middleware.InitializeInput) (string, string) {
 	stateMachineNameValue := ""
 
 	switch params := requestInput.Parameters.(type) {
