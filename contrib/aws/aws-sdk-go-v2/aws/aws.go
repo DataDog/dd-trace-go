@@ -159,302 +159,194 @@ func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsS
 }
 
 func extractQueueName(requestInput middleware.InitializeInput) string {
-	queueNameValue := ""
+	var queueURL *string
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		if params.QueueUrl != nil {
-			parts := strings.Split(*params.QueueUrl, "/")
-			queueNameValue = parts[len(parts)-1]
-		}
+		queueURL = params.QueueUrl
 	case *sqs.DeleteMessageInput:
-		if params.QueueUrl != nil {
-			parts := strings.Split(*params.QueueUrl, "/")
-			queueNameValue = parts[len(parts)-1]
-		}
+		queueURL = params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
-		if params.QueueUrl != nil {
-			parts := strings.Split(*params.QueueUrl, "/")
-			queueNameValue = parts[len(parts)-1]
-		}
+		queueURL = params.QueueUrl
 	case *sqs.ReceiveMessageInput:
-		if params.QueueUrl != nil {
-			parts := strings.Split(*params.QueueUrl, "/")
-			queueNameValue = parts[len(parts)-1]
-		}
+		queueURL = params.QueueUrl
 	case *sqs.SendMessageBatchInput:
-		if params.QueueUrl != nil {
-			parts := strings.Split(*params.QueueUrl, "/")
-			queueNameValue = parts[len(parts)-1]
-		}
+		queueURL = params.QueueUrl
 	}
-	return queueNameValue
+	if queueURL == nil {
+		return ""
+	}
+	parts := strings.Split(*queueURL, "/")
+	return parts[len(parts)-1]
 }
 
 func extractBucketName(requestInput middleware.InitializeInput) string {
-	bucketNameValue := ""
+	var bucket *string
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
+		bucket = params.Bucket
 	case *s3.ListObjectsV2Input:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
+		bucket = params.Bucket
 	case *s3.PutObjectInput:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
+		bucket = params.Bucket
 	case *s3.GetObjectInput:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
+		bucket = params.Bucket
 	case *s3.DeleteObjectInput:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
+		bucket = params.Bucket
 	case *s3.DeleteObjectsInput:
-		if params.Bucket != nil {
-			bucketNameValue = *params.Bucket
-		}
-
+		bucket = params.Bucket
 	}
-
-	return bucketNameValue
+	if bucket == nil {
+		return ""
+	}
+	return *bucket
 }
 
 func extractTopicName(requestInput middleware.InitializeInput) string {
-	topicNameValue := ""
+	var topicArn *string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.PublishBatchInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.GetTopicAttributesInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.ListSubscriptionsByTopicInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.RemovePermissionInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.SetTopicAttributesInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.SubscribeInput:
-		if params.TopicArn != nil {
-			topicArnValue := *params.TopicArn
-			//example topic_arn: arn:aws:sns:us-west-2:123456789012:my-topic-name
-			parts := strings.Split(topicArnValue, ":")
-			topicNameValue = parts[len(parts)-1]
-		}
+		topicArn = params.TopicArn
 	case *sns.CreateTopicInput:
-		topicNameValue = *params.Name
+		return *params.Name
 	}
-
-	return topicNameValue
+	if topicArn == nil {
+		return ""
+	}
+	parts := strings.Split(*topicArn, ":")
+	return parts[len(parts)-1]
 }
 
 func extractTableName(requestInput middleware.InitializeInput) string {
-	tableNameValue := ""
+	var tableName *string
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		if params.TableName != nil {
-			tableNameValue = *params.TableName
-		}
+		tableName = params.TableName
 	case *dynamodb.PutItemInput:
-		if params.TableName != nil {
-			tableNameValue = *params.TableName
-		}
+		tableName = params.TableName
 	case *dynamodb.QueryInput:
-		if params.TableName != nil {
-			tableNameValue = *params.TableName
-		}
+		tableName = params.TableName
 	case *dynamodb.ScanInput:
-		if params.TableName != nil {
-			tableNameValue = *params.TableName
-		}
+		tableName = params.TableName
 	case *dynamodb.UpdateItemInput:
-		if params.TableName != nil {
-			tableNameValue = *params.TableName
-		}
+		tableName = params.TableName
 	}
-
-	return tableNameValue
+	if tableName == nil {
+		return ""
+	}
+	return *tableName
 }
 
 func extractStreamName(requestInput middleware.InitializeInput) string {
-	streamNameValue := ""
+	var streamName *string
 
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.PutRecordsInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.AddTagsToStreamInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.RemoveTagsFromStreamInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.CreateStreamInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.DeleteStreamInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.DescribeStreamInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.DescribeStreamSummaryInput:
-		if params.StreamName != nil {
-			streamNameValue = *params.StreamName
-		}
+		streamName = params.StreamName
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
 			streamArnValue := *params.StreamARN
-			//example stream_arn: arn:aws:kinesis:us-east-1:123456789012:stream/my-stream
 			parts := strings.Split(streamArnValue, "/")
-			streamNameValue = parts[len(parts)-1]
+			return parts[len(parts)-1]
 		}
 	}
 
-	return streamNameValue
+	if streamName == nil {
+		return ""
+	}
+	return *streamName
 }
 
 func extractRuleName(requestInput middleware.InitializeInput) string {
-	ruleNameValue := ""
+	var ruleName *string
+
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
-		if params.Name != nil {
-			ruleNameValue = *params.Name
-		}
+		ruleName = params.Name
 	case *eventbridge.DescribeRuleInput:
-		if params.Name != nil {
-			ruleNameValue = *params.Name
-		}
+		ruleName = params.Name
 	case *eventbridge.DeleteRuleInput:
-		if params.Name != nil {
-			ruleNameValue = *params.Name
-		}
+		ruleName = params.Name
 	case *eventbridge.DisableRuleInput:
-		if params.Name != nil {
-			ruleNameValue = *params.Name
-		}
+		ruleName = params.Name
 	case *eventbridge.EnableRuleInput:
-		if params.Name != nil {
-			ruleNameValue = *params.Name
-		}
+		ruleName = params.Name
 	case *eventbridge.PutTargetsInput:
-		if params.Rule != nil {
-			ruleNameValue = *params.Rule
-		}
+		ruleName = params.Rule
 	case *eventbridge.RemoveTargetsInput:
-		if params.Rule != nil {
-			ruleNameValue = *params.Rule
-		}
+		ruleName = params.Rule
 	}
 
-	return ruleNameValue
+	if ruleName == nil {
+		return ""
+	}
+	return *ruleName
 }
 
 func extractStateMachineName(requestInput middleware.InitializeInput) string {
-	stateMachineNameValue := ""
+	var stateMachineArn *string
 
 	switch params := requestInput.Parameters.(type) {
 	case *sfn.CreateStateMachineInput:
-		if params.Name != nil {
-			stateMachineNameValue = *params.Name
-		}
+		return *params.Name
 	case *sfn.DescribeStateMachineInput:
-		if params.StateMachineArn != nil {
-			stateMachineArnValue := *params.StateMachineArn
-			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-			parts := strings.Split(stateMachineArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-1]
-		}
+		stateMachineArn = params.StateMachineArn
 	case *sfn.StartExecutionInput:
-		if params.StateMachineArn != nil {
-			stateMachineArnValue := *params.StateMachineArn
-			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-			parts := strings.Split(stateMachineArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-1]
-		}
+		stateMachineArn = params.StateMachineArn
 	case *sfn.StopExecutionInput:
 		if params.ExecutionArn != nil {
 			executionArnValue := *params.ExecutionArn
-			//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
 			parts := strings.Split(executionArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-2]
+			return parts[len(parts)-2]
 		}
 	case *sfn.DescribeExecutionInput:
 		if params.ExecutionArn != nil {
 			executionArnValue := *params.ExecutionArn
-			//'arn:aws:states:us-east-1:123456789012:execution:example-state-machine:example-execution'
 			parts := strings.Split(executionArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-2]
+			return parts[len(parts)-2]
 		}
 	case *sfn.ListExecutionsInput:
-		if params.StateMachineArn != nil {
-			stateMachineArnValue := *params.StateMachineArn
-			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-			parts := strings.Split(stateMachineArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-1]
-		}
+		stateMachineArn = params.StateMachineArn
 	case *sfn.UpdateStateMachineInput:
-		if params.StateMachineArn != nil {
-			stateMachineArnValue := *params.StateMachineArn
-			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-			parts := strings.Split(stateMachineArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-1]
-		}
+		stateMachineArn = params.StateMachineArn
 	case *sfn.DeleteStateMachineInput:
-		if params.StateMachineArn != nil {
-			stateMachineArnValue := *params.StateMachineArn
-			//arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine
-			parts := strings.Split(stateMachineArnValue, ":")
-			stateMachineNameValue = parts[len(parts)-1]
-		}
+		stateMachineArn = params.StateMachineArn
 	}
 
-	return stateMachineNameValue
+	if stateMachineArn == nil {
+		return ""
+	}
+
+	parts := strings.Split(*stateMachineArn, ":")
+	return parts[len(parts)-1]
 }
+
+
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
 	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
