@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -140,6 +142,24 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Len(trc, 1, "there was a trace in the channel")
 	comparePayloadSpans(t, root, trc[0])
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
+}
+
+func TestPartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
+	tracer, transport, flush, stop := startTestTracer(t)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	child := tracer.StartSpan("child", ChildOf(root.Context()))
+	child.Finish()
+
+	flush(1)
+
+	ts := transport.Traces()
+	require.Len(t, ts, 1)
+	require.Len(t, ts[0], 1)
+	fs := ts[0][0]
+	comparePayloadSpans(t, child.(*span), fs)
 }
 
 func TestSpanTracePushNoFinish(t *testing.T) {
