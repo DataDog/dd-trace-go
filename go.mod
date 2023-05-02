@@ -207,6 +207,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.0
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/microsoft/go-mssqldb v0.21.0
+	github.com/redis/go-redis/v9 v9.0.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
 	go.opentelemetry.io/otel v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
