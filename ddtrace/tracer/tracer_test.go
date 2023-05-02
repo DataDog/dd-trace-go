@@ -212,7 +212,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).pushTrace(&finishedTrace{spans: []*span{}})
+		internal.GetGlobalTracer().(*tracer).pushTrace(&flushableTraceChunk{spans: []*span{}})
 
 		Stop()
 		Stop()
@@ -223,7 +223,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
-		tr.pushTrace(&finishedTrace{spans: []*span{}}) // blocks until worker is started
+		tr.pushTrace(&flushableTraceChunk{spans: []*span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -1524,11 +1524,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushTrace(&finishedTrace{[]*span{s}, true})
+	tracer.pushTrace(&flushableTraceChunk{[]*span{s}, true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushTrace(&finishedTrace{[]*span{s}, true})
+	tracer.pushTrace(&flushableTraceChunk{[]*span{s}, true})
 	flush(2)
 }
 
@@ -1551,16 +1551,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushTrace(&finishedTrace{spans: trace})
+	tracer.pushTrace(&flushableTraceChunk{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(&finishedTrace{spans: trace}, t0)
+	assert.Equal(&flushableTraceChunk{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushTrace(&finishedTrace{spans: make([]*span, i)})
+		tracer.pushTrace(&flushableTraceChunk{spans: make([]*span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
