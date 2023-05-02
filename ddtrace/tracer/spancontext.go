@@ -437,15 +437,19 @@ func (t *trace) finishedOne(s *span) {
 		//TODO: is there a metric we should bump when doing this?
 		finishedSpans := make([]*span, 0, t.finished)
 		leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+		foundFinished := false
 		for _, s2 := range t.spans {
 			if s2.finished {
-				s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
+				if !foundFinished { // Only need to set sampling priority on the first span in the chunk
+					foundFinished = true
+					s2.setMetric(keySamplingPriority, *t.priority)
+				}
 				finishedSpans = append(finishedSpans, s2)
 			} else {
 				leftoverSpans = append(leftoverSpans, s2)
 			}
 		}
-		// Copy over all the trace level tags to the first span in the partial flush chunk
+		// Copy over all the trace level tags to the first span in the chunk
 		fs := finishedSpans[0]
 		for k, v := range t.tags {
 			fs.setMeta(k, v)
@@ -458,7 +462,7 @@ func (t *trace) finishedOne(s *span) {
 		}
 		t.spans = leftoverSpans
 		t.finished = 0
-		tr.pushTrace(&finishedTrace{
+		tr.pushTrace(&flushableTraceChunk{
 			spans:    finishedSpans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
@@ -474,7 +478,7 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	tr.pushTrace(&finishedTrace{
+	tr.pushTrace(&flushableTraceChunk{
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
