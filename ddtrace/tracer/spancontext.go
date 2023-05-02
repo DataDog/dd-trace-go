@@ -360,6 +360,23 @@ func (t *trace) push(sp *span) {
 	}
 }
 
+// setTraceTags sets all "trace level" tags on the provided span
+// t must already be locked.
+func (t *trace) setTraceTags(s *span) {
+	for k, v := range t.tags {
+		s.setMeta(k, v)
+	}
+	for k, v := range t.propagatingTags {
+		s.setMeta(k, v)
+	}
+	for k, v := range ginternal.GetTracerGitMetadataTags() {
+		s.setMeta(k, v)
+	}
+	if s.context != nil && s.context.traceID.HasUpper() {
+		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+	}
+}
+
 // finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
@@ -388,18 +405,7 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		for k, v := range t.tags {
-			s.setMeta(k, v)
-		}
-		for k, v := range t.propagatingTags {
-			s.setMeta(k, v)
-		}
-		for k, v := range ginternal.GetTracerGitMetadataTags() {
-			s.setMeta(k, v)
-		}
-		if s.context != nil && s.context.traceID.HasUpper() {
-			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
-		}
+		t.setTraceTags(s)
 	}
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
@@ -425,16 +431,7 @@ func (t *trace) finishedOne(s *span) {
 			}
 		}
 		// Copy over all the trace level tags to the first span in the chunk
-		fs := finishedSpans[0]
-		for k, v := range t.tags {
-			fs.setMeta(k, v)
-		}
-		for k, v := range t.propagatingTags {
-			fs.setMeta(k, v)
-		}
-		for k, v := range ginternal.GetTracerGitMetadataTags() {
-			fs.setMeta(k, v)
-		}
+		t.setTraceTags(finishedSpans[0])
 		t.spans = leftoverSpans
 		t.finished = 0
 		tr.pushTrace(&flushableTraceChunk{
