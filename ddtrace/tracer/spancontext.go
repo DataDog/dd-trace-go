@@ -429,6 +429,17 @@ func (t *trace) finishedOne(s *span) {
 				leftoverSpans = append(leftoverSpans, s2)
 			}
 		}
+		// Copy over all the trace level tags to the first span in the partial flush chunk
+		fs := finishedSpans[0]
+		for k, v := range t.tags {
+			fs.setMeta(k, v)
+		}
+		for k, v := range t.propagatingTags {
+			fs.setMeta(k, v)
+		}
+		for k, v := range ginternal.GetTracerGitMetadataTags() {
+			fs.setMeta(k, v)
+		}
 		t.spans = leftoverSpans
 		t.finished = 0
 		tr.pushTrace(&finishedTrace{
