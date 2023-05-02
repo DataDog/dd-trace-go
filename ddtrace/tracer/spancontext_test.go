@@ -151,6 +151,7 @@ func TestPartialFlush(t *testing.T) {
 	defer stop()
 
 	root := tracer.StartSpan("root")
+	root.(*span).context.trace.setTag("someTraceTag", "someValue")
 	child := tracer.StartSpan("child", ChildOf(root.Context()))
 	child.Finish()
 
@@ -160,7 +161,16 @@ func TestPartialFlush(t *testing.T) {
 	require.Len(t, ts, 1)
 	require.Len(t, ts[0], 1)
 	fs := ts[0][0]
+	assert.Equal(t, "someValue", fs.Meta["someTraceTag"])
+	assert.Equal(t, 1.0, fs.Metrics[keySamplingPriority])
 	comparePayloadSpans(t, child.(*span), fs)
+
+	root.Finish()
+	flush(1)
+	tsRoot := transport.Traces()
+	require.Len(t, tsRoot, 1)
+	require.Len(t, tsRoot[0], 1)
+	comparePayloadSpans(t, root.(*span), tsRoot[0][0])
 }
 
 func TestSpanTracePushNoFinish(t *testing.T) {
