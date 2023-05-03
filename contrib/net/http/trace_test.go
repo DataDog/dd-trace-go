@@ -288,6 +288,34 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 	})
+
+	t.Run("noconfig", func(t *testing.T) {
+		mt := mocktracer.Start()
+		assert := assert.New(t)
+		defer mt.Stop()
+
+		called := false
+		w := httptest.NewRecorder()
+		r, err := http.NewRequest("GET", "/path?token=value", nil)
+		assert.NoError(err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			_, ok := w.(http.Hijacker)
+			assert.False(ok)
+			called = true
+		}
+		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{})
+		spans := mt.FinishedSpans()
+		span := spans[0]
+
+		assert.True(called)
+		assert.Len(spans, 1)
+		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+		assert.Nil(span.Tag(ext.ServiceName))
+		assert.Equal("http.server.request", span.Tag(ext.ResourceName))
+		assert.Equal("GET", span.Tag(ext.HTTPMethod))
+		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
+		assert.Equal("200", span.Tag(ext.HTTPCode))
+	})
 }
 
 func TestTraceAndServeHost(t *testing.T) {

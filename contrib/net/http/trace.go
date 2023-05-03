@@ -52,12 +52,12 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	var opts []tracer.StartSpanOption
+	opts := cfg.SpanOpts
 	if cfg.Service != "" {
-		opts = append(cfg.SpanOpts, tracer.ServiceName(cfg.Service))
+		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
 	if cfg.Resource != "" {
-		opts = append(cfg.SpanOpts, tracer.ResourceName(cfg.Resource))
+		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
