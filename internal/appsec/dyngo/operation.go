@@ -48,11 +48,6 @@ type Operation interface {
 	// that no other package can define it.
 	emitEvent(argsType reflect.Type, op Operation, v interface{})
 
-	// add the given event listeners to the operation.
-	// add is a private method implemented by the operation struct type so
-	// that no other package can define it.
-	add(...EventListener)
-
 	// finish the operation. This method allows to pass the operation value to
 	// use to emit the finish event.
 	// finish is a private method implemented by the operation struct type so
@@ -189,22 +184,6 @@ func (o *operation) disable() {
 	}
 	o.disabled = true
 	o.eventRegister.clear()
-}
-
-// Add the given event listeners to the operation.
-func (o *operation) add(l ...EventListener) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-	if o.disabled {
-		return
-	}
-	for _, l := range l {
-		if l == nil {
-			continue
-		}
-		key := l.ListenedType()
-		o.eventRegister.add(key, l)
-	}
 }
 
 // On registers the event listener. The difference with the Register() is that
