@@ -421,7 +421,7 @@ func (t *trace) finishedOne(s *span) {
 		foundFinished := false
 		for _, s2 := range t.spans {
 			if s2.finished {
-				if !foundFinished { // Only need to set sampling priority on the first span in the chunk
+				if !foundFinished && t.priority != nil { // Only need to set sampling priority on the first span in the chunk
 					foundFinished = true
 					s2.setMetric(keySamplingPriority, *t.priority)
 				}
