@@ -1885,6 +1885,40 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	}
 }
 
+// BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
+// while partial flushing is enabled.
+func BenchmarkPartialFlushing(b *testing.B) {
+	b.Run("Enabled", func(b *testing.B) {
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
+		genBigTraces(b)
+	})
+	b.Run("Disabled", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+func genBigTraces(b *testing.B) {
+	tracer, transport, flush, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	defer stop()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i := 0; i < 10; i++ {
+			parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+			for i := 0; i < 10_000; i++ {
+				tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
+			}
+			parent.Finish()
+		}
+		go flush(-1)         // act like a ticker
+		go transport.Reset() // pretend we sent any payloads
+		m := runtime.MemStats{}
+		runtime.ReadMemStats(&m)
+		b.ReportMetric(float64(m.HeapAlloc)/float64(b.N), "heapAlloc/op")
+		b.ReportMetric(float64(m.HeapInuse)/float64(b.N), "heapInUse/op")
+	}
+}
+
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
