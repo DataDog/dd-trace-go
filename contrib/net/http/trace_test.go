@@ -312,6 +312,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Nil(span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
 		assert.Equal("http.server.request", span.Tag(ext.ResourceName))
+		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
