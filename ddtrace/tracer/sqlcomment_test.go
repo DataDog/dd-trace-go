@@ -20,53 +20,69 @@ import (
 
 func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
-		name              string
-		query             string
-		mode              DBMPropagationMode
-		injectSpan        bool
-		samplingPriority  int
-		expectedQuery     string
-		expectedSpanIDGen bool
+		name               string
+		query              string
+		mode               DBMPropagationMode
+		injectSpan         bool
+		samplingPriority   int
+		expectedQuery      string
+		expectedSpanIDGen  bool
+		expectedExtractErr error
 	}{
 		{
-			name:              "default",
-			query:             "SELECT * from FOO",
-			mode:              DBMPropagationModeFull,
-			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
-			expectedSpanIDGen: true,
+			name:               "default",
+			query:              "SELECT * from FOO",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/ SELECT * from FOO",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
 		},
 		{
-			name:              "service",
-			query:             "SELECT * from FOO",
-			mode:              DBMPropagationModeService,
-			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
-			expectedSpanIDGen: false,
+			name:               "service",
+			query:              "SELECT * from FOO",
+			mode:               DBMPropagationModeService,
+			injectSpan:         true,
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
+			expectedSpanIDGen:  false,
+			expectedExtractErr: nil,
 		},
 		{
-			name:              "no-trace",
-			query:             "SELECT * from FOO",
-			mode:              DBMPropagationModeFull,
-			expectedQuery:     "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
-			expectedSpanIDGen: true,
+			name:               "no-trace",
+			query:              "SELECT * from FOO",
+			mode:               DBMPropagationModeFull,
+			expectedQuery:      "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
 		},
 		{
-			name:              "no-query",
-			query:             "",
-			mode:              DBMPropagationModeFull,
-			injectSpan:        true,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
-			expectedSpanIDGen: true,
+			name:               "no-query",
+			query:              "",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-00'*/",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
 		},
 		{
-			name:              "commented",
-			query:             "SELECT * from FOO -- test query",
-			mode:              DBMPropagationModeFull,
-			injectSpan:        true,
-			samplingPriority:  1,
-			expectedQuery:     "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ SELECT * from FOO -- test query",
-			expectedSpanIDGen: true,
+			name:               "commented",
+			query:              "SELECT * from FOO -- test query",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			samplingPriority:   1,
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ SELECT * from FOO -- test query",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
+		},
+		{
+			name:               "disabled",
+			query:              "SELECT * from FOO",
+			mode:               DBMPropagationModeDisabled,
+			injectSpan:         true,
+			samplingPriority:   1,
+			expectedQuery:      "SELECT * from FOO",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: ErrSpanContextNotFound,
 		},
 	}
 
@@ -89,20 +105,44 @@ func TestSQLCommentCarrier(t *testing.T) {
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
 			assert.Equal(t, expected, carrier.Query)
+			fmt.Println(carrier.Query)
+
+			extractedSpanCtx, err := carrier.Extract()
+			if tc.expectedExtractErr == nil {
+				assert.Equal(t, carrier.SpanID, extractedSpanCtx.SpanID())
+				assert.Equal(t, carrier.SpanID, extractedSpanCtx.TraceID())
+			}
+			assert.Equal(t, tc.expectedExtractErr, err)
 		})
 	}
 }
 
 func BenchmarkSQLCommentInjection(b *testing.B) {
-	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
-	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
-	root.SetTag(ext.SamplingPriority, 2)
-	spanCtx := root.Context()
-	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}
 
 	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
 		carrier.Inject(spanCtx)
 	}
+}
+
+func BenchmarkSQLCommentExtraction(b *testing.B) {
+	tracer, spanCtx, carrier := setupBenchmark()
+	defer tracer.Stop()
+	carrier.Inject(spanCtx)
+
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		carrier.Extract()
+	}
+}
+
+func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
+	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
+	root.SetTag(ext.SamplingPriority, 2)
+	spanCtx := root.Context()
+	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}
+	return tracer, spanCtx, carrier
 }
