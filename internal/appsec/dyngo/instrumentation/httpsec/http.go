@@ -12,14 +12,11 @@ package httpsec
 
 import (
 	"context"
-	"errors"
-
-	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -279,64 +276,17 @@ func (op *SDKBodyOperation) Finish() {
 type (
 	// OnHandlerOperationStart function type, called when an HTTP handler
 	// operation starts.
-	OnHandlerOperationStart func(*Operation, HandlerOperationArgs)
+	OnHandlerOperationStart = dyngo.EventListenerTemplate[*Operation, HandlerOperationArgs]
 	// OnHandlerOperationFinish function type, called when an HTTP handler
 	// operation finishes.
-	OnHandlerOperationFinish func(*Operation, HandlerOperationRes)
+	OnHandlerOperationFinish = dyngo.EventListenerTemplate[*Operation, HandlerOperationRes]
 	// OnSDKBodyOperationStart function type, called when an SDK body
 	// operation starts.
-	OnSDKBodyOperationStart func(*SDKBodyOperation, SDKBodyOperationArgs)
+	OnSDKBodyOperationStart = dyngo.EventListenerTemplate[*SDKBodyOperation, SDKBodyOperationArgs]
 	// OnSDKBodyOperationFinish function type, called when an SDK body
 	// operation finishes.
-	OnSDKBodyOperationFinish func(*SDKBodyOperation, SDKBodyOperationRes)
+	OnSDKBodyOperationFinish dyngo.EventListenerTemplate[*SDKBodyOperation, SDKBodyOperationRes]
 )
-
-var (
-	handlerOperationArgsType = reflect.TypeOf((*HandlerOperationArgs)(nil)).Elem()
-	handlerOperationResType  = reflect.TypeOf((*HandlerOperationRes)(nil)).Elem()
-	sdkBodyOperationArgsType = reflect.TypeOf((*SDKBodyOperationArgs)(nil)).Elem()
-	sdkBodyOperationResType  = reflect.TypeOf((*SDKBodyOperationRes)(nil)).Elem()
-)
-
-// ListenedType returns the type a OnHandlerOperationStart event listener
-// listens to, which is the HandlerOperationArgs type.
-func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOperationArgsType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Operation), v.(HandlerOperationArgs))
-}
-
-// ListenedType returns the type a OnHandlerOperationFinish event listener
-// listens to, which is the HandlerOperationRes type.
-func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOperationResType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Operation), v.(HandlerOperationRes))
-}
-
-// ListenedType returns the type a OnSDKBodyOperationStart event listener
-// listens to, which is the SDKBodyOperationStartArgs type.
-func (OnSDKBodyOperationStart) ListenedType() reflect.Type { return sdkBodyOperationArgsType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion  on v whose type is the one returned by ListenedType().
-func (f OnSDKBodyOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*SDKBodyOperation), v.(SDKBodyOperationArgs))
-}
-
-// ListenedType returns the type a OnSDKBodyOperationFinish event listener
-// listens to, which is the SDKBodyOperationRes type.
-func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOperationResType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
-}
 
 // blockedTemplateJSON is the default JSON template used to write responses for blocked requests
 //

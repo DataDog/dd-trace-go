@@ -35,22 +35,9 @@ type (
 		Headers http.Header
 	}
 	HTTPHandlerRes               struct{}
-	OnHTTPHandlerOperationStart  func(dyngo.Operation, HTTPHandlerArgs)
-	OnHTTPHandlerOperationFinish func(dyngo.Operation, HTTPHandlerRes)
+	OnHTTPHandlerOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, HTTPHandlerArgs]
+	OnHTTPHandlerOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, HTTPHandlerRes]
 )
-
-func (f OnHTTPHandlerOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*HTTPHandlerArgs)(nil)).Elem()
-}
-func (f OnHTTPHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(HTTPHandlerArgs))
-}
-func (f OnHTTPHandlerOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*HTTPHandlerRes)(nil)).Elem()
-}
-func (f OnHTTPHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(HTTPHandlerRes))
-}
 
 type (
 	SQLQueryArgs struct {
@@ -59,22 +46,9 @@ type (
 	SQLQueryRes struct {
 		Err error
 	}
-	OnSQLQueryOperationStart  func(dyngo.Operation, SQLQueryArgs)
-	OnSQLQueryOperationFinish func(dyngo.Operation, SQLQueryRes)
+	OnSQLQueryOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, SQLQueryArgs]
+	OnSQLQueryOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, SQLQueryRes]
 )
-
-func (f OnSQLQueryOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*SQLQueryArgs)(nil)).Elem()
-}
-func (f OnSQLQueryOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(SQLQueryArgs))
-}
-func (f OnSQLQueryOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*SQLQueryRes)(nil)).Elem()
-}
-func (f OnSQLQueryOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(SQLQueryRes))
-}
 
 type (
 	GRPCHandlerArgs struct {
@@ -83,22 +57,9 @@ type (
 	GRPCHandlerRes struct {
 		Res interface{}
 	}
-	OnGRPCHandlerOperationStart  func(dyngo.Operation, GRPCHandlerArgs)
-	OnGRPCHandlerOperationFinish func(dyngo.Operation, GRPCHandlerRes)
+	OnGRPCHandlerOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, GRPCHandlerArgs]
+	OnGRPCHandlerOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, GRPCHandlerRes]
 )
-
-func (f OnGRPCHandlerOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*GRPCHandlerArgs)(nil)).Elem()
-}
-func (f OnGRPCHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(GRPCHandlerArgs))
-}
-func (f OnGRPCHandlerOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*GRPCHandlerRes)(nil)).Elem()
-}
-func (f OnGRPCHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(GRPCHandlerRes))
-}
 
 type (
 	JSONParserArgs struct {
@@ -108,22 +69,9 @@ type (
 		Value interface{}
 		Err   error
 	}
-	OnJSONParserOperationStart  func(dyngo.Operation, JSONParserArgs)
-	OnJSONParserOperationFinish func(dyngo.Operation, JSONParserRes)
+	OnJSONParserOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, JSONParserArgs]
+	OnJSONParserOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, JSONParserRes]
 )
-
-func (f OnJSONParserOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*JSONParserArgs)(nil)).Elem()
-}
-func (f OnJSONParserOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(JSONParserArgs))
-}
-func (f OnJSONParserOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*JSONParserRes)(nil)).Elem()
-}
-func (f OnJSONParserOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(JSONParserRes))
-}
 
 type (
 	BodyReadArgs struct{}
@@ -131,82 +79,30 @@ type (
 		Buf []byte
 		Err error
 	}
-	OnBodyReadOperationStart  func(dyngo.Operation, BodyReadArgs)
-	OnBodyReadOperationFinish func(dyngo.Operation, BodyReadRes)
+	OnBodyReadOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, BodyReadArgs]
+	OnBodyReadOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, BodyReadRes]
 )
-
-func (f OnBodyReadOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*BodyReadArgs)(nil)).Elem()
-}
-func (f OnBodyReadOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(BodyReadArgs))
-}
-func (f OnBodyReadOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*BodyReadRes)(nil)).Elem()
-}
-func (f OnBodyReadOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(BodyReadRes))
-}
 
 type (
 	MyOperationArgs     struct{ n int }
 	MyOperationRes      struct{ n int }
-	OnMyOperationStart  func(dyngo.Operation, MyOperationArgs)
-	OnMyOperationFinish func(dyngo.Operation, MyOperationRes)
+	OnMyOperationStart  = dyngo.EventListenerTemplate[dyngo.Operation, MyOperationArgs]
+	OnMyOperationFinish = dyngo.EventListenerTemplate[dyngo.Operation, MyOperationRes]
 )
-
-func (f OnMyOperationStart) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperationArgs)(nil)).Elem()
-}
-func (f OnMyOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperationArgs))
-}
-func (f OnMyOperationFinish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperationRes)(nil)).Elem()
-}
-func (f OnMyOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperationRes))
-}
 
 type (
 	MyOperation2Args     struct{}
 	MyOperation2Res      struct{}
-	OnMyOperation2Start  func(dyngo.Operation, MyOperation2Args)
-	OnMyOperation2Finish func(dyngo.Operation, MyOperation2Res)
+	OnMyOperation2Start  = dyngo.EventListenerTemplate[dyngo.Operation, MyOperation2Args]
+	OnMyOperation2Finish = dyngo.EventListenerTemplate[dyngo.Operation, MyOperation2Res]
 )
-
-func (f OnMyOperation2Start) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperation2Args)(nil)).Elem()
-}
-func (f OnMyOperation2Start) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperation2Args))
-}
-func (f OnMyOperation2Finish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperation2Res)(nil)).Elem()
-}
-func (f OnMyOperation2Finish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperation2Res))
-}
 
 type (
 	MyOperation3Args     struct{}
 	MyOperation3Res      struct{}
-	OnMyOperation3Start  func(dyngo.Operation, MyOperation3Args)
-	OnMyOperation3Finish func(dyngo.Operation, MyOperation3Res)
+	OnMyOperation3Start  = dyngo.EventListenerTemplate[dyngo.Operation, MyOperation3Args]
+	OnMyOperation3Finish = dyngo.EventListenerTemplate[dyngo.Operation, MyOperation3Res]
 )
-
-func (f OnMyOperation3Start) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperation3Args)(nil)).Elem()
-}
-func (f OnMyOperation3Start) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperation3Args))
-}
-func (f OnMyOperation3Finish) ListenedType() reflect.Type {
-	return reflect.TypeOf((*MyOperation3Res)(nil)).Elem()
-}
-func (f OnMyOperation3Finish) Call(op dyngo.Operation, v interface{}) {
-	f(op, v.(MyOperation3Res))
-}
 
 func TestUsage(t *testing.T) {
 	t.Run("operation-stacking", func(t *testing.T) {

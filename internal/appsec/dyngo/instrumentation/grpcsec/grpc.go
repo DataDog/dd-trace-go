@@ -12,7 +12,6 @@ package grpcsec
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
@@ -98,36 +97,11 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) []json.RawMessage {
 type (
 	// OnHandlerOperationStart function type, called when an gRPC handler
 	// operation starts.
-	OnHandlerOperationStart func(*HandlerOperation, HandlerOperationArgs)
+	OnHandlerOperationStart = dyngo.EventListenerTemplate[*HandlerOperation, HandlerOperationArgs]
 	// OnHandlerOperationFinish function type, called when an gRPC handler
 	// operation finishes.
-	OnHandlerOperationFinish func(*HandlerOperation, HandlerOperationRes)
+	OnHandlerOperationFinish = dyngo.EventListenerTemplate[*HandlerOperation, HandlerOperationRes]
 )
-
-var (
-	handlerOperationArgsType = reflect.TypeOf((*HandlerOperationArgs)(nil)).Elem()
-	handlerOperationResType  = reflect.TypeOf((*HandlerOperationRes)(nil)).Elem()
-)
-
-// ListenedType returns the type a OnHandlerOperationStart event listener
-// listens to, which is the HandlerOperationArgs type.
-func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOperationArgsType }
-
-// Call the underlying event listener function by performing the type-assertion
-// on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*HandlerOperation), v.(HandlerOperationArgs))
-}
-
-// ListenedType returns the type a OnHandlerOperationFinish event listener
-// listens to, which is the HandlerOperationRes type.
-func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOperationResType }
-
-// Call the underlying event listener function by performing the type-assertion
-// on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*HandlerOperation), v.(HandlerOperationRes))
-}
 
 // StartReceiveOperation starts a receive operation of a gRPC handler, along
 // with the given arguments and parent operation, and emits a start event up in
@@ -149,33 +123,8 @@ func (op ReceiveOperation) Finish(res ReceiveOperationRes) {
 type (
 	// OnReceiveOperationStart function type, called when a gRPC receive
 	// operation starts.
-	OnReceiveOperationStart func(ReceiveOperation, ReceiveOperationArgs)
+	OnReceiveOperationStart = dyngo.EventListenerTemplate[ReceiveOperation, ReceiveOperationArgs]
 	// OnReceiveOperationFinish function type, called when a grpc receive
 	// operation finishes.
-	OnReceiveOperationFinish func(ReceiveOperation, ReceiveOperationRes)
+	OnReceiveOperationFinish = dyngo.EventListenerTemplate[ReceiveOperation, ReceiveOperationRes]
 )
-
-var (
-	receiveOperationArgsType = reflect.TypeOf((*ReceiveOperationArgs)(nil)).Elem()
-	receiveOperationResType  = reflect.TypeOf((*ReceiveOperationRes)(nil)).Elem()
-)
-
-// ListenedType returns the type a OnHandlerOperationStart event listener
-// listens to, which is the HandlerOperationArgs type.
-func (OnReceiveOperationStart) ListenedType() reflect.Type { return receiveOperationArgsType }
-
-// Call the underlying event listener function by performing the type-assertion
-// on v whose type is the one returned by ListenedType().
-func (f OnReceiveOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(ReceiveOperation), v.(ReceiveOperationArgs))
-}
-
-// ListenedType returns the type a OnHandlerOperationFinish event listener
-// listens to, which is the HandlerOperationRes type.
-func (OnReceiveOperationFinish) ListenedType() reflect.Type { return receiveOperationResType }
-
-// Call the underlying event listener function by performing the type-assertion
-// on v whose type is the one returned by ListenedType().
-func (f OnReceiveOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(ReceiveOperation), v.(ReceiveOperationRes))
-}
