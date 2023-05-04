@@ -82,7 +82,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			samplingPriority:   1,
 			expectedQuery:      "SELECT * from FOO",
 			expectedSpanIDGen:  true,
-			expectedExtractErr: ErrSpanContextNotFound,
+			expectedExtractErr: nil,
 		},
 	}
 
@@ -94,8 +94,11 @@ func TestSQLCommentCarrier(t *testing.T) {
 			defer tracer.Stop()
 
 			var spanCtx ddtrace.SpanContext
+			var traceID uint64
+
 			if tc.injectSpan {
-				root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
+				traceID = uint64(10)
+				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*span)
 				root.SetTag(ext.SamplingPriority, tc.samplingPriority)
 				spanCtx = root.Context()
 			}
@@ -105,12 +108,17 @@ func TestSQLCommentCarrier(t *testing.T) {
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
 			assert.Equal(t, expected, carrier.Query)
-			fmt.Println(carrier.Query)
+
+			if !tc.injectSpan {
+				traceID = carrier.SpanID
+			}
 
 			extractedSpanCtx, err := carrier.Extract()
-			if tc.expectedExtractErr == nil {
+			fmt.Println(extractedSpanCtx, err)
+			if tc.expectedExtractErr == nil && tc.mode == DBMPropagationModeFull {
 				assert.Equal(t, carrier.SpanID, extractedSpanCtx.SpanID())
-				assert.Equal(t, carrier.SpanID, extractedSpanCtx.TraceID())
+				assert.Equal(t, traceID, extractedSpanCtx.TraceID())
+				// assert.Equal(t, spanCtx, extractedSpanCtx)
 			}
 			assert.Equal(t, tc.expectedExtractErr, err)
 		})

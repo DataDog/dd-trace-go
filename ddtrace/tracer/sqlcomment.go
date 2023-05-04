@@ -193,9 +193,12 @@ func commentQuery(query string, tags map[string]string) string {
 // Extract TODO write comment
 // TODO return errors and create new ones
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	var ctx spanContext
-	var span span // do we need to set this?
+	if c.Mode != DBMPropagationModeFull {
+		return nil, nil
+	}
 
+	var ctx spanContext
+	var span span                           // do we need to set this?
 	re := regexp.MustCompile(`/\*(.*?)\*/`) // extract sql comment
 	if match := re.FindStringSubmatch(c.Query); len(match) == 2 {
 		comment := match[1]
