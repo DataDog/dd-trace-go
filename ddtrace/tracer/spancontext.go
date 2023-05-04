@@ -396,9 +396,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
 			s.setMeta(k, v)
 		}
-	}
-	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		if s.context != nil && s.context.traceID.HasUpper() {
+			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		}
 	}
 	if len(t.spans) != t.finished {
 		return
