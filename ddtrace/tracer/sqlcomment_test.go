@@ -45,7 +45,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			injectSpan:         true,
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen:  false,
-			expectedExtractErr: nil,
+			expectedExtractErr: ErrSpanContextNotFound,
 		},
 		{
 			name:               "no-trace",
@@ -82,7 +82,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			samplingPriority:   1,
 			expectedQuery:      "SELECT * from FOO",
 			expectedSpanIDGen:  true,
-			expectedExtractErr: nil,
+			expectedExtractErr: ErrSpanContextNotFound,
 		},
 	}
 
@@ -95,7 +95,6 @@ func TestSQLCommentCarrier(t *testing.T) {
 
 			var spanCtx ddtrace.SpanContext
 			var traceID uint64
-
 			if tc.injectSpan {
 				traceID = uint64(10)
 				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*span)
@@ -113,14 +112,21 @@ func TestSQLCommentCarrier(t *testing.T) {
 				traceID = carrier.SpanID
 			}
 
-			extractedSpanCtx, err := carrier.Extract()
-			fmt.Println(extractedSpanCtx, err)
-			if tc.expectedExtractErr == nil && tc.mode == DBMPropagationModeFull {
-				assert.Equal(t, carrier.SpanID, extractedSpanCtx.SpanID())
-				assert.Equal(t, traceID, extractedSpanCtx.TraceID())
-				// assert.Equal(t, spanCtx, extractedSpanCtx)
-			}
+			sctx, err := carrier.Extract()
+
 			assert.Equal(t, tc.expectedExtractErr, err)
+
+			if tc.expectedExtractErr == nil {
+				xctx, ok := sctx.(*spanContext)
+				assert.True(t, ok)
+
+				assert.Equal(t, carrier.SpanID, xctx.spanID)
+				assert.Equal(t, traceID, xctx.traceID.Lower())
+
+				p, ok := xctx.samplingPriority()
+				assert.True(t, ok)
+				assert.Equal(t, tc.samplingPriority, p)
+			}
 		})
 	}
 }

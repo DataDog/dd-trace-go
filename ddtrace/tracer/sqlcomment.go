@@ -193,44 +193,36 @@ func commentQuery(query string, tags map[string]string) string {
 // Extract TODO write comment
 // TODO return errors and create new ones
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	if c.Mode != DBMPropagationModeFull {
-		return nil, nil
-	}
-
 	var ctx spanContext
-	var span span                           // do we need to set this?
 	re := regexp.MustCompile(`/\*(.*?)\*/`) // extract sql comment
 	if match := re.FindStringSubmatch(c.Query); len(match) == 2 {
 		comment := match[1]
 		kvs := strings.Split(comment, ",")
-
 		for _, unparsedKV := range kvs {
 			if splitKV := strings.Split(unparsedKV, "="); len(splitKV) == 2 {
 				key := splitKV[0]
 				value := strings.Trim(splitKV[1], "'")
-
 				switch key {
 				case sqlCommentTraceParent:
-					traceID, spanID, sampled, _ := decodeTraceParent(value)
+					traceID, spanID, sampled, err := decodeTraceParent(value)
+					if err != nil {
+						return nil, err
+					}
 					ctx.traceID.SetLower(traceID)
 					ctx.spanID = spanID
 					ctx.setSamplingPriority(int(sampled), samplernames.Unknown)
-				case sqlCommentParentService:
-					span.Service = value
-				case sqlCommentDBService:
-					// TODO
-				case sqlCommentParentVersion:
-					span.setMeta(ext.Version, value)
-				case sqlCommentEnv:
-					span.setMeta(ext.Environment, value)
+				default:
 				}
+			} else {
+				return nil, ErrSpanContextCorrupted
 			}
 		}
 	} else {
+		return nil, ErrSpanContextCorrupted
+	}
+	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
 	}
-
-	ctx.span = &span
 	return &ctx, nil
 }
 
@@ -239,6 +231,8 @@ func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampl
 		traceID, err = strconv.ParseUint(splitParent[1], 16, 64)
 		spanID, err = strconv.ParseUint(splitParent[2], 16, 64)
 		sampled, err = strconv.ParseInt(splitParent[3], 16, 64)
+	} else {
+		return 0, 0, 0, ErrSpanContextCorrupted
 	}
 	return traceID, spanID, sampled, err
 }
