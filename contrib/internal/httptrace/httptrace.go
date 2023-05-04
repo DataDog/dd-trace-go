@@ -22,20 +22,8 @@ import (
 )
 
 var (
-	cfg            = newConfig()
-	serverSpanName string
+	cfg = newConfig()
 )
-
-func init() {
-	// initialize and cache this value for performance reasons.
-	InitServerSpanName()
-}
-
-// InitServerSpanName initializes the server span name using the naming schema. This function is exported in order to
-// be used in tests.
-func InitServerSpanName() {
-	serverSpanName = namingschema.NewHTTPServerOp().GetName()
-}
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
@@ -63,7 +51,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			opts = append(opts, tracer.Tag(k, v))
 		}
 	}
-	return tracer.StartSpanFromContext(r.Context(), serverSpanName, opts...)
+	return tracer.StartSpanFromContext(r.Context(), namingschema.NewHTTPServerOp().GetName(), opts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
