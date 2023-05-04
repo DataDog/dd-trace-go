@@ -370,6 +370,7 @@ func (r *appsecRig) Close() {
 }
 
 type appsecFixtureServer struct {
+	UnimplementedFixtureServer
 	s fixtureServer
 }
 

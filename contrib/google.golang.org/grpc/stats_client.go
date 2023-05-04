@@ -6,9 +6,9 @@
 package grpc
 
 import (
+	"context"
 	"net"
 
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc/stats"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
