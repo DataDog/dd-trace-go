@@ -190,8 +190,7 @@ func commentQuery(query string, tags map[string]string) string {
 	return b.String()
 }
 
-// Extract TODO write comment
-// TODO return errors and create new ones
+// Extract parses for key value attributes in a sql query's comment in order to build a span context
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	re := regexp.MustCompile(`/\*(.*?)\*/`) // extract sql comment
@@ -226,8 +225,13 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	return &ctx, nil
 }
 
+// decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
 func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int64, err error) {
 	if splitParent := strings.Split(traceParent, "-"); len(splitParent) == 4 {
+		version := splitParent[0]
+		if version != w3cContextVersion {
+			return 0, 0, 0, ErrSpanContextCorrupted
+		}
 		traceID, err = strconv.ParseUint(splitParent[1], 16, 64)
 		spanID, err = strconv.ParseUint(splitParent[2], 16, 64)
 		sampled, err = strconv.ParseInt(splitParent[3], 16, 64)
