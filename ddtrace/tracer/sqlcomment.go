@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
@@ -209,7 +209,7 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 					}
 					ctx.traceID.SetLower(traceID)
 					ctx.spanID = spanID
-					ctx.setSamplingPriority(int(sampled), samplernames.Unknown)
+					ctx.setSamplingPriority(sampled, samplernames.Unknown)
 				default:
 				}
 			} else {
@@ -217,7 +217,7 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 			}
 		}
 	} else {
-		return nil, ErrSpanContextCorrupted
+		return nil, ErrSpanContextNotFound
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
@@ -226,7 +226,7 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 }
 
 // decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
-func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int64, err error) {
+func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int, err error) {
 	if splitParent := strings.Split(traceParent, "-"); len(splitParent) == 4 {
 		version := splitParent[0]
 		if version != w3cContextVersion {
@@ -234,7 +234,7 @@ func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampl
 		}
 		traceID, err = strconv.ParseUint(splitParent[1], 16, 64)
 		spanID, err = strconv.ParseUint(splitParent[2], 16, 64)
-		sampled, err = strconv.ParseInt(splitParent[3], 16, 64)
+		sampled, err = strconv.Atoi(splitParent[3])
 	} else {
 		return 0, 0, 0, ErrSpanContextCorrupted
 	}
