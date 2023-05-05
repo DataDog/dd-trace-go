@@ -147,6 +147,58 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	assert.Equal(ErrSpanContextNotFound, err)
 }
 
+func TestMalformedTIDPropagationErrorTag(t *testing.T) {
+	assert := assert.New(t)
+	t.Run("datadog", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer(WithPropagator(NewPropagator(nil)))
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=XXXX",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Contains(root.Meta, keyPropagationError)
+		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXX")
+	})
+
+	t.Run("tracecontext,inconsistent", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "tracecontext")
+		tracer := newTracer(WithPropagator(NewPropagator(nil)))
+		headers := TextMapCarrier(map[string]string{
+			"traceparent": "00-640cfd8d00000000abcdefab12345678-000000003ade68b1-01",
+			"tracestate":  "dd=t.tid:640cfd8d0000ffff",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Contains(root.Meta, keyPropagationError)
+		assert.Equal(root.Meta[keyPropagationError], "inconsistent_tid 640cfd8d0000ffff")
+	})
+
+	t.Run("tracecontext,malformed", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "tracecontext")
+		tracer := newTracer(WithPropagator(NewPropagator(nil)))
+		headers := TextMapCarrier(map[string]string{
+			"traceparent": "00-640cfd8d00000000abcdefab12345678-000000003ade68b1-01",
+			"tracestate":  "dd=t.tid:XXXX",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Contains(root.Meta, keyPropagationError)
+		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXX")
+	})
+}
+
 func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	assert := assert.New(t)
 

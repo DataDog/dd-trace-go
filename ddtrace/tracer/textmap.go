@@ -398,7 +398,9 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	}
 	if ctx.trace != nil {
 		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128))
+		if err := ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128)); err != nil {
+			ctx.trace.setTag(keyPropagationError, err.Error())
+		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
@@ -948,6 +950,13 @@ func parseTracestate(ctx *spanContext, header string) {
 				}
 				setPropagatingTag(ctx, keyDecisionMaker, val)
 			} else if strings.HasPrefix(key, "t.") {
+				if key == "t.tid" {
+					if ok := validIDRgx.MatchString(val); !ok {
+						ctx.trace.setTag(keyPropagationError, fmt.Sprintf("malformed_tid %s", val))
+					} else if val != ctx.traceID.UpperHex() {
+						ctx.trace.setTag(keyPropagationError, fmt.Sprintf("inconsistent_tid %s", val))
+					}
+				}
 				keySuffix := key[len("t."):]
 				val = strings.ReplaceAll(val, "~", "=")
 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
