@@ -155,7 +155,7 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
-			traceTagsHeader:       "_dd.p.tid=XXXX",
+			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(err)
@@ -163,7 +163,24 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
 		assert.Contains(root.Meta, keyPropagationError)
-		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXX")
+		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXXXXXXXXXXXXXX")
+	})
+
+	t.Run("datadog", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer(WithPropagator(NewPropagator(nil)))
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyPropagationError)
+		assert.NotContains(root.Meta, keyTraceID128)
 	})
 
 	t.Run("tracecontext,inconsistent", func(t *testing.T) {

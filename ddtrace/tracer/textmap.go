@@ -386,6 +386,9 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			ctx.origin = v
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
+			if len(ctx.trace.propagatingTag(keyTraceID128)) != 16 {
+				ctx.trace.unsetPropagatingTag(keyTraceID128)
+			}
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -396,9 +399,10 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	if err != nil {
 		return nil, err
 	}
-	if ctx.trace != nil {
+	if ctx.trace != nil && ctx.trace.propagatingTag(keyTraceID128) != "" {
 		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		if err := ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128)); err != nil {
+		if err := ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128)); err != nil &&
+			ctx.trace.tags[keyPropagationError] == "" {
 			ctx.trace.setTag(keyPropagationError, err.Error())
 		}
 	}
