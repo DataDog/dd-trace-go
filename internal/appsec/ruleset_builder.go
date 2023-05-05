@@ -34,7 +34,7 @@ type (
 		Exclusions  []exclusionEntry     `json:"exclusions,omitempty"`
 		RulesData   []ruleDataEntry      `json:"rules_data,omitempty"`
 		Actions     []interface{}        `json:"actions,omitempty"`
-		CustomRules []ruleEntry          `json:"custom_rules,omitempty"`
+		CustomRules []interface{}        `json:"custom_rules,omitempty"`
 	}
 
 	ruleEntry struct {
