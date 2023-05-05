@@ -163,115 +163,115 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 }
 
 func queueName(requestInput middleware.InitializeInput) string {
-	var queueURL *string
+	var queueURL string
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		queueURL = params.QueueUrl
+		queueURL = *params.QueueUrl
 	case *sqs.DeleteMessageInput:
-		queueURL = params.QueueUrl
+		queueURL = *params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
-		queueURL = params.QueueUrl
+		queueURL = *params.QueueUrl
 	case *sqs.ReceiveMessageInput:
-		queueURL = params.QueueUrl
+		queueURL = *params.QueueUrl
 	case *sqs.SendMessageBatchInput:
-		queueURL = params.QueueUrl
+		queueURL = *params.QueueUrl
 	}
-	if queueURL == nil {
+	if queueURL == "" {
 		return ""
 	}
-	parts := strings.Split(*queueURL, "/")
+	parts := strings.Split(queueURL, "/")
 	return parts[len(parts)-1]
 }
 
 func bucketName(requestInput middleware.InitializeInput) string {
-	var bucket *string
+	var bucket string
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	case *s3.ListObjectsV2Input:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	case *s3.PutObjectInput:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	case *s3.GetObjectInput:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	case *s3.DeleteObjectInput:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	case *s3.DeleteObjectsInput:
-		bucket = params.Bucket
+		bucket = *params.Bucket
 	}
-	if bucket == nil {
+	if bucket == "" {
 		return ""
 	}
-	return *bucket
+	return bucket
 }
 
 func topicName(requestInput middleware.InitializeInput) string {
-	var topicArn *string
+	var topicArn string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.PublishBatchInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.GetTopicAttributesInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.ListSubscriptionsByTopicInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.RemovePermissionInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.SetTopicAttributesInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.SubscribeInput:
-		topicArn = params.TopicArn
+		topicArn = *params.TopicArn
 	case *sns.CreateTopicInput:
 		return *params.Name
 	}
-	if topicArn == nil {
+	if topicArn == "" {
 		return ""
 	}
-	parts := strings.Split(*topicArn, ":")
+	parts := strings.Split(topicArn, ":")
 	return parts[len(parts)-1]
 }
 
 func tableName(requestInput middleware.InitializeInput) string {
-	var tableName *string
+	var tableName string
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		tableName = params.TableName
+		tableName = *params.TableName
 	case *dynamodb.PutItemInput:
-		tableName = params.TableName
+		tableName = *params.TableName
 	case *dynamodb.QueryInput:
-		tableName = params.TableName
+		tableName = *params.TableName
 	case *dynamodb.ScanInput:
-		tableName = params.TableName
+		tableName = *params.TableName
 	case *dynamodb.UpdateItemInput:
-		tableName = params.TableName
+		tableName = *params.TableName
 	}
-	if tableName == nil {
+	if tableName == "" {
 		return ""
 	}
-	return *tableName
+	return tableName
 }
 
 func steamName(requestInput middleware.InitializeInput) string {
-	var streamName *string
+	var streamName string
 
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.PutRecordsInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.AddTagsToStreamInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.RemoveTagsFromStreamInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.CreateStreamInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.DeleteStreamInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.DescribeStreamInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.DescribeStreamSummaryInput:
-		streamName = params.StreamName
+		streamName = *params.StreamName
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
 			streamArnValue := *params.StreamARN
@@ -280,48 +280,48 @@ func steamName(requestInput middleware.InitializeInput) string {
 		}
 	}
 
-	if streamName == nil {
+	if streamName == "" {
 		return ""
 	}
-	return *streamName
+	return streamName
 }
 
 func ruleName(requestInput middleware.InitializeInput) string {
-	var ruleName *string
+	var ruleName string
 
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
-		ruleName = params.Name
+		ruleName = *params.Name
 	case *eventbridge.DescribeRuleInput:
-		ruleName = params.Name
+		ruleName = *params.Name
 	case *eventbridge.DeleteRuleInput:
-		ruleName = params.Name
+		ruleName = *params.Name
 	case *eventbridge.DisableRuleInput:
-		ruleName = params.Name
+		ruleName = *params.Name
 	case *eventbridge.EnableRuleInput:
-		ruleName = params.Name
+		ruleName = *params.Name
 	case *eventbridge.PutTargetsInput:
-		ruleName = params.Rule
+		ruleName = *params.Rule
 	case *eventbridge.RemoveTargetsInput:
-		ruleName = params.Rule
+		ruleName = *params.Rule
 	}
 
-	if ruleName == nil {
+	if ruleName == "" {
 		return ""
 	}
-	return *ruleName
+	return ruleName
 }
 
 func stateMachineName(requestInput middleware.InitializeInput) string {
-	var stateMachineArn *string
+	var stateMachineArn string
 
 	switch params := requestInput.Parameters.(type) {
 	case *sfn.CreateStateMachineInput:
 		return *params.Name
 	case *sfn.DescribeStateMachineInput:
-		stateMachineArn = params.StateMachineArn
+		stateMachineArn = *params.StateMachineArn
 	case *sfn.StartExecutionInput:
-		stateMachineArn = params.StateMachineArn
+		stateMachineArn = *params.StateMachineArn
 	case *sfn.StopExecutionInput:
 		if params.ExecutionArn != nil {
 			executionArnValue := *params.ExecutionArn
@@ -335,18 +335,18 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 			return parts[len(parts)-2]
 		}
 	case *sfn.ListExecutionsInput:
-		stateMachineArn = params.StateMachineArn
+		stateMachineArn = *params.StateMachineArn
 	case *sfn.UpdateStateMachineInput:
-		stateMachineArn = params.StateMachineArn
+		stateMachineArn = *params.StateMachineArn
 	case *sfn.DeleteStateMachineInput:
-		stateMachineArn = params.StateMachineArn
+		stateMachineArn = *params.StateMachineArn
 	}
 
-	if stateMachineArn == nil {
+	if stateMachineArn == "" {
 		return ""
 	}
 
-	parts := strings.Split(*stateMachineArn, ":")
+	parts := strings.Split(stateMachineArn, ":")
 	return parts[len(parts)-1]
 }
 
