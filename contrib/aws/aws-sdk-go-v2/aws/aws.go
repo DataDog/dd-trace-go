@@ -36,24 +36,25 @@ const componentName = "aws/aws-sdk-go-v2/aws"
 func init() {
 	telemetry.LoadIntegration(componentName)
 }
+
 const (
-	// duplicate tags that will be phased out
-	tagAWSService         = "aws.service"
-	tagAWSRegion          = "aws.region"
+	// duplicate tags that will be phased out in favor of aws_service & region
+	tagAWSService = "aws.service"
+	tagAWSRegion  = "aws.region"
 )
 const (
-	tagAWSAgent           = "aws.agent"
-	tagTopLevelAWSService = "aws_service"
-	tagAWSOperation       = "aws.operation"
-	tagTopLevelRegion     = "region" //AWS Region used to pivot from AWS Integration metrics to traces
-	tagAWSRequestID       = "aws.request_id"
-	tagQueueName          = "queuename"
-	tagTopicName          = "topicname"
-	tagTableName          = "tablename"
-	tagStreamName         = "streamname"
-	tagBucketName         = "bucketname"
-	tagRuleName           = "rulename"
-	tagStateMachineName   = "statemachinename"
+	tagAWSAgent         = "aws.agent"
+	tagService          = "aws_service" //Service aws-sdk request is heading to, ex. S3, SQS
+	tagAWSOperation     = "aws.operation"
+	tagRegion           = "region" //AWS Region used to pivot from AWS Integration metrics to traces
+	tagAWSRequestID     = "aws.request_id"
+	tagQueueName        = "queuename"
+	tagTopicName        = "topicname"
+	tagTableName        = "tablename"
+	tagStreamName       = "streamname"
+	tagBucketName       = "bucketname"
+	tagRuleName         = "rulename"
+	tagStateMachineName = "statemachinename"
 )
 
 type spanTimestampKey struct{}
@@ -102,10 +103,10 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tagTopLevelRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tagRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tagAWSOperation, operation),
 			tracer.Tag(tagAWSService, serviceID),
-			tracer.Tag(tagTopLevelAWSService, serviceID),
+			tracer.Tag(tagService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -185,7 +186,9 @@ func queueName(requestInput middleware.InitializeInput) string {
 func bucketName(requestInput middleware.InitializeInput) string {
 	var bucket *string
 	switch params := requestInput.Parameters.(type) {
-	case *s3.ListObjectsInput, *s3.ListObjectsV2Input:
+	case *s3.ListObjectsInput:
+		bucket = params.Bucket
+	case *s3.ListObjectsV2Input:
 		bucket = params.Bucket
 	case *s3.PutObjectInput:
 		bucket = params.Bucket
@@ -346,8 +349,6 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 	parts := strings.Split(*stateMachineArn, ":")
 	return parts[len(parts)-1]
 }
-
-
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
 	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
