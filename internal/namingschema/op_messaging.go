@@ -76,3 +76,15 @@ func NewKafkaInboundOp(opts ...Option) *Schema {
 	newOpts := append([]Option{WithVersionOverride(SchemaV0, "kafka.consume")}, opts...)
 	return NewMessagingInboundOp("kafka", newOpts...)
 }
+
+// NewGCPPubsubInboundOp creates a new schema for GCP Pubsub (messaging) inbound operations.
+func NewGCPPubsubInboundOp(opts ...Option) *Schema {
+	newOpts := append([]Option{WithVersionOverride(SchemaV0, "pubsub.receive")}, opts...)
+	return NewMessagingInboundOp("gcp.pubsub", newOpts...)
+}
+
+// NewGCPPubsubOutboundOp creates a new schema for GCP Pubsub (messaging) outbound operations.
+func NewGCPPubsubOutboundOp(opts ...Option) *Schema {
+	newOpts := append([]Option{WithVersionOverride(SchemaV0, "pubsub.publish")}, opts...)
+	return NewMessagingOutboundOp("gcp.pubsub", newOpts...)
+}
