@@ -30,15 +30,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func skipIntegrationTest(t *testing.T) {
+func newIntegrationTestConfig(t *testing.T, opts ...Option) aws.Config {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-}
-
-func newIntegrationTestConfig(t *testing.T, opts ...Option) aws.Config {
-	skipIntegrationTest(t)
-
 	awsEndpoint := "http://localhost:4566" // use localstack
 	awsRegion := "us-east-1"
 

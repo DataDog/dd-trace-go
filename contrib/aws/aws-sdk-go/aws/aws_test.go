@@ -35,15 +35,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func skipIntegrationTest(t *testing.T) {
+func newIntegrationTestSession(t *testing.T, opts ...Option) *session.Session {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-}
-
-func newIntegrationTestSession(t *testing.T, opts ...Option) *session.Session {
-	skipIntegrationTest(t)
-
 	cfg := aws.NewConfig().
 		WithRegion("us-east-1").
 		WithDisableSSL(true).

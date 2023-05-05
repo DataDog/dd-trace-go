@@ -76,16 +76,16 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 	) {
-		awsOperation := awsmiddleware.GetOperationName(ctx)
-		awsService := awsmiddleware.GetServiceID(ctx)
+		operation := awsmiddleware.GetOperationName(ctx)
+		serviceID := awsmiddleware.GetServiceID(ctx)
 
 		opts := []ddtrace.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, awsService)),
-			tracer.ResourceName(fmt.Sprintf("%s.%s", awsService, awsOperation)),
+			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tagAWSOperation, awsOperation),
-			tracer.Tag(tagAWSService, awsService),
+			tracer.Tag(tagAWSOperation, operation),
+			tracer.Tag(tagAWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -93,7 +93,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(awsService, awsOperation), opts...)
+		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)

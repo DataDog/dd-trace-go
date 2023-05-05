@@ -87,7 +87,7 @@ func (h *handlers) Send(req *request.Request) {
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
-	_, ctx := tracer.StartSpanFromContext(req.Context(), getSpanName(req), opts...)
+	_, ctx := tracer.StartSpanFromContext(req.Context(), spanName(req), opts...)
 	req.SetContext(ctx)
 }
 
@@ -116,7 +116,7 @@ func (h *handlers) serviceName(req *request.Request) string {
 	).GetName()
 }
 
-func getSpanName(req *request.Request) string {
+func spanName(req *request.Request) string {
 	svc := awsService(req)
 	op := awsOperation(req)
 	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
