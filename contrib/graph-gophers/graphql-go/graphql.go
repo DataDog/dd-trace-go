@@ -60,7 +60,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
