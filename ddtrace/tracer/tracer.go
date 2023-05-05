@@ -449,9 +449,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		noDebugStack: t.config.noDebugStack,
 	}
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofContext, span)
-	}
 	// Generate span ID after execution trace task creation (if it's
 	// enabled) so that the task includes possible contention during span ID
 	// generation.
@@ -524,6 +521,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
+	}
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(pprofContext, span)
 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
