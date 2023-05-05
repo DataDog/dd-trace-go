@@ -440,19 +440,29 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// to properly document this for users.
 		pprofContext = gocontext.Background()
 	}
-	id := opts.SpanID
-	if id == 0 {
-		id = generateSpanID(startTime)
-	}
 	// span defaults
 	span := &span{
 		Name:         operationName,
 		Service:      t.config.serviceName,
 		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
+	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(pprofContext, span)
+	}
+	// Generate span ID after execution trace task creation (if it's
+	// enabled) so that the task includes possible contention during span ID
+	// generation.
+	id := opts.SpanID
+	if id == 0 {
+		id = generateSpanID(startTime)
+	}
+	span.SpanID = id
+	span.TraceID = id
+	if rt.IsEnabled() {
+		rt.Log(pprofContext, "span id", strconv.FormatUint(span.SpanID, 10))
 	}
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
@@ -514,10 +524,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
-	}
-	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofContext, span)
 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
@@ -640,7 +646,6 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 		taskName = span.Type
 	}
 	ctx, task := rt.NewTask(ctx, taskName)
-	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
 	return ctx, task.End
 }
 
