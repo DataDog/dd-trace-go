@@ -8,7 +8,6 @@ package aws
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,14 +36,16 @@ const componentName = "aws/aws-sdk-go-v2/aws"
 func init() {
 	telemetry.LoadIntegration(componentName)
 }
-
+const (
+	// duplicate tags that will be phased out
+	tagAWSService         = "aws.service"
+	tagAWSRegion          = "aws.region"
+)
 const (
 	tagAWSAgent           = "aws.agent"
-	tagAWSService         = "aws.service"
 	tagTopLevelAWSService = "aws_service"
 	tagAWSOperation       = "aws.operation"
-	tagAWSRegion          = "aws.region"
-	tagTopLevelRegion     = "region"
+	tagTopLevelRegion     = "region" //AWS Region used to pivot from AWS Integration metrics to traces
 	tagAWSRequestID       = "aws.request_id"
 	tagQueueName          = "queuename"
 	tagTopicName          = "topicname"
@@ -108,11 +110,12 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		resourceNameKey, resourceNameValue, err := extractResourceNameFromParams(in, serviceID)
+		k, v, err := resourceNameFromParams(in, serviceID)
 		if err != nil {
-			log.Printf("Error: %v", err)
+			log.Debug("Error: %v", err)
+		} else {
+			opts = append(opts, tracer.Tag(k, v))
 		}
-		opts = append(opts, tracer.Tag(resourceNameKey, resourceNameValue))
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
@@ -126,39 +129,39 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func extractResourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
-	var resourceNameKey, resourceNameValue string
+func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
+	var k, v string
 
 	switch awsService {
 	case "SQS":
-		resourceNameKey = tagQueueName
-		resourceNameValue = extractQueueName(requestInput)
+		k = tagQueueName
+		v = queueName(requestInput)
 	case "S3":
-		resourceNameKey = tagBucketName
-		resourceNameValue = extractBucketName(requestInput)
+		k = tagBucketName
+		v = bucketName(requestInput)
 	case "SNS":
-		resourceNameKey = tagTopicName
-		resourceNameValue = extractTopicName(requestInput)
+		k = tagTopicName
+		v = topicName(requestInput)
 	case "DynamoDB":
-		resourceNameKey = tagTableName
-		resourceNameValue = extractTableName(requestInput)
+		k = tagTableName
+		v = tableName(requestInput)
 	case "Kinesis":
-		resourceNameKey = tagStreamName
-		resourceNameValue = extractStreamName(requestInput)
+		k = tagStreamName
+		v = steamName(requestInput)
 	case "EventBridge":
-		resourceNameKey = tagRuleName
-		resourceNameValue = extractRuleName(requestInput)
+		k = tagRuleName
+		v = ruleName(requestInput)
 	case "SFN":
-		resourceNameKey = tagStateMachineName
-		resourceNameValue = extractStateMachineName(requestInput)
+		k = tagStateMachineName
+		v = stateMachineName(requestInput)
 	default:
 		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
 
-	return resourceNameKey, resourceNameValue, nil
+	return k, v, nil
 }
 
-func extractQueueName(requestInput middleware.InitializeInput) string {
+func queueName(requestInput middleware.InitializeInput) string {
 	var queueURL *string
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
@@ -179,12 +182,10 @@ func extractQueueName(requestInput middleware.InitializeInput) string {
 	return parts[len(parts)-1]
 }
 
-func extractBucketName(requestInput middleware.InitializeInput) string {
+func bucketName(requestInput middleware.InitializeInput) string {
 	var bucket *string
 	switch params := requestInput.Parameters.(type) {
-	case *s3.ListObjectsInput:
-		bucket = params.Bucket
-	case *s3.ListObjectsV2Input:
+	case *s3.ListObjectsInput, *s3.ListObjectsV2Input:
 		bucket = params.Bucket
 	case *s3.PutObjectInput:
 		bucket = params.Bucket
@@ -201,7 +202,7 @@ func extractBucketName(requestInput middleware.InitializeInput) string {
 	return *bucket
 }
 
-func extractTopicName(requestInput middleware.InitializeInput) string {
+func topicName(requestInput middleware.InitializeInput) string {
 	var topicArn *string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
@@ -228,7 +229,7 @@ func extractTopicName(requestInput middleware.InitializeInput) string {
 	return parts[len(parts)-1]
 }
 
-func extractTableName(requestInput middleware.InitializeInput) string {
+func tableName(requestInput middleware.InitializeInput) string {
 	var tableName *string
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
@@ -248,7 +249,7 @@ func extractTableName(requestInput middleware.InitializeInput) string {
 	return *tableName
 }
 
-func extractStreamName(requestInput middleware.InitializeInput) string {
+func steamName(requestInput middleware.InitializeInput) string {
 	var streamName *string
 
 	switch params := requestInput.Parameters.(type) {
@@ -282,7 +283,7 @@ func extractStreamName(requestInput middleware.InitializeInput) string {
 	return *streamName
 }
 
-func extractRuleName(requestInput middleware.InitializeInput) string {
+func ruleName(requestInput middleware.InitializeInput) string {
 	var ruleName *string
 
 	switch params := requestInput.Parameters.(type) {
@@ -308,7 +309,7 @@ func extractRuleName(requestInput middleware.InitializeInput) string {
 	return *ruleName
 }
 
-func extractStateMachineName(requestInput middleware.InitializeInput) string {
+func stateMachineName(requestInput middleware.InitializeInput) string {
 	var stateMachineArn *string
 
 	switch params := requestInput.Parameters.(type) {
