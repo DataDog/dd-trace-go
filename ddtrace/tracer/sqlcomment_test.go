@@ -84,6 +84,16 @@ func TestSQLCommentCarrier(t *testing.T) {
 			expectedSpanIDGen:  true,
 			expectedExtractErr: ErrSpanContextNotFound,
 		},
+		{
+			name:               "comment",
+			query:              "/* c */ SELECT * from FOO /**/",
+			mode:               DBMPropagationModeFull,
+			injectSpan:         true,
+			samplingPriority:   1,
+			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0',traceparent='00-0000000000000000000000000000000a-<span_id>-01'*/ /* c */ SELECT * from FOO /**/",
+			expectedSpanIDGen:  true,
+			expectedExtractErr: nil,
+		},
 	}
 
 	for _, tc := range testCases {

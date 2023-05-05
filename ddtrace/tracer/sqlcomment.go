@@ -227,16 +227,19 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 
 // decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
 func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int, err error) {
-	if splitParent := strings.Split(traceParent, "-"); len(splitParent) == 4 {
-		version := splitParent[0]
-		if version != w3cContextVersion {
+	version := traceParent[0:2]
+	switch version {
+	case w3cContextVersion:
+		if traceID, err = strconv.ParseUint(traceParent[3:35], 16, 64); err != nil {
 			return 0, 0, 0, ErrSpanContextCorrupted
 		}
-		traceID, err = strconv.ParseUint(splitParent[1], 16, 64)
-		spanID, err = strconv.ParseUint(splitParent[2], 16, 64)
-		sampled, err = strconv.Atoi(splitParent[3])
-	} else {
-		return 0, 0, 0, ErrSpanContextCorrupted
+		if spanID, err = strconv.ParseUint(traceParent[36:52], 16, 64); err != nil {
+			return 0, 0, 0, ErrSpanContextCorrupted
+		}
+		if sampled, err = strconv.Atoi(traceParent[53:55]); err != nil {
+			return 0, 0, 0, ErrSpanContextCorrupted
+		}
+	default:
 	}
 	return traceID, spanID, sampled, err
 }
