@@ -19,38 +19,7 @@ jobs:
         run: |
           go run checkcopyright.go
 
-  # Deprecated
-  # TODO remove this once the golangci-lint job is stable.
   lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - name: gofmt
-        run: |
-          if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
-            gofmt -e -l .
-            exit 1
-          fi
-
-      - name: goimports
-        run: |
-          go install golang.org/x/tools/cmd/goimports
-          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
-            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
-            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
-            exit 1
-          fi
-
-      - name: lint
-        run: |
-          go install golang.org/x/lint/golint@latest
-          curl https://raw.githubusercontent.com/alecthomas/gometalinter/master/scripts/install.sh | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
-
-  golangci-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-go@v4
@@ -233,6 +202,10 @@ jobs:
           KAFKA_BROKER_ID: 1
         ports:
           - 9092:9092
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
     steps:
       - name: Checkout
         uses: actions/checkout@v2

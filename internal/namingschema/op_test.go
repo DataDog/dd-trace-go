@@ -104,6 +104,14 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "grpc.server.request",
 		},
 		{
+			name: "graphql server",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGraphqlServerOp()
+			},
+			wantV0: "graphql.request",
+			wantV1: "graphql.server.request",
+		},
+		{
 			name: "client outbound override",
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewClientOutboundOp("test", optOverrideV0, optOverrideV1)

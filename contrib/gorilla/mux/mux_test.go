@@ -351,6 +351,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the server behaved as intended (404 after the 301)
 		require.Equal(t, http.StatusNotFound, res.StatusCode)
 		// The span should contain the security event
@@ -380,6 +381,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -405,6 +407,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		require.Equal(t, 404, res.StatusCode)
 
 		finished := mt.FinishedSpans()
@@ -426,6 +429,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
