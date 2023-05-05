@@ -25,11 +25,7 @@ import (
 
 func TestPropagation(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	topic, sub := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+	ctx, cancel, mt, topic, sub := setup(t)
 
 	// Publisher
 	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test", tracer.WithSpanID(42)) // set the root trace ID
@@ -100,11 +96,7 @@ func TestPropagation(t *testing.T) {
 
 func TestPropagationWithServiceName(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	topic, sub := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+	ctx, cancel, mt, topic, sub := setup(t)
 
 	// Publisher
 	span, pctx := tracer.StartSpanFromContext(ctx, "service-name-test")
@@ -126,11 +118,7 @@ func TestPropagationWithServiceName(t *testing.T) {
 
 func TestPropagationNoParentSpan(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	topic, sub := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+	ctx, cancel, mt, topic, sub := setup(t)
 
 	// Publisher
 	// no parent span
@@ -199,12 +187,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 
 func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	topic, sub := setup(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+	ctx, cancel, mt, topic, sub := setup(t)
 
 	// Publisher
 	// no tracing on publisher side
@@ -230,6 +213,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 		pubTime = msg.PublishTime.String()
 		msg.Ack()
 		called = true
+		cancel()
 	}))
 	assert.True(called, "callback not called")
 	assert.NoError(err)
@@ -260,13 +244,7 @@ func TestNamingSchema(t *testing.T) {
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
 		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-
-		topic, sub := setup(t)
+		ctx, cancel, mt, topic, sub := setup(t)
 
 		_, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}, opts...).Get(ctx)
 		require.NoError(t, err)
@@ -299,12 +277,15 @@ func TestNamingSchema(t *testing.T) {
 	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
-func setup(t *testing.T) (*pubsub.Topic, *pubsub.Subscription) {
+func setup(t *testing.T) (context.Context, context.CancelFunc, mocktracer.Tracer, *pubsub.Topic, *pubsub.Subscription) {
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+
 	srv := pstest.NewServer()
 	t.Cleanup(func() { assert.NoError(t, srv.Close()) })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 
 	conn, err := grpc.Dial(srv.Addr, grpc.WithInsecure())
 	require.NoError(t, err)
@@ -324,5 +305,5 @@ func setup(t *testing.T) (*pubsub.Topic, *pubsub.Subscription) {
 	require.NoError(t, err)
 
 	sub := client.Subscription("subscription")
-	return topic, sub
+	return ctx, cancel, mt, topic, sub
 }

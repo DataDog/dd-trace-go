@@ -32,8 +32,7 @@ func init() {
 // It is required to call (*PublishResult).Get(ctx) on the value returned by Publish to complete
 // the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
-	cfg := &config{}
-	defaults(cfg)
+	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -92,8 +91,7 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 // extracts any tracing metadata attached to the received message, and starts a
 // receive span.
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
-	cfg := &config{}
-	defaults(cfg)
+	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
