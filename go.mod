@@ -208,7 +208,7 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/go-libddwaf v1.1.0
+	github.com/DataDog/go-libddwaf v1.2.0
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.18.9
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.17.10
