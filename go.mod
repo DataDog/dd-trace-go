@@ -227,16 +227,9 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/go-libddwaf v1.1.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.0
-	github.com/jackc/pgx/v5 v5.3.1
 	github.com/microsoft/go-mssqldb v0.21.0
-	github.com/redis/go-redis/v9 v9.0.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0
-	go.opentelemetry.io/otel v1.14.0
-	go.opentelemetry.io/otel/trace v1.14.0
-	go.uber.org/atomic v1.10.0
+	github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
 )
 
 require (
@@ -245,18 +238,10 @@ require (
 	cloud.google.com/go/iam v0.13.0 // indirect
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	github.com/outcaste-io/ristretto v0.2.1 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
-	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
-	mellium.im/sasl v0.3.1 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.2.0 // indirect
 )
