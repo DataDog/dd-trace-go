@@ -43,7 +43,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.24.0
 	github.com/golang/protobuf v1.5.3
 	github.com/gomodule/redigo v1.8.9
-	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1
+	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.0
 	github.com/graph-gophers/graphql-go v1.3.0
@@ -227,7 +227,7 @@ require (
 )
 
 require (
-	github.com/confluentinc/confluent-kafka-go/v2 v2.1.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.0.2
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
 )
