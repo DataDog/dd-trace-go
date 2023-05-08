@@ -205,9 +205,8 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 					return nil, err
 				}
 				break
-			} else {
-				i += len(comment)
 			}
+			i += len(comment)
 		} else {
 			return nil, ErrSpanContextNotFound
 		}
