@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -413,6 +414,12 @@ func (t *trace) finishedOne(s *span) {
 	}
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
+	}
+	// ensure we generate APM stats for spans representing outbound requests, as they often point at some core
+	// dependency of the service making the requests and are therefore often relevant for troubleshooting
+	// service issues.
+	if kind := s.Meta[ext.SpanKind]; kind == ext.SpanKindClient || kind == ext.SpanKindProducer {
+		s.setMetric(keyMeasured, 1.0)
 	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))

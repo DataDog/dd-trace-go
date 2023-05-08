@@ -245,6 +245,36 @@ func TestSpanFinishPriority(t *testing.T) {
 	assert.Fail("span not found")
 }
 
+func TestSpanMeasured(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport, flush, stop := startTestTracer(t)
+	defer stop()
+
+	s1 := tracer.StartSpan(
+		"client",
+		Tag(ext.SpanKind, ext.SpanKindClient),
+	)
+	s2 := tracer.StartSpan(
+		"producer",
+		Tag(ext.SpanKind, ext.SpanKindProducer),
+	)
+	s3 := tracer.StartSpan(
+		"internal",
+		Tag(ext.SpanKind, ext.SpanKindInternal),
+	)
+	s1.Finish()
+	s2.Finish()
+	s3.Finish()
+
+	flush(3)
+
+	traces := transport.Traces()
+	assert.Len(traces, 3)
+	assert.Equal(1.0, traces[0][0].Metrics["_dd.measured"])
+	assert.Equal(1.0, traces[1][0].Metrics["_dd.measured"])
+	assert.NotContains(traces[2][0].Metrics, "_dd.measured")
+}
+
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		span := &span{
