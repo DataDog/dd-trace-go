@@ -20,20 +20,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
 
 func newIntegrationTestConfig(t *testing.T, opts ...Option) aws.Config {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
@@ -267,7 +266,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
 			assert.Equal(t, "SQS", s.Tag(tagAWSService))
-			assert.Equal(t, "SQS.ListQueues", s.Tag(ext.ResourceName))
+			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
