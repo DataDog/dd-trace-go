@@ -147,9 +147,9 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	priority := 1
 	traceparent := encodeTraceParent(traceID, spanID, int64(priority))
 	// open-telemetry implementation appends comment to the end of the query
-	q := fmt.Sprintf("/*c*/ SELECT * from FOO /**/ /*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service',ddpv='1.0.0',traceparent='%s'*/", traceparent)
+	q := "/*c*/ SELECT traceparent from FOO /**/ /*action='%2Fparam*d',controller='index,'framework='spring',traceparent='<trace-parent>',tracestate='congo%3Dt61rcWkgMzE%2Crojo%3D00f067aa0ba902b7'*/"
+	q = strings.ReplaceAll(q, "<trace-parent>", traceparent)
 	carrier := SQLCommentCarrier{Query: q}
-
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
 	xctx, ok := sctx.(*spanContext)

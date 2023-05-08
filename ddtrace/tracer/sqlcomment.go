@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -191,40 +190,57 @@ func commentQuery(query string, tags map[string]string) string {
 	return b.String()
 }
 
-// Extract parses for key value attributes in a sql query's comment in order to build a span context
+// Extract parses for key value attributes in a sql query injected with trace information in order to build a span context
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	var ctx spanContext
-	// there may be multiple comments within the sql query, so we can identify which one contains trace information
-	// this regex matches sql comments that contain the traceparent key and ensures that it does not match on the
-	// opening /* of one comment and the closing */ of a second comment
-	re := regexp.MustCompile(fmt.Sprintf(`/\*([^/\*]*?%s[^\*/]*?)\*/`, sqlCommentTraceParent))
-	if match := re.FindStringSubmatch(c.Query); len(match) == 2 {
-		comment := match[1]
-		kvs := strings.Split(comment, ",")
-		for _, unparsedKV := range kvs {
-			if splitKV := strings.Split(unparsedKV, "="); len(splitKV) == 2 {
-				key := splitKV[0]
-				value := strings.Trim(splitKV[1], "'")
-				switch key {
-				case sqlCommentTraceParent:
-					traceID, spanID, sampled, err := decodeTraceParent(value)
-					if err != nil {
-						return nil, err
-					}
-					ctx.traceID.SetLower(traceID)
-					ctx.spanID = spanID
-					ctx.setSamplingPriority(sampled, samplernames.Unknown)
-				default:
+	var ctx *spanContext
+	// There may be multiple comments within the sql query, so we must identify which one contains trace information.
+	// We look at each comment until we find one that contains a traceparent
+	reComment := regexp.MustCompile(`/\*(.*?)\*/`)
+	for i := 0; i < len(c.Query); {
+		if comment := reComment.FindString(c.Query[i:]); comment != "" {
+			if strings.Contains(comment, sqlCommentTraceParent) {
+				var err error
+				if ctx, err = createSpanContextFromKVs(comment[2 : len(comment)-2]); err != nil {
+					// comment substring skips /* and */ at beginning and end of comment
+					return nil, err
 				}
+				break
 			} else {
-				return nil, ErrSpanContextCorrupted
+				i += len(comment)
 			}
+		} else {
+			return nil, ErrSpanContextNotFound
 		}
-	} else {
-		return nil, ErrSpanContextNotFound
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
+	}
+	return ctx, nil
+}
+
+// createSpanContextFromKVs looks for specific kv pairs in a comment containing trace information.
+// It returns a span context with the appropriate attributes
+func createSpanContextFromKVs(c string) (*spanContext, error) {
+	var ctx spanContext
+	kvs := strings.Split(c, ",")
+	for _, unparsedKV := range kvs {
+		if splitKV := strings.Split(unparsedKV, "="); len(splitKV) == 2 {
+			key := splitKV[0]
+			value := strings.Trim(splitKV[1], "'")
+			switch key {
+			case sqlCommentTraceParent:
+				traceID, spanID, sampled, err := decodeTraceParent(value)
+				if err != nil {
+					return nil, err
+				}
+				ctx.traceID.SetLower(traceID)
+				ctx.spanID = spanID
+				ctx.setSamplingPriority(sampled, samplernames.Unknown)
+			default:
+			}
+		} else {
+			return nil, ErrSpanContextCorrupted
+		}
 	}
 	return &ctx, nil
 }
