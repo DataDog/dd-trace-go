@@ -145,8 +145,9 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	spanID := generateSpanID(now())
 	traceID := generateSpanID(now())
 	priority := 1
+	traceparent := encodeTraceParent(traceID, spanID, int64(priority))
 	// open-telemetry implementation appends comment to the end of the query
-	q := fmt.Sprintf("/*c*/ SELECT * from FOO /**/ /*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service',ddpv='1.0.0',traceparent='00-0000000000000000%s-%s-0%d'*/", strconv.FormatUint(traceID, 16), strconv.FormatUint(spanID, 16), priority)
+	q := fmt.Sprintf("/*c*/ SELECT * from FOO /**/ /*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service',ddpv='1.0.0',traceparent='%s'*/", traceparent)
 	carrier := SQLCommentCarrier{Query: q}
 
 	sctx, err := carrier.Extract()
