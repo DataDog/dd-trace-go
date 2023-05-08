@@ -26,14 +26,13 @@ type queryConfig struct {
 type WrapOption func(*queryConfig)
 
 func defaults(cfg *queryConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
 	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "cassandra.batch"),
+		namingschema.WithOverrideV0("cassandra.batch"),
 	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {

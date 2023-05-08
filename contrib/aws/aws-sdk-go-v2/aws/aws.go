@@ -149,9 +149,8 @@ func serviceName(cfg *config, awsService string) string {
 		return cfg.serviceName
 	}
 	defaultName := fmt.Sprintf("aws.%s", awsService)
-	return namingschema.NewServiceNameSchema(
-		"",
+	return namingschema.NewDefaultServiceName(
 		defaultName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+		namingschema.WithOverrideV0(defaultName),
 	).GetName()
 }
