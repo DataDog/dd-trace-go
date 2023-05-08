@@ -396,7 +396,7 @@ func TestNamingSchema(t *testing.T) {
 		}
 	}
 	t.Run("SQLServer", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "sqlserver", "")
+		genSpans := newGenSpansFunc(t, "sqlserver", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
