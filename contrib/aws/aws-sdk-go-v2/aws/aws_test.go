@@ -15,12 +15,14 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -115,7 +117,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -189,7 +191,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -335,7 +337,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "MyBucketName", s.Tag(tagBucketName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -406,7 +408,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "MyTopicName", s.Tag(tagTopicName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -476,7 +478,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "MyTableName", s.Tag(tagTableName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -548,7 +550,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "my-kinesis-stream", s.Tag(tagStreamName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -618,7 +620,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "my-event-rule-name", s.Tag(tagRuleName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -688,7 +690,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "HelloWorld-StateMachine", s.Tag(tagStateMachineName))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagTopLevelRegion))
+			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -868,4 +870,55 @@ func TestHTTPCredentials(t *testing.T) {
 	// Make sure we haven't modified the outgoing request, and the server still
 	// receives the auth request.
 	assert.Equal(t, auth, "myuser:mypassword")
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		awsCfg := newIntegrationTestConfig(t, opts...)
+		ctx := context.Background()
+		ec2Client := ec2.NewFromConfig(awsCfg)
+		s3Client := s3.NewFromConfig(awsCfg)
+		sqsClient := sqs.NewFromConfig(awsCfg)
+		snsClient := sns.NewFromConfig(awsCfg)
+
+		_, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
+		require.NoError(t, err)
+		_, err = s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		require.NoError(t, err)
+		_, err = sqsClient.ListQueues(ctx, &sqs.ListQueuesInput{})
+		require.NoError(t, err)
+		_, err = snsClient.ListTopics(ctx, &sns.ListTopicsInput{})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		assert.Equal(t, "EC2.request", spans[0].OperationName())
+		assert.Equal(t, "S3.request", spans[1].OperationName())
+		assert.Equal(t, "SQS.request", spans[2].OperationName())
+		assert.Equal(t, "SNS.request", spans[3].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
+		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
+		assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
+		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
+	}
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
+		WithDDService:            []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
+		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
 }
