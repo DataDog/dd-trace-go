@@ -141,6 +141,27 @@ func TestSQLCommentCarrier(t *testing.T) {
 	}
 }
 
+func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
+	spanID := generateSpanID(now())
+	traceID := generateSpanID(now())
+	priority := 1
+	// open-telemetry implementation appends comment to the end of the query
+	q := fmt.Sprintf("/*c*/ SELECT * from FOO /**/ /*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service',ddpv='1.0.0',traceparent='00-0000000000000000%s-%s-0%d'*/", strconv.FormatUint(traceID, 16), strconv.FormatUint(spanID, 16), priority)
+	carrier := SQLCommentCarrier{Query: q}
+
+	sctx, err := carrier.Extract()
+	require.NoError(t, err)
+	xctx, ok := sctx.(*spanContext)
+	assert.True(t, ok)
+
+	assert.Equal(t, spanID, xctx.spanID)
+	assert.Equal(t, traceID, xctx.traceID.Lower())
+
+	p, ok := xctx.samplingPriority()
+	assert.True(t, ok)
+	assert.Equal(t, priority, p)
+}
+
 func BenchmarkSQLCommentInjection(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -193,7 +194,10 @@ func commentQuery(query string, tags map[string]string) string {
 // Extract parses for key value attributes in a sql query's comment in order to build a span context
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	var ctx spanContext
-	re := regexp.MustCompile(`/\*(.*?)\*/`) // extract sql comment
+	// there may be multiple comments within the sql query, so we can identify which one contains trace information
+	// this regex matches sql comments that contain the traceparent key and ensures that it does not match on the
+	// opening /* of one comment and the closing */ of a second comment
+	re := regexp.MustCompile(fmt.Sprintf(`/\*([^/\*]*?%s[^\*/]*?)\*/`, sqlCommentTraceParent))
 	if match := re.FindStringSubmatch(c.Query); len(match) == 2 {
 		comment := match[1]
 		kvs := strings.Split(comment, ",")
