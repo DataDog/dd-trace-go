@@ -39,6 +39,22 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.process",
 		},
 		{
+			name: "gcp pubsub outbound",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGCPPubsubOutboundOp()
+			},
+			wantV0: "pubsub.publish",
+			wantV1: "gcp.pubsub.send",
+		},
+		{
+			name: "gcp pubsub inbound",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGCPPubsubInboundOp()
+			},
+			wantV0: "pubsub.receive",
+			wantV1: "gcp.pubsub.process",
+		},
+		{
 			name: "messaging outbound override",
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewMessagingOutboundOp("test", optOverrideV0)
@@ -85,6 +101,14 @@ func TestOpContribSchemas(t *testing.T) {
 			},
 			wantV0: "grpc.server",
 			wantV1: "grpc.server.request",
+		},
+		{
+			name: "graphql server",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGraphqlServerOp()
+			},
+			wantV0: "graphql.request",
+			wantV1: "graphql.server.request",
 		},
 		{
 			name: "client outbound override",

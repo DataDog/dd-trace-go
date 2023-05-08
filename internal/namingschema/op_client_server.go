@@ -78,3 +78,8 @@ func NewGRPCServerOp(opts ...Option) *Schema {
 	newOpts := append([]Option{WithOverrideV0("grpc.server")}, opts...)
 	return NewServerInboundOp("grpc", newOpts...)
 }
+
+// NewGraphqlServerOp creates a new schema for GraphQL server inbound operations.
+func NewGraphqlServerOp(opts ...Option) *Schema {
+	return NewServerInboundOp("graphql", opts...)
+}

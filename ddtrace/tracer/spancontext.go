@@ -301,41 +301,16 @@ func (t *trace) drop() {
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-// setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
-}
-
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
-// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
-	if t.propagatingTags == nil {
-		t.propagatingTags = make(map[string]string, 1)
-	}
-	t.propagatingTags[key] = value
-}
-
-// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.propagatingTags, key)
-}
-
-// hasPropagatingTag performs a thread-safe lookup for propagating tags.
-func (t *trace) hasPropagatingTag(key string) bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	_, found := t.propagatingTags[key]
-	return found
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
@@ -421,9 +396,9 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
 			s.setMeta(k, v)
 		}
-	}
-	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		if s.context != nil && s.context.traceID.HasUpper() {
+			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		}
 	}
 	if len(t.spans) != t.finished {
 		return

@@ -20,13 +20,11 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
-	"math"
 	"reflect"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -198,18 +196,6 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	// use registered config for unset options
-	if math.IsNaN(cfg.analyticsRate) {
-		cfg.analyticsRate = rc.analyticsRate
-	}
-	if cfg.errCheck == nil {
-		cfg.errCheck = rc.errCheck
-	}
-	if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
-		cfg.dbmPropagationMode = rc.dbmPropagationMode
-	}
-	cfg.ignoreQueryTypes = rc.ignoreQueryTypes
-	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
 		driverName: driverName,

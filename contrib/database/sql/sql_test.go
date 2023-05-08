@@ -10,7 +10,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -126,17 +125,13 @@ func TestPostgres(t *testing.T) {
 
 func TestOpenOptions(t *testing.T) {
 	driverName := "postgres"
-	Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
-	defer unregister(driverName)
+	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 
 	t.Run("Open", func(t *testing.T) {
-		db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
-			WithServiceName("override-test"),
-			WithAnalytics(true),
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
+		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		defer unregister(driverName)
+		db, err := Open(driverName, dsn, WithServiceName("override-test"), WithAnalytics(true))
+		require.NoError(t, err)
 		defer db.Close()
 
 		testConfig := &sqltest.Config{
@@ -159,10 +154,10 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("OpenDB", func(t *testing.T) {
-		c, err := pq.NewConnector("postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-		if err != nil {
-			log.Fatal(err)
-		}
+		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		defer unregister(driverName)
+		c, err := pq.NewConnector(dsn)
+		require.NoError(t, err)
 		db := OpenDB(c)
 		defer db.Close()
 
@@ -186,11 +181,10 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("WithDSN", func(t *testing.T) {
-		dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		defer unregister(driverName)
 		c, err := pq.NewConnector(dsn)
-		if err != nil {
-			log.Fatal(err)
-		}
+		require.NoError(t, err)
 		db := OpenDB(c, WithDSN(dsn))
 		defer db.Close()
 
@@ -211,6 +205,66 @@ func TestOpenOptions(t *testing.T) {
 			},
 		}
 		sqltest.RunAll(t, testConfig)
+	})
+
+	t.Run("WithChildSpansOnly", func(t *testing.T) {
+		Register(driverName, &pq.Driver{})
+		defer unregister(driverName)
+		db, err := Open(driverName, dsn, WithChildSpansOnly())
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		err = db.Ping()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		// the number of spans should be 0 since we specified the WithChildSpansOnly option
+		assert.Len(t, spans, 0)
+	})
+
+	t.Run("WithIgnoreQueryTypes", func(t *testing.T) {
+		registerOpts := []RegisterOption{WithIgnoreQueryTypes(QueryTypeConnect)}
+		openDBOpts := []Option{WithIgnoreQueryTypes(QueryTypeConnect, QueryTypePing)}
+		Register(driverName, &pq.Driver{}, registerOpts...)
+		defer unregister(driverName)
+		db, err := Open(driverName, dsn, openDBOpts...)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		err = db.Ping()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		// the number of spans should be 0 since we are ignoring Connect and Ping spans.
+		assert.Len(t, spans, 0)
+	})
+
+	t.Run("RegisterOptionsAsDefault", func(t *testing.T) {
+		registerOpts := []RegisterOption{
+			WithServiceName("register-override"),
+			WithIgnoreQueryTypes(QueryTypeConnect),
+		}
+		Register(driverName, &pq.Driver{}, registerOpts...)
+		defer unregister(driverName)
+		db, err := Open(driverName, dsn)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		err = db.Ping()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		// the number of spans should be 1 since we are ignoring Connect spans from the Register options.
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "register-override", s0.Tag(ext.ServiceName))
 	})
 }
 
@@ -295,11 +349,14 @@ func TestRegister(_ *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	newGenSpansFunc := func(t *testing.T, driverName string) namingschematest.GenSpansFn {
+	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride string) namingschematest.GenSpansFn {
 		return func(t *testing.T, serviceOverride string) []mocktracer.Span {
 			var registerOpts []RegisterOption
+			// serviceOverride has higher priority than the registerOverride parameter.
 			if serviceOverride != "" {
 				registerOpts = append(registerOpts, WithServiceName(serviceOverride))
+			} else if registerOverride != "" {
+				registerOpts = append(registerOpts, WithServiceName(registerOverride))
 			}
 			var openOpts []Option
 			if serviceOverride != "" {
@@ -339,7 +396,7 @@ func TestNamingSchema(t *testing.T) {
 		}
 	}
 	t.Run("SQLServer", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "sqlserver")
+		genSpans := newGenSpansFunc(t, "sqlserver", "")
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
@@ -359,7 +416,7 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("Postgres", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "postgres")
+		genSpans := newGenSpansFunc(t, "postgres", "")
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -378,8 +435,31 @@ func TestNamingSchema(t *testing.T) {
 		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
 		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
+	t.Run("PostgresWithRegisterOverride", func(t *testing.T) {
+		genSpans := newGenSpansFunc(t, "postgres", "register-override")
+		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+			require.Len(t, spans, 2)
+			assert.Equal(t, "postgres.query", spans[0].OperationName())
+			assert.Equal(t, "postgres.query", spans[1].OperationName())
+		}
+		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+			require.Len(t, spans, 2)
+			assert.Equal(t, "postgresql.query", spans[0].OperationName())
+			assert.Equal(t, "postgresql.query", spans[1].OperationName())
+		}
+		wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+			// when the WithServiceName option is set during Register and not providing a service name when opening
+			// the DB connection, that value is used as default instead of postgres.db.
+			WithDefaults: []string{"register-override", "register-override"},
+			// in v0, DD_SERVICE is ignored for this integration.
+			WithDDService:            []string{"register-override", "register-override"},
+			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
+		}
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "register-override", wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	})
 	t.Run("MySQL", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "mysql")
+		genSpans := newGenSpansFunc(t, "mysql", "")
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mysql.query", spans[0].OperationName())

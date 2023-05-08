@@ -8,7 +8,6 @@ package namingschematest
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
@@ -36,11 +35,7 @@ func NewHTTPServerTest(genSpans GenSpansFn, defaultName string, opts ...Option) 
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.server.request", spans[0].OperationName())
 		}
-		genSpansWithInit := GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-			httptrace.InitServerSpanName()
-			return genSpans(t, serviceOverride)
-		})
-		t.Run("ServiceName", NewServiceNameTest(genSpansWithInit, cfg.wantServiceName[namingschema.SchemaV0]))
-		t.Run("SpanName", NewSpanNameTest(genSpansWithInit, assertOpV0, assertOpV1))
+		t.Run("ServiceName", NewServiceNameTest(genSpans, cfg.wantServiceName[namingschema.SchemaV0]))
+		t.Run("SpanName", NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	}
 }

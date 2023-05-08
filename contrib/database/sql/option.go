@@ -36,7 +36,6 @@ type registerConfig = config
 type RegisterOption = Option
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
-	// default cfg.serviceName set in Register based on driver name
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -50,18 +49,30 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = getServiceName(driverName, rc)
 	cfg.spanName = getSpanName(driverName)
+	if rc != nil {
+		// use registered config as the default value for some options
+		if math.IsNaN(cfg.analyticsRate) {
+			cfg.analyticsRate = rc.analyticsRate
+		}
+		if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
+			cfg.dbmPropagationMode = rc.dbmPropagationMode
+		}
+		cfg.errCheck = rc.errCheck
+		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
+		cfg.childSpansOnly = rc.childSpansOnly
+	}
 }
 
 func getServiceName(driverName string, rc *registerConfig) string {
 	defaultServiceName := fmt.Sprintf("%s.db", driverName)
-	serviceNameV0 := defaultServiceName
 	if rc != nil {
-		// for v0, if service name was set during Register, we use that value as default
-		serviceNameV0 = rc.serviceName
+		// if service name was set during Register, we use that value as default instead of
+		// the one calculated above.
+		defaultServiceName = rc.serviceName
 	}
 	return namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithOverrideV0(serviceNameV0),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 }
 
