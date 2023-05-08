@@ -9,12 +9,12 @@ package namingschema
 type Option func(cfg *config)
 
 type config struct {
-	overrideV0 string
+	overrideV0 *string
 }
 
 // WithOverrideV0 allows to override the value returned for V0 in the given Schema.
 func WithOverrideV0(value string) Option {
 	return func(cfg *config) {
-		cfg.overrideV0 = value
+		cfg.overrideV0 = &value
 	}
 }

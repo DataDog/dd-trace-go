@@ -22,8 +22,8 @@ func NewClientOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (c *clientOutboundOp) V0() string {
-	if c.cfg.overrideV0 != "" {
-		return c.cfg.overrideV0
+	if c.cfg.overrideV0 != nil {
+		return *c.cfg.overrideV0
 	}
 	return fmt.Sprintf("%s.request", c.system)
 }
@@ -47,8 +47,8 @@ func NewServerInboundOp(system string, opts ...Option) *Schema {
 }
 
 func (s *serverInboundOp) V0() string {
-	if s.cfg.overrideV0 != "" {
-		return s.cfg.overrideV0
+	if s.cfg.overrideV0 != nil {
+		return *s.cfg.overrideV0
 	}
 	return fmt.Sprintf("%s.request", s.system)
 }

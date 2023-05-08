@@ -22,8 +22,8 @@ func NewMessagingOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (m *messagingOutboundOp) V0() string {
-	if m.cfg.overrideV0 != "" {
-		return m.cfg.overrideV0
+	if m.cfg.overrideV0 != nil {
+		return *m.cfg.overrideV0
 	}
 	return m.V1()
 }
@@ -49,8 +49,8 @@ func NewMessagingInboundOp(system string, opts ...Option) *Schema {
 }
 
 func (m *messagingInboundOp) V0() string {
-	if m.cfg.overrideV0 != "" {
-		return m.cfg.overrideV0
+	if m.cfg.overrideV0 != nil {
+		return *m.cfg.overrideV0
 	}
 	return m.V1()
 }

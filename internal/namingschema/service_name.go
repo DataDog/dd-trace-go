@@ -27,8 +27,8 @@ type standardServiceNameSchema struct {
 }
 
 func (s *standardServiceNameSchema) V0() string {
-	if s.cfg.overrideV0 != "" {
-		return s.cfg.overrideV0
+	if s.cfg.overrideV0 != nil {
+		return *s.cfg.overrideV0
 	}
 	return s.getName()
 }

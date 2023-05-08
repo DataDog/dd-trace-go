@@ -24,8 +24,8 @@ func NewCacheOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (c *cacheOutboundOp) V0() string {
-	if c.cfg.overrideV0 != "" {
-		return c.cfg.overrideV0
+	if c.cfg.overrideV0 != nil {
+		return *c.cfg.overrideV0
 	}
 	return c.V1()
 }

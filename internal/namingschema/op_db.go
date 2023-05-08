@@ -24,8 +24,8 @@ func NewDBOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (d *dbOutboundOp) V0() string {
-	if d.cfg.overrideV0 != "" {
-		return d.cfg.overrideV0
+	if d.cfg.overrideV0 != nil {
+		return *d.cfg.overrideV0
 	}
 	return d.V1()
 }
