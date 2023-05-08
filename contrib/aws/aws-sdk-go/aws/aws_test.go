@@ -316,8 +316,8 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
 		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestMessagingNamingSchema(t *testing.T) {
@@ -379,8 +379,8 @@ func TestMessagingNamingSchema(t *testing.T) {
 		WithDDService:            []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
 		WithDDServiceAndOverride: repeat(serviceOverride, 5),
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func repeat(s string, n int) []string {
