@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	books "google.golang.org/api/books/v1"
-	civicinfo "google.golang.org/api/civicinfo/v2"
-	urlshortener "google.golang.org/api/urlshortener/v1"
+	"google.golang.org/api/books/v1"
+	"google.golang.org/api/civicinfo/v2"
+	"google.golang.org/api/urlshortener/v1"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -80,8 +80,8 @@ func TestCivicInfo(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "http.request", s0.OperationName())
 	assert.Equal(t, "http", s0.Tag(ext.SpanType))
-	assert.Equal(t, "google", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "google.civicinfo", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "civicinfo.representatives.representativeInfoByAddress", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
