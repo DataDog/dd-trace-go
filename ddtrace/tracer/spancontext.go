@@ -8,7 +8,6 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -53,7 +52,7 @@ func (t *traceID) SetUpperFromHex(s string) error {
 	u, err := strconv.ParseUint(s, 16, 64)
 	if err != nil {
 		log.Debug("Attempted to decode an invalid hex traceID %s", s)
-		return errors.New(fmt.Sprintf("malformed_tid %s", s))
+		return fmt.Errorf("malformed_tid %s", s)
 	}
 	t.SetUpper(u)
 	return nil
