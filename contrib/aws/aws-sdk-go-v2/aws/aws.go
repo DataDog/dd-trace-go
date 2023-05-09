@@ -191,9 +191,6 @@ func bucketName(requestInput middleware.InitializeInput) string {
 	case *s3.DeleteObjectsInput:
 		bucket = *params.Bucket
 	}
-	if bucket == "" {
-		return ""
-	}
 	return bucket
 }
 
@@ -217,9 +214,6 @@ func topicName(requestInput middleware.InitializeInput) string {
 	case *sns.CreateTopicInput:
 		return *params.Name
 	}
-	if topicArn == "" {
-		return ""
-	}
 	parts := strings.Split(topicArn, ":")
 	return parts[len(parts)-1]
 }
@@ -237,9 +231,6 @@ func tableName(requestInput middleware.InitializeInput) string {
 		tableName = *params.TableName
 	case *dynamodb.UpdateItemInput:
 		tableName = *params.TableName
-	}
-	if tableName == "" {
-		return ""
 	}
 	return tableName
 }
@@ -271,10 +262,6 @@ func streamName(requestInput middleware.InitializeInput) string {
 			return parts[len(parts)-1]
 		}
 	}
-
-	if streamName == "" {
-		return ""
-	}
 	return streamName
 }
 
@@ -296,10 +283,6 @@ func ruleName(requestInput middleware.InitializeInput) string {
 		ruleName = *params.Rule
 	case *eventbridge.RemoveTargetsInput:
 		ruleName = *params.Rule
-	}
-
-	if ruleName == "" {
-		return ""
 	}
 	return ruleName
 }
@@ -333,11 +316,6 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 	case *sfn.DeleteStateMachineInput:
 		stateMachineArn = *params.StateMachineArn
 	}
-
-	if stateMachineArn == "" {
-		return ""
-	}
-
 	parts := strings.Split(stateMachineArn, ":")
 	return parts[len(parts)-1]
 }
