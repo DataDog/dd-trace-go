@@ -137,26 +137,19 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 
 	switch awsService {
 	case "SQS":
-		k = tagQueueName
-		v = queueName(requestInput)
+			k, v = tagQueueName, queueName(requestInput)
 	case "S3":
-		k = tagBucketName
-		v = bucketName(requestInput)
-	case "SNS":
-		k = tagTopicName
-		v = topicName(requestInput)
-	case "DynamoDB":
-		k = tagTableName
-		v = tableName(requestInput)
-	case "Kinesis":
-		k = tagStreamName
-		v = steamName(requestInput)
-	case "EventBridge":
-		k = tagRuleName
-		v = ruleName(requestInput)
-	case "SFN":
-		k = tagStateMachineName
-		v = stateMachineName(requestInput)
+		k, v = tagBucketName,bucketName(requestInput)
+    case "SNS":
+        k, v = tagTopicName, topicName(requestInput)
+    case "DynamoDB":
+        k, v = tagTableName, tableName(requestInput)
+    case "Kinesis":
+        k, v = tagStreamName, streamName(requestInput)
+    case "EventBridge":
+        k, v = tagRuleName, ruleName(requestInput)
+    case "SFN":
+        k, v = tagStateMachineName, stateMachineName(requestInput)
 	default:
 		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
@@ -177,9 +170,6 @@ func queueName(requestInput middleware.InitializeInput) string {
 		queueURL = *params.QueueUrl
 	case *sqs.SendMessageBatchInput:
 		queueURL = *params.QueueUrl
-	}
-	if queueURL == "" {
-		return ""
 	}
 	parts := strings.Split(queueURL, "/")
 	return parts[len(parts)-1]
@@ -254,7 +244,7 @@ func tableName(requestInput middleware.InitializeInput) string {
 	return tableName
 }
 
-func steamName(requestInput middleware.InitializeInput) string {
+func streamName(requestInput middleware.InitializeInput) string {
 	var streamName string
 
 	switch params := requestInput.Parameters.(type) {
