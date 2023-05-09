@@ -204,7 +204,7 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 				depPayload.Dependencies = append(depPayload.Dependencies,
 					Dependency{
 						Name:    dep.Path,
-						Version: dep.Version,
+						Version: strings.TrimPrefix(dep.Version, "v"),
 					},
 				)
 			}
