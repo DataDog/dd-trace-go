@@ -8,6 +8,7 @@ package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/segmentio/kafka
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/segmentio/kafka-go"
 
@@ -61,8 +62,10 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.KafkaBootstrapServers, strings.Join(r.Config().Brokers, ",")),
 		tracer.Measured(),
 	}
+
 	if !math.IsNaN(r.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, r.cfg.analyticsRate))
 	}
@@ -141,6 +144,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.KafkaBootstrapServers, w.Addr.String()),
 	}
 	if w.Writer.Topic != "" {
 		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))
