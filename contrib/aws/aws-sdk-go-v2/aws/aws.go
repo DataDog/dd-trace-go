@@ -137,19 +137,19 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 
 	switch awsService {
 	case "SQS":
-			k, v = tagQueueName, queueName(requestInput)
+		k, v = tagQueueName, queueName(requestInput)
 	case "S3":
-		k, v = tagBucketName,bucketName(requestInput)
-    case "SNS":
-        k, v = tagTopicName, topicName(requestInput)
-    case "DynamoDB":
-        k, v = tagTableName, tableName(requestInput)
-    case "Kinesis":
-        k, v = tagStreamName, streamName(requestInput)
-    case "EventBridge":
-        k, v = tagRuleName, ruleName(requestInput)
-    case "SFN":
-        k, v = tagStateMachineName, stateMachineName(requestInput)
+		k, v = tagBucketName, bucketName(requestInput)
+	case "SNS":
+		k, v = tagTopicName, topicName(requestInput)
+	case "DynamoDB":
+		k, v = tagTableName, tableName(requestInput)
+	case "Kinesis":
+		k, v = tagStreamName, streamName(requestInput)
+	case "EventBridge":
+		k, v = tagRuleName, ruleName(requestInput)
+	case "SFN":
+		k, v = tagStateMachineName, stateMachineName(requestInput)
 	default:
 		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
@@ -176,22 +176,21 @@ func queueName(requestInput middleware.InitializeInput) string {
 }
 
 func bucketName(requestInput middleware.InitializeInput) string {
-	var bucket string
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
-		bucket = *params.Bucket
+		return *params.Bucket
 	case *s3.ListObjectsV2Input:
-		bucket = *params.Bucket
+		return *params.Bucket
 	case *s3.PutObjectInput:
-		bucket = *params.Bucket
+		return *params.Bucket
 	case *s3.GetObjectInput:
-		bucket = *params.Bucket
+		return *params.Bucket
 	case *s3.DeleteObjectInput:
-		bucket = *params.Bucket
+		return *params.Bucket
 	case *s3.DeleteObjectsInput:
-		bucket = *params.Bucket
+		return *params.Bucket
 	}
-	return bucket
+	return ""
 }
 
 func topicName(requestInput middleware.InitializeInput) string {
@@ -219,42 +218,39 @@ func topicName(requestInput middleware.InitializeInput) string {
 }
 
 func tableName(requestInput middleware.InitializeInput) string {
-	var tableName string
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		tableName = *params.TableName
+		return *params.TableName
 	case *dynamodb.PutItemInput:
-		tableName = *params.TableName
+		return *params.TableName
 	case *dynamodb.QueryInput:
-		tableName = *params.TableName
+		return *params.TableName
 	case *dynamodb.ScanInput:
-		tableName = *params.TableName
+		return *params.TableName
 	case *dynamodb.UpdateItemInput:
-		tableName = *params.TableName
+		return *params.TableName
 	}
-	return tableName
+	return ""
 }
 
 func streamName(requestInput middleware.InitializeInput) string {
-	var streamName string
-
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.PutRecordsInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.AddTagsToStreamInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.RemoveTagsFromStreamInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.CreateStreamInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.DeleteStreamInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.DescribeStreamInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.DescribeStreamSummaryInput:
-		streamName = *params.StreamName
+		return *params.StreamName
 	case *kinesis.GetRecordsInput:
 		if params.StreamARN != nil {
 			streamArnValue := *params.StreamARN
@@ -262,29 +258,27 @@ func streamName(requestInput middleware.InitializeInput) string {
 			return parts[len(parts)-1]
 		}
 	}
-	return streamName
+	return ""
 }
 
 func ruleName(requestInput middleware.InitializeInput) string {
-	var ruleName string
-
 	switch params := requestInput.Parameters.(type) {
 	case *eventbridge.PutRuleInput:
-		ruleName = *params.Name
+		return *params.Name
 	case *eventbridge.DescribeRuleInput:
-		ruleName = *params.Name
+		return *params.Name
 	case *eventbridge.DeleteRuleInput:
-		ruleName = *params.Name
+		return *params.Name
 	case *eventbridge.DisableRuleInput:
-		ruleName = *params.Name
+		return *params.Name
 	case *eventbridge.EnableRuleInput:
-		ruleName = *params.Name
+		return *params.Name
 	case *eventbridge.PutTargetsInput:
-		ruleName = *params.Rule
+		return *params.Rule
 	case *eventbridge.RemoveTargetsInput:
-		ruleName = *params.Rule
+		return *params.Rule
 	}
-	return ruleName
+	return ""
 }
 
 func stateMachineName(requestInput middleware.InitializeInput) string {
