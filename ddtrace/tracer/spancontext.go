@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -414,10 +415,68 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
+	if kind := s.Meta[ext.SpanKind]; kind == ext.SpanKindClient || kind == ext.SpanKindProducer {
+		// ensure we generate APM stats for spans representing outbound requests, as they often point at some core
+		// dependency of the service making the requests and are therefore often relevant for troubleshooting
+		// service issues.
+		s.setMetric(keyMeasured, 1.0)
+		// TODO: find a way to cache this.
+		if peerServiceDefaultsEnabled() {
+			t.setPeerService(s)
+		}
+	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+}
+
+func (t *trace) setPeerService(s *span) {
+	contains := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	switch {
+	case contains(ext.PeerService):
+		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	case contains(ext.DBSystem):
+		setPeerServiceFromPrecursors(s,
+			ext.DBInstance,
+			ext.DBName,
+			ext.CassandraContactPoints,
+			ext.PeerHostname,
+			ext.TargetHost,
+		)
+	case contains(ext.MessagingSystem):
+		setPeerServiceFromPrecursors(s,
+			ext.MessagingKafkaPartition,
+			ext.PeerHostname,
+			ext.TargetHost,
+		)
+	case contains(ext.RPCSystem):
+		setPeerServiceFromPrecursors(s,
+			ext.RPCService,
+			ext.PeerHostname,
+			ext.TargetHost,
+		)
+	default:
+		setPeerServiceFromPrecursors(s,
+			ext.PeerHostname,
+			ext.TargetHost,
+		)
+	}
+}
+
+func setPeerServiceFromPrecursors(s *span, precursors ...string) {
+	for _, t := range precursors {
+		if val, ok := s.Meta[t]; ok {
+			s.setMeta(ext.PeerService, val)
+			s.setMeta(keyPeerServiceSource, t)
+			return
+		}
+	}
+	log.Warn("No valid precursor tag was found for span: %s", s.Name)
+	return
 }

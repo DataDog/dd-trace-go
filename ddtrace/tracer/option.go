@@ -154,6 +154,9 @@ type config struct {
 
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
+
+	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
+	peerServiceDefaultsEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -234,6 +237,8 @@ func newConfig(opts ...StartOption) *config {
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
+	// TODO: field not used yet, find a way to propagate it.
+	c.peerServiceDefaultsEnabled = peerServiceDefaultsEnabled()
 
 	for _, fn := range opts {
 		fn(c)
@@ -330,6 +335,14 @@ func newConfig(opts ...StartOption) *config {
 	}
 
 	return c
+}
+
+func peerServiceDefaultsEnabled() bool {
+	sv := namingschema.GetVersion()
+	if sv == namingschema.SchemaV0 {
+		return internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	return true
 }
 
 func newStatsdClient(c *config) (statsdClient, error) {
