@@ -415,13 +415,10 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
+	// since peer.service represents the service name of the remote service, this tag is calculated only for spans
+	// that represent an outbound request.
 	if kind := s.Meta[ext.SpanKind]; kind == ext.SpanKindClient || kind == ext.SpanKindProducer {
-		// ensure we generate APM stats for spans representing outbound requests, as they often point at some core
-		// dependency of the service making the requests and are therefore often relevant for troubleshooting
-		// service issues.
-		s.setMetric(keyMeasured, 1.0)
-		// TODO: find a way to cache this.
-		if peerServiceDefaultsEnabled() {
+		if tr.config.peerServiceDefaultsEnabled {
 			t.setPeerService(s)
 		}
 	}
@@ -433,6 +430,7 @@ func (t *trace) finishedOne(s *span) {
 	})
 }
 
+// setPeerService sets the peer.service tag to the most appropriate value, depending on the nature of the span.
 func (t *trace) setPeerService(s *span) {
 	contains := func(tag string) bool {
 		_, ok := s.Meta[tag]
@@ -440,6 +438,8 @@ func (t *trace) setPeerService(s *span) {
 	}
 	switch {
 	case contains(ext.PeerService):
+		// in this case, peer.service was already present on the span, so we just leave the value unmodified and track
+		// the source (in this case it was the tag peer.service itself).
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	case contains(ext.DBSystem):
 		setPeerServiceFromPrecursors(s,
@@ -451,7 +451,7 @@ func (t *trace) setPeerService(s *span) {
 		)
 	case contains(ext.MessagingSystem):
 		setPeerServiceFromPrecursors(s,
-			ext.MessagingKafkaPartition,
+			ext.KafkaBootstrapServers,
 			ext.PeerHostname,
 			ext.TargetHost,
 		)
@@ -469,6 +469,8 @@ func (t *trace) setPeerService(s *span) {
 	}
 }
 
+// setPeerServiceFromPrecursors looks for the given precursor tags in the span and sets the value of peer.service
+// to the first found. It also sets the value of _dd.peer.service.source to the name of the tag that was used.
 func setPeerServiceFromPrecursors(s *span, precursors ...string) {
 	for _, t := range precursors {
 		if val, ok := s.Meta[t]; ok {

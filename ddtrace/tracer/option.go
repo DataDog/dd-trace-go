@@ -237,8 +237,11 @@ func newConfig(opts ...StartOption) *config {
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
-	// TODO: field not used yet, find a way to propagate it.
-	c.peerServiceDefaultsEnabled = peerServiceDefaultsEnabled()
+	// peer.service tag is always enabled if using attribute schema >= 1
+	c.peerServiceDefaultsEnabled = true
+	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
+		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
 
 	for _, fn := range opts {
 		fn(c)
@@ -335,14 +338,6 @@ func newConfig(opts ...StartOption) *config {
 	}
 
 	return c
-}
-
-func peerServiceDefaultsEnabled() bool {
-	sv := namingschema.GetVersion()
-	if sv == namingschema.SchemaV0 {
-		return internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	}
-	return true
 }
 
 func newStatsdClient(c *config) (statsdClient, error) {
