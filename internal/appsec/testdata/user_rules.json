@@ -1,0 +1,56 @@
+{
+    "version": "2.2",
+    "metadata": {
+        "rules_version": "1.4.2"
+    },
+    "rules": [
+        {
+            "id": "001",
+            "name": "POST match",
+            "tags": {
+                "type": "security_scanner",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.method"
+                            }
+                        ],
+                        "regex": "^POST$"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": []
+        }
+    ],
+    "custom_rules": [
+        {
+            "id": "custom-001",
+            "name": "GET match",
+            "tags": {
+                "type": "security_scanner",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.method"
+                            }
+                        ],
+                        "regex": "^GET$"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": []
+        }
+    ]
+}

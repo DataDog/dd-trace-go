@@ -375,7 +375,7 @@ func TestCapabilities(t *testing.T) {
 			env:  map[string]string{enabledEnvVar: "1"},
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
-				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking,
+				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
 			},
 		},
 		{
