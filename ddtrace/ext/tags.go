@@ -110,7 +110,7 @@ const (
 	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
 	MessagingSystem = "messaging.system"
 
-	//KafkaBootstrapServers lists bootstrap servers as defined in producer or consumer config
+	//KafkaBootstrapServers holds a comma separated list bootstrap servers as defined in producer or consumer config
 	KafkaBootstrapServers = "messaging.kafka.bootstrap.servers"
 )
 

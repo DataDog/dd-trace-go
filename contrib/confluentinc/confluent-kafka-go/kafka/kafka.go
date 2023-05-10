@@ -31,7 +31,8 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapConsumer(c, opts...), nil
+
+	return WrapConsumerWithConfig(c, conf, opts...), nil
 }
 
 // NewProducer calls kafka.NewProducer and wraps the resulting Producer.
@@ -40,23 +41,41 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapProducer(p, opts...), nil
+
+	return WrapProducerWithConfig(p, conf, opts...), nil
 }
 
 // A Consumer wraps a kafka.Consumer.
 type Consumer struct {
 	*kafka.Consumer
-	cfg    *config
-	events chan kafka.Event
-	prev   ddtrace.Span
+	*kafka.ConfigMap
+	cfg             *config
+	events          chan kafka.Event
+	prev            ddtrace.Span
+	bootstrapServer string
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
+// Deprecated: Replaced with WrapConsumerWithConfig such that config information can be used in span tags
 func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	wrapped := &Consumer{
 		Consumer: c,
 		cfg:      newConfig(opts...),
 	}
+
+	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Consumer: %#v", wrapped.cfg)
+	wrapped.events = wrapped.traceEventsChannel(c.Events())
+	return wrapped
+}
+
+// WrapConsumerWithConfig wraps a kafka.Consumer with its Config such that future information can be tagged.
+func WrapConsumerWithConfig(c *kafka.Consumer, cg *kafka.ConfigMap, opts ...Option) *Consumer {
+	wrapped := &Consumer{
+		Consumer:  c,
+		ConfigMap: cg,
+		cfg:       newConfig(opts...),
+	}
+
 	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Consumer: %#v", wrapped.cfg)
 	wrapped.events = wrapped.traceEventsChannel(c.Events())
 	return wrapped
@@ -108,6 +127,11 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
 	}
+
+	if bs, err := c.ConfigMap.Get("bootstrap.servers", ""); err == nil {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, bs))
+	}
+
 	if c.cfg.tagFns != nil {
 		for key, tagFn := range c.cfg.tagFns {
 			opts = append(opts, tracer.Tag(key, tagFn(msg)))
@@ -178,15 +202,30 @@ func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
 // A Producer wraps a kafka.Producer.
 type Producer struct {
 	*kafka.Producer
-	cfg            *config
-	produceChannel chan *kafka.Message
+	*kafka.ConfigMap
+	cfg             *config
+	produceChannel  chan *kafka.Message
+	bootstrapServer string
 }
 
 // WrapProducer wraps a kafka.Producer so requests are traced.
+// Deprecated: Replaced with WrapProducerWithConfig such that config information can be used in span tags
 func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 	wrapped := &Producer{
 		Producer: p,
 		cfg:      newConfig(opts...),
+	}
+	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Producer: %#v", wrapped.cfg)
+	wrapped.produceChannel = wrapped.traceProduceChannel(p.ProduceChannel())
+	return wrapped
+}
+
+// WrapProducerWithConfig wraps a kafka.Producer with its Config such that future information can be tagged.
+func WrapProducerWithConfig(p *kafka.Producer, cg *kafka.ConfigMap, opts ...Option) *Producer {
+	wrapped := &Producer{
+		Producer:  p,
+		ConfigMap: cg,
+		cfg:       newConfig(opts...),
 	}
 	log.Debug("contrib/confluentinc/confluent-kafka-go/kafka: Wrapping Producer: %#v", wrapped.cfg)
 	wrapped.produceChannel = wrapped.traceProduceChannel(p.ProduceChannel())
@@ -220,6 +259,11 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 	}
+
+	if bs, err := p.ConfigMap.Get("bootstrap.servers", ""); err == nil {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, bs))
+	}
+
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
