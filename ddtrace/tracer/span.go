@@ -445,6 +445,13 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		// those cases since execution tracing tasks aren't recorded in
 		// traces if they started before the trace.
 		s.SetTag("go_execution_traced", "yes")
+	} else if s.goExecTraced {
+		// If the span started with tracing enabled, but tracing wasn't
+		// enabled when the span finished, we still have some data to
+		// show. If tracing wasn't enabled when the span started, we
+		// won't have data in the execution trace to identify it so
+		// there's nothign we can show.
+		s.SetTag("go_execution_traced", "partial")
 	}
 	s.finish(t)
 
