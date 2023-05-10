@@ -42,7 +42,7 @@ func startTelemetry(c *config) {
 			{Name: "goroutine_profile_enabled", Value: profileEnabled(GoroutineProfile)},
 			{Name: "goroutine_wait_profile_enabled", Value: profileEnabled(expGoroutineWaitProfile)},
 			{Name: "upload_timeout", Value: c.uploadTimeout.String()},
-			{Name: "execution_trace_enabled", Value: c.traceEnabled},
+			{Name: "execution_trace_enabled", Value: c.traceConfig.Enabled},
 			{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
