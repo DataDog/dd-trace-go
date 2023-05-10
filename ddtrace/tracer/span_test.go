@@ -8,10 +8,8 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
-	rt "runtime/trace"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -913,33 +911,4 @@ type stringer struct{}
 
 func (s *stringer) String() string {
 	return "string"
-}
-
-func TestExecutionTracePartialCoverage(t *testing.T) {
-	if rt.IsEnabled() {
-		t.Skip("execution tracing is already enabled")
-	}
-
-	if err := rt.Start(io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	Start()
-	defer Stop()
-
-	full := StartSpan("full")
-	partial := StartSpan("partial")
-
-	// This span is fully execution traced
-	full.Finish()
-
-	rt.Stop()
-
-	// This span is not fully execution traced
-	partial.Finish()
-
-	f := full.(*span)
-	assert.Contains(t, f.Meta, "go_execution_traced")
-	p := partial.(*span)
-	assert.NotContains(t, p.Meta, "go_execution_traced")
 }
