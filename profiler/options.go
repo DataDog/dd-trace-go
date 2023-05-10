@@ -560,11 +560,11 @@ type executionTraceConfig struct {
 // changes to the configuration environment variables, applying defaults as
 // needed.
 func (e *executionTraceConfig) Refresh() {
-	enabled := internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
-	period := internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
-	limit := internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
+	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
+	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
+	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
 
-	if enabled && (period == 0 || limit == 0) {
+	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
 		if !e.warned {
 			e.warned = true
 			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
@@ -575,8 +575,4 @@ func (e *executionTraceConfig) Refresh() {
 	// If the config is valid, reset e.warned so we'll print another warning
 	// if it's udpated to be invalid
 	e.warned = false
-
-	e.Enabled = enabled
-	e.Period = period
-	e.Limit = limit
 }
