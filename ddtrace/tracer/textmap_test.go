@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -942,14 +943,37 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
 						tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out: []uint64{2459565876494606882, 1},
-					tid: traceIDFrom64Bits(1229782938247303441),
-
+					out:    []uint64{2459565876494606882, 1},
+					tid:    traceIDFrom64Bits(1229782938247303441),
 					origin: "rum",
 					propagatingTags: map[string]string{
-						"_dd.p.dm":     "-2",
+						"_dd.p.dm":     "-0",
 						"_dd.p.usr.id": "baz64==",
 						"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 				},
 				{
 					in: TextMapCarrier{
@@ -1940,4 +1964,24 @@ func FuzzExtractTraceID128(f *testing.F) {
 		ctx := new(spanContext)
 		extractTraceID128(ctx, v) // make sure it doesn't panic
 	})
+}
+
+// Regression test for https://github.com/DataDog/dd-trace-go/issues/1944
+func TestPropagatingTagsConcurrency(_ *testing.T) {
+	// This test ensures Injection can be done concurrently.
+	trc := newTracer()
+	defer trc.Stop()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 1_000; i++ {
+		root := trc.StartSpan("test")
+		wg.Add(5)
+		for i := 0; i < 5; i++ {
+			go func() {
+				defer wg.Done()
+				trc.Inject(root.Context(), TextMapCarrier(make(map[string]string)))
+			}()
+		}
+		wg.Wait()
+	}
 }

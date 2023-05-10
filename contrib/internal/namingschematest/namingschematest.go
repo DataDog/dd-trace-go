@@ -9,6 +9,7 @@ package namingschematest
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -49,71 +50,87 @@ const (
 )
 
 // NewServiceNameTest generates a new test for span service names using the naming schema versioning.
-func NewServiceNameTest(genSpans GenSpansFn, defaultName string, wantV0 ServiceNameAssertions) func(t *testing.T) {
+// TODO(rarguelloF): remove the 2nd parameter as it's unused.
+func NewServiceNameTest(genSpans GenSpansFn, _ string, wantV0 ServiceNameAssertions) func(t *testing.T) {
 	return func(t *testing.T) {
 		testCases := []struct {
 			name                string
 			serviceNameOverride string
 			ddService           string
-			// wantV0 is a list because the expected service name for v0 could be different for each of the integration
-			// generated spans.
+			// the assertions are a slice that should match the number of spans returned by the genSpans function.
 			wantV0 []string
-			wantV1 string
+			wantV1 []string
 		}{
 			{
 				name:                "WithDefaults",
 				serviceNameOverride: "",
 				ddService:           "",
 				wantV0:              wantV0.WithDefaults,
-				wantV1:              defaultName,
+				wantV1:              wantV0.WithDefaults, // defaults should be the same for v1
 			},
 			{
 				name:                "WithGlobalDDService",
 				serviceNameOverride: "",
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDService,
-				wantV1:              TestDDService,
+				wantV1:              lists.RepeatString(TestDDService, len(wantV0.WithDDService)),
 			},
 			{
 				name:                "WithGlobalDDServiceAndOverride",
 				serviceNameOverride: TestServiceOverride,
 				ddService:           TestDDService,
 				wantV0:              wantV0.WithDDServiceAndOverride,
-				wantV1:              TestServiceOverride,
+				wantV1:              lists.RepeatString(TestServiceOverride, len(wantV0.WithDDServiceAndOverride)),
 			},
 		}
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				if tc.ddService != "" {
-					svc := globalconfig.ServiceName()
-					defer globalconfig.SetServiceName(svc)
-					globalconfig.SetServiceName(tc.ddService)
+					reset := withDDService(tc.ddService)
+					defer reset()
 				}
-
 				t.Run("v0", func(t *testing.T) {
-					version := namingschema.GetVersion()
-					defer namingschema.SetVersion(version)
-					namingschema.SetVersion(namingschema.SchemaV0)
-
+					reset := withNamingSchemaVersion(namingschema.SchemaV0)
+					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
-					require.Len(t, spans, len(tc.wantV0), "the number of spans and number of assertions for v0 don't match")
-					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV0[i], spans[i].Tag(ext.ServiceName))
-					}
+					assertServiceNames(t, spans, tc.wantV0)
 				})
 				t.Run("v1", func(t *testing.T) {
-					version := namingschema.GetVersion()
-					defer namingschema.SetVersion(version)
-					namingschema.SetVersion(namingschema.SchemaV1)
-
+					reset := withNamingSchemaVersion(namingschema.SchemaV1)
+					defer reset()
 					spans := genSpans(t, tc.serviceNameOverride)
-					for i := 0; i < len(spans); i++ {
-						assert.Equal(t, tc.wantV1, spans[i].Tag(ext.ServiceName))
-					}
+					assertServiceNames(t, spans, tc.wantV1)
 				})
 			})
 		}
 	}
+}
+
+func assertServiceNames(t *testing.T, spans []mocktracer.Span, wantServiceNames []string) {
+	t.Helper()
+	require.Len(t, spans, len(wantServiceNames), "the number of spans and number of assertions should be the same")
+	for i := 0; i < len(spans); i++ {
+		want, got, spanName := wantServiceNames[i], spans[i].Tag(ext.ServiceName), spans[i].OperationName()
+		if want == "" {
+			assert.Empty(t, got, "expected empty service name tag for span: %s", spanName)
+		} else {
+			assert.Equal(t, want, got, "incorrect service name for span: %s", spanName)
+		}
+	}
+}
+
+func withNamingSchemaVersion(version namingschema.Version) func() {
+	prevVersion := namingschema.GetVersion()
+	reset := func() { namingschema.SetVersion(prevVersion) }
+	namingschema.SetVersion(version)
+	return reset
+}
+
+func withDDService(ddService string) func() {
+	prevName := globalconfig.ServiceName()
+	reset := func() { globalconfig.SetServiceName(prevName) }
+	globalconfig.SetServiceName(ddService)
+	return reset
 }
 
 // AssertSpansFn allows to make assertions on the generated spans.

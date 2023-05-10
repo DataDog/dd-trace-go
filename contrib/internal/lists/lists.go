@@ -41,3 +41,12 @@ func Combinations(list []string, pick int) (all [][]string) {
 	}
 	return all
 }
+
+// RepeatString returns a new slice with the string s repeated n times.
+func RepeatString(s string, n int) []string {
+	r := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		r = append(r, s)
+	}
+	return r
+}

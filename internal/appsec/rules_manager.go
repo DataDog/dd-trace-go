@@ -27,13 +27,14 @@ type (
 	}
 	// rulesFragment can represent a full ruleset or a fragment of it.
 	rulesFragment struct {
-		Version    string               `json:"version,omitempty"`
-		Metadata   interface{}          `json:"metadata,omitempty"`
-		Rules      []ruleEntry          `json:"rules,omitempty"`
-		Overrides  []rulesOverrideEntry `json:"rules_override,omitempty"`
-		Exclusions []exclusionEntry     `json:"exclusions,omitempty"`
-		RulesData  []ruleDataEntry      `json:"rules_data,omitempty"`
-		Actions    []interface{}        `json:"actions,omitempty"`
+		Version     string               `json:"version,omitempty"`
+		Metadata    interface{}          `json:"metadata,omitempty"`
+		Rules       []ruleEntry          `json:"rules,omitempty"`
+		Overrides   []rulesOverrideEntry `json:"rules_override,omitempty"`
+		Exclusions  []exclusionEntry     `json:"exclusions,omitempty"`
+		RulesData   []ruleDataEntry      `json:"rules_data,omitempty"`
+		Actions     []interface{}        `json:"actions,omitempty"`
+		CustomRules []interface{}        `json:"custom_rules,omitempty"`
 	}
 
 	ruleEntry struct {
@@ -107,6 +108,7 @@ func (r_ *rulesFragment) clone() rulesFragment {
 	f.Overrides = append(f.Overrides, r_.Overrides...)
 	f.Exclusions = append(f.Exclusions, r_.Exclusions...)
 	f.RulesData = append(f.RulesData, r_.RulesData...)
+	f.CustomRules = append(f.CustomRules, r_.CustomRules...)
 	// TODO (Francois Mazeau): copy more fields once we handle them
 	return f
 }
@@ -167,6 +169,7 @@ func (r *rulesManager) compile() {
 		r.latest.Exclusions = append(r.latest.Exclusions, v.Exclusions...)
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		r.latest.RulesData = append(r.latest.RulesData, v.RulesData...)
+		r.latest.CustomRules = append(r.latest.CustomRules, v.CustomRules...)
 		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 }

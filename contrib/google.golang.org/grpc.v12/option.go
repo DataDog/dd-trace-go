@@ -9,10 +9,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+)
+
+const (
+	defaultClientServiceName = "grpc.client"
+	defaultServerServiceName = "grpc.server"
 )
 
 type interceptorConfig struct {
 	serviceName string
+	spanName    string
 	spanOpts    []ddtrace.StartSpanOption
 }
 
@@ -26,6 +33,25 @@ func defaults(cfg *interceptorConfig) {
 	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
 	}
+}
+
+func clientDefaults(cfg *interceptorConfig) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultClientServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultClientServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	defaults(cfg)
+}
+
+func serverDefaults(cfg *interceptorConfig) {
+	cfg.serviceName = namingschema.NewServiceNameSchema(
+		"",
+		defaultServerServiceName,
+	).GetName()
+	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	defaults(cfg)
 }
 
 // WithServiceName sets the given service name for the intercepted client.
