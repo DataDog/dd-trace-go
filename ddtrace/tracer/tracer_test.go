@@ -2371,11 +2371,16 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	tracedSpan := tracer.StartSpan("traced").(*span)
 	tracedSpan.Finish()
 
+	partialSpan := tracer.StartSpan("partial").(*span)
+
 	rt.Stop()
+
+	partialSpan.Finish()
 
 	untracedSpan := tracer.StartSpan("untraced").(*span)
 	untracedSpan.Finish()
 
 	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
+	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }
