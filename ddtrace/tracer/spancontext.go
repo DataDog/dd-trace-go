@@ -8,13 +8,13 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
