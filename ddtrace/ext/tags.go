@@ -11,6 +11,9 @@ const (
 	// TargetHost sets the target host address.
 	TargetHost = "out.host"
 
+	// NetworkTargetHost is the updated hostname tag for outbound connections
+	NetworkTargetHost = "network.destination.name"
+
 	// TargetPort sets the target host port.
 	TargetPort = "out.port"
 
