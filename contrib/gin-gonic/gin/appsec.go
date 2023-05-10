@@ -29,4 +29,7 @@ func useAppSec(c *gin.Context, span tracer.Span) {
 		c.Next()
 	})
 	httpsec.WrapHandler(h, span, params).ServeHTTP(c.Writer, c.Request)
+	if c.Writer.Status() == http.StatusForbidden {
+		c.Abort()
+	}
 }
