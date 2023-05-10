@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -195,21 +194,13 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	var ctx *spanContext
 	// There may be multiple comments within the sql query, so we must identify which one contains trace information.
 	// We look at each comment until we find one that contains a traceparent
-	reComment := regexp.MustCompile(`/\*(.*?)\*/`)
-	for i := 0; i < len(c.Query); {
-		if comment := reComment.FindString(c.Query[i:]); comment != "" {
-			if strings.Contains(comment, sqlCommentTraceParent) {
-				var err error
-				if ctx, err = createSpanContextFromKVs(comment[2 : len(comment)-2]); err != nil {
-					// comment substring skips /* and */ at beginning and end of comment
-					return nil, err
-				}
-				break
-			}
-			i += len(comment)
-		} else {
-			return nil, ErrSpanContextNotFound
+	if traceComment, found := findTraceComment(c.Query); found {
+		var err error
+		if ctx, err = spanContextFromTraceComment(traceComment); err != nil {
+			return nil, err
 		}
+	} else {
+		return nil, ErrSpanContextNotFound
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return nil, ErrSpanContextNotFound
@@ -217,9 +208,9 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	return ctx, nil
 }
 
-// createSpanContextFromKVs looks for specific kv pairs in a comment containing trace information.
+// spanContextFromTraceComment looks for specific kv pairs in a comment containing trace information.
 // It returns a span context with the appropriate attributes
-func createSpanContextFromKVs(c string) (*spanContext, error) {
+func spanContextFromTraceComment(c string) (*spanContext, error) {
 	var ctx spanContext
 	kvs := strings.Split(c, ",")
 	for _, unparsedKV := range kvs {
@@ -261,4 +252,41 @@ func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampl
 	default:
 	}
 	return traceID, spanID, sampled, err
+}
+
+// findTraceComment looks for a sql comment that contains trace information by looking for the keyword traceparent
+func findTraceComment(query string) (traceComment string, found bool) {
+	startIndex := -1
+	containsTrace := false
+	keyLength := len(sqlCommentTraceParent)
+	qLength := len(query)
+	for i := 0; i < qLength-1; {
+		if query[i] == '/' && query[i+1] == '*' {
+			// look for leading /*
+			startIndex = i
+			i += 2
+			containsTrace = false
+		} else if query[i] == '*' && query[i+1] == '/' {
+			// look for closing */
+			if startIndex == -1 {
+				// malformed comment, it did not have a leading /*
+				return "", false
+			}
+			if !containsTrace {
+				// ignore this comment, it was not a trace comment
+				startIndex = -1
+				i += 2
+			} else {
+				// do not return the query with the leading /* or trailing */
+				return query[startIndex+2 : i], true
+			}
+		} else if !containsTrace && i+keyLength < qLength && query[i:i+keyLength] == sqlCommentTraceParent {
+			// look for occurrence of keyword in the query if not yet found and make sure we don't go out of range
+			containsTrace = true
+			i += keyLength
+		} else {
+			i++
+		}
+	}
+	return "", false
 }
