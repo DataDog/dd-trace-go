@@ -105,7 +105,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag("offset", msg.TopicPartition.Offset),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Measured(),
 	}
 	if c.cfg.tagFns != nil {
@@ -217,7 +217,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
