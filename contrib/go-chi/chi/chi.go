@@ -77,6 +77,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			resourceName := chi.RouteContext(r.Context()).RoutePattern()
 			span.SetTag(ext.HTTPRoute, resourceName)
 			if resourceName == "" {
+				resourceName = r.URL.Path
+			}
+			if resourceName == "" {
 				resourceName = "unknown"
 			}
 			resourceName = r.Method + " " + resourceName

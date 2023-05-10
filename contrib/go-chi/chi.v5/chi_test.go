@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -470,4 +471,61 @@ func TestNamingSchema(t *testing.T) {
 		return mt.FinishedSpans()
 	})
 	namingschematest.NewHTTPServerTest(genSpans, "chi.router")(t)
+}
+
+func TestAvoidUnknownPath(t *testing.T) {
+	t.Run("resource not found", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := chi.NewRouter()
+		router.Use(Middleware())
+		router.Post("/user/123", func(w http.ResponseWriter, r *http.Request) {})
+
+		r := httptest.NewRequest(http.MethodPost, "/not-found", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		spans := mt.FinishedSpans()
+
+		assert.Equal(404, response.StatusCode)
+		require.Len(t, spans, 1)
+		assert.Equal("POST /not-found", spans[0].Tag("resource.name"))
+	})
+
+	t.Run("middleware 400 error", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		someMiddleware := func() func(http.Handler) http.Handler {
+			return func(h http.Handler) http.Handler {
+				return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+					if somethingWrong := true; somethingWrong {
+						render.Status(r, http.StatusBadRequest)
+						render.Respond(rw, r, render.M{"status": "error"})
+						return
+					}
+					h.ServeHTTP(rw, r)
+				})
+			}
+		}
+
+		router := chi.NewRouter()
+		router.Use(Middleware(), someMiddleware())
+		router.Post("/user/123", func(w http.ResponseWriter, r *http.Request) {})
+
+		r := httptest.NewRequest(http.MethodPost, "/user/123", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		spans := mt.FinishedSpans()
+
+		assert.Equal(400, response.StatusCode)
+		require.Len(t, spans, 1)
+		assert.Equal("POST /user/123", spans[0].Tag("resource.name"))
+	})
 }
