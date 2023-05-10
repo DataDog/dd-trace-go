@@ -56,9 +56,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		Span:       s,
 		oteltracer: t,
 	})
-	// erasing the start span options from the context to prevent them from being reused
+	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
-	// wrapping the span in Opentelemetry and Datadog contexts is necessary for API to propagate span context values
+	// Wrap the span in Opentelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
 }
