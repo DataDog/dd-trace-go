@@ -21,7 +21,7 @@ func TestHeaderTags(t *testing.T) {
 
 	// This chunk essentially confirms that the globalconfig header tags is passed by value
 	// not by reference.
-	cp := GetAllHeaderTags()
+	cp := HeaderTagsCopy()
 	assert.Equal(t, "tag1", cp["header1"])
 	assert.Equal(t, "tag2", cp["header2"])
 
