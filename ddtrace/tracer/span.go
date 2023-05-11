@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,6 +77,7 @@ type span struct {
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
+	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
@@ -434,6 +436,22 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	if s.taskEnd != nil {
 		s.taskEnd()
+	}
+	if s.goExecTraced && rt.IsEnabled() {
+		// Only tag spans as traced if they both started & ended with
+		// execution tracing enabled. This is technically not sufficient
+		// for spans which could straddle the boundary between two
+		// execution traces, but there's really nothing we can do in
+		// those cases since execution tracing tasks aren't recorded in
+		// traces if they started before the trace.
+		s.SetTag("go_execution_traced", "yes")
+	} else if s.goExecTraced {
+		// If the span started with tracing enabled, but tracing wasn't
+		// enabled when the span finished, we still have some data to
+		// show. If tracing wasn't enabled when the span started, we
+		// won't have data in the execution trace to identify it so
+		// there's nothign we can show.
+		s.SetTag("go_execution_traced", "partial")
 	}
 	s.finish(t)
 
