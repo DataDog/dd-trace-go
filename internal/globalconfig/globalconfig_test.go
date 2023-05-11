@@ -16,8 +16,8 @@ func TestHeaderTags(t *testing.T) {
 	SetHeaderTag("header1", "tag1")
 	SetHeaderTag("header2", "tag2")
 
-	assert.Equal(t, "tag1", GetHeaderTag("header1"))
-	assert.Equal(t, "tag2", GetHeaderTag("header2"))
+	assert.Equal(t, "tag1", cfg.headersAsTags["header1"])
+	assert.Equal(t, "tag2", cfg.headersAsTags["header2"])
 
 	// This chunk essentially confirms that the globalconfig header tags is passed by value
 	// not by reference.
@@ -30,6 +30,6 @@ func TestHeaderTags(t *testing.T) {
 	assert.Len(t, cp, 0)
 
 	// Ensure the globalconfig remains untouched
-	assert.Equal(t, "tag1", GetHeaderTag("header1"))
-	assert.Equal(t, "tag2", GetHeaderTag("header2"))
+	assert.Equal(t, "tag1", cfg.headersAsTags["header1"])
+	assert.Equal(t, "tag2", cfg.headersAsTags["header2"])
 }
