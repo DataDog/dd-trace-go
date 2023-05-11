@@ -53,7 +53,7 @@ func genIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *Writer
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	//add some dummy values to broker/addr to test bootstrap servers
+	// add some dummy values to broker/addr to test bootstrap servers.
 	kw := &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 		Topic:        testTopic,
