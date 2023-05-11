@@ -9,10 +9,14 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
+	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
-	// NetworkTargetHost is the updated hostname tag for outbound connections
-	NetworkTargetHost = "network.destination.name"
+	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
+	NetworkDestinationName = "network.destination.name"
+
+	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
+	NetworkDestinationIP = "network.destination.ip"
 
 	// TargetPort sets the target host port.
 	TargetPort = "out.port"

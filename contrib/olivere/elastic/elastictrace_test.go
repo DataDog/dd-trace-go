@@ -273,7 +273,7 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
-	assert.Equal(host, span.Tag(ext.NetworkTargetHost))
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
 func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
@@ -285,7 +285,7 @@ func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
-	assert.Equal(host, span.Tag(ext.NetworkTargetHost))
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
 func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
@@ -298,8 +298,7 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
-	assert.Equal(host, span.Tag(ext.NetworkTargetHost))
-
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
 func TestQuantize(t *testing.T) {
