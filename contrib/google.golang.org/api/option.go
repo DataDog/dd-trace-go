@@ -13,10 +13,11 @@ import (
 )
 
 type config struct {
-	serviceName   string
-	ctx           context.Context
-	analyticsRate float64
-	scopes        []string
+	serviceName             string
+	ctx                     context.Context
+	analyticsRate           float64
+	scopes                  []string
+	endpointMetadataEnabled bool
 }
 
 func newConfig(options ...Option) *config {
@@ -27,7 +28,8 @@ func newConfig(options ...Option) *config {
 	cfg := &config{
 		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: rate,
+		analyticsRate:           rate,
+		endpointMetadataEnabled: true,
 	}
 	for _, opt := range options {
 		opt(cfg)
@@ -81,5 +83,13 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithEndpointMetadataEnabled allows to enable/disable the enriched Google endpoint metadata behavior for
+// this integration.
+func WithEndpointMetadataEnabled(enabled bool) Option {
+	return func(cfg *config) {
+		cfg.endpointMetadataEnabled = enabled
 	}
 }
