@@ -70,14 +70,14 @@ func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
-// GetHeaderTag returns tag representation of header `header`
-func GetHeaderTag(header string) (tag string) {
+// HeaderTag returns tag representation of header `header`
+func HeaderTag(header string) (tag string) {
 	return cfg.headersAsTags[header]
 }
 
-// GetAllHeaderTags returns a copy of the header tags held in the global config (or empty map)
-func GetAllHeaderTags() map[string]string {
-	headersAsTags := make(map[string]string)
+// HeaderTagsCopy returns a copy of the header tags held in the global config (or empty map)
+func HeaderTagsCopy() map[string]string {
+	headersAsTags := make(map[string]string, len(cfg.headersAsTags))
 	for header, tag := range cfg.headersAsTags {
 		headersAsTags[header] = tag
 	}
