@@ -41,8 +41,7 @@ func withTickChan(ch <-chan time.Time) StartOption {
 }
 
 func headerTag(header string) (tag string) {
-	tag = globalconfig.HeaderTagsCopy()[header]
-	return
+	return globalconfig.HeaderTagsCopy()[header]
 }
 
 // testStatsd asserts that the given statsd.Client can successfully send metrics

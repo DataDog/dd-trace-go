@@ -89,7 +89,6 @@ func TestWithHeaderTags(t *testing.T) {
 
 		header, tag := normalizer.NormalizeHeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
-		defer globalconfig.ClearHeaderTags()
 
 		r := setupReq()
 		spans := mt.FinishedSpans()
@@ -107,7 +106,6 @@ func TestWithHeaderTags(t *testing.T) {
 
 		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
 		globalconfig.SetHeaderTag(globalH, globalT)
-		defer globalconfig.ClearHeaderTags()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
 		r := setupReq(WithHeaderTags(htArgs))

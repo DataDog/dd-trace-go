@@ -12,7 +12,6 @@ import (
 )
 
 func TestHeaderTags(t *testing.T) {
-	ClearHeaderTags()
 	SetHeaderTag("header1", "tag1")
 	SetHeaderTag("header2", "tag2")
 

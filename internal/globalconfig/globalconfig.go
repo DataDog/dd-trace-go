@@ -78,8 +78,3 @@ func HeaderTagsCopy() map[string]string {
 	}
 	return headersAsTags
 }
-
-// ClearHeaderTags clears config of any header tags
-func ClearHeaderTags() {
-	cfg.headersAsTags = make(map[string]string)
-}
