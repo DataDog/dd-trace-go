@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/emicklei/go-restful"
 )
+
+const componentName = "emicklei/go-restful"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.
 func FilterFunc(configOpts ...Option) restful.FilterFunction {
@@ -28,7 +35,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
-		spanOpts = append(spanOpts, tracer.Tag(ext.Component, "emicklei/go-restful"))
+		spanOpts = append(spanOpts, tracer.Tag(ext.Component, componentName))
 		spanOpts = append(spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 
 		if !math.IsNaN(cfg.analyticsRate) {

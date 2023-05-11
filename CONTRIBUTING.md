@@ -41,6 +41,12 @@ If a PR sits open for more than a month awaiting work or replies by the author, 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+To run golangci-lint locally:
+
+```
+docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.52.2 golangci-lint run -v
+```
+
 ### Integrations
 
 Please view our contrib [README.md](contrib/README.md) for information on new integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.

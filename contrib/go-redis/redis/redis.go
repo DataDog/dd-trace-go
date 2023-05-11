@@ -20,9 +20,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-redis/redis"
 )
+
+const componentName = "go-redis/redis"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Client is used to trace requests to a redis server.
 type Client struct {
@@ -123,7 +130,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 		tracer.Tag(ext.TargetHost, p.host),
 		tracer.Tag(ext.TargetPort, p.port),
 		tracer.Tag("out.db", strconv.Itoa(p.db)),
-		tracer.Tag(ext.Component, "go-redis/redis"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		tracer.Tag(ext.RedisDatabaseIndex, p.db),
@@ -131,7 +138,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
@@ -197,7 +204,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 				tracer.Tag("out.db", strconv.Itoa(p.db)),
 				tracer.Tag("redis.raw_command", raw),
 				tracer.Tag("redis.args_length", strconv.Itoa(length)),
-				tracer.Tag(ext.Component, "go-redis/redis"),
+				tracer.Tag(ext.Component, componentName),
 				tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 				tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 				tracer.Tag(ext.RedisDatabaseIndex, p.db),
@@ -205,7 +212,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			if !math.IsNaN(p.config.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 			}
-			span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+			span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 			err := tc.process(cmd)
 			var finishOpts []ddtrace.FinishOption
 			if err != redis.Nil {

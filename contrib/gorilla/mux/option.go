@@ -14,8 +14,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
+
+const defaultServiceName = "mux.router"
 
 type routerConfig struct {
 	serviceName   string
@@ -54,6 +57,7 @@ func defaults(cfg *routerConfig) {
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
+	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }

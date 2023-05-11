@@ -22,6 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -123,6 +124,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
+	defer telemetry.Time(telemetry.NamespaceTracers, "tracer_init_time", nil, true)()
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
@@ -627,7 +629,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
-	span.SetTag("go_execution_traced", "yes")
+	span.goExecTraced = true
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
 	taskName := span.Resource

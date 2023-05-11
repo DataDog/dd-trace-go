@@ -16,12 +16,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+const componentName = "google.golang.org/grpc"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // cache a constant option: saves one allocation per call
 var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)

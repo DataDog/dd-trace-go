@@ -29,7 +29,7 @@ func TestProductEnabled(t *testing.T) {
 	body := client.requests[0].Body
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
-	var productsPayload *Products = body.Payload.(*Products)
+	var productsPayload = body.Payload.(*Products)
 	assert.True(t, productsPayload.Profiler.Enabled)
 }
 
@@ -41,7 +41,7 @@ func TestConfigChange(t *testing.T) {
 
 	body := client.requests[0].Body
 	assert.Equal(t, RequestTypeAppClientConfigurationChange, body.RequestType)
-	var configPayload *ConfigurationChange = client.requests[0].Body.Payload.(*ConfigurationChange)
+	var configPayload = client.requests[0].Body.Payload.(*ConfigurationChange)
 	require.Len(t, configPayload.Configuration, 1)
 
 	Check(t, configPayload.Configuration, "delta_profiles", true)

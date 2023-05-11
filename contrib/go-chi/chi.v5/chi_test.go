@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -53,6 +54,7 @@ func TestTrace200(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -121,6 +123,7 @@ func TestWithModifyResourceName(t *testing.T) {
 	// do and verify the request
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(t, response.StatusCode, 200)
 
 	// verify traces look good
@@ -167,6 +170,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -196,6 +200,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -217,6 +222,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 }
 
@@ -373,6 +379,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the server behaved as intended
 		require.Equal(t, http.StatusOK, res.StatusCode)
 		b, err := io.ReadAll(res.Body)
@@ -400,6 +407,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -426,6 +434,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -518,4 +527,26 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
 	})
+}
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := chi.NewRouter().With(Middleware(opts...))
+		mux.HandleFunc("/200", func(w http.ResponseWriter, r *http.Request) {
+			_, err := w.Write([]byte("ok"))
+			require.NoError(t, err)
+		})
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "chi.router")(t)
 }

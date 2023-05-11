@@ -28,7 +28,6 @@ func TestParseDSN(t *testing.T) {
 				ext.TargetHost: "1.2.3.4",
 				ext.TargetPort: "5432",
 				ext.DBName:     "mydb",
-				ext.DBSystem:   "postgresql",
 			},
 		},
 		{
@@ -39,7 +38,6 @@ func TestParseDSN(t *testing.T) {
 				ext.DBUser:     "bob",
 				ext.TargetHost: "1.2.3.4",
 				ext.TargetPort: "5432",
-				ext.DBSystem:   "mysql",
 			},
 		},
 		{
@@ -51,7 +49,6 @@ func TestParseDSN(t *testing.T) {
 				ext.DBName:        "dogdatastaging",
 				ext.DBApplication: "trace-api",
 				ext.DBUser:        "dog",
-				ext.DBSystem:      "postgresql",
 			},
 		},
 		{
@@ -62,7 +59,6 @@ func TestParseDSN(t *testing.T) {
 				ext.TargetHost: "1.2.3.4",
 				ext.TargetPort: "1433",
 				ext.DBName:     "mydb",
-				ext.DBSystem:   "mssql",
 			},
 		},
 		{
@@ -72,7 +68,6 @@ func TestParseDSN(t *testing.T) {
 				ext.DBUser:                         "alice",
 				ext.TargetHost:                     "localhost",
 				ext.DBName:                         "mydb",
-				ext.DBSystem:                       "mssql",
 				ext.MicrosoftSQLServerInstanceName: "SQLExpress",
 			},
 		},

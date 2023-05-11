@@ -10,8 +10,11 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
+
+const defaultServiceName = "go-restful"
 
 type config struct {
 	serviceName   string
@@ -25,8 +28,13 @@ func newConfig() *config {
 		rate = 1.0
 	}
 	ht := globalconfig.GetAllHeaderTags()
+	serviceName := namingschema.NewServiceNameSchema(
+		"",
+		defaultServiceName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+	).GetName()
 	return &config{
-		serviceName:   "go-restful",
+		serviceName:   serviceName,
 		analyticsRate: rate,
 		headersAsTags: ht,
 	}

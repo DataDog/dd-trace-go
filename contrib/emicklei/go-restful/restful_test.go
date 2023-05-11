@@ -13,14 +13,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/emicklei/go-restful"
-	"github.com/stretchr/testify/assert"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+
+	"github.com/emicklei/go-restful"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWithHeaderTags(t *testing.T) {
@@ -265,4 +268,41 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ws := new(restful.WebService)
+		ws.Filter(FilterFunc(opts...))
+		ws.Route(ws.GET("/user/{id}").Param(restful.PathParameter("id", "user ID")).
+			To(func(request *restful.Request, response *restful.Response) {
+				_, err := response.Write([]byte(request.PathParameter("id")))
+				require.NoError(t, err)
+			}))
+		container := restful.NewContainer()
+		container.Add(ws)
+
+		r := httptest.NewRequest("GET", "/user/200", nil)
+		w := httptest.NewRecorder()
+		container.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"go-restful"},
+		WithDDService:            []string{"go-restful"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	namingschematest.NewHTTPServerTest(
+		genSpans,
+		"go-restful",
+		namingschematest.WithServiceNameAssertions(namingschema.SchemaV0, wantServiceNameV0),
+	)(t)
 }

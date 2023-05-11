@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const debug = false
@@ -486,4 +488,22 @@ func TestWithContext(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []ClientOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
+		st := client.Set("test_key", "test_value", 0)
+		require.NoError(t, st.Err())
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }

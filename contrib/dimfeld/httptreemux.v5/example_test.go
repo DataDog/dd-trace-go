@@ -15,11 +15,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-func Index(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+func Index(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	fmt.Fprint(w, "Welcome!\n")
 }
 
-func Hello(w http.ResponseWriter, r *http.Request, params map[string]string) {
+func Hello(w http.ResponseWriter, _ *http.Request, params map[string]string) {
 	fmt.Fprintf(w, "hello, %s!\n", params["name"])
 }
 

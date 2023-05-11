@@ -20,9 +20,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	redis "github.com/gomodule/redigo/redis"
 )
+
+const componentName = "gomodule/redigo"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
 type Conn struct {
@@ -149,14 +156,14 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.Tag(ext.Component, "gomodule/redigo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	span.SetTag("out.network", p.network)
 	span.SetTag(ext.TargetPort, p.port)
 	span.SetTag(ext.TargetHost, p.host)

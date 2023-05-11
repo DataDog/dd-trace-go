@@ -11,15 +11,24 @@ import (
 	"math"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
+
+const componentName = "aws/aws-sdk-go-v2/aws"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 const (
 	tagAWSAgent     = "aws.agent"
@@ -78,13 +87,13 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(tagAWSOperation, operation),
 			tracer.Tag(tagAWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
-			tracer.Tag(ext.Component, "aws/aws-sdk-go-v2/aws"),
+			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
-		span, spanctx := tracer.StartSpanFromContext(ctx, fmt.Sprintf("%s.request", serviceID), opts...)
+		span, spanctx := tracer.StartSpanFromContext(ctx, spanName(serviceID, operation), opts...)
 
 		// Handle initialize and continue through the middleware chain.
 		out, metadata, err = next.HandleInitialize(spanctx, in)
@@ -129,10 +138,20 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 	}), middleware.Before)
 }
 
-func serviceName(cfg *config, serviceID string) string {
+func spanName(awsService, awsOperation string) string {
+	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, func(s string) string {
+		return s + ".request"
+	}).GetName()
+}
+
+func serviceName(cfg *config, awsService string) string {
 	if cfg.serviceName != "" {
 		return cfg.serviceName
 	}
-
-	return fmt.Sprintf("aws.%s", serviceID)
+	defaultName := fmt.Sprintf("aws.%s", awsService)
+	return namingschema.NewServiceNameSchema(
+		"",
+		defaultName,
+		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+	).GetName()
 }
