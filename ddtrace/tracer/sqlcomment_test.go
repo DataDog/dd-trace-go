@@ -128,7 +128,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 
 			if tc.expectedExtractErr == nil {
 				xctx, ok := sctx.(*spanContext)
-				assert.True(t, ok)
+				require.True(t, ok)
 
 				assert.Equal(t, carrier.SpanID, xctx.spanID)
 				assert.Equal(t, traceID, xctx.traceID.Lower())

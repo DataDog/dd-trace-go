@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"strconv"
 	"strings"
 
@@ -13,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
@@ -214,22 +214,22 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 	var ctx spanContext
 	kvs := strings.Split(c, ",")
 	for _, unparsedKV := range kvs {
-		if splitKV := strings.Split(unparsedKV, "="); len(splitKV) == 2 {
-			key := splitKV[0]
-			value := strings.Trim(splitKV[1], "'")
-			switch key {
-			case sqlCommentTraceParent:
-				traceID, spanID, sampled, err := decodeTraceParent(value)
-				if err != nil {
-					return nil, err
-				}
-				ctx.traceID.SetLower(traceID)
-				ctx.spanID = spanID
-				ctx.setSamplingPriority(sampled, samplernames.Unknown)
-			default:
-			}
-		} else {
+		splitKV := strings.Split(unparsedKV, "=")
+		if len(splitKV) != 2 {
 			return nil, ErrSpanContextCorrupted
+		}
+		key := splitKV[0]
+		value := strings.Trim(splitKV[1], "'")
+		switch key {
+		case sqlCommentTraceParent:
+			traceID, spanID, sampled, err := decodeTraceParent(value)
+			if err != nil {
+				return nil, err
+			}
+			ctx.traceID.SetLower(traceID)
+			ctx.spanID = spanID
+			ctx.setSamplingPriority(sampled, samplernames.Unknown)
+		default:
 		}
 	}
 	return &ctx, nil
@@ -237,6 +237,9 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 
 // decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
 func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int, err error) {
+	if len(traceParent) < 55 {
+		return 0, 0, 0, ErrSpanContextCorrupted
+	}
 	version := traceParent[0:2]
 	switch version {
 	case w3cContextVersion:
