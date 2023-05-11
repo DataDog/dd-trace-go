@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -214,16 +215,25 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 
 	startTime := time.Now()
 	duration := time.Second * 5
-	_, sp := tr.Start(
+	spanID := uint64(1234567890)
+	ctx, sp := tr.Start(
 		ContextWithStartOptions(context.Background(),
 			tracer.ResourceName("persisted_ctx_rsc"),
 			tracer.ServiceName("persisted_srv"),
 			tracer.StartTime(startTime),
-			tracer.WithSpanID(1234567890),
+			tracer.WithSpanID(spanID),
 		), "op_name",
 		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
 		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
 	)
+
+	_, child := tr.Start(ctx, "child")
+	ddChild := child.(*span)
+	// this verifies that options passed to the parent, such as tracer.WithSpanID(spanID)
+	// weren't passed down to the child
+	assert.NotEqual(spanID, ddChild.Context().SpanID())
+	child.End()
+
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
 	sp.End()
 
@@ -235,10 +245,11 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
 	assert.Contains(p, `"type":"producer"`)
-	assert.Contains(p, "1234567890")
+	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
 	assert.NotContains(p, "discarded")
+	assert.Equal(1, strings.Count(p, `"span_id":1234567890`))
 }
 
 func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
