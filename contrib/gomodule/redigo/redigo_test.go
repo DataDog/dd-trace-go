@@ -340,6 +340,26 @@ func TestDoContext(t *testing.T) {
 		assert.True(len(spans) > 0)
 	})
 
+	t.Run("do context with parent", func(t *testing.T) {
+		const parentSpanID = uint64(1)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, ctx := tracer.StartSpanFromContext(context.Background(), "test", tracer.WithSpanID(parentSpanID))
+		defer span.Finish()
+
+		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		assert.Nil(err)
+		_, err = redis.DoContext(client, ctx, "SET", "ONE", " TWO")
+		assert.NoError(err)
+
+		spans := mt.FinishedSpans()
+		if assert.True(len(spans) > 0) {
+			assert.Equal(parentSpanID, spans[0].ParentID())
+		}
+	})
+
 	t.Run("do context with timeout", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
