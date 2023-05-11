@@ -72,7 +72,7 @@ func WithServiceName(name string) MuxOption {
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
-// Warnings: 
+// Warnings:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
