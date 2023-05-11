@@ -35,7 +35,7 @@ func newConfig(serviceName string) *config {
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
-	ht := globalconfig.GetAllHeaderTags()
+	ht := globalconfig.HeaderTagsCopy()
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,

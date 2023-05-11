@@ -38,7 +38,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
+	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }

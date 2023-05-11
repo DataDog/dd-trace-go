@@ -52,7 +52,7 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
+	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
 	cfg.serviceName = "mux.router"
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc

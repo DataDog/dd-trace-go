@@ -38,7 +38,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
+	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 }

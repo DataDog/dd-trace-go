@@ -27,7 +27,7 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
-	ht := globalconfig.GetAllHeaderTags()
+	ht := globalconfig.HeaderTagsCopy()
 	serviceName := namingschema.NewServiceNameSchema(
 		"",
 		defaultServiceName,

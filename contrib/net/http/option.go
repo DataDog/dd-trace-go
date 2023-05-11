@@ -43,7 +43,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = "http.router"
-	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
+	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}

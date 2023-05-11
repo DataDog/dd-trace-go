@@ -34,7 +34,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.headersAsTags = globalconfig.GetAllHeaderTags()
+	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
 	cfg.isStatusError = isServerError
 }
 
