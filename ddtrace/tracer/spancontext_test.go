@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupteardown(start, max int) func() {
@@ -243,6 +244,134 @@ func TestSpanFinishPriority(t *testing.T) {
 		}
 	}
 	assert.Fail("span not found")
+}
+
+func TestSpanPeerService(t *testing.T) {
+	assert := assert.New(t)
+	tracer, transport, flush, stop := startTestTracer(t)
+	defer stop()
+
+	testCases := []struct {
+		name                        string
+		spanOpts                    []StartSpanOption
+		peerServiceMappings         map[string]string
+		wantPeerService             string
+		wantPeerServiceSource       string
+		wantPeerServiceRemappedFrom string
+	}{
+		{
+			name: "PeerServiceSet",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("peer.service", "peer-service"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "peer-service",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "NotAnOutboundRequestSpan",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "internal"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "DBClient",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "some-db"),
+				Tag("db.instance", "db-instance"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "db-instance",
+			wantPeerServiceSource:       "db.instance",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "DBCassandra",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "cassandra"),
+				Tag("db.instance", "db-instance"),
+				Tag("db.cassandra.contact.points", "h1,h2,h3"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "h1,h2,h3",
+			wantPeerServiceSource:       "db.cassandra.contact.points",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "GRPCClient",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("rpc.system", "grpc"),
+				Tag("rpc.service", "rpc-service"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "rpc-service",
+			wantPeerServiceSource:       "rpc.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "OtherClients",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceMappings:         nil,
+			wantPeerService:             "out-host",
+			wantPeerServiceSource:       "out.host",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "WithMapping",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceMappings: map[string]string{
+				"out-host": "remapped-out-host",
+			},
+			wantPeerService:             "remapped-out-host",
+			wantPeerServiceSource:       "out.host",
+			wantPeerServiceRemappedFrom: "out-host",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer.config.peerServiceDefaultsEnabled = true
+			tracer.config.peerServiceMappings = tc.peerServiceMappings
+			s := tracer.StartSpan("peer-service-test", tc.spanOpts...)
+			s.Finish()
+			flush(1)
+			traces := transport.Traces()
+			require.Len(t, traces, 1)
+			require.Len(t, traces[0], 1)
+			finishedSpan := traces[0][0]
+			if tc.wantPeerService == "" {
+				assert.NotContains(finishedSpan.Meta, "peer.service")
+			} else {
+				assert.Equal(tc.wantPeerService, finishedSpan.Meta["peer.service"])
+			}
+			if tc.wantPeerServiceSource == "" {
+				assert.NotContains(finishedSpan.Meta, "_dd.peer.service.source")
+			} else {
+				assert.Equal(tc.wantPeerServiceSource, finishedSpan.Meta["_dd.peer.service.source"])
+			}
+			if tc.wantPeerServiceRemappedFrom == "" {
+				assert.NotContains(finishedSpan.Meta, "_dd.peer.service.remapped_from")
+			} else {
+				assert.Equal(tc.wantPeerServiceRemappedFrom, finishedSpan.Meta["_dd.peer.service.remapped_from"])
+			}
+		})
+	}
 }
 
 func TestNewSpanContext(t *testing.T) {

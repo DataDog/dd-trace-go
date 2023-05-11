@@ -419,7 +419,7 @@ func (t *trace) finishedOne(s *span) {
 	// that represent an outbound request.
 	if kind := s.Meta[ext.SpanKind]; kind == ext.SpanKindClient || kind == ext.SpanKindProducer {
 		if tr.config.peerServiceDefaultsEnabled {
-			t.setPeerService(s)
+			t.setPeerService(s, tr.config.peerServiceMappings)
 		}
 	}
 	// we have a tracer that can receive completed traces.
@@ -431,7 +431,7 @@ func (t *trace) finishedOne(s *span) {
 }
 
 // setPeerService sets the peer.service tag to the most appropriate value, depending on the nature of the span.
-func (t *trace) setPeerService(s *span) {
+func (t *trace) setPeerService(s *span, mappings map[string]string) {
 	contains := func(tag string) bool {
 		_, ok := s.Meta[tag]
 		return ok
@@ -443,9 +443,9 @@ func (t *trace) setPeerService(s *span) {
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	case contains(ext.DBSystem):
 		setPeerServiceFromPrecursors(s,
+			ext.CassandraContactPoints,
 			ext.DBInstance,
 			ext.DBName,
-			ext.CassandraContactPoints,
 			ext.PeerHostname,
 			ext.TargetHost,
 		)
@@ -467,12 +467,19 @@ func (t *trace) setPeerService(s *span) {
 			ext.TargetHost,
 		)
 	}
+	if from, ok := s.Meta[ext.PeerService]; ok {
+		if to, ok := mappings[from]; ok {
+			s.setMeta(keyPeerServiceRemappedFrom, from)
+			s.setMeta(ext.PeerService, to)
+		}
+	}
 }
 
 // setPeerServiceFromPrecursors looks for the given precursor tags in the span and sets the value of peer.service
-// to the first found. It also sets the value of _dd.peer.service.source to the name of the tag that was used.
-func setPeerServiceFromPrecursors(s *span, precursors ...string) {
-	for _, t := range precursors {
+// to the first one that is found in the span. It also sets the value of _dd.peer.service.source to the name of the
+// used precursor tag.
+func setPeerServiceFromPrecursors(s *span, precursorTags ...string) {
+	for _, t := range precursorTags {
 		if val, ok := s.Meta[t]; ok {
 			s.setMeta(ext.PeerService, val)
 			s.setMeta(keyPeerServiceSource, t)
