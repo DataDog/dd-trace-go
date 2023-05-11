@@ -205,3 +205,33 @@ func TestNamingSchema(t *testing.T) {
 	}
 	namingschematest.NewKafkaTest(genSpans)(t)
 }
+
+func BenchmarkReaderStartSpan(b *testing.B) {
+
+	r := NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
+		GroupID: testGroupID,
+		Topic:   testTopic,
+		MaxWait: testReaderMaxWait,
+	})
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		r.startSpan(nil, &testMessages[0])
+	}
+}
+
+func BenchmarkWriterStartSpan(b *testing.B) {
+
+	kw := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+	}
+	w := WrapWriter(kw)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		w.startSpan(nil, &testMessages[0])
+	}
+}

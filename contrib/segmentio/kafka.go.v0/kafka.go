@@ -41,13 +41,23 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 		cfg:    newConfig(opts...),
 	}
+
+	if c.Config().Brokers != nil {
+		wrapped.bootstrapServers = strings.Join(c.Config().Brokers, ",")
+	}
 	log.Debug("contrib/segmentio/kafka-go.v0/kafka: Wrapping Reader: %#v", wrapped.cfg)
 	return wrapped
+}
+
+// A kafkaConfig struct holds information from the kafka config for span tags
+type kafkaConfig struct {
+	bootstrapServers string
 }
 
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
+	kafkaConfig
 	cfg  *config
 	prev ddtrace.Span
 }
@@ -62,7 +72,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
-		tracer.Tag(ext.KafkaBootstrapServers, strings.Join(r.Config().Brokers, ",")),
+		tracer.Tag(ext.KafkaBootstrapServers, r.bootstrapServers),
 		tracer.Measured(),
 	}
 
@@ -127,6 +137,10 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 		Writer: w,
 		cfg:    newConfig(opts...),
 	}
+
+	if w.Addr.String() != "" {
+		writer.bootstrapServers = w.Addr.String()
+	}
 	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.cfg)
 	return writer
 }
@@ -134,6 +148,7 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 // Writer wraps a kafka.Writer with tracing config data
 type Writer struct {
 	*kafka.Writer
+	kafkaConfig
 	cfg *config
 }
 
@@ -144,7 +159,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
-		tracer.Tag(ext.KafkaBootstrapServers, w.Addr.String()),
+		tracer.Tag(ext.KafkaBootstrapServers, w.bootstrapServers),
 	}
 	if w.Writer.Topic != "" {
 		opts = append(opts, tracer.ResourceName("Produce Topic "+w.Writer.Topic))
