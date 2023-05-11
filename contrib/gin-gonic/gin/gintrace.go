@@ -60,10 +60,10 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		// Use AppSec if enabled by user
 		if appsec.Enabled() {
 			useAppSec(c, span)
+		} else {
+			// serve the request to the next middleware
+			c.Next()
 		}
-
-		// serve the request to the next middleware
-		c.Next()
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
