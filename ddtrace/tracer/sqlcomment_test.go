@@ -163,6 +163,24 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	assert.Equal(t, priority, p)
 }
 
+func FuzzExtract(f *testing.F) {
+	testCases := []struct {
+		query string
+	}{
+		{"/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO"},
+		{"SELECT * from FOO -- test query"},
+		{"/* c */ SELECT traceparent from FOO /**/"},
+		{"/*c*/ SELECT traceparent from FOO /**/ /*action='%2Fparam*d',controller='index,'framework='spring',traceparent='<trace-parent>',tracestate='congo%3Dt61rcWkgMzE%2Crojo%3D00f067aa0ba902b7'*/"},
+	}
+	for _, tc := range testCases {
+		f.Add(tc.query)
+	}
+	f.Fuzz(func(t *testing.T, q string) {
+		carrier := SQLCommentCarrier{Query: q}
+		carrier.Extract() // make sure it doesn't panic
+	})
+}
+
 func FuzzSpanContextFromTraceComment(f *testing.F) {
 	f.Fuzz(func(t *testing.T, query string, traceID uint64, spanID uint64, sampled int64) {
 		expectedSampled := 0
