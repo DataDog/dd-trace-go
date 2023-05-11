@@ -126,8 +126,9 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
-// Warning: using this feature can risk exposing sensitive data such as authorization tokens
-// to Datadog.
+// Warnings: 
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) RouterOption {
 	return func(cfg *routerConfig) {
 		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
