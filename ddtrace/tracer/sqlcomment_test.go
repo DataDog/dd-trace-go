@@ -163,6 +163,51 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	assert.Equal(t, priority, p)
 }
 
+func FuzzSpanContextFromTraceComment(f *testing.F) {
+	f.Fuzz(func(t *testing.T, query string, traceID uint64, spanID uint64, sampled int64) {
+		expectedSampled := 0
+		if sampled > 0 {
+			expectedSampled = 1
+		}
+
+		tags := make(map[string]string)
+		comment := encodeTraceParent(traceID, spanID, int64(expectedSampled))
+		tags[sqlCommentTraceParent] = comment
+		q := commentQuery(query, tags)
+
+		c, found := findTraceComment(q)
+		if !found {
+			t.Fatalf("Error parsing trace comment from query")
+		}
+
+		xctx, err := spanContextFromTraceComment(c)
+
+		if err != nil {
+			t.Skip()
+		}
+		if xctx.spanID != spanID {
+			t.Fatalf(`Inconsistent span id parsing:
+				got: %d
+				wanted: %d\n%s`, xctx.spanID, spanID, q)
+		}
+		if xctx.traceID.Lower() != traceID {
+			t.Fatalf(`Inconsistent trace id parsing:
+				got: %d
+				wanted: %d`, xctx.traceID.Lower(), traceID)
+		}
+
+		p, ok := xctx.samplingPriority()
+		if !ok {
+			t.Fatalf("Error retrieving sampling priority")
+		}
+		if p != expectedSampled {
+			t.Fatalf(`Inconsistent trace id parsing:
+				got: %d
+				wanted: %d`, p, expectedSampled)
+		}
+	})
+}
+
 func BenchmarkSQLCommentInjection(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
