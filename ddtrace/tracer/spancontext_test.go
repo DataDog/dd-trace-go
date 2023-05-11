@@ -254,6 +254,7 @@ func TestSpanPeerService(t *testing.T) {
 	testCases := []struct {
 		name                        string
 		spanOpts                    []StartSpanOption
+		peerServiceDefaultsEnabled  bool
 		peerServiceMappings         map[string]string
 		wantPeerService             string
 		wantPeerServiceSource       string
@@ -265,6 +266,7 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("span.kind", "client"),
 				Tag("peer.service", "peer-service"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "peer-service",
 			wantPeerServiceSource:       "peer.service",
@@ -275,6 +277,7 @@ func TestSpanPeerService(t *testing.T) {
 			spanOpts: []StartSpanOption{
 				Tag("span.kind", "internal"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "",
 			wantPeerServiceSource:       "",
@@ -287,9 +290,23 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("db.system", "some-db"),
 				Tag("db.instance", "db-instance"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "db-instance",
 			wantPeerServiceSource:       "db.instance",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "DBClientDefaultsDisabled",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "some-db"),
+				Tag("db.instance", "db-instance"),
+			},
+			peerServiceDefaultsEnabled:  false,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -301,6 +318,7 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("db.cassandra.contact.points", "h1,h2,h3"),
 				Tag("out.host", "out-host"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "h1,h2,h3",
 			wantPeerServiceSource:       "db.cassandra.contact.points",
@@ -314,6 +332,7 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("rpc.service", "rpc-service"),
 				Tag("out.host", "out-host"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "rpc-service",
 			wantPeerServiceSource:       "rpc.service",
@@ -325,6 +344,7 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("span.kind", "client"),
 				Tag("out.host", "out-host"),
 			},
+			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "out-host",
 			wantPeerServiceSource:       "out.host",
@@ -336,6 +356,7 @@ func TestSpanPeerService(t *testing.T) {
 				Tag("span.kind", "client"),
 				Tag("out.host", "out-host"),
 			},
+			peerServiceDefaultsEnabled: true,
 			peerServiceMappings: map[string]string{
 				"out-host": "remapped-out-host",
 			},
@@ -343,10 +364,24 @@ func TestSpanPeerService(t *testing.T) {
 			wantPeerServiceSource:       "out.host",
 			wantPeerServiceRemappedFrom: "out-host",
 		},
+		{
+			// in this case we skip defaults calculation but track the source and run the remapping.
+			name: "WithoutSpanKindAndPeerService",
+			spanOpts: []StartSpanOption{
+				Tag("peer.service", "peer-service"),
+			},
+			peerServiceDefaultsEnabled: false,
+			peerServiceMappings: map[string]string{
+				"peer-service": "remapped-peer-service",
+			},
+			wantPeerService:             "remapped-peer-service",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "peer-service",
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tracer.config.peerServiceDefaultsEnabled = true
+			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
 			tracer.config.peerServiceMappings = tc.peerServiceMappings
 			s := tracer.StartSpan("peer-service-test", tc.spanOpts...)
 			s.Finish()

@@ -415,13 +415,7 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	// since peer.service represents the service name of the remote service, this tag is calculated only for spans
-	// that represent an outbound request.
-	if kind := s.Meta[ext.SpanKind]; kind == ext.SpanKindClient || kind == ext.SpanKindProducer {
-		if tr.config.peerServiceDefaultsEnabled {
-			t.setPeerService(s, tr.config.peerServiceMappings)
-		}
-	}
+	t.setPeerService(s, tr.config)
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
@@ -431,44 +425,57 @@ func (t *trace) finishedOne(s *span) {
 }
 
 // setPeerService sets the peer.service tag to the most appropriate value, depending on the nature of the span.
-func (t *trace) setPeerService(s *span, mappings map[string]string) {
+func (t *trace) setPeerService(s *span, cfg *config) {
 	contains := func(tag string) bool {
 		_, ok := s.Meta[tag]
 		return ok
 	}
-	switch {
-	case contains(ext.PeerService):
+	spanKind := s.Meta[ext.SpanKind]
+	containsPeerService := contains(ext.PeerService)
+
+	// peer.service represents the service name of the remote service and is calculated only for spans
+	// that represent an outbound request.
+	// We also check here if peer.service is already present in the span, as in that case we still want to track
+	// the source and do the remapping (if applies).
+	if !(spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer) && !containsPeerService {
+		return
+	}
+	if containsPeerService {
 		// in this case, peer.service was already present on the span, so we just leave the value unmodified and track
 		// the source (in this case it was the tag peer.service itself).
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	case contains(ext.DBSystem):
-		setPeerServiceFromPrecursors(s,
-			ext.CassandraContactPoints,
-			ext.DBInstance,
-			ext.DBName,
-			ext.PeerHostname,
-			ext.TargetHost,
-		)
-	case contains(ext.MessagingSystem):
-		setPeerServiceFromPrecursors(s,
-			ext.KafkaBootstrapServers,
-			ext.PeerHostname,
-			ext.TargetHost,
-		)
-	case contains(ext.RPCSystem):
-		setPeerServiceFromPrecursors(s,
-			ext.RPCService,
-			ext.PeerHostname,
-			ext.TargetHost,
-		)
-	default:
-		setPeerServiceFromPrecursors(s,
-			ext.PeerHostname,
-			ext.TargetHost,
-		)
+	} else if cfg.peerServiceDefaultsEnabled {
+		switch {
+		case contains(ext.DBSystem):
+			setPeerServiceFromPrecursors(s,
+				ext.CassandraContactPoints,
+				ext.DBInstance,
+				ext.DBName,
+				ext.PeerHostname,
+				ext.TargetHost,
+			)
+		case contains(ext.MessagingSystem):
+			setPeerServiceFromPrecursors(s,
+				ext.KafkaBootstrapServers,
+				ext.PeerHostname,
+				ext.TargetHost,
+			)
+		case contains(ext.RPCSystem):
+			setPeerServiceFromPrecursors(s,
+				ext.RPCService,
+				ext.PeerHostname,
+				ext.TargetHost,
+			)
+		default:
+			setPeerServiceFromPrecursors(s,
+				ext.PeerHostname,
+				ext.TargetHost,
+			)
+		}
 	}
+	// remap peer.service value if configured by the user.
 	if from, ok := s.Meta[ext.PeerService]; ok {
-		if to, ok := mappings[from]; ok {
+		if to, ok := cfg.peerServiceMappings[from]; ok {
 			s.setMeta(keyPeerServiceRemappedFrom, from)
 			s.setMeta(ext.PeerService, to)
 		}
