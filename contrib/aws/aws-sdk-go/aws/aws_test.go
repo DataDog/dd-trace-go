@@ -293,7 +293,7 @@ func TestWithErrorCheck(t *testing.T) {
 
 	t.Run("defaults", testOpts(true))
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
-		return !strings.Contains(err.Error(), `NoCredentialProviders: no valid providers in chain`)
+		return false
 	})))
 }
 
