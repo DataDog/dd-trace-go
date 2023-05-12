@@ -142,13 +142,20 @@ func TestSQLCommentCarrier(t *testing.T) {
 }
 
 func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
-	spanID := generateSpanID(now())
-	traceID := generateSpanID(now())
-	priority := 1
-	traceparent := encodeTraceParent(traceID, spanID, int64(priority))
+	// open-telemetry supports 128 bit trace ids
+	traceID := "5bd66ef5095369c7b0d1f8f4bd33716a"
+	ss := "c532cb4098ac3dd2"
+	upper, err := strconv.ParseUint(traceID[:16], 16, 64)
+	lower, err := strconv.ParseUint(traceID[16:], 16, 64)
+	spanID, err := strconv.ParseUint(ss, 16, 64)
+	ps := "1"
+	priority, err := strconv.Atoi(ps)
+	require.NoError(t, err)
+	traceparent := fmt.Sprintf("00-%s-%s-0%s", traceID, ss, ps)
 	// open-telemetry implementation appends comment to the end of the query
 	q := "/*c*/ SELECT traceparent from FOO /**/ /*action='%2Fparam*d',controller='index,'framework='spring',traceparent='<trace-parent>',tracestate='congo%3Dt61rcWkgMzE%2Crojo%3D00f067aa0ba902b7'*/"
 	q = strings.ReplaceAll(q, "<trace-parent>", traceparent)
+
 	carrier := SQLCommentCarrier{Query: q}
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
@@ -156,7 +163,8 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	assert.True(t, ok)
 
 	assert.Equal(t, spanID, xctx.spanID)
-	assert.Equal(t, traceID, xctx.traceID.Lower())
+	assert.Equal(t, lower, xctx.traceID.Lower())
+	assert.Equal(t, upper, xctx.traceID.Upper())
 
 	p, ok := xctx.samplingPriority()
 	assert.True(t, ok)
@@ -171,6 +179,8 @@ func FuzzExtract(f *testing.F) {
 		{"SELECT * from FOO -- test query"},
 		{"/* c */ SELECT traceparent from FOO /**/"},
 		{"/*c*/ SELECT traceparent from FOO /**/ /*action='%2Fparam*d',controller='index,'framework='spring',traceparent='<trace-parent>',tracestate='congo%3Dt61rcWkgMzE%2Crojo%3D00f067aa0ba902b7'*/"},
+		{"*/ / * * *//*/**/"},
+		{""},
 	}
 	for _, tc := range testCases {
 		f.Add(tc.query)

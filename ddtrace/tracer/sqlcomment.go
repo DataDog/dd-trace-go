@@ -222,11 +222,12 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 		value := strings.Trim(splitKV[1], "'")
 		switch key {
 		case sqlCommentTraceParent:
-			traceID, spanID, sampled, err := decodeTraceParent(value)
+			traceIDLower, traceIDUpper, spanID, sampled, err := decodeTraceParent(value)
 			if err != nil {
 				return nil, err
 			}
-			ctx.traceID.SetLower(traceID)
+			ctx.traceID.SetLower(traceIDLower)
+			ctx.traceID.SetUpper(traceIDUpper)
 			ctx.spanID = spanID
 			ctx.setSamplingPriority(sampled, samplernames.Unknown)
 		default:
@@ -236,25 +237,29 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 }
 
 // decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
-func decodeTraceParent(traceParent string) (traceID uint64, spanID uint64, sampled int, err error) {
+// this also supports decoding traceparents from open telemetry sql comments which are 128 bit
+func decodeTraceParent(traceParent string) (traceIDLower uint64, traceIDUpper uint64, spanID uint64, sampled int, err error) {
 	if len(traceParent) < 55 {
-		return 0, 0, 0, ErrSpanContextCorrupted
+		return 0, 0, 0, 0, ErrSpanContextCorrupted
 	}
 	version := traceParent[0:2]
 	switch version {
 	case w3cContextVersion:
-		if traceID, err = strconv.ParseUint(traceParent[3:35], 16, 64); err != nil {
-			return 0, 0, 0, ErrSpanContextCorrupted
+		if traceIDUpper, err = strconv.ParseUint(traceParent[3:19], 16, 64); err != nil {
+			return 0, 0, 0, 0, ErrSpanContextCorrupted
+		}
+		if traceIDLower, err = strconv.ParseUint(traceParent[19:35], 16, 64); err != nil {
+			return 0, 0, 0, 0, ErrSpanContextCorrupted
 		}
 		if spanID, err = strconv.ParseUint(traceParent[36:52], 16, 64); err != nil {
-			return 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ErrSpanContextCorrupted
 		}
 		if sampled, err = strconv.Atoi(traceParent[53:55]); err != nil {
-			return 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ErrSpanContextCorrupted
 		}
 	default:
 	}
-	return traceID, spanID, sampled, err
+	return traceIDLower, traceIDUpper, spanID, sampled, err
 }
 
 // findTraceComment looks for a sql comment that contains trace information by looking for the keyword traceparent
