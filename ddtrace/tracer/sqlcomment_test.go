@@ -198,6 +198,21 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 			expectedSampled = 1
 		}
 
+		ts := strconv.FormatUint(traceID, 16)
+		var b strings.Builder
+		b.Grow(32)
+		for i := 0; i < 32-len(ts); i++ {
+			b.WriteRune('0')
+		}
+		b.WriteString(ts)
+		ts = b.String()
+
+		traceIDUpper, err := strconv.ParseUint(ts[:16], 16, 64)
+		traceIDLower, err := strconv.ParseUint(ts[16:], 16, 64)
+		if err != nil {
+			t.Skip()
+		}
+
 		tags := make(map[string]string)
 		comment := encodeTraceParent(traceID, spanID, int64(expectedSampled))
 		tags[sqlCommentTraceParent] = comment
@@ -211,17 +226,22 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 		xctx, err := spanContextFromTraceComment(c)
 
 		if err != nil {
-			t.Fatalf("Error creating span context from trace comment")
+			t.Fatalf("Error: %+v creating span context from trace comment: %s", err, c)
 		}
 		if xctx.spanID != spanID {
 			t.Fatalf(`Inconsistent span id parsing:
 				got: %d
-				wanted: %d\n%s`, xctx.spanID, spanID, q)
+				wanted: %d`, xctx.spanID, spanID)
 		}
-		if xctx.traceID.Lower() != traceID {
-			t.Fatalf(`Inconsistent trace id parsing:
+		if xctx.traceID.Lower() != traceIDLower {
+			t.Fatalf(`Inconsistent lower trace id parsing:
 				got: %d
-				wanted: %d`, xctx.traceID.Lower(), traceID)
+				wanted: %d`, xctx.traceID.Lower(), traceIDLower)
+		}
+		if xctx.traceID.Upper() != traceIDUpper {
+			t.Fatalf(`Inconsistent lower trace id parsing:
+				got: %d
+				wanted: %d`, xctx.traceID.Upper(), traceIDUpper)
 		}
 
 		p, ok := xctx.samplingPriority()
