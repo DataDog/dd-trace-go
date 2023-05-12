@@ -295,7 +295,8 @@ func TestWithErrorCheck(t *testing.T) {
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
 		return !strings.Contains(err.Error(), `NoCredentialProviders: no valid providers in chain`)
 	})))
-  
+}
+
 func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
