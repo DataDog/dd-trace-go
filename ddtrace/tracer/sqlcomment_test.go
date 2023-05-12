@@ -201,7 +201,7 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 		xctx, err := spanContextFromTraceComment(c)
 
 		if err != nil {
-			t.Skip()
+			t.Fatalf("Error creating span context from trace comment")
 		}
 		if xctx.spanID != spanID {
 			t.Fatalf(`Inconsistent span id parsing:

@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"strconv"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
