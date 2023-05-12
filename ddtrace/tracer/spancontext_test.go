@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -33,7 +34,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ")
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -70,6 +71,7 @@ func TestAsyncSpanRace(t *testing.T) {
 						for range root.(*span).Metrics {
 							// this range simulates iterating over the metrics map
 							// as we do when encoding msgpack upon flushing.
+							continue
 						}
 					}
 					return
@@ -85,6 +87,7 @@ func TestAsyncSpanRace(t *testing.T) {
 						for range root.(*span).Meta {
 							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
+							continue
 						}
 					}
 					return
@@ -145,7 +148,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ")
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -251,7 +254,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority)
@@ -268,7 +271,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
@@ -291,9 +294,9 @@ func TestNewSpanContext(t *testing.T) {
 		sctx, ok := ctx.(*spanContext)
 		assert.True(ok)
 		span := StartSpan("some-span", ChildOf(ctx))
-		assert.EqualValues(sctx.traceID, 1)
-		assert.EqualValues(sctx.spanID, 2)
-		assert.EqualValues(*sctx.trace.priority, 3)
+		assert.EqualValues(uint64(1), sctx.traceID.Lower())
+		assert.EqualValues(2, sctx.spanID)
+		assert.EqualValues(3, *sctx.trace.priority)
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -305,13 +308,13 @@ func TestSpanContextParent(t *testing.T) {
 		ParentID: 3,
 	}
 	for name, parentCtx := range map[string]*spanContext{
-		"basic": &spanContext{
+		"basic": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
 		},
-		"nil-trace": &spanContext{},
-		"priority": &spanContext{
+		"nil-trace": {},
+		"priority": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
@@ -319,7 +322,7 @@ func TestSpanContextParent(t *testing.T) {
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
 			},
 		},
-		"sampling_decision": &spanContext{
+		"sampling_decision": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
@@ -327,7 +330,7 @@ func TestSpanContextParent(t *testing.T) {
 				samplingDecision: decisionKeep,
 			},
 		},
-		"origin": &spanContext{
+		"origin": {
 			trace:  &trace{spans: []*span{newBasicSpan("abc")}},
 			origin: "synthetics",
 		},
@@ -335,7 +338,7 @@ func TestSpanContextParent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID, s.TraceID)
+			assert.Equal(ctx.traceID.Lower(), s.TraceID)
 			assert.Equal(ctx.spanID, s.SpanID)
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
@@ -356,7 +359,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ")
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -456,4 +459,16 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
+}
+
+func TestTraceIDHexEncoded(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
+}
+
+func TestTraceIDEmpty(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.False(t, tid.Empty())
 }

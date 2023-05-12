@@ -23,10 +23,17 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
+
+const componentName = "hashicorp/vault"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewHTTPClient returns an http.Client for use in the Vault API config
 // Client. A set of options can be passed in for further configuration.
@@ -50,6 +57,9 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
 		httptrace.RTWithAnalyticsRate(conf.analyticsRate),
+		httptrace.RTWithSpanNamer(func(_ *http.Request) string {
+			return conf.operationName
+		}),
 		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)

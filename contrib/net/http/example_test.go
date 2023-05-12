@@ -33,7 +33,7 @@ func ExampleTraceAndServe() {
 	http.ListenAndServe(":8080", mux)
 }
 
-func Index(w http.ResponseWriter, r *http.Request) {
+func Index(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("Hello World!\n"))
 }
 
@@ -44,7 +44,12 @@ func ExampleWrapClient() {
 	c := httptrace.WrapClient(http.DefaultClient)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://test.test", nil)
-		resp, _ := c.Do(req)
+		resp, err := c.Do(req)
+		if err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		defer resp.Body.Close()
 		w.Write([]byte(resp.Status))
 	})
 	http.ListenAndServe(":8080", mux)

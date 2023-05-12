@@ -19,3 +19,6 @@
 
 # telemetry
 /internal/telemetry             @DataDog/apm-go
+
+# linter rules
+.golangci.yml                   @DataDog/tracing-go @DataDog/profiling-go @DataDog/appsec-go

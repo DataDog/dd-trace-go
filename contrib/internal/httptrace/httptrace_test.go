@@ -12,12 +12,12 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -51,7 +51,7 @@ func TestTraceClientIPFlag(t *testing.T) {
 		remoteAddr          string
 		traceClientIPEnvVal string
 		expectTrace         bool
-		expectedIP          instrumentation.NetaddrIP
+		expectedIP          netip.Addr
 	}
 
 	oldConfig := cfg
@@ -61,28 +61,28 @@ func TestTraceClientIPFlag(t *testing.T) {
 		{
 			name:                "Trace client IP set to true",
 			remoteAddr:          validIPAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			expectedIP:          netip.MustParseAddr(validIPAddr),
 			traceClientIPEnvVal: "true",
 			expectTrace:         true,
 		},
 		{
 			name:                "Trace client IP set to false",
 			remoteAddr:          validIPAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			expectedIP:          netip.MustParseAddr(validIPAddr),
 			traceClientIPEnvVal: "false",
 			expectTrace:         false,
 		},
 		{
 			name:                "Trace client IP unset",
 			remoteAddr:          validIPAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			expectedIP:          netip.MustParseAddr(validIPAddr),
 			traceClientIPEnvVal: "",
 			expectTrace:         false,
 		},
 		{
 			name:                "Trace client IP set to non-boolean value",
 			remoteAddr:          validIPAddr,
-			expectedIP:          instrumentation.NetaddrMustParseIP(validIPAddr),
+			expectedIP:          netip.MustParseAddr(validIPAddr),
 			traceClientIPEnvVal: "asdadsasd",
 			expectTrace:         false,
 		},

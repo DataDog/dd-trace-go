@@ -13,12 +13,14 @@ import (
 	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/urfave/negroni"
 )
 
@@ -50,6 +52,7 @@ func TestTrace200(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -159,6 +162,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -189,6 +193,7 @@ func TestError(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, code)
 
 		// verify the errors and status are correct
@@ -212,6 +217,7 @@ func TestGetSpanNotInstrumented(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 }
 
@@ -321,6 +327,7 @@ func TestServiceName(t *testing.T) {
 		// do and verify the request
 		router.ServeHTTP(w, r)
 		response := w.Result()
+		defer response.Body.Close()
 		assert.Equal(response.StatusCode, 200)
 
 		// verify traces look good
@@ -359,4 +366,30 @@ func TestServiceName(t *testing.T) {
 		router.Use(Middleware(WithServiceName("my-service")))
 		assertServiceName(t, mt, router, "my-service")
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+			_, err := w.Write([]byte("ok"))
+			require.NoError(t, err)
+		})
+		router := negroni.New()
+		router.Use(Middleware(opts...))
+		router.UseHandler(mux)
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "negroni.router")(t)
 }

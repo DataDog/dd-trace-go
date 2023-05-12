@@ -10,17 +10,19 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type config struct {
-	ctx                 context.Context
-	consumerServiceName string
-	producerServiceName string
-	analyticsRate       float64
-	tagFns              map[string]func(msg *kafka.Message) interface{}
+	ctx                   context.Context
+	consumerServiceName   string
+	producerServiceName   string
+	consumerOperationName string
+	producerOperationName string
+	analyticsRate         float64
+	tagFns                map[string]func(msg *kafka.Message) interface{}
 }
 
 // An Option customizes the config.
@@ -28,18 +30,24 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		ctx:                 context.Background(),
-		consumerServiceName: "kafka",
-		producerServiceName: "kafka",
+		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.consumerServiceName = svc
-	}
+
+	cfg.consumerServiceName = namingschema.NewServiceNameSchema("", "kafka").GetName()
+	cfg.producerServiceName = namingschema.NewServiceNameSchema(
+		"",
+		"kafka",
+		namingschema.WithVersionOverride(namingschema.SchemaV0, "kafka"),
+	).GetName()
+
+	cfg.consumerOperationName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerOperationName = namingschema.NewKafkaOutboundOp().GetName()
+
 	for _, opt := range opts {
 		opt(cfg)
 	}
