@@ -1,7 +1,7 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.6.0"
+    "rules_version": "1.7.0"
   },
   "rules": [
     {
@@ -58,10 +58,11 @@
       "id": "crs-913-110",
       "name": "Acunetix",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "crs_id": "913110",
         "category": "attack_attempt",
-        "confidence": "1"
+        "tool_name": "Acunetix",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -2698,7 +2699,7 @@
                 "address": "grpc.server.request.message"
               }
             ],
-            "regex": "\\b(?:s(?:e(?:t(?:_(?:e(?:xception|rror)_handler|magic_quotes_runtime|include_path)|defaultstub)|ssion_s(?:et_save_handler|tart))|qlite_(?:(?:(?:unbuffered|single|array)_)?query|create_(?:aggregate|function)|p?open|exec)|tr(?:eam_(?:context_create|socket_client)|ipc?slashes|rev)|implexml_load_(?:string|file)|ocket_c(?:onnect|reate)|h(?:ow_sourc|a1_fil)e|pl_autoload_register|ystem)|p(?:r(?:eg_(?:replace(?:_callback(?:_array)?)?|match(?:_all)?|split)|oc_(?:(?:terminat|clos|nic)e|get_status|open)|int_r)|o(?:six_(?:get(?:(?:e[gu]|g)id|login|pwnam)|mk(?:fifo|nod)|ttyname|kill)|pen)|hp(?:_(?:strip_whitespac|unam)e|version|info)|g_(?:(?:execut|prepar)e|connect|query)|a(?:rse_(?:ini_file|str)|ssthru)|utenv)|r(?:unkit_(?:function_(?:re(?:defin|nam)e|copy|add)|method_(?:re(?:defin|nam)e|copy|add)|constant_(?:redefine|add))|e(?:(?:gister_(?:shutdown|tick)|name)_function|ad(?:(?:gz)?file|_exif_data|dir))|awurl(?:de|en)code)|i(?:mage(?:createfrom(?:(?:jpe|pn)g|x[bp]m|wbmp|gif)|(?:jpe|pn)g|g(?:d2?|if)|2?wbmp|xbm)|s_(?:(?:(?:execut|write?|read)ab|fi)le|dir)|ni_(?:get(?:_all)?|set)|terator_apply|ptcembed)|g(?:et(?:_(?:c(?:urrent_use|fg_va)r|meta_tags)|my(?:[gpu]id|inode)|(?:lastmo|cw)d|imagesize|env)|z(?:(?:(?:defla|wri)t|encod|fil)e|compress|open|read)|lob)|a(?:rray_(?:u(?:intersect(?:_u?assoc)?|diff(?:_u?assoc)?)|intersect_u(?:assoc|key)|diff_u(?:assoc|key)|filter|reduce|map)|ssert(?:_options)?|lert|tob)|h(?:tml(?:specialchars(?:_decode)?|_entity_decode|entities)|(?:ash(?:_(?:update|hmac))?|ighlight)_file|e(?:ader_register_callback|x2bin))|f(?:i(?:le(?:(?:[acm]tim|inod)e|(?:_exist|perm)s|group)?|nfo_open)|tp_(?:nb_(?:ge|pu)|connec|ge|pu)t|(?:unction_exis|pu)ts|write|open)|o(?:b_(?:get_(?:c(?:ontents|lean)|flush)|end_(?:clean|flush)|clean|flush|start)|dbc_(?:result(?:_all)?|exec(?:ute)?|connect)|pendir)|m(?:b_(?:ereg(?:_(?:replace(?:_callback)?|match)|i(?:_replace)?)?|parse_str)|(?:ove_uploaded|d5)_file|ethod_exists|ysql_query|kdir)|e(?:x(?:if_(?:t(?:humbnail|agname)|imagetype|read_data)|ec)|scapeshell(?:arg|cmd)|rror_reporting|val)|c(?:url_(?:file_create|exec|init)|onvert_uuencode|reate_function|hr)|u(?:n(?:serialize|pack)|rl(?:de|en)code|[ak]?sort)|b(?:(?:son_(?:de|en)|ase64_en)code|zopen|toa)|(?:json_(?:de|en)cod|debug_backtrac|tmpfil)e|var_dump)(?:\\s|/\\*.*\\*/|//.*|#.*|\\\"|')*\\((?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?,)*(?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?)?\\)",
+            "regex": "\\b(?:s(?:e(?:t(?:_(?:e(?:xception|rror)_handler|magic_quotes_runtime|include_path)|defaultstub)|ssion_s(?:et_save_handler|tart))|qlite_(?:(?:(?:unbuffered|single|array)_)?query|create_(?:aggregate|function)|p?open|exec)|tr(?:eam_(?:context_create|socket_client)|ipc?slashes|rev)|implexml_load_(?:string|file)|ocket_c(?:onnect|reate)|h(?:ow_sourc|a1_fil)e|pl_autoload_register|ystem)|p(?:r(?:eg_(?:replace(?:_callback(?:_array)?)?|match(?:_all)?|split)|oc_(?:(?:terminat|clos|nic)e|get_status|open)|int_r)|o(?:six_(?:get(?:(?:e[gu]|g)id|login|pwnam)|mk(?:fifo|nod)|ttyname|kill)|pen)|hp(?:_(?:strip_whitespac|unam)e|version|info)|g_(?:(?:execut|prepar)e|connect|query)|a(?:rse_(?:ini_file|str)|ssthru)|utenv)|r(?:unkit_(?:function_(?:re(?:defin|nam)e|copy|add)|method_(?:re(?:defin|nam)e|copy|add)|constant_(?:redefine|add))|e(?:(?:gister_(?:shutdown|tick)|name)_function|ad(?:(?:gz)?file|_exif_data|dir))|awurl(?:de|en)code)|i(?:mage(?:createfrom(?:(?:jpe|pn)g|x[bp]m|wbmp|gif)|(?:jpe|pn)g|g(?:d2?|if)|2?wbmp|xbm)|s_(?:(?:(?:execut|write?|read)ab|fi)le|dir)|ni_(?:get(?:_all)?|set)|terator_apply|ptcembed)|g(?:et(?:_(?:c(?:urrent_use|fg_va)r|meta_tags)|my(?:[gpu]id|inode)|(?:lastmo|cw)d|imagesize|env)|z(?:(?:(?:defla|wri)t|encod|fil)e|compress|open|read)|lob)|a(?:rray_(?:u(?:intersect(?:_u?assoc)?|diff(?:_u?assoc)?)|intersect_u(?:assoc|key)|diff_u(?:assoc|key)|filter|reduce|map)|ssert(?:_options)?|tob)|h(?:tml(?:specialchars(?:_decode)?|_entity_decode|entities)|(?:ash(?:_(?:update|hmac))?|ighlight)_file|e(?:ader_register_callback|x2bin))|f(?:i(?:le(?:(?:[acm]tim|inod)e|(?:_exist|perm)s|group)?|nfo_open)|tp_(?:nb_(?:ge|pu)|connec|ge|pu)t|(?:unction_exis|pu)ts|write|open)|o(?:b_(?:get_(?:c(?:ontents|lean)|flush)|end_(?:clean|flush)|clean|flush|start)|dbc_(?:result(?:_all)?|exec(?:ute)?|connect)|pendir)|m(?:b_(?:ereg(?:_(?:replace(?:_callback)?|match)|i(?:_replace)?)?|parse_str)|(?:ove_uploaded|d5)_file|ethod_exists|ysql_query|kdir)|e(?:x(?:if_(?:t(?:humbnail|agname)|imagetype|read_data)|ec)|scapeshell(?:arg|cmd)|rror_reporting|val)|c(?:url_(?:file_create|exec|init)|onvert_uuencode|reate_function|hr)|u(?:n(?:serialize|pack)|rl(?:de|en)code|[ak]?sort)|b(?:(?:son_(?:de|en)|ase64_en)code|zopen|toa)|(?:json_(?:de|en)cod|debug_backtrac|tmpfil)e|var_dump)(?:\\s|/\\*.*\\*/|//.*|#.*|\\\"|')*\\((?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?,)*(?:(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:\\$\\w+|[A-Z\\d]\\w*|\\w+\\(.*\\)|\\\\?\"(?:[^\"]|\\\\\"|\"\"|\"\\+\")*\\\\?\"|\\\\?'(?:[^']|''|'\\+')*\\\\?')(?:\\s|/\\*.*\\*/|//.*|#.*)*(?:(?:::|\\.|->)(?:\\s|/\\*.*\\*/|//.*|#.*)*\\w+(?:\\(.*\\))?)?)?\\)",
             "options": {
               "case_sensitive": true,
               "min_length": 5
@@ -4386,6 +4387,256 @@
       "transformers": []
     },
     {
+      "id": "dog-913-001",
+      "name": "BurpCollaborator OOB domain",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "tool_name": "BurpCollaborator",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\b(?:burpcollaborator\\.net|oastify\\.com)\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-002",
+      "name": "Qualys OOB domain",
+      "tags": {
+        "type": "commercial_scanner",
+        "category": "attack_attempt",
+        "tool_name": "Qualys",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\bqualysperiscope\\.com\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-003",
+      "name": "Probely OOB domain",
+      "tags": {
+        "type": "commercial_scanner",
+        "category": "attack_attempt",
+        "tool_name": "Probely",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\bprbly\\.win\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-004",
+      "name": "Known malicious out-of-band interaction domain",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\b(?:webhook\\.site|\\.canarytokens\\.com|vii\\.one|act1on3\\.ru|gdsburp\\.com)\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-005",
+      "name": "Known suspicious out-of-band interaction domain",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\b(?:\\.ngrok\\.io|requestbin\\.com|requestbin\\.net)\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-006",
+      "name": "Rapid7 OOB domain",
+      "tags": {
+        "type": "commercial_scanner",
+        "category": "attack_attempt",
+        "tool_name": "Rapid7",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\bappspidered\\.rapid7\\."
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "dog-913-007",
+      "name": "Interact.sh OOB domain",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "tool_name": "interact.sh",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "server.request.headers.no_cookies"
+              },
+              {
+                "address": "grpc.server.request.message"
+              }
+            ],
+            "regex": "\\b(?:interact\\.sh|oast\\.(?:pro|live|site|online|fun|me))\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
       "id": "dog-931-001",
       "name": "RFI: URL Payload to well known RFI target",
       "tags": {
@@ -5440,6 +5691,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Joomla exploitation tool",
         "confidence": "1"
       },
       "conditions": [
@@ -5466,6 +5718,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nessus",
         "confidence": "1"
       },
       "conditions": [
@@ -5492,6 +5745,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Arachni",
         "confidence": "1"
       },
       "conditions": [
@@ -5518,6 +5772,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Jorgee",
         "confidence": "1"
       },
       "conditions": [
@@ -5542,9 +5797,10 @@
       "id": "ua0-600-14x",
       "name": "Probely",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "category": "attack_attempt",
-        "confidence": "1"
+        "tool_name": "Probely",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -5570,6 +5826,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Metis",
         "confidence": "1"
       },
       "conditions": [
@@ -5596,6 +5853,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "SQLPowerInjector",
         "confidence": "1"
       },
       "conditions": [
@@ -5622,6 +5880,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "N-Stealth",
         "confidence": "1"
       },
       "conditions": [
@@ -5648,6 +5907,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Brutus",
         "confidence": "1"
       },
       "conditions": [
@@ -5674,6 +5934,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Shellshock",
         "confidence": "1"
       },
       "conditions": [
@@ -5698,9 +5959,10 @@
       "id": "ua0-600-20x",
       "name": "Netsparker",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "category": "attack_attempt",
-        "confidence": "1"
+        "tool_name": "Netsparker",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -5713,7 +5975,7 @@
                 ]
               }
             ],
-            "regex": "(?i)(<script>netsparker\\(0x0|ns:netsparker.*=vuln)"
+            "regex": "\\bnetsparker\\b"
           },
           "operator": "match_regex"
         }
@@ -5726,6 +5988,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "JAASCois",
         "confidence": "1"
       },
       "conditions": [
@@ -5747,63 +6010,12 @@
       "transformers": []
     },
     {
-      "id": "ua0-600-23x",
-      "name": "PMAFind",
-      "tags": {
-        "type": "security_scanner",
-        "category": "attack_attempt",
-        "confidence": "1"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "user-agent"
-                ]
-              }
-            ],
-            "regex": "(?i)\\bpmafind\\b"
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": []
-    },
-    {
-      "id": "ua0-600-25x",
-      "name": "Webtrends",
-      "tags": {
-        "type": "security_scanner",
-        "category": "attack_attempt",
-        "confidence": "1"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "user-agent"
-                ]
-              }
-            ],
-            "regex": "webtrends security analyzer"
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": []
-    },
-    {
       "id": "ua0-600-26x",
       "name": "Nsauditor",
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nsauditor",
         "confidence": "1"
       },
       "conditions": [
@@ -5830,6 +6042,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Paros",
         "confidence": "1"
       },
       "conditions": [
@@ -5856,6 +6069,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "DirBuster",
         "confidence": "1"
       },
       "conditions": [
@@ -5882,6 +6096,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Pangolin",
         "confidence": "1"
       },
       "conditions": [
@@ -5906,8 +6121,9 @@
       "id": "ua0-600-2xx",
       "name": "Qualys",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "category": "attack_attempt",
+        "tool_name": "Qualys",
         "confidence": "0"
       },
       "conditions": [
@@ -5934,6 +6150,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "SQLNinja",
         "confidence": "1"
       },
       "conditions": [
@@ -5960,6 +6177,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nikto",
         "confidence": "1"
       },
       "conditions": [
@@ -5981,37 +6199,12 @@
       "transformers": []
     },
     {
-      "id": "ua0-600-32x",
-      "name": "WebInspect",
-      "tags": {
-        "type": "security_scanner",
-        "category": "attack_attempt",
-        "confidence": "1"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "user-agent"
-                ]
-              }
-            ],
-            "regex": "(?i)\\bwebinspect\\b"
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": []
-    },
-    {
       "id": "ua0-600-33x",
       "name": "BlackWidow",
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "BlackWidow",
         "confidence": "1"
       },
       "conditions": [
@@ -6038,6 +6231,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Grendel-Scan",
         "confidence": "1"
       },
       "conditions": [
@@ -6064,6 +6258,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Havij",
         "confidence": "1"
       },
       "conditions": [
@@ -6090,6 +6285,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "w3af",
         "confidence": "1"
       },
       "conditions": [
@@ -6116,6 +6312,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nmap",
         "confidence": "1"
       },
       "conditions": [
@@ -6142,6 +6339,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nessus",
         "confidence": "1"
       },
       "conditions": [
@@ -6155,7 +6353,7 @@
                 ]
               }
             ],
-            "regex": "(?i)^'?[a-z0-9]+\\.nasl'?$"
+            "regex": "(?i)^'?[a-z0-9_]+\\.nasl'?$"
           },
           "operator": "match_regex"
         }
@@ -6168,6 +6366,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "EvilScanner",
         "confidence": "1"
       },
       "conditions": [
@@ -6194,6 +6393,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "WebFuck",
         "confidence": "1"
       },
       "conditions": [
@@ -6220,6 +6420,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "OpenVAS",
         "confidence": "1"
       },
       "conditions": [
@@ -6246,6 +6447,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Spider-Pig",
         "confidence": "1"
       },
       "conditions": [
@@ -6272,6 +6474,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Zgrab",
         "confidence": "1"
       },
       "conditions": [
@@ -6298,6 +6501,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Zmeu",
         "confidence": "1"
       },
       "conditions": [
@@ -6319,38 +6523,13 @@
       "transformers": []
     },
     {
-      "id": "ua0-600-46x",
-      "name": "Crowdstrike",
-      "tags": {
-        "type": "security_scanner",
-        "category": "attack_attempt",
-        "confidence": "1"
-      },
-      "conditions": [
-        {
-          "parameters": {
-            "inputs": [
-              {
-                "address": "server.request.headers.no_cookies",
-                "key_path": [
-                  "user-agent"
-                ]
-              }
-            ],
-            "regex": "(?i)\\bcrowdstrike\\b"
-          },
-          "operator": "match_regex"
-        }
-      ],
-      "transformers": []
-    },
-    {
       "id": "ua0-600-47x",
       "name": "GoogleSecurityScanner",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "category": "attack_attempt",
-        "confidence": "1"
+        "tool_name": "GoogleSecurityScanner",
+        "confidence": "0"
       },
       "conditions": [
         {
@@ -6376,6 +6555,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Commix",
         "confidence": "1"
       },
       "conditions": [
@@ -6402,6 +6582,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Gobuster",
         "confidence": "1"
       },
       "conditions": [
@@ -6428,6 +6609,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "CGIchk",
         "confidence": "1"
       },
       "conditions": [
@@ -6454,6 +6636,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "FFUF",
         "confidence": "1"
       },
       "conditions": [
@@ -6480,6 +6663,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nuclei",
         "confidence": "1"
       },
       "conditions": [
@@ -6506,6 +6690,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Tsunami",
         "confidence": "1"
       },
       "conditions": [
@@ -6532,6 +6717,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Nimbostratus",
         "confidence": "1"
       },
       "conditions": [
@@ -6558,6 +6744,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Datadog Canary Test",
         "confidence": "1"
       },
       "conditions": [
@@ -6577,7 +6764,7 @@
                 ]
               }
             ],
-            "regex": "^dd-test-scanner-log$"
+            "regex": "^dd-test-scanner-log(?:$|/|\\s)"
           },
           "operator": "match_regex"
         }
@@ -6590,6 +6777,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Datadog Canary Test",
         "confidence": "1"
       },
       "conditions": [
@@ -6609,7 +6797,7 @@
                 ]
               }
             ],
-            "regex": "^dd-test-scanner-log-block$"
+            "regex": "^dd-test-scanner-log-block(?:$|/|\\s)"
           },
           "operator": "match_regex"
         }
@@ -6623,8 +6811,9 @@
       "id": "ua0-600-57x",
       "name": "AlertLogic",
       "tags": {
-        "type": "security_scanner",
+        "type": "commercial_scanner",
         "category": "attack_attempt",
+        "tool_name": "AlertLogic",
         "confidence": "0"
       },
       "conditions": [
@@ -6646,11 +6835,66 @@
       "transformers": []
     },
     {
+      "id": "ua0-600-58x",
+      "name": "wfuzz",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "tool_name": "wfuzz",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "\\bwfuzz\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "ua0-600-59x",
+      "name": "Detectify",
+      "tags": {
+        "type": "commercial_scanner",
+        "category": "attack_attempt",
+        "tool_name": "Detectify",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "\\bdetectify\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
       "id": "ua0-600-5xx",
       "name": "Blind SQL Injection Brute Forcer",
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "BSQLBF",
         "confidence": "1"
       },
       "conditions": [
@@ -6672,8 +6916,89 @@
       "transformers": []
     },
     {
+      "id": "ua0-600-60x",
+      "name": "masscan",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "tool_name": "masscan",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^masscan/"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "ua0-600-61x",
+      "name": "WPScan",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt",
+        "tool_name": "WPScan",
+        "confidence": "1"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^wpscan\\b"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
+      "id": "ua0-600-62x",
+      "name": "Aon pentesting services",
+      "tags": {
+        "type": "commercial_scanner",
+        "category": "attack_attempt",
+        "tool_name": "Aon",
+        "confidence": "0"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^Aon/"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": []
+    },
+    {
       "id": "ua0-600-6xx",
-      "name": "Suspicious user agent",
+      "name": "Stealthy scanner",
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
@@ -6703,6 +7028,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "SQLmap",
         "confidence": "1"
       },
       "conditions": [
@@ -6729,6 +7055,7 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
+        "tool_name": "Skipfish",
         "confidence": "1"
       },
       "conditions": [
