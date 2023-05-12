@@ -207,7 +207,6 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func BenchmarkReaderStartSpan(b *testing.B) {
-
 	r := NewReader(kafka.ReaderConfig{
 		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
 		GroupID: testGroupID,
@@ -222,7 +221,6 @@ func BenchmarkReaderStartSpan(b *testing.B) {
 }
 
 func BenchmarkWriterStartSpan(b *testing.B) {
-
 	kw := &kafka.Writer{
 		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 		Topic:        testTopic,
