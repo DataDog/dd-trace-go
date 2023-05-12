@@ -118,7 +118,7 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) 
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
@@ -130,6 +130,11 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 		if h := applyActions(op); h != nil {
 			handler = h
+		}
+		if _, ok := op.Tags()[instrumentation.BlockedRequestTag]; ok {
+			for _, f := range onBlock {
+				f()
+			}
 		}
 		defer func() {
 			var status int

@@ -24,9 +24,12 @@ func useAppSec(c *gin.Context, span tracer.Span) {
 			params[p.Key] = p.Value
 		}
 	}
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Request = r
 		c.Next()
 	})
-	httpsec.WrapHandler(h, span, params).ServeHTTP(c.Writer, c.Request)
+	h := httpsec.WrapHandler(wrapped, span, params, func() {
+		c.Abort()
+	})
+	h.ServeHTTP(c.Writer, c.Request)
 }
