@@ -35,6 +35,25 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	return &internal.NoopSpan{}, false
 }
 
+// RootSpanFromContext returns the root span contained in the given context. A second return
+// value indicates if a span was found in the context. If no span is found, a no-op
+// span is returned.
+func RootSpanFromContext(ctx context.Context) (Span, bool) {
+	s, ok := SpanFromContext(ctx)
+	if ok {
+		return s, ok
+	}
+
+	type rooter interface {
+		Root() Span
+	}
+	if rs, ok := s.(rooter); ok {
+		return rs.Root(), true
+	}
+
+	return s, true
+}
+
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, it will only be used as the parent if there is no span found in `ctx`.

@@ -48,6 +48,19 @@ func TestSpanFromContext(t *testing.T) {
 	})
 }
 
+func TestRootSpanFromContext(t *testing.T) {
+	parent, ctx := StartSpanFromContext(context.Background(), "a")
+	child, ctx := StartSpanFromContext(ctx, "b")
+
+	got, ok := SpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, child, got)
+
+	got, ok = RootSpanFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, parent, got)
+}
+
 func TestStartSpanFromContext(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
