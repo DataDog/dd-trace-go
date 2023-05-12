@@ -9,17 +9,26 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sfn"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
@@ -31,11 +40,23 @@ func init() {
 }
 
 const (
-	tagAWSAgent     = "aws.agent"
-	tagAWSService   = "aws.service"
-	tagAWSOperation = "aws.operation"
-	tagAWSRegion    = "aws.region"
-	tagAWSRequestID = "aws.request_id"
+	// duplicate tags that will be phased out in favor of aws_service & region
+	tagAWSService = "aws.service"
+	tagAWSRegion  = "aws.region"
+)
+const (
+	tagAWSAgent         = "aws.agent"
+	tagService          = "aws_service" //Service aws-sdk request is heading to, ex. S3, SQS
+	tagAWSOperation     = "aws.operation"
+	tagRegion           = "region" //AWS Region used to pivot from AWS Integration metrics to traces
+	tagAWSRequestID     = "aws.request_id"
+	tagQueueName        = "queuename"
+	tagTopicName        = "topicname"
+	tagTableName        = "tablename"
+	tagStreamName       = "streamname"
+	tagBucketName       = "bucketname"
+	tagRuleName         = "rulename"
+	tagStateMachineName = "statemachinename"
 )
 
 type spanTimestampKey struct{}
@@ -84,11 +105,19 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tagRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tagAWSOperation, operation),
 			tracer.Tag(tagAWSService, serviceID),
+			tracer.Tag(tagService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		}
+		k, v, err := resourceNameFromParams(in, serviceID)
+		if err != nil {
+			log.Debug("Error: %v", err)
+		} else {
+			opts = append(opts, tracer.Tag(k, v))
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -101,6 +130,188 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		return out, metadata, err
 	}), middleware.After)
+}
+
+func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
+	var k, v string
+
+	switch awsService {
+	case "SQS":
+		k, v = tagQueueName, queueName(requestInput)
+	case "S3":
+		k, v = tagBucketName, bucketName(requestInput)
+	case "SNS":
+		k, v = tagTopicName, topicName(requestInput)
+	case "DynamoDB":
+		k, v = tagTableName, tableName(requestInput)
+	case "Kinesis":
+		k, v = tagStreamName, streamName(requestInput)
+	case "EventBridge":
+		k, v = tagRuleName, ruleName(requestInput)
+	case "SFN":
+		k, v = tagStateMachineName, stateMachineName(requestInput)
+	default:
+		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
+	}
+
+	return k, v, nil
+}
+
+func queueName(requestInput middleware.InitializeInput) string {
+	var queueURL string
+	switch params := requestInput.Parameters.(type) {
+	case *sqs.SendMessageInput:
+		queueURL = *params.QueueUrl
+	case *sqs.DeleteMessageInput:
+		queueURL = *params.QueueUrl
+	case *sqs.DeleteMessageBatchInput:
+		queueURL = *params.QueueUrl
+	case *sqs.ReceiveMessageInput:
+		queueURL = *params.QueueUrl
+	case *sqs.SendMessageBatchInput:
+		queueURL = *params.QueueUrl
+	}
+	parts := strings.Split(queueURL, "/")
+	return parts[len(parts)-1]
+}
+
+func bucketName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *s3.ListObjectsInput:
+		return *params.Bucket
+	case *s3.ListObjectsV2Input:
+		return *params.Bucket
+	case *s3.PutObjectInput:
+		return *params.Bucket
+	case *s3.GetObjectInput:
+		return *params.Bucket
+	case *s3.DeleteObjectInput:
+		return *params.Bucket
+	case *s3.DeleteObjectsInput:
+		return *params.Bucket
+	}
+	return ""
+}
+
+func topicName(requestInput middleware.InitializeInput) string {
+	var topicArn string
+	switch params := requestInput.Parameters.(type) {
+	case *sns.PublishInput:
+		topicArn = *params.TopicArn
+	case *sns.PublishBatchInput:
+		topicArn = *params.TopicArn
+	case *sns.GetTopicAttributesInput:
+		topicArn = *params.TopicArn
+	case *sns.ListSubscriptionsByTopicInput:
+		topicArn = *params.TopicArn
+	case *sns.RemovePermissionInput:
+		topicArn = *params.TopicArn
+	case *sns.SetTopicAttributesInput:
+		topicArn = *params.TopicArn
+	case *sns.SubscribeInput:
+		topicArn = *params.TopicArn
+	case *sns.CreateTopicInput:
+		return *params.Name
+	}
+	parts := strings.Split(topicArn, ":")
+	return parts[len(parts)-1]
+}
+
+func tableName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *dynamodb.GetItemInput:
+		return *params.TableName
+	case *dynamodb.PutItemInput:
+		return *params.TableName
+	case *dynamodb.QueryInput:
+		return *params.TableName
+	case *dynamodb.ScanInput:
+		return *params.TableName
+	case *dynamodb.UpdateItemInput:
+		return *params.TableName
+	}
+	return ""
+}
+
+func streamName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *kinesis.PutRecordInput:
+		return *params.StreamName
+	case *kinesis.PutRecordsInput:
+		return *params.StreamName
+	case *kinesis.AddTagsToStreamInput:
+		return *params.StreamName
+	case *kinesis.RemoveTagsFromStreamInput:
+		return *params.StreamName
+	case *kinesis.CreateStreamInput:
+		return *params.StreamName
+	case *kinesis.DeleteStreamInput:
+		return *params.StreamName
+	case *kinesis.DescribeStreamInput:
+		return *params.StreamName
+	case *kinesis.DescribeStreamSummaryInput:
+		return *params.StreamName
+	case *kinesis.GetRecordsInput:
+		if params.StreamARN != nil {
+			streamArnValue := *params.StreamARN
+			parts := strings.Split(streamArnValue, "/")
+			return parts[len(parts)-1]
+		}
+	}
+	return ""
+}
+
+func ruleName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *eventbridge.PutRuleInput:
+		return *params.Name
+	case *eventbridge.DescribeRuleInput:
+		return *params.Name
+	case *eventbridge.DeleteRuleInput:
+		return *params.Name
+	case *eventbridge.DisableRuleInput:
+		return *params.Name
+	case *eventbridge.EnableRuleInput:
+		return *params.Name
+	case *eventbridge.PutTargetsInput:
+		return *params.Rule
+	case *eventbridge.RemoveTargetsInput:
+		return *params.Rule
+	}
+	return ""
+}
+
+func stateMachineName(requestInput middleware.InitializeInput) string {
+	var stateMachineArn string
+
+	switch params := requestInput.Parameters.(type) {
+	case *sfn.CreateStateMachineInput:
+		return *params.Name
+	case *sfn.DescribeStateMachineInput:
+		stateMachineArn = *params.StateMachineArn
+	case *sfn.StartExecutionInput:
+		stateMachineArn = *params.StateMachineArn
+	case *sfn.StopExecutionInput:
+		if params.ExecutionArn != nil {
+			executionArnValue := *params.ExecutionArn
+			parts := strings.Split(executionArnValue, ":")
+			return parts[len(parts)-2]
+		}
+	case *sfn.DescribeExecutionInput:
+		if params.ExecutionArn != nil {
+			executionArnValue := *params.ExecutionArn
+			parts := strings.Split(executionArnValue, ":")
+			return parts[len(parts)-2]
+		}
+	case *sfn.ListExecutionsInput:
+		stateMachineArn = *params.StateMachineArn
+	case *sfn.UpdateStateMachineInput:
+		stateMachineArn = *params.StateMachineArn
+	case *sfn.DeleteStateMachineInput:
+		stateMachineArn = *params.StateMachineArn
+	}
+	parts := strings.Split(stateMachineArn, ":")
+	return parts[len(parts)-1]
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
