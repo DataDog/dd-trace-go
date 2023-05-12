@@ -10,10 +10,8 @@
 // follow semver due to the auto-generated nature of the package). For this reason, there might be unexpected changes
 // in some tag values like service.name and resource.name, depending on the google.golang.org/api that you are using in your
 // project. If this is not an acceptable behavior for your use-case, you can disable this feature using the
-// WithEndpointMetadataEnabled option.
+// WithEndpointMetadataDisabled option.
 package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
-
-//go:generate go run make_endpoints.go
 
 import (
 	"math"
@@ -59,7 +57,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
 		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
-			if cfg.endpointMetadataEnabled {
+			if !cfg.endpointMetadataDisabled {
 				setTagsWithEndpointMetadata(req, span)
 			} else {
 				setTagsWithoutEndpointMetadata(req, span)

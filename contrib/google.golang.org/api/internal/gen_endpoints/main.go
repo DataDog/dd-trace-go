@@ -212,7 +212,7 @@ func buildEndpointFromMethod(def *APIDefinition, method *APIMethod) (*Endpoint, 
 }
 
 func downloadGoogleAPISrc() (string, error) {
-	zipUrl := googleAPIClientURL()
+	zipURL := googleAPIClientURL()
 	dir := os.TempDir()
 
 	zipFile := path.Join(dir, "google-api-go-client.zip")
@@ -221,11 +221,11 @@ func downloadGoogleAPISrc() (string, error) {
 	err := os.Mkdir(dst, os.ModePerm)
 	assertNoError(err)
 
-	log.Printf("Downloading %s into %s...\n", zipUrl, dst)
+	log.Printf("Downloading %s into %s...\n", zipURL, dst)
 
 	out, err := os.Create(zipFile)
 	defer out.Close()
-	resp, err := http.Get(zipUrl)
+	resp, err := http.Get(zipURL)
 	assertNoError(err)
 	defer resp.Body.Close()
 	_, err = io.Copy(out, resp.Body)
