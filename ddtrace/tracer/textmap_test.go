@@ -162,8 +162,7 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.Contains(root.Meta, keyPropagationError)
-		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXXXXXXXXXXXXXX")
+		assert.NotContains(root.Meta, keyTraceID128)
 	})
 
 	t.Run("datadog", func(t *testing.T) {
@@ -179,7 +178,6 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.NotContains(root.Meta, keyPropagationError)
 		assert.NotContains(root.Meta, keyTraceID128)
 	})
 
@@ -195,8 +193,7 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.Contains(root.Meta, keyPropagationError)
-		assert.Equal(root.Meta[keyPropagationError], "inconsistent_tid 640cfd8d0000ffff")
+		assert.NotContains(root.Meta, keyTraceID128)
 	})
 
 	t.Run("tracecontext,malformed", func(t *testing.T) {
@@ -211,8 +208,7 @@ func TestMalformedTIDPropagationErrorTag(t *testing.T) {
 
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.Contains(root.Meta, keyPropagationError)
-		assert.Equal(root.Meta[keyPropagationError], "malformed_tid XXXX")
+		assert.NotContains(root.Meta, keyTraceID128)
 	})
 }
 

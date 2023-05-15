@@ -386,9 +386,6 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			ctx.origin = v
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
-			if len(ctx.trace.propagatingTag(keyTraceID128)) != 16 {
-				ctx.trace.unsetPropagatingTag(keyTraceID128)
-			}
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
@@ -399,11 +396,11 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	if err != nil {
 		return nil, err
 	}
-	if ctx.trace != nil && ctx.trace.propagatingTag(keyTraceID128) != "" {
-		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		if err := ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128)); err != nil &&
-			ctx.trace.tags[keyPropagationError] == "" {
-			ctx.trace.setTag(keyPropagationError, err.Error())
+	if ctx.trace != nil {
+		if len(ctx.trace.propagatingTag(keyTraceID128)) != 16 {
+			ctx.trace.unsetPropagatingTag(keyTraceID128)
+		} else if err := ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128)); err != nil {
+			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
@@ -954,12 +951,9 @@ func parseTracestate(ctx *spanContext, header string) {
 				}
 				setPropagatingTag(ctx, keyDecisionMaker, val)
 			} else if strings.HasPrefix(key, "t.") {
-				if key == "t.tid" {
-					if ok := validIDRgx.MatchString(val); !ok {
-						ctx.trace.setTag(keyPropagationError, fmt.Sprintf("malformed_tid %s", val))
-					} else if val != ctx.traceID.UpperHex() {
-						ctx.trace.setTag(keyPropagationError, fmt.Sprintf("inconsistent_tid %s", val))
-					}
+				// discard the tag if it is malformed or inconsistent with the traceparent traceID
+				if key == "t.tid" && (val != ctx.traceID.UpperHex() || (!validIDRgx.MatchString(val))) {
+					continue
 				}
 				keySuffix := key[len("t."):]
 				val = strings.ReplaceAll(val, "~", "=")
