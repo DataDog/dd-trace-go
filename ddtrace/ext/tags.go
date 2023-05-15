@@ -9,7 +9,14 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
+	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
+
+	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
+	NetworkDestinationName = "network.destination.name"
+
+	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
+	NetworkDestinationIP = "network.destination.ip"
 
 	// TargetPort sets the target host port.
 	TargetPort = "out.port"
@@ -106,4 +113,16 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+)
+
+// Messaging tags.
+const (
+  // MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
+	MessagingSystem = "messaging.system"
+  
+  // MessagingKafkaPartition defines the Kafka partition the trace is associated with.
+	MessagingKafkaPartition = "messaging.kafka.partition"
+
+	// KafkaBootstrapServers holds a comma separated list of bootstrap servers as defined in producer or consumer config.
+	KafkaBootstrapServers = "messaging.kafka.bootstrap.servers"
 )
