@@ -101,7 +101,7 @@ func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.A
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
 	if len(ipTags) > 0 {
 		instrumentation.SetStringTags(span, ipTags)
 	}
