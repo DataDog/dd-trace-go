@@ -12,11 +12,9 @@ package httpsec
 
 import (
 	"context"
-	"errors"
-
-	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"reflect"
@@ -127,9 +125,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
+		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		instrumentation.SetStringTags(span, ipTags)
 
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
+		SetRequestHeadersTags(span, args.Headers)
+
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
 
@@ -154,10 +155,11 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 				}
 			}
 			instrumentation.SetTags(span, op.Tags())
+			SetResponseHeadersTags(span, w.Header())
 			if len(events) == 0 {
 				return
 			}
-			SetSecurityEventTags(span, events, args.Headers, w.Header())
+			SetSecurityEventTags(span, events)
 		}()
 
 		handler.ServeHTTP(w, r)
