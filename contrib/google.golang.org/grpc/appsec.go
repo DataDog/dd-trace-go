@@ -10,6 +10,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
@@ -100,6 +101,7 @@ func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.A
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 	if len(ipTags) > 0 {
 		instrumentation.SetStringTags(span, ipTags)
 	}
