@@ -93,12 +93,13 @@ func TestSetSecurityEventTags(t *testing.T) {
 			metadataCase := metadataCase
 			t.Run(fmt.Sprintf("%s-%s", eventCase.name, metadataCase.name), func(t *testing.T) {
 				var span MockSpan
-				err := setSecurityEventTags(&span, eventCase.events, metadataCase.md)
+				err := setSecurityEventsTags(&span, eventCase.events)
 				if eventCase.expectedError {
 					require.Error(t, err)
 					return
 				}
 				require.NoError(t, err)
+				setGRPCMetadataTags(&span, metadataCase.md)
 
 				expectedTags := map[string]interface{}{
 					"_dd.appsec.json": eventCase.expectedTag,

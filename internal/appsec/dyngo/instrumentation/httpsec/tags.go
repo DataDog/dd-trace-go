@@ -75,7 +75,7 @@ func init() {
 // setSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
 func setSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) {
 	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
-		log.Error("appsec: unexpected error while creating the appsec event tags: %v", err)
+		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
