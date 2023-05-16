@@ -10,6 +10,7 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 
 import (
 	"net"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -55,6 +56,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startServerSpanFromContext(ctx context.Context, method string, cfg *interceptorConfig) (ddtrace.Span, context.Context) {
+	methodElements := strings.Split(strings.TrimPrefix(method, "/"), "/")
 	extraOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(method),
@@ -64,6 +66,7 @@ func startServerSpanFromContext(ctx context.Context, method string, cfg *interce
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+		tracer.Tag(ext.RPCService, methodElements[0]),
 		tracer.Tag(ext.GRPCFullMethod, method),
 	}
 	// copy opts in case the caller reuses the slice in parallel
@@ -91,6 +94,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			span ddtrace.Span
 			p    peer.Peer
 		)
+		methodElements := strings.Split(strings.TrimPrefix(method, "/"), "/")
 		spanopts := cfg.spanOpts
 		spanopts = append(spanopts,
 			tracer.ServiceName(cfg.serviceName),
@@ -99,6 +103,7 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 			tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+			tracer.Tag(ext.RPCService, methodElements[0]),
 			tracer.Tag(ext.GRPCFullMethod, method),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, cfg.spanName, spanopts...)
