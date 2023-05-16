@@ -127,11 +127,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		instrumentation.SetStringTags(span, ipTags)
-		setRequestHeadersTags(span, r.Header)
 
-		ctx, op := StartOperation(r.Context(), MakeHandlerOperationArgs(r, clientIP, pathParams))
+		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
+
+		// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
+		// extra headers have been added such as the Host header which is removed from the original Go request headers
+		// map
+		setRequestHeadersTags(span, args.Headers)
+
+		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
-
 		if h := applyActions(op); h != nil {
 			handler = h
 		}
