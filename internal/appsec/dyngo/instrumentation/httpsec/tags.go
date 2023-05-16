@@ -40,7 +40,7 @@ var (
 	}
 
 	// Configured list of IP-related headers leveraged to retrieve the public
-	//client IP address. Defined at init-time in the init() function below.
+	// client IP address. Defined at init-time in the init() function below.
 	monitoredClientIPHeadersCfg []string
 
 	// List of HTTP headers we collect and send.
@@ -72,24 +72,27 @@ func init() {
 	sort.Strings(collectedHTTPHeaders[:])
 }
 
-// SetSecurityEventTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventTags(span instrumentation.TagSetter, events []json.RawMessage) {
+// setSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
+func setSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) {
 	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec event tags: %v", err)
 	}
 }
 
-// SetRequestHeadersTags sets the AppSec-specific request headers span tags.
-func SetRequestHeadersTags(span instrumentation.TagSetter, headers map[string][]string) {
-	for h, v := range NormalizeHTTPHeaders(headers) {
-		span.SetTag("http.request.headers."+h, v)
-	}
+// setRequestHeadersTags sets the AppSec-specific request headers span tags.
+func setRequestHeadersTags(span instrumentation.TagSetter, headers map[string][]string) {
+	setHeadersTags(span, "http.request.headers.", headers)
 }
 
-// SetResponseHeadersTags sets the AppSec-specific response headers span tags.
-func SetResponseHeadersTags(span instrumentation.TagSetter, headers map[string][]string) {
+// setResponseHeadersTags sets the AppSec-specific response headers span tags.
+func setResponseHeadersTags(span instrumentation.TagSetter, headers map[string][]string) {
+	setHeadersTags(span, "http.response.headers.", headers)
+}
+
+// setResponseHeadersTags sets the AppSec-specific response headers span tags.
+func setHeadersTags(span instrumentation.TagSetter, tagPrefix string, headers map[string][]string) {
 	for h, v := range NormalizeHTTPHeaders(headers) {
-		span.SetTag("http.response.headers."+h, v)
+		span.SetTag(tagPrefix+h, v)
 	}
 }
 

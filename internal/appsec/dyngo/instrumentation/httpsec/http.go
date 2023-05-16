@@ -127,23 +127,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		instrumentation.SetStringTags(span, ipTags)
+		setRequestHeadersTags(span, r.Header)
 
-		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		SetRequestHeadersTags(span, args.Headers)
-
-		ctx, op := StartOperation(r.Context(), args)
+		ctx, op := StartOperation(r.Context(), MakeHandlerOperationArgs(r, clientIP, pathParams))
 		r = r.WithContext(ctx)
 
 		if h := applyActions(op); h != nil {
 			handler = h
 		}
 		defer func() {
-			var status int
-			if mw, ok := w.(interface{ Status() int }); ok {
-				status = mw.Status()
-			}
-
-			events := op.Finish(HandlerOperationRes{Status: status})
+			events := op.Finish(MakeHandlerOperationRes(w))
 			if h := applyActions(op); h != nil {
 				h.ServeHTTP(w, r)
 			}
@@ -154,22 +147,19 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 			}
+
 			instrumentation.SetTags(span, op.Tags())
-			SetResponseHeadersTags(span, w.Header())
-			if len(events) == 0 {
-				return
+			setResponseHeadersTags(span, w.Header())
+			if len(events) > 0 {
+				setSecurityEventsTags(span, events)
 			}
-			SetSecurityEventTags(span, events)
 		}()
 
 		handler.ServeHTTP(w, r)
-
 	})
 }
 
-// MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
-// http.Request along with the given current span. It returns an empty structure
-// when appsec is disabled.
+// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
 func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
@@ -191,6 +181,15 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 		PathParams: pathParams,
 		ClientIP:   clientIP,
 	}
+}
+
+// MakeHandlerOperationRes creates the HandlerOperationRes value.
+func MakeHandlerOperationRes(w http.ResponseWriter) HandlerOperationRes {
+	var status int
+	if mw, ok := w.(interface{ Status() int }); ok {
+		status = mw.Status()
+	}
+	return HandlerOperationRes{Status: status}
 }
 
 // Return the map of parsed cookies if any and following the specification of
