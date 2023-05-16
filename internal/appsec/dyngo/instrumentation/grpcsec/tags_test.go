@@ -99,7 +99,7 @@ func TestSetSecurityEventTags(t *testing.T) {
 					return
 				}
 				require.NoError(t, err)
-				setGRPCMetadataTags(&span, metadataCase.md)
+				SetRequestMetadataTags(&span, metadataCase.md)
 
 				expectedTags := map[string]interface{}{
 					"_dd.appsec.json": eventCase.expectedTag,
