@@ -6,12 +6,11 @@
 package grpc
 
 import (
-	"encoding/json"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
@@ -26,14 +25,14 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
+		grpcsec.SetRequestMetadataTags(span, md)
 		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			if len(events) > 0 {
+				grpcsec.SetSecurityEventsTags(span, events)
 			}
-			setAppSecEventsTags(ctx, span, events)
 		}()
 
 		if op.Error != nil {
@@ -52,6 +51,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
+		grpcsec.SetRequestMetadataTags(span, md)
 
 		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		stream = appsecServerStream{
@@ -62,10 +62,9 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			if len(events) > 0 {
+				grpcsec.SetSecurityEventsTags(span, events)
 			}
-			setAppSecEventsTags(stream.Context(), span, events)
 		}()
 
 		if op.Error != nil {
@@ -96,18 +95,13 @@ func (ss appsecServerStream) Context() context.Context {
 	return ss.ctx
 }
 
-// Set the AppSec tags when security events were found.
-func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	grpcsec.SetSecurityEventTags(span, events, md)
-}
-
 func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
 	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
 	if len(ipTags) > 0 {
 		instrumentation.SetStringTags(span, ipTags)
 	}
