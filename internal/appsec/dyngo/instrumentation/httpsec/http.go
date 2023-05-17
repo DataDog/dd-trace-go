@@ -12,11 +12,9 @@ package httpsec
 
 import (
 	"context"
-	"errors"
-
-	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"reflect"
@@ -127,22 +125,23 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
+		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		instrumentation.SetStringTags(span, ipTags)
 
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
+
+		// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
+		// extra headers have been added such as the Host header which is removed from the original Go request headers
+		// map
+		setRequestHeadersTags(span, args.Headers)
+
 		ctx, op := StartOperation(r.Context(), args)
 		r = r.WithContext(ctx)
-
 		if h := applyActions(op); h != nil {
 			handler = h
 		}
 		defer func() {
-			var status int
-			if mw, ok := w.(interface{ Status() int }); ok {
-				status = mw.Status()
-			}
-
-			events := op.Finish(HandlerOperationRes{Status: status})
+			events := op.Finish(MakeHandlerOperationRes(w))
 			if h := applyActions(op); h != nil {
 				h.ServeHTTP(w, r)
 			}
@@ -153,21 +152,19 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 			}
+
 			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			setResponseHeadersTags(span, w.Header())
+			if len(events) > 0 {
+				SetSecurityEventsTags(span, events)
 			}
-			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
 		handler.ServeHTTP(w, r)
-
 	})
 }
 
-// MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
-// http.Request along with the given current span. It returns an empty structure
-// when appsec is disabled.
+// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
 func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
@@ -189,6 +186,15 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 		PathParams: pathParams,
 		ClientIP:   clientIP,
 	}
+}
+
+// MakeHandlerOperationRes creates the HandlerOperationRes value.
+func MakeHandlerOperationRes(w http.ResponseWriter) HandlerOperationRes {
+	var status int
+	if mw, ok := w.(interface{ Status() int }); ok {
+		status = mw.Status()
+	}
+	return HandlerOperationRes{Status: status}
 }
 
 // Return the map of parsed cookies if any and following the specification of
