@@ -156,7 +156,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			instrumentation.SetTags(span, op.Tags())
 			setResponseHeadersTags(span, w.Header())
 			if len(events) > 0 {
-				setSecurityEventsTags(span, events)
+				SetSecurityEventsTags(span, events)
 			}
 		}()
 

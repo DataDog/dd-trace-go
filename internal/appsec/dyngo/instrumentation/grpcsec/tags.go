@@ -22,6 +22,9 @@ func SetSecurityEventsTags(span ddtrace.Span, events []json.RawMessage) {
 }
 
 func setSecurityEventsTags(span ddtrace.Span, events []json.RawMessage) error {
+	if events == nil {
+		return nil
+	}
 	return instrumentation.SetEventSpanTags(span, events)
 }
 

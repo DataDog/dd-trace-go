@@ -11,23 +11,25 @@ import (
 	"net"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-
 	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+
+	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
-func TestSetSecurityEventTags(t *testing.T) {
+func TestTags(t *testing.T) {
 	for _, eventCase := range []struct {
 		name          string
 		events        []json.RawMessage
 		expectedTag   string
 		expectedError bool
 	}{
+		{
+			name:   "no-event",
+			events: nil,
+		},
 		{
 			name:        "one-event",
 			events:      []json.RawMessage{json.RawMessage(`["one","two"]`)},
@@ -92,7 +94,7 @@ func TestSetSecurityEventTags(t *testing.T) {
 		} {
 			metadataCase := metadataCase
 			t.Run(fmt.Sprintf("%s-%s", eventCase.name, metadataCase.name), func(t *testing.T) {
-				var span MockSpan
+				var span testlib.MockSpan
 				err := setSecurityEventsTags(&span, eventCase.events)
 				if eventCase.expectedError {
 					require.Error(t, err)
@@ -101,19 +103,29 @@ func TestSetSecurityEventTags(t *testing.T) {
 				require.NoError(t, err)
 				SetRequestMetadataTags(&span, metadataCase.md)
 
-				expectedTags := map[string]interface{}{
-					"_dd.appsec.json": eventCase.expectedTag,
-					"manual.keep":     true,
-					"appsec.event":    true,
-					"_dd.origin":      "appsec",
+				var expectedTags map[string]interface{}
+				{
+				}
+				if eventCase.events != nil {
+					expectedTags = map[string]interface{}{
+						"_dd.appsec.json": eventCase.expectedTag,
+						"manual.keep":     true,
+						"appsec.event":    true,
+						"_dd.origin":      "appsec",
+					}
 				}
 
-				for k, v := range metadataCase.expectedTags {
-					expectedTags[k] = v
+				if l := len(metadataCase.expectedTags); l > 0 {
+					if expectedTags == nil {
+						expectedTags = make(map[string]interface{}, l)
+					}
+					for k, v := range metadataCase.expectedTags {
+						expectedTags[k] = v
+					}
 				}
 
-				require.Equal(t, expectedTags, span.tags)
-				require.False(t, span.finished)
+				require.Equal(t, expectedTags, span.Tags)
+				require.False(t, span.Finished)
 			})
 		}
 	}
@@ -164,42 +176,4 @@ func TestClientIP(t *testing.T) {
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})
 	}
-}
-
-type MockSpan struct {
-	tags     map[string]interface{}
-	finished bool
-}
-
-func (m *MockSpan) SetTag(key string, value interface{}) {
-	if m.tags == nil {
-		m.tags = make(map[string]interface{})
-	}
-	if key == ext.ManualKeep {
-		if value == samplernames.AppSec {
-			m.tags[ext.ManualKeep] = true
-		}
-	} else {
-		m.tags[key] = value
-	}
-}
-
-func (m *MockSpan) SetOperationName(_ string) {
-	panic("unused")
-}
-
-func (m *MockSpan) BaggageItem(_ string) string {
-	panic("unused")
-}
-
-func (m *MockSpan) SetBaggageItem(_, _ string) {
-	panic("unused")
-}
-
-func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
-	m.finished = true
-}
-
-func (m *MockSpan) Context() ddtrace.SpanContext {
-	panic("unused")
 }

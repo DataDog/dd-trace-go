@@ -6,10 +6,161 @@
 package httpsec
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
 )
+
+func TestTags(t *testing.T) {
+	for _, eventCase := range []struct {
+		name          string
+		events        []json.RawMessage
+		expectedTag   string
+		expectedError bool
+	}{
+		{
+			name:   "no-event",
+			events: nil,
+		},
+		{
+			name:        "one-event",
+			events:      []json.RawMessage{json.RawMessage(`["one","two"]`)},
+			expectedTag: `{"triggers":["one","two"]}`,
+		},
+		{
+			name:          "one-event-with-json-error",
+			events:        []json.RawMessage{json.RawMessage(`["one",two"]`)},
+			expectedError: true,
+		},
+		{
+			name:        "two-events",
+			events:      []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three","four"]`)},
+			expectedTag: `{"triggers":["one","two","three","four"]}`,
+		},
+		{
+			name:          "two-events-with-json-error",
+			events:        []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three,"four"]`)},
+			expectedError: true,
+		},
+		{
+			name:          "three-events-with-json-error",
+			events:        []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three","four"]`), json.RawMessage(`"five"`)},
+			expectedError: true,
+		},
+	} {
+		eventCase := eventCase
+		for _, reqHeadersCase := range []struct {
+			name         string
+			headers      map[string][]string
+			expectedTags map[string]string
+		}{
+			{
+				name: "zero-headers",
+			},
+			{
+				name: "xff-header",
+				headers: map[string][]string{
+					"X-Forwarded-For": {"1.2.3.4", "4.5.6.7"},
+					"my-header":       {"something"},
+				},
+				expectedTags: map[string]string{
+					"http.request.headers.x-forwarded-for": "1.2.3.4,4.5.6.7",
+				},
+			},
+			{
+				name: "xff-header",
+				headers: map[string][]string{
+					"X-Forwarded-For": {"1.2.3.4"},
+					"my-header":       {"something"},
+				},
+				expectedTags: map[string]string{
+					"http.request.headers.x-forwarded-for": "1.2.3.4",
+				},
+			},
+			{
+				name: "no-monitored-headers",
+				headers: map[string][]string{
+					"my-header": {"something"},
+				},
+			},
+		} {
+			reqHeadersCase := reqHeadersCase
+			for _, respHeadersCase := range []struct {
+				name         string
+				headers      map[string][]string
+				expectedTags map[string]string
+			}{
+				{
+					name: "zero-headers",
+				},
+				{
+					name: "ct-header",
+					headers: map[string][]string{
+						"Content-Type": {"application/json"},
+						"my-header":    {"something"},
+					},
+					expectedTags: map[string]string{
+						"http.response.headers.content-type": "application/json",
+					},
+				},
+				{
+					name: "no-monitored-headers",
+					headers: map[string][]string{
+						"my-header": {"something"},
+					},
+				},
+			} {
+				respHeadersCase := respHeadersCase
+				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, reqHeadersCase.name, respHeadersCase.name), func(t *testing.T) {
+					var span testlib.MockSpan
+					err := setSecurityEventsTags(&span, eventCase.events)
+					if eventCase.expectedError {
+						require.Error(t, err)
+						return
+					}
+					require.NoError(t, err)
+					setRequestHeadersTags(&span, reqHeadersCase.headers)
+					setResponseHeadersTags(&span, respHeadersCase.headers)
+
+					var expectedTags map[string]interface{}
+					if eventCase.events != nil {
+						expectedTags = map[string]interface{}{
+							"_dd.appsec.json": eventCase.expectedTag,
+							"manual.keep":     true,
+							"appsec.event":    true,
+							"_dd.origin":      "appsec",
+						}
+					}
+
+					if l := len(reqHeadersCase.expectedTags); l > 0 {
+						if expectedTags == nil {
+							expectedTags = make(map[string]interface{}, l)
+						}
+						for k, v := range reqHeadersCase.expectedTags {
+							expectedTags[k] = v
+						}
+					}
+
+					if l := len(respHeadersCase.expectedTags); l > 0 {
+						if expectedTags == nil {
+							expectedTags = make(map[string]interface{}, l)
+						}
+						for k, v := range respHeadersCase.expectedTags {
+							expectedTags[k] = v
+						}
+					}
+
+					require.Equal(t, expectedTags, span.Tags)
+					require.False(t, span.Finished)
+				})
+			}
+		}
+	}
+}
 
 func TestNormalizeHTTPHeaders(t *testing.T) {
 	for _, tc := range []struct {

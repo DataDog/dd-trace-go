@@ -72,11 +72,18 @@ func init() {
 	sort.Strings(collectedHTTPHeaders[:])
 }
 
-// setSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func setSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) {
+// SetSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
+func SetSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) {
 	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
+}
+
+func setSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) error {
+	if len(events) == 0 {
+		return nil
+	}
+	return instrumentation.SetEventSpanTags(span, events)
 }
 
 // setRequestHeadersTags sets the AppSec-specific request headers span tags.
