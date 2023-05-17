@@ -89,7 +89,7 @@ func setResponseHeadersTags(span instrumentation.TagSetter, headers map[string][
 	setHeadersTags(span, "http.response.headers.", headers)
 }
 
-// setResponseHeadersTags sets the AppSec-specific response headers span tags.
+// setHeadersTags sets the AppSec-specific headers span tags.
 func setHeadersTags(span instrumentation.TagSetter, tagPrefix string, headers map[string][]string) {
 	for h, v := range NormalizeHTTPHeaders(headers) {
 		span.SetTag(tagPrefix+h, v)
