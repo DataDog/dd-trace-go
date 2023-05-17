@@ -11,7 +11,13 @@ on:
     branches:
       - "**"
   merge_group:
-  workflow_dispatch: {}
+  workflow_dispatch:
+      inputs:
+          ref:
+              description: 'System Tests ref/tag/branch'
+              required: true
+              default: main
+              type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
@@ -84,6 +90,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v2

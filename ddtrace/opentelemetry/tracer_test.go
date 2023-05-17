@@ -201,7 +201,7 @@ func TestSpanTelemetry(t *testing.T) {
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
-func BenchmarkApiWithNoTags(b *testing.B) {
+func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	testData := struct {
 		env, srv, op string
 	}{"test_env", "test_srv", "op_name"}
@@ -229,7 +229,8 @@ func BenchmarkApiWithNoTags(b *testing.B) {
 		}
 	})
 }
-func BenchmarkApiWithCustomTags(b *testing.B) {
+
+func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	testData := struct {
 		env, srv, oldOp, newOp, tagKey, tagValue string
 	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
@@ -262,7 +263,7 @@ func BenchmarkApiWithCustomTags(b *testing.B) {
 	})
 }
 
-func BenchmarkOtelConcurrentTracing(b *testing.B) {
+func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tp := NewTracerProvider()
 	defer tp.Shutdown()
 	otel.SetTracerProvider(NewTracerProvider())
