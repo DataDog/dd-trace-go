@@ -104,8 +104,6 @@ func TestTags(t *testing.T) {
 				SetRequestMetadataTags(&span, metadataCase.md)
 
 				var expectedTags map[string]interface{}
-				{
-				}
 				if eventCase.events != nil {
 					expectedTags = map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
