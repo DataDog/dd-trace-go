@@ -19,6 +19,7 @@ package vault
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -68,6 +69,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 			s.SetTag(ext.SpanType, ext.SpanTypeHTTP)
 			s.SetTag(ext.Component, "hashicorp/vault")
 			s.SetTag(ext.SpanKind, ext.SpanKindClient)
+			s.SetTag(ext.NetworkDestinationName, strings.Split(r.Host, ":")[0])
 			if ns := r.Header.Get(consts.NamespaceHeaderName); ns != "" {
 				s.SetTag("vault.namespace", ns)
 			}
