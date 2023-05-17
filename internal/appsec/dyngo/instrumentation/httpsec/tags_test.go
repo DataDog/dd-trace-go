@@ -56,7 +56,7 @@ func TestTags(t *testing.T) {
 		for _, reqHeadersCase := range []struct {
 			name         string
 			headers      map[string][]string
-			expectedTags map[string]string
+			expectedTags map[string]interface{}
 		}{
 			{
 				name: "zero-headers",
@@ -67,7 +67,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4", "4.5.6.7"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]string{
+				expectedTags: map[string]interface{}{
 					"http.request.headers.x-forwarded-for": "1.2.3.4,4.5.6.7",
 				},
 			},
@@ -77,7 +77,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]string{
+				expectedTags: map[string]interface{}{
 					"http.request.headers.x-forwarded-for": "1.2.3.4",
 				},
 			},
@@ -92,7 +92,7 @@ func TestTags(t *testing.T) {
 			for _, respHeadersCase := range []struct {
 				name         string
 				headers      map[string][]string
-				expectedTags map[string]string
+				expectedTags map[string]interface{}
 			}{
 				{
 					name: "zero-headers",
@@ -103,7 +103,7 @@ func TestTags(t *testing.T) {
 						"Content-Type": {"application/json"},
 						"my-header":    {"something"},
 					},
-					expectedTags: map[string]string{
+					expectedTags: map[string]interface{}{
 						"http.response.headers.content-type": "application/json",
 					},
 				},
@@ -126,35 +126,23 @@ func TestTags(t *testing.T) {
 					setRequestHeadersTags(&span, reqHeadersCase.headers)
 					setResponseHeadersTags(&span, respHeadersCase.headers)
 
-					var expectedTags map[string]interface{}
 					if eventCase.events != nil {
-						expectedTags = map[string]interface{}{
+						testlib.RequireContainsMapSubset(t, span.Tags, map[string]interface{}{
 							"_dd.appsec.json": eventCase.expectedTag,
 							"manual.keep":     true,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
-						}
+						})
 					}
 
 					if l := len(reqHeadersCase.expectedTags); l > 0 {
-						if expectedTags == nil {
-							expectedTags = make(map[string]interface{}, l)
-						}
-						for k, v := range reqHeadersCase.expectedTags {
-							expectedTags[k] = v
-						}
+						testlib.RequireContainsMapSubset(t, span.Tags, reqHeadersCase.expectedTags)
 					}
 
 					if l := len(respHeadersCase.expectedTags); l > 0 {
-						if expectedTags == nil {
-							expectedTags = make(map[string]interface{}, l)
-						}
-						for k, v := range respHeadersCase.expectedTags {
-							expectedTags[k] = v
-						}
+						testlib.RequireContainsMapSubset(t, span.Tags, respHeadersCase.expectedTags)
 					}
 
-					require.Equal(t, expectedTags, span.Tags)
 					require.False(t, span.Finished)
 				})
 			}

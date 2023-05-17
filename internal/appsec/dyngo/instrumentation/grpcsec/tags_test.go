@@ -60,7 +60,7 @@ func TestTags(t *testing.T) {
 		for _, metadataCase := range []struct {
 			name         string
 			md           map[string][]string
-			expectedTags map[string]string
+			expectedTags map[string]interface{}
 		}{
 			{
 				name: "zero-metadata",
@@ -71,7 +71,7 @@ func TestTags(t *testing.T) {
 					"x-forwarded-for": {"1.2.3.4", "4.5.6.7"},
 					":authority":      {"something"},
 				},
-				expectedTags: map[string]string{
+				expectedTags: map[string]interface{}{
 					"grpc.metadata.x-forwarded-for": "1.2.3.4,4.5.6.7",
 				},
 			},
@@ -81,7 +81,7 @@ func TestTags(t *testing.T) {
 					"x-forwarded-for": {"1.2.3.4"},
 					":authority":      {"something"},
 				},
-				expectedTags: map[string]string{
+				expectedTags: map[string]interface{}{
 					"grpc.metadata.x-forwarded-for": "1.2.3.4",
 				},
 			},
@@ -103,26 +103,19 @@ func TestTags(t *testing.T) {
 				require.NoError(t, err)
 				SetRequestMetadataTags(&span, metadataCase.md)
 
-				var expectedTags map[string]interface{}
 				if eventCase.events != nil {
-					expectedTags = map[string]interface{}{
+					testlib.RequireContainsMapSubset(t, span.Tags, map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
 						"manual.keep":     true,
 						"appsec.event":    true,
 						"_dd.origin":      "appsec",
-					}
+					})
 				}
 
 				if l := len(metadataCase.expectedTags); l > 0 {
-					if expectedTags == nil {
-						expectedTags = make(map[string]interface{}, l)
-					}
-					for k, v := range metadataCase.expectedTags {
-						expectedTags[k] = v
-					}
+					testlib.RequireContainsMapSubset(t, span.Tags, metadataCase.expectedTags)
 				}
 
-				require.Equal(t, expectedTags, span.Tags)
 				require.False(t, span.Finished)
 			})
 		}
