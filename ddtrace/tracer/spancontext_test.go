@@ -273,6 +273,18 @@ func TestSpanPeerService(t *testing.T) {
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
+			name: "PeerServiceSetSpanKindInternal",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "internal"),
+				Tag("peer.service", "peer-service-asdkjaskjdajsk"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "peer-service-asdkjaskjdajsk",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
 			name: "NotAnOutboundRequestSpan",
 			spanOpts: []StartSpanOption{
 				Tag("span.kind", "internal"),

@@ -424,56 +424,53 @@ func (t *trace) finishedOne(s *span) {
 	})
 }
 
+// shouldSetDefaultPeerService checks whether peer.service default value should be set for the given span or not.
+func (t *trace) shouldSetDefaultPeerService(s *span, cfg *config) bool {
+	spanKind := s.Meta[ext.SpanKind]
+	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+	return isOutboundRequest && cfg.peerServiceDefaultsEnabled
+}
+
 // setPeerService sets the peer.service tag to the most appropriate value, depending on the nature of the span.
 func (t *trace) setPeerService(s *span, cfg *config) {
-	contains := func(tag string) bool {
+	has := func(tag string) bool {
 		_, ok := s.Meta[tag]
 		return ok
 	}
-	spanKind := s.Meta[ext.SpanKind]
-	containsPeerService := contains(ext.PeerService)
-
-	// peer.service represents the service name of the remote service and is calculated only for spans
-	// that represent an outbound request.
-	// We also check here if peer.service is already present in the span, as in that case we still want to track
-	// the source and do the remapping (if applies).
-	if !(spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer) && !containsPeerService {
-		return
-	}
-	if containsPeerService {
+	if has(ext.PeerService) {
 		// in this case, peer.service was already present on the span, so we just leave the value unmodified and track
 		// the source (in this case it was the tag peer.service itself).
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	} else if cfg.peerServiceDefaultsEnabled {
+	} else if t.shouldSetDefaultPeerService(s, cfg) {
 		switch {
-		case contains(ext.DBSystem):
-			setPeerServiceFromPrecursors(s,
+		case has(ext.DBSystem):
+			setPeerServiceFromSource(s,
 				ext.CassandraContactPoints,
 				ext.DBInstance,
 				ext.DBName,
 				ext.PeerHostname,
 				ext.TargetHost,
 			)
-		case contains(ext.MessagingSystem):
-			setPeerServiceFromPrecursors(s,
+		case has(ext.MessagingSystem):
+			setPeerServiceFromSource(s,
 				ext.KafkaBootstrapServers,
 				ext.PeerHostname,
 				ext.TargetHost,
 			)
-		case contains(ext.RPCSystem):
-			setPeerServiceFromPrecursors(s,
+		case has(ext.RPCSystem):
+			setPeerServiceFromSource(s,
 				ext.RPCService,
 				ext.PeerHostname,
 				ext.TargetHost,
 			)
 		default:
-			setPeerServiceFromPrecursors(s,
+			setPeerServiceFromSource(s,
 				ext.PeerHostname,
 				ext.TargetHost,
 			)
 		}
 	}
-	// remap peer.service value if configured by the user.
+	// overwrite peer.service value if configured by the user.
 	if from, ok := s.Meta[ext.PeerService]; ok {
 		if to, ok := cfg.peerServiceMappings[from]; ok {
 			s.setMeta(keyPeerServiceRemappedFrom, from)
@@ -482,17 +479,17 @@ func (t *trace) setPeerService(s *span, cfg *config) {
 	}
 }
 
-// setPeerServiceFromPrecursors looks for the given precursor tags in the span and sets the value of peer.service
+// setPeerServiceFromSource looks for the given source tags in the span and sets the value of peer.service
 // to the first one that is found in the span. It also sets the value of _dd.peer.service.source to the name of the
-// used precursor tag.
-func setPeerServiceFromPrecursors(s *span, precursorTags ...string) {
-	for _, t := range precursorTags {
+// used source tag.
+func setPeerServiceFromSource(s *span, sourceTags ...string) {
+	for _, t := range sourceTags {
 		if val, ok := s.Meta[t]; ok {
 			s.setMeta(ext.PeerService, val)
 			s.setMeta(keyPeerServiceSource, t)
 			return
 		}
 	}
-	log.Warn("No valid precursor tag was found for span: %s", s.Name)
+	log.Warn("No valid source tag was found for span: %s", s.Name)
 	return
 }
