@@ -438,7 +438,6 @@ func (t *trace) setPeerService(s *span, cfg *config) {
 		}
 		source := setPeerServiceFromSource(s)
 		if source == "" {
-			// no valid source could be found, and peer.service was not set
 			log.Warn("No source tag value could be found for span %q, peer.service not set", s.Name)
 			return
 		}
