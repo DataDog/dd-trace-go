@@ -237,13 +237,13 @@ require (
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/iam v0.13.0 // indirect
 	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
-	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
-	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.18.9
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.17.10
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.17.9
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
+	go.opentelemetry.io/otel/metric v0.37.0 // indirect
 )
 
 require (
