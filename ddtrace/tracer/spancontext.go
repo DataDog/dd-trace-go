@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -424,72 +425,73 @@ func (t *trace) finishedOne(s *span) {
 	})
 }
 
-// shouldSetDefaultPeerService checks whether peer.service default value should be set for the given span or not.
-func (t *trace) shouldSetDefaultPeerService(s *span, cfg *config) bool {
-	spanKind := s.Meta[ext.SpanKind]
-	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
-	return isOutboundRequest && cfg.peerServiceDefaultsEnabled
-}
-
-// setPeerService sets the peer.service tag to the most appropriate value, depending on the nature of the span.
+// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// tags as applicable for the given span.
 func (t *trace) setPeerService(s *span, cfg *config) {
-	has := func(tag string) bool {
-		_, ok := s.Meta[tag]
-		return ok
-	}
-	if has(ext.PeerService) {
-		// in this case, peer.service was already present on the span, so we just leave the value unmodified and track
-		// the source (in this case it was the tag peer.service itself).
+	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+		// Set the source (in this case it was the tag peer.service itself)
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	} else if t.shouldSetDefaultPeerService(s, cfg) {
-		switch {
-		case has(ext.DBSystem):
-			setPeerServiceFromSource(s,
-				ext.CassandraContactPoints,
-				ext.DBInstance,
-				ext.DBName,
-				ext.PeerHostname,
-				ext.TargetHost,
-			)
-		case has(ext.MessagingSystem):
-			setPeerServiceFromSource(s,
-				ext.KafkaBootstrapServers,
-				ext.PeerHostname,
-				ext.TargetHost,
-			)
-		case has(ext.RPCSystem):
-			setPeerServiceFromSource(s,
-				ext.RPCService,
-				ext.PeerHostname,
-				ext.TargetHost,
-			)
-		default:
-			setPeerServiceFromSource(s,
-				ext.PeerHostname,
-				ext.TargetHost,
-			)
+	} else { // no peer.service currently set
+		spanKind := s.Meta[ext.SpanKind]
+		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		if !shouldSetDefaultPeerService {
+			return
+		}
+		if err := setPeerServiceFromSource(s); err != nil {
+			log.Warn("Could not set peer service from source: %s", err)
+			return
 		}
 	}
-	// overwrite peer.service value if configured by the user.
-	if from, ok := s.Meta[ext.PeerService]; ok {
-		if to, ok := cfg.peerServiceMappings[from]; ok {
-			s.setMeta(keyPeerServiceRemappedFrom, from)
-			s.setMeta(ext.PeerService, to)
-		}
+	// Overwrite existing peer.service value if remapped by the user
+	ps := s.Meta[ext.PeerService]
+	if to, ok := cfg.peerServiceMappings[ps]; ok {
+		s.setMeta(keyPeerServiceRemappedFrom, ps)
+		s.setMeta(ext.PeerService, to)
 	}
 }
 
 // setPeerServiceFromSource looks for the given source tags in the span and sets the value of peer.service
 // to the first one that is found in the span. It also sets the value of _dd.peer.service.source to the name of the
 // used source tag.
-func setPeerServiceFromSource(s *span, sourceTags ...string) {
-	for _, t := range sourceTags {
-		if val, ok := s.Meta[t]; ok {
-			s.setMeta(ext.PeerService, val)
-			s.setMeta(keyPeerServiceSource, t)
-			return
+func setPeerServiceFromSource(s *span) error {
+	has := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	var sources []string
+	switch {
+	case has(ext.DBSystem):
+		sources = []string{
+			ext.CassandraContactPoints,
+			ext.DBInstance,
+			ext.DBName,
+			ext.PeerHostname,
+			ext.TargetHost}
+	case has(ext.MessagingSystem):
+		sources = []string{
+			ext.KafkaBootstrapServers,
+			ext.PeerHostname,
+			ext.TargetHost,
+		}
+	case has(ext.RPCSystem):
+		sources = []string{
+			ext.RPCService,
+			ext.PeerHostname,
+			ext.TargetHost,
+		}
+	default:
+		sources = []string{
+			ext.PeerHostname,
+			ext.TargetHost,
 		}
 	}
-	log.Warn("No valid source tag was found for span: %s", s.Name)
-	return
+	for _, source := range sources {
+		if val, ok := s.Meta[source]; ok {
+			s.setMeta(ext.PeerService, val)
+			s.setMeta(keyPeerServiceSource, source)
+			return nil
+		}
+	}
+	return fmt.Errorf("no source tag value was found for sources %q in span %q", sources, s.Name)
 }
