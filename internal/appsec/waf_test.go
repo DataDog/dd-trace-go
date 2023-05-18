@@ -80,6 +80,43 @@ func TestCustomRules(t *testing.T) {
 	}
 }
 
+func TestUserRules(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Run("custom-001", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", srv.URL, nil)
+		require.NoError(t, err)
+
+		_, err = srv.Client().Do(req)
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		event := spans[0].Tag("_dd.appsec.json")
+		require.Contains(t, event, "custom-001")
+	})
+
+}
+
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
