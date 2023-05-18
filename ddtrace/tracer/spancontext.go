@@ -8,7 +8,6 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -429,7 +428,6 @@ func (t *trace) finishedOne(s *span) {
 // tags as applicable for the given span.
 func (t *trace) setPeerService(s *span, cfg *config) {
 	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
-		// Set the source (in this case it was the tag peer.service itself)
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
 		spanKind := s.Meta[ext.SpanKind]
@@ -438,10 +436,13 @@ func (t *trace) setPeerService(s *span, cfg *config) {
 		if !shouldSetDefaultPeerService {
 			return
 		}
-		if err := setPeerServiceFromSource(s); err != nil {
-			log.Warn("Could not set peer service from source: %s", err)
+		source := setPeerServiceFromSource(s)
+		if source == "" {
+			// no valid source could be found, and peer.service was not set
+			log.Warn("No source tag value could be found for span %q, peer.service not set", s.Name)
 			return
 		}
+		s.setMeta(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.Meta[ext.PeerService]
@@ -451,10 +452,10 @@ func (t *trace) setPeerService(s *span, cfg *config) {
 	}
 }
 
-// setPeerServiceFromSource looks for the given source tags in the span and sets the value of peer.service
-// to the first one that is found in the span. It also sets the value of _dd.peer.service.source to the name of the
-// used source tag.
-func setPeerServiceFromSource(s *span) error {
+// setPeerServiceFromSource sets peer.service from the sources determined
+// by the tags on the span. It returns the source tag name that it used for
+// the peer.service value, or the empty string if no valid source tag was available.
+func setPeerServiceFromSource(s *span) string {
 	has := func(tag string) bool {
 		_, ok := s.Meta[tag]
 		return ok
@@ -489,9 +490,8 @@ func setPeerServiceFromSource(s *span) error {
 	for _, source := range sources {
 		if val, ok := s.Meta[source]; ok {
 			s.setMeta(ext.PeerService, val)
-			s.setMeta(keyPeerServiceSource, source)
-			return nil
+			return source
 		}
 	}
-	return fmt.Errorf("no source tag value was found for sources %q in span %q", sources, s.Name)
+	return ""
 }
