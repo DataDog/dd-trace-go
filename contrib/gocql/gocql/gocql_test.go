@@ -100,7 +100,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(span.Tag(ext.DBSystem), "cassandra")
-	assert.NotContains(span.Tags(), ext.CassandraContactPoints)
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 
 	if iter.Host() != nil {
 		assert.Equal(span.Tag(ext.TargetPort), "9042")
@@ -147,7 +147,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
-	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
@@ -329,7 +329,7 @@ func TestIterScanner(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
-	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 }
 
 func TestBatch(t *testing.T) {
@@ -375,45 +375,52 @@ func TestBatch(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
-	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 }
 
-func TestCassandraContactPoints(t *testing.T) {
+func TestWrappedClusterConfig(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
 
 	cluster := NewCluster([]string{cassandraHost, "127.0.0.1:9043"})
 	updateTestClusterConfig(cluster.ClusterConfig)
 
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
-	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	err = q.Iter().Close()
-	require.NoError(t, err)
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	span := spans[0]
+	t.Run("query", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	assert.Equal(span.OperationName(), "cassandra.query")
-	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+		q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		err = q.Iter().Close()
+		require.NoError(t, err)
 
-	mt.Reset()
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		span := spans[0]
 
-	tb := session.NewBatch(gocql.UnloggedBatch)
-	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
-	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
-	tb.Query(stmt, "Lucas", 60, "Another person")
-	err = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session.Session)
-	require.NoError(t, err)
+		assert.Equal(span.OperationName(), "cassandra.query")
+		assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+	})
+	t.Run("batch", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
-	spans = mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	span = spans[0]
+		tb := session.NewBatch(gocql.UnloggedBatch)
+		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+		tb.Query(stmt, "Lucas", 60, "Another person")
 
-	assert.Equal(span.OperationName(), "cassandra.batch")
-	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+		err = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session.Session)
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		s0 := spans[0]
+
+		assert.Equal(s0.OperationName(), "cassandra.batch")
+		assert.Equal(s0.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+	})
 }
 
 func TestWithWrapOptions(t *testing.T) {

@@ -10,8 +10,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -31,15 +33,13 @@ func init() {
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
 type ClusterConfig struct {
 	*gocql.ClusterConfig
-	hosts []string
-	opts  []WrapOption
+	opts []WrapOption
 }
 
 // NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
 func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 	return &ClusterConfig{
 		ClusterConfig: gocql.NewCluster(hosts...),
-		hosts:         hosts,
 		opts:          opts,
 	}
 }
@@ -47,8 +47,8 @@ func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 // Session embeds gocql.Session and keeps information relevant to tracing.
 type Session struct {
 	*gocql.Session
-	hosts []string
-	opts  []WrapOption
+	clusterCfg *gocql.ClusterConfig
+	opts       []WrapOption
 }
 
 // CreateSession calls the underlying gocql.ClusterConfig's CreateSession method and returns a new Session augmented with tracing.
@@ -58,9 +58,9 @@ func (c *ClusterConfig) CreateSession() (*Session, error) {
 		return nil, err
 	}
 	return &Session{
-		Session: s,
-		hosts:   c.hosts,
-		opts:    c.opts,
+		Session:    s,
+		clusterCfg: c.ClusterConfig,
+		opts:       c.opts,
 	}, nil
 }
 
@@ -74,7 +74,7 @@ type Query struct {
 // Query calls the underlying gocql.Session's Query method and returns a new Query augmented with tracing.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	q := s.Session.Query(stmt, values...)
-	return wrapQuery(q, s.hosts, s.opts...)
+	return wrapQuery(q, s.clusterCfg, s.opts...)
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
@@ -87,7 +87,7 @@ type Batch struct {
 // NewBatch calls the underlying gocql.Session's NewBatch method and returns a new Batch augmented with tracing.
 func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 	b := s.Session.NewBatch(typ)
-	return wrapBatch(b, s.hosts, s.opts...)
+	return wrapBatch(b, s.clusterCfg, s.opts...)
 }
 
 // params contains fields and metadata useful for command tracing
@@ -113,7 +113,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 	return wrapQuery(q, nil, opts...)
 }
 
-func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
+func wrapQuery(q *gocql.Query, clusterCfg *gocql.ClusterConfig, opts ...WrapOption) *Query {
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
@@ -124,6 +124,16 @@ func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 		}
 	}
 	p := &params{config: cfg}
+
+	var hosts []string
+	if clusterCfg != nil {
+		hosts = clusterCfg.Hosts
+	} else {
+		c, ok := clusterConfigFromQuery(q)
+		if ok && c != nil {
+			hosts = c.Hosts
+		}
+	}
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
@@ -294,12 +304,22 @@ func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 	return wrapBatch(b, nil, opts...)
 }
 
-func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
+func wrapBatch(b *gocql.Batch, clusterCfg *gocql.ClusterConfig, opts ...WrapOption) *Batch {
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	p := &params{config: cfg}
+
+	var hosts []string
+	if clusterCfg != nil {
+		hosts = clusterCfg.Hosts
+	} else {
+		c, ok := clusterConfigFromQuery(b)
+		if ok && c != nil {
+			hosts = c.Hosts
+		}
+	}
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
@@ -372,4 +392,30 @@ func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
 	} else {
 		span.Finish(tracer.WithError(err))
 	}
+}
+
+type query interface {
+	*gocql.Query | *gocql.Batch
+}
+
+func clusterConfigFromQuery[T query](q T) (*gocql.ClusterConfig, bool) {
+	defer func() { recover() }()
+	sv := reflect.ValueOf(q).Elem().FieldByName("session")
+	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
+	s, ok := sv.Interface().(*gocql.Session)
+	if !ok {
+		return nil, false
+	}
+	return clusterConfigFromSession(s)
+}
+
+func clusterConfigFromSession(s *gocql.Session) (*gocql.ClusterConfig, bool) {
+	defer func() { recover() }()
+	cv := reflect.ValueOf(s).Elem().FieldByName("cfg")
+	cv = reflect.NewAt(cv.Type(), unsafe.Pointer(cv.UnsafeAddr())).Elem()
+	cfg, ok := cv.Interface().(gocql.ClusterConfig)
+	if ok {
+		return &cfg, true
+	}
+	return nil, false
 }
