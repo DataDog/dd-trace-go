@@ -20,7 +20,7 @@ git clone --branch "$CANDIDATE_BRANCH" https://github.com/DataDog/dd-trace-go "$
   git checkout $CANDIDATE_COMMIT_SHA
 
 # Run benchmarks for candidate release
-cd "$CANDIDATE_SRC/ddtrace/tracer/"
+cd "$CANDIDATE_SRC/ddtrace/"
 bench_loop_x10 "${ARTIFACTS_DIR}/pr_bench.txt"
 
 BASELINE_BRANCH=$(github-find-merge-into-branch --for-repo="$CI_PROJECT_NAME" --for-pr="$CANDIDATE_BRANCH" || :)
@@ -35,6 +35,6 @@ if [ ! -z "$BASELINE_BRANCH" ]; then
     git checkout $BASELINE_COMMIT_SHA
 
   # Run benchmarks for baseline release
-  cd "$BASELINE_SRC/ddtrace/tracer/"
+  cd "$BASELINE_SRC/ddtrace/"
   bench_loop_x10 "${ARTIFACTS_DIR}/main_bench.txt"
 fi

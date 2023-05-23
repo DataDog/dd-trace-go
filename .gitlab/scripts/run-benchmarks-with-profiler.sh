@@ -9,7 +9,7 @@ PROFILER_RUNS_START_DATE=$(date -u --iso-8601=minutes | sed 's/\+.*/Z/')
 
 # Run candidate and baseline the same way like in run-benchmarks.sh, but with profiler enabled
 mkdir -p "${ARTIFACTS_DIR}/candidate-profile"
-cd "$CANDIDATE_SRC/ddtrace/tracer/"
+cd "$CANDIDATE_SRC/ddtrace/"
 CANDIDATE_START_DATE=$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')
 go test -run=XXX -bench $BENCHMARK_TARGETS \
   -cpuprofile "${ARTIFACTS_DIR}/candidate-profile/cpu.pprof" \
@@ -18,7 +18,7 @@ go test -run=XXX -bench $BENCHMARK_TARGETS \
 CANDIDATE_END_DATE=$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')
 
 mkdir -p "${ARTIFACTS_DIR}/baseline-profile"
-cd "$BASELINE_SRC/ddtrace/tracer/"
+cd "$BASELINE_SRC/ddtrace/"
 BASELINE_START_DATE=$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')
 go test -run=XXX -bench $BENCHMARK_TARGETS \
   -cpuprofile "${ARTIFACTS_DIR}/baseline-profile/cpu.pprof" \
