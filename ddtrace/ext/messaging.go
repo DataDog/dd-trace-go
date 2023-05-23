@@ -10,6 +10,7 @@ const (
 	MessagingSystem = "messaging.system"
 )
 
+// Available values for messaging.system.
 const (
 	MessagingSystemGCPPubsub = "googlepubsub"
 	MessagingSystemKafka     = "kafka"

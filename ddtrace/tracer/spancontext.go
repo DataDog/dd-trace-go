@@ -415,7 +415,7 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	t.setPeerService(s, tr.config)
+	setPeerService(s, tr.config)
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
@@ -426,7 +426,7 @@ func (t *trace) finishedOne(s *span) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func (t *trace) setPeerService(s *span, cfg *config) {
+func setPeerService(s *span, cfg *config) {
 	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
