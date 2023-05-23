@@ -317,6 +317,9 @@ type batch struct {
 	host           string
 	profiles       []*profile
 	endpointCounts map[string]uint64
+	// extraTags are tags which might vary depending on which profile types
+	// actually run in a given profiling cycle
+	extraTags []string
 }
 
 func (b *batch) addProfile(p *profile) {
