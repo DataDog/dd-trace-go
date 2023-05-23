@@ -211,6 +211,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1:9092", s0.Tag(ext.KafkaBootstrapServers))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -222,6 +223,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1:9092", s1.Tag(ext.KafkaBootstrapServers))
 		})
 	}
 }
