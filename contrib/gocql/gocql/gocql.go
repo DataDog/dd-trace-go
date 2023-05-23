@@ -10,8 +10,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -56,9 +58,10 @@ type Batch struct {
 
 // params containes fields and metadata useful for command tracing
 type params struct {
-	config    *queryConfig
-	keyspace  string
-	paginated bool
+	config               *queryConfig
+	keyspace             string
+	paginated            bool
+	clusterContactPoints string
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
@@ -81,8 +84,13 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 			cfg.resourceName = parts[1]
 		}
 	}
+	p := &params{config: cfg}
+	cp, ok := getClusterContactPoints(q)
+	if ok {
+		p.clusterContactPoints = strings.Join(cp, ",")
+	}
 	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
-	tq := &Query{q, &params{config: cfg}, q.Context()}
+	tq := &Query{Query: q, params: p, ctx: q.Context()}
 	return tq
 }
 
@@ -115,6 +123,9 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+	}
+	if tq.clusterContactPoints != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tq.clusterContactPoints))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
 	return span
@@ -225,8 +236,13 @@ func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	p := &params{config: cfg}
+	cp, ok := getClusterContactPoints(b)
+	if ok {
+		p.clusterContactPoints = strings.Join(cp, ",")
+	}
 	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
-	tb := &Batch{b, &params{config: cfg}, b.Context()}
+	tb := &Batch{Batch: b, params: p, ctx: b.Context()}
 	return tb
 }
 
@@ -270,6 +286,9 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
+	if tb.clusterContactPoints != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tb.clusterContactPoints))
+	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.batchSpanName, opts...)
 	return span
 }
@@ -283,4 +302,39 @@ func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
 	} else {
 		span.Finish(tracer.WithError(err))
 	}
+}
+
+type query interface {
+	*gocql.Query | *gocql.Batch
+}
+
+func getClusterContactPoints[T query](q T) ([]string, bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// ignore panics as we are working with reflection
+		}
+	}()
+	sv := reflect.ValueOf(q).Elem().FieldByName("session")
+	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
+	s, ok := sv.Interface().(*gocql.Session)
+	if !ok {
+		return nil, false
+	}
+	cfg, ok := getClusterConfig(s)
+	if !ok {
+		return nil, false
+	}
+	return cfg.Hosts, true
+}
+
+func getClusterConfig(s *gocql.Session) (gocql.ClusterConfig, bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// ignore panics as we are working with reflection
+		}
+	}()
+	cv := reflect.ValueOf(s).Elem().FieldByName("cfg")
+	cv = reflect.NewAt(cv.Type(), unsafe.Pointer(cv.UnsafeAddr())).Elem()
+	cfg, ok := cv.Interface().(gocql.ClusterConfig)
+	return cfg, ok
 }
