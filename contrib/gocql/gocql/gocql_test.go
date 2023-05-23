@@ -90,6 +90,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(span.Tag(ext.DBSystem), "cassandra")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 
 	if iter.Host() != nil {
 		assert.Equal(span.Tag(ext.TargetPort), "9042")
@@ -136,6 +137,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
@@ -317,6 +319,7 @@ func TestIterScanner(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 }
 
 func TestBatch(t *testing.T) {
@@ -362,6 +365,49 @@ func TestBatch(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
+}
+
+func TestCassandraContactPoints(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cluster := gocql.NewCluster(cassandraHost, "127.0.0.1:9043")
+	cluster.DisableInitialHostLookup = true
+	cluster.ConnectTimeout = 2 * time.Second
+	cluster.Timeout = 2 * time.Second
+
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	iter := WrapQuery(q).Iter()
+	err = iter.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.query")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+
+	mt.Reset()
+
+	b := session.NewBatch(gocql.UnloggedBatch)
+	tb := WrapBatch(b, WithServiceName("TestServiceName"), WithResourceName("BatchInsert"))
+
+	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+	tb.Query(stmt, "Lucas", 60, "Another person")
+	err = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session)
+	require.NoError(t, err)
+
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span = spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.batch")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
 }
 
 func TestNamingSchema(t *testing.T) {

@@ -28,4 +28,7 @@ const (
 
 	// CassandraPaginated specifies the tag name for paginated queries.
 	CassandraPaginated = "cassandra.paginated"
+
+	// CassandraContactPoints represents the list of cassandra initial seed nodes used to discover the cluster.
+	CassandraContactPoints = "db.cassandra.contact.points"
 )
