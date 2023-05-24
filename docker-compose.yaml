@@ -128,3 +128,4 @@ services:
         - PORT=9126
         - DD_SUPPRESS_TRACE_PARSE_ERRORS=true
         - DD_POOL_TRACE_CHECK_FAILURES=true
+        - DD_DISABLE_ERROR_RESPONSES=true
