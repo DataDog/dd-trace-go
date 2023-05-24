@@ -19,9 +19,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+const (
+	// headerComputedTopLevel specifies that the client has marked top-level spans, when set.
+	// Any non-empty value will mean 'yes'.
+	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
+)
+
 type traceWriter interface {
 	// add adds traces to be sent by the writer.
-	add([]*span)
+	add(traceSubmission)
 
 	// flush causes the writer to send any buffered traces.
 	flush()
@@ -31,8 +37,9 @@ type traceWriter interface {
 }
 
 type agentTraceWriter struct {
-	// config holds the tracer configuration
-	config *config
+	// The thing that we'll submit traces and stats to.
+	// usually an submitter.Agent.
+	submitter traceSubmitter
 
 	// payload encodes and buffers traces in msgpack format
 	payload *payload
@@ -49,19 +56,35 @@ type agentTraceWriter struct {
 
 	// statsd is used to send metrics
 	statsd statsdClient
+
+	// retries is the number of times the trace writer will retry a payload before
+	// giving up.
+	retries int
 }
 
-func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient statsdClient) *agentTraceWriter {
+type traceSubmitter interface {
+	SubmitTraces(p io.Reader, headers map[string]string) (body io.ReadCloser, err error)
+}
+
+func newAgentTraceWriter(a traceSubmitter, s *prioritySampler, statsdClient statsdClient, retries int) *agentTraceWriter {
 	return &agentTraceWriter{
-		config:           c,
+		submitter:        a,
 		payload:          newPayload(),
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: s,
 		statsd:           statsdClient,
+		retries:          retries,
 	}
 }
 
-func (h *agentTraceWriter) add(trace []*span) {
+type traceSubmission struct {
+	trace           []*span
+	computedStats   bool
+	droppedP0Traces int
+	droppedP0Spans  int
+}
+
+func (h *agentTraceWriter) add(trace traceSubmission) {
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
@@ -87,6 +110,9 @@ func (h *agentTraceWriter) flush() {
 	h.climit <- struct{}{}
 	oldp := h.payload
 	h.payload = newPayload()
+	if h.submitter == nil {
+		panic("NIL AGENT")
+	}
 	go func(p *payload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
@@ -102,10 +128,22 @@ func (h *agentTraceWriter) flush() {
 
 		var count, size int
 		var err error
-		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
+		for attempt := 0; attempt <= h.retries; attempt++ {
 			size, count = p.size(), p.itemCount()
 			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
-			rc, err := h.config.transport.send(p)
+
+			headers := map[string]string{
+				traceCountHeader: strconv.Itoa(p.itemCount()),
+				//"Content-Length":
+				headerComputedTopLevel:             "yes",
+				"Datadog-Client-Dropped-P0-Traces": strconv.Itoa(p.droppedP0Traces),
+				"Datadog-Client-Dropped-P0-Spans":  strconv.Itoa(p.droppedP0Spans),
+			}
+			if p.computedStats {
+				headers["Datadog-Client-Computed-Stats"] = "yes"
+			}
+
+			rc, err := h.submitter.SubmitTraces(p, headers)
 			if err == nil {
 				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
@@ -305,19 +343,19 @@ func (h *logTraceWriter) writeTrace(trace []*span) (n int, err *encodingError) {
 }
 
 // add adds a trace to the writer's buffer.
-func (h *logTraceWriter) add(trace []*span) {
+func (h *logTraceWriter) add(trace traceSubmission) {
 	// Try adding traces to the buffer until we flush them all or encounter an error.
-	for len(trace) > 0 {
-		n, err := h.writeTrace(trace)
+	for len(trace.trace) > 0 {
+		n, err := h.writeTrace(trace.trace)
 		if err != nil {
 			log.Error("Lost a trace: %s", err.cause)
 			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:" + err.dropReason}, 1)
 			return
 		}
-		trace = trace[n:]
+		trace.trace = trace.trace[n:]
 		// If there are traces left that didn't fit into the buffer, flush the buffer and loop to
 		// write the remaining spans.
-		if len(trace) > 0 {
+		if len(trace.trace) > 0 {
 			h.flush()
 		}
 	}

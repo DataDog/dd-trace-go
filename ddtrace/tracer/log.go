@@ -21,17 +21,19 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
+const traceCountHeader = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
+
 // startupInfo contains various information about the status of the tracer on startup.
 type startupInfo struct {
-	Date                        string            `json:"date"`                           // ISO 8601 date and time of start
-	OSName                      string            `json:"os_name"`                        // Windows, Darwin, Debian, etc.
-	OSVersion                   string            `json:"os_version"`                     // Version of the OS
-	Version                     string            `json:"version"`                        // Tracer version
-	Lang                        string            `json:"lang"`                           // "Go"
-	LangVersion                 string            `json:"lang_version"`                   // Go version, e.g. go1.13
-	Env                         string            `json:"env"`                            // Tracer env
-	Service                     string            `json:"service"`                        // Tracer Service
-	AgentURL                    string            `json:"agent_url"`                      // The address of the agent
+	Date        string `json:"date"`         // ISO 8601 date and time of start
+	OSName      string `json:"os_name"`      // Windows, Darwin, Debian, etc.
+	OSVersion   string `json:"os_version"`   // Version of the OS
+	Version     string `json:"version"`      // Tracer version
+	Lang        string `json:"lang"`         // "Go"
+	LangVersion string `json:"lang_version"` // Go version, e.g. go1.13
+	Env         string `json:"env"`          // Tracer env
+	Service     string `json:"service"`      // Tracer Service
+	//AgentURL                    string            `json:"agent_url"`                      // The address of the agent
 	AgentError                  string            `json:"agent_error"`                    // Any error that occurred trying to connect to agent
 	Debug                       bool              `json:"debug"`                          // Whether debug mode is enabled
 	AnalyticsEnabled            bool              `json:"analytics_enabled"`              // True if there is a global analytics rate set
@@ -50,7 +52,7 @@ type startupInfo struct {
 	GlobalService               string            `json:"global_service"`                 // Global service string. If not-nil should be same as Service. (#614)
 	LambdaMode                  string            `json:"lambda_mode"`                    // Whether or not the client has enabled lambda mode
 	AppSec                      bool              `json:"appsec"`                         // AppSec status: true when started, false otherwise.
-	AgentFeatures               agentFeatures     `json:"agent_features"`                 // Lists the capabilities of the agent.
+	//AgentFeatures               agentFeatures     `json:"agent_features"`                 // Lists the capabilities of the agent.
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -80,15 +82,15 @@ func logStartup(t *tracer) {
 	}
 
 	info := startupInfo{
-		Date:                        time.Now().Format(time.RFC3339),
-		OSName:                      osinfo.OSName(),
-		OSVersion:                   osinfo.OSVersion(),
-		Version:                     version.Tag,
-		Lang:                        "Go",
-		LangVersion:                 runtime.Version(),
-		Env:                         t.config.env,
-		Service:                     t.config.serviceName,
-		AgentURL:                    t.config.transport.endpoint(),
+		Date:        time.Now().Format(time.RFC3339),
+		OSName:      osinfo.OSName(),
+		OSVersion:   osinfo.OSVersion(),
+		Version:     version.Tag,
+		Lang:        "Go",
+		LangVersion: runtime.Version(),
+		Env:         t.config.env,
+		Service:     t.config.serviceName,
+		//AgentURL:                    t.config.transport.endpoint(),
 		Debug:                       t.config.debug,
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
@@ -104,8 +106,8 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
-		AgentFeatures:               t.config.agent,
-		AppSec:                      appsec.Enabled(),
+		//AgentFeatures:               t.config.agent,
+		AppSec: appsec.Enabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
@@ -113,12 +115,12 @@ func logStartup(t *tracer) {
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
-	if !t.config.logToStdout {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err)
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
-		}
-	}
+	// 	if !t.config.logToStdout {
+	// 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
+	// 			info.AgentError = fmt.Sprintf("%s", err)
+	// 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
+	// 		}
+	// 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)

@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	rt "runtime/trace"
@@ -27,6 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -119,7 +119,7 @@ func TestTracerCleanStop(t *testing.T) {
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
 	var wg sync.WaitGroup
-	transport := newDummyTransport()
+	//transport := newDummyTransport()
 
 	n := 5000
 
@@ -144,10 +144,10 @@ func TestTracerCleanStop(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < n; i++ {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
-			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
+			Start(WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
+			Start(WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
+			Start(WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
 		}
 	}()
 
@@ -353,7 +353,7 @@ func TestSamplingDecision(t *testing.T) {
 		// client-side stats are also enabled.
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -370,8 +370,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
-		tracer.config.agent.DropP0s = true
-		tracer.config.agent.Stats = true
+		tracer.config.agnt.Features().DropP0s = true
+		tracer.config.agnt.Features().Stats = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -386,7 +386,7 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1").(*span)
@@ -434,7 +434,7 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(1), tracer.droppedP0Spans)
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -515,7 +515,7 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
@@ -1012,16 +1012,16 @@ func TestTracerNoDebugStack(t *testing.T) {
 	})
 }
 
-// newDefaultTransport return a default transport for this tracing client
-func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultClient)
-}
+// // newDefaultTransport return a default transport for this tracing client
+// func newDefaultTransport() transport {
+// 	return newHTTPTransport(defaultURL, defaultClient)
+// }
 
 func TestNewSpan(t *testing.T) {
 	assert := assert.New(t)
 
 	// the tracer must create root spans
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	assert.Equal(uint64(0), span.ParentID)
@@ -1043,7 +1043,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 		assert := assert.New(t)
 
 		// the tracer must create child spans
-		tracer := newTracer(withTransport(newDefaultTransport()))
+		tracer := newTracer()
 		defer tracer.Stop()
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", parent)
@@ -1072,7 +1072,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 func TestNewRootSpanHasPid(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -1082,7 +1082,7 @@ func TestNewRootSpanHasPid(t *testing.T) {
 func TestNewChildHasNoPid(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 	child := tracer.newChildSpan("redis.command", root)
@@ -1095,7 +1095,6 @@ func TestTracerSampler(t *testing.T) {
 
 	sampler := NewRateSampler(0.9999) // high probability of sampling
 	tracer := newTracer(
-		withTransport(newDefaultTransport()),
 		WithSampler(sampler),
 	)
 	defer tracer.Stop()
@@ -1112,22 +1111,20 @@ func TestTracerSampler(t *testing.T) {
 
 func TestTracerPrioritySampler(t *testing.T) {
 	assert := assert.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
-			"rate_by_service":{
-				"service:,env:":0.1,
-				"service:my-service,env:":0.2,
-				"service:my-service,env:default":0.2,
-				"service:my-service,env:other":0.3
-			}
-		}`))
-	}))
-	url := "http://" + srv.Listener.Addr().String()
+	// 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 		w.WriteHeader(http.StatusOK)
+	// 		w.Write([]byte(`{
+	// 			"rate_by_service":{
+	// 				"service:,env:":0.1,
+	// 				"service:my-service,env:":0.2,
+	// 				"service:my-service,env:default":0.2,
+	// 				"service:my-service,env:other":0.3
+	// 			}
+	// 		}`))
+	// 	}))
+	//url := "http://" + srv.Listener.Addr().String()
 
-	tr, _, flush, stop := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultClient)),
-	)
+	tr, _, flush, stop := startTestTracer(t)
 	defer stop()
 
 	// default rates (1.0)
@@ -1193,13 +1190,11 @@ func TestTracerEdgeSampler(t *testing.T) {
 
 	// a sample rate of 0 should sample nothing
 	tracer0, _, _, stop := startTestTracer(t,
-		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
 	defer stop()
 	// a sample rate of 1 should sample everything
 	tracer1, _, _, stop := startTestTracer(t,
-		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
 	defer stop()
@@ -1922,7 +1917,6 @@ func startTestTracer(t interface {
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
-		withTransport(transport),
 		withTickChan(tick),
 	}, opts...)
 	tracer := newTracer(o...)
@@ -2009,7 +2003,7 @@ func decode(p *payload) (spanLists, error) {
 func encode(traces [][]*span) (*payload, error) {
 	p := newPayload()
 	for _, t := range traces {
-		if err := p.push(t); err != nil {
+		if err := p.push(traceSubmission{trace: t}); err != nil {
 			return p, err
 		}
 	}
@@ -2075,9 +2069,9 @@ func newTestTraceWriter() *testTraceWriter {
 	}
 }
 
-func (w *testTraceWriter) add(spans []*span) {
+func (w *testTraceWriter) add(t traceSubmission) {
 	w.mu.Lock()
-	w.buf = append(w.buf, spans...)
+	w.buf = append(w.buf, t.trace...)
 	w.mu.Unlock()
 }
 
@@ -2121,8 +2115,8 @@ func TestFlush(t *testing.T) {
 	ts := &testStatsdClient{}
 	tr.statsd = ts
 
-	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+	agentMock := agent.NewMock()
+	c := newConcentrator(&config{}, agentMock, defaultStatsBucketSize)
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
@@ -2154,11 +2148,11 @@ loop:
 
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Zero(t, ts.flushed)
-	assert.Len(t, transport.Stats(), 0)
+	assert.Zero(t, agentMock.StatsSendSuccess)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
 	assert.Equal(t, 1, ts.flushed)
-	assert.Len(t, transport.Stats(), 1)
+	assert.Equal(t, 1, agentMock.StatsSendSuccess)
 }
 
 func TestTakeStackTrace(t *testing.T) {
@@ -2287,7 +2281,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2309,7 +2303,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2335,7 +2329,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
-		tracer.config.agent.DropP0s = true
+		tracer.config.agnt.Features().DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)

@@ -8,6 +8,8 @@
 package tracer
 
 import (
+	"bytes"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
+	"github.com/tinylib/msgp/msgp"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -34,6 +37,10 @@ type aggregableSpan struct {
 // defaultStatsBucketSize specifies the default span of time that will be
 // covered in one stats bucket.
 var defaultStatsBucketSize = (10 * time.Second).Nanoseconds()
+
+type statsSubmitter interface {
+	SubmitStats(p io.Reader) error
+}
 
 // concentrator aggregates and stores statistics on incoming spans in time buckets,
 // flushing them occasionally to the underlying transport located in the given
@@ -59,17 +66,19 @@ type concentrator struct {
 	stop         chan struct{}  // closing this channel triggers shutdown
 	cfg          *config        // tracer startup configuration
 	statsdClient statsdClient   // statsd client for sending metrics.
+	submitter    statsSubmitter // the thing we submit stats to, usually an agent.Agent
 }
 
 // newConcentrator creates a new concentrator using the given tracer
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
-func newConcentrator(c *config, bucketSize int64) *concentrator {
+func newConcentrator(c *config, s statsSubmitter, bucketSize int64) *concentrator {
 	return &concentrator{
 		In:         make(chan *aggregableSpan, 10000),
 		bucketSize: bucketSize,
 		stopped:    1,
 		buckets:    make(map[int64]*rawBucket),
 		cfg:        c,
+		submitter:  s,
 	}
 }
 
@@ -204,10 +213,19 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_payloads", nil, 1)
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(len(sp.Stats)))
-	if err := c.cfg.transport.sendStats(&sp); err != nil {
+
+	if err := c.submit(&sp); err != nil {
 		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 		log.Error("Error sending stats payload: %v", err)
 	}
+}
+
+func (c *concentrator) submit(p *statsPayload) error {
+	var buf bytes.Buffer
+	if err := msgp.Encode(&buf, p); err != nil {
+		return err
+	}
+	return c.submitter.SubmitStats(&buf)
 }
 
 // aggregation specifies a uniquely identifiable key under which a certain set

@@ -27,16 +27,16 @@ func startTelemetry(c *config) {
 	telemetry.GlobalClient.ApplyOps(
 		telemetry.WithService(c.serviceName),
 		telemetry.WithEnv(c.env),
-		telemetry.WithHTTPClient(c.httpClient),
+		//telemetry.WithHTTPClient(c.httpClient), TODO(knusbaum): This should all be moved to the agent package probably.
 		// c.logToStdout is true if serverless is turned on
 		telemetry.WithURL(c.logToStdout, c.agentURL.String()),
 		telemetry.WithVersion(c.version),
 	)
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
-		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
-		{Name: "stats_computation_enabled", Value: c.agent.Stats},
-		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
+		{Name: "agent_feature_drop_p0s", Value: c.agnt.Features().DropP0s},
+		{Name: "stats_computation_enabled", Value: c.agnt.Features().Stats},
+		{Name: "dogstatsd_port", Value: c.agnt.Features().StatsdPort},
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "trace_startup_logs_enabled", Value: c.logStartup},

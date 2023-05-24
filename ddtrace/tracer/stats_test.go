@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 )
 
 // waitForBuckets reports whether concentrator c contains n buckets within a 5ms
@@ -56,7 +57,7 @@ func TestConcentrator(t *testing.T) {
 	t.Run("new", func(t *testing.T) {
 		assert := assert.New(t)
 		cfg := &config{version: "1.2.3"}
-		c := newConcentrator(cfg, defaultStatsBucketSize)
+		c := newConcentrator(cfg, agent.NewMock(), defaultStatsBucketSize)
 		assert.Equal(cap(c.In), 10000)
 		assert.Nil(c.stop)
 		assert.NotNil(c.buckets)
@@ -66,7 +67,7 @@ func TestConcentrator(t *testing.T) {
 
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, agent.NewMock(), defaultStatsBucketSize)
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -84,7 +85,7 @@ func TestConcentrator(t *testing.T) {
 	})
 
 	t.Run("valid", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, agent.NewMock(), defaultStatsBucketSize)
 		btime := alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)
 		c.add(ss1)
 		assert.Len(t, c.buckets, 1)
@@ -95,7 +96,7 @@ func TestConcentrator(t *testing.T) {
 	})
 
 	t.Run("grouping", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, agent.NewMock(), defaultStatsBucketSize)
 		c.add(ss1)
 		c.add(ss1)
 		assert.Len(t, c.buckets, 1)
@@ -108,8 +109,9 @@ func TestConcentrator(t *testing.T) {
 	})
 
 	t.Run("ingester", func(t *testing.T) {
-		transport := newDummyTransport()
-		c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
+		//transport := newDummyTransport()
+		mock := agent.NewMock()
+		c := newConcentrator(&config{}, mock, defaultStatsBucketSize)
 		c.Start()
 		assert.Len(t, c.buckets, 0)
 		c.In <- ss1
@@ -121,9 +123,9 @@ func TestConcentrator(t *testing.T) {
 
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
-			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
-			assert.Len(t, transport.Stats(), 0)
+			mock := agent.NewMock()
+			c := newConcentrator(&config{}, mock, 500000)
+			assert.Equal(t, mock.StatsSendSuccess, 0)
 			c.Start()
 			c.In <- &aggregableSpan{
 				key: key2,
@@ -139,13 +141,13 @@ func TestConcentrator(t *testing.T) {
 			}
 			time.Sleep(2 * time.Millisecond * timeMultiplicator)
 			c.Stop()
-			assert.NotZero(t, transport.Stats())
+			assert.NotZero(t, mock.StatsSendSuccess)
 		})
 
 		t.Run("recent", func(t *testing.T) {
-			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
-			assert.Len(t, transport.Stats(), 0)
+			mock := agent.NewMock()
+			c := newConcentrator(&config{}, mock, 500000)
+			assert.Equal(t, 0, mock.StatsSendSuccess)
 			c.Start()
 			c.In <- &aggregableSpan{
 				key:      key2,
@@ -158,14 +160,14 @@ func TestConcentrator(t *testing.T) {
 				Duration: 1,
 			}
 			c.Stop()
-			assert.NotEmpty(t, transport.Stats())
+			assert.NotEmpty(t, mock.StatsSendSuccess)
 		})
 
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
-			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
-			assert.Len(t, transport.Stats(), 0)
+			mock := agent.NewMock()
+			c := newConcentrator(&config{}, mock, 500000)
+			assert.Equal(t, 0, mock.StatsSendSuccess)
 			c.Start()
 			c.In <- &aggregableSpan{
 				key:      key1,
@@ -173,7 +175,7 @@ func TestConcentrator(t *testing.T) {
 				Duration: 1,
 			}
 			c.Stop()
-			assert.NotEmpty(t, transport.Stats())
+			assert.NotEmpty(t, mock.StatsSendSuccess)
 		})
 	})
 }

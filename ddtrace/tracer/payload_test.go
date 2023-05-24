@@ -42,7 +42,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			for i := 0; i < n; i++ {
 				list := newSpanList(i%5 + 1)
 				lists[i] = list
-				p.push(list)
+				p.push(traceSubmission{trace: list})
 			}
 			want.Reset()
 			err := msgp.Encode(want, lists)
@@ -65,7 +65,7 @@ func TestPayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			p := newPayload()
 			for i := 0; i < n; i++ {
-				p.push(newSpanList(i%5 + 1))
+				p.push(traceSubmission{trace: newSpanList(i%5 + 1)})
 			}
 			var got spanLists
 			err := msgp.Decode(p, &got)
@@ -103,7 +103,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		for i := 0; i < b.N; i++ {
 			reset()
 			for p.size() < payloadMaxLimit {
-				p.push(trace)
+				p.push(traceSubmission{trace: trace})
 			}
 		}
 	}

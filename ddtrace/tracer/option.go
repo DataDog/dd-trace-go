@@ -7,12 +7,8 @@ package tracer
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"math"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -50,9 +47,10 @@ type config struct {
 	// debug, when true, writes details to logs.
 	debug bool
 
-	// agent holds the capabilities of the agent and determines some
-	// of the behaviour of the tracer.
-	agent agentFeatures
+	//// agent holds the capabilities of the agent and determines some
+	//// of the behaviour of the tracer.
+	//agent agentFeatures
+	agnt *agent.Agent
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -85,8 +83,8 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler Sampler
 
-	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL *url.URL
+	//// agentURL is the agent URL that receives traces from the tracer.
+	//agentURL *url.URL
 
 	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
@@ -95,14 +93,14 @@ type config struct {
 	// all spans.
 	globalTags map[string]interface{}
 
-	// transport specifies the Transport interface which will be used to send data to the agent.
-	transport transport
+	// 	// transport specifies the Transport interface which will be used to send data to the agent.
+	// 	transport transport
 
 	// propagator propagates span context cross-process
 	propagator Propagator
 
-	// httpClient specifies the HTTP client to be used by the agent's transport.
-	httpClient *http.Client
+	//// httpClient specifies the HTTP client to be used by the agent's transport.
+	//httpClient *http.Client
 
 	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
 	// and is added as a special tag to the root span of traces.
@@ -158,8 +156,7 @@ type config struct {
 
 // HasFeature reports whether feature f is enabled.
 func (c *config) HasFeature(f string) bool {
-	_, ok := c.featureFlags[strings.TrimSpace(f)]
-	return ok
+	return c.agnt.Features().HasFlag(strings.TrimSpace(f))
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -238,24 +235,24 @@ func newConfig(opts ...StartOption) *config {
 	for _, fn := range opts {
 		fn(c)
 	}
-	if c.agentURL == nil {
-		c.agentURL = resolveAgentAddr()
-		if url := internal.AgentURLFromEnv(); url != nil {
-			c.agentURL = url
-		}
-	}
-	if c.agentURL.Scheme == "unix" {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.enableHostnameDetection = false
-		c.httpClient = udsClient(c.agentURL.Path)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
-		}
-	} else if c.httpClient == nil {
-		c.httpClient = defaultClient
-	}
+	// 	if c.agentURL == nil {
+	// 		c.agentURL = resolveAgentAddr()
+	// 		if url := internal.AgentURLFromEnv(); url != nil {
+	// 			c.agentURL = url
+	// 		}
+	// 	}
+	// 	if c.agentURL.Scheme == "unix" {
+	// 		// If we're connecting over UDS we can just rely on the agent to provide the hostname
+	// 		log.Debug("connecting to agent over unix, do not set hostname on any traces")
+	// 		c.enableHostnameDetection = false
+	// 		c.httpClient = udsClient(c.agentURL.Path)
+	// 		c.agentURL = &url.URL{
+	// 			Scheme: "http",
+	// 			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
+	// 		}
+	// 	} else if c.httpClient == nil {
+	// 		c.httpClient = defaultClient
+	// 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	if c.env == "" {
 		if v, ok := c.globalTags["env"]; ok {
@@ -281,9 +278,9 @@ func newConfig(opts ...StartOption) *config {
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
-	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
-	}
+	// 	if c.transport == nil {
+	// 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+	// 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
 		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
@@ -305,7 +302,10 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	c.loadAgentFeatures()
+	c.agnt = agent.New()
+	if err := c.agnt.LoadFeatures(); err != nil {
+		log.Info("%v", err)
+	}
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -313,14 +313,14 @@ func newConfig(opts ...StartOption) *config {
 			// no config defined address; use defaults
 			addr = defaultDogstatsdAddr()
 		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
+		if agentport := c.agnt.Features().StatsdPort; agentport > 0 {
 			// the agent reported a non-standard port
 			host, _, err := net.SplitHostPort(addr)
 			if err == nil {
 				// we have a valid host:port address; replace the port because
 				// the agent knows better
 				if host == "" {
-					host = defaultHostname
+					host = "localhost"
 				}
 				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
 			}
@@ -344,34 +344,34 @@ func newStatsdClient(c *config) (statsdClient, error) {
 	return client, nil
 }
 
-// defaultHTTPClient returns the default http.Client to start the tracer with.
-func defaultHTTPClient() *http.Client {
-	if _, err := os.Stat(defaultSocketAPM); err == nil {
-		// we have the UDS socket file, use it
-		return udsClient(defaultSocketAPM)
-	}
-	return defaultClient
-}
-
-// udsClient returns a new http.Client which connects using the given UDS socket path.
-func udsClient(socketPath string) *http.Client {
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
-					Name: socketPath,
-					Net:  "unix",
-				}).String())
-			},
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-		Timeout: defaultHTTPTimeout,
-	}
-}
+// // defaultHTTPClient returns the default http.Client to start the tracer with.
+// func defaultHTTPClient() *http.Client {
+// 	if _, err := os.Stat(defaultSocketAPM); err == nil {
+// 		// we have the UDS socket file, use it
+// 		return udsClient(defaultSocketAPM)
+// 	}
+// 	return defaultClient
+// }
+//
+// // udsClient returns a new http.Client which connects using the given UDS socket path.
+// func udsClient(socketPath string) *http.Client {
+// 	return &http.Client{
+// 		Transport: &http.Transport{
+// 			Proxy: http.ProxyFromEnvironment,
+// 			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+// 				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+// 					Name: socketPath,
+// 					Net:  "unix",
+// 				}).String())
+// 			},
+// 			MaxIdleConns:          100,
+// 			IdleConnTimeout:       90 * time.Second,
+// 			TLSHandshakeTimeout:   10 * time.Second,
+// 			ExpectContinueTimeout: 1 * time.Second,
+// 		},
+// 		Timeout: defaultHTTPTimeout,
+// 	}
+// }
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
 func defaultDogstatsdAddr() string {
@@ -380,7 +380,7 @@ func defaultDogstatsdAddr() string {
 		// socket exists and user didn't specify otherwise via env vars
 		return "unix://" + defaultSocketDSD
 	}
-	host, port := defaultHostname, "8125"
+	host, port := "localhost", "8125"
 	if envHost != "" {
 		host = envHost
 	}
@@ -410,61 +410,61 @@ type agentFeatures struct {
 	featureFlags map[string]struct{}
 }
 
-// HasFlag reports whether the agent has set the feat feature flag.
-func (a *agentFeatures) HasFlag(feat string) bool {
-	_, ok := a.featureFlags[feat]
-	return ok
-}
+// // HasFlag reports whether the agent has set the feat feature flag.
+// func (a *agentFeatures) HasFlag(feat string) bool {
+// 	_, ok := a.featureFlags[feat]
+// 	return ok
+// }
 
-// loadAgentFeatures queries the trace-agent for its capabilities and updates
-// the tracer's behaviour.
-func (c *config) loadAgentFeatures() {
-	c.agent = agentFeatures{}
-	if c.logToStdout {
-		// there is no agent; all features off
-		return
-	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
-	if err != nil {
-		log.Error("Loading features: %v", err)
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		return
-	}
-	defer resp.Body.Close()
-	type infoResponse struct {
-		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
-		FeatureFlags  []string `json:"feature_flags"`
-	}
-	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
-		return
-	}
-	c.agent.DropP0s = info.ClientDropP0s
-	c.agent.StatsdPort = info.StatsdPort
-	for _, endpoint := range info.Endpoints {
-		switch endpoint {
-		case "/v0.6/stats":
-			c.agent.Stats = true
-		}
-	}
-	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
-	for _, flag := range info.FeatureFlags {
-		c.agent.featureFlags[flag] = struct{}{}
-	}
-}
+// // loadAgentFeatures queries the trace-agent for its capabilities and updates
+// // the tracer's behaviour.
+// func (c *config) loadAgentFeatures() {
+// 	c.agent = agentFeatures{}
+// 	if c.logToStdout {
+// 		// there is no agent; all features off
+// 		return
+// 	}
+// 	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
+// 	if err != nil {
+// 		log.Error("Loading features: %v", err)
+// 		return
+// 	}
+// 	if resp.StatusCode == http.StatusNotFound {
+// 		// agent is older than 7.28.0, features not discoverable
+// 		return
+// 	}
+// 	defer resp.Body.Close()
+// 	type infoResponse struct {
+// 		Endpoints     []string `json:"endpoints"`
+// 		ClientDropP0s bool     `json:"client_drop_p0s"`
+// 		StatsdPort    int      `json:"statsd_port"`
+// 		FeatureFlags  []string `json:"feature_flags"`
+// 	}
+// 	var info infoResponse
+// 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+// 		log.Error("Decoding features: %v", err)
+// 		return
+// 	}
+// 	c.agent.DropP0s = info.ClientDropP0s
+// 	c.agent.StatsdPort = info.StatsdPort
+// 	for _, endpoint := range info.Endpoints {
+// 		switch endpoint {
+// 		case "/v0.6/stats":
+// 			c.agent.Stats = true
+// 		}
+// 	}
+// 	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+// 	for _, flag := range info.FeatureFlags {
+// 		c.agent.featureFlags[flag] = struct{}{}
+// 	}
+// }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.agnt.Features().Stats && c.HasFeature("discovery")
 }
 
 func (c *config) canDropP0s() bool {
-	return c.canComputeStats() && c.agent.DropP0s
+	return c.canComputeStats() && c.agnt.Features().DropP0s
 }
 
 func statsTags(c *config) []string {
@@ -594,16 +594,16 @@ func WithService(name string) StartOption {
 	}
 }
 
-// WithAgentAddr sets the address where the agent is located. The default is
-// localhost:8126. It should contain both host and port.
-func WithAgentAddr(addr string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   addr,
-		}
-	}
-}
+// // WithAgentAddr sets the address where the agent is located. The default is
+// // localhost:8126. It should contain both host and port.
+// func WithAgentAddr(addr string) StartOption {
+// 	return func(c *config) {
+// 		c.agentURL = &url.URL{
+// 			Scheme: "http",
+// 			Host:   addr,
+// 		}
+// 	}
+// }
 
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
@@ -643,31 +643,31 @@ func WithSampler(s Sampler) StartOption {
 	}
 }
 
-// WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
-// The function allows customizing the underlying HTTP transport for emitting spans.
-func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: r,
-		Timeout:   defaultHTTPTimeout,
-	})
-}
-
-// WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
-func WithHTTPClient(client *http.Client) StartOption {
-	return func(c *config) {
-		c.httpClient = client
-	}
-}
-
-// WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
-func WithUDS(socketPath string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "unix",
-			Path:   socketPath,
-		}
-	}
-}
+// // WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
+// // The function allows customizing the underlying HTTP transport for emitting spans.
+// func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
+// 	return WithHTTPClient(&http.Client{
+// 		Transport: r,
+// 		Timeout:   defaultHTTPTimeout,
+// 	})
+// }
+//
+// // WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
+// func WithHTTPClient(client *http.Client) StartOption {
+// 	return func(c *config) {
+// 		c.httpClient = client
+// 	}
+// }
+//
+// // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
+// func WithUDS(socketPath string) StartOption {
+// 	return func(c *config) {
+// 		c.agentURL = &url.URL{
+// 			Scheme: "unix",
+// 			Path:   socketPath,
+// 		}
+// 	}
+// }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.

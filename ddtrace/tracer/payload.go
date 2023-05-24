@@ -57,6 +57,11 @@ type payload struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// These track stats from the tracer, which need to be sent to the agent.
+	computedStats   bool
+	droppedP0Traces int
+	droppedP0Spans  int
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -71,12 +76,17 @@ func newPayload() *payload {
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(t spanList) error {
-	if err := msgp.Encode(&p.buf, t); err != nil {
+func (p *payload) push(t traceSubmission) error {
+	if err := msgp.Encode(&p.buf, spanList(t.trace)); err != nil {
 		return err
 	}
 	atomic.AddUint32(&p.count, 1)
 	p.updateHeader()
+
+	p.computedStats = p.computedStats || t.computedStats
+	p.droppedP0Traces += t.droppedP0Traces
+	p.droppedP0Spans += t.droppedP0Spans
+
 	return nil
 }
 
@@ -99,6 +109,9 @@ func (p *payload) reset() {
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
 	}
+	p.computedStats = false
+	p.droppedP0Traces = 0
+	p.droppedP0Spans = 0
 }
 
 // clear empties the payload buffers.

@@ -20,6 +20,7 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -78,8 +79,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if config.HTTP == nil {
-		config.HTTP = DefaultClientConfig().HTTP
+	if config.Agent == nil {
+		config.Agent = agent.New()
 	}
 
 	return &Client{
@@ -136,7 +137,7 @@ func (c *Client) updateState() {
 		return
 	}
 
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.Agent.Do(req)
 	if err != nil {
 		log.Debug("remoteconfig: http request error: %v", err)
 		return

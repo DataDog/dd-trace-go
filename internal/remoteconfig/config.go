@@ -6,10 +6,10 @@
 package remoteconfig
 
 import (
-	"net/http"
 	"os"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -43,16 +43,18 @@ type ClientConfig struct {
 	// The capabilities of the client
 	Capabilities map[Capability]struct{}
 	// HTTP is the HTTP client used to receive config updates
-	HTTP *http.Client
+	//HTTP *http.Client
+	Agent *agent.Agent
 }
 
 // DefaultClientConfig returns the default remote config client configuration
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		Capabilities:  map[Capability]struct{}{},
-		Products:      map[string]struct{}{},
-		Env:           os.Getenv("DD_ENV"),
-		HTTP:          &http.Client{Timeout: 10 * time.Second},
+		Capabilities: map[Capability]struct{}{},
+		Products:     map[string]struct{}{},
+		Env:          os.Getenv("DD_ENV"),
+		//HTTP:          &http.Client{Timeout: 10 * time.Second},
+		Agent:         agent.New(),
 		PollInterval:  pollIntervalFromEnv(),
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),

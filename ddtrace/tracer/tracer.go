@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"fmt"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -142,7 +143,8 @@ func Start(opts ...StartOption) {
 	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
-	cfg.HTTP = t.config.httpClient
+	//cfg.HTTP = t.config.httpClient
+	cfg.Agent = t.config.agnt
 	cfg.ServiceName = t.config.serviceName
 	appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
@@ -210,11 +212,12 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if err != nil {
 		log.Warn("Runtime and health metrics disabled: %v", err)
 	}
+
 	var writer traceWriter
 	if c.logToStdout {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
-		writer = newAgentTraceWriter(c, sampler, statsd)
+		writer = newAgentTraceWriter(c.agnt, sampler, statsd, c.sendRetries)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -235,14 +238,14 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
-		stats:            newConcentrator(c, defaultStatsBucketSize),
+		stats:            newConcentrator(c, c.agnt, defaultStatsBucketSize),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
-				TableNames:       c.agent.HasFlag("table_names"),
-				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
-				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
-				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-				Cache:            c.agent.HasFlag("sql_cache"),
+				TableNames:       c.agnt.Features().HasFlag("table_names"),
+				ReplaceDigits:    c.agnt.Features().HasFlag("quantize_sql_tables") || c.agnt.Features().HasFlag("replace_sql_digits"),
+				KeepSQLAlias:     c.agnt.Features().HasFlag("keep_sql_alias"),
+				DollarQuotedFunc: c.agnt.Features().HasFlag("dollar_quoted_func"),
+				Cache:            c.agnt.Features().HasFlag("sql_cache"),
 			},
 		}),
 		statsd: statsd,
@@ -313,7 +316,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		case trace := <-t.out:
 			t.sampleFinishedTrace(trace)
 			if len(trace.spans) != 0 {
-				t.traceWriter.add(trace.spans)
+				t.traceWriter.add(t.makeTraceSubmission(trace))
 			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
@@ -338,7 +341,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				case trace := <-t.out:
 					t.sampleFinishedTrace(trace)
 					if len(trace.spans) != 0 {
-						t.traceWriter.add(trace.spans)
+						t.traceWriter.add(t.makeTraceSubmission(trace))
 					}
 				default:
 					break loop
@@ -346,6 +349,24 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			}
 			return
 		}
+	}
+}
+
+func (t *tracer) makeTraceSubmission(info *finishedTrace) traceSubmission {
+	droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
+	partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
+	droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
+	if stats := t.statsd; stats != nil {
+		stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+			[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
+		stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+	}
+
+	return traceSubmission{
+		trace:           info.spans,
+		computedStats:   t.config.canComputeStats(),
+		droppedP0Traces: droppedTraces,
+		droppedP0Spans:  droppedSpans,
 	}
 }
 

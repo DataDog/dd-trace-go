@@ -77,7 +77,7 @@ func TestSpanFinish(t *testing.T) {
 
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -400,7 +400,7 @@ func TestSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -410,7 +410,7 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -469,7 +469,7 @@ func TestSpanSetMetric(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			tracer := newTracer(withTransport(newDefaultTransport()))
+			tracer := newTracer()
 			defer tracer.Stop()
 			span := tracer.newRootSpan("http.request", "mux.router", "/")
 			tt(assert, span)
@@ -479,7 +479,7 @@ func TestSpanSetMetric(t *testing.T) {
 
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -507,7 +507,7 @@ func TestSpanError(t *testing.T) {
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -522,7 +522,7 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -585,7 +585,7 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer := newTracer()
 	defer tracer.Stop()
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")

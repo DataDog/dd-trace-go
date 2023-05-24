@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/dd/agent"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -106,7 +107,7 @@ func TestLogWriter(t *testing.T) {
 		h.w = &buf
 		s := makeSpan(0)
 		for i := 0; i < 20; i++ {
-			h.add([]*span{s, s})
+			h.add(traceSubmission{trace: []*span{s, s}})
 		}
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
@@ -134,7 +135,7 @@ func TestLogWriter(t *testing.T) {
 		s.Metrics["nan"] = math.NaN()
 		s.Metrics["+inf"] = math.Inf(1)
 		s.Metrics["-inf"] = math.Inf(-1)
-		h.add([]*span{s})
+		h.add(traceSubmission{trace: []*span{s}})
 		h.flush()
 		json := string(buf.Bytes())
 		assert.NotContains(json, `"nan":`)
@@ -212,7 +213,7 @@ func TestLogWriter(t *testing.T) {
 			Duration: 456,
 			Error:    789,
 		}
-		h.add([]*span{s})
+		h.add(traceSubmission{trace: []*span{s}})
 		h.flush()
 		d := json.NewDecoder(&buf)
 		var payload jsonPayload
@@ -251,7 +252,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10000)
-		h.add([]*span{s})
+		h.add(traceSubmission{trace: []*span{s}})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
@@ -275,7 +276,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		for i := 0; i < 500; i++ {
 			trace = append(trace, s)
 		}
-		h.add(trace)
+		h.add(traceSubmission{trace: trace})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
@@ -302,8 +303,8 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(4000)
-		h.add([]*span{s})
-		h.add([]*span{s})
+		h.add(traceSubmission{trace: []*span{s}})
+		h.add(traceSubmission{trace: []*span{s}})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
@@ -385,24 +386,26 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			p := &failingTransport{
-				failCount: test.failCount,
-				assert:    assert,
-			}
-			c := newConfig(func(c *config) {
-				c.transport = p
-				c.sendRetries = test.configRetries
-			})
+			//p := &failingTransport{
+			//	failCount: test.failCount,
+			//	assert:    assert,
+			//}
+			// 			c := newConfig(func(c *config) {
+			// 				c.transport = p
+			// 				c.sendRetries = test.configRetries
+			// 			})
 			var statsd testStatsdClient
 
-			h := newAgentTraceWriter(c, nil, &statsd)
-			h.add(ss)
+			a := agent.NewMock(agent.WithFailCount(test.failCount))
+
+			h := newAgentTraceWriter(a, nil, &statsd, test.configRetries)
+			h.add(traceSubmission{trace: ss})
 
 			h.flush()
 			h.wg.Wait()
 
-			assert.Equal(test.expAttempts, p.sendAttempts)
-			assert.Equal(test.tracesSent, p.tracesSent)
+			assert.Equal(test.expAttempts, int(a.TraceSendAttempts))
+			assert.Equal(test.tracesSent, a.TraceSendSuccess > 0)
 
 			statsd.mu.Lock()
 			assert.Equal(1, len(statsd.timingCalls))
