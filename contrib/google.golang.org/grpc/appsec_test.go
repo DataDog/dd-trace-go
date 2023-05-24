@@ -42,7 +42,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
-		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>alert('xss');</script>"})
+		res, err := client.Ping(ctx, &FixtureRequest{Name: "<script>evilJSCode;</script>"})
 		// Check that the handler was properly called
 		require.NoError(t, err)
 		require.Equal(t, "passed", res.Message)
@@ -67,7 +67,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a XSS attack
-		err = stream.Send(&FixtureRequest{Name: "<script>alert('xss');</script>"})
+		err = stream.Send(&FixtureRequest{Name: "<script>evilJSCode;</script>"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called
@@ -76,7 +76,7 @@ func TestAppSec(t *testing.T) {
 		require.NoError(t, err)
 
 		// Send a SQLi attack
-		err = stream.Send(&FixtureRequest{Name: "-1' and 1=1 union/* foo */select load_file('/etc/passwd')--"})
+		err = stream.Send(&FixtureRequest{Name: "-1' and 1=1 union select * from users--"})
 		require.NoError(t, err)
 
 		// Check that the handler was properly called

@@ -27,6 +27,12 @@ import (
 
 const debug = false
 
+const (
+	elasticV5URL   = "http://127.0.0.1:9201"
+	elasticV3URL   = "http://127.0.0.1:9200"
+	elasticFakeURL = "http://127.0.0.1:29201"
+)
+
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
@@ -43,7 +49,7 @@ func TestClientV5(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
-		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetURL(elasticV5URL),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -56,19 +62,19 @@ func TestClientV5(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		Do(context.TODO())
 	assert.NoError(err)
-	checkPUTTrace(assert, mt)
+	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").Do(context.TODO())
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("not-real-index").
 		Id("1").Do(context.TODO())
 	assert.Error(err)
-	checkErrTrace(assert, mt)
+	checkErrTrace(assert, mt, "127.0.0.1")
 }
 
 func TestClientV5Gzip(t *testing.T) {
@@ -78,7 +84,7 @@ func TestClientV5Gzip(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
-		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetURL(elasticV5URL),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -92,19 +98,19 @@ func TestClientV5Gzip(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		Do(context.TODO())
 	assert.NoError(err)
-	checkPUTTrace(assert, mt)
+	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").Do(context.TODO())
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("not-real-index").
 		Id("1").Do(context.TODO())
 	assert.Error(err)
-	checkErrTrace(assert, mt)
+	checkErrTrace(assert, mt, "127.0.0.1")
 }
 
 func TestClientErrorCutoffV3(t *testing.T) {
@@ -119,7 +125,7 @@ func TestClientErrorCutoffV3(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
-		elasticv5.SetURL("http://127.0.0.1:9200"),
+		elasticv5.SetURL(elasticV3URL),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -149,7 +155,7 @@ func TestClientErrorCutoffV5(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
-		elasticv5.SetURL("http://127.0.0.1:9201"),
+		elasticv5.SetURL(elasticV5URL),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -171,7 +177,7 @@ func TestClientV3(t *testing.T) {
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv3.NewClient(
-		elasticv3.SetURL("http://127.0.0.1:9200"),
+		elasticv3.SetURL(elasticV3URL),
 		elasticv3.SetHttpClient(tc),
 		elasticv3.SetSniff(false),
 		elasticv3.SetHealthcheck(false),
@@ -184,19 +190,19 @@ func TestClientV3(t *testing.T) {
 		BodyString(`{"user": "test", "message": "hello"}`).
 		DoC(context.TODO())
 	assert.NoError(err)
-	checkPUTTrace(assert, mt)
+	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("twitter").Type("tweet").
 		Id("1").DoC(context.TODO())
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTrace(assert, mt, "127.0.0.1")
 
 	mt.Reset()
 	_, err = client.Get().Index("not-real-index").
 		Id("1").DoC(context.TODO())
 	assert.Error(err)
-	checkErrTrace(assert, mt)
+	checkErrTrace(assert, mt, "127.0.0.1")
 }
 
 func TestClientV3Failure(t *testing.T) {
@@ -207,7 +213,7 @@ func TestClientV3Failure(t *testing.T) {
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv3.NewClient(
 		// inexistent service, it must fail
-		elasticv3.SetURL("http://127.0.0.1:29200"),
+		elasticv3.SetURL(elasticFakeURL),
 		elasticv3.SetHttpClient(tc),
 		elasticv3.SetSniff(false),
 		elasticv3.SetHealthcheck(false),
@@ -222,7 +228,7 @@ func TestClientV3Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt)
+	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
@@ -236,7 +242,7 @@ func TestClientV5Failure(t *testing.T) {
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
 	client, err := elasticv5.NewClient(
 		// inexistent service, it must fail
-		elasticv5.SetURL("http://127.0.0.1:29201"),
+		elasticv5.SetURL(elasticFakeURL),
 		elasticv5.SetHttpClient(tc),
 		elasticv5.SetSniff(false),
 		elasticv5.SetHealthcheck(false),
@@ -251,13 +257,13 @@ func TestClientV5Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt)
+	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }
 
-func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("PUT /twitter/tweet/?", span.Tag(ext.ResourceName))
@@ -267,9 +273,10 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
-func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
@@ -278,9 +285,10 @@ func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
-func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
+func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
 	span := mt.FinishedSpans()[0]
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /not-real-index/_all/?", span.Tag(ext.ResourceName))
@@ -290,6 +298,7 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
+	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
 }
 
 func TestQuantize(t *testing.T) {
@@ -334,7 +343,7 @@ func TestResourceNamerSettings(t *testing.T) {
 
 		tc := NewHTTPClient()
 		client, err := elasticv5.NewClient(
-			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetURL(elasticV3URL),
 			elasticv5.SetHttpClient(tc),
 			elasticv5.SetSniff(false),
 			elasticv5.SetHealthcheck(false),
@@ -356,7 +365,7 @@ func TestResourceNamerSettings(t *testing.T) {
 
 		tc := NewHTTPClient(WithResourceNamer(staticNamer))
 		client, err := elasticv5.NewClient(
-			elasticv5.SetURL("http://127.0.0.1:9200"),
+			elasticv5.SetURL(elasticV3URL),
 			elasticv5.SetHttpClient(tc),
 			elasticv5.SetSniff(false),
 			elasticv5.SetHealthcheck(false),
@@ -451,7 +460,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 		tc := NewHTTPClient(opts...)
 		client, err := elasticv5.NewClient(
-			elasticv5.SetURL("http://127.0.0.1:9201"),
+			elasticv5.SetURL(elasticV5URL),
 			elasticv5.SetHttpClient(tc),
 			elasticv5.SetSniff(false),
 			elasticv5.SetHealthcheck(false),
@@ -526,7 +535,7 @@ func TestNamingSchema(t *testing.T) {
 		defer mt.Stop()
 		tc := NewHTTPClient(opts...)
 		client, err := elasticv5.NewClient(
-			elasticv5.SetURL("http://127.0.0.1:9201"),
+			elasticv5.SetURL(elasticV5URL),
 			elasticv5.SetHttpClient(tc),
 			elasticv5.SetSniff(false),
 			elasticv5.SetHealthcheck(false),

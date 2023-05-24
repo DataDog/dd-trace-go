@@ -53,8 +53,9 @@ func genIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *Writer
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	// add some dummy values to broker/addr to test bootstrap servers.
 	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092"),
+		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
 		Topic:        testTopic,
 		RequiredAcks: kafka.RequireOne,
 	}
@@ -64,7 +65,7 @@ func genIntegrationTestSpans(t *testing.T, writerOp func(t *testing.T, w *Writer
 	require.NoError(t, err)
 
 	r := NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092"},
+		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
 		GroupID: testGroupID,
 		Topic:   testTopic,
 		MaxWait: testReaderMaxWait,
@@ -112,6 +113,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
 	// consumer span
 	s1 := spans[1]
@@ -124,6 +126,7 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 }
 
 func TestFetchMessageFunctional(t *testing.T) {
@@ -158,6 +161,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "segmentio/kafka.go.v0", s0.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 
 	// consumer span
 	s1 := spans[1]
@@ -170,6 +174,7 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "segmentio/kafka.go.v0", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 }
 
 func TestNamingSchema(t *testing.T) {
@@ -199,4 +204,32 @@ func TestNamingSchema(t *testing.T) {
 		)
 	}
 	namingschematest.NewKafkaTest(genSpans)(t)
+}
+
+func BenchmarkReaderStartSpan(b *testing.B) {
+	r := NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
+		GroupID: testGroupID,
+		Topic:   testTopic,
+		MaxWait: testReaderMaxWait,
+	})
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		r.startSpan(nil, &testMessages[0])
+	}
+}
+
+func BenchmarkWriterStartSpan(b *testing.B) {
+	kw := &kafka.Writer{
+		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+	}
+	w := WrapWriter(kw)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		w.startSpan(nil, &testMessages[0])
+	}
 }

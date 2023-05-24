@@ -8,4 +8,4 @@ export BASELINE_SRC="/app/baseline/"
 export UNCONFIDENCE_THRESHOLD=2.0
 export FAIL_ON_REGRESSION_THRESHOLD=$UNCONFIDENCE_THRESHOLD
 
-export BENCHMARK_TARGETS="BenchmarkConcurrentTracing|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkInjectW3C"
+export BENCHMARK_TARGETS="BenchmarkConcurrentTracing|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C"

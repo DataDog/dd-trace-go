@@ -405,7 +405,7 @@ func TestBlocking(t *testing.T) {
 		// Check that the request was blocked
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
-		require.NotEqual(t, "Hello World!\n", string(b))
+		require.NotContains(t, string(b), "Hello World!\n")
 		require.Equal(t, 403, res.StatusCode)
 	})
 
