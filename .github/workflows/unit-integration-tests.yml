@@ -18,6 +18,7 @@ jobs:
       - name: Copyright
         run: |
           go run checkcopyright.go
+
       - name: slack-send
         id: slack
         uses: slackapi/slack-github-action@v1.24.0
