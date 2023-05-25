@@ -17,3 +17,12 @@ jobs:
     with:
       go-version: "1.18"
     secrets: inherit
+  slack-alert:
+    if: ${{ failure() }}
+    name: Send Alert to Slack
+    steps:
+      - name: slack-send
+        id: slack
+        uses: 'slackapi/slack-github-action@v1.24.0'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
