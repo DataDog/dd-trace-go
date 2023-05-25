@@ -33,3 +33,14 @@ jobs:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
     secrets: inherit
+  slack-alert:
+    runs-on: ubuntu-latest
+    needs: [unit-integration-tests, multios-unit-tests]
+    if: ${{ failure() }}
+    name: Send Alert to Slack
+    steps:
+      - name: slack-send
+        id: slack
+        uses: 'slackapi/slack-github-action@v1.24.0'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
