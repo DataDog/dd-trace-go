@@ -18,6 +18,10 @@ jobs:
       - name: Copyright
         run: |
           go run checkcopyright.go
+      - name: slack-send
+        uses: slackapi/slack-github-action@v1.24.0
+	env:
+	  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
   lint:
     runs-on: ubuntu-latest
