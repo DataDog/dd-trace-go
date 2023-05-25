@@ -1,7 +1,7 @@
 {
   "version": "2.2",
   "metadata": {
-    "rules_version": "1.7.0"
+    "rules_version": "1.7.1"
   },
   "rules": [
     {
@@ -4390,7 +4390,7 @@
       "id": "dog-913-001",
       "name": "BurpCollaborator OOB domain",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "BurpCollaborator",
         "confidence": "1"
@@ -4604,7 +4604,7 @@
       "id": "dog-913-007",
       "name": "Interact.sh OOB domain",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "interact.sh",
         "confidence": "1"
@@ -5689,7 +5689,7 @@
       "id": "ua0-600-0xx",
       "name": "Joomla exploitation tool",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Joomla exploitation tool",
         "confidence": "1"
@@ -5716,7 +5716,7 @@
       "id": "ua0-600-10x",
       "name": "Nessus",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nessus",
         "confidence": "1"
@@ -5743,7 +5743,7 @@
       "id": "ua0-600-12x",
       "name": "Arachni",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Arachni",
         "confidence": "1"
@@ -5770,7 +5770,7 @@
       "id": "ua0-600-13x",
       "name": "Jorgee",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Jorgee",
         "confidence": "1"
@@ -5824,7 +5824,7 @@
       "id": "ua0-600-15x",
       "name": "Metis",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Metis",
         "confidence": "1"
@@ -5851,7 +5851,7 @@
       "id": "ua0-600-16x",
       "name": "SQL power injector",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "SQLPowerInjector",
         "confidence": "1"
@@ -5878,7 +5878,7 @@
       "id": "ua0-600-18x",
       "name": "N-Stealth",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "N-Stealth",
         "confidence": "1"
@@ -5905,7 +5905,7 @@
       "id": "ua0-600-19x",
       "name": "Brutus",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Brutus",
         "confidence": "1"
@@ -5934,7 +5934,6 @@
       "tags": {
         "type": "security_scanner",
         "category": "attack_attempt",
-        "tool_name": "Shellshock",
         "confidence": "1"
       },
       "conditions": [
@@ -5986,7 +5985,7 @@
       "id": "ua0-600-22x",
       "name": "JAASCois",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "JAASCois",
         "confidence": "1"
@@ -6013,7 +6012,7 @@
       "id": "ua0-600-26x",
       "name": "Nsauditor",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nsauditor",
         "confidence": "1"
@@ -6040,7 +6039,7 @@
       "id": "ua0-600-27x",
       "name": "Paros",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Paros",
         "confidence": "1"
@@ -6067,7 +6066,7 @@
       "id": "ua0-600-28x",
       "name": "DirBuster",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "DirBuster",
         "confidence": "1"
@@ -6094,7 +6093,7 @@
       "id": "ua0-600-29x",
       "name": "Pangolin",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Pangolin",
         "confidence": "1"
@@ -6148,7 +6147,7 @@
       "id": "ua0-600-30x",
       "name": "SQLNinja",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "SQLNinja",
         "confidence": "1"
@@ -6175,7 +6174,7 @@
       "id": "ua0-600-31x",
       "name": "Nikto",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nikto",
         "confidence": "1"
@@ -6202,7 +6201,7 @@
       "id": "ua0-600-33x",
       "name": "BlackWidow",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "BlackWidow",
         "confidence": "1"
@@ -6229,7 +6228,7 @@
       "id": "ua0-600-34x",
       "name": "Grendel-Scan",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Grendel-Scan",
         "confidence": "1"
@@ -6256,7 +6255,7 @@
       "id": "ua0-600-35x",
       "name": "Havij",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Havij",
         "confidence": "1"
@@ -6283,7 +6282,7 @@
       "id": "ua0-600-36x",
       "name": "w3af",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "w3af",
         "confidence": "1"
@@ -6310,7 +6309,7 @@
       "id": "ua0-600-37x",
       "name": "Nmap",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nmap",
         "confidence": "1"
@@ -6337,7 +6336,7 @@
       "id": "ua0-600-39x",
       "name": "Nessus Scripted",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nessus",
         "confidence": "1"
@@ -6364,7 +6363,7 @@
       "id": "ua0-600-3xx",
       "name": "Evil Scanner",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "EvilScanner",
         "confidence": "1"
@@ -6391,7 +6390,7 @@
       "id": "ua0-600-40x",
       "name": "WebFuck",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "WebFuck",
         "confidence": "1"
@@ -6418,7 +6417,7 @@
       "id": "ua0-600-42x",
       "name": "OpenVAS",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "OpenVAS",
         "confidence": "1"
@@ -6445,7 +6444,7 @@
       "id": "ua0-600-43x",
       "name": "Spider-Pig",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Spider-Pig",
         "confidence": "1"
@@ -6472,7 +6471,7 @@
       "id": "ua0-600-44x",
       "name": "Zgrab",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Zgrab",
         "confidence": "1"
@@ -6499,7 +6498,7 @@
       "id": "ua0-600-45x",
       "name": "Zmeu",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Zmeu",
         "confidence": "1"
@@ -6553,7 +6552,7 @@
       "id": "ua0-600-48x",
       "name": "Commix",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Commix",
         "confidence": "1"
@@ -6580,7 +6579,7 @@
       "id": "ua0-600-49x",
       "name": "Gobuster",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Gobuster",
         "confidence": "1"
@@ -6607,7 +6606,7 @@
       "id": "ua0-600-4xx",
       "name": "CGIchk",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "CGIchk",
         "confidence": "1"
@@ -6634,7 +6633,7 @@
       "id": "ua0-600-51x",
       "name": "FFUF",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "FFUF",
         "confidence": "1"
@@ -6661,7 +6660,7 @@
       "id": "ua0-600-52x",
       "name": "Nuclei",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nuclei",
         "confidence": "1"
@@ -6688,7 +6687,7 @@
       "id": "ua0-600-53x",
       "name": "Tsunami",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Tsunami",
         "confidence": "1"
@@ -6715,7 +6714,7 @@
       "id": "ua0-600-54x",
       "name": "Nimbostratus",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Nimbostratus",
         "confidence": "1"
@@ -6775,7 +6774,7 @@
       "id": "ua0-600-56x",
       "name": "Datadog test scanner - blocking version: user-agent",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Datadog Canary Test",
         "confidence": "1"
@@ -6838,7 +6837,7 @@
       "id": "ua0-600-58x",
       "name": "wfuzz",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "wfuzz",
         "confidence": "1"
@@ -6892,7 +6891,7 @@
       "id": "ua0-600-5xx",
       "name": "Blind SQL Injection Brute Forcer",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "BSQLBF",
         "confidence": "1"
@@ -6919,7 +6918,7 @@
       "id": "ua0-600-60x",
       "name": "masscan",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "masscan",
         "confidence": "1"
@@ -6946,7 +6945,7 @@
       "id": "ua0-600-61x",
       "name": "WPScan",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "WPScan",
         "confidence": "1"
@@ -7026,7 +7025,7 @@
       "id": "ua0-600-7xx",
       "name": "SQLmap",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "SQLmap",
         "confidence": "1"
@@ -7053,7 +7052,7 @@
       "id": "ua0-600-9xx",
       "name": "Skipfish",
       "tags": {
-        "type": "security_scanner",
+        "type": "attack_tool",
         "category": "attack_attempt",
         "tool_name": "Skipfish",
         "confidence": "1"
