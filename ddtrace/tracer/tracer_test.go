@@ -169,6 +169,7 @@ func TestTracerCleanStop(t *testing.T) {
 }
 
 func TestTracerStart(t *testing.T) {
+	t.Fatalf("TEST FAILURE")
 	t.Run("normal", func(t *testing.T) {
 		Start()
 		defer Stop()
