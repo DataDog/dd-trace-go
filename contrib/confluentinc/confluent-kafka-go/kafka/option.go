@@ -7,10 +7,11 @@ package kafka
 
 import (
 	"context"
-	"math"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"math"
+	"net"
+	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
@@ -22,6 +23,7 @@ type config struct {
 	consumerOperationName string
 	producerOperationName string
 	analyticsRate         float64
+	bootstrapServers      string
 	tagFns                map[string]func(msg *kafka.Message) interface{}
 }
 
@@ -102,5 +104,21 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 			cfg.tagFns = make(map[string]func(msg *kafka.Message) interface{})
 		}
 		cfg.tagFns[tag] = tagFn
+	}
+}
+
+// WithConfig extracts the config information for the client to be tagged
+func WithConfig(cg *kafka.ConfigMap) Option {
+	return func(cfg *config) {
+		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
+			var hostnames []string
+			for _, addr := range strings.Split(bs.(string), ",") {
+				host, _, err := net.SplitHostPort(addr)
+				if err == nil {
+					hostnames = append(hostnames, host)
+				}
+			}
+			cfg.bootstrapServers = hostnames[0]
+		}
 	}
 }
