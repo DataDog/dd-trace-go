@@ -7,11 +7,12 @@ package kafka
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"math"
 	"net"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
