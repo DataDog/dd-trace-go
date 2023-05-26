@@ -7,13 +7,15 @@ package consul
 
 import (
 	"context"
+	"math"
+
 	consul "github.com/hashicorp/consul/api"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"math"
 )
 
 const componentName = "hashicorp/consul"
@@ -51,18 +53,6 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	return &Client{c, cfg, context.Background()}
 }
 
-/*// WrapClientWithConfig wraps a given consul.Client with a tracer under the given service name plus additional config info
-func WrapClientWithConfig(c *consul.Client, config *consul.Config, opts ...ClientOption) *Client {
-	cfg := new(clientConfig)
-	defaults(cfg)
-	for _, fn := range opts {
-		fn(cfg)
-	}
-	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
-	consulConfig := &consulConfig{hostname: strings.Split(config.Address, ":")[0]}
-	return &Client{c, consulConfig, cfg, context.Background()}
-}*/
-
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
 	c.ctx = ctx
@@ -92,7 +82,7 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}
 
-	if k.config.consulConfig != nil && k.config.hostname != "" {
+	if k.config.hostname != "" {
 		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, k.config.hostname))
 	}
 
