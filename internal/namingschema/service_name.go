@@ -16,20 +16,25 @@ func NewServiceNameSchema(userOverride, defaultName string, opts ...Option) *Sch
 		opt(cfg)
 	}
 	return New(&standardServiceNameSchema{
-		userOverride: userOverride,
-		defaultName:  defaultName,
-		cfg:          cfg,
+		userOverride:               userOverride,
+		defaultName:                defaultName,
+		defaultServiceNamesEnabled: GetDefaultServiceNamesEnabled(),
+		cfg:                        cfg,
 	})
 }
 
 type standardServiceNameSchema struct {
-	userOverride string
-	defaultName  string
-	cfg          *config
+	userOverride               string
+	defaultName                string
+	defaultServiceNamesEnabled bool
+	cfg                        *config
 }
 
 func (s *standardServiceNameSchema) V0() string {
-	return s.getName(SchemaV0)
+	if s.defaultServiceNamesEnabled {
+		return s.getName(SchemaV0)
+	}
+	return s.V1()
 }
 
 func (s *standardServiceNameSchema) V1() string {

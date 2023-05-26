@@ -24,6 +24,7 @@ func TestNewServiceNameSchema(t *testing.T) {
 		schemaVersion       namingschema.Version
 		serviceNameOverride string
 		ddService           string
+		beforeTestHook      func(t *testing.T) func()
 		opts                []namingschema.Option
 		want                string
 	}{
@@ -91,6 +92,36 @@ func TestNewServiceNameSchema(t *testing.T) {
 			opts:                []namingschema.Option{optOverrideV1},
 			want:                "override-v1",
 		},
+		{
+			name:                "schema v0 with defaults disabled",
+			schemaVersion:       namingschema.SchemaV0,
+			serviceNameOverride: "",
+			ddService:           "dd-service",
+			beforeTestHook: func(_ *testing.T) func() {
+				prev := namingschema.GetDefaultServiceNamesEnabled()
+				namingschema.SetDefaultServiceNamesEnabled(false)
+				return func() {
+					namingschema.SetDefaultServiceNamesEnabled(prev)
+				}
+			},
+			opts: nil,
+			want: "dd-service",
+		},
+		{
+			name:                "schema v0 with defaults enabled",
+			schemaVersion:       namingschema.SchemaV0,
+			serviceNameOverride: "",
+			ddService:           "",
+			beforeTestHook: func(_ *testing.T) func() {
+				prev := namingschema.GetDefaultServiceNamesEnabled()
+				namingschema.SetDefaultServiceNamesEnabled(true)
+				return func() {
+					namingschema.SetDefaultServiceNamesEnabled(prev)
+				}
+			},
+			opts: nil,
+			want: "default",
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -98,12 +129,14 @@ func TestNewServiceNameSchema(t *testing.T) {
 			defer namingschema.SetVersion(version)
 			namingschema.SetVersion(tc.schemaVersion)
 
+			if tc.beforeTestHook != nil {
+				tc.beforeTestHook(t)
+			}
 			if tc.ddService != "" {
 				svc := globalconfig.ServiceName()
 				defer globalconfig.SetServiceName(svc)
 				globalconfig.SetServiceName(tc.ddService)
 			}
-
 			s := namingschema.NewServiceNameSchema(tc.serviceNameOverride, defaultServiceName, tc.opts...)
 			assert.Equal(t, tc.want, s.GetName())
 		})
