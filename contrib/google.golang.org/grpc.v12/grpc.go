@@ -56,7 +56,7 @@ func UnaryServerInterceptor(opts ...InterceptorOption) grpc.UnaryServerIntercept
 }
 
 func startServerSpanFromContext(ctx context.Context, method string, cfg *interceptorConfig) (ddtrace.Span, context.Context) {
-	methodElements := strings.Split(strings.TrimPrefix(method, "/"), "/")
+	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	extraOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(method),
