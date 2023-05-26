@@ -9,13 +9,13 @@ import (
 	"context"
 	"math"
 
-	consul "github.com/hashicorp/consul/api"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	consul "github.com/hashicorp/consul/api"
 )
 
 const componentName = "hashicorp/consul"
