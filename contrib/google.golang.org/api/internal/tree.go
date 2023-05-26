@@ -6,7 +6,6 @@
 package internal
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -39,12 +38,6 @@ type (
 		ResourceName string
 	}
 )
-
-// String returns a constructor without field names.
-func (e Endpoint) String() string {
-	return fmt.Sprintf(`{Hostname: "%s", HTTPMethod: "%s", PathTemplate: "%s", PathMatcher: regexp.MustCompile(`+"`"+`%s`+"`"+`), ServiceName: "%s", ResourceName: "%s"}`,
-		e.Hostname, e.HTTPMethod, e.PathTemplate, e.PathMatcher.String(), e.ServiceName, e.ResourceName)
-}
 
 // NewTree creates a new Tree. You can optionally pass endpoints to add to the
 // tree.
