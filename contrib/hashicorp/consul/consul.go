@@ -7,16 +7,13 @@ package consul
 
 import (
 	"context"
-	"math"
-	"strings"
-
+	consul "github.com/hashicorp/consul/api"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	consul "github.com/hashicorp/consul/api"
+	"math"
 )
 
 const componentName = "hashicorp/consul"
@@ -25,17 +22,11 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
-// A kafkaConfig struct holds information from the kafka config for span tags
-type consulConfig struct {
-	hostname string
-}
-
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
 type Client struct {
 	*consul.Client
-	consulConfig *consulConfig
-	config       *clientConfig
-	ctx          context.Context
+	config *clientConfig
+	ctx    context.Context
 }
 
 // NewClient returns a traced Consul client.
@@ -44,11 +35,12 @@ func NewClient(config *consul.Config, opts ...ClientOption) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapClientWithConfig(c, config, opts...), nil
+
+	opts = append(opts, WithConfig(config))
+	return WrapClient(c, opts...), nil
 }
 
 // WrapClient wraps a given consul.Client with a tracer under the given service name.
-// Deprecated: Replaced with WrapClientWithConfig such that config information can be used in span tags.
 func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -56,10 +48,10 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 		fn(cfg)
 	}
 	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
-	return &Client{c, nil, cfg, context.Background()}
+	return &Client{c, cfg, context.Background()}
 }
 
-// WrapClientWithConfig wraps a given consul.Client with a tracer under the given service name plus additional config info
+/*// WrapClientWithConfig wraps a given consul.Client with a tracer under the given service name plus additional config info
 func WrapClientWithConfig(c *consul.Client, config *consul.Config, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
@@ -69,7 +61,7 @@ func WrapClientWithConfig(c *consul.Client, config *consul.Config, opts ...Clien
 	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	consulConfig := &consulConfig{hostname: strings.Split(config.Address, ":")[0]}
 	return &Client{c, consulConfig, cfg, context.Background()}
-}
+}*/
 
 // WithContext sets a context on a Client. Use it to ensure that emitted spans have the correct parent.
 func (c *Client) WithContext(ctx context.Context) *Client {
@@ -80,14 +72,13 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 // A KV is used to trace requests to Consul's KV.
 type KV struct {
 	*consul.KV
-	consulConfig *consulConfig
-	config       *clientConfig
-	ctx          context.Context
+	config *clientConfig
+	ctx    context.Context
 }
 
 // KV returns the KV for the Client.
 func (c *Client) KV() *KV {
-	return &KV{c.Client.KV(), c.consulConfig, c.config, c.ctx}
+	return &KV{c.Client.KV(), c.config, c.ctx}
 }
 
 func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
@@ -99,8 +90,12 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
-		tracer.Tag(ext.NetworkDestinationName, k.consulConfig.hostname),
 	}
+
+	if k.config.consulConfig != nil && k.config.hostname != "" {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, k.config.hostname))
+	}
+
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))
 	}
