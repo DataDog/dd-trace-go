@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.45.0-rc.1
 	github.com/DataDog/datadog-go/v5 v5.1.1
-	github.com/DataDog/go-libddwaf v1.2.0
+	github.com/DataDog/go-libddwaf v1.2.1-0.20230526152649-117a81e957b7
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
@@ -138,6 +138,7 @@ require (
 	github.com/eapache/go-resiliency v1.1.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/ebitengine/purego v0.4.0-alpha.4.0.20230519103000-ee8dcecc618f // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect

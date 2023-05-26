@@ -633,6 +633,8 @@ github.com/DataDog/datadog-go/v5 v5.1.1 h1:JLZ6s2K1pG2h9GkvEvMdEGqMDyVLEAccdX5Tl
 github.com/DataDog/datadog-go/v5 v5.1.1/go.mod h1:KhiYb2Badlv9/rofz+OznKoEF5XKTonWyhx5K83AP8E=
 github.com/DataDog/go-libddwaf v1.2.0 h1:fKHP5U29E597eV2hU501fcW40bL8zcQ081jEGuRw2kM=
 github.com/DataDog/go-libddwaf v1.2.0/go.mod h1:DI5y8obPajk+Tvy2o+nZc2g/5Ria/Rfq5/624k7pHpE=
+github.com/DataDog/go-libddwaf v1.2.1-0.20230526152649-117a81e957b7 h1:jgHnNeIJYnbXyv6z7IuQ8ol+2LaXqIR3e5mSGIKtTCI=
+github.com/DataDog/go-libddwaf v1.2.1-0.20230526152649-117a81e957b7/go.mod h1:bysxCVisE3UgiX7HEsJ4gGdVyZvR4UEOHbk/wbYh/Wg=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork h1:yBq5PrAtrM4yVeSzQ+bn050+Ysp++RKF1QmtkL4VqvU=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork/go.mod h1:yA5JwkZsHTLuqq3zaRgUQf35DfDkpOZqgtBqHKpwrBs=
 github.com/DataDog/gostackparse v0.5.0 h1:jb72P6GFHPHz2W0onsN51cS3FkaMDcjb0QzgxxA4gDk=
@@ -1046,6 +1048,8 @@ github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21 h1:YEetp8
 github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21/go.mod h1:+020luEh2TKB4/GOp8oxxtq0Daoen/Cii55CzbTV6DU=
 github.com/eapache/queue v1.1.0 h1:YOEu7KNc61ntiQlcEeUIoDTJ2o8mQznoNvUhiigpIqc=
 github.com/eapache/queue v1.1.0/go.mod h1:6eCeP0CKFpHLu8blIFXhExK/dRa7WDZfr6jVFPTqq+I=
+github.com/ebitengine/purego v0.4.0-alpha.4.0.20230519103000-ee8dcecc618f h1:v8f0ADMg0RBM0+5rb8qCFj/XlPkjo+xkyCLuUpBnj9s=
+github.com/ebitengine/purego v0.4.0-alpha.4.0.20230519103000-ee8dcecc618f/go.mod h1:ah1In8AOtksoNK6yk5z1HTJeUkC1Ez4Wk2idgGslMwQ=
 github.com/elastic/elastic-transport-go/v8 v8.1.0 h1:NeqEz1ty4RQz+TVbUrpSU7pZ48XkzGWQj02k5koahIE=
 github.com/elastic/elastic-transport-go/v8 v8.1.0/go.mod h1:87Tcz8IVNe6rVSLdBux1o/PEItLtyabHU3naC7IoqKI=
 github.com/elastic/go-elasticsearch/v6 v6.8.5 h1:U2HtkBseC1FNBmDr0TR2tKltL6FxoY+niDAlj5M8TK8=
