@@ -111,14 +111,13 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 func WithConfig(cg *kafka.ConfigMap) Option {
 	return func(cfg *config) {
 		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
-			var hostnames []string
 			for _, addr := range strings.Split(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
 				if err == nil {
-					hostnames = append(hostnames, host)
+					cfg.bootstrapServers = host
+					return
 				}
 			}
-			cfg.bootstrapServers = hostnames[0]
 		}
 	}
 }
