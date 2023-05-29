@@ -42,10 +42,10 @@ var apiEndpointsTree *tree.Tree
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	initApiEndpointsTree()
+	initAPIEndpointsTree()
 }
 
-func initApiEndpointsTree() {
+func initAPIEndpointsTree() {
 	var apiEndpoints []tree.Endpoint
 	if err := json.Unmarshal(endpointBytes, &apiEndpoints); err != nil {
 		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
