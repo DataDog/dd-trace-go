@@ -104,6 +104,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -115,6 +116,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
