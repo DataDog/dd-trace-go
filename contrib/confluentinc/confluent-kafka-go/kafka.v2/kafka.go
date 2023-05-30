@@ -31,6 +31,7 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapConsumer(c, opts...), nil
 }
 
@@ -40,6 +41,7 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapProducer(p, opts...), nil
 }
 
@@ -106,6 +108,9 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
+	}
+	if c.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, c.cfg.bootstrapServers))
 	}
 	if c.cfg.tagFns != nil {
 		for key, tagFn := range c.cfg.tagFns {
@@ -216,6 +221,9 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
+	}
+	if p.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, p.cfg.bootstrapServers))
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
