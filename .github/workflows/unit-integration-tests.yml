@@ -33,6 +33,7 @@ jobs:
         uses: reviewdog/action-golangci-lint@v2
         with:
           golangci_lint_version: v1.52.2
+          fail_on_error: true
 
   test-core:
     runs-on: ubuntu-latest
