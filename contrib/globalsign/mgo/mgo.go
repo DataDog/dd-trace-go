@@ -47,16 +47,21 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 			hostnames = append(hostnames, host)
 		}
 	}
+	tags := map[string]string{
+		"mgo_version": version,
+	}
+
+	if ls := session.LiveServers(); len(ls) > 0 {
+		tags["hosts"] = strings.Join(ls, ", ")
+		tags[ext.NetworkDestinationName] = hostnames[0]
+	}
 
 	s := &Session{
 		Session: session,
 		cfg:     newConfig(),
-		tags: map[string]string{
-			"hosts":                    strings.Join(session.LiveServers(), ", "),
-			ext.NetworkDestinationName: hostnames[0],
-			"mgo_version":              version,
-		},
+		tags:    tags,
 	}
+
 	for _, fn := range opts {
 		fn(s.cfg)
 	}
