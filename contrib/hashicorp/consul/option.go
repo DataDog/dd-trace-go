@@ -6,9 +6,10 @@
 package consul
 
 import (
-	consul "github.com/hashicorp/consul/api"
 	"math"
 	"net"
+
+	consul "github.com/hashicorp/consul/api"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
