@@ -38,22 +38,26 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 		version = info.Version
 	}
 
-	// Note that these are all currently known hosts that are alive
-	// This is not guaranteed to be the exact server involved in the communication
-	var hostnames []string
-	for _, addr := range session.LiveServers() {
-		host, _, err := net.SplitHostPort(addr)
-		if err == nil {
-			hostnames = append(hostnames, host)
-		}
-	}
 	tags := map[string]string{
 		"mgo_version": version,
 	}
 
 	if ls := session.LiveServers(); len(ls) > 0 {
 		tags["hosts"] = strings.Join(ls, ", ")
-		tags[ext.NetworkDestinationName] = hostnames[0]
+
+		// Note that these are all currently known hosts that are alive
+		// This is not guaranteed to be the exact server involved in the communication
+		var hostnames []string
+		for _, addr := range ls {
+			host, _, err := net.SplitHostPort(addr)
+			if err == nil {
+				hostnames = append(hostnames, host)
+			}
+		}
+
+		if len(hostnames) > 0 {
+			tags[ext.NetworkDestinationName] = hostnames[0]
+		}
 	}
 
 	s := &Session{
