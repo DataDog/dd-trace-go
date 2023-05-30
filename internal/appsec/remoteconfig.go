@@ -370,6 +370,7 @@ func (a *appsec) enableRCBlocking() {
 		a.registerRCCapability(remoteconfig.ASMIPBlocking)
 		a.registerRCCapability(remoteconfig.ASMDDRules)
 		a.registerRCCapability(remoteconfig.ASMExclusions)
+		a.registerRCCapability(remoteconfig.ASMCustomRules)
 	}
 }
 
@@ -382,5 +383,6 @@ func (a *appsec) disableRCBlocking() {
 	a.unregisterRCCapability(remoteconfig.ASMIPBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMRequestBlocking)
 	a.unregisterRCCapability(remoteconfig.ASMUserBlocking)
+	a.unregisterRCCapability(remoteconfig.ASMCustomRules)
 	a.rc.UnregisterCallback(a.onRCRulesUpdate)
 }

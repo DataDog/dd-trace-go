@@ -118,7 +118,12 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) 
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
+// The onBlock params are used to cleanup the context when needed.
+// It is a specific patch meant for Gin, for which we must abort the
+// context since it uses a queue of handlers and it's the only way to make
+// sure other queued handlers don't get executed.
+// TODO: this patch must be removed/improved when we rework our actions/operations system
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
@@ -140,6 +145,13 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			events := op.Finish(HandlerOperationRes{Status: status})
 			if h := applyActions(op); h != nil {
 				h.ServeHTTP(w, r)
+			}
+			// Execute the onBlock functions to make sure blocking works properly
+			// in case we are instrumenting the Gin framework
+			if _, ok := op.Tags()[instrumentation.BlockedRequestTag]; ok {
+				for _, f := range onBlock {
+					f()
+				}
 			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
