@@ -34,6 +34,7 @@ jobs:
         with:
           golangci_lint_version: v1.52.2
           fail_on_error: true
+          reporter: github-pr-review
 
   test-core:
     runs-on: ubuntu-latest
