@@ -6,10 +6,9 @@
 package consul
 
 import (
-	"math"
-	"strings"
-
 	consul "github.com/hashicorp/consul/api"
+	"math"
+	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -80,6 +79,8 @@ func WithAnalyticsRate(rate float64) ClientOption {
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(config *consul.Config) ClientOption {
 	return func(cfg *clientConfig) {
-		cfg.hostname = strings.Split(config.Address, ":")[0]
+		if host, _, err := net.SplitHostPort(config.Address); err == nil {
+			cfg.hostname = host
+		}
 	}
 }
