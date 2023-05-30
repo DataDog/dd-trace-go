@@ -8,11 +8,11 @@ package sqlx_test
 import (
 	"log"
 
-	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
-
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	sqlxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 func ExampleOpen() {
