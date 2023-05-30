@@ -6,9 +6,9 @@
 package mgo
 
 import (
-	"github.com/globalsign/mgo"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/globalsign/mgo"
 )
 
 // Pipe is an mgo.Pipe instance along with the data necessary for tracing.
