@@ -27,7 +27,6 @@ func init() {
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.
 type Client struct {
 	*consul.Client
-
 	config *clientConfig
 	ctx    context.Context
 }
@@ -38,6 +37,8 @@ func NewClient(config *consul.Config, opts ...ClientOption) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	opts = append(opts, WithConfig(config))
 	return WrapClient(c, opts...), nil
 }
 
@@ -61,7 +62,6 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 // A KV is used to trace requests to Consul's KV.
 type KV struct {
 	*consul.KV
-
 	config *clientConfig
 	ctx    context.Context
 }
@@ -81,6 +81,11 @@ func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemConsulKV),
 	}
+
+	if k.config.hostname != "" {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, k.config.hostname))
+	}
+
 	if !math.IsNaN(k.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, k.config.analyticsRate))
 	}

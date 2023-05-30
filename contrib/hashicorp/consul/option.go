@@ -7,9 +7,12 @@ package consul
 
 import (
 	"math"
+	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	consul "github.com/hashicorp/consul/api"
 )
 
 const (
@@ -20,6 +23,7 @@ type clientConfig struct {
 	serviceName   string
 	operationName string
 	analyticsRate float64
+	hostname      string
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
@@ -69,6 +73,15 @@ func WithAnalyticsRate(rate float64) ClientOption {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
+		}
+	}
+}
+
+// WithConfig extracts the config information for the client to be tagged
+func WithConfig(config *consul.Config) ClientOption {
+	return func(cfg *clientConfig) {
+		if host, _, err := net.SplitHostPort(config.Address); err == nil {
+			cfg.hostname = host
 		}
 	}
 }
