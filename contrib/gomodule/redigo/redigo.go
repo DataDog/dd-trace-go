@@ -172,10 +172,9 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 
 func withSpan(ctx context.Context, do func(commandName string, args ...interface{}) (interface{}, error), p *params, commandName string, args ...interface{}) (reply interface{}, err error) {
 	// When a context exists in the args, it takes precedence over the passed ctx.
-	var ok bool
 	if n := len(args); n > 0 {
-		ctx, ok = args[n-1].(context.Context)
-		if ok {
+		if argCtx, ok := args[n-1].(context.Context); ok {
+			ctx = argCtx
 			args = args[:n-1]
 		}
 	}
