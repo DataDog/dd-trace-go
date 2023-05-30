@@ -8,9 +8,9 @@ package fastdelta
 import (
 	"fmt"
 
-	"github.com/spaolacci/murmur3"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
+
+	"github.com/spaolacci/murmur3"
 )
 
 // As of Go 1.19, the Go heap profile has 4 values per sample, with 2 of them

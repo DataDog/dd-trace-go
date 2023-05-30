@@ -12,11 +12,10 @@ package httpsec
 
 import (
 	"context"
-	"errors"
-
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"reflect"
