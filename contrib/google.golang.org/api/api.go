@@ -13,11 +13,15 @@
 // WithEndpointMetadataDisabled option.
 package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
 
+//go:generate go run ./internal/gen_endpoints -o gen_endpoints.json
+
 import (
+	_ "embed"
+	"encoding/json"
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal/tree"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -27,15 +31,33 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+//go:embed gen_endpoints.json
+var endpointBytes []byte
+
 const componentName = "google.golang.org/api"
+
+// apiEndpoints are the defined endpoints for the Google API; it is populated
+// by "go generate".
+var apiEndpointsTree *tree.Tree
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	initAPIEndpointsTree()
 }
 
-// apiEndpoints are all of the defined endpoints for the Google API; it is populated
-// by "go generate".
-var apiEndpoints *internal.Tree
+func initAPIEndpointsTree() {
+	var apiEndpoints []tree.Endpoint
+	if err := json.Unmarshal(endpointBytes, &apiEndpoints); err != nil {
+		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
+		return
+	}
+	tr, err := tree.New(apiEndpoints...)
+	if err != nil {
+		log.Warn("contrib/google.golang.org/api: failed to create endpoints tree: %v", err)
+		return
+	}
+	apiEndpointsTree = tr
+}
 
 // NewClient creates a new oauth http client suitable for use with the google
 // APIs with all requests traced automatically.
@@ -76,7 +98,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 }
 
 func setTagsWithEndpointMetadata(req *http.Request, span ddtrace.Span) {
-	e, ok := apiEndpoints.Get(req.URL.Hostname(), req.Method, req.URL.Path)
+	e, ok := apiEndpointsTree.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 	if ok {
 		span.SetTag(ext.ServiceName, e.ServiceName)
 		span.SetTag(ext.ResourceName, e.ResourceName)
