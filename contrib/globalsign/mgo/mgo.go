@@ -8,6 +8,7 @@ package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
 	"math"
+	"net"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -36,12 +37,24 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 	if info, err := session.BuildInfo(); err == nil {
 		version = info.Version
 	}
+
+	// Note that these are all currently known hosts that are alive
+	// This is not guaranteed to be the exact server involved in the communication
+	var hostnames []string
+	for _, addr := range session.LiveServers() {
+		host, _, err := net.SplitHostPort(addr)
+		if err == nil {
+			hostnames = append(hostnames, host)
+		}
+	}
+
 	s := &Session{
 		Session: session,
 		cfg:     newConfig(),
 		tags: map[string]string{
-			"hosts":       strings.Join(session.LiveServers(), ", "),
-			"mgo_version": version,
+			"hosts":                    strings.Join(session.LiveServers(), ", "),
+			ext.NetworkDestinationName: hostnames[0],
+			"mgo_version":              version,
 		},
 	}
 	for _, fn := range opts {
