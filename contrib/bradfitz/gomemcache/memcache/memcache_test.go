@@ -213,8 +213,8 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"memcached"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "memcached", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertV0, assertV1))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertV0, assertV1))
 }
 
 func makeFakeServer(t *testing.T) net.Listener {

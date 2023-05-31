@@ -70,10 +70,9 @@ func getServiceName(driverName string, rc *registerConfig) string {
 		// the one calculated above.
 		defaultServiceName = rc.serviceName
 	}
-	return namingschema.NewServiceNameSchema(
-		"",
+	return namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 }
 
@@ -84,7 +83,7 @@ func getSpanName(driverName string) string {
 	}
 	return namingschema.NewDBOutboundOp(
 		dbSystem,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, fmt.Sprintf("%s.query", driverName)),
+		namingschema.WithOverrideV0(fmt.Sprintf("%s.query", driverName)),
 	).GetName()
 }
 

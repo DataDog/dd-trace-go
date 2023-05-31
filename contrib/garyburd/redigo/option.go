@@ -24,10 +24,9 @@ type dialConfig struct {
 type DialOption func(*dialConfig)
 
 func defaults(cfg *dialConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	cfg.spanName = namingschema.NewRedisOutboundOp().GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
