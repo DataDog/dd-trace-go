@@ -27,7 +27,7 @@ type config struct {
 
 func newConfig(serviceName string) *config {
 	if serviceName == "" {
-		serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
+		serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	}
 	rate := globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {

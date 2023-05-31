@@ -60,20 +60,16 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultClientServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultClientServiceName),
+		namingschema.WithOverrideV0(defaultClientServiceName),
 	).GetName()
 	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
-		defaultServerServiceName,
-	).GetName()
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
 	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
 	defaults(cfg)
 }
