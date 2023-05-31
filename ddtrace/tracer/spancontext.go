@@ -464,28 +464,24 @@ func setPeerServiceFromSource(s *span) string {
 	case has(ext.DBSystem):
 		sources = []string{
 			ext.CassandraContactPoints,
-			ext.DBInstance,
 			ext.DBName,
-			ext.PeerHostname,
-			ext.TargetHost}
+			ext.DBInstance,
+		}
 	case has(ext.MessagingSystem):
 		sources = []string{
 			ext.KafkaBootstrapServers,
-			ext.PeerHostname,
-			ext.TargetHost,
 		}
 	case has(ext.RPCSystem):
 		sources = []string{
 			ext.RPCService,
-			ext.PeerHostname,
-			ext.TargetHost,
-		}
-	default:
-		sources = []string{
-			ext.PeerHostname,
-			ext.TargetHost,
 		}
 	}
+	// network destination tags will be used as fallback unless there are higher priority sources already set.
+	sources = append(sources, []string{
+		ext.NetworkDestinationName,
+		ext.PeerHostname,
+		ext.TargetHost,
+	}...)
 	for _, source := range sources {
 		if val, ok := s.Meta[source]; ok {
 			s.setMeta(ext.PeerService, val)
