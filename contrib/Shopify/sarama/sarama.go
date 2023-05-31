@@ -72,7 +72,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 			if spanctx, err := tracer.Extract(carrier); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
-			next := tracer.StartSpan(cfg.consumerOperationName, opts...)
+			next := tracer.StartSpan(cfg.consumerSpanName, opts...)
 			// reinject the span context so consumers can pick it up
 			tracer.Inject(next.Context(), carrier)
 
@@ -279,7 +279,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span := tracer.StartSpan(cfg.producerOperationName, opts...)
+	span := tracer.StartSpan(cfg.producerSpanName, opts...)
 	if version.IsAtLeast(sarama.V0_11_0_0) {
 		// re-inject the span context so consumers can pick it up
 		tracer.Inject(span.Context(), carrier)

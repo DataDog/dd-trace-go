@@ -377,8 +377,8 @@ func TestServerNamingSchema(t *testing.T) {
 		WithDDService:            []string{ddService},
 		WithDDServiceAndOverride: []string{serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestClientNamingSchema(t *testing.T) {
@@ -412,6 +412,6 @@ func TestClientNamingSchema(t *testing.T) {
 		WithDDService:            []string{"grpc.client"},
 		WithDDServiceAndOverride: []string{serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
