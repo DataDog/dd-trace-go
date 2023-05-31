@@ -42,7 +42,7 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 		"mgo_version": version,
 	}
 	if ls := session.LiveServers(); len(ls) > 0 {
-		tags["hosts"] = strings.Join(ls, ", ")
+		tags["hosts"] = strings.Join(ls, ",")
 		// Note that these are all currently known hosts that are alive
 		// This is not guaranteed to be the exact server involved in the communication
 		for _, addr := range ls {
