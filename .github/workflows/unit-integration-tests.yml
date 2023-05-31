@@ -12,19 +12,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/dd-trace-go'
       - name: Copyright
         run: |
           go run checkcopyright.go
 
+  resolve-go-modules:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout Sources
+        uses: actions/checkout@v3
+      - id: set-matrix
+        run: |
+          PATHS=$(find . -mindepth 1 -type f -name go.mod -printf '"%h",')
+          echo "name=workdirs::[${PATHS%?}]" >> "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-latest
+    needs: resolve-go-modules
     strategy:
       matrix:
         # lint all files regardless of build tags
-        go_os: [linux, freebsd, windows, darwin, openbsd]
+        goos: [linux, freebsd, windows, darwin, openbsd]
+        # lint also nested Go modules
+        workdir: "${{ fromJSON(needs.resolve-go-modules.outputs.workdirs) }}"
     steps:
       - uses: actions/setup-go@v4
         with:
@@ -39,8 +54,9 @@ jobs:
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review
+          workdir: ${{ matrix.workdir }}
         env:
-          GOOS: ${{ matrix.go_os }}
+          GOOS: ${{ matrix.goos }}
 
   test-core:
     runs-on: ubuntu-latest
@@ -65,7 +81,7 @@ jobs:
           - 8126:8126
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/dd-trace-go'
       - uses: actions/setup-go@v3
@@ -216,7 +232,7 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/dd-trace-go'
       - uses: actions/setup-go@v3
