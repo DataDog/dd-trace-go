@@ -43,7 +43,7 @@ func TestCombinations(t *testing.T) {
 	}
 }
 
-func TestRepeatedStringSlice(t *testing.T) {
+func TestRepeatString(t *testing.T) {
 	sl := RepeatString("abc", 3)
 	assert.Equal(t, []string{"abc", "abc", "abc"}, sl)
 }

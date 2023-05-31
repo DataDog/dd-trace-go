@@ -47,13 +47,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/vektah/gqlparser/v2/ast"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/99designs/gqlgen/graphql"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 const componentName = "99designs/gqlgen"
@@ -63,8 +64,6 @@ func init() {
 }
 
 const (
-	defaultGraphqlOperation = "graphql.request"
-
 	readOp       = "graphql.read"
 	parsingOp    = "graphql.parse"
 	validationOp = "graphql.validate"
@@ -106,7 +105,6 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 	var (
 		octx *graphql.OperationContext
 	)
-	name := defaultGraphqlOperation
 	if graphql.HasOperationContext(ctx) {
 		// Variables in the operation will be left out of the tags
 		// until obfuscation is implemented in the agent.
@@ -118,7 +116,6 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 				// Return early and do not create these spans.
 				return next(ctx)
 			}
-			name = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 		}
 		if octx.RawQuery != "" {
 			opts = append(opts, tracer.ResourceName(octx.RawQuery))
@@ -126,7 +123,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
 	var span ddtrace.Span
-	span, ctx = tracer.StartSpanFromContext(ctx, name, opts...)
+	span, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(octx), opts...)
 	defer func() {
 		var errs []string
 		for _, err := range graphql.GetErrors(ctx) {
@@ -155,6 +152,16 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		createChildSpan(validationOp, octx.Stats.Validation.Start, octx.Stats.Validation.End)
 	}
 	return next(ctx)
+}
+
+func serverSpanName(octx *graphql.OperationContext) string {
+	nameV0 := "graphql.request"
+	if octx != nil && octx.Operation != nil {
+		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+	}
+	return namingschema.NewGraphqlServerOp(
+		namingschema.WithOverrideV0(nameV0),
+	).GetName()
 }
 
 // Ensure all of these interfaces are implemented.
