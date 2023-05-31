@@ -10,11 +10,11 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
-
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 func Index(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
