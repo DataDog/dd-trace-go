@@ -309,11 +309,7 @@ type query interface {
 }
 
 func getClusterContactPoints[T query](q T) ([]string, bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			// ignore panics as we are working with reflection
-		}
-	}()
+	defer func() { recover() }()
 	sv := reflect.ValueOf(q).Elem().FieldByName("session")
 	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
 	s, ok := sv.Interface().(*gocql.Session)
@@ -328,11 +324,7 @@ func getClusterContactPoints[T query](q T) ([]string, bool) {
 }
 
 func getClusterConfig(s *gocql.Session) (gocql.ClusterConfig, bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			// ignore panics as we are working with reflection
-		}
-	}()
+	defer func() { recover() }()
 	cv := reflect.ValueOf(s).Elem().FieldByName("cfg")
 	cv = reflect.NewAt(cv.Type(), unsafe.Pointer(cv.UnsafeAddr())).Elem()
 	cfg, ok := cv.Interface().(gocql.ClusterConfig)
