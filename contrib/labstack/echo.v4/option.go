@@ -8,7 +8,6 @@ package echo
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/labstack/echo/v4"
@@ -31,10 +30,7 @@ type Option func(*config)
 type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 }

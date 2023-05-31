@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -41,7 +41,7 @@ const (
 	ASMIPBlocking
 	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
 	ASMDDRules
-	// ASMExclusions represents the capabilty for ASM to exclude traffic from its protections
+	// ASMExclusions represents the capability for ASM to exclude traffic from its protections
 	ASMExclusions
 	// ASMRequestBlocking represents the capability for ASM to block requests based on the HTTP request related WAF addresses
 	ASMRequestBlocking
@@ -49,6 +49,8 @@ const (
 	ASMResponseBlocking
 	// ASMUserBlocking represents the capability for ASM to block requests based on user ID
 	ASMUserBlocking
+	// ASMCustomRules represents the capability for ASM to receive and use user-defined security rules
+	ASMCustomRules
 )
 
 // ProductUpdate represents an update for a specific product.

@@ -24,9 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -34,6 +31,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *span {
@@ -2371,11 +2371,16 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	tracedSpan := tracer.StartSpan("traced").(*span)
 	tracedSpan.Finish()
 
+	partialSpan := tracer.StartSpan("partial").(*span)
+
 	rt.Stop()
+
+	partialSpan.Finish()
 
 	untracedSpan := tracer.StartSpan("untraced").(*span)
 	untracedSpan.Finish()
 
 	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
+	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
 }

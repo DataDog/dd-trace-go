@@ -101,7 +101,10 @@ func (h *handlers) Complete(req *request.Request) {
 	if req.HTTPResponse != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(req.HTTPResponse.StatusCode))
 	}
-	span.Finish(tracer.WithError(req.Error))
+	if req.Error != nil && (h.cfg.errCheck == nil || h.cfg.errCheck(req.Error)) {
+		span.SetTag(ext.Error, req.Error)
+	}
+	span.Finish()
 }
 
 func (h *handlers) serviceName(req *request.Request) string {
@@ -109,10 +112,9 @@ func (h *handlers) serviceName(req *request.Request) string {
 		return h.cfg.serviceName
 	}
 	defaultName := "aws." + awsService(req)
-	return namingschema.NewServiceNameSchema(
-		"",
+	return namingschema.NewDefaultServiceName(
 		defaultName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+		namingschema.WithOverrideV0(defaultName),
 	).GetName()
 }
 

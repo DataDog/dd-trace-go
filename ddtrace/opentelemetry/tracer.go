@@ -10,11 +10,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
-	oteltrace "go.opentelemetry.io/otel/trace"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -56,7 +56,11 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		Span:       s,
 		oteltracer: t,
 	})
-	return oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os), os
+	// Erase the start span options from the context to prevent them from being propagated to children
+	ctx = context.WithValue(ctx, startOptsKey, nil)
+	// Wrap the span in Opentelemetry and Datadog contexts to propagate span context values
+	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
+	return ctx, os
 }
 
 type otelCtxToDDCtx struct {

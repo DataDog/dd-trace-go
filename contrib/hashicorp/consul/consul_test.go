@@ -102,6 +102,7 @@ func TestKV(t *testing.T) {
 			assert.Equal(key, span.Tag("consul.key"))
 			assert.Equal("hashicorp/consul", span.Tag(ext.Component))
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 			assert.Equal(ext.DBSystemConsulKV, span.Tag(ext.DBSystem))
 		})
 	}
@@ -140,6 +141,6 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"consul"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "consul", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

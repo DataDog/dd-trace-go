@@ -28,6 +28,7 @@ func checkGETTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("GET /twitter/_doc/?", span.Tag(ext.ResourceName))
 	assert.Equal("/twitter/_doc/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
+	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 }
 
 func checkErrTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -37,6 +38,7 @@ func checkErrTraceV8(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 }
 
 func TestClientV8(t *testing.T) {
@@ -295,6 +297,6 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"elastic.client"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "elastic.client", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

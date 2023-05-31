@@ -104,6 +104,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -115,6 +116,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
@@ -1041,8 +1043,8 @@ func TestServerNamingSchema(t *testing.T) {
 		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
 		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestClientNamingSchema(t *testing.T) {
@@ -1064,8 +1066,8 @@ func TestClientNamingSchema(t *testing.T) {
 		WithDDService:            lists.RepeatString("grpc.client", 4),
 		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
