@@ -33,10 +33,9 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 }
 

@@ -30,7 +30,7 @@ func NewRedisTest(genSpans GenSpansFn, defaultServiceName string) func(t *testin
 			WithDDService:            []string{defaultServiceName},
 			WithDDServiceAndOverride: []string{TestServiceOverride},
 		}
-		t.Run("ServiceName", NewServiceNameTest(genSpans, defaultServiceName, wantServiceNameV0))
-		t.Run("SpanName", NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	}
 }

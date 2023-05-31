@@ -31,7 +31,7 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 }
 
 // WithServiceName sets the given service name for the returned router.
