@@ -21,6 +21,10 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # lint all files regardless of build tags
+        go_os: [linux, freebsd, windows, darwin, openbsd]
     steps:
       - uses: actions/setup-go@v4
         with:
@@ -35,6 +39,8 @@ jobs:
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review
+        env:
+          GOOS: ${{ matrix.go_os }}
 
   test-core:
     runs-on: ubuntu-latest

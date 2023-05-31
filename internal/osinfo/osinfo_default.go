@@ -12,6 +12,8 @@ import (
 	"runtime"
 )
 
+DEFAULT
+
 func osName() string {
 	return runtime.GOOS
 }

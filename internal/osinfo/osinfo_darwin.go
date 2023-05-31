@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+DARWIN
+
 func osName() string {
 	return runtime.GOOS
 }

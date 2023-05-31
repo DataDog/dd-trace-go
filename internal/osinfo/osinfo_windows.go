@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+WINDOWS
+
 func osName() string {
 	return runtime.GOOS
 }

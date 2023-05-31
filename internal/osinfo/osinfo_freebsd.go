@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+FREEBSD
+
 func osName() string {
 	return runtime.GOOS
 }
