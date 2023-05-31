@@ -42,22 +42,17 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := getClient(addr, WithServiceName("test-memcache"))
+	client := getClient([]string{addr, addr}, WithServiceName("test-memcache"))
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
-		assert.Equal(t, "test-memcache", span.Tag(ext.ServiceName),
-			"service name should be set to test-memcache")
-		assert.Equal(t, "memcached.query", span.OperationName(),
-			"operation name should be set to memcached.query")
-		assert.Equal(t, resourceName, span.Tag(ext.ResourceName),
-			"resource name should be set to the memcache command")
-		assert.Equal(t, "bradfitz/gomemcache/memcache", span.Tag(ext.Component),
-			"component should be set to gomemcache")
-		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
-			"span.kind should be set to client")
-		assert.Equal(t, "memcached", span.Tag(ext.DBSystem),
-			"db.system should be set to memcached")
+		assert.Equal(t, "test-memcache", span.Tag(ext.ServiceName), "service name should be set to test-memcache")
+		assert.Equal(t, "memcached.query", span.OperationName(), "operation name should be set to memcached.query")
+		assert.Equal(t, resourceName, span.Tag(ext.ResourceName), "resource name should be set to the memcache command")
+		assert.Equal(t, "bradfitz/gomemcache/memcache", span.Tag(ext.Component), "component should be set to gomemcache")
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind), "span.kind should be set to client")
+		assert.Equal(t, "memcached", span.Tag(ext.DBSystem), "db.system should be set to memcached")
+		assert.Equal(t, addr+","+addr, span.Tag("db.memcached.servers"))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -69,7 +64,7 @@ func testMemcache(t *testing.T, addr string) {
 				Key:   "key1",
 				Value: []byte("value1"),
 			})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -89,7 +84,7 @@ func testMemcache(t *testing.T, addr string) {
 				Key:   "key2",
 				Value: []byte("value2"),
 			})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		span.Finish()
 
@@ -97,8 +92,7 @@ func testMemcache(t *testing.T, addr string) {
 		assert.Len(t, spans, 2)
 		validateMemcacheSpan(t, spans[0], "Add")
 		assert.Equal(t, span, spans[1])
-		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
-			"memcache span should be part of the parent trace")
+		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(), "memcache span should be part of the parent trace")
 	})
 }
 
@@ -123,7 +117,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
-		client := getClient(addr, opts...)
+		client := getClient([]string{addr}, opts...)
 		defer client.DeleteAll()
 		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
 		assert.NoError(t, err)
@@ -191,7 +185,7 @@ func TestNamingSchema(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := getClient(addr, opts...)
+		client := getClient([]string{addr}, opts...)
 		defer client.DeleteAll()
 		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
 		require.NoError(t, err)
@@ -219,9 +213,7 @@ func TestNamingSchema(t *testing.T) {
 
 func makeFakeServer(t *testing.T) net.Listener {
 	li, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	go func() {
 		for {
@@ -260,8 +252,8 @@ func makeFakeServer(t *testing.T) net.Listener {
 	return li
 }
 
-func getClient(addr string, opts ...ClientOption) *Client {
-	client := WrapClient(memcache.New(addr), opts...)
+func getClient(addrs []string, opts ...ClientOption) *Client {
+	client := WrapClient(memcache.New(addrs...), opts...)
 	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
 	return client
 }

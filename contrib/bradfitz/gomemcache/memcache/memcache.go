@@ -14,6 +14,10 @@ package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gom
 import (
 	"context"
 	"math"
+	"net"
+	"reflect"
+	"strings"
+	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -39,18 +43,25 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 		opt(cfg)
 	}
 	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
-	return &Client{
+
+	wClient := &Client{
 		Client:  client,
 		cfg:     cfg,
 		context: context.Background(),
 	}
+	servers, ok := getServers(client)
+	if ok && len(servers) > 0 {
+		wClient.serverList = strings.Join(servers, ",")
+	}
+	return wClient
 }
 
 // A Client is used to trace requests to the memcached server.
 type Client struct {
 	*memcache.Client
-	cfg     *clientConfig
-	context context.Context
+	cfg        *clientConfig
+	context    context.Context
+	serverList string
 }
 
 // WithContext creates a copy of the Client with the given context.
@@ -64,9 +75,10 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 		mc = wc.WithContext(ctx)
 	}
 	return &Client{
-		Client:  mc,
-		cfg:     c.cfg,
-		context: ctx,
+		Client:     mc,
+		cfg:        c.cfg,
+		context:    ctx,
+		serverList: c.serverList,
 	}
 }
 
@@ -82,6 +94,9 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 	}
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
+	}
+	if c.serverList != "" {
+		opts = append(opts, tracer.Tag(ext.MemcachedServers, c.serverList))
 	}
 	span, _ := tracer.StartSpanFromContext(c.context, c.cfg.operationName, opts...)
 	return span
@@ -183,4 +198,23 @@ func (c *Client) Touch(key string, seconds int32) error {
 	err := c.Client.Touch(key, seconds)
 	span.Finish(tracer.WithError(err))
 	return err
+}
+
+func getServers(c *memcache.Client) ([]string, bool) {
+	defer func() { recover() }()
+	sv := reflect.ValueOf(c).Elem().FieldByName("selector")
+	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
+
+	selector, ok := sv.Interface().(memcache.ServerSelector)
+	if !ok {
+		return nil, false
+	}
+	servers := make([]string, 0)
+	if err := selector.Each(func(addr net.Addr) error {
+		servers = append(servers, addr.String())
+		return nil
+	}); err != nil {
+		return nil, false
+	}
+	return servers, true
 }

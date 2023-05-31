@@ -56,3 +56,9 @@ const (
 	// RedisDatabaseIndex indicates the Redis database index connected to.
 	RedisDatabaseIndex = "db.redis.database_index"
 )
+
+// Memcached tags.
+const (
+	// MemcachedServers represents a comma separated lists of servers the client is connecting to.
+	MemcachedServers = "db.memcached.servers"
+)
