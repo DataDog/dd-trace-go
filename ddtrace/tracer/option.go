@@ -240,6 +240,10 @@ func newConfig(opts ...StartOption) *config {
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default client service names.
+	// These default service names are always disabled for v1 onwards.
+	namingschema.SetDefaultServiceNamesEnabled(internal.BoolEnv("DD_TRACE_DEFAULT_CLIENT_SERVICE_NAMES_ENABLED", true))
+
 	// peer.service tag is always enabled if using attribute schema >= 1
 	c.peerServiceDefaultsEnabled = true
 	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
