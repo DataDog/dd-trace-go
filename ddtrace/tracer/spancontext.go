@@ -461,6 +461,14 @@ func setPeerServiceFromSource(s *span) string {
 	}
 	var sources []string
 	switch {
+	case has("aws_service"):
+		sources = []string{
+			"queuename",
+			"topicname",
+			"streamname",
+			"tablename",
+			"bucketname",
+		}
 	case has(ext.DBSystem):
 		sources = []string{
 			ext.CassandraContactPoints,

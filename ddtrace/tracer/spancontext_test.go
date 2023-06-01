@@ -296,6 +296,21 @@ func TestSpanPeerService(t *testing.T) {
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
+			name: "AWS",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("bucketname", "some-bucket"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "some-bucket",
+			wantPeerServiceSource:       "bucketname",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
 			name: "DBClient",
 			spanOpts: []StartSpanOption{
 				Tag("span.kind", "client"),
