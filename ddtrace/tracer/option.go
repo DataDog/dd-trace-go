@@ -927,6 +927,7 @@ func StackFrames(n, skip uint) FinishOption {
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
+		globalconfig.ClearHeaderTags()
 		for _, h := range headerAsTags {
 			header, tag := normalizer.NormalizeHeaderTag(h)
 			globalconfig.SetHeaderTag(header, tag)

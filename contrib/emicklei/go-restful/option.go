@@ -17,9 +17,16 @@ import (
 const defaultServiceName = "go-restful"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	headersAsTags map[string]string
+	serviceName     string
+	analyticsRate   float64
+	headerTagsLocal bool
+}
+
+var headerTagsMap = make(map[string]string)
+
+func headerTag(header string) (tag string, ok bool) {
+	tag, ok = headerTagsMap[header]
+	return
 }
 
 func newConfig() *config {
@@ -27,16 +34,15 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
-	ht := globalconfig.HeaderTagsCopy()
 	serviceName := namingschema.NewServiceNameSchema(
 		"",
 		defaultServiceName,
 		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
 	).GetName()
 	return &config{
-		serviceName:   serviceName,
-		analyticsRate: rate,
-		headersAsTags: ht,
+		serviceName:     serviceName,
+		analyticsRate:   rate,
+		headerTagsLocal: false,
 	}
 }
 
@@ -78,14 +84,11 @@ func WithAnalyticsRate(rate float64) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
 	return func(cfg *config) {
-		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0 {
-			cfg.headersAsTags = make(map[string]string)
-		}
-		for _, h := range headers {
-			header, tag := normalizer.NormalizeHeaderTag(h)
-			cfg.headersAsTags[header] = tag
-		}
+		cfg.headerTagsLocal = true
 	}
 }

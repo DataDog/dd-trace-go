@@ -25,7 +25,14 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
-	headersAsTags      map[string]string
+	headerTagsLocal    bool
+}
+
+var headerTagsMap = make(map[string]string)
+
+func headerTag(header string) (tag string, ok bool) {
+	tag, ok = headerTagsMap[header]
+	return
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -38,7 +45,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
+	cfg.headerTagsLocal = false
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
@@ -114,14 +121,11 @@ func WithModifyResourceName(fn func(resourceName string) string) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
 	return func(cfg *config) {
-		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0 {
-			cfg.headersAsTags = make(map[string]string)
-		}
-		for _, h := range headers {
-			header, tag := normalizer.NormalizeHeaderTag(h)
-			cfg.headersAsTags[header] = tag
-		}
+		cfg.headerTagsLocal = true
 	}
 }

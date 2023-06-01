@@ -20,11 +20,18 @@ import (
 const defaultServiceName = "gin.router"
 
 type config struct {
-	analyticsRate float64
-	resourceNamer func(c *gin.Context) string
-	serviceName   string
-	ignoreRequest func(c *gin.Context) bool
-	headersAsTags map[string]string
+	analyticsRate   float64
+	resourceNamer   func(c *gin.Context) string
+	serviceName     string
+	ignoreRequest   func(c *gin.Context) bool
+	headerTagsLocal bool
+}
+
+var headerTagsMap = make(map[string]string)
+
+func headerTag(header string) (tag string, ok bool) {
+	tag, ok = headerTagsMap[header]
+	return
 }
 
 func newConfig(serviceName string) *config {
@@ -35,13 +42,12 @@ func newConfig(serviceName string) *config {
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
-	ht := globalconfig.HeaderTagsCopy()
 	return &config{
-		analyticsRate: rate,
-		resourceNamer: defaultResourceNamer,
-		serviceName:   serviceName,
-		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headersAsTags: ht,
+		analyticsRate:   rate,
+		resourceNamer:   defaultResourceNamer,
+		serviceName:     serviceName,
+		ignoreRequest:   func(_ *gin.Context) bool { return false },
+		headerTagsLocal: false,
 	}
 }
 
@@ -84,15 +90,12 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
 	return func(cfg *config) {
-		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0 {
-			cfg.headersAsTags = make(map[string]string)
-		}
-		for _, h := range headers {
-			header, tag := normalizer.NormalizeHeaderTag(h)
-			cfg.headersAsTags[header] = tag
-		}
+		cfg.headerTagsLocal = true
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
@@ -17,11 +16,18 @@ import (
 const defaultServiceName = "echo"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
-	noDebugStack  bool
-	isStatusError func(statusCode int) bool
-	headersAsTags map[string]string
+	serviceName     string
+	analyticsRate   float64
+	noDebugStack    bool
+	isStatusError   func(statusCode int) bool
+	headerTagsLocal bool
+}
+
+var headerTagsMap = make(map[string]string)
+
+func headerTag(header string) (tag string, ok bool) {
+	tag, ok = headerTagsMap[header]
+	return
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -34,7 +40,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.headersAsTags = globalconfig.HeaderTagsCopy()
+	cfg.headerTagsLocal = false
 	cfg.isStatusError = isServerError
 }
 
@@ -94,14 +100,11 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
 	return func(cfg *config) {
-		// If we inherited from global config, overwrite it. Otherwise, cfg.headersAsTags is an empty map that we can fill
-		if len(cfg.headersAsTags) > 0 {
-			cfg.headersAsTags = make(map[string]string)
-		}
-		for _, h := range headers {
-			header, tag := normalizer.NormalizeHeaderTag(h)
-			cfg.headersAsTags[header] = tag
-		}
+		cfg.headerTagsLocal = true
 	}
 }

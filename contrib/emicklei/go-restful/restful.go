@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -41,7 +42,11 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headersAsTags))
+		if cfg.headerTagsLocal {
+			spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, headerTag))
+		} else {
+			spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, globalconfig.HeaderTag))
+		}
 		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))

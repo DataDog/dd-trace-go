@@ -467,7 +467,6 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-
 		for _, arg := range htArgs {
 			header, tag := normalizer.NormalizeHeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
