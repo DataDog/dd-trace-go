@@ -10,10 +10,8 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"reflect"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -30,6 +28,39 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
+type ClusterConfig struct {
+	*gocql.ClusterConfig
+	hosts []string
+	opts  []WrapOption
+}
+
+// NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
+func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
+	return &ClusterConfig{
+		ClusterConfig: gocql.NewCluster(hosts...),
+		hosts:         hosts,
+		opts:          opts,
+	}
+}
+
+type Session struct {
+	*gocql.Session
+	hosts []string
+	opts  []WrapOption
+}
+
+func (c *ClusterConfig) CreateSession() (*Session, error) {
+	s, err := c.ClusterConfig.CreateSession()
+	if err != nil {
+		return nil, err
+	}
+	return &Session{
+		Session: s,
+		hosts:   c.hosts,
+		opts:    c.opts,
+	}, nil
+}
+
 // Query inherits from gocql.Query, it keeps the tracer and the context.
 type Query struct {
 	*gocql.Query
@@ -37,16 +68,9 @@ type Query struct {
 	ctx context.Context
 }
 
-// Iter inherits from gocql.Iter and contains a span.
-type Iter struct {
-	*gocql.Iter
-	span ddtrace.Span
-}
-
-// Scanner inherits from a gocql.Scanner derived from an Iter
-type Scanner struct {
-	gocql.Scanner
-	span ddtrace.Span
+func (s *Session) Query(stmt string, values ...interface{}) *Query {
+	q := s.Session.Query(stmt, values...)
+	return wrapQuery(q, s.hosts, s.opts...)
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
@@ -56,7 +80,12 @@ type Batch struct {
 	ctx context.Context
 }
 
-// params containes fields and metadata useful for command tracing
+func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
+	b := s.Session.NewBatch(typ)
+	return wrapBatch(b, s.hosts, s.opts...)
+}
+
+// params contains fields and metadata useful for command tracing
 type params struct {
 	config               *queryConfig
 	keyspace             string
@@ -73,9 +102,14 @@ type params struct {
 // To be more specific: it is ok (and recommended) to use and chain the return value
 // of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
 // `Observer`, etc.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
-	cfg := new(queryConfig)
-	defaults(cfg)
+	return wrapQuery(q, nil, opts...)
+}
+
+func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
+	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -85,9 +119,8 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 		}
 	}
 	p := &params{config: cfg}
-	cp, ok := getClusterContactPoints(q)
-	if ok {
-		p.clusterContactPoints = strings.Join(cp, ",")
+	if len(hosts) > 0 {
+		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
 	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
 	tq := &Query{Query: q, params: p, ctx: q.Context()}
@@ -98,6 +131,14 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 func (tq *Query) WithContext(ctx context.Context) *Query {
 	tq.ctx = ctx
 	tq.Query = tq.Query.WithContext(ctx)
+	return tq
+}
+
+// WithWrapOptions allows to specify options specific to the query.
+func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
+	for _, fn := range opts {
+		fn(tq.params.config)
+	}
 	return tq
 }
 
@@ -171,6 +212,12 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return applied, err
 }
 
+// Iter inherits from gocql.Iter and contains a span.
+type Iter struct {
+	*gocql.Iter
+	span ddtrace.Span
+}
+
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
 	span := tq.newChildSpan(tq.ctx)
@@ -199,6 +246,12 @@ func (tIter *Iter) Close() error {
 	}
 	tIter.span.Finish()
 	return err
+}
+
+// Scanner inherits from a gocql.Scanner derived from an Iter
+type Scanner struct {
+	gocql.Scanner
+	span ddtrace.Span
 }
 
 // Scanner returns a row Scanner which provides an interface to scan rows in a
@@ -230,16 +283,20 @@ func (s *Scanner) Err() error {
 // To be more specific: it is ok (and recommended) to use and chain the return value
 // of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
 // `Observer`, etc.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
 func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
-	cfg := new(queryConfig)
-	defaults(cfg)
+	return wrapBatch(b, nil, opts...)
+}
+
+func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
+	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	p := &params{config: cfg}
-	cp, ok := getClusterContactPoints(b)
-	if ok {
-		p.clusterContactPoints = strings.Join(cp, ",")
+	if len(hosts) > 0 {
+		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
 	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
 	tb := &Batch{Batch: b, params: p, ctx: b.Context()}
@@ -250,6 +307,14 @@ func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 func (tb *Batch) WithContext(ctx context.Context) *Batch {
 	tb.ctx = ctx
 	tb.Batch = tb.Batch.WithContext(ctx)
+	return tb
+}
+
+// WithWrapOptions allows to specify options specific to the batch.
+func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
+	for _, fn := range opts {
+		fn(tb.params.config)
+	}
 	return tb
 }
 
@@ -302,31 +367,4 @@ func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
 	} else {
 		span.Finish(tracer.WithError(err))
 	}
-}
-
-type query interface {
-	*gocql.Query | *gocql.Batch
-}
-
-func getClusterContactPoints[T query](q T) ([]string, bool) {
-	defer func() { recover() }()
-	sv := reflect.ValueOf(q).Elem().FieldByName("session")
-	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
-	s, ok := sv.Interface().(*gocql.Session)
-	if !ok {
-		return nil, false
-	}
-	cfg, ok := getClusterConfig(s)
-	if !ok {
-		return nil, false
-	}
-	return cfg.Hosts, true
-}
-
-func getClusterConfig(s *gocql.Session) (gocql.ClusterConfig, bool) {
-	defer func() { recover() }()
-	cv := reflect.ValueOf(s).Elem().FieldByName("cfg")
-	cv = reflect.NewAt(cv.Type(), unsafe.Pointer(cv.UnsafeAddr())).Elem()
-	cfg, ok := cv.Interface().(gocql.ClusterConfig)
-	return cfg, ok
 }
