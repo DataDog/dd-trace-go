@@ -8,6 +8,7 @@ package http
 import (
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -44,6 +45,14 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 	if rt.cfg.serviceName != "" {
 		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
+	}
+	if host, port, err := net.SplitHostPort(url.Host); err == nil {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, host))
+		if portNum, err := strconv.Atoi(port); err == nil {
+			opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, portNum))
+		}
+	} else {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, url.Host))
 	}
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
