@@ -66,20 +66,20 @@ func TestSkipRaw(t *testing.T) {
 		spans := runCmds(t)
 		raw, ok := spans[0].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "set test_key test_value: ", raw)
+		assert.Equal(t, "set test_key test_value:", raw)
 		raw, ok = spans[1].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "expire pipeline_counter 3600: false\n", raw)
+		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
 
 	t.Run("false", func(t *testing.T) {
 		spans := runCmds(t, WithSkipRawCommand(false))
 		raw, ok := spans[0].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "set test_key test_value: ", raw)
+		assert.Equal(t, "set test_key test_value:", raw)
 		raw, ok = spans[1].Tags()["redis.raw_command"]
 		assert.True(t, ok)
-		assert.Equal(t, "expire pipeline_counter 3600: false\n", raw)
+		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
 }
 
@@ -114,6 +114,33 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
+func TestPing(t *testing.T) {
+	ctx := context.Background()
+	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := NewClient(opts, WithServiceName("my-redis"))
+	_, err := client.Do(ctx, "PING").Result()
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+
+	span := spans[0]
+	assert.Equal("redis.command", span.OperationName())
+	assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
+	assert.Equal("my-redis", span.Tag(ext.ServiceName))
+	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+	assert.Equal("6379", span.Tag(ext.TargetPort))
+	assert.Equal("PING", span.Tag("redis.raw_command"))
+	assert.Equal("1", span.Tag("redis.args_length"))
+	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+}
+
 func TestClient(t *testing.T) {
 	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379", DB: 15}
@@ -133,7 +160,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
-	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
+	assert.Equal("set test_key test_value:", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
 	assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -196,7 +223,7 @@ func TestWrapClient(t *testing.T) {
 			assert.Equal("redis.command", span.OperationName())
 			assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
 			assert.Equal("my-redis", span.Tag(ext.ServiceName))
-			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
+			assert.Equal("set test_key test_value:", span.Tag("redis.raw_command"))
 			assert.Equal("3", span.Tag("redis.args_length"))
 			assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
 			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
@@ -376,10 +403,10 @@ func TestMultipleCommands(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		commands[i] = spans[i].Tag("redis.raw_command").(string)
 	}
-	assert.Contains(commands, "set test_key test_value: ")
-	assert.Contains(commands, "get test_key: ")
+	assert.Contains(commands, "set test_key test_value:")
+	assert.Contains(commands, "get test_key:")
 	assert.Contains(commands, "incr int_key: 0")
-	assert.Contains(commands, "client list: ")
+	assert.Contains(commands, "client list:")
 }
 
 func TestError(t *testing.T) {
@@ -402,7 +429,7 @@ func TestError(t *testing.T) {
 		assert.Equal(err, span.Tag(ext.Error))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
-		assert.Equal("get key: ", span.Tag("redis.raw_command"))
+		assert.Equal("get key:", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
@@ -429,7 +456,7 @@ func TestError(t *testing.T) {
 		assert.Empty(span.Tag(ext.Error))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
-		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
+		assert.Equal("get non_existent_key:", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))

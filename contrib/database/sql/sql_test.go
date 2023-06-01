@@ -349,14 +349,14 @@ func TestRegister(_ *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride string) namingschematest.GenSpansFn {
+	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride bool) namingschematest.GenSpansFn {
 		return func(t *testing.T, serviceOverride string) []mocktracer.Span {
 			var registerOpts []RegisterOption
 			// serviceOverride has higher priority than the registerOverride parameter.
 			if serviceOverride != "" {
 				registerOpts = append(registerOpts, WithServiceName(serviceOverride))
-			} else if registerOverride != "" {
-				registerOpts = append(registerOpts, WithServiceName(registerOverride))
+			} else if registerOverride {
+				registerOpts = append(registerOpts, WithServiceName("register-override"))
 			}
 			var openOpts []Option
 			if serviceOverride != "" {
@@ -396,7 +396,7 @@ func TestNamingSchema(t *testing.T) {
 		}
 	}
 	t.Run("SQLServer", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "sqlserver", "")
+		genSpans := newGenSpansFunc(t, "sqlserver", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
@@ -412,11 +412,11 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"sqlserver.db", "sqlserver.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "sqlserver.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("Postgres", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "postgres", "")
+		genSpans := newGenSpansFunc(t, "postgres", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -432,11 +432,11 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"postgres.db", "postgres.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "postgres.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("PostgresWithRegisterOverride", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "postgres", "register-override")
+		genSpans := newGenSpansFunc(t, "postgres", true)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -455,11 +455,11 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"register-override", "register-override"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "register-override", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 	t.Run("MySQL", func(t *testing.T) {
-		genSpans := newGenSpansFunc(t, "mysql", "")
+		genSpans := newGenSpansFunc(t, "mysql", false)
 		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mysql.query", spans[0].OperationName())
@@ -475,7 +475,7 @@ func TestNamingSchema(t *testing.T) {
 			WithDDService:            []string{"mysql.db", "mysql.db"},
 			WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 		}
-		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "mysql.db", wantServiceNameV0))
-		t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	})
 }

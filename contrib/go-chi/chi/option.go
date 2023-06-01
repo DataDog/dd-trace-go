@@ -14,6 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+
+	"github.com/go-chi/chi"
 )
 
 const defaultServiceName = "chi.router"
@@ -24,6 +26,7 @@ type config struct {
 	analyticsRate   float64
 	isStatusError   func(statusCode int) bool
 	ignoreRequest   func(r *http.Request) bool
+	resourceNamer   func(r *http.Request) string
 	headerTagsLocal bool
 }
 
@@ -38,7 +41,7 @@ func headerTag(header string) (tag string, ok bool) {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
@@ -47,6 +50,14 @@ func defaults(cfg *config) {
 	cfg.headerTagsLocal = false
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.resourceNamer = func(r *http.Request) string {
+		resourceName := chi.RouteContext(r.Context()).RoutePattern()
+		if resourceName == "" {
+			resourceName = "unknown"
+		}
+		resourceName = r.Method + " " + resourceName
+		return resourceName
+	}
 }
 
 // WithServiceName sets the given service name for the router.
@@ -118,5 +129,13 @@ func WithHeaderTags(headers []string) Option {
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = fn
+	}
+}
+
+// WithResourceNamer specifies a function to use for determining the resource
+// name of the span.
+func WithResourceNamer(fn func(r *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = fn
 	}
 }
