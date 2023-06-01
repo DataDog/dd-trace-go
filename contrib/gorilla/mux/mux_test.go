@@ -123,7 +123,20 @@ func TestWithHeaderTags(t *testing.T) {
 		mux.ServeHTTP(httptest.NewRecorder(), r)
 		return r
 	}
-
+	t.Run("default-off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+		for _, arg := range htArgs {
+			_, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.NotContains(s.Tags(), tag)
+		}
+	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -141,7 +154,6 @@ func TestWithHeaderTags(t *testing.T) {
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
-
 	t.Run("global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -158,7 +170,6 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
-
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()

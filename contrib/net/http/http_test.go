@@ -33,6 +33,20 @@ func TestWithHeaderTags(t *testing.T) {
 		router(opts...).ServeHTTP(w, r)
 		return r
 	}
+	t.Run("default-off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+		for _, arg := range htArgs {
+			_, tag := normalizer.NormalizeHeaderTag(arg)
+			assert.NotContains(s.Tags(), tag)
+		}
+	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
