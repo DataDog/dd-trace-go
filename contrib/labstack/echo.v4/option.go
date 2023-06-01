@@ -23,7 +23,7 @@ type config struct {
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
-	headerTagsLocal bool
+	headerTagsLocal   bool
 }
 
 var headerTagsMap = make(map[string]string)
