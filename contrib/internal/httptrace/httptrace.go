@@ -25,11 +25,6 @@ var (
 	cfg = newConfig()
 )
 
-type HeaderTagsMap interface {
-	SetHeaderTag(from, to string)
-	HeaderTag(header string) (tag string, ok bool)
-}
-
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
@@ -110,22 +105,11 @@ func urlFromRequest(r *http.Request) string {
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-// func HeaderTagsFromRequest(req *http.Request, headersAsTags map[string]string) ddtrace.StartSpanOption {
-// 	return func(cfg *ddtrace.StartSpanConfig) {
-// 		for h, v := range req.Header {
-// 			h = strings.ToLower(h)
-// 			if tag, ok := headersAsTags[h]; ok && !strings.HasPrefix(h, "x-datadog-") {
-// 				cfg.Tags[tag] = strings.TrimSpace(strings.Join(v, ","))
-// 			}
-// 		}
-// 	}
-// }
-
-func HeaderTagsFromRequest(req *http.Request, f func(string) (string, bool)) ddtrace.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, lookupHeader func(string) (string, bool)) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		for h, v := range req.Header {
 			h = strings.ToLower(h)
-			if tag, ok := f(h); ok && !strings.HasPrefix(h, "x-datadog-") {
+			if tag, ok := lookupHeader(h); ok && !strings.HasPrefix(h, "x-datadog-") {
 				cfg.Tags[tag] = strings.TrimSpace(strings.Join(v, ","))
 			}
 		}
