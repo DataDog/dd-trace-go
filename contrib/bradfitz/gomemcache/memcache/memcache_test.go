@@ -96,6 +96,36 @@ func testMemcache(t *testing.T, addr string) {
 	})
 }
 
+func TestDeprecatedWrapClient(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+
+	client := WrapClient(memcache.New(li.Addr().String()))
+	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	err := client.
+		Add(&memcache.Item{
+			Key:   "key1",
+			Value: []byte("value1"),
+		})
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s0 := spans[0]
+	assert.Equal(t, "memcached", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "memcached.query", s0.OperationName())
+	assert.Equal(t, "Add", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "bradfitz/gomemcache/memcache", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "memcached", s0.Tag(ext.DBSystem))
+	assert.NotContains(t, "db.memcached.servers", s0.Tags())
+}
+
 func TestFakeServer(t *testing.T) {
 	li := makeFakeServer(t)
 	defer li.Close()
@@ -253,7 +283,7 @@ func makeFakeServer(t *testing.T) net.Listener {
 }
 
 func getClient(addrs []string, opts ...ClientOption) *Client {
-	client := WrapClient(memcache.New(addrs...), opts...)
+	client := New(addrs, opts...)
 	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
 	return client
 }

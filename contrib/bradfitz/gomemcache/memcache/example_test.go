@@ -21,8 +21,7 @@ func Example() {
 	)
 	defer span.Finish()
 
-	mc := memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"))
+	mc := memcachetrace.New([]string{"127.0.0.1:112111"})
 	// you can use WithContext to set the parent span
 	mc.WithContext(ctx).Set(&memcache.Item{Key: "my key", Value: []byte("my value")})
-
 }

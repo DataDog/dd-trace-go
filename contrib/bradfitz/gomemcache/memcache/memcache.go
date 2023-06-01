@@ -14,10 +14,7 @@ package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gom
 import (
 	"context"
 	"math"
-	"net"
-	"reflect"
 	"strings"
-	"unsafe"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -34,9 +31,20 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
+// New initializes the memcache.Client and wraps it so that all requests are traced.
+func New(servers []string, opts ...ClientOption) *Client {
+	c := memcache.New(servers...)
+	return wrapClient(c, servers, opts...)
+}
+
 // WrapClient wraps a memcache.Client so that all requests are traced using the
 // default tracer with the service name "memcached".
+// Deprecated: use New instead.
 func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
+	return wrapClient(client, nil, opts...)
+}
+
+func wrapClient(client *memcache.Client, servers []string, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, opt := range opts {
@@ -49,8 +57,7 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 		cfg:     cfg,
 		context: context.Background(),
 	}
-	servers, ok := getServers(client)
-	if ok && len(servers) > 0 {
+	if len(servers) > 0 {
 		wClient.serverList = strings.Join(servers, ",")
 	}
 	return wClient
@@ -198,23 +205,4 @@ func (c *Client) Touch(key string, seconds int32) error {
 	err := c.Client.Touch(key, seconds)
 	span.Finish(tracer.WithError(err))
 	return err
-}
-
-func getServers(c *memcache.Client) ([]string, bool) {
-	defer func() { recover() }()
-	sv := reflect.ValueOf(c).Elem().FieldByName("selector")
-	sv = reflect.NewAt(sv.Type(), unsafe.Pointer(sv.UnsafeAddr())).Elem()
-
-	selector, ok := sv.Interface().(memcache.ServerSelector)
-	if !ok {
-		return nil, false
-	}
-	servers := make([]string, 0)
-	if err := selector.Each(func(addr net.Addr) error {
-		servers = append(servers, addr.String())
-		return nil
-	}); err != nil {
-		return nil, false
-	}
-	return servers, true
 }
