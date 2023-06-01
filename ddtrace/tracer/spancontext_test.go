@@ -247,7 +247,6 @@ func TestSpanFinishPriority(t *testing.T) {
 }
 
 func TestSpanPeerService(t *testing.T) {
-	assert := assert.New(t)
 	tracer, transport, flush, stop := startTestTracer(t)
 	defer stop()
 
@@ -408,15 +407,19 @@ func TestSpanPeerService(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
 			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
 			tracer.config.peerServiceMappings = tc.peerServiceMappings
-			s := tracer.StartSpan("peer-service-test", tc.spanOpts...)
+			p := tracer.StartSpan("parent-span")
+			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
+			s := tracer.StartSpan("peer-service-test", opts...)
 			s.Finish()
+			p.Finish()
 			flush(1)
 			traces := transport.Traces()
 			require.Len(t, traces, 1)
-			require.Len(t, traces[0], 1)
-			finishedSpan := traces[0][0]
+			require.Len(t, traces[0], 2)
+			finishedSpan := traces[0][1]
 			if tc.wantPeerService == "" {
 				assert.NotContains(finishedSpan.Meta, "peer.service")
 			} else {

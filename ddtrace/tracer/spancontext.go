@@ -401,21 +401,24 @@ func (t *trace) finishedOne(s *span) {
 			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 		}
 	}
-	if len(t.spans) != t.finished {
-		return
-	}
 	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
+		if len(t.spans) == t.finished {
+			t.spans = nil
+			t.finished = 0 // important, because a buffer can be used for several flushes
+		}
 	}()
+
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
+		return
+	}
+	setPeerService(s, tr.config)
+	if len(t.spans) != t.finished {
 		return
 	}
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	setPeerService(s, tr.config)
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
