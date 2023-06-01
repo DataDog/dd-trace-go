@@ -9,9 +9,9 @@ package telemetrytest
 import (
 	"sync"
 
-	"github.com/stretchr/testify/mock"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // MockClient implements Client and is used for testing purposes outside of the telemetry package,

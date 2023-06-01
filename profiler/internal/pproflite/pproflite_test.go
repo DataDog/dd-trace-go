@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
+
 	"github.com/google/pprof/profile"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
 )
 
 func TestDecoderEncoder(t *testing.T) {
