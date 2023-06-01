@@ -9,8 +9,6 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
-
 	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -19,6 +17,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/gorilla/mux"
 )
 
 const componentName = "gorilla/mux"
