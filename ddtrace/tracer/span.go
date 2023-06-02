@@ -700,6 +700,10 @@ const (
 	keyTraceID128 = "_dd.p.tid"
 	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
+	// keyPeerServiceSource indicates the precursor tag that was used as the value of peer.service.
+	keyPeerServiceSource = "_dd.peer.service.source"
+	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
+	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

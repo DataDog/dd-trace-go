@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -400,15 +401,18 @@ func (t *trace) finishedOne(s *span) {
 			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 		}
 	}
-	if len(t.spans) != t.finished {
-		return
-	}
 	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
+		if len(t.spans) == t.finished {
+			t.spans = nil
+			t.finished = 0 // important, because a buffer can be used for several flushes
+		}
 	}()
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
+		return
+	}
+	setPeerService(s, tr.config)
+	if len(t.spans) != t.finished {
 		return
 	}
 	if hn := tr.hostname(); hn != "" {
@@ -420,4 +424,79 @@ func (t *trace) finishedOne(s *span) {
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+}
+
+// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// tags as applicable for the given span.
+func setPeerService(s *span, cfg *config) {
+	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else { // no peer.service currently set
+		spanKind := s.Meta[ext.SpanKind]
+		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		if !shouldSetDefaultPeerService {
+			return
+		}
+		source := setPeerServiceFromSource(s)
+		if source == "" {
+			log.Warn("No source tag value could be found for span %q, peer.service not set", s.Name)
+			return
+		}
+		s.setMeta(keyPeerServiceSource, source)
+	}
+	// Overwrite existing peer.service value if remapped by the user
+	ps := s.Meta[ext.PeerService]
+	if to, ok := cfg.peerServiceMappings[ps]; ok {
+		s.setMeta(keyPeerServiceRemappedFrom, ps)
+		s.setMeta(ext.PeerService, to)
+	}
+}
+
+// setPeerServiceFromSource sets peer.service from the sources determined
+// by the tags on the span. It returns the source tag name that it used for
+// the peer.service value, or the empty string if no valid source tag was available.
+func setPeerServiceFromSource(s *span) string {
+	has := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	var sources []string
+	switch {
+	case has("aws_service"):
+		sources = []string{
+			"queuename",
+			"topicname",
+			"streamname",
+			"tablename",
+			"bucketname",
+		}
+	case has(ext.DBSystem):
+		sources = []string{
+			ext.CassandraContactPoints,
+			ext.DBName,
+			ext.DBInstance,
+		}
+	case has(ext.MessagingSystem):
+		sources = []string{
+			ext.KafkaBootstrapServers,
+		}
+	case has(ext.RPCSystem):
+		sources = []string{
+			ext.RPCService,
+		}
+	}
+	// network destination tags will be used as fallback unless there are higher priority sources already set.
+	sources = append(sources, []string{
+		ext.NetworkDestinationName,
+		ext.PeerHostname,
+		ext.TargetHost,
+	}...)
+	for _, source := range sources {
+		if val, ok := s.Meta[source]; ok {
+			s.setMeta(ext.PeerService, val)
+			return source
+		}
+	}
+	return ""
 }
