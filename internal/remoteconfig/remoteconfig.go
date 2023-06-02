@@ -168,7 +168,18 @@ func (c *Client) updateState() {
 		return
 	}
 
+	log.Debug("CLIENT CONFIGS LEN: ", len(update.ClientConfigs))
+	log.Debug("TARGET FILES   LEN: ", len(update.TargetFiles))
+	for _, cfgName := range update.ClientConfigs {
+		log.Debug("CLIENT CONFIGS: %s", cfgName)
+	}
+	for _, f := range update.TargetFiles {
+		log.Debug("TARGET FILES: %s", f.Path)
+	}
 	c.lastError = c.applyUpdate(&update)
+	if c.lastError != nil {
+		log.Debug("LAST ERROR: %s", c.lastError.Error())
+	}
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client

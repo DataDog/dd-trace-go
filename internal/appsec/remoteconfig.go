@@ -37,7 +37,10 @@ func genApplyStatus(ack bool, err error) rc.ApplyStatus {
 
 func statusesFromUpdate(u remoteconfig.ProductUpdate, ack bool, err error) map[string]rc.ApplyStatus {
 	statuses := make(map[string]rc.ApplyStatus, len(u))
-	for path := range u {
+	for path, data := range u {
+		if data == nil && err == nil {
+			continue
+		}
 		statuses[path] = genApplyStatus(ack, err)
 	}
 	return statuses
@@ -70,27 +73,26 @@ updateLoop:
 		case rc.ProductASMDD:
 			// Switch the base rules of the rulesManager if the config received through ASM_DD is valid
 			// If the config was removed, switch back to the static recommended rules
-			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
-				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				err = errors.New("More than one config received for ASM_DD")
-				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
-				break updateLoop
-			}
+			var newBase rulesFragment
+			var newPath string
 			for path, data := range u {
 				if data == nil {
-					log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
-					r.changeBase(defaultRulesFragment(), "")
-					break
+					log.Debug("appsec: Remote config: %s config removed", path)
+					continue
 				}
-				var newBase rulesFragment
 				if err = json.Unmarshal(data, &newBase); err != nil {
 					log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
 					statuses[path] = genApplyStatus(true, err)
 					break updateLoop
 				}
-				log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
-				r.changeBase(newBase, path)
+				newPath = path
 			}
+			if newPath == "" {
+				log.Debug("appsec: Remote config: no more ASM_DD config. Switching back to default rules")
+				newBase = defaultRulesFragment()
+			}
+			log.Debug("appsec: Remote config: switching to %s as the base rules file", newPath)
+			r.changeBase(newBase, newPath)
 		case rc.ProductASM:
 			// Store each config received through ASM as an edit entry in the rulesManager
 			// Those entries will get merged together when the final rules are compiled
@@ -146,6 +148,14 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return map[string]rc.ApplyStatus{}
 	}
 
+	log.Debug("================ START ==================")
+	log.Debug("RC UPDATE CONFIGS LIST:")
+	for _, u := range updates {
+		for p, data := range u {
+			log.Debug("%s - nil ? %t", p, data == nil)
+		}
+	}
+
 	// Create a new local rulesManager
 	r := a.cfg.rulesManager.clone()
 	statuses, err := combineRCRulesUpdates(r, updates)
@@ -156,7 +166,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 
 	// Compile the final rules once all updates have been processed and no error occurred
 	r.compile()
-	log.Debug("appsec: Remote config: final compiled rules: %s", r)
+	//log.Debug("appsec: Remote config: final compiled rules: %s", r)
 
 	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
@@ -169,6 +179,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		// Replace the rulesManager with the new one holding the new state
 		a.cfg.rulesManager = r
 	}
+	log.Debug("REMOTE CONFIG STATUSES: %v", statuses)
+	log.Debug("================ END ==================")
 	return statuses
 }
 
