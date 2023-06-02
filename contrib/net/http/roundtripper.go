@@ -8,7 +8,6 @@ package http
 import (
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -39,6 +38,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
@@ -46,13 +46,8 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.serviceName != "" {
 		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
 	}
-	if host, port, err := net.SplitHostPort(url.Host); err == nil {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, host))
-		if portNum, err := strconv.Atoi(port); err == nil {
-			opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, portNum))
-		}
-	} else {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, url.Host))
+	if port, err := strconv.Atoi(url.Port()); err == nil {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
 	}
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
