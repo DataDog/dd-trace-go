@@ -13,6 +13,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	"github.com/go-chi/chi"
 )
 
 const defaultServiceName = "chi.router"
@@ -23,6 +25,7 @@ type config struct {
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	ignoreRequest func(r *http.Request) bool
+	resourceNamer func(r *http.Request) string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -37,6 +40,14 @@ func defaults(cfg *config) {
 	}
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.resourceNamer = func(r *http.Request) string {
+		resourceName := chi.RouteContext(r.Context()).RoutePattern()
+		if resourceName == "" {
+			resourceName = "unknown"
+		}
+		resourceName = r.Method + " " + resourceName
+		return resourceName
+	}
 }
 
 // WithServiceName sets the given service name for the router.
@@ -94,5 +105,13 @@ func isServerError(statusCode int) bool {
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = fn
+	}
+}
+
+// WithResourceNamer specifies a function to use for determining the resource
+// name of the span.
+func WithResourceNamer(fn func(r *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = fn
 	}
 }
