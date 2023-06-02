@@ -147,7 +147,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
 	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
-	assert.Equal(childSpan.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
+	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
 
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
