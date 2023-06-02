@@ -154,6 +154,12 @@ type config struct {
 
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
+
+	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
+	peerServiceDefaultsEnabled bool
+
+	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
+	peerServiceMappings map[string]string
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -233,6 +239,15 @@ func newConfig(opts ...StartOption) *config {
 		v := namingschema.SetDefaultVersion()
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	// peer.service tag is always enabled if using attribute schema >= 1
+	c.peerServiceDefaultsEnabled = true
+	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
+		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	c.peerServiceMappings = make(map[string]string)
+	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
+		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
