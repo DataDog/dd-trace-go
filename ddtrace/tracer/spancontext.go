@@ -440,7 +440,7 @@ func setPeerService(s *span, cfg *config) {
 		}
 		source := setPeerServiceFromSource(s)
 		if source == "" {
-			log.Warn("No source tag value could be found for span %q, peer.service not set", s.Name)
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
 			return
 		}
 		s.setMeta(keyPeerServiceSource, source)
