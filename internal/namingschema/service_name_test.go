@@ -41,7 +41,7 @@ func TestNewDefaultServiceName(t *testing.T) {
 			want:          "dd-service",
 		},
 		{
-			name:          "schema v0 override",
+			name:          "schema v0 with override",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			opts:          []namingschema.Option{optOverrideV0},
@@ -62,32 +62,32 @@ func TestNewDefaultServiceName(t *testing.T) {
 			want:          "dd-service",
 		},
 		{
-			name:          "schema v0 with defaults disabled",
+			name:          "schema v0 without rm client service names",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetDefaultServiceNamesEnabled()
-				namingschema.SetDefaultServiceNamesEnabled(false)
+				prev := namingschema.GetRemoveClientServiceNamesEnabled()
+				namingschema.SetRemoveClientServiceNamesEnabled(false)
 				return func() {
-					namingschema.SetDefaultServiceNamesEnabled(prev)
+					namingschema.SetRemoveClientServiceNamesEnabled(prev)
 				}
 			},
-			opts: nil,
-			want: "dd-service",
+			opts: []namingschema.Option{optOverrideV0},
+			want: "override-v0",
 		},
 		{
-			name:          "schema v0 with defaults enabled",
+			name:          "schema v0 with rm client service names",
 			schemaVersion: namingschema.SchemaV0,
-			ddService:     "",
+			ddService:     "dd-service",
 			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetDefaultServiceNamesEnabled()
-				namingschema.SetDefaultServiceNamesEnabled(true)
+				prev := namingschema.GetRemoveClientServiceNamesEnabled()
+				namingschema.SetRemoveClientServiceNamesEnabled(true)
 				return func() {
-					namingschema.SetDefaultServiceNamesEnabled(prev)
+					namingschema.SetRemoveClientServiceNamesEnabled(prev)
 				}
 			},
-			opts: nil,
-			want: "default",
+			opts: []namingschema.Option{optOverrideV0},
+			want: "dd-service",
 		},
 	}
 	for _, tc := range testCases {
@@ -97,7 +97,8 @@ func TestNewDefaultServiceName(t *testing.T) {
 			namingschema.SetVersion(tc.schemaVersion)
 
 			if tc.beforeTestHook != nil {
-				tc.beforeTestHook(t)
+				cleanup := tc.beforeTestHook(t)
+				defer cleanup()
 			}
 			if tc.ddService != "" {
 				svc := globalconfig.ServiceName()

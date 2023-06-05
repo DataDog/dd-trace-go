@@ -36,8 +36,8 @@ var (
 	sv   Version
 	svMu sync.RWMutex
 
-	defaultServiceNamesEnabled   = true
-	defaultServiceNamesEnabledMu sync.RWMutex
+	rmClientServiceNames   bool
+	rmClientServiceNamesMu sync.RWMutex
 )
 
 // ParseVersion attempts to parse the version string.
@@ -72,18 +72,18 @@ func SetDefaultVersion() Version {
 	return defaultSchemaVersion
 }
 
-// GetDefaultServiceNamesEnabled returns the value of the DefaultServiceNamesEnabled setting for this application.
-func GetDefaultServiceNamesEnabled() bool {
-	defaultServiceNamesEnabledMu.RLock()
-	defer defaultServiceNamesEnabledMu.RUnlock()
-	return defaultServiceNamesEnabled
+// GetRemoveClientServiceNamesEnabled returns the value of the RemoveClientServiceNamesEnabled setting for this application.
+func GetRemoveClientServiceNamesEnabled() bool {
+	rmClientServiceNamesMu.RLock()
+	defer rmClientServiceNamesMu.RUnlock()
+	return rmClientServiceNames
 }
 
-// SetDefaultServiceNamesEnabled sets the value of the DefaultServiceNamesEnabled setting used for this application.
-func SetDefaultServiceNamesEnabled(v bool) {
-	defaultServiceNamesEnabledMu.RLock()
-	defer defaultServiceNamesEnabledMu.RUnlock()
-	defaultServiceNamesEnabled = v
+// SetRemoveClientServiceNamesEnabled sets the value of the RemoveClientServiceNamesEnabled setting used for this application.
+func SetRemoveClientServiceNamesEnabled(v bool) {
+	rmClientServiceNamesMu.RLock()
+	defer rmClientServiceNamesMu.RUnlock()
+	rmClientServiceNames = v
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.

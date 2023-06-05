@@ -16,23 +16,26 @@ func NewDefaultServiceName(fallbackName string, opts ...Option) *Schema {
 		opt(cfg)
 	}
 	return New(&standardServiceNameSchema{
-		fallbackName:               fallbackName,
-		defaultServiceNamesEnabled: GetDefaultServiceNamesEnabled(),
-		cfg:                        cfg,
+		fallbackName:         fallbackName,
+		rmClientServiceNames: GetRemoveClientServiceNamesEnabled(),
+		cfg:                  cfg,
 	})
 }
 
 type standardServiceNameSchema struct {
-	fallbackName               string
-	defaultServiceNamesEnabled bool
-	cfg                        *config
+	fallbackName         string
+	rmClientServiceNames bool
+	cfg                  *config
 }
 
 func (s *standardServiceNameSchema) V0() string {
-	if s.cfg.overrideV0 != nil && s.defaultServiceNamesEnabled {
-		return *s.cfg.overrideV0
+	// the override function for V0 is used by contribs to introduce their default service names (i.e. "kafka, mongo, etc.")
+	// when V0 is used. The extra flag rmClientServiceNames allows to disable these default service names even when V0
+	// is used.
+	if s.cfg.overrideV0 == nil || s.rmClientServiceNames {
+		return s.getName()
 	}
-	return s.getName()
+	return *s.cfg.overrideV0
 }
 
 func (s *standardServiceNameSchema) V1() string {
