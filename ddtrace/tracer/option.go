@@ -240,7 +240,7 @@ func newConfig(opts ...StartOption) *config {
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
-	// peer.service tag is always enabled if using attribute schema >= 1
+	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
 	c.peerServiceDefaultsEnabled = true
 	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
 		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -636,6 +636,23 @@ func WithServiceMapping(from, to string) StartOption {
 			c.serviceMappings = make(map[string]string)
 		}
 		c.serviceMappings[from] = to
+	}
+}
+
+// WithPeerServiceDefaultsEnabled allows to enable or disable defaults calculation for peer.service.
+func WithPeerServiceDefaultsEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.peerServiceDefaultsEnabled = enabled
+	}
+}
+
+// WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
+func WithPeerServiceMapping(from, to string) StartOption {
+	return func(c *config) {
+		if c.peerServiceMappings == nil {
+			c.peerServiceMappings = make(map[string]string)
+		}
+		c.peerServiceMappings[from] = to
 	}
 }
 

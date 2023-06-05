@@ -514,6 +514,38 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
+
+	t.Run("peer-service", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, false)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("defaults-with-schema-v1", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+			t.Setenv("DD_TRACE_PEER_SERVICE_MAPPING", "old:new,old2:new2")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+
+		t.Run("options", func(t *testing.T) {
+			c := newConfig()
+			WithPeerServiceDefaultsEnabled(true)(c)
+			WithPeerServiceMapping("old", "new")(c)
+			WithPeerServiceMapping("old2", "new2")(c)
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
