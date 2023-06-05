@@ -36,8 +36,8 @@ var (
 	sv   Version
 	svMu sync.RWMutex
 
-	rmClientServiceNames   bool
-	rmClientServiceNamesMu sync.RWMutex
+	rmIntegrationServiceNames   bool
+	rmIntegrationServiceNamesMu sync.RWMutex
 )
 
 // ParseVersion attempts to parse the version string.
@@ -72,18 +72,18 @@ func SetDefaultVersion() Version {
 	return defaultSchemaVersion
 }
 
-// GetRemoveClientServiceNamesEnabled returns the value of the RemoveClientServiceNamesEnabled setting for this application.
-func GetRemoveClientServiceNamesEnabled() bool {
-	rmClientServiceNamesMu.RLock()
-	defer rmClientServiceNamesMu.RUnlock()
-	return rmClientServiceNames
+// GetRemoveIntegrationServiceNamesEnabled returns the value of the RemoveIntegrationServiceNames setting for this application.
+func GetRemoveIntegrationServiceNamesEnabled() bool {
+	rmIntegrationServiceNamesMu.RLock()
+	defer rmIntegrationServiceNamesMu.RUnlock()
+	return rmIntegrationServiceNames
 }
 
-// SetRemoveClientServiceNamesEnabled sets the value of the RemoveClientServiceNamesEnabled setting used for this application.
-func SetRemoveClientServiceNamesEnabled(v bool) {
-	rmClientServiceNamesMu.RLock()
-	defer rmClientServiceNamesMu.RUnlock()
-	rmClientServiceNames = v
+// SetRemoveIntegrationServiceNamesEnabled sets the value of the RemoveIntegrationServiceNames setting used for this application.
+func SetRemoveIntegrationServiceNamesEnabled(v bool) {
+	rmIntegrationServiceNamesMu.RLock()
+	defer rmIntegrationServiceNamesMu.RUnlock()
+	rmIntegrationServiceNames = v
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
