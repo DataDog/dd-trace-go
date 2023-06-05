@@ -63,6 +63,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 		if val.OperationName() == "mongodb.query" {
 			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
 			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
+			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
 		}
 	}
 
@@ -121,6 +122,7 @@ func TestCollection_Insert(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 	assert.Equal(ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_Update(t *testing.T) {
@@ -143,6 +145,7 @@ func TestCollection_Update(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal(ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
 	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_UpdateId(t *testing.T) {

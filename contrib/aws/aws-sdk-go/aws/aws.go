@@ -112,10 +112,9 @@ func (h *handlers) serviceName(req *request.Request) string {
 		return h.cfg.serviceName
 	}
 	defaultName := "aws." + awsService(req)
-	return namingschema.NewServiceNameSchema(
-		"",
+	return namingschema.NewDefaultServiceName(
 		defaultName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultName),
+		namingschema.WithOverrideV0(defaultName),
 	).GetName()
 }
 
