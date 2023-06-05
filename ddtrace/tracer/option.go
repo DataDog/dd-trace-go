@@ -597,10 +597,12 @@ func WithService(name string) StartOption {
 	}
 }
 
-// WithRemoveClientServiceNamesEnabled allows to remove default service names set by some contribs and allow to fall back
+// WithRemoveIntegrationServiceNamesEnabled allows to remove default service names set by some contribs and allow to fall back
 // to the tracer's global default behavior.
-func WithRemoveClientServiceNamesEnabled(enabled bool) {
-	namingschema.SetRemoveIntegrationServiceNamesEnabled(enabled)
+func WithRemoveIntegrationServiceNamesEnabled(enabled bool) StartOption {
+	return func(_ *config) {
+		namingschema.SetRemoveIntegrationServiceNamesEnabled(enabled)
+	}
 }
 
 // WithAgentAddr sets the address where the agent is located. The default is
