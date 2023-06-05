@@ -249,6 +249,9 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default client service names.
+	// These default service names are always disabled for v1 onwards.
+	namingschema.SetRemoveClientServiceNamesEnabled(internal.BoolEnv("DD_TRACE_REMOVE_CLIENT_SERVICE_NAMES_ENABLED", false))
 
 	for _, fn := range opts {
 		fn(c)
@@ -607,6 +610,12 @@ func WithService(name string) StartOption {
 		c.serviceName = name
 		globalconfig.SetServiceName(c.serviceName)
 	}
+}
+
+// WithRemoveClientServiceNamesEnabled allows to remove default service names set by some contribs and allow to fall back
+// to the tracer's global default behavior.
+func WithRemoveClientServiceNamesEnabled(enabled bool) {
+	namingschema.SetRemoveClientServiceNamesEnabled(enabled)
 }
 
 // WithAgentAddr sets the address where the agent is located. The default is
