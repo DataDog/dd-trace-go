@@ -62,28 +62,28 @@ func TestNewDefaultServiceName(t *testing.T) {
 			want:          "dd-service",
 		},
 		{
-			name:          "schema v0 without rm client service names",
+			name:          "schema v0 without rm integration service names",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetRemoveClientServiceNamesEnabled()
-				namingschema.SetRemoveClientServiceNamesEnabled(false)
+				prev := namingschema.GetRemoveIntegrationServiceNamesEnabled()
+				namingschema.SetRemoveIntegrationServiceNamesEnabled(false)
 				return func() {
-					namingschema.SetRemoveClientServiceNamesEnabled(prev)
+					namingschema.SetRemoveIntegrationServiceNamesEnabled(prev)
 				}
 			},
 			opts: []namingschema.Option{optOverrideV0},
 			want: "override-v0",
 		},
 		{
-			name:          "schema v0 with rm client service names",
+			name:          "schema v0 with rm integration service names",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetRemoveClientServiceNamesEnabled()
-				namingschema.SetRemoveClientServiceNamesEnabled(true)
+				prev := namingschema.GetRemoveIntegrationServiceNamesEnabled()
+				namingschema.SetRemoveIntegrationServiceNamesEnabled(true)
 				return func() {
-					namingschema.SetRemoveClientServiceNamesEnabled(prev)
+					namingschema.SetRemoveIntegrationServiceNamesEnabled(prev)
 				}
 			},
 			opts: []namingschema.Option{optOverrideV0},
