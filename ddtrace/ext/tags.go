@@ -19,7 +19,11 @@ const (
 	NetworkDestinationIP = "network.destination.ip"
 
 	// TargetPort sets the target host port.
+	// Deprecated: Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// NetworkDestinationPort is the remote port number of the outbound connection.
+	NetworkDestinationPort = "network.destination.port"
 
 	// SamplingPriority is the tag that marks the sampling priority of a span.
 	// Deprecated in favor of ManualKeep and ManualDrop.
