@@ -19,7 +19,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"errors"
 	"reflect"
 	"sync"
 	"time"
@@ -108,9 +107,9 @@ func (d *driverRegistry) unregister(name string) {
 	delete(d.drivers, name)
 }
 
-// Register tells the sql integration package about the driver that we will be tracing. It must
-// be called before Open, if that connection is to be traced. It uses the driverName suffixed
-// with ".db" as the default service name.
+// Register tells the sql integration package about the driver that we will be tracing. If used, it
+// must be called before Open. It uses the driverName suffixed with ".db" as the default service
+// name.
 func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
@@ -135,10 +134,6 @@ func unregister(name string) {
 		registeredDrivers.unregister(name)
 	}
 }
-
-// errNotRegistered is returned when there is an attempt to open a database connection towards a driver
-// that has not previously been registered using this package.
-var errNotRegistered = errors.New("sqltrace: Register must be called before Open")
 
 type tracedConnector struct {
 	connector  driver.Connector
@@ -183,16 +178,20 @@ func (t dsnConnector) Driver() driver.Driver {
 	return t.driver
 }
 
-// OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
-// to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
+// OpenDB returns connection to a DB using the traced version of the given driver. The driver may
+// first be registered using Register. If this did not occur, OpenDB will determine the driver name
+// based on its type.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
-	driverName, ok := registeredDrivers.name(c.Driver())
-	if !ok {
-		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
-	}
-	rc, _ := registeredDrivers.config(driverName)
 	cfg := new(config)
-	defaults(cfg, driverName, rc)
+	var driverName string
+	if name, ok := registeredDrivers.name(c.Driver()); ok {
+		driverName = name
+		rc, _ := registeredDrivers.config(driverName)
+		defaults(cfg, driverName, rc)
+	} else {
+		driverName = reflect.TypeOf(c.Driver()).String()
+		defaults(cfg, driverName, nil)
+	}
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -204,14 +203,23 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	return sql.OpenDB(tc)
 }
 
-// Open returns connection to a DB using the traced version of the given driver. In order for Open
-// to work, the driver must first be registered using Register. If this did not occur, Open will
-// return an error.
+// Open returns connection to a DB using the traced version of the given driver. The driver may
+// first be registered using Register. If this did not occur, Open will determine the driver by
+// opening a DB connection and retrieving the driver using (*sql.DB).Driver, before closing it and
+// opening a new, traced connection.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
-	if !registeredDrivers.isRegistered(driverName) {
-		return nil, errNotRegistered
+	var d driver.Driver
+	if registeredDrivers.isRegistered(driverName) {
+		d, _ = registeredDrivers.driver(driverName)
+	} else {
+		db, err := sql.Open(driverName, dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		d = db.Driver()
 	}
-	d, _ := registeredDrivers.driver(driverName)
+
 	if driverCtx, ok := d.(driver.DriverContext); ok {
 		connector, err := driverCtx.OpenConnector(dataSourceName)
 		if err != nil {
