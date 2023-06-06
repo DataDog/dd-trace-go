@@ -8,6 +8,8 @@ package appsec
 import (
 	"encoding/json"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -33,7 +35,7 @@ type (
 		Overrides   []rulesOverrideEntry `json:"rules_override,omitempty"`
 		Exclusions  []exclusionEntry     `json:"exclusions,omitempty"`
 		RulesData   []ruleDataEntry      `json:"rules_data,omitempty"`
-		Actions     []interface{}        `json:"actions,omitempty"`
+		Actions     []actionEntry        `json:"actions,omitempty"`
 		CustomRules []interface{}        `json:"custom_rules,omitempty"`
 	}
 
@@ -64,7 +66,27 @@ type (
 	rulesData     struct {
 		RulesData []ruleDataEntry `json:"rules_data"`
 	}
+
+	actionEntry struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Parameters struct {
+			StatusCode int    `json:"status_code"`
+			StrParam   string `json:"-"`
+		} `json:"parameters,omitempty"`
+	}
 )
+
+func (a *actionEntry) toHandler() http.Handler {
+	switch a.Type {
+	case "block_request":
+		return httpsec.NewBlockRequestHandler(a.Parameters.StatusCode, a.Parameters.StrParam)
+	case "redirect_request":
+		return httpsec.NewRedirectRequestHandler(a.Parameters.StrParam, a.Parameters.StatusCode)
+	default:
+		return nil
+	}
+}
 
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {
