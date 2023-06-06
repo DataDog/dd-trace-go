@@ -39,6 +39,24 @@ const (
 	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
+type wafHandle struct {
+	mu sync.Mutex
+	*waf.Handle
+	// Actions are tightly link to a ruleset, which is linked to a waf handle
+	actions map[string]*sharedsec.Action
+}
+
+// RegisterAction registers a specific action to the handler. If the action kind is unknown
+// the action will not be registered
+func (h *wafHandle) RegisterAction(id string, a *sharedsec.Action) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.actions == nil {
+		h.actions = make(map[string]*sharedsec.Action)
+	}
+	h.actions[id] = a
+}
+
 func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
 	newHandle, err := newWAFHandle(rules, a.cfg)
@@ -83,11 +101,36 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	return nil
 }
 
-func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
-	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+func actionFromEntry(e *actionEntry) *sharedsec.Action {
+	switch e.Type {
+	case "block_request":
+		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.StrParam)
+	case "redirect_request":
+		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.StrParam)
+	default:
+		return nil
+	}
 }
 
-func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
+func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
+	handle, err := waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+	actions := map[string]*sharedsec.Action{
+		"block": sharedsec.NewBlockRequestAction(403, "auto"),
+	}
+
+	for _, entry := range rules.Actions {
+		a := actionFromEntry(&entry)
+		if a != nil {
+			actions[entry.ID] = a
+		}
+	}
+	return &wafHandle{
+		Handle:  handle,
+		actions: actions,
+	}, err
+}
+
+func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
@@ -119,12 +162,11 @@ func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []
 }
 
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
-	actionHandler := httpsec.NewActionsHandler()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		wafCtx := waf.NewContext(handle)
+		wafCtx := waf.NewContext(handle.Handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
@@ -138,8 +180,8 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
 				if len(matches) > 0 {
 					for _, id := range actionIds {
-						if actionHandler.Apply(id, op) {
-							operation.Error = sharedsec.NewUserMonitoringError("Request blocked")
+						if action, ok := handle.actions[id]; ok {
+							op.SendData(action)
 						}
 					}
 					addSecurityEvents(op, limiter, matches)
@@ -180,13 +222,12 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
-			interrupt := false
 			for _, id := range actionIds {
-				interrupt = actionHandler.Apply(id, op) || interrupt
+				op.SendData(handle.actions[id])
 			}
 			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
-			if interrupt {
+			if len(actionIds) > 0 {
 				wafCtx.Close()
 				return
 			}
@@ -197,9 +238,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
 				if len(matches) > 0 {
 					for _, id := range actionIds {
-						if actionHandler.Apply(id, op) {
-							sdkBodyOp.Error = httpsec.NewBodyMonitoringError("Request blocked")
-						}
+						op.SendData(handle.actions[id])
 					}
 					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious request body")
@@ -242,9 +281,8 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 
 // newGRPCWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
-	actionHandler := grpcsec.NewActionsHandler()
 
 	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
@@ -261,7 +299,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			mu     sync.Mutex // events mutex
 		)
 
-		wafCtx := waf.NewContext(handle)
+		wafCtx := waf.NewContext(handle.Handle)
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
@@ -280,7 +318,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			matches, actionIds := runWAF(wafCtx, values, timeout)
 			if len(matches) > 0 {
 				for _, id := range actionIds {
-					actionHandler.Apply(id, op)
+					op.SendData(handle.actions[id])
 				}
 				operation.Error = op.Error
 				addSecurityEvents(op, limiter, matches)
@@ -298,13 +336,12 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
-			interrupt := false
 			for _, id := range actionIds {
-				interrupt = actionHandler.Apply(id, op) || interrupt
+				op.SendData(handle.actions[id])
 			}
 			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
-			if interrupt {
+			if len(actionIds) > 0 {
 				wafCtx.Close()
 				return
 			}
@@ -325,7 +362,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			//      the RPC lifetime.
 			//   2. We avoid the limitation of 1 event per attack type.
 			// TODO(Julio-Guerra): a future libddwaf API should solve this out.
-			wafCtx := waf.NewContext(handle)
+			wafCtx := waf.NewContext(handle.Handle)
 			if wafCtx == nil {
 				// The WAF event listener got concurrently released
 				return

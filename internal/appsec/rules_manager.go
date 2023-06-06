@@ -8,12 +8,9 @@ package appsec
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"net/http"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
@@ -76,17 +73,6 @@ type (
 		} `json:"parameters,omitempty"`
 	}
 )
-
-func (a *actionEntry) toHandler() http.Handler {
-	switch a.Type {
-	case "block_request":
-		return httpsec.NewBlockRequestHandler(a.Parameters.StatusCode, a.Parameters.StrParam)
-	case "redirect_request":
-		return httpsec.NewRedirectRequestHandler(a.Parameters.StrParam, a.Parameters.StatusCode)
-	default:
-		return nil
-	}
-}
 
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {

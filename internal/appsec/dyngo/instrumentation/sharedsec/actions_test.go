@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package httpsec
+package sharedsec
 
 import (
 	"io"
@@ -17,9 +17,9 @@ import (
 func TestNewBlockRequestAction(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/json", NewBlockRequestAction(403, "json").handler.ServeHTTP)
-	mux.HandleFunc("/html", NewBlockRequestAction(403, "html").handler.ServeHTTP)
-	mux.HandleFunc("/auto", NewBlockRequestAction(403, "auto").handler.ServeHTTP)
+	mux.HandleFunc("/json", NewBlockRequestAction(403, "json").HTTP().ServeHTTP)
+	mux.HandleFunc("/html", NewBlockRequestAction(403, "html").HTTP().ServeHTTP)
+	mux.HandleFunc("/auto", NewBlockRequestAction(403, "auto").HTTP().ServeHTTP)
 	defer srv.Close()
 
 	t.Run("json", func(t *testing.T) {

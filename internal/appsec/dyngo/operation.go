@@ -38,6 +38,12 @@ type Operation interface {
 	// listener will be removed from the operation once it finishes.
 	On(EventListener)
 
+	// OnData blablabla
+	OnData(reflect.Type, DataListener)
+
+	// SendData blabla
+	SendData(any)
+
 	// Parent return the parent operation. It returns nil for the root
 	// operation.
 	Parent() Operation
@@ -47,6 +53,8 @@ type Operation interface {
 	// emitEvent is a private method implemented by the operation struct type so
 	// that no other package can define it.
 	emitEvent(argsType reflect.Type, op Operation, v interface{})
+
+	emitData(argsType reflect.Type, v any)
 
 	// add the given event listeners to the operation.
 	// add is a private method implemented by the operation struct type so
@@ -92,6 +100,7 @@ func SwapRootOperation(new Operation) {
 type operation struct {
 	parent Operation
 	eventRegister
+	dataBroadcaster
 
 	disabled bool
 	mu       sync.RWMutex
@@ -223,6 +232,24 @@ func (o *operation) On(l EventListener) {
 	o.eventRegister.add(l.ListenedType(), l)
 }
 
+func (o *operation) OnData(t reflect.Type, l DataListener) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
+	o.dataBroadcaster.add(t, l)
+}
+
+func (o *operation) SendData(data any) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
+	o.dataBroadcaster.emitData(reflect.TypeOf(data), data)
+}
+
 type (
 	// eventRegister implements a thread-safe list of event listeners.
 	eventRegister struct {
@@ -234,7 +261,56 @@ type (
 	// indexed by the operation argument or result type the event listener
 	// expects.
 	eventListenerMap map[reflect.Type][]EventListener
+
+	dataBroadcaster struct {
+		mu        sync.RWMutex
+		listeners dataListenerMap
+	}
+
+	DataListenerSpec[T any] func(data T)
+	DataListener            func(v any)
+	dataListenerMap         map[reflect.Type][]DataListener
 )
+
+func (l DataListenerSpec[T]) Genericize() DataListener {
+	return (func(v any) {
+		l(v.(T))
+	})
+}
+
+func ToData[T any](i interface{}) T {
+	return i.(T)
+}
+
+func (b *dataBroadcaster) add(key reflect.Type, l DataListener) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.listeners == nil {
+		b.listeners = make(dataListenerMap)
+	}
+	b.listeners[key] = append(b.listeners[key], l)
+
+}
+
+func (b *dataBroadcaster) clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = nil
+}
+
+func (b *dataBroadcaster) emitData(key reflect.Type, v any) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+		}
+	}()
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, listener := range b.listeners[key] {
+		listener(v)
+	}
+}
 
 func (r *eventRegister) add(key reflect.Type, l EventListener) {
 	r.mu.Lock()

@@ -14,8 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
-	waf "github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -97,7 +95,7 @@ type appsec struct {
 	cfg       *Config
 	limiter   *TokenTicker
 	rc        *remoteconfig.Client
-	wafHandle *waf.Handle
+	wafHandle *wafHandle
 	started   bool
 }
 

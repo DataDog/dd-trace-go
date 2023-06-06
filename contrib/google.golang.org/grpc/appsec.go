@@ -7,11 +7,12 @@ package grpc
 
 import (
 	"encoding/json"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"reflect"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
@@ -36,8 +37,14 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			setAppSecEventsTags(ctx, span, events)
 		}()
 
-		if op.Error != nil {
-			return nil, op.Error
+		var err error
+		l := dyngo.DataListenerSpec[error](func(e error) {
+			op.AddTag(instrumentation.BlockedRequestTag, true)
+			err = e
+		})
+		op.OnData(reflect.TypeOf(err), l.Genericize())
+		if err != nil {
+			return nil, err
 		}
 
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
@@ -59,6 +66,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			handlerOperation: op,
 			ctx:              ctx,
 		}
+		var err error
+		l := dyngo.DataListenerSpec[error](func(e error) {
+			op.AddTag(instrumentation.BlockedRequestTag, true)
+			err = e
+		})
+		op.OnData(reflect.TypeOf(err), l.Genericize())
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -68,8 +81,8 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			setAppSecEventsTags(stream.Context(), span, events)
 		}()
 
-		if op.Error != nil {
-			return op.Error
+		if err != nil {
+			return err
 		}
 
 		return handler(srv, stream)

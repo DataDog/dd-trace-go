@@ -7,6 +7,7 @@ package sharedsec
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"reflect"
 
