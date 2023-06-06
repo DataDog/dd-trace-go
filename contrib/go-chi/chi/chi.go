@@ -16,10 +16,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 )
+
+const componentName = "go-chi/chi"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
@@ -30,7 +37,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "go-chi/chi"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,15 +72,8 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
-
-			// set the resource name as we get it only once the handler is executed
-			resourceName := chi.RouteContext(r.Context()).RoutePattern()
-			span.SetTag(ext.HTTPRoute, resourceName)
-			if resourceName == "" {
-				resourceName = "unknown"
-			}
-			resourceName = r.Method + " " + resourceName
-			span.SetTag(ext.ResourceName, resourceName)
+			span.SetTag(ext.HTTPRoute, chi.RouteContext(r.Context()).RoutePattern())
+			span.SetTag(ext.ResourceName, cfg.resourceNamer(r))
 		})
 	}
 }

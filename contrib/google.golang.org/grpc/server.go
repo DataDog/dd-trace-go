@@ -46,10 +46,10 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serverServiceName(),
+			ss.cfg.serviceName,
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
-		span.SetTag(ext.Component, "google.golang.org/grpc")
+		span.SetTag(ext.Component, componentName)
 		defer func() {
 			withMetadataTags(ss.ctx, ss.cfg, span)
 			withRequestTags(ss.cfg, m, span)
@@ -68,10 +68,10 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serverServiceName(),
+			ss.cfg.serviceName,
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
-		span.SetTag(ext.Component, "google.golang.org/grpc")
+		span.SetTag(ext.Component, componentName)
 		defer func() { finishWithError(span, err, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
@@ -81,7 +81,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 // StreamServerInterceptor will trace streaming requests to the given gRPC server.
 func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	serverDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -96,10 +96,10 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			span, ctx = startSpanFromContext(
 				ctx,
 				info.FullMethod,
-				"grpc.server",
-				cfg.serverServiceName(),
+				cfg.spanName,
+				cfg.serviceName,
 				cfg.startSpanOptions(tracer.Measured(),
-					tracer.Tag(ext.Component, "google.golang.org/grpc"),
+					tracer.Tag(ext.Component, componentName),
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 			)
 			switch {
@@ -130,7 +130,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 // UnaryServerInterceptor will trace requests to the given grpc server.
 func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	serverDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -144,10 +144,10 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		span, ctx := startSpanFromContext(
 			ctx,
 			info.FullMethod,
-			"grpc.server",
-			cfg.serverServiceName(),
+			cfg.spanName,
+			cfg.serviceName,
 			cfg.startSpanOptions(tracer.Measured(),
-				tracer.Tag(ext.Component, "google.golang.org/grpc"),
+				tracer.Tag(ext.Component, componentName),
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 		)
 		span.SetTag(tagMethodKind, methodKindUnary)

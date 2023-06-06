@@ -9,15 +9,16 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 const (
-	serviceName   = "memcached"
-	operationName = "memcached.query"
+	defaultServiceName = "memcached"
 )
 
 type clientConfig struct {
 	serviceName   string
+	operationName string
 	analyticsRate float64
 }
 
@@ -25,7 +26,12 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = serviceName
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.operationName = namingschema.NewMemcachedOutboundOp().GetName()
+
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

@@ -9,20 +9,31 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+const defaultServiceName = "gocql.query"
+
 type queryConfig struct {
-	serviceName, resourceName string
-	noDebugStack              bool
-	analyticsRate             float64
-	errCheck                  func(err error) bool
+	serviceName, resourceName    string
+	querySpanName, batchSpanName string
+	noDebugStack                 bool
+	analyticsRate                float64
+	errCheck                     func(err error) bool
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
 func defaults(cfg *queryConfig) {
-	cfg.serviceName = "gocql.query"
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
+	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
+		namingschema.WithOverrideV0("cassandra.batch"),
+	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

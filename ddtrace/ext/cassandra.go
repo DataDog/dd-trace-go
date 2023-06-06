@@ -7,9 +7,11 @@ package ext
 
 const (
 	// CassandraQuery is the tag name used for cassandra queries.
+	// Deprecated: this value is no longer used internally and will be removed in future versions.
 	CassandraQuery = "cassandra.query"
 
 	// CassandraBatch is the tag name used for cassandra batches.
+	// Deprecated: this value is no longer used internally and will be removed in future versions.
 	CassandraBatch = "cassandra.batch"
 
 	// CassandraConsistencyLevel is the tag name to set for consitency level.

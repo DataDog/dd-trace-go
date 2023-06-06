@@ -83,7 +83,8 @@ type profiler struct {
 }
 
 func (p *profiler) shouldTrace() bool {
-	return p.cfg.traceEnabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
+	p.cfg.traceConfig.Refresh()
+	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
 }
 
 // testHooks are functions that are replaced during testing which would normally

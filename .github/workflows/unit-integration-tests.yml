@@ -8,19 +8,6 @@ on:
         type: string
 
 jobs:
-  milestone:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - name: Milestone
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          go run checkmilestone.go
   copyright:
     runs-on: ubuntu-latest
     steps:
@@ -31,34 +18,23 @@ jobs:
       - name: Copyright
         run: |
           go run checkcopyright.go
+
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache: true
+      - uses: actions/checkout@v3
         with:
           repository: 'DataDog/dd-trace-go'
-      - name: gofmt
-        run: |
-          if [ "$(gofmt -e -l . | wc -l)" -gt 0 ]; then
-            gofmt -e -l .
-            exit 1
-          fi
-
-      - name: goimports
-        run: |
-          go install golang.org/x/tools/cmd/goimports
-          if [ "$(~/go/bin/goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 . | wc -l)" -gt 0 ]; then
-            echo "Run 'goimports -w -local gopkg.in/DataDog/dd-trace-go.v1 .' to format code."
-            ~/go/bin/goimports -d -local gopkg.in/DataDog/dd-trace-go.v1 .
-            exit 1
-          fi
-
-      - name: lint
-        run: |
-          go install golang.org/x/lint/golint@latest
-          curl -L https://git.io/vp6lP | sh # https://github.com/alecthomas/gometalinter#binary-releases
-          ./bin/gometalinter --disable-all --vendor --deadline=120s --enable=golint ./...
+      - name: golangci-lint
+        uses: reviewdog/action-golangci-lint@v2
+        with:
+          golangci_lint_version: v1.52.2
+          fail_on_error: true
+          reporter: github-pr-review
 
   test-core:
     runs-on: ubuntu-latest
@@ -73,7 +49,7 @@ jobs:
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since 
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
         # we don't fully configure it with a valid API key (and possibly other reasons)
         # This command just checks for our ability to connect to port 8126
         options: >-
@@ -125,7 +101,7 @@ jobs:
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since 
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
         # we don't fully configure it with a valid API key (and possibly other reasons)
         # This command just checks for our ability to connect to port 8126
         options: >-
@@ -228,6 +204,10 @@ jobs:
           KAFKA_BROKER_ID: 1
         ports:
           - 9092:9092
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -263,7 +243,7 @@ jobs:
 
       - name: Testing outlier google.golang.org/api
         run: |
-              go get google.golang.org/grpc@v1.29.0 # https://github.com/grpc/grpc-go/issues/3726
+              go get google.golang.org/api@v0.121.0 # version used to generate code
               go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
               go test -v ./contrib/google.golang.org/api/...
 

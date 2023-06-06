@@ -16,7 +16,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "net/http"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig struct {
@@ -45,8 +52,16 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := append(cfg.SpanOpts, tracer.ServiceName(cfg.Service), tracer.ResourceName(cfg.Resource))
-	opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
+	opts := cfg.SpanOpts
+	if cfg.Service != "" {
+		opts = append(opts, tracer.ServiceName(cfg.Service))
+	}
+	if cfg.Resource != "" {
+		opts = append(opts, tracer.ResourceName(cfg.Resource))
+	}
+	if cfg.Route != "" {
+		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
+	}
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {

@@ -22,13 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 const heapFile = "heap.pprof"
@@ -576,7 +576,7 @@ func vt(vtype, vunit string) pprofutils.ValueType {
 
 type badWriter struct{}
 
-func (badWriter) Write(p []byte) (int, error) {
+func (badWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("fail")
 }
 

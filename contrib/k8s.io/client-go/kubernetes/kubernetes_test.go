@@ -6,6 +6,7 @@
 package kubernetes
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,7 +74,7 @@ func TestKubernetes(t *testing.T) {
 	client, err := kubernetes.NewForConfig(cfg)
 	assert.NoError(t, err)
 
-	client.CoreV1().Namespaces().List(meta_v1.ListOptions{})
+	client.CoreV1().Namespaces().List(context.TODO(), meta_v1.ListOptions{})
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -108,7 +109,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		client, err := kubernetes.NewForConfig(cfg)
 		assert.NoError(t, err)
 
-		client.CoreV1().Namespaces().List(meta_v1.ListOptions{})
+		client.CoreV1().Namespaces().List(context.TODO(), meta_v1.ListOptions{})
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 

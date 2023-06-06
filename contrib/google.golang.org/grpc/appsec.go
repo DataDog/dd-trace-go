@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -101,7 +102,7 @@ func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.R
 	grpcsec.SetSecurityEventTags(span, events, md)
 }
 
-func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) instrumentation.NetaddrIP {
+func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
 	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()

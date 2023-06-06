@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
+
+const componentName = "confluentinc/confluent-kafka-go/kafka"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
 func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
@@ -24,6 +31,8 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	opts = append(opts, WithConfig(conf))
 	return WrapConsumer(c, opts...), nil
 }
 
@@ -33,6 +42,7 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapProducer(p, opts...), nil
 }
 
@@ -96,10 +106,14 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 		tracer.Tag("offset", msg.TopicPartition.Offset),
-		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Measured(),
+	}
+
+	if c.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, c.cfg.bootstrapServers))
 	}
 	if c.cfg.tagFns != nil {
 		for key, tagFn := range c.cfg.tagFns {
@@ -114,7 +128,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, "kafka.consume", opts...)
+	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, c.cfg.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span
@@ -208,10 +222,14 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag(ext.Component, "confluentinc/confluent-kafka-go/kafka"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, "kafka"),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
+	}
+
+	if p.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, p.cfg.bootstrapServers))
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
@@ -222,7 +240,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
-	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, "kafka.produce", opts...)
+	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerSpanName, opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span

@@ -11,14 +11,14 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+
+	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestSetSecurityEventTags(t *testing.T) {
@@ -159,7 +159,7 @@ func TestClientIP(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
-			expectedClientIP, _ := instrumentation.NetaddrParseIP(tc.expectedClientIP)
+			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})
 	}
@@ -183,19 +183,19 @@ func (m *MockSpan) SetTag(key string, value interface{}) {
 	}
 }
 
-func (m *MockSpan) SetOperationName(operationName string) {
+func (m *MockSpan) SetOperationName(_ string) {
 	panic("unused")
 }
 
-func (m *MockSpan) BaggageItem(key string) string {
+func (m *MockSpan) BaggageItem(_ string) string {
 	panic("unused")
 }
 
-func (m *MockSpan) SetBaggageItem(key, val string) {
+func (m *MockSpan) SetBaggageItem(_, _ string) {
 	panic("unused")
 }
 
-func (m *MockSpan) Finish(opts ...ddtrace.FinishOption) {
+func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
 	m.finished = true
 }
 

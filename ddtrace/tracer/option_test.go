@@ -207,8 +207,8 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.DropP0s)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
-			"a": struct{}{},
-			"b": struct{}{},
+			"a": {},
+			"b": {},
 		})
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
@@ -952,4 +952,21 @@ func TestWithLogStartup(t *testing.T) {
 	assert.False(t, c.logStartup)
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
+}
+
+func TestHostnameDisabled(t *testing.T) {
+	t.Run("DisabledWithUDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+	t.Run("Default", func(t *testing.T) {
+		c := newConfig()
+		assert.True(t, c.enableHostnameDetection)
+	})
+	t.Run("DisableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
 }

@@ -6,72 +6,52 @@
 package tracer
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
 	"testing"
-	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTelemetryEnabled(t *testing.T) {
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	t.Run("tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
 
-	received := make(chan *telemetry.AppStarted, 1)
-	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/telemetry/proxy/api/v2/apmtelemetry" {
-			return
-		}
-		if r.Header.Get("DD-Telemetry-Request-Type") != string(telemetry.RequestTypeAppStarted) {
-			return
-		}
-		var body telemetry.Body
-		body.Payload = new(telemetry.AppStarted)
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			t.Errorf("bad body: %s", err)
-		}
-		select {
-		case received <- body.Payload.(*telemetry.AppStarted):
-		default:
-		}
-	}))
-	defer server.Close()
+		Start(
+			WithDebugStack(false),
+			WithService("test-serv"),
+			WithEnv("test-env"),
+			WithRuntimeMetrics(),
+		)
+		defer Stop()
 
-	Start(
-		WithHTTPClient(client),
-		WithDebugStack(false),
-		WithService("test-serv"),
-		WithEnv("test-env"),
-		WithRuntimeMetrics(),
-	)
-	defer Stop()
-
-	var payload *telemetry.AppStarted
-	select {
-	case <-ctx.Done():
-		t.Fatalf("Time out: waiting for telemetry payload")
-	case payload = <-received:
-	}
-
-	check := func(key string, expected interface{}) {
-		for _, kv := range payload.Configuration {
-			if kv.Name == key {
-				if kv.Value != expected {
-					t.Errorf("configuration %s: wanted %v, got %v", key, expected, kv.Value)
-				}
+		assert.True(t, telemetryClient.Started)
+		assert.True(t, telemetryClient.AsmEnabled)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
+		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceTracers]; ok {
+			if initTime, ok := metrics["tracer_init_time"]; ok {
+				assert.True(t, initTime > 0)
 				return
 			}
+			t.Fatalf("could not find tracer init time in telemetry client metrics")
 		}
-		t.Errorf("missing configuration %s", key)
-	}
-
-	check("trace_debug_enabled", false)
-	check("service", "test-serv")
-	check("env", "test-env")
-	check("runtime_metrics_enabled", true)
+		t.Fatalf("could not find tracer namespace in telemetry client metrics")
+	})
+	t.Run("profiler start, tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		profiler.Start()
+		defer profiler.Stop()
+		Start(
+			WithService("test-serv"),
+		)
+		defer Stop()
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+	})
 }

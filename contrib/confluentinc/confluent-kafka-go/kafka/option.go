@@ -8,18 +8,25 @@ package kafka
 import (
 	"context"
 	"math"
+	"net"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
+
+const defaultServiceName = "kafka"
 
 type config struct {
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
 	analyticsRate       float64
+	bootstrapServers    string
 	tagFns              map[string]func(msg *kafka.Message) interface{}
 }
 
@@ -28,18 +35,22 @@ type Option func(cfg *config)
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		ctx:                 context.Background(),
-		consumerServiceName: "kafka",
-		producerServiceName: "kafka",
+		ctx: context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.consumerServiceName = svc
-	}
+
+	cfg.consumerServiceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.producerServiceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
+
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -94,5 +105,20 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 			cfg.tagFns = make(map[string]func(msg *kafka.Message) interface{})
 		}
 		cfg.tagFns[tag] = tagFn
+	}
+}
+
+// WithConfig extracts the config information for the client to be tagged
+func WithConfig(cg *kafka.ConfigMap) Option {
+	return func(cfg *config) {
+		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
+			for _, addr := range strings.Split(bs.(string), ",") {
+				host, _, err := net.SplitHostPort(addr)
+				if err == nil {
+					cfg.bootstrapServers = host
+					return
+				}
+			}
+		}
 	}
 }

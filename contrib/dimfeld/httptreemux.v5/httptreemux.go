@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/dimfeld/httptreemux/v5"
 )
+
+const componentName = "dimfeld/httptreemux.v5"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Router is a traced version of httptreemux.TreeMux.
 type Router struct {
@@ -33,7 +40,7 @@ func New(opts ...RouterOption) *Router {
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring Router: %#v", cfg)
 	return &Router{httptreemux.New(), cfg}
 }
@@ -66,7 +73,7 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "dimfeld/httptreemux.v5"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }
@@ -94,16 +101,16 @@ func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, re
 	}
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
-		old := "/" + v + "/"
-		new := "/:" + k + "/"
-		if strings.Contains(route, old) {
-			route = strings.Replace(route, old, new, 1)
+		oldP := "/" + v + "/"
+		newP := "/:" + k + "/"
+		if strings.Contains(route, oldP) {
+			route = strings.Replace(route, oldP, newP, 1)
 			continue
 		}
 		// replace parameter at end of the path, i.e. "../:param"
-		old = "/" + v
-		new = "/:" + k
-		route = strings.Replace(route, old, new, 1)
+		oldP = "/" + v
+		newP = "/:" + k
+		route = strings.Replace(route, oldP, newP, 1)
 	}
 	return req.Method + " " + route
 }
