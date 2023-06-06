@@ -15,8 +15,6 @@ import (
 	"runtime/trace"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
