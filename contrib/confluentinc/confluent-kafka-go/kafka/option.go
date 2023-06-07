@@ -8,6 +8,8 @@ package kafka
 import (
 	"context"
 	"math"
+	"net"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -15,14 +17,17 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
+const defaultServiceName = "kafka"
+
 type config struct {
-	ctx                   context.Context
-	consumerServiceName   string
-	producerServiceName   string
-	consumerOperationName string
-	producerOperationName string
-	analyticsRate         float64
-	tagFns                map[string]func(msg *kafka.Message) interface{}
+	ctx                 context.Context
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	bootstrapServers    string
+	tagFns              map[string]func(msg *kafka.Message) interface{}
 }
 
 // An Option customizes the config.
@@ -38,15 +43,13 @@ func newConfig(opts ...Option) *config {
 		cfg.analyticsRate = 1.0
 	}
 
-	cfg.consumerServiceName = namingschema.NewServiceNameSchema("", "kafka").GetName()
-	cfg.producerServiceName = namingschema.NewServiceNameSchema(
-		"",
-		"kafka",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "kafka"),
+	cfg.consumerServiceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.producerServiceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
-
-	cfg.consumerOperationName = namingschema.NewKafkaInboundOp().GetName()
-	cfg.producerOperationName = namingschema.NewKafkaOutboundOp().GetName()
+	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
 
 	for _, opt := range opts {
 		opt(cfg)
@@ -102,5 +105,20 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 			cfg.tagFns = make(map[string]func(msg *kafka.Message) interface{})
 		}
 		cfg.tagFns[tag] = tagFn
+	}
+}
+
+// WithConfig extracts the config information for the client to be tagged
+func WithConfig(cg *kafka.ConfigMap) Option {
+	return func(cfg *config) {
+		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
+			for _, addr := range strings.Split(bs.(string), ",") {
+				host, _, err := net.SplitHostPort(addr)
+				if err == nil {
+					cfg.bootstrapServers = host
+					return
+				}
+			}
+		}
 	}
 }

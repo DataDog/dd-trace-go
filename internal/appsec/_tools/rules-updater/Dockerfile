@@ -1,4 +1,4 @@
-FROM golang as go-format
+FROM golang:1.20 as go-format
 ARG version
 ENV VERSION=$version
 ADD https://raw.githubusercontent.com/DataDog/appsec-event-rules/$version/build/recommended.json /home/rules.json

@@ -35,7 +35,7 @@ func NewHTTPServerTest(genSpans GenSpansFn, defaultName string, opts ...Option) 
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.server.request", spans[0].OperationName())
 		}
-		t.Run("ServiceName", NewServiceNameTest(genSpans, "", cfg.wantServiceName[namingschema.SchemaV0]))
-		t.Run("SpanName", NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", NewServiceNameTest(genSpans, cfg.wantServiceName[namingschema.SchemaV0]))
+		t.Run("SpanName", NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	}
 }

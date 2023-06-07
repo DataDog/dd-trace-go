@@ -173,7 +173,7 @@ func serverSpanName(ctx context.Context) string {
 	}
 	return namingschema.NewServerInboundOp(
 		"twirp",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, serviceNameV0),
+		namingschema.WithOverrideV0(serviceNameV0),
 	).GetName()
 }
 

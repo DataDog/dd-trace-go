@@ -18,10 +18,9 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName: namingschema.NewServiceNameSchema(
+		serviceName: namingschema.NewDefaultServiceName(
 			"",
-			"",
-			namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
+			namingschema.WithOverrideV0(""),
 		).GetName(),
 		publishSpanName: namingschema.NewGCPPubsubOutboundOp().GetName(),
 		receiveSpanName: namingschema.NewGCPPubsubInboundOp().GetName(),

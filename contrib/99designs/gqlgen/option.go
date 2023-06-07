@@ -23,10 +23,9 @@ type config struct {
 type Option func(t *config)
 
 func defaults(t *config) {
-	t.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	t.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	t.analyticsRate = globalconfig.AnalyticsRate()
 }
