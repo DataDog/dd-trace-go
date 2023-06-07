@@ -11,9 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/atomic"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -40,6 +40,10 @@ const (
 
 func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
+	if err := waf.InitWaf(); err != nil {
+		return err
+	}
+
 	newHandle, err := newWAFHandle(rules, a.cfg)
 	if err != nil {
 		return err
@@ -83,7 +87,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 }
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
-	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 }
 
 func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
@@ -123,7 +127,7 @@ func newHTTPWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 	actionHandler := httpsec.NewActionsHandler()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		wafCtx := waf.NewContext(handle)
+		wafCtx := handle.NewContext()
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
@@ -252,15 +256,15 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		var (
 			nbEvents          uint32
 			logOnce           sync.Once // per request
-			overallRuntimeNs  waf.AtomicU64
-			internalRuntimeNs waf.AtomicU64
-			nbTimeouts        waf.AtomicU64
+			overallRuntimeNs  atomic.Uint64
+			internalRuntimeNs atomic.Uint64
+			nbTimeouts        atomic.Uint64
 
 			events []json.RawMessage
 			mu     sync.Mutex // events mutex
 		)
 
-		wafCtx := waf.NewContext(handle)
+		wafCtx := handle.NewContext()
 		if wafCtx == nil {
 			// The WAF event listener got concurrently released
 			return
@@ -324,7 +328,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 			//      the RPC lifetime.
 			//   2. We avoid the limitation of 1 event per attack type.
 			// TODO(Julio-Guerra): a future libddwaf API should solve this out.
-			wafCtx := waf.NewContext(handle)
+			wafCtx := handle.NewContext()
 			if wafCtx == nil {
 				// The WAF event listener got concurrently released
 				return
