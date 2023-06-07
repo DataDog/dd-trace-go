@@ -218,6 +218,7 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		}
 		defer db.Close()
 		d = db.Driver()
+		Register(driverName, d)
 	}
 
 	if driverCtx, ok := d.(driver.DriverContext); ok {
