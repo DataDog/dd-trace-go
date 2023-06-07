@@ -23,7 +23,7 @@ func TestTagsTypes(t *testing.T) {
 		Version: "1.3.0",
 		Loaded:  10,
 		Failed:  1,
-		Errors:  map[string]interface{}{"test": []string{"1", "2"}},
+		Errors:  map[string][]string{"test": {"1", "2"}},
 	}
 
 	addRulesMonitoringTags(&th, rInfo)
