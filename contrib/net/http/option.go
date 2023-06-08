@@ -34,7 +34,7 @@ var headerTagsMap = make(map[string]string)
 
 func headerTag(header string) (tag string, ok bool) {
 	tag, ok = headerTagsMap[header]
-	return
+	return tag, ok
 }
 
 // MuxOption has been deprecated in favor of Option.

@@ -67,7 +67,7 @@ func RuntimeID() string {
 
 func HeaderTag(header string) (tag string, ok bool) {
 	tag, ok = cfg.headersAsTags[header]
-	return
+	return tag, ok
 }
 
 // SetHeaderTag adds config for header `from` with tag value `to`

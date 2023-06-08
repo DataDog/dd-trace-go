@@ -31,7 +31,7 @@ var headerTagsMap = make(map[string]string)
 
 func headerTag(header string) (tag string, ok bool) {
 	tag, ok = headerTagsMap[header]
-	return
+	return tag, ok
 }
 
 func newConfig(serviceName string) *config {
