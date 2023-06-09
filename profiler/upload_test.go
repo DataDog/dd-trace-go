@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -62,7 +63,7 @@ func TestTryUpload(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
-	assert.ElementsMatch([]string{
+	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
 		"service:my-service",
@@ -77,7 +78,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
-	}, profile.tags)
+	})
 	assert.Equal(profile.event.Version, "4")
 	assert.Equal(profile.event.Family, "go")
 	assert.NotNil(profile.event.Start)
@@ -91,6 +92,9 @@ func TestTryUpload(t *testing.T) {
 }
 
 func TestTryUploadUDS(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix domain sockets are non-functional on windows.")
+	}
 	profiles := make(chan profileMeta, 1)
 	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
 	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
@@ -200,4 +204,77 @@ func BenchmarkDoRequest(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		p.doRequest(bat)
 	}
+}
+
+func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+	defer maininternal.ResetGitMetadataTags()
+
+	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
+
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
+		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo")
+		assert.Contains(profile.tags, "go_path:somepath")
+	})
+	t.Run("git-metadata-from-env", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+
+		// git metadata env has priority under DD_TAGS
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
+
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
+		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo_new")
+	})
+
+	t.Run("git-metadata-disabled", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
+
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCD")
+
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
+
+		assert := assert.New(t)
+		assert.NotContains(profile.tags, "git.commit.sha:123456789ABCD")
+		assert.NotContains(profile.tags, "git.repository_url:github.com/user/repo")
+	})
 }

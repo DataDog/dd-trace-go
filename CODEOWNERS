@@ -6,7 +6,6 @@
 # tracing
 /contrib                        @DataDog/tracing-go
 /ddtrace                        @DataDog/tracing-go
-/internal                       @DataDog/tracing-go
 
 # profiling
 /profiler                       @DataDog/profiling-go
@@ -15,8 +14,15 @@
 # appsec
 /appsec                         @DataDog/appsec-go
 /internal/appsec                @DataDog/appsec-go
-/contrib/**/appsec.go           @DataDog/appsec-go
+/contrib/**/*appsec*.go         @DataDog/appsec-go
 /.github/workflows/appsec.yml   @DataDog/appsec-go
 
 # telemetry
 /internal/telemetry             @DataDog/apm-go
+
+# linter rules
+.golangci.yml                   @DataDog/tracing-go @DataDog/profiling-go @DataDog/appsec-go
+
+# Gitlab configuration
+.gitlab-ci.yml                  @DataDog/apm-go @DataDog/apm-core-reliability-and-performance
+/.gitlab-ci                     @DataDog/apm-go @DataDog/apm-core-reliability-and-performance

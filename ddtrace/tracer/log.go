@@ -56,17 +56,18 @@ type startupInfo struct {
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(endpoint string) error {
+func checkEndpoint(c *http.Client, endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %v", err)
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
-	_, err = defaultClient.Do(req)
+	res, err := c.Do(req)
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 	return nil
 }
 
@@ -113,7 +114,7 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
-		if err := checkEndpoint(t.config.transport.endpoint()); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
 			info.AgentError = fmt.Sprintf("%s", err)
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
 		}

@@ -8,16 +8,19 @@ package echo
 import (
 	"math"
 
-	"github.com/labstack/echo/v4"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/labstack/echo/v4"
 )
+
+const defaultServiceName = "echo"
 
 type config struct {
 	serviceName       string
 	analyticsRate     float64
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
+	isStatusError     func(statusCode int) bool
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -27,11 +30,9 @@ type Option func(*config)
 type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
-	cfg.serviceName = "echo"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.analyticsRate = math.NaN()
+	cfg.isStatusError = isServerError
 }
 
 // WithServiceName sets the given service name for the system.
@@ -79,4 +80,16 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequestFunc = ignoreRequestFunc
 	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) Option {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
+	}
+}
+
+func isServerError(statusCode int) bool {
+	return statusCode >= 500 && statusCode < 600
 }

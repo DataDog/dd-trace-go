@@ -1,6 +1,10 @@
-[![CircleCI](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1.svg?style=svg)](https://circleci.com/gh/DataDog/dd-trace-go/tree/v1)
-[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1)
+[![Main Branch and Release Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/main-branch-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/main-branch-tests.yml)
+[![System Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/system-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/system-tests.yml)
+[![CodeQL](https://github.com/DataDog/dd-trace-go/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/codeql-analysis.yml)
+[![APM Parametric Tests](https://github.com/DataDog/dd-trace-go/actions/workflows/parametric-tests.yml/badge.svg)](https://github.com/DataDog/dd-trace-go/actions/workflows/parametric-tests.yml)
 [![codecov](https://codecov.io/gh/DataDog/dd-trace-go/branch/v1/graph/badge.svg?token=jGG20Xhv8i)](https://codecov.io/gh/DataDog/dd-trace-go)
+
+[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1)
 
 ### Datadog Client Libraries for Go
 
@@ -47,16 +51,16 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 |--------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | <span id="support-ga">General Availability (GA)</span> | Full implementation of all features. Full support for new features, bug & security fixes.                                                                                    |
 | <span id="support-maintenance">Maintenance</span>      | Full implementation of existing features. May receive new features. Support for bug & security fixes only.                                                                   |
-| <span id="support-legacy">Legacy</span>                | Legacy implementation. May have limited function, but no maintenance provided. [Contact our customer support team for special requests.](https://www.datadoghq.com/support/) |
+| <span id="support-legacy">Legacy</span>                | Legacy implementation. May have limited function, but no maintenance provided. Not guaranteed to compile the latest version of dd-trace-go. [Contact our customer support team for special requests.](https://www.datadoghq.com/support/) |
 
 ### Supported Versions
 <!-- NOTE: When updating the below section ensure you update the minimum supported version listed in the public docs here: https://docs.datadoghq.com/tracing/setup_overview/setup/go/?tab=containers#compatibility-requirements -->
 | **Go Version** | **Support level**                   |
 |----------------|-------------------------------------|
+| 1.20           | [GA](#support-ga)                   |
 | 1.19           | [GA](#support-ga)                   |
-| 1.18           | [GA](#support-ga)                   |
-| 1.17           | [Maintenance](#support-maintenance) |
-| 1.16           | [Legacy](#support-legacy)           |
+| 1.18           | [Maintenance](#support-maintenance) |
+| 1.17           | [Legacy](#support-legacy)           |
 
 * Datadog's Trace Agent >= 5.21.1
 
@@ -93,11 +97,6 @@ we vendor this version of the library inside the integration. Under normal circu
 might be running versions different from the vendored one, creating hard to debug conflicts.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
-idea about the versions and the set-up take a look at our [CI config](./.circleci/config.yml).
+idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
-The best way to run the entire test suite is using the [CircleCI CLI](https://circleci.com/docs/2.0/local-cli/). In order to run
-jobs locally, you'll first need to convert the Circle CI configuration to a format accepted by the `circleci` cli tool:
-  * `circleci config process .circleci/config.yml > process.yml` (from the repository root)
-
-Once you have a converted `process.yml`, simply run `circleci local execute -c process.yml --job <job-name>`. 
-Note that you might have to increase the resources dedicated to Docker to around 4GB.
+The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.

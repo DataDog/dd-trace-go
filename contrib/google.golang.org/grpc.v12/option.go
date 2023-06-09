@@ -6,14 +6,21 @@
 package grpc
 
 import (
-	"math"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+)
+
+const (
+	defaultClientServiceName = "grpc.client"
+	defaultServerServiceName = "grpc.server"
 )
 
 type interceptorConfig struct {
-	serviceName   string
-	analyticsRate float64
+	serviceName string
+	spanName    string
+	spanOpts    []ddtrace.StartSpanOption
 }
 
 // InterceptorOption represents an option that can be passed to the grpc unary
@@ -22,12 +29,25 @@ type InterceptorOption func(*interceptorConfig)
 
 func defaults(cfg *interceptorConfig) {
 	// cfg.serviceName default set in interceptor
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
 	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
+		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
 	}
+}
+
+func clientDefaults(cfg *interceptorConfig) {
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultClientServiceName,
+		namingschema.WithOverrideV0(defaultClientServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	defaults(cfg)
+}
+
+func serverDefaults(cfg *interceptorConfig) {
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	defaults(cfg)
 }
 
 // WithServiceName sets the given service name for the intercepted client.
@@ -41,9 +61,7 @@ func WithServiceName(name string) InterceptorOption {
 func WithAnalytics(on bool) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
 		}
 	}
 }
@@ -53,9 +71,15 @@ func WithAnalytics(on bool) InterceptorOption {
 func WithAnalyticsRate(rate float64) InterceptorOption {
 	return func(cfg *interceptorConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
 		}
+	}
+}
+
+// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// to spans started by the integration.
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) InterceptorOption {
+	return func(cfg *interceptorConfig) {
+		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
 }

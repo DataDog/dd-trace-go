@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -33,7 +33,8 @@ func setupteardown(start, max int) func() {
 func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
@@ -45,7 +46,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
-	assert.Contains(t, removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -70,6 +71,7 @@ func TestAsyncSpanRace(t *testing.T) {
 						for range root.(*span).Metrics {
 							// this range simulates iterating over the metrics map
 							// as we do when encoding msgpack upon flushing.
+							continue
 						}
 					}
 					return
@@ -85,6 +87,7 @@ func TestAsyncSpanRace(t *testing.T) {
 						for range root.(*span).Meta {
 							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
+							continue
 						}
 					}
 					return
@@ -144,7 +147,8 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	assert := assert.New(t)
 
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -162,7 +166,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	<-time.After(time.Second / 10)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Lines()), 0)
+	assert.Len(tp.Logs(), 0)
 	t.Logf("expected timeout, nothing should show up in buffer as the trace is not finished")
 }
 
@@ -250,7 +254,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority)
@@ -267,7 +271,7 @@ func TestNewSpanContext(t *testing.T) {
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID, span.TraceID)
+		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
@@ -277,6 +281,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
 		_, _, _, stop := startTestTracer(t)
 		defer stop()
 		assert := assert.New(t)
@@ -289,9 +294,9 @@ func TestNewSpanContext(t *testing.T) {
 		sctx, ok := ctx.(*spanContext)
 		assert.True(ok)
 		span := StartSpan("some-span", ChildOf(ctx))
-		assert.EqualValues(sctx.traceID, 1)
-		assert.EqualValues(sctx.spanID, 2)
-		assert.EqualValues(*sctx.trace.priority, 3)
+		assert.EqualValues(uint64(1), sctx.traceID.Lower())
+		assert.EqualValues(2, sctx.spanID)
+		assert.EqualValues(3, *sctx.trace.priority)
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -303,13 +308,13 @@ func TestSpanContextParent(t *testing.T) {
 		ParentID: 3,
 	}
 	for name, parentCtx := range map[string]*spanContext{
-		"basic": &spanContext{
+		"basic": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
 		},
-		"nil-trace": &spanContext{},
-		"priority": &spanContext{
+		"nil-trace": {},
+		"priority": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
@@ -317,7 +322,7 @@ func TestSpanContextParent(t *testing.T) {
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
 			},
 		},
-		"sampling_decision": &spanContext{
+		"sampling_decision": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
@@ -325,7 +330,7 @@ func TestSpanContextParent(t *testing.T) {
 				samplingDecision: decisionKeep,
 			},
 		},
-		"origin": &spanContext{
+		"origin": {
 			trace:  &trace{spans: []*span{newBasicSpan("abc")}},
 			origin: "synthetics",
 		},
@@ -333,7 +338,7 @@ func TestSpanContextParent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID, s.TraceID)
+			assert.Equal(ctx.traceID.Lower(), s.TraceID)
 			assert.Equal(ctx.spanID, s.SpanID)
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
@@ -353,7 +358,8 @@ func TestSpanContextParent(t *testing.T) {
 func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
-	tp := new(testLogger)
+	tp := new(log.RecordLogger)
+	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
 	defer stop()
 
@@ -365,13 +371,13 @@ func TestSpanContextPushFull(t *testing.T) {
 	assert := assert.New(t)
 	buffer.push(span1)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Lines()), 0)
+	assert.Len(tp.Logs(), 0)
 	buffer.push(span2)
 	log.Flush()
-	assert.Len(removeAppSec(tp.Lines()), 0)
+	assert.Len(tp.Logs(), 0)
 	buffer.push(span3)
 	log.Flush()
-	assert.Contains(removeAppSec(tp.Lines())[0], "ERROR: trace buffer full (2)")
+	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -406,33 +412,6 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 	assert.Len(t, got, 0)
 }
 
-// testLogger implements a mock Printer.
-type testLogger struct {
-	mu    sync.RWMutex
-	lines []string
-}
-
-// Print implements log.Printer.
-func (tp *testLogger) Log(msg string) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-	tp.lines = append(tp.lines, msg)
-}
-
-// Lines returns the lines that were printed using this printer.
-func (tp *testLogger) Lines() []string {
-	tp.mu.RLock()
-	defer tp.mu.RUnlock()
-	return tp.lines
-}
-
-// Reset resets the printer's internal buffer.
-func (tp *testLogger) Reset() {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-	tp.lines = tp.lines[:0]
-}
-
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := spanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
 	for n := 0; n < b.N; n++ {
@@ -449,18 +428,6 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 			return true
 		})
 	}
-}
-
-// Remove the appsec logs from the given log lines
-func removeAppSec(lines []string) []string {
-	res := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.Contains(line, "appsec:") {
-			continue
-		}
-		res = append(res, line)
-	}
-	return res
 }
 
 func TestSetSamplingPriorityLocked(t *testing.T) {
@@ -492,4 +459,16 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
+}
+
+func TestTraceIDHexEncoded(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
+}
+
+func TestTraceIDEmpty(t *testing.T) {
+	tid := traceID([16]byte{})
+	tid[15] = 5
+	assert.False(t, tid.Empty())
 }

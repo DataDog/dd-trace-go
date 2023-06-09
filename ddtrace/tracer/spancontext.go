@@ -6,23 +6,81 @@
 package tracer
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
+type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+
+var emptyTraceID traceID
+
+func (t *traceID) HexEncoded() string {
+	return hex.EncodeToString(t[:])
+}
+
+func (t *traceID) Lower() uint64 {
+	return binary.BigEndian.Uint64(t[8:])
+}
+
+func (t *traceID) Upper() uint64 {
+	return binary.BigEndian.Uint64(t[:8])
+}
+
+func (t *traceID) SetLower(i uint64) {
+	binary.BigEndian.PutUint64(t[8:], i)
+}
+
+func (t *traceID) SetUpper(i uint64) {
+	binary.BigEndian.PutUint64(t[:8], i)
+}
+
+func (t *traceID) SetUpperFromHex(s string) {
+	u, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
+		log.Debug("Attempted to decode an invalid hex traceID %s", s)
+		return
+	}
+	t.SetUpper(u)
+}
+
+func (t *traceID) Empty() bool {
+	return *t == emptyTraceID
+}
+
+func (t *traceID) HasUpper() bool {
+	//TODO: in go 1.20 we can simplify this
+	for _, b := range t[:8] {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *traceID) UpperHex() string {
+	return hex.EncodeToString(t[:8])
+}
+
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
+	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
+
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
@@ -31,7 +89,7 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
+	traceID traceID
 	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
@@ -47,11 +105,12 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		spanID: span.SpanID,
+		span:   span,
 	}
+	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
+		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
@@ -59,6 +118,15 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+		// add 128 bit trace id, if enabled, formatted as big-endian:
+		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+		id128 := time.Duration(span.Start) / time.Second
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -69,6 +137,10 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// setting context.updated to false here is necessary to distinguish
+	// between initializing properties of the span (priority)
+	// and updating them after extracting context through propagators
+	context.updated = false
 	return context
 }
 
@@ -76,7 +148,17 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID }
+func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
+
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128() string {
+	return c.traceID.HexEncoded()
+}
+
+// TraceID128Bytes implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128Bytes() [16]byte {
+	return c.traceID
+}
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
@@ -95,6 +177,9 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
+	}
+	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
 }
@@ -216,33 +301,16 @@ func (t *trace) drop() {
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-// setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
-}
-
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
-// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
-	if t.propagatingTags == nil {
-		t.propagatingTags = make(map[string]string, 1)
-	}
-	t.propagatingTags[key] = value
-}
-
-// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.propagatingTags, key)
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
@@ -325,6 +393,12 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.propagatingTags {
 			s.setMeta(k, v)
 		}
+		for k, v := range ginternal.GetTracerGitMetadataTags() {
+			s.setMeta(k, v)
+		}
+		if s.context != nil && s.context.traceID.HasUpper() {
+			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		}
 	}
 	if len(t.spans) != t.finished {
 		return
@@ -337,10 +411,13 @@ func (t *trace) finishedOne(s *span) {
 	if !ok {
 		return
 	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
+	}
 	// we have a tracer that can receive completed traces.
 	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
 	tr.pushTrace(&finishedTrace{
 		spans:    t.spans,
-		decision: samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 }

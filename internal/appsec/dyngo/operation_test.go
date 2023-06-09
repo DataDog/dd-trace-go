@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 )
 
 // Dummy struct to mimic real-life operation stacks.
@@ -552,106 +552,38 @@ func TestUsage(t *testing.T) {
 		// The number of calls should be equal to the expected number of events
 		require.Equal(t, uint32(nbGoroutines*2*nbGoroutines), atomic.LoadUint32(&calls))
 	})
-
-	t.Run("concurrency", func(t *testing.T) {
-		// Create nbGoroutines registering event listeners concurrently
-		nbGoroutines := 1000
-		// The concurrency is maximized by using start barriers to sync the goroutine launches
-		var done, startBarrier sync.WaitGroup
-
-		done.Add(nbGoroutines)
-		startBarrier.Add(nbGoroutines + 1)
-
-		var calls uint32
-		for g := 0; g < nbGoroutines; g++ {
-			// Start a goroutine that registers its event listeners to root, emits those events with a new operation, and
-			// finally unregisters them. This allows to test the thread-safety of the underlying list of listeners.
-			// To make the number of calls predictable, the event listener increases the number of calls only when it
-			// comes from the goroutine emitting the event.
-			go func(g int) {
-				startBarrier.Done()
-				startBarrier.Wait()
-				defer done.Done()
-
-				unregister := dyngo.Register(OnMyOperationStart(func(_ dyngo.Operation, a MyOperationArgs) {
-					if a.n == g {
-						atomic.AddUint32(&calls, 1)
-					}
-				}))
-				defer unregister()
-				unregister = dyngo.Register(OnMyOperationFinish(func(_ dyngo.Operation, r MyOperationRes) {
-					if r.n == g {
-						atomic.AddUint32(&calls, 1)
-					}
-				}))
-				defer unregister()
-
-				// Emit events by passing the goroutine number g
-				op := startOperation(MyOperationArgs{g}, nil)
-				defer op.Finish(MyOperationRes{g})
-			}(g)
-		}
-
-		// Wait for all the goroutines to be started
-		startBarrier.Done()
-		startBarrier.Wait()
-		// Wait for the goroutines to be done
-		done.Wait()
-
-		// The number of calls should be equal to the expected number of events
-		require.Equal(t, uint32(nbGoroutines*2), calls)
-	})
 }
 
-func TestRegisterUnregister(t *testing.T) {
-	t.Run("single-listener", func(t *testing.T) {
-		var called int
-		unregister := dyngo.Register(OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) {
-			called++
-		}))
+func TestSwapRootOperation(t *testing.T) {
+	var onStartCalled, onFinishCalled int
 
-		op := startOperation(MyOperationArgs{}, nil)
-		require.Equal(t, 1, called)
-		dyngo.FinishOperation(op, MyOperationRes{})
+	root := dyngo.NewRootOperation()
+	root.On(OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) {
+		onStartCalled++
+	}))
+	root.On(OnMyOperationFinish(func(dyngo.Operation, MyOperationRes) {
+		onFinishCalled++
+	}))
 
-		unregister()
-		op = startOperation(MyOperationArgs{}, nil)
-		require.Equal(t, 1, called)
-		dyngo.FinishOperation(op, MyOperationRes{})
+	dyngo.SwapRootOperation(root)
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	require.Equal(t, 1, onStartCalled)
+	require.Equal(t, 1, onFinishCalled)
 
-		require.NotPanics(t, func() {
-			unregister()
-		})
-		op = startOperation(MyOperationArgs{}, nil)
-		require.Equal(t, 1, called)
-		dyngo.FinishOperation(op, MyOperationRes{})
-	})
+	dyngo.SwapRootOperation(dyngo.NewRootOperation())
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	require.Equal(t, 1, onStartCalled)
+	require.Equal(t, 1, onFinishCalled)
 
-	t.Run("multiple-listeners", func(t *testing.T) {
-		var onStartCalled, onFinishCalled int
+	dyngo.SwapRootOperation(nil)
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	require.Equal(t, 1, onStartCalled)
+	require.Equal(t, 1, onFinishCalled)
 
-		unregister := dyngo.Register(
-			OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) {
-				onStartCalled++
-			}),
-			OnMyOperationFinish(func(dyngo.Operation, MyOperationRes) {
-				onFinishCalled++
-			}),
-		)
-
-		runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-		require.Equal(t, 1, onStartCalled)
-		require.Equal(t, 1, onFinishCalled)
-
-		unregister()
-		runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-		require.Equal(t, 1, onStartCalled)
-		require.Equal(t, 1, onFinishCalled)
-
-		require.NotPanics(t, func() {
-			unregister()
-		})
-	})
+	dyngo.SwapRootOperation(root)
+	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
+	require.Equal(t, 2, onStartCalled)
+	require.Equal(t, 2, onFinishCalled)
 }
 
 // Helper type wrapping a dyngo.Operation to provide some helper function and

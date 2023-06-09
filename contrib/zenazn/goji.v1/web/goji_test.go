@@ -11,12 +11,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/zenazn/goji/web"
 )
 
@@ -47,6 +50,8 @@ func TestNoRouter(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestTraceWithRouter(t *testing.T) {
@@ -68,6 +73,7 @@ func TestTraceWithRouter(t *testing.T) {
 	w := httptest.NewRecorder()
 	m.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 
 	spans := mt.FinishedSpans()
@@ -83,6 +89,8 @@ func TestTraceWithRouter(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestError(t *testing.T) {
@@ -101,6 +109,7 @@ func TestError(t *testing.T) {
 	w := httptest.NewRecorder()
 	m.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 500)
 
 	spans := mt.FinishedSpans()
@@ -113,6 +122,8 @@ func TestError(t *testing.T) {
 	assert.Equal("my-router", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
 func TestPropagation(t *testing.T) {
@@ -133,7 +144,9 @@ func TestPropagation(t *testing.T) {
 	})
 
 	m.ServeHTTP(w, r)
-	assert.Equal(200, w.Result().StatusCode)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
 }
 
 func TestOptions(t *testing.T) {
@@ -218,4 +231,39 @@ func TestNoDebugStack(t *testing.T) {
 	s := spans[0]
 	assert.EqualError(t, s.Tags()[ext.Error].(error), "500: Internal Server Error")
 	assert.Equal(t, "<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
+	assert.Equal(t, "zenazn/goji.v1/web", spans[0].Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindServer, spans[0].Tag(ext.SpanKind))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := web.New()
+		mux.Use(Middleware(opts...))
+		mux.Get("/200", func(w http.ResponseWriter, r *http.Request) {
+			_, err := w.Write([]byte("ok"))
+			require.NoError(t, err)
+		})
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"http.router"},
+		WithDDService:            []string{"http.router"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	namingschematest.NewHTTPServerTest(
+		genSpans,
+		"http.router",
+		namingschematest.WithServiceNameAssertions(namingschema.SchemaV0, wantServiceNameV0),
+	)(t)
 }

@@ -7,13 +7,15 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/trace"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/extensions"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
@@ -47,6 +49,11 @@ const (
 	expGoroutineWaitProfile
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
+
+	// executionTrace is the runtime/trace execution tracer.
+	// This is private, as this trace requires special explicit configuration and
+	// shouldn't just be added to WithProfileTypes
+	executionTrace
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -76,6 +83,7 @@ type profileType struct {
 // profileTypes maps every ProfileType to its implementation.
 var profileTypes = map[ProfileType]profileType{
 	CPUProfile: {
+		Name:     "cpu",
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
@@ -90,10 +98,12 @@ var profileTypes = map[ProfileType]profileType{
 				// rate itself.
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
+
 			if err := p.startCPUProfile(&buf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
+
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
 			// the other profile types
@@ -171,33 +181,72 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), err
 		},
 	},
+	executionTrace: {
+		Name:     "execution-trace",
+		Filename: "go.trace",
+		Collect: func(p *profiler) ([]byte, error) {
+			if !p.shouldTrace() {
+				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
+			}
+			p.lastTrace = time.Now()
+			buf := new(bytes.Buffer)
+			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
+			if err := trace.Start(lt); err != nil {
+				return nil, err
+			}
+			select {
+			case <-p.exit: // Profiling was stopped
+			case <-time.After(p.cfg.period): // The profiling cycle has ended
+			case <-lt.done: // The trace size limit was exceeded
+			}
+			trace.Stop()
+			return buf.Bytes(), nil
+		},
+	},
+}
+
+// defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
+// of an executiont trace.
+//
+// 5MB was selected to give reasonable latency for processing, both online and
+// using offline tools. This is a conservative estimate--we could possibly get
+// away with 10MB and still have a tolerable experience.
+const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
+
+type limitedTraceCollector struct {
+	w       io.Writer
+	limit   int64
+	written int64
+	// done is closed to signal that the limit has been exceeded
+	done chan struct{}
+}
+
+func newLimitedTraceCollector(w io.Writer, limit int64) *limitedTraceCollector {
+	return &limitedTraceCollector{w: w, limit: limit, done: make(chan struct{})}
+}
+
+// Write calls the underlying writer's Write method, and stops tracing if the
+// limit has been reached.
+func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
+	n, err = l.w.Write(p)
+	if err != nil {
+		// TODO: still count n against the limit?
+		return
+	}
+	l.written += int64(n)
+	if l.written >= l.limit {
+		select {
+		case <-l.done:
+		default:
+			close(l.done)
+		}
+	}
+	return
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
-		var extra *pprofile.Profile
-		cAlloc, ok := extensions.GetCAllocationProfiler()
-		switch {
-		case ok && p.cfg.cmemprofEnabled && p.cfg.deltaProfiles && pt == HeapProfile:
-			// For the heap profile, we'd also like to include C
-			// allocations if that extension is enabled and have the
-			// allocations show up in the same profile. Collect them
-			// first before getting the regular heap snapshot so
-			// that all allocations cover the same time period
-			//
-			// TODO: Support non-delta profiles for C allocations?
-			cAlloc.Start(p.cfg.cmemprofRate)
-			p.interruptibleSleep(p.cfg.period)
-			profile, err := cAlloc.Stop()
-			if err == nil {
-				extra = profile
-			}
-		default:
-			// In all cases, sleep until the end of the profile
-			// period so that all profiles cover the same period of
-			// time
-			p.interruptibleSleep(p.cfg.period)
-		}
+		p.interruptibleSleep(p.cfg.period)
 
 		var buf bytes.Buffer
 		err := p.lookupProfile(name, &buf, 0)
@@ -209,21 +258,6 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 
 		start := time.Now()
 		delta, err := dp.Delta(data)
-		if err == nil && extra != nil {
-			extended, err := pprofile.ParseData(delta)
-			if err != nil {
-				return nil, err
-			}
-			extended, err = pprofile.Merge([]*pprofile.Profile{extended, extra})
-			if err != nil {
-				return nil, err
-			}
-			buf.Reset()
-			if err := extended.Write(&buf); err != nil {
-				return nil, err
-			}
-			delta = buf.Bytes()
-		}
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
@@ -269,16 +303,21 @@ func (t ProfileType) Tag() string {
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
 	name string
+	pt   ProfileType
 	data []byte
 }
 
 // batch is a collection of profiles of different types, collected at roughly the same time. It maps
 // to what the Datadog UI calls a profile.
 type batch struct {
-	seq        uint64 // seq is the value of the profile_seq tag
-	start, end time.Time
-	host       string
-	profiles   []*profile
+	seq            uint64 // seq is the value of the profile_seq tag
+	start, end     time.Time
+	host           string
+	profiles       []*profile
+	endpointCounts map[string]uint64
+	// extraTags are tags which might vary depending on which profile types
+	// actually run in a given profiling cycle
+	extraTags []string
 }
 
 func (b *batch) addProfile(p *profile) {
@@ -300,61 +339,70 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 		filename = "delta-" + filename
 	}
 	p.cfg.statsd.Timing("datadog.profiling.go.collect_time", end.Sub(start), tags, 1)
-	return []*profile{{name: filename, data: data}}, nil
+	return []*profile{{name: filename, pt: pt, data: data}}, nil
 }
 
-type deltaProfiler struct {
-	delta pprofutils.Delta
-	prev  *pprofile.Profile
+type fastDeltaProfiler struct {
+	dc  *fastdelta.DeltaComputer
+	buf bytes.Buffer
+	gzr gzip.Reader
+	gzw *gzip.Writer
 }
 
-// newDeltaProfiler returns an initialized deltaProfiler. If value types
-// are given (e.g. "alloc_space", "alloc_objects"), only those values will have
-// deltas computed. Otherwise, deltas will be computed for every value.
-func newDeltaProfiler(v ...pprofutils.ValueType) *deltaProfiler {
-	return &deltaProfiler{
-		delta: pprofutils.Delta{SampleTypes: v},
+func newFastDeltaProfiler(v ...pprofutils.ValueType) *fastDeltaProfiler {
+	fd := &fastDeltaProfiler{
+		dc: fastdelta.NewDeltaComputer(v...),
 	}
+	fd.gzw = gzip.NewWriter(&fd.buf)
+	return fd
 }
 
-// Delta derives the delta profile between curData and the profile passed to the
-// previous call to Delta. The first call to Delta will return the profile
-// unchanged.
-func (d *deltaProfiler) Delta(curData []byte) ([]byte, error) {
-	curProf, err := pprofile.ParseData(curData)
-	if err != nil {
-		return nil, fmt.Errorf("delta prof parse: %v", err)
-	}
-	var deltaData []byte
-	prevProf := d.prev
-	if prevProf == nil {
-		// First time deltaProfile gets called for a type, there is no prevProf. In
-		// this case we emit the current profile as a delta profile.
-		deltaData = curData
-	} else {
-		// Delta profiling is also implemented in the Go core, see commit below.
-		// Unfortunately the core implementation isn't resuable via a API, so we do
-		// our own delta calculation below.
-		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := d.delta.Convert(prevProf, curProf)
+func isGzipData(data []byte) bool {
+	return bytes.HasPrefix(data, []byte{0x1f, 0x8b})
+}
+
+func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
+	if isGzipData(data) {
+		if err := fdp.gzr.Reset(bytes.NewReader(data)); err != nil {
+			return nil, err
+		}
+		data, err = io.ReadAll(&fdp.gzr)
 		if err != nil {
-			return nil, fmt.Errorf("delta prof merge: %v", err)
+			return nil, fmt.Errorf("decompressing profile: %v", err)
 		}
-		// TimeNanos is supposed to be the time the profile was collected, see
-		// https://github.com/google/pprof/blob/master/proto/profile.proto.
-		deltaProf.TimeNanos = curProf.TimeNanos
-		// DurationNanos is the time period covered by the profile.
-		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
-		deltaBuf := &bytes.Buffer{}
-		if err := deltaProf.Write(deltaBuf); err != nil {
-			return nil, fmt.Errorf("delta prof write: %v", err)
-		}
-		deltaData = deltaBuf.Bytes()
 	}
-	// Keep the most recent profiles in memory for future diffing. This needs to
-	// be taken into account when enforcing memory limits going forward.
-	d.prev = curProf
-	return deltaData, nil
+
+	fdp.buf.Reset()
+	fdp.gzw.Reset(&fdp.buf)
+
+	if err = fdp.dc.Delta(data, fdp.gzw); err != nil {
+		return nil, fmt.Errorf("error computing delta: %v", err)
+	}
+	if err = fdp.gzw.Close(); err != nil {
+		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
+	}
+	// The returned slice will be retained in case the profile upload fails,
+	// so we need to return a copy of the buffer's bytes to avoid a data
+	// race.
+	b = make([]byte, len(fdp.buf.Bytes()))
+	copy(b, fdp.buf.Bytes())
+	return b, nil
+}
+
+// PprofDiff computes the delta between all values b-a and returns them as a new
+// profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
+// a will be mutated by this function. You should pass a copy if that's
+// undesirable.
+//
+// Deprecated: This function was introduced into our public API unintentionally.
+// It will be removed in the next release. If you need this functionality,
+// it can be implemented in two lines:
+//
+//	a.Scale(-1)
+//	return pprofile.Merge([]*pprofile.Profile{a, b})
+func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
+	a.Scale(-1)
+	return pprofile.Merge([]*pprofile.Profile{a, b})
 }
 
 func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {

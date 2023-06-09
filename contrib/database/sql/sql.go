@@ -9,7 +9,7 @@
 // We start by telling the package which driver we will be using. For example, if we are using "github.com/lib/pq",
 // we would do as follows:
 //
-//	sqltrace.Register("pq", pq.Driver{})
+//	sqltrace.Register("pq", &pq.Driver{})
 //	db, err := sqltrace.Open("pq", "postgres://pqgotest:password@localhost...")
 //
 // The rest of our application would continue as usual, but with tracing enabled.
@@ -19,16 +19,20 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"errors"
-	"math"
 	"reflect"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "database/sql"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
 var registeredDrivers = &driverRegistry{
@@ -103,9 +107,9 @@ func (d *driverRegistry) unregister(name string) {
 	delete(d.drivers, name)
 }
 
-// Register tells the sql integration package about the driver that we will be tracing. It must
-// be called before Open, if that connection is to be traced. It uses the driverName suffixed
-// with ".db" as the default service name.
+// Register tells the sql integration package about the driver that we will be tracing. If used, it
+// must be called before Open. It uses the driverName suffixed with ".db" as the default service
+// name.
 func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
@@ -116,12 +120,9 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 	}
 
 	cfg := new(config)
-	defaults(cfg)
+	defaults(cfg, driverName, nil)
 	for _, fn := range opts {
 		fn(cfg)
-	}
-	if cfg.serviceName == "" {
-		cfg.serviceName = driverName + ".db"
 	}
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
@@ -133,10 +134,6 @@ func unregister(name string) {
 		registeredDrivers.unregister(name)
 	}
 }
-
-// errNotRegistered is returned when there is an attempt to open a database connection towards a driver
-// that has not previously been registered using this package.
-var errNotRegistered = errors.New("sqltrace: Register must be called before Open")
 
 type tracedConnector struct {
 	connector  driver.Connector
@@ -156,11 +153,11 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	}
 	start := time.Now()
 	conn, err := t.connector.Connect(ctx)
-	tp.tryTrace(ctx, queryTypeConnect, "", start, err)
+	tp.tryTrace(ctx, QueryTypeConnect, "", start, err)
 	if err != nil {
 		return nil, err
 	}
-	return &tracedConn{conn, tp}, err
+	return &TracedConn{conn, tp}, err
 }
 
 func (t *tracedConnector) Driver() driver.Driver {
@@ -181,48 +178,57 @@ func (t dsnConnector) Driver() driver.Driver {
 	return t.driver
 }
 
-// OpenDB returns connection to a DB using the traced version of the given driver. In order for OpenDB
-// to work, the driver must first be registered using Register. If this did not occur, OpenDB will panic.
+// OpenDB returns connection to a DB using the traced version of the given driver. The driver may
+// first be registered using Register. If this did not occur, OpenDB will determine the driver name
+// based on its type.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
-	name, ok := registeredDrivers.name(c.Driver())
-	if !ok {
-		panic("sqltrace.OpenDB: driver is not registered via sqltrace.Register")
-	}
-	rc, _ := registeredDrivers.config(name)
 	cfg := new(config)
-	defaults(cfg)
+	var driverName string
+	if name, ok := registeredDrivers.name(c.Driver()); ok {
+		driverName = name
+		rc, _ := registeredDrivers.config(driverName)
+		defaults(cfg, driverName, rc)
+	} else {
+		driverName = reflect.TypeOf(c.Driver()).String()
+		defaults(cfg, driverName, nil)
+	}
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	// use registered config for unset options
-	if cfg.serviceName == "" {
-		cfg.serviceName = rc.serviceName
-	}
-	if math.IsNaN(cfg.analyticsRate) {
-		cfg.analyticsRate = rc.analyticsRate
-	}
-	if cfg.errCheck == nil {
-		cfg.errCheck = rc.errCheck
-	}
-	if cfg.commentInjectionMode == tracer.SQLInjectionUndefined {
-		cfg.commentInjectionMode = rc.commentInjectionMode
-	}
-	cfg.childSpansOnly = rc.childSpansOnly
 	tc := &tracedConnector{
 		connector:  c,
-		driverName: name,
+		driverName: driverName,
 		cfg:        cfg,
 	}
 	return sql.OpenDB(tc)
 }
 
-// Open returns connection to a DB using the traced version of the given driver. In order for Open
-// to work, the driver must first be registered using Register. If this did not occur, Open will
-// return an error.
+// Open returns connection to a DB using the traced version of the given driver. The driver may
+// first be registered using Register. If this did not occur, Open will determine the driver by
+// opening a DB connection and retrieving the driver using (*sql.DB).Driver, before closing it and
+// opening a new, traced connection.
 func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
-	if !registeredDrivers.isRegistered(driverName) {
-		return nil, errNotRegistered
+	var d driver.Driver
+	if registeredDrivers.isRegistered(driverName) {
+		d, _ = registeredDrivers.driver(driverName)
+	} else {
+		db, err := sql.Open(driverName, dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		d = db.Driver()
+		Register(driverName, d)
 	}
-	d, _ := registeredDrivers.driver(driverName)
+
+	if driverCtx, ok := d.(driver.DriverContext); ok {
+		connector, err := driverCtx.OpenConnector(dataSourceName)
+		if err != nil {
+			return nil, err
+		}
+		// since we're not using the dsnConnector, we need to register the dsn manually in the config
+		opts = append(opts, WithDSN(dataSourceName))
+		return OpenDB(connector, opts...), nil
+	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }

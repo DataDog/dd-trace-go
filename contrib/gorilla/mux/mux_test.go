@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -82,6 +83,9 @@ func TestHttpTracer(t *testing.T) {
 			assert.Equal(ht.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+ht.url, s.Tag(ext.HTTPURL))
 			assert.Equal(ht.resourceName, s.Tag(ext.ResourceName))
+			assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+			assert.Equal("gorilla/mux", s.Tag(ext.Component))
+
 			if ht.errorStr != "" {
 				assert.Equal(ht.errorStr, s.Tag(ext.Error).(error).Error())
 			}
@@ -168,7 +172,7 @@ func TestNoDebugStack(t *testing.T) {
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods
 // returning the router will return the modified traced version of it and not the original
 // router.
-func TestImplementingMethods(t *testing.T) {
+func TestImplementingMethods(_ *testing.T) {
 	r := NewRouter()
 	_ = (*Router)(r.StrictSlash(false))
 	_ = (*Router)(r.SkipClean(false))
@@ -347,6 +351,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the server behaved as intended (404 after the 301)
 		require.Equal(t, http.StatusNotFound, res.StatusCode)
 		// The span should contain the security event
@@ -376,6 +381,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -401,6 +407,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		require.Equal(t, 404, res.StatusCode)
 
 		finished := mt.FinishedSpans()
@@ -422,6 +429,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -433,4 +441,24 @@ func TestAppSec(t *testing.T) {
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []RouterOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := NewRouter(opts...)
+		mux.Handle("/200", okHandler())
+		req := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "mux.router")(t)
 }

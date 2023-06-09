@@ -33,14 +33,15 @@ func (cs *clientStream) Context() context.Context {
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
-	if cs.cfg.traceStreamMessages {
+	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
 		span, _ := startSpanFromContext(
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.clientServiceName(),
+			cs.cfg.serviceName,
 			cs.cfg.startSpanOptions()...,
 		)
+		span.SetTag(ext.Component, componentName)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -51,14 +52,15 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
-	if cs.cfg.traceStreamMessages {
+	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
 		span, _ := startSpanFromContext(
 			cs.Context(),
 			cs.method,
 			"grpc.message",
-			cs.cfg.clientServiceName(),
+			cs.cfg.serviceName,
 			cs.cfg.startSpanOptions()...,
 		)
+		span.SetTag(ext.Component, componentName)
 		if p, ok := peer.FromContext(cs.Context()); ok {
 			setSpanTargetFromPeer(span, *p)
 		}
@@ -72,7 +74,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 // streams using the given set of options.
 func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -90,7 +92,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			}
 		}
 		var stream grpc.ClientStream
-		if cfg.traceStreamCalls {
+		if _, ok := cfg.untracedMethods[method]; cfg.traceStreamCalls && !ok {
 			var (
 				span tracer.Span
 				err  error
@@ -143,12 +145,15 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 // the given set of options.
 func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if _, ok := cfg.untracedMethods[method]; ok {
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}
 		span, _, err := doClientRequest(ctx, cfg, method, methodKindUnary, opts,
 			func(ctx context.Context, opts []grpc.CallOption) error {
 				return invoker(ctx, method, req, reply, cc, opts...)
@@ -168,9 +173,11 @@ func doClientRequest(
 	span, ctx := startSpanFromContext(
 		ctx,
 		method,
-		"grpc.client",
-		cfg.clientServiceName(),
-		cfg.startSpanOptions()...,
+		cfg.spanName,
+		cfg.serviceName,
+		cfg.startSpanOptions(
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
 	)
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)

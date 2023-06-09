@@ -1,0 +1,36 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches:
+      - main
+      - release-v*
+    tags:
+      - '**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
+  workflow_dispatch: {} #manually
+
+jobs:
+  go-get-u:
+    #  Run go get -u to upgrade dd-trace-go dependencies to their
+    #  latest minor version and see if dd-trace-go still compiles.
+    #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
+    name: 'dd-trace-go still works after go get -u'
+    runs-on: ubuntu-latest
+    env:
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.18
+          cache: true
+      - name: go get -u
+        run: |
+          go get -u $PACKAGES
+          go mod tidy
+      - name: Compile dd-trace-go
+        run: go build -tags appsec $PACKAGES
+      - name: Test dd-trace-go
+        run: go test -tags appsec $PACKAGES

@@ -24,6 +24,101 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCustomRules(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name      string
+		method    string
+		ruleMatch string
+	}{
+		{
+			name:      "method",
+			method:    "POST",
+			ruleMatch: "custom-001",
+		},
+		{
+			name:   "no-method",
+			method: "GET",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest(tc.method, srv.URL, nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			event := spans[0].Tag("_dd.appsec.json")
+
+			if tc.ruleMatch != "" {
+				require.NotNil(t, event)
+				require.Contains(t, event, tc.ruleMatch)
+			}
+		})
+	}
+}
+
+func TestUserRules(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Run("custom-001", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", srv.URL, nil)
+		require.NoError(t, err)
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		event := spans[0].Tag("_dd.appsec.json")
+		require.Contains(t, event, "custom-001")
+	})
+
+}
+
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
@@ -58,6 +153,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -89,6 +185,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -133,7 +230,7 @@ func TestWAF(t *testing.T) {
                            ,"scores":[]
                        },
                    "additionalInfo":{
-                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
+                       "codeSnippetValue":"<!-- Google Tag Manager (noscript) -->\r\n<embed src=\"https://www.googletagmanager.com/ns.html?id=GTM-PCVXQNM\"\r\nheight=\"0\" width=\"0\" style=\"display:none"
                    }
                }
            }
@@ -154,6 +251,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -167,8 +265,141 @@ func TestWAF(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
 		require.Contains(t, event, "crs-942-270") // SQLi
-		require.Contains(t, event, "crs-941-100") // XSS
+		require.Contains(t, event, "crs-941-230") // XSS
 		require.NotContains(t, event, sensitiveParamKeyValue)
 		require.NotContains(t, event, sensitivePayloadValue)
 	})
+}
+
+// Test that request blocking works by using custom rules/rules data
+func TestBlocking(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
+	appsec.Start()
+	defer appsec.Stop()
+	if !appsec.Enabled() {
+		t.Skip("AppSec needs to be enabled for this test")
+	}
+
+	const (
+		ipBlockingRule   = "blk-001-001"
+		userBlockingRule = "blk-001-002"
+		bodyBlockingRule = "crs-933-130-block"
+	)
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+		if err := pAppsec.SetUser(r.Context(), r.Header.Get("test-usr")); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name      string
+		headers   map[string]string
+		endpoint  string
+		status    int
+		ruleMatch string
+		reqBody   string
+	}{
+		{
+			name:     "ip/no-block/no-ip",
+			endpoint: "/ip",
+			status:   200,
+		},
+		{
+			name:     "ip/no-block/good-ip",
+			endpoint: "/ip",
+			headers:  map[string]string{"x-forwarded-for": "1.2.3.5"},
+			status:   200,
+		},
+		{
+			name:      "ip/block",
+			headers:   map[string]string{"x-forwarded-for": "1.2.3.4"},
+			endpoint:  "/ip",
+			status:    403,
+			ruleMatch: ipBlockingRule,
+		},
+		{
+			name:     "user/no-block/no-user",
+			endpoint: "/user",
+			status:   200,
+		},
+		{
+			name:     "user/no-block/legit-user",
+			headers:  map[string]string{"test-usr": "legit-user"},
+			endpoint: "/user",
+			status:   200,
+		},
+		{
+			name:      "user/block",
+			headers:   map[string]string{"test-usr": "blocked-user-1"},
+			endpoint:  "/user",
+			status:    403,
+			ruleMatch: userBlockingRule,
+		},
+		// This test checks that IP blocking happens BEFORE user blocking, since user blocking needs the request handler
+		// to be invoked while IP blocking doesn't
+		{
+			name:      "user/ip-block",
+			headers:   map[string]string{"test-usr": "blocked-user-1", "x-forwarded-for": "1.2.3.4"},
+			endpoint:  "/user",
+			status:    403,
+			ruleMatch: ipBlockingRule,
+		},
+		{
+			name:     "body/no-block",
+			endpoint: "/body",
+			status:   200,
+			reqBody:  "Happy body existing",
+		},
+		{
+			name:      "body/block",
+			endpoint:  "/body",
+			status:    403,
+			reqBody:   "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
+			require.NoError(t, err)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			require.Equal(t, tc.status, res.StatusCode)
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			if tc.status == 200 {
+				require.Equal(t, "Hello World!\n", string(b))
+			} else {
+				require.NotEqual(t, "Hello World!\n", string(b))
+			}
+			if tc.ruleMatch != "" {
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+			}
+
+		})
+	}
 }

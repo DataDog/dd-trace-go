@@ -15,13 +15,20 @@ import (
 	"context"
 	"math"
 
-	"github.com/bradfitz/gomemcache/memcache"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/bradfitz/gomemcache/memcache"
 )
+
+const componentName = "bradfitz/gomemcache/memcache"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
 // default tracer with the service name "memcached".
@@ -69,11 +76,14 @@ func (c *Client) startSpan(resourceName string) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemMemcached),
 	}
 	if !math.IsNaN(c.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, c.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(c.context, operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(c.context, c.cfg.operationName, opts...)
 	return span
 }
 

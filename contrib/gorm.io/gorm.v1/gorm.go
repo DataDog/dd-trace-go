@@ -15,9 +15,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gorm.io/gorm"
 )
+
+const componentName = "gorm.io/gorm.v1"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 type key string
 
@@ -90,6 +97,14 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	if err != nil {
 		return db, err
 	}
+	err = cb.Raw().Before("gorm:query").Register("dd-trace-go:before_raw_query", before)
+	if err != nil {
+		return db, err
+	}
+	err = cb.Raw().After("gorm:query").Register("dd-trace-go:after_raw_query", afterFunc("gorm.raw_query"))
+	if err != nil {
+		return db, err
+	}
 	return db, nil
 }
 
@@ -115,6 +130,7 @@ func after(db *gorm.DB, operationName string, cfg *config) {
 		tracer.ServiceName(cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(db.Statement.SQL.String()),
+		tracer.Tag(ext.Component, componentName),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

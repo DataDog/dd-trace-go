@@ -16,9 +16,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+const componentName = "gofiber/fiber.v2"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(c *fiber.Ctx) error {
@@ -39,9 +46,18 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-
+		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
+		h := http.Header{}
+		for k, v := range c.GetReqHeaders() {
+			h.Add(k, v)
+		}
+		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
+			opts = append(opts, tracer.ChildOf(spanctx))
+		}
 		opts = append(opts, cfg.spanOpts...)
-		span, ctx := tracer.StartSpanFromContext(c.Context(), "http.request", opts...)
+		opts = append(opts, tracer.Tag(ext.Component, componentName))
+		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+		span, ctx := tracer.StartSpanFromContext(c.Context(), cfg.spanName, opts...)
 
 		defer span.Finish()
 

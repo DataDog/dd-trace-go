@@ -1,0 +1,24 @@
+benchmark:
+  stage: benchmarks
+  image: $BASE_CI_IMAGE
+  when: on_success
+  timeout: 1h
+  only:
+    refs:
+      - branches
+  interruptible: true
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  script:
+    - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+    - git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    - ./steps/capture-hardware-software-info.sh
+    - ./steps/run-benchmarks.sh
+    - ./steps/analyze-results.sh
+    - "./steps/upload-results-to-s3.sh || :"
+    - "./steps/post-pr-comment.sh || :"
+  artifacts:
+    name: "reports"
+    paths:
+      - reports/
+    expire_in: 3 months

@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -71,10 +73,11 @@ type span struct {
 	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
 	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
 	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
+	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
+	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
@@ -164,10 +167,31 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
+}
+
+// Root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+func (s *span) Root() Span {
+	return s.root()
+}
+
+// root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+// As opposed to the public Root method, this one returns the actual span type
+// when internal usage requires it (to avoid type assertions from Root's return
+// value).
+func (s *span) root() *span {
+	if s == nil || s.context == nil {
+		return nil
+	}
+	if s.context.trace == nil {
+		return nil
+	}
+	return s.context.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -180,23 +204,32 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	root := s.context.trace.root
+	root := s.root()
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if root.finished {
+		return
+	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
 		delete(root.Meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+		s.context.updated = true
 	} else {
-		// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
-		trace.unsetPropagatingTag(keyPropagatedUserID)
+		if trace.hasPropagatingTag(keyPropagatedUserID) {
+			// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+			trace.unsetPropagatingTag(keyPropagatedUserID)
+			s.context.updated = true
+		}
 		delete(root.Meta, keyPropagatedUserID)
-		// setMeta is used since the span is already locked
-		root.setMeta(keyUserID, id)
 	}
 	for k, v := range map[string]string{
+		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
@@ -204,6 +237,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	} {
 		if v != "" {
+			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
 		}
 	}
@@ -403,6 +437,22 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	if s.taskEnd != nil {
 		s.taskEnd()
 	}
+	if s.goExecTraced && rt.IsEnabled() {
+		// Only tag spans as traced if they both started & ended with
+		// execution tracing enabled. This is technically not sufficient
+		// for spans which could straddle the boundary between two
+		// execution traces, but there's really nothing we can do in
+		// those cases since execution tracing tasks aren't recorded in
+		// traces if they started before the trace.
+		s.SetTag("go_execution_traced", "yes")
+	} else if s.goExecTraced {
+		// If the span started with tracing enabled, but tracing wasn't
+		// enabled when the span finished, we still have some data to
+		// show. If tracing wasn't enabled when the span started, we
+		// won't have data in the execution trace to identify it so
+		// there's nothign we can show.
+		s.SetTag("go_execution_traced", "partial")
+	}
 	s.finish(t)
 
 	if s.pprofCtxRestore != nil {
@@ -464,6 +514,11 @@ func (s *span) finish(finishTime int64) {
 	if keep {
 		// a single kept span keeps the whole trace.
 		s.context.trace.keep()
+	}
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
 	s.context.finish()
 }
@@ -558,6 +613,7 @@ func (s *span) String() string {
 		fmt.Sprintf("Service: %s", s.Service),
 		fmt.Sprintf("Resource: %s", s.Resource),
 		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
 		fmt.Sprintf("SpanID: %d", s.SpanID),
 		fmt.Sprintf("ParentID: %d", s.ParentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
@@ -599,18 +655,27 @@ func (s *span) Format(f fmt.State, c rune) {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
-		fmt.Fprintf(f, `dd.trace_id="%d" dd.span_id="%d"`, s.TraceID, s.SpanID)
+		var traceID string
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
+			traceID = s.context.TraceID128()
+		} else {
+			traceID = fmt.Sprintf("%d", s.TraceID)
+		}
+		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
+		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyDecisionMaker           = "_dd.p.dm"
-	keyServiceHash             = "_dd.dm.service_hash"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -629,6 +694,12 @@ const (
 	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
 	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
 	keyPropagatedUserID = "_dd.p.usr.id"
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
+	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
+	keyTraceID128 = "_dd.p.tid"
+	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
@@ -639,10 +710,4 @@ const (
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"
-)
-
-const (
-	// samplingMechanismSingleSpan specifies value reserved to indicate that a span was kept
-	// on account of a single span sampling rule.
-	samplingMechanismSingleSpan = 8
 )

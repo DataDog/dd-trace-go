@@ -10,7 +10,10 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "go-restful"
 
 type config struct {
 	serviceName   string
@@ -22,8 +25,12 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
+	serviceName := namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
 	return &config{
-		serviceName:   "go-restful",
+		serviceName:   serviceName,
 		analyticsRate: rate,
 	}
 }

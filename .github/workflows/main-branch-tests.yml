@@ -1,0 +1,35 @@
+name: Main Branch and Release Tests
+
+on:
+  push:
+    branches:
+      - main
+      - release-v*
+    tags:
+      - "**"
+
+concurrency: 
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-integration-tests:
+    strategy:
+      matrix:
+        go-version: ["1.18", "1.19", "1.20"]
+      fail-fast: false
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+    secrets: inherit
+  multios-unit-tests:
+    strategy:
+      matrix:
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
+        go-version: ["1.18", "1.19", "1.20"]
+      fail-fast: false
+    uses: ./.github/workflows/multios-unit-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+      runs-on: ${{ matrix.runs-on }}
+    secrets: inherit

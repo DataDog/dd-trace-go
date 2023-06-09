@@ -9,11 +9,14 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "graphql.server"
 
 type config struct {
 	serviceName   string
+	querySpanName string
 	analyticsRate float64
 	omitTrivial   bool
 }
@@ -22,10 +25,8 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "graphql.server"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.querySpanName = namingschema.NewGraphqlServerOp().GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

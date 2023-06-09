@@ -6,21 +6,25 @@
 package sql
 
 import (
+	"fmt"
 	"math"
 	"os"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 type config struct {
-	serviceName          string
-	analyticsRate        float64
-	dsn                  string
-	childSpansOnly       bool
-	errCheck             func(err error) bool
-	tags                 map[string]interface{}
-	commentInjectionMode tracer.SQLCommentInjectionMode
+	serviceName        string
+	spanName           string
+	analyticsRate      float64
+	dsn                string
+	ignoreQueryTypes   map[QueryType]struct{}
+	childSpansOnly     bool
+	errCheck           func(err error) bool
+	tags               map[string]interface{}
+	dbmPropagationMode tracer.DBMPropagationMode
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -31,15 +35,56 @@ type registerConfig = config
 // RegisterOption has been deprecated in favor of Option.
 type RegisterOption = Option
 
-func defaults(cfg *config) {
-	// default cfg.serviceName set in Register based on driver name
+func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.commentInjectionMode = tracer.SQLCommentInjectionMode(os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE"))
+	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
+	if mode == "" {
+		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
+	}
+	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
+	cfg.serviceName = getServiceName(driverName, rc)
+	cfg.spanName = getSpanName(driverName)
+	if rc != nil {
+		// use registered config as the default value for some options
+		if math.IsNaN(cfg.analyticsRate) {
+			cfg.analyticsRate = rc.analyticsRate
+		}
+		if cfg.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
+			cfg.dbmPropagationMode = rc.dbmPropagationMode
+		}
+		cfg.errCheck = rc.errCheck
+		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
+		cfg.childSpansOnly = rc.childSpansOnly
+	}
+}
+
+func getServiceName(driverName string, rc *registerConfig) string {
+	defaultServiceName := fmt.Sprintf("%s.db", driverName)
+	if rc != nil {
+		// if service name was set during Register, we use that value as default instead of
+		// the one calculated above.
+		defaultServiceName = rc.serviceName
+	}
+	return namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+}
+
+func getSpanName(driverName string) string {
+	dbSystem := driverName
+	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
+		dbSystem = normalizedDBSystem
+	}
+	return namingschema.NewDBOutboundOp(
+		dbSystem,
+		namingschema.WithOverrideV0(fmt.Sprintf("%s.query", driverName)),
+	).GetName()
 }
 
 // WithServiceName sets the given service name when registering a driver,
@@ -82,6 +127,19 @@ func WithDSN(name string) Option {
 	}
 }
 
+// WithIgnoreQueryTypes specifies the query types for which spans should not be
+// created.
+func WithIgnoreQueryTypes(qtypes ...QueryType) Option {
+	return func(cfg *config) {
+		if cfg.ignoreQueryTypes == nil {
+			cfg.ignoreQueryTypes = make(map[QueryType]struct{})
+		}
+		for _, qt := range qtypes {
+			cfg.ignoreQueryTypes[qt] = struct{}{}
+		}
+	}
+}
+
 // WithChildSpansOnly causes spans to be created only when
 // there is an existing parent span in the Context.
 func WithChildSpansOnly() Option {
@@ -111,9 +169,22 @@ func WithCustomTag(key string, value interface{}) Option {
 
 // WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
 // This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations. Use WithStaticTagsCommentInjection if this is a concern.
+// unique for some cache implementations.
+//
+// Deprecated: Use WithDBMPropagation instead.
 func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
+	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
+}
+
+// WithDBMPropagation enables injection of tags as sql comments on traced queries.
+// This includes dynamic values like span id, trace id and the sampled flag which can make queries
+// unique for some cache implementations. Use DBMPropagationModeService if this is a concern.
+//
+// Note that enabling sql comment propagation results in potentially confidential data (service names)
+// being stored in the databases which can then be accessed by other 3rd parties that have been granted
+// access to the database.
+func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
-		cfg.commentInjectionMode = mode
+		cfg.dbmPropagationMode = mode
 	}
 }

@@ -15,15 +15,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
+const componentName = "k8s.io/client-go/kubernetes"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
+
 const (
-	prefixAPI   = "/api/v1/"
-	prefixWatch = "watch/"
+	prefixCoreAPI  = "/api/v1/"
+	prefixNamedAPI = "/apis/"
+	prefixWatch    = "watch/"
 )
 
 // WrapRoundTripperFunc creates a new WrapTransport function using the given set of
-// RountripperOption. It is useful when desiring to to enable Trace Analytics or setting
+// RountripperOption. It is useful when desiring to enable Trace Analytics or setting
 // up a RoundTripperAfterFunc.
 func WrapRoundTripperFunc(opts ...httptrace.RoundTripperOption) func(http.RoundTripper) http.RoundTripper {
 	return func(rt http.RoundTripper) http.RoundTripper {
@@ -40,6 +48,8 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
 	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
+		span.SetTag(ext.Component, componentName)
+		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
 		if traceID == 0 {
 			// tracer is not running
@@ -55,15 +65,53 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
 func RequestToResource(method, path string) string {
-	if !strings.HasPrefix(path, prefixAPI) {
+	switch {
+	case strings.HasPrefix(path, prefixCoreAPI):
+		return requestToResourceCoreAPI(method, path)
+	case strings.HasPrefix(path, prefixNamedAPI):
+		return requestToResourceNamedAPI(method, path)
+	default:
 		return method
 	}
+}
+
+// requestToResource handles API paths for core endpoints.
+// See https://kubernetes.io/docs/reference/using-api/#api-groups.
+func requestToResourceCoreAPI(method, path string) string {
+	path = strings.TrimPrefix(path, prefixCoreAPI)
 
 	var out strings.Builder
 	out.WriteString(method)
 	out.WriteByte(' ')
 
-	path = strings.TrimPrefix(path, prefixAPI)
+	out.WriteString(resourcePath(path))
+	return out.String()
+}
+
+// requestToResourceNamedAPI handles API paths for named API endpoints.
+// See https://kubernetes.io/docs/reference/using-api/#api-groups.
+func requestToResourceNamedAPI(method, path string) string {
+	path = strings.TrimPrefix(path, prefixNamedAPI)
+
+	elems := strings.Split(path, "/")
+	if len(elems) < 3 {
+		return method
+	}
+	groupVersion := strings.Join(elems[0:2], "/")
+	path = strings.Join(elems[2:], "/")
+
+	var out strings.Builder
+	out.WriteString(method)
+	out.WriteByte(' ')
+	out.WriteString(groupVersion)
+	out.WriteByte('/')
+
+	out.WriteString(resourcePath(path))
+	return out.String()
+}
+
+func resourcePath(path string) string {
+	var out strings.Builder
 
 	if strings.HasPrefix(path, prefixWatch) {
 		// strip out /watch

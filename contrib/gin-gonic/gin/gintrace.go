@@ -15,14 +15,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 )
 
+const componentName = "gin-gonic/gin"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
+
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
 // default service name will be used.
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
-	appsecEnabled := appsec.Enabled()
 	cfg := newConfig(service)
 	for _, opt := range opts {
 		opt(cfg)
@@ -30,6 +36,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(c *gin.Context) {
 		if cfg.ignoreRequest(c) {
@@ -40,6 +48,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())
@@ -49,9 +58,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 
 		// Use AppSec if enabled by user
-		if appsecEnabled {
-			afterMiddleware := useAppSec(c, span)
-			defer afterMiddleware()
+		if appsec.Enabled() {
+			useAppSec(c, span)
 		}
 
 		// serve the request to the next middleware
@@ -67,6 +75,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 func HTML(c *gin.Context, code int, name string, obj interface{}) {
 	span, _ := tracer.StartSpanFromContext(c.Request.Context(), "gin.render.html")
 	span.SetTag("go.template", name)
+	span.SetTag(ext.Component, componentName)
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)

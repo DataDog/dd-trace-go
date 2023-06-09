@@ -8,15 +8,22 @@ package gqlgen
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"github.com/stretchr/testify/require"
 )
+
+type testServerResponse struct {
+	Name string
+}
 
 func TestOptions(t *testing.T) {
 	query := `{ name }`
@@ -30,6 +37,7 @@ func TestOptions(t *testing.T) {
 				assert.Equal(query, root.Tag(ext.ResourceName))
 				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
+				assert.Equal("99designs/gqlgen", root.Tag(ext.Component))
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
@@ -63,10 +71,7 @@ func TestOptions(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
-			var resp struct {
-				Name string
-			}
-			c.MustPost(query, &resp)
+			c.MustPost(query, &testServerResponse{})
 			var root mocktracer.Span
 			for _, span := range mt.FinishedSpans() {
 				if span.ParentID() == 0 {
@@ -85,10 +90,7 @@ func TestError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	c := newTestClient(t, testserver.NewError(), NewTracer())
-	var resp struct {
-		Name string
-	}
-	err := c.Post(`{ name }`, &resp)
+	err := c.Post(`{ name }`, &testServerResponse{})
 	assert.NotNil(err)
 	var root mocktracer.Span
 	for _, span := range mt.FinishedSpans() {
@@ -127,11 +129,7 @@ func TestChildSpans(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	c := newTestClient(t, testserver.New(), NewTracer())
-	var resp struct {
-		Name string
-	}
-	query := `{ name }`
-	err := c.Post(query, &resp)
+	err := c.Post(`{ name }`, &testServerResponse{})
 	assert.Nil(err)
 	var root mocktracer.Span
 	allSpans := mt.FinishedSpans()
@@ -143,11 +141,62 @@ func TestChildSpans(t *testing.T) {
 		}
 		resNames = append(resNames, span.Tag(ext.ResourceName).(string))
 		opNames = append(opNames, span.OperationName())
+		assert.Equal("99designs/gqlgen", span.Tag(ext.Component))
 	}
-	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, query})
+	assert.ElementsMatch(resNames, []string{readOp, validationOp, parsingOp, `{ name }`})
 	assert.ElementsMatch(opNames, []string{readOp, validationOp, parsingOp, "graphql.query"})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := newTestClient(t, testserver.New(), NewTracer(opts...))
+		err := c.Post(`{ name }`, &testServerResponse{})
+		require.NoError(t, err)
+
+		err = c.Post(`mutation Name() { name }`, &testServerResponse{})
+		assert.ErrorContains(t, err, "mutations are not supported")
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 8)
+		assert.Equal(t, "graphql.read", spans[0].OperationName())
+		assert.Equal(t, "graphql.parse", spans[1].OperationName())
+		assert.Equal(t, "graphql.validate", spans[2].OperationName())
+		assert.Equal(t, "graphql.query", spans[3].OperationName())
+		assert.Equal(t, "graphql.read", spans[4].OperationName())
+		assert.Equal(t, "graphql.parse", spans[5].OperationName())
+		assert.Equal(t, "graphql.validate", spans[6].OperationName())
+		assert.Equal(t, "graphql.mutation", spans[7].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 8)
+		assert.Equal(t, "graphql.read", spans[0].OperationName())
+		assert.Equal(t, "graphql.parse", spans[1].OperationName())
+		assert.Equal(t, "graphql.validate", spans[2].OperationName())
+		assert.Equal(t, "graphql.server.request", spans[3].OperationName())
+		assert.Equal(t, "graphql.read", spans[4].OperationName())
+		assert.Equal(t, "graphql.parse", spans[5].OperationName())
+		assert.Equal(t, "graphql.validate", spans[6].OperationName())
+		assert.Equal(t, "graphql.server.request", spans[7].OperationName())
+	}
+	serviceOverride := namingschematest.TestServiceOverride
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("graphql", 8),
+		WithDDService:            lists.RepeatString("graphql", 8),
+		WithDDServiceAndOverride: lists.RepeatString(serviceOverride, 8),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.HandlerExtension) *client.Client {

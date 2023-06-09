@@ -10,12 +10,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHttpTracer200(t *testing.T) {
@@ -43,6 +44,8 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -71,6 +74,8 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestWrapHandler200(t *testing.T) {
@@ -101,6 +106,8 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestNoStack(t *testing.T) {
@@ -122,6 +129,8 @@ func TestNoStack(t *testing.T) {
 	s := spans[0]
 	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
 	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestServeMuxUsesResourceNamer(t *testing.T) {
@@ -154,6 +163,8 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal(nil, s.Tag(ext.Error))
 	assert.Equal("bar", s.Tag("foo"))
+	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -281,6 +292,26 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := NewServeMux(opts...)
+		mux.HandleFunc("/200", handler200)
+		r := httptest.NewRequest("GET", "http://localhost/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
+}
+
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
 		WithServiceName("my-service"),
@@ -292,10 +323,10 @@ func router(muxOpts ...Option) http.Handler {
 	return mux
 }
 
-func handler200(w http.ResponseWriter, r *http.Request) {
+func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, r *http.Request) {
+func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }

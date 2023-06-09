@@ -11,9 +11,8 @@ package appsec
 import (
 	"testing"
 
+	waf "github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 )
 
 func TestStaticRule(t *testing.T) {
@@ -21,7 +20,7 @@ func TestStaticRule(t *testing.T) {
 		t.Skip("waf disabled")
 		return
 	}
-	waf, err := waf.NewHandle([]byte(staticRecommendedRule), "", "")
+	waf, err := waf.NewHandle([]byte(staticRecommendedRules), "", "")
 	require.NoError(t, err)
 	waf.Close()
 }

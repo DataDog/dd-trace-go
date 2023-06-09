@@ -6,6 +6,7 @@
 package kubernetes
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,19 +25,30 @@ import (
 
 func TestPathToResource(t *testing.T) {
 	expected := map[string]string{
-		"/api/v1/componentstatuses":                                           "componentstatuses",
-		"/api/v1/componentstatuses/NAME":                                      "componentstatuses/{name}",
-		"/api/v1/configmaps":                                                  "configmaps",
-		"/api/v1/namespaces/default/bindings":                                 "namespaces/{namespace}/bindings",
-		"/api/v1/namespaces/someothernamespace/configmaps":                    "namespaces/{namespace}/configmaps",
-		"/api/v1/namespaces/default/configmaps/some-config-map":               "namespaces/{namespace}/configmaps/{name}",
-		"/api/v1/namespaces/default/persistentvolumeclaims/pvc-abcd/status":   "namespaces/{namespace}/persistentvolumeclaims/{name}/status",
-		"/api/v1/namespaces/default/pods/pod-1234/proxy":                      "namespaces/{namespace}/pods/{name}/proxy",
-		"/api/v1/namespaces/default/pods/pod-5678/proxy/some-path":            "namespaces/{namespace}/pods/{name}/proxy/{path}",
-		"/api/v1/watch/configmaps":                                            "watch/configmaps",
-		"/api/v1/watch/namespaces":                                            "watch/namespaces",
-		"/api/v1/watch/namespaces/default/configmaps":                         "watch/namespaces/{namespace}/configmaps",
-		"/api/v1/watch/namespaces/someothernamespace/configmaps/another-name": "watch/namespaces/{namespace}/configmaps/{name}",
+		"/api/v1/componentstatuses":                                                          "componentstatuses",
+		"/api/v1/componentstatuses/NAME":                                                     "componentstatuses/{name}",
+		"/api/v1/configmaps":                                                                 "configmaps",
+		"/api/v1/namespaces/default/bindings":                                                "namespaces/{namespace}/bindings",
+		"/api/v1/namespaces/someothernamespace/configmaps":                                   "namespaces/{namespace}/configmaps",
+		"/api/v1/namespaces/default/configmaps/some-config-map":                              "namespaces/{namespace}/configmaps/{name}",
+		"/api/v1/namespaces/default/persistentvolumeclaims/pvc-abcd/status":                  "namespaces/{namespace}/persistentvolumeclaims/{name}/status",
+		"/api/v1/namespaces/default/pods/pod-1234/proxy":                                     "namespaces/{namespace}/pods/{name}/proxy",
+		"/api/v1/namespaces/default/pods/pod-5678/proxy/some-path":                           "namespaces/{namespace}/pods/{name}/proxy/{path}",
+		"/api/v1/watch/configmaps":                                                           "watch/configmaps",
+		"/api/v1/watch/namespaces":                                                           "watch/namespaces",
+		"/api/v1/watch/namespaces/default/configmaps":                                        "watch/namespaces/{namespace}/configmaps",
+		"/api/v1/watch/namespaces/someothernamespace/configmaps/another-name":                "watch/namespaces/{namespace}/configmaps/{name}",
+		"/apis/apps/v1/namespaces/default/replicasets":                                       "apps/v1/namespaces/{namespace}/replicasets",
+		"/apis/apps/v1/namespaces/someothernamespace/replicasets":                            "apps/v1/namespaces/{namespace}/replicasets",
+		"/apis/apps/v1/namespaces/default/replicasets/foo":                                   "apps/v1/namespaces/{namespace}/replicasets/{name}",
+		"/apis/apps/v1/watch/namespaces/default/replicasets":                                 "apps/v1/watch/namespaces/{namespace}/replicasets",
+		"/apis/apps/v1/watch/namespaces/someothernamespace/replicasets":                      "apps/v1/watch/namespaces/{namespace}/replicasets",
+		"/apis/apps/v1/watch/namespaces/default/replicasets/foo":                             "apps/v1/watch/namespaces/{namespace}/replicasets/{name}",
+		"/apis/coordination.k8s.io/v1/namespaces/default/leases":                             "coordination.k8s.io/v1/namespaces/{namespace}/leases",
+		"/apis/coordination.k8s.io/v1/namespaces/default/leases/some-lease":                  "coordination.k8s.io/v1/namespaces/{namespace}/leases/{name}",
+		"/apis/coordination.k8s.io/v1/namespaces/someothernamespace/leases/some-lease":       "coordination.k8s.io/v1/namespaces/{namespace}/leases/{name}",
+		"/apis/coordination.k8s.io/v1/watch/namespaces/default/leases/some-lease":            "coordination.k8s.io/v1/watch/namespaces/{namespace}/leases/{name}",
+		"/apis/coordination.k8s.io/v1/watch/namespaces/someothernamespace/leases/some-lease": "coordination.k8s.io/v1/watch/namespaces/{namespace}/leases/{name}",
 	}
 
 	for path, expectedResource := range expected {
@@ -62,7 +74,7 @@ func TestKubernetes(t *testing.T) {
 	client, err := kubernetes.NewForConfig(cfg)
 	assert.NoError(t, err)
 
-	client.CoreV1().Namespaces().List(meta_v1.ListOptions{})
+	client.CoreV1().Namespaces().List(context.TODO(), meta_v1.ListOptions{})
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -76,6 +88,8 @@ func TestKubernetes(t *testing.T) {
 		auditID, ok := span.Tag("kubernetes.audit_id").(string)
 		assert.True(t, ok)
 		assert.True(t, len(auditID) > 0)
+		assert.Equal(t, "k8s.io/client-go/kubernetes", span.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 	}
 }
 
@@ -95,7 +109,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		client, err := kubernetes.NewForConfig(cfg)
 		assert.NoError(t, err)
 
-		client.CoreV1().Namespaces().List(meta_v1.ListOptions{})
+		client.CoreV1().Namespaces().List(context.TODO(), meta_v1.ListOptions{})
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
 

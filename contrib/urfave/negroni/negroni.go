@@ -11,13 +11,20 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/urfave/negroni"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/urfave/negroni"
 )
+
+const componentName = "urfave/negroni"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // DatadogMiddleware returns middleware that will trace incoming requests.
 type DatadogMiddleware struct {
@@ -29,6 +36,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
+
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
@@ -56,6 +64,8 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
 
 	m := DatadogMiddleware{

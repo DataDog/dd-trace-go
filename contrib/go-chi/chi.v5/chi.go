@@ -16,10 +16,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+const componentName = "go-chi/chi.v5"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
@@ -29,7 +36,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName))
+	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
@@ -64,13 +73,18 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			// set the resource name as we get it only once the handler is executed
-			resourceName := chi.RouteContext(r.Context()).RoutePattern()
-			span.SetTag(ext.HTTPRoute, resourceName)
-			if resourceName == "" {
-				resourceName = "unknown"
+			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
+			span.SetTag(ext.HTTPRoute, routePattern)
+			var resourceName string
+			if cfg.resourceNamer != nil {
+				resourceName = cfg.resourceNamer(r)
+			} else {
+				resourceName = routePattern
+				if resourceName == "" {
+					resourceName = "unknown"
+				}
+				resourceName = r.Method + " " + resourceName
 			}
-			resourceName = r.Method + " " + resourceName
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}

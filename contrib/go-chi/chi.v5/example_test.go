@@ -8,13 +8,13 @@ package chi_test
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/go-chi/chi/v5"
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func handler(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("Hello World!\n"))
 }
 
