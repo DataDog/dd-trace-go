@@ -259,6 +259,13 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			seq:   p.seq,
 			host:  p.cfg.hostname,
 			start: now(),
+			extraTags: []string{
+				// _dd.profiler.go_execution_trace_enabled indicates whether execution
+				// tracing is enabled, to distinguish between missing a trace
+				// because we don't collect them every profiling cycle from
+				// missing a trace because the feature isn't turned on.
+				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+			},
 		}
 		p.seq++
 
@@ -298,6 +305,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		}
 		wg.Wait()
 		for _, prof := range completed {
+			if prof.pt == executionTrace {
+				// If the profile batch includes a runtime execution trace, add a tag so
+				// that the uploads are more easily discoverable in the UI.
+				bat.extraTags = append(bat.extraTags, "go_execution_traced:yes")
+			}
 			bat.addProfile(prof)
 		}
 
