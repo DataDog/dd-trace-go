@@ -40,8 +40,8 @@ func AnalyticsRate() float64 {
 // SetAnalyticsRate sets the given event sampling rate globally.
 func SetAnalyticsRate(rate float64) {
 	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.analyticsRate = rate
-	cfg.mu.Unlock()
 }
 
 // ServiceName returns the default service name used by non-client integrations such as servers and frameworks.
@@ -66,28 +66,25 @@ func RuntimeID() string {
 }
 
 func HeaderTag(header string) (tag string, ok bool) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
 	tag, ok = cfg.headersAsTags[header]
 	return tag, ok
 }
 
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.headersAsTags[from] = to
 }
 
+// TODO: can we remove this? If not, probably put it behind a read lock
 func HeaderTagsLen() int {
 	return len(cfg.headersAsTags)
 }
 
+// TODO: can we remove this?
 func ClearHeaderTags() {
 	cfg.headersAsTags = make(map[string]string)
-}
-
-// HeaderTagsCopy returns a copy of the header tags held in the global config (or empty map)
-func HeaderTagsCopy() map[string]string {
-	headersAsTags := make(map[string]string, len(cfg.headersAsTags))
-	for header, tag := range cfg.headersAsTags {
-		headersAsTags[header] = tag
-	}
-	return headersAsTags
 }

@@ -17,16 +17,9 @@ import (
 const defaultServiceName = "go-restful"
 
 type config struct {
-	serviceName     string
-	analyticsRate   float64
-	headerTagsLocal bool
-}
-
-var headerTagsMap = make(map[string]string)
-
-func headerTag(header string) (tag string, ok bool) {
-	tag, ok = headerTagsMap[header]
-	return tag, ok
+	serviceName   string
+	analyticsRate float64
+	headerTags    func(string) (string, bool)
 }
 
 func newConfig() *config {
@@ -39,9 +32,9 @@ func newConfig() *config {
 		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	return &config{
-		serviceName:     serviceName,
-		analyticsRate:   rate,
-		headerTagsLocal: false,
+		serviceName:   serviceName,
+		analyticsRate: rate,
+		headerTags:    globalconfig.HeaderTag,
 	}
 }
 
@@ -81,13 +74,18 @@ func WithAnalyticsRate(rate float64) Option {
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
-// Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
+// In the case of special headers such as Cookies, the entire value will be transmitted as a tag,
+// i.e. there is no way to sub-select a single part of a header value.
 func WithHeaderTags(headers []string) Option {
+	headerAsTags := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
+		headerAsTags[header] = tag
 	}
 	return func(cfg *config) {
-		cfg.headerTagsLocal = true
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerAsTags[k]
+			return tag, ok
+		}
 	}
 }
