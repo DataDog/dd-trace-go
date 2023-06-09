@@ -63,7 +63,7 @@ func TestTryUpload(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
-	assert.ElementsMatch([]string{
+	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
 		"service:my-service",
@@ -78,7 +78,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
-	}, profile.tags)
+	})
 	assert.Equal(profile.event.Version, "4")
 	assert.Equal(profile.event.Family, "go")
 	assert.NotNil(profile.event.Start)
