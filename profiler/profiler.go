@@ -260,11 +260,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			host:  p.cfg.hostname,
 			start: now(),
 			extraTags: []string{
-				// go_execution_trace_enabled indicates whether execution
+				// _dd.profiler.go_execution_trace_enabled indicates whether execution
 				// tracing is enabled, to distinguish between missing a trace
 				// because we don't collect them every profiling cycle from
 				// missing a trace because the feature isn't turned on.
-				fmt.Sprintf("go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
 			},
 		}
 		p.seq++

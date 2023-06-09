@@ -600,7 +600,7 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 
 			m := <-got
 			t.Log(m.event.Attachments, m.tags)
-			require.Contains(t, m.tags, fmt.Sprintf("go_execution_trace_enabled:%s", status))
+			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
 	}
 }
