@@ -8,6 +8,7 @@
 package appsec
 
 import (
+	"encoding/json"
 	"testing"
 
 	waf "github.com/DataDog/go-libddwaf"
@@ -19,7 +20,12 @@ func TestStaticRule(t *testing.T) {
 		t.Skip("waf disabled")
 		return
 	}
-	waf, err := waf.NewHandle([]byte(staticRecommendedRules), "", "")
+
+	var parsedStaticRecommendedRules any
+
+	require.NoError(t, json.Unmarshal([]byte(staticRecommendedRules), &parsedStaticRecommendedRules))
+
+	waf, err := waf.NewHandle(parsedStaticRecommendedRules, "", "")
 	require.NoError(t, err)
 	waf.Close()
 }

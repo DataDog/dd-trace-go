@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.uber.org/atomic"
 	"sort"
 	"sync"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	waf "github.com/DataDog/go-libddwaf"
+	"go.uber.org/atomic"
 )
 
 const (
