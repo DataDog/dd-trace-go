@@ -5,7 +5,7 @@
 
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
-//go:generate msgp -unexported -marshal=false -o=mockspan_msgp.go -tests=false
+//go:generate msgp -unexported -marshal=true -o=mockspan_msgp.go -tests=false
 
 import (
 	"fmt"
@@ -125,10 +125,8 @@ var (
 )
 
 type encodablemockspan struct {
-	name       string
-	tags       map[string]interface{}
-	finishTime time.Time
-	finished   bool
+	name string
+	tags map[string]interface{}
 
 	startTime time.Time
 	parentID  uint64

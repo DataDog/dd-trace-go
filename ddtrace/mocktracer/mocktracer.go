@@ -15,6 +15,7 @@ package mocktracer
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -119,12 +120,10 @@ func ConvertToEncodableMockSpans(spans []Span) []*encodablemockspan {
 	result := make([]*encodablemockspan, len(spans))
 	for i, span := range spans {
 		result[i] = &encodablemockspan{
-			name:       span.OperationName(),
-			tags:       span.Tags(),
-			finishTime: span.FinishTime(),
-			finished:   true,
-			startTime:  span.StartTime(),
-			parentID:   span.ParentID(),
+			name:      span.OperationName(),
+			tags:      span.Tags(),
+			startTime: span.StartTime(),
+			parentID:  span.ParentID(),
 		}
 	}
 	return result
@@ -135,8 +134,8 @@ func (t *mocktracer) FinishedSpans() []Span {
 	defer t.RUnlock()
 
 	// send finished spans to test agent, along with trace headers and new header with all Datadog env variables at time of trace, ex: X-Datadog-Trace-Env-Variables => "DD_SERVICE=my-service;DD_KEY=VAL, ...."
-	sendTracesViaPost(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
-
+	// sendTracesViaPost(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+	sendSpansJson(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
 	return t.finishedSpans
 }
 
@@ -356,4 +355,33 @@ func encode_finished_spans(t encodableMockSpanList) (*mockpayload, error) {
 		mp.off = 3
 	}
 	return mp, nil
+}
+
+func sendSpansJson(spans []*encodablemockspan, host string, port int) error {
+	// convert spans to JSON
+	jsonSpans, err := json.Marshal(spans)
+	if err != nil {
+		return err
+	}
+
+	// create POST request with JSON data
+	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", bytes.NewBuffer(jsonSpans))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// send request and get response
+	resp, err := defaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// check for any errors in response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("received non-200 response code: %d", resp.StatusCode)
+	}
+
+	return nil
 }

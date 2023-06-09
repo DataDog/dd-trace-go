@@ -65,6 +65,59 @@ func (z encodableMockSpanList) EncodeMsg(en *msgp.Writer) (err error) {
 	return
 }
 
+// MarshalMsg implements msgp.Marshaler
+func (z encodableMockSpanList) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	o = msgp.AppendArrayHeader(o, uint32(len(z)))
+	for zb0003 := range z {
+		if z[zb0003] == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z[zb0003].MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, zb0003)
+				return
+			}
+		}
+	}
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *encodableMockSpanList) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var zb0002 uint32
+	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	if cap((*z)) >= int(zb0002) {
+		(*z) = (*z)[:zb0002]
+	} else {
+		(*z) = make(encodableMockSpanList, zb0002)
+	}
+	for zb0001 := range *z {
+		if msgp.IsNil(bts) {
+			bts, err = msgp.ReadNilBytes(bts)
+			if err != nil {
+				return
+			}
+			(*z)[zb0001] = nil
+		} else {
+			if (*z)[zb0001] == nil {
+				(*z)[zb0001] = new(encodablemockspan)
+			}
+			bts, err = (*z)[zb0001].UnmarshalMsg(bts)
+			if err != nil {
+				err = msgp.WrapError(err, zb0001)
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z encodableMockSpanList) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
@@ -157,6 +210,75 @@ func (z encodableMockSpanLists) EncodeMsg(en *msgp.Writer) (err error) {
 	return
 }
 
+// MarshalMsg implements msgp.Marshaler
+func (z encodableMockSpanLists) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	o = msgp.AppendArrayHeader(o, uint32(len(z)))
+	for zb0005 := range z {
+		o = msgp.AppendArrayHeader(o, uint32(len(z[zb0005])))
+		for zb0006 := range z[zb0005] {
+			if z[zb0005][zb0006] == nil {
+				o = msgp.AppendNil(o)
+			} else {
+				o, err = z[zb0005][zb0006].MarshalMsg(o)
+				if err != nil {
+					err = msgp.WrapError(err, zb0005, zb0006)
+					return
+				}
+			}
+		}
+	}
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *encodableMockSpanLists) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var zb0003 uint32
+	zb0003, bts, err = msgp.ReadArrayHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	if cap((*z)) >= int(zb0003) {
+		(*z) = (*z)[:zb0003]
+	} else {
+		(*z) = make(encodableMockSpanLists, zb0003)
+	}
+	for zb0001 := range *z {
+		var zb0004 uint32
+		zb0004, bts, err = msgp.ReadArrayHeaderBytes(bts)
+		if err != nil {
+			err = msgp.WrapError(err, zb0001)
+			return
+		}
+		if cap((*z)[zb0001]) >= int(zb0004) {
+			(*z)[zb0001] = ((*z)[zb0001])[:zb0004]
+		} else {
+			(*z)[zb0001] = make(encodableMockSpanList, zb0004)
+		}
+		for zb0002 := range (*z)[zb0001] {
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				(*z)[zb0001][zb0002] = nil
+			} else {
+				if (*z)[zb0001][zb0002] == nil {
+					(*z)[zb0001][zb0002] = new(encodablemockspan)
+				}
+				bts, err = (*z)[zb0001][zb0002].UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, zb0001, zb0002)
+					return
+				}
+			}
+		}
+	}
+	o = bts
+	return
+}
+
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z encodableMockSpanLists) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
@@ -227,18 +349,6 @@ func (z *encodablemockspan) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				z.tags[za0001] = za0002
 			}
-		case "finishTime":
-			z.finishTime, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "finishTime")
-				return
-			}
-		case "finished":
-			z.finished, err = dc.ReadBool()
-			if err != nil {
-				err = msgp.WrapError(err, "finished")
-				return
-			}
 		case "startTime":
 			z.startTime, err = dc.ReadTime()
 			if err != nil {
@@ -264,9 +374,9 @@ func (z *encodablemockspan) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *encodablemockspan) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 6
+	// map header, size 4
 	// write "name"
-	err = en.Append(0x86, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	err = en.Append(0x84, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
@@ -297,26 +407,6 @@ func (z *encodablemockspan) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
-	// write "finishTime"
-	err = en.Append(0xaa, 0x66, 0x69, 0x6e, 0x69, 0x73, 0x68, 0x54, 0x69, 0x6d, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.finishTime)
-	if err != nil {
-		err = msgp.WrapError(err, "finishTime")
-		return
-	}
-	// write "finished"
-	err = en.Append(0xa8, 0x66, 0x69, 0x6e, 0x69, 0x73, 0x68, 0x65, 0x64)
-	if err != nil {
-		return
-	}
-	err = en.WriteBool(z.finished)
-	if err != nil {
-		err = msgp.WrapError(err, "finished")
-		return
-	}
 	// write "startTime"
 	err = en.Append(0xa9, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
 	if err != nil {
@@ -340,6 +430,111 @@ func (z *encodablemockspan) EncodeMsg(en *msgp.Writer) (err error) {
 	return
 }
 
+// MarshalMsg implements msgp.Marshaler
+func (z *encodablemockspan) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// map header, size 4
+	// string "name"
+	o = append(o, 0x84, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	o = msgp.AppendString(o, z.name)
+	// string "tags"
+	o = append(o, 0xa4, 0x74, 0x61, 0x67, 0x73)
+	o = msgp.AppendMapHeader(o, uint32(len(z.tags)))
+	for za0001, za0002 := range z.tags {
+		o = msgp.AppendString(o, za0001)
+		o, err = msgp.AppendIntf(o, za0002)
+		if err != nil {
+			err = msgp.WrapError(err, "tags", za0001)
+			return
+		}
+	}
+	// string "startTime"
+	o = append(o, 0xa9, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
+	o = msgp.AppendTime(o, z.startTime)
+	// string "parentID"
+	o = append(o, 0xa8, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x49, 0x44)
+	o = msgp.AppendUint64(o, z.parentID)
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *encodablemockspan) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "name":
+			z.name, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "name")
+				return
+			}
+		case "tags":
+			var zb0002 uint32
+			zb0002, bts, err = msgp.ReadMapHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "tags")
+				return
+			}
+			if z.tags == nil {
+				z.tags = make(map[string]interface{}, zb0002)
+			} else if len(z.tags) > 0 {
+				for key := range z.tags {
+					delete(z.tags, key)
+				}
+			}
+			for zb0002 > 0 {
+				var za0001 string
+				var za0002 interface{}
+				zb0002--
+				za0001, bts, err = msgp.ReadStringBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "tags")
+					return
+				}
+				za0002, bts, err = msgp.ReadIntfBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "tags", za0001)
+					return
+				}
+				z.tags[za0001] = za0002
+			}
+		case "startTime":
+			z.startTime, bts, err = msgp.ReadTimeBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "startTime")
+				return
+			}
+		case "parentID":
+			z.parentID, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "parentID")
+				return
+			}
+		default:
+			bts, err = msgp.Skip(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *encodablemockspan) Msgsize() (s int) {
 	s = 1 + 5 + msgp.StringPrefixSize + len(z.name) + 5 + msgp.MapHeaderSize
@@ -349,6 +544,6 @@ func (z *encodablemockspan) Msgsize() (s int) {
 			s += msgp.StringPrefixSize + len(za0001) + msgp.GuessSize(za0002)
 		}
 	}
-	s += 11 + msgp.TimeSize + 9 + msgp.BoolSize + 10 + msgp.TimeSize + 9 + msgp.Uint64Size
+	s += 10 + msgp.TimeSize + 9 + msgp.Uint64Size
 	return
 }
