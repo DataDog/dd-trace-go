@@ -14,10 +14,8 @@ package mocktracer
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -25,14 +23,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -120,10 +115,14 @@ func ConvertToEncodableMockSpans(spans []Span) []*encodablemockspan {
 	result := make([]*encodablemockspan, len(spans))
 	for i, span := range spans {
 		result[i] = &encodablemockspan{
-			name:      span.OperationName(),
-			tags:      span.Tags(),
-			startTime: span.StartTime(),
-			parentID:  span.ParentID(),
+			Name:       span.OperationName(),
+			Tags:       span.Tags(),
+			StartTime:  span.StartTime(),
+			FinishTime: span.FinishTime(),
+			Error:      0,
+			ParentID:   span.ParentID(),
+			SpanID:     span.SpanID(),
+			TraceID:    span.TraceID(),
 		}
 	}
 	return result
@@ -135,7 +134,8 @@ func (t *mocktracer) FinishedSpans() []Span {
 
 	// send finished spans to test agent, along with trace headers and new header with all Datadog env variables at time of trace, ex: X-Datadog-Trace-Env-Variables => "DD_SERVICE=my-service;DD_KEY=VAL, ...."
 	// sendTracesViaPost(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
-	sendSpansJson(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+
+	sendTraceJson(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
 	return t.finishedSpans
 }
 
@@ -280,36 +280,106 @@ var defaultHeaders = map[string]string{
 	"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 	"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
 	"Datadog-Meta-Tracer-Version":   version.Tag,
-	"Content-Type":                  "application/msgpack",
 }
 
-func sendTracesViaPost(trace []*encodablemockspan, host string, port int) (body io.ReadCloser, err error) {
-	var size int
-	var trace_count int
+// func sendTracesViaPost(trace []*encodablemockspan, host string, port int) (body io.ReadCloser, err error) {
+// 	var size int
+// 	var trace_count int
 
-	mp, err := encode_finished_spans(trace)
+// 	mp, err := encode_finished_spans(trace)
 
-	size, trace_count = mp.buf.Len()+len(mp.header)-mp.off, int(mp.count)
-	log.Debug("Sending payload: size: %d traces: %d\n", size, trace_count)
+// 	size, trace_count = mp.buf.Len()+len(mp.header)-mp.off, int(mp.count)
+// 	log.Debug("Sending payload: size: %d traces: %d\n", size, trace_count)
 
-	// Create a new HTTP request with the POST method
-	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", mp)
+// 	// Create a new HTTP request with the POST method
+// 	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", mp)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("cannot create http request: %v", err)
+// 	}
+
+// 	for header, value := range defaultHeaders {
+// 		req.Header.Set(header, value)
+// 	}
+// 	req.Header.Set("X-Datadog-Trace-Env-Variables", getDDEnvVars())
+// 	req.Header.Set(traceCountHeader, strconv.Itoa(trace_count))
+// 	req.Header.Set("Content-Length", strconv.Itoa(size))
+// 	req.Header.Set(headerComputedTopLevel, "yes")
+// 	req.Header.Set("Content-Type", "application/json")
+
+// 	response, err := defaultClient.Do(req)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if code := response.StatusCode; code >= 400 {
+// 		// error, check the body for context information and
+// 		// return a nice error.
+// 		msg := make([]byte, 1000)
+// 		n, _ := response.Body.Read(msg)
+// 		response.Body.Close()
+// 		txt := http.StatusText(code)
+// 		if n > 0 {
+// 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+// 		}
+// 		return nil, fmt.Errorf("%s", txt)
+// 	}
+// 	return response.Body, nil
+// }
+
+// func encode_finished_spans(t encodableMockSpanList) (*mockpayload, error) {
+// 	mp := &mockpayload{
+// 		header: make([]byte, 8),
+// 		off:    8,
+// 	}
+
+// 	mp.buf = bytes.Buffer{}
+// 	mp.count = 0
+
+// 	if err := msgp.Encode(&mp.buf, t); err != nil {
+// 		return mp, err
+// 	}
+// 	atomic.AddUint32(&mp.count, 1)
+
+// 	n := uint64(atomic.LoadUint32(&mp.count))
+// 	switch {
+// 	case n <= 15:
+// 		mp.header[7] = msgpackArrayFix + byte(n)
+// 		mp.off = 7
+// 	case n <= 1<<16-1:
+// 		binary.BigEndian.PutUint64(mp.header, n) // writes 2 bytes
+// 		mp.header[5] = msgpackArray16
+// 		mp.off = 5
+// 	default: // n <= 1<<32-1
+// 		binary.BigEndian.PutUint64(mp.header, n) // writes 4 bytes
+// 		mp.header[3] = msgpackArray32
+// 		mp.off = 3
+// 	}
+// 	return mp, nil
+// }
+
+func sendTraceJson(spans []*encodablemockspan, host string, port int) error {
+	// convert spans to JSON
+	jsonTraces, err := MarshalJSON(spans)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return err
+	}
+
+	// create POST request with JSON data
+	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", bytes.NewBuffer(jsonTraces))
+	if err != nil {
+		return err
 	}
 
 	for header, value := range defaultHeaders {
 		req.Header.Set(header, value)
 	}
 	req.Header.Set("X-Datadog-Trace-Env-Variables", getDDEnvVars())
-	req.Header.Set(traceCountHeader, strconv.Itoa(trace_count))
-	req.Header.Set("Content-Length", strconv.Itoa(size))
+	req.Header.Set(traceCountHeader, strconv.Itoa(1))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	req.Header.Set("Content-Type", "application/json")
 
 	response, err := defaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if code := response.StatusCode; code >= 400 {
 		// error, check the body for context information and
@@ -319,69 +389,34 @@ func sendTracesViaPost(trace []*encodablemockspan, host string, port int) (body 
 		response.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
-			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
-		return nil, fmt.Errorf("%s", txt)
+		return fmt.Errorf("%s", txt)
 	}
-	return response.Body, nil
-}
-
-func encode_finished_spans(t encodableMockSpanList) (*mockpayload, error) {
-	mp := &mockpayload{
-		header: make([]byte, 8),
-		off:    8,
-	}
-
-	mp.buf = bytes.Buffer{}
-	mp.count = 0
-
-	if err := msgp.Encode(&mp.buf, t); err != nil {
-		return mp, err
-	}
-	atomic.AddUint32(&mp.count, 1)
-
-	n := uint64(atomic.LoadUint32(&mp.count))
-	switch {
-	case n <= 15:
-		mp.header[7] = msgpackArrayFix + byte(n)
-		mp.off = 7
-	case n <= 1<<16-1:
-		binary.BigEndian.PutUint64(mp.header, n) // writes 2 bytes
-		mp.header[5] = msgpackArray16
-		mp.off = 5
-	default: // n <= 1<<32-1
-		binary.BigEndian.PutUint64(mp.header, n) // writes 4 bytes
-		mp.header[3] = msgpackArray32
-		mp.off = 3
-	}
-	return mp, nil
-}
-
-func sendSpansJson(spans []*encodablemockspan, host string, port int) error {
-	// convert spans to JSON
-	jsonSpans, err := json.Marshal(spans)
-	if err != nil {
-		return err
-	}
-
-	// create POST request with JSON data
-	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", bytes.NewBuffer(jsonSpans))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// send request and get response
-	resp, err := defaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// check for any errors in response
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received non-200 response code: %d", resp.StatusCode)
-	}
-
 	return nil
+}
+
+func MarshalJSON(spans []*encodablemockspan) ([]byte, error) {
+	traces := make([]encodableMockSpanList, 1)
+
+	for _, s := range spans {
+		// Check if service.name is null and remove it if it is
+		if s.Tags != nil && s.Tags["service.name"] == nil {
+			s.Tags["service.name"] = "my-service"
+		}
+
+		// Check if error is present and set s.error accordingly
+		if s.Tags != nil && s.Tags["error"] != nil {
+			s.Tags["error.message"] = s.Tags["error"].(error).Error()
+			delete(s.Tags, "error")
+			s.Error = 1
+		} else {
+			s.Error = 0
+		}
+	}
+
+	traces[0] = spans
+
+	// Marshal the struct to JSON
+	return json.Marshal(traces)
 }

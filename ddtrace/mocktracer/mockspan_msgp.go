@@ -313,24 +313,24 @@ func (z *encodablemockspan) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "name":
-			z.name, err = dc.ReadString()
+		case "Name":
+			z.Name, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "name")
+				err = msgp.WrapError(err, "Name")
 				return
 			}
-		case "tags":
+		case "Tags":
 			var zb0002 uint32
 			zb0002, err = dc.ReadMapHeader()
 			if err != nil {
-				err = msgp.WrapError(err, "tags")
+				err = msgp.WrapError(err, "Tags")
 				return
 			}
-			if z.tags == nil {
-				z.tags = make(map[string]interface{}, zb0002)
-			} else if len(z.tags) > 0 {
-				for key := range z.tags {
-					delete(z.tags, key)
+			if z.Tags == nil {
+				z.Tags = make(map[string]interface{}, zb0002)
+			} else if len(z.Tags) > 0 {
+				for key := range z.Tags {
+					delete(z.Tags, key)
 				}
 			}
 			for zb0002 > 0 {
@@ -339,26 +339,44 @@ func (z *encodablemockspan) DecodeMsg(dc *msgp.Reader) (err error) {
 				var za0002 interface{}
 				za0001, err = dc.ReadString()
 				if err != nil {
-					err = msgp.WrapError(err, "tags")
+					err = msgp.WrapError(err, "Tags")
 					return
 				}
 				za0002, err = dc.ReadIntf()
 				if err != nil {
-					err = msgp.WrapError(err, "tags", za0001)
+					err = msgp.WrapError(err, "Tags", za0001)
 					return
 				}
-				z.tags[za0001] = za0002
+				z.Tags[za0001] = za0002
 			}
-		case "startTime":
-			z.startTime, err = dc.ReadTime()
+		case "StartTime":
+			z.StartTime, err = dc.ReadTime()
 			if err != nil {
-				err = msgp.WrapError(err, "startTime")
+				err = msgp.WrapError(err, "StartTime")
 				return
 			}
-		case "parentID":
-			z.parentID, err = dc.ReadUint64()
+		case "FinishTime":
+			z.FinishTime, err = dc.ReadTime()
 			if err != nil {
-				err = msgp.WrapError(err, "parentID")
+				err = msgp.WrapError(err, "FinishTime")
+				return
+			}
+		case "ParentID":
+			z.ParentID, err = dc.ReadUint64()
+			if err != nil {
+				err = msgp.WrapError(err, "ParentID")
+				return
+			}
+		case "SpanID":
+			z.SpanID, err = dc.ReadUint64()
+			if err != nil {
+				err = msgp.WrapError(err, "SpanID")
+				return
+			}
+		case "TraceID":
+			z.TraceID, err = dc.ReadUint64()
+			if err != nil {
+				err = msgp.WrapError(err, "TraceID")
 				return
 			}
 		default:
@@ -374,57 +392,87 @@ func (z *encodablemockspan) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *encodablemockspan) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 4
-	// write "name"
-	err = en.Append(0x84, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	// map header, size 7
+	// write "Name"
+	err = en.Append(0x87, 0xa4, 0x4e, 0x61, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.name)
+	err = en.WriteString(z.Name)
 	if err != nil {
-		err = msgp.WrapError(err, "name")
+		err = msgp.WrapError(err, "Name")
 		return
 	}
-	// write "tags"
-	err = en.Append(0xa4, 0x74, 0x61, 0x67, 0x73)
+	// write "Tags"
+	err = en.Append(0xa4, 0x54, 0x61, 0x67, 0x73)
 	if err != nil {
 		return
 	}
-	err = en.WriteMapHeader(uint32(len(z.tags)))
+	err = en.WriteMapHeader(uint32(len(z.Tags)))
 	if err != nil {
-		err = msgp.WrapError(err, "tags")
+		err = msgp.WrapError(err, "Tags")
 		return
 	}
-	for za0001, za0002 := range z.tags {
+	for za0001, za0002 := range z.Tags {
 		err = en.WriteString(za0001)
 		if err != nil {
-			err = msgp.WrapError(err, "tags")
+			err = msgp.WrapError(err, "Tags")
 			return
 		}
 		err = en.WriteIntf(za0002)
 		if err != nil {
-			err = msgp.WrapError(err, "tags", za0001)
+			err = msgp.WrapError(err, "Tags", za0001)
 			return
 		}
 	}
-	// write "startTime"
-	err = en.Append(0xa9, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
+	// write "StartTime"
+	err = en.Append(0xa9, 0x53, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
-	err = en.WriteTime(z.startTime)
+	err = en.WriteTime(z.StartTime)
 	if err != nil {
-		err = msgp.WrapError(err, "startTime")
+		err = msgp.WrapError(err, "StartTime")
 		return
 	}
-	// write "parentID"
-	err = en.Append(0xa8, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x49, 0x44)
+	// write "FinishTime"
+	err = en.Append(0xaa, 0x46, 0x69, 0x6e, 0x69, 0x73, 0x68, 0x54, 0x69, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
-	err = en.WriteUint64(z.parentID)
+	err = en.WriteTime(z.FinishTime)
 	if err != nil {
-		err = msgp.WrapError(err, "parentID")
+		err = msgp.WrapError(err, "FinishTime")
+		return
+	}
+	// write "ParentID"
+	err = en.Append(0xa8, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x49, 0x44)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.ParentID)
+	if err != nil {
+		err = msgp.WrapError(err, "ParentID")
+		return
+	}
+	// write "SpanID"
+	err = en.Append(0xa6, 0x53, 0x70, 0x61, 0x6e, 0x49, 0x44)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.SpanID)
+	if err != nil {
+		err = msgp.WrapError(err, "SpanID")
+		return
+	}
+	// write "TraceID"
+	err = en.Append(0xa7, 0x54, 0x72, 0x61, 0x63, 0x65, 0x49, 0x44)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.TraceID)
+	if err != nil {
+		err = msgp.WrapError(err, "TraceID")
 		return
 	}
 	return
@@ -433,27 +481,36 @@ func (z *encodablemockspan) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *encodablemockspan) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 4
-	// string "name"
-	o = append(o, 0x84, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
-	o = msgp.AppendString(o, z.name)
-	// string "tags"
-	o = append(o, 0xa4, 0x74, 0x61, 0x67, 0x73)
-	o = msgp.AppendMapHeader(o, uint32(len(z.tags)))
-	for za0001, za0002 := range z.tags {
+	// map header, size 7
+	// string "Name"
+	o = append(o, 0x87, 0xa4, 0x4e, 0x61, 0x6d, 0x65)
+	o = msgp.AppendString(o, z.Name)
+	// string "Tags"
+	o = append(o, 0xa4, 0x54, 0x61, 0x67, 0x73)
+	o = msgp.AppendMapHeader(o, uint32(len(z.Tags)))
+	for za0001, za0002 := range z.Tags {
 		o = msgp.AppendString(o, za0001)
 		o, err = msgp.AppendIntf(o, za0002)
 		if err != nil {
-			err = msgp.WrapError(err, "tags", za0001)
+			err = msgp.WrapError(err, "Tags", za0001)
 			return
 		}
 	}
-	// string "startTime"
-	o = append(o, 0xa9, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
-	o = msgp.AppendTime(o, z.startTime)
-	// string "parentID"
-	o = append(o, 0xa8, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x49, 0x44)
-	o = msgp.AppendUint64(o, z.parentID)
+	// string "StartTime"
+	o = append(o, 0xa9, 0x53, 0x74, 0x61, 0x72, 0x74, 0x54, 0x69, 0x6d, 0x65)
+	o = msgp.AppendTime(o, z.StartTime)
+	// string "FinishTime"
+	o = append(o, 0xaa, 0x46, 0x69, 0x6e, 0x69, 0x73, 0x68, 0x54, 0x69, 0x6d, 0x65)
+	o = msgp.AppendTime(o, z.FinishTime)
+	// string "ParentID"
+	o = append(o, 0xa8, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x49, 0x44)
+	o = msgp.AppendUint64(o, z.ParentID)
+	// string "SpanID"
+	o = append(o, 0xa6, 0x53, 0x70, 0x61, 0x6e, 0x49, 0x44)
+	o = msgp.AppendUint64(o, z.SpanID)
+	// string "TraceID"
+	o = append(o, 0xa7, 0x54, 0x72, 0x61, 0x63, 0x65, 0x49, 0x44)
+	o = msgp.AppendUint64(o, z.TraceID)
 	return
 }
 
@@ -475,24 +532,24 @@ func (z *encodablemockspan) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "name":
-			z.name, bts, err = msgp.ReadStringBytes(bts)
+		case "Name":
+			z.Name, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "name")
+				err = msgp.WrapError(err, "Name")
 				return
 			}
-		case "tags":
+		case "Tags":
 			var zb0002 uint32
 			zb0002, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "tags")
+				err = msgp.WrapError(err, "Tags")
 				return
 			}
-			if z.tags == nil {
-				z.tags = make(map[string]interface{}, zb0002)
-			} else if len(z.tags) > 0 {
-				for key := range z.tags {
-					delete(z.tags, key)
+			if z.Tags == nil {
+				z.Tags = make(map[string]interface{}, zb0002)
+			} else if len(z.Tags) > 0 {
+				for key := range z.Tags {
+					delete(z.Tags, key)
 				}
 			}
 			for zb0002 > 0 {
@@ -501,26 +558,44 @@ func (z *encodablemockspan) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				zb0002--
 				za0001, bts, err = msgp.ReadStringBytes(bts)
 				if err != nil {
-					err = msgp.WrapError(err, "tags")
+					err = msgp.WrapError(err, "Tags")
 					return
 				}
 				za0002, bts, err = msgp.ReadIntfBytes(bts)
 				if err != nil {
-					err = msgp.WrapError(err, "tags", za0001)
+					err = msgp.WrapError(err, "Tags", za0001)
 					return
 				}
-				z.tags[za0001] = za0002
+				z.Tags[za0001] = za0002
 			}
-		case "startTime":
-			z.startTime, bts, err = msgp.ReadTimeBytes(bts)
+		case "StartTime":
+			z.StartTime, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "startTime")
+				err = msgp.WrapError(err, "StartTime")
 				return
 			}
-		case "parentID":
-			z.parentID, bts, err = msgp.ReadUint64Bytes(bts)
+		case "FinishTime":
+			z.FinishTime, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "parentID")
+				err = msgp.WrapError(err, "FinishTime")
+				return
+			}
+		case "ParentID":
+			z.ParentID, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "ParentID")
+				return
+			}
+		case "SpanID":
+			z.SpanID, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "SpanID")
+				return
+			}
+		case "TraceID":
+			z.TraceID, bts, err = msgp.ReadUint64Bytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "TraceID")
 				return
 			}
 		default:
@@ -537,13 +612,13 @@ func (z *encodablemockspan) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *encodablemockspan) Msgsize() (s int) {
-	s = 1 + 5 + msgp.StringPrefixSize + len(z.name) + 5 + msgp.MapHeaderSize
-	if z.tags != nil {
-		for za0001, za0002 := range z.tags {
+	s = 1 + 5 + msgp.StringPrefixSize + len(z.Name) + 5 + msgp.MapHeaderSize
+	if z.Tags != nil {
+		for za0001, za0002 := range z.Tags {
 			_ = za0002
 			s += msgp.StringPrefixSize + len(za0001) + msgp.GuessSize(za0002)
 		}
 	}
-	s += 10 + msgp.TimeSize + 9 + msgp.Uint64Size
+	s += 10 + msgp.TimeSize + 11 + msgp.TimeSize + 9 + msgp.Uint64Size + 7 + msgp.Uint64Size + 8 + msgp.Uint64Size
 	return
 }

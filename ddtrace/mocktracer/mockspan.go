@@ -45,6 +45,7 @@ type Span interface {
 	Tag(k string) interface{}
 
 	// Tags returns a copy of all the tags in this span.
+	//msgp:ignore Error
 	Tags() map[string]interface{}
 
 	// Context returns the span's SpanContext.
@@ -125,11 +126,15 @@ var (
 )
 
 type encodablemockspan struct {
-	name string
-	tags map[string]interface{}
+	Name  string                 `json:"name"`
+	Tags  map[string]interface{} `json:"meta,omitempty"`
+	Error int                    `json:"error"`
 
-	startTime time.Time
-	parentID  uint64
+	StartTime  time.Time `json:"start"`
+	FinishTime time.Time `json:"finish"`
+	ParentID   uint64    `json:"parent_id"`
+	SpanID     uint64    `json:"span_id"`
+	TraceID    uint64    `json:"trace_id"`
 }
 
 //msgp:ignore mockspan
