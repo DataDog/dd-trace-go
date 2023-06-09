@@ -7,11 +7,12 @@ package sharedsec
 
 import (
 	_ "embed"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
 
-	"google.golang.org/grpc"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -45,10 +46,12 @@ func init() {
 
 type (
 	Action struct {
-		http       http.Handler
-		grpcUnary  grpc.UnaryHandler
-		grpcStream grpc.StreamHandler
+		http http.Handler
+		grpc grpcWrapper
 	}
+
+	md          map[string][]string
+	grpcWrapper func(map[string][]string) (uint32, error)
 )
 
 // NewBlockHandler creates, initializes and returns a new BlockRequestAction
@@ -83,15 +86,30 @@ func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler 
 	})
 }
 
+func newGRPCBlockHandler(status int) grpcWrapper {
+	return func(_ map[string][]string) (uint32, error) {
+		return uint32(status), errors.New("Request blocked")
+	}
+}
+
+func newGRPCRedirectHandler(status int, loc string) grpcWrapper {
+	return func(m map[string][]string) (uint32, error) {
+		m = pairs(m, "location", loc)
+		return uint32(status), errors.New("Redirected")
+	}
+}
+
 func NewBlockRequestAction(status int, template string) *Action {
 	return &Action{
 		http: NewBlockHandler(status, template),
+		grpc: newGRPCBlockHandler(status),
 	}
 }
 
 func NewRedirectRequestAction(status int, loc string) *Action {
 	return &Action{
 		http: http.RedirectHandler(loc, status),
+		grpc: newGRPCRedirectHandler(status, loc),
 	}
 }
 
@@ -99,10 +117,18 @@ func (a *Action) HTTP() http.Handler {
 	return a.http
 }
 
-func (a *Action) GRPCUnary() grpc.UnaryHandler {
-	return a.grpcUnary
+func (a *Action) GRPC() grpcWrapper {
+	return a.grpc
 }
 
-func (a *Action) GRPCStream() grpc.StreamHandler {
-	return a.grpcStream
+// Copied from grpc.Metadata.Pairs and tweeked to use existing md
+func pairs(m md, kv ...string) md {
+	if len(kv)%2 == 1 {
+		panic(fmt.Sprintf("metadata: Pairs got the odd number of input pairs for metadata: %d", len(kv)))
+	}
+	for i := 0; i < len(kv); i += 2 {
+		key := strings.ToLower(kv[i])
+		m[key] = append(m[key], kv[i+1])
+	}
+	return m
 }

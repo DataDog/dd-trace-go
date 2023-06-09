@@ -7,11 +7,14 @@ package grpc
 
 import (
 	"encoding/json"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"reflect"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -38,9 +41,10 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		}()
 
 		var err error
-		l := dyngo.DataListenerSpec[error](func(e error) {
+		l := dyngo.DataListenerSpec[*sharedsec.Action](func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
-			err = e
+			err = status.Error(codes.Code(code), e.Error())
 		})
 		op.OnData(reflect.TypeOf(err), l.Genericize())
 		if err != nil {
@@ -67,9 +71,10 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			ctx:              ctx,
 		}
 		var err error
-		l := dyngo.DataListenerSpec[error](func(e error) {
+		l := dyngo.DataListenerSpec[*sharedsec.Action](func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
-			err = e
+			err = status.Error(codes.Code(code), e.Error())
 		})
 		op.OnData(reflect.TypeOf(err), l.Genericize())
 		defer func() {
