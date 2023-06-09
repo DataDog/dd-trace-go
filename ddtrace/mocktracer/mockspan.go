@@ -5,18 +5,23 @@
 
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
+//msgp:ignore Tracer RWMutex SpanContext
+
+//go:generate msgp -unexported -marshal=false -o=mockspan_msgp.go -tests=false
+
 import (
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var _ ddtrace.Span = (*mockspan)(nil)
 var _ Span = (*mockspan)(nil)
+var _ msgp.Encodable = (*mockspan)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
 type Span interface {
@@ -49,6 +54,8 @@ type Span interface {
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
+
+	EncodeMsg(en *msgp.Writer) (err error)
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
@@ -95,6 +102,21 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 	}
 	return s
 }
+
+type (
+	// spanList implements msgp.Encodable on top of a slice of spans.
+	mockSpanList []*mockspan
+
+	// spanLists implements msgp.Decodable on top of a slice of spanList.
+	// This type is only used in tests.
+	mockSpanLists []mockSpanList
+)
+
+var (
+	_ ddtrace.Span   = (*mockspan)(nil)
+	_ msgp.Encodable = (*mockSpanList)(nil)
+	_ msgp.Decodable = (*mockSpanLists)(nil)
+)
 
 type mockspan struct {
 	sync.RWMutex // guards below fields

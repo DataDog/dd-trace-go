@@ -13,17 +13,36 @@
 package mocktracer
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 var _ ddtrace.Tracer = (*mocktracer)(nil)
 var _ Tracer = (*mocktracer)(nil)
+
+const (
+	msgpackArrayFix byte = 144  // up to 15 items
+	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
@@ -96,9 +115,25 @@ func (t *mocktracer) OpenSpans() []Span {
 	return spans
 }
 
+func convertSpansToMockSpans(spans []Span) []*mockspan {
+	mockSpans := make([]*mockspan, len(spans))
+	for i, span := range spans {
+		mockSpan := span.(*mockspan)
+		mockSpan.tracer = nil
+		mockSpan.context = nil
+		mockSpan.RWMutex = sync.RWMutex{}
+		mockSpans[i] = mockSpan
+	}
+	return mockSpans
+}
+
 func (t *mocktracer) FinishedSpans() []Span {
 	t.RLock()
 	defer t.RUnlock()
+
+	// send finished spans to test agent, along with trace headers and new header with all Datadog env variables at time of trace, ex: X-Datadog-Trace-Env-Variables => "DD_SERVICE=my-service;DD_KEY=VAL, ...."
+	sendTracesViaPost(convertSpansToMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+
 	return t.finishedSpans
 }
 
@@ -191,4 +226,131 @@ func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) er
 		return true
 	})
 	return nil
+}
+
+func getDDEnvVars() string {
+	var envVars []string
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "DD_") {
+			envVars = append(envVars, e)
+		}
+	}
+	return strings.Join(envVars, ",")
+}
+
+const (
+	// headerComputedTopLevel specifies that the client has marked top-level spans, when set.
+	// Any non-empty value will mean 'yes'.
+	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
+)
+
+var defaultDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+	DualStack: true,
+}
+
+var defaultClient = &http.Client{
+	// We copy the transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           defaultDialer.DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+	Timeout: defaultHTTPTimeout,
+}
+
+const (
+	defaultHostname    = "localhost"
+	defaultPort        = "8126"
+	defaultAddress     = defaultHostname + ":" + defaultPort
+	defaultHTTPTimeout = 2 * time.Second         // defines the current timeout before giving up with the send process
+	traceCountHeader   = "X-Datadog-Trace-Count" // header containing the number of traces in the payload
+)
+
+var defaultHeaders = map[string]string{
+	"Datadog-Meta-Lang":             "go",
+	"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
+	"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
+	"Datadog-Meta-Tracer-Version":   version.Tag,
+	"Content-Type":                  "application/msgpack",
+}
+
+func sendTracesViaPost(trace []*mockspan, host string, port int) (body io.ReadCloser, err error) {
+	var size int
+	var trace_count int
+
+	mp, err := encode_finished_spans(trace)
+
+	size, trace_count = mp.buf.Len()+len(mp.header)-mp.off, int(mp.count)
+	log.Debug("Sending payload: size: %d traces: %d\n", size, trace_count)
+
+	// Create a new HTTP request with the POST method
+	req, err := http.NewRequest("POST", "http://"+host+":"+strconv.Itoa(port)+"/v0.4/traces", mp)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create http request: %v", err)
+	}
+
+	for header, value := range defaultHeaders {
+		req.Header.Set(header, value)
+	}
+	req.Header.Set("X-Datadog-Trace-Env-Variables", getDDEnvVars())
+	req.Header.Set(traceCountHeader, strconv.Itoa(trace_count))
+	req.Header.Set("Content-Length", strconv.Itoa(size))
+	req.Header.Set(headerComputedTopLevel, "yes")
+	req.Header.Set("Content-Type", "application/json")
+
+	response, err := defaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if code := response.StatusCode; code >= 400 {
+		// error, check the body for context information and
+		// return a nice error.
+		msg := make([]byte, 1000)
+		n, _ := response.Body.Read(msg)
+		response.Body.Close()
+		txt := http.StatusText(code)
+		if n > 0 {
+			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
+		}
+		return nil, fmt.Errorf("%s", txt)
+	}
+	return response.Body, nil
+}
+
+func encode_finished_spans(t mockSpanList) (*mockpayload, error) {
+	mp := &mockpayload{
+		header: make([]byte, 8),
+		off:    8,
+	}
+
+	mp.buf = bytes.Buffer{}
+	mp.count = 0
+
+	if err := msgp.Encode(&mp.buf, t); err != nil {
+		return mp, err
+	}
+	atomic.AddUint32(&mp.count, 1)
+
+	n := uint64(atomic.LoadUint32(&mp.count))
+	switch {
+	case n <= 15:
+		mp.header[7] = msgpackArrayFix + byte(n)
+		mp.off = 7
+	case n <= 1<<16-1:
+		binary.BigEndian.PutUint64(mp.header, n) // writes 2 bytes
+		mp.header[5] = msgpackArray16
+		mp.off = 5
+	default: // n <= 1<<32-1
+		binary.BigEndian.PutUint64(mp.header, n) // writes 4 bytes
+		mp.header[3] = msgpackArray32
+		mp.off = 3
+	}
+	return mp, nil
 }
