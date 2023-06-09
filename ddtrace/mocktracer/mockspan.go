@@ -5,8 +5,6 @@
 
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
-//msgp:ignore Tracer RWMutex SpanContext
-
 //go:generate msgp -unexported -marshal=false -o=mockspan_msgp.go -tests=false
 
 import (
@@ -21,7 +19,7 @@ import (
 )
 
 var _ Span = (*mockspan)(nil)
-var _ msgp.Encodable = (*mockspan)(nil)
+var _ msgp.Encodable = (*encodablemockspan)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
 type Span interface {
@@ -50,12 +48,11 @@ type Span interface {
 	Tags() map[string]interface{}
 
 	// Context returns the span's SpanContext.
+	//msgp:ignore SpanContext
 	Context() ddtrace.SpanContext
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
-
-	EncodeMsg(en *msgp.Writer) (err error)
 }
 
 func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
@@ -105,20 +102,41 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 
 type (
 	// spanList implements msgp.Encodable on top of a slice of spans.
+	//msgp:ignore mockSpanList
 	mockSpanList []*mockspan
 
 	// spanLists implements msgp.Decodable on top of a slice of spanList.
 	// This type is only used in tests.
+	//msgp:ignore mockSpanLists
 	mockSpanLists []mockSpanList
+
+	// encodableMockSpanList implements msgp.Encodable on top of a slice of encodableMockSpans.
+	encodableMockSpanList []*encodablemockspan
+
+	// encodableMockSpanLists implements msgp.Decodable on top of a slice of encodableMockSpanList.
+	// This type is only used in tests.
+	encodableMockSpanLists []encodableMockSpanList
 )
 
 var (
 	_ ddtrace.Span   = (*mockspan)(nil)
-	_ msgp.Encodable = (*mockSpanList)(nil)
-	_ msgp.Decodable = (*mockSpanLists)(nil)
+	_ msgp.Encodable = (*encodableMockSpanList)(nil)
+	_ msgp.Decodable = (*encodableMockSpanLists)(nil)
 )
 
+type encodablemockspan struct {
+	name       string
+	tags       map[string]interface{}
+	finishTime time.Time
+	finished   bool
+
+	startTime time.Time
+	parentID  uint64
+}
+
+//msgp:ignore mockspan
 type mockspan struct {
+	//msgp:ignore RWMutex
 	sync.RWMutex // guards below fields
 	name         string
 	tags         map[string]interface{}
@@ -127,8 +145,10 @@ type mockspan struct {
 
 	startTime time.Time
 	parentID  uint64
-	context   *spanContext
-	tracer    *mocktracer
+	//msgp:ignore spanContext
+	context *spanContext
+	//msgp:ignore mocktracer
+	tracer *mocktracer
 }
 
 // SetTag sets a given tag on the span.

@@ -115,16 +115,19 @@ func (t *mocktracer) OpenSpans() []Span {
 	return spans
 }
 
-func convertSpansToMockSpans(spans []Span) []*mockspan {
-	mockSpans := make([]*mockspan, len(spans))
+func ConvertToEncodableMockSpans(spans []Span) []*encodablemockspan {
+	result := make([]*encodablemockspan, len(spans))
 	for i, span := range spans {
-		mockSpan := span.(*mockspan)
-		mockSpan.tracer = nil
-		mockSpan.context = nil
-		mockSpan.RWMutex = sync.RWMutex{}
-		mockSpans[i] = mockSpan
+		result[i] = &encodablemockspan{
+			name:       span.OperationName(),
+			tags:       span.Tags(),
+			finishTime: span.FinishTime(),
+			finished:   true,
+			startTime:  span.StartTime(),
+			parentID:   span.ParentID(),
+		}
 	}
-	return mockSpans
+	return result
 }
 
 func (t *mocktracer) FinishedSpans() []Span {
@@ -132,7 +135,7 @@ func (t *mocktracer) FinishedSpans() []Span {
 	defer t.RUnlock()
 
 	// send finished spans to test agent, along with trace headers and new header with all Datadog env variables at time of trace, ex: X-Datadog-Trace-Env-Variables => "DD_SERVICE=my-service;DD_KEY=VAL, ...."
-	sendTracesViaPost(convertSpansToMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+	sendTracesViaPost(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
 
 	return t.finishedSpans
 }
@@ -281,7 +284,7 @@ var defaultHeaders = map[string]string{
 	"Content-Type":                  "application/msgpack",
 }
 
-func sendTracesViaPost(trace []*mockspan, host string, port int) (body io.ReadCloser, err error) {
+func sendTracesViaPost(trace []*encodablemockspan, host string, port int) (body io.ReadCloser, err error) {
 	var size int
 	var trace_count int
 
@@ -324,7 +327,7 @@ func sendTracesViaPost(trace []*mockspan, host string, port int) (body io.ReadCl
 	return response.Body, nil
 }
 
-func encode_finished_spans(t mockSpanList) (*mockpayload, error) {
+func encode_finished_spans(t encodableMockSpanList) (*mockpayload, error) {
 	mp := &mockpayload{
 		header: make([]byte, 8),
 		off:    8,
