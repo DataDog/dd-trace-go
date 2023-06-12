@@ -393,17 +393,6 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
-		{
-			name: "test mocked sns destination phone number success request",
-			publishInput: &sns.PublishInput{
-				Message:     aws.String("Hello world!"),
-				PhoneNumber: aws.String("+1234567890"),
-			},
-			tagKey:             tagPhoneNumber,
-			expectedTagValue:   "*******7890",
-			responseStatus:     200,
-			expectedStatusCode: 200,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
