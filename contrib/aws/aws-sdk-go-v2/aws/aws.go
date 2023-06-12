@@ -53,7 +53,6 @@ const (
 	tagQueueName        = "queuename"
 	tagTopicName        = "topicname"
 	tagTargetName       = "targetname"
-	tagPhoneNumber      = "phonenumber"
 	tagTableName        = "tablename"
 	tagStreamName       = "streamname"
 	tagBucketName       = "bucketname"
@@ -206,11 +205,6 @@ func destinationTagValue(requestInput middleware.InitializeInput) (tag string, v
 		case params.TargetArn != nil:
 			tag = tagTargetName
 			s = *params.TargetArn
-		case params.PhoneNumber != nil:
-			n := len(*params.PhoneNumber) - 4
-			maskedDigits := strings.Repeat("*", n)
-			last4Digits := (*params.PhoneNumber)[n:]
-			return tagPhoneNumber, maskedDigits + last4Digits
 		default:
 			return "destination", "empty"
 		}
