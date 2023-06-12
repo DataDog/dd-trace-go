@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/appsec-internal-go v1.0.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.45.0-rc.1
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.45.0
 	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/go-libddwaf v1.2.0
 	github.com/DataDog/gostackparse v0.5.0
@@ -203,7 +203,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.5.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
