@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -892,6 +893,9 @@ func FinishTime(t time.Time) FinishOption {
 // err to set tags such as the error message, error type and stack trace. It has
 // no effect if the error is nil.
 func WithError(err error) FinishOption {
+	if err == nil || reflect.ValueOf(err).IsNil() {
+		return func(_ *ddtrace.FinishConfig) {}
+	}
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.Error = err
 	}
