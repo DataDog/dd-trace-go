@@ -353,17 +353,43 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 func TestAppendMiddlewareSnsPublish(t *testing.T) {
 	tests := []struct {
 		name               string
+		publishInput       *sns.PublishInput
+		tagKey             string
+		expectedTagValue   string
 		responseStatus     int
 		responseBody       []byte
 		expectedStatusCode int
 	}{
 		{
-			name:               "test mocked sns failure request",
+			name: "test mocked sns failure request",
+			publishInput: &sns.PublishInput{
+				Message:  aws.String("Hello world!"),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
+			},
+			tagKey:             tagTopicName,
+			expectedTagValue:   "MyTopicName",
 			responseStatus:     400,
 			expectedStatusCode: 400,
 		},
 		{
-			name:               "test mocked sns success request",
+			name: "test mocked sns destination topic arn success request",
+			publishInput: &sns.PublishInput{
+				Message:  aws.String("Hello world!"),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
+			},
+			tagKey:             tagTopicName,
+			expectedTagValue:   "MyTopicName",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+		{
+			name: "test mocked sns destination target arn success request",
+			publishInput: &sns.PublishInput{
+				Message:   aws.String("Hello world!"),
+				TargetArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTargetName"),
+			},
+			tagKey:             tagTargetName,
+			expectedTagValue:   "MyTargetName",
 			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
@@ -393,10 +419,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			snsClient := sns.NewFromConfig(awsCfg)
-			snsClient.Publish(context.Background(), &sns.PublishInput{
-				Message:  aws.String("Hello world!"),
-				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
-			})
+			snsClient.Publish(context.Background(), tt.publishInput)
 
 			spans := mt.FinishedSpans()
 
@@ -406,7 +429,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "Publish", s.Tag(tagAWSOperation))
 			assert.Equal(t, "SNS", s.Tag(tagAWSService))
 			assert.Equal(t, "SNS", s.Tag(tagService))
-			assert.Equal(t, "MyTopicName", s.Tag(tagTopicName))
+			assert.Equal(t, tt.expectedTagValue, s.Tag(tt.tagKey))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
