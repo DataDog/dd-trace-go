@@ -52,6 +52,16 @@ func TestNewSpanContextPushError(t *testing.T) {
 }
 
 func TestAsyncSpanRace(t *testing.T) {
+	testAsyncSpanRace(t)
+}
+
+func TestAsyncSpanRacePartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
+	testAsyncSpanRace(t)
+}
+
+func testAsyncSpanRace(t *testing.T) {
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop := startTestTracer(t)
@@ -114,7 +124,6 @@ func TestAsyncSpanRace(t *testing.T) {
 			wg.Wait()
 		})
 	}
-
 	// Test passes if no panic occurs while running.
 }
 
