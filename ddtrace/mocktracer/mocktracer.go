@@ -111,7 +111,7 @@ func (t *mocktracer) OpenSpans() []Span {
 	return spans
 }
 
-func ConvertToEncodableMockSpans(spans []Span) []*encodablemockspan {
+func convertToEncodableMockSpans(spans []Span) []*encodablemockspan {
 	result := make([]*encodablemockspan, len(spans))
 	for i, span := range spans {
 		result[i] = &encodablemockspan{
@@ -135,7 +135,10 @@ func (t *mocktracer) FinishedSpans() []Span {
 	// send finished spans to test agent, along with trace headers and new header with all Datadog env variables at time of trace, ex: X-Datadog-Trace-Env-Variables => "DD_SERVICE=my-service;DD_KEY=VAL, ...."
 	// sendTracesViaPost(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
 
-	sendTraceJson(ConvertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+	if os.Getenv("CI_USE_TEST_AGENT") == "true" {
+		sendTraceJSON(convertToEncodableMockSpans(t.finishedSpans), "127.0.0.1", 9126)
+	}
+
 	return t.finishedSpans
 }
 
@@ -356,9 +359,9 @@ var defaultHeaders = map[string]string{
 // 	return mp, nil
 // }
 
-func sendTraceJson(spans []*encodablemockspan, host string, port int) error {
+func sendTraceJSON(spans []*encodablemockspan, host string, port int) error {
 	// convert spans to JSON
-	jsonTraces, err := MarshalJSON(spans)
+	jsonTraces, err := marshalJSON(spans)
 	if err != nil {
 		return err
 	}
@@ -396,7 +399,7 @@ func sendTraceJson(spans []*encodablemockspan, host string, port int) error {
 	return nil
 }
 
-func MarshalJSON(spans []*encodablemockspan) ([]byte, error) {
+func marshalJSON(spans []*encodablemockspan) ([]byte, error) {
 	traces := make([]encodableMockSpanList, 1)
 
 	for _, s := range spans {
@@ -407,7 +410,11 @@ func MarshalJSON(spans []*encodablemockspan) ([]byte, error) {
 
 		// Check if error is present and set s.error accordingly
 		if s.Tags != nil && s.Tags["error"] != nil {
-			s.Tags["error.message"] = s.Tags["error"].(error).Error()
+			if err, ok := s.Tags["error"].(error); ok {
+				s.Tags["error.message"] = err.Error()
+			} else {
+				s.Tags["error.message"] = fmt.Sprintf("%v", s.Tags["error"])
+			}
 			delete(s.Tags, "error")
 			s.Error = 1
 		} else {

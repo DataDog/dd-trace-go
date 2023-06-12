@@ -41,6 +41,7 @@ jobs:
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
+       CI_USE_TEST_AGENT: true
     services:
       datadog-agent:
         image: datadog/agent:latest
@@ -57,6 +58,18 @@ jobs:
         ports:
           - 8125:8125/udp
           - 8126:8126
+      testagent:
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:latest
+        ports:
+        - "127.0.0.1:9126:9126"
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          DISABLED_CHECKS: trace_content_length
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -87,12 +100,43 @@ jobs:
         if: always()
         shell: bash
         run: bash <(curl -s https://codecov.io/bash)
+      - name: Get Datadog APM Test Agent Logs
+        if: always()
+        shell: bash
+        run: docker logs ${{ job.services.testagent.id }}
+      - name: Get Datadog APM Test Agent Trace Check Results
+        if: always()
+        shell: bash
+        run: |
+          set +e  # Disable exiting from testagent response failure
+          STATUS_RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:9126/info) || true
+          set -e
+          STATUS_RESPONSE_CODE=$(echo "STATUS_RESPONSE" | awk 'END {print $NF}')
+          if [[ $STATUS_RESPONSE_CODE -eq 200 ]]; then
+            echo "APM Test Agent is running. (HTTP 200)"
+          else
+            echo "APM Test Agent is not running and was not used for testing. No checks failed."
+            exit 0
+          fi
+          RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt http://localhost:9126/test/trace_check/failures)
+          RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
+          if [[ $RESPONSE_CODE -eq 200 ]]; then
+            echo "All APM Test Agent Check Traces returned successful! (HTTP 200)"
+          elif [[ $RESPONSE_CODE -eq 404 ]]; then
+            echo "Real APM Agent running in place of TestAgent, no checks to validate!"
+          else
+            echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
+            echo "Failures:"
+            cat response.txt
+            exit 1
+          fi
 
   test-contrib:
     runs-on: ubuntu-latest
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
+       CI_USE_TEST_AGENT: true
     services:
       datadog-agent:
         image: datadog/agent:latest
@@ -109,6 +153,18 @@ jobs:
         ports:
           - 8125:8125/udp
           - 8126:8126
+      testagent:
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:latest
+        ports:
+        - "127.0.0.1:9126:9126"
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          DISABLED_CHECKS: trace_content_length
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
       cassandra:
         image: cassandra:3.7
         env:
@@ -264,3 +320,35 @@ jobs:
               git fetch origin && git checkout v1.0.0 && cd ../..
 
               go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+      - name: Get Datadog APM Test Agent Logs
+        if: always()
+        shell: bash
+        run: docker logs ${{ job.services.testagent.id }}
+
+      - name: Get APM Test Agent Trace Check Results
+        if: always()
+        shell: bash
+        run: |
+          set +e  # Disable exiting from testagent response failure
+          STATUS_RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:9126/info) || true
+          set -e
+          STATUS_RESPONSE_CODE=$(echo "STATUS_RESPONSE" | awk 'END {print $NF}')
+          if [[ $STATUS_RESPONSE_CODE -eq 200 ]]; then
+            echo "APM Test Agent is running. (HTTP 200)"
+          else
+            echo "APM Test Agent is not running and was not used for testing. No checks failed."
+            exit 0
+          fi
+          RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt http://localhost:9126/test/trace_check/failures)
+          RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
+          if [[ $RESPONSE_CODE -eq 200 ]]; then
+            echo "All APM Test Agent Check Traces returned successful! (HTTP 200)"
+          elif [[ $RESPONSE_CODE -eq 404 ]]; then
+            echo "Real APM Agent running in place of TestAgent, no checks to validate!"
+          else
+            echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
+            echo "Failures:"
+            cat response.txt
+            exit 1
+          fi
