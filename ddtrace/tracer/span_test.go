@@ -229,6 +229,28 @@ func TestSpanFinishWithError(t *testing.T) {
 	assert.NotEmpty(span.Meta[ext.ErrorStack])
 }
 
+type MyError struct {
+	msg string
+}
+
+func (e *MyError) Error() string {
+	return e.msg
+}
+
+func TestSpanFinishWithErrorNilCustomError(t *testing.T) {
+	assert := assert.New(t)
+
+	var err error
+	var myError *MyError
+	myError = nil
+	err = myError
+
+	span := newBasicSpan("web.request")
+	span.Finish(WithError(err))
+
+	assert.Equal(int32(0), span.Error)
+}
+
 func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 	assert := assert.New(t)
 

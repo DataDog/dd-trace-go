@@ -424,7 +424,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
-		if cfg.Error != nil {
+		if cfg.Error != nil && !reflect.ValueOf(cfg.Error).IsNil() {
 			s.Lock()
 			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
