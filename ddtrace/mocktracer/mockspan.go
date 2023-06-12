@@ -102,15 +102,6 @@ func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) 
 }
 
 type (
-	// spanList implements msgp.Encodable on top of a slice of spans.
-	//msgp:ignore mockSpanList
-	mockSpanList []*mockspan
-
-	// spanLists implements msgp.Decodable on top of a slice of spanList.
-	// This type is only used in tests.
-	//msgp:ignore mockSpanLists
-	mockSpanLists []mockSpanList
-
 	// encodableMockSpanList implements msgp.Encodable on top of a slice of encodableMockSpans.
 	encodableMockSpanList []*encodablemockspan
 
