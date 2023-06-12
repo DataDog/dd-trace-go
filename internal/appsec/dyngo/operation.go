@@ -272,14 +272,10 @@ type (
 	dataListenerMap         map[reflect.Type][]DataListener
 )
 
-func (l DataListenerSpec[T]) Genericize() DataListener {
+func NewDataListener[T any](f func(data T)) DataListener {
 	return (func(v any) {
-		l(v.(T))
+		f(v.(T))
 	})
-}
-
-func ToData[T any](i interface{}) T {
-	return i.(T)
 }
 
 func (b *dataBroadcaster) add(key reflect.Type, l DataListener) {

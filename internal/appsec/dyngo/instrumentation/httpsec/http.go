@@ -16,7 +16,6 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"reflect"
 	"strings"
@@ -65,11 +64,6 @@ type (
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
-
-	// BodyMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	BodyMonitoringError struct {
-		error
-	}
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
@@ -85,20 +79,17 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 	return ExecuteSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
 }
 
-// NewBodyMonitoringError creates a new body sdk monitoring error that returns `msg` upon calling `Error()`
-func NewBodyMonitoringError(msg string) *BodyMonitoringError {
-	return &BodyMonitoringError{
-		errors.New(msg),
-	}
-}
-
 // ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
 // An error is returned if the body associated to that operation must be blocked
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
+	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
+	op.OnData(reflect.TypeOf(&sharedsec.SDKMonitoringError{}), dyngo.NewDataListener[error](func(e error) {
+		err = e
+	}))
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-	return op.Error
+	return err
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -114,11 +105,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
-		l := dyngo.DataListenerSpec[*sharedsec.Action](func(a *sharedsec.Action) {
-			handler = a.HTTP()
+		var bypassHandler http.Handler
+		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+			bypassHandler = a.HTTP()
 		})
 		listeners := map[reflect.Type]dyngo.DataListener{
-			reflect.TypeOf(&sharedsec.Action{}): l.Genericize(),
+			reflect.TypeOf(&sharedsec.Action{}): l,
 		}
 
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
@@ -139,6 +131,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 			}
+			if bypassHandler != nil {
+				bypassHandler.ServeHTTP(w, r)
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
@@ -146,6 +141,10 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
+		if bypassHandler != nil {
+			handler = bypassHandler
+			bypassHandler = nil
+		}
 		handler.ServeHTTP(w, r)
 
 	})
@@ -203,11 +202,9 @@ type (
 		mu sync.RWMutex
 	}
 
-	// SDKBodyOperation type representing an SDK body. It must be created with
-	// StartSDKBodyOperation() and finished with its Finish() method.
+	// SDKBodyOperation type representing an SDK body
 	SDKBodyOperation struct {
 		dyngo.Operation
-		Error error
 	}
 )
 
@@ -240,13 +237,6 @@ func fromContext(ctx context.Context) *Operation {
 func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
-}
-
-// StartSDKBodyOperation starts the SDKBody operation and emits a start event
-func StartSDKBodyOperation(parent *Operation, args SDKBodyOperationArgs) *SDKBodyOperation {
-	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.StartOperation(op, args)
-	return op
 }
 
 // Finish finishes the SDKBody operation and emits a finish event

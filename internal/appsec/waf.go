@@ -179,11 +179,7 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
 				if len(matches) > 0 {
-					for _, id := range actionIds {
-						if action, ok := handle.actions[id]; ok {
-							op.SendData(action)
-						}
-					}
+					processSDKAction(operation, handle.actions, actionIds)
 					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
@@ -237,9 +233,7 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
 				if len(matches) > 0 {
-					for _, id := range actionIds {
-						op.SendData(handle.actions[id])
-					}
+					processSDKAction(sdkBodyOp, handle.actions, actionIds)
 					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
@@ -318,9 +312,10 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			matches, actionIds := runWAF(wafCtx, values, timeout)
 			if len(matches) > 0 {
 				for _, id := range actionIds {
-					op.SendData(handle.actions[id])
+					if a, ok := handle.actions[id]; ok && a.Blocking() {
+						op.SendData(sharedsec.NewSDKMonitoringError("Request blocked"))
+					}
 				}
-				operation.Error = op.Error
 				addSecurityEvents(op, limiter, matches)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
@@ -536,5 +531,18 @@ type securityEventsAdder interface {
 func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches ...json.RawMessage) {
 	if len(matches) > 0 && limiter.Allow() {
 		op.AddSecurityEvents(matches...)
+	}
+}
+
+func processSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) {
+	for _, id := range actionIds {
+		if action, ok := actions[id]; ok {
+			if op.Parent() != nil {
+				op.Parent().SendData(action) // Send the action so that the handler gets executed
+			}
+			if action.Blocking() { // Send the error to be returned by the SDK
+				op.SendData(sharedsec.NewSDKMonitoringError("Request blocked")) // Send error
+			}
+		}
 	}
 }

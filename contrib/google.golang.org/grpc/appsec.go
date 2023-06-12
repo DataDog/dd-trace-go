@@ -41,12 +41,13 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		}()
 
 		var err error
-		l := dyngo.DataListenerSpec[*sharedsec.Action](func(a *sharedsec.Action) {
+		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
 			err = status.Error(codes.Code(code), e.Error())
+
 		})
-		op.OnData(reflect.TypeOf(err), l.Genericize())
+		op.OnData(reflect.TypeOf(err), l)
 		if err != nil {
 			return nil, err
 		}
@@ -71,12 +72,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			ctx:              ctx,
 		}
 		var err error
-		l := dyngo.DataListenerSpec[*sharedsec.Action](func(a *sharedsec.Action) {
+		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
 			err = status.Error(codes.Code(code), e.Error())
 		})
-		op.OnData(reflect.TypeOf(err), l.Genericize())
+		op.OnData(reflect.TypeOf(err), l)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())

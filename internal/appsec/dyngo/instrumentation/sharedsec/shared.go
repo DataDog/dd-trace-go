@@ -21,7 +21,6 @@ type (
 	// call to ExecuteUserIDOperation
 	UserIDOperation struct {
 		dyngo.Operation
-		Error error
 	}
 	// UserIDOperationArgs is the user ID operation arguments.
 	UserIDOperationArgs struct {
@@ -34,15 +33,15 @@ type (
 	// operation starts.
 	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
 
-	// UserMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	UserMonitoringError struct {
+	// SDKMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
+	SDKMonitoringError struct {
 		error
 	}
 )
 
-// NewUserMonitoringError creates a new user monitoring error that returns `msg` upon calling `Error()`
-func NewUserMonitoringError(msg string) *UserMonitoringError {
-	return &UserMonitoringError{
+// NewSDKMonitoringError creates a new SDK monitoring error that returns `msg` upon calling `Error()`
+func NewSDKMonitoringError(msg string) *SDKMonitoringError {
+	return &SDKMonitoringError{
 		errors.New(msg),
 	}
 }
@@ -52,10 +51,14 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 // ExecuteUserIDOperation starts and finishes the UserID operation by emitting a dyngo start and finish events
 // An error is returned if the user associated to that operation must be blocked
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
+	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
+	op.OnData(reflect.TypeOf(&SDKMonitoringError{}), dyngo.NewDataListener[error](func(e error) {
+		err = e
+	}))
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
-	return op.Error
+	return err
 }
 
 // ListenedType returns the type a OnUserIDOperationStart event listener

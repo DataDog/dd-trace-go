@@ -46,13 +46,18 @@ func init() {
 
 type (
 	Action struct {
-		http http.Handler
-		grpc grpcWrapper
+		http     http.Handler
+		grpc     grpcWrapper
+		blocking bool
 	}
 
 	md          map[string][]string
 	grpcWrapper func(map[string][]string) (uint32, error)
 )
+
+func (a *Action) Blocking() bool {
+	return a.blocking
+}
 
 // NewBlockHandler creates, initializes and returns a new BlockRequestAction
 func NewBlockHandler(status int, template string) http.Handler {
@@ -101,8 +106,9 @@ func newGRPCRedirectHandler(status int, loc string) grpcWrapper {
 
 func NewBlockRequestAction(status int, template string) *Action {
 	return &Action{
-		http: NewBlockHandler(status, template),
-		grpc: newGRPCBlockHandler(status),
+		http:     NewBlockHandler(status, template),
+		grpc:     newGRPCBlockHandler(status),
+		blocking: true,
 	}
 }
 
