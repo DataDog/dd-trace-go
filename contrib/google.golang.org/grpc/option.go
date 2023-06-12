@@ -27,6 +27,7 @@ type config struct {
 	serviceName         string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
+	nonErrorFunc        func(error) bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
@@ -113,6 +114,15 @@ func NonErrorCodes(cs ...codes.Code) InterceptorOption {
 		for _, c := range cs {
 			cfg.nonErrorCodes[c] = true
 		}
+	}
+}
+
+// NonErrorFunc sets a custom function to determine whether an error should not be considered as an error for tracing purposes.
+// This function is evaluated when an error occurs, and if it returns true, the error will not be recorded in the trace.
+// f: A function that takes an error as an argument and returns a boolean indicating whether the error should be ignored.
+func NonErrorFunc(f func(error) bool) InterceptorOption {
+	return func(cfg *config) {
+		cfg.nonErrorFunc = f
 	}
 }
 
