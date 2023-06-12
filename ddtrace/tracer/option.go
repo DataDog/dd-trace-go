@@ -893,7 +893,11 @@ func FinishTime(t time.Time) FinishOption {
 // err to set tags such as the error message, error type and stack trace. It has
 // no effect if the error is nil.
 func WithError(err error) FinishOption {
-	if err == nil || reflect.ValueOf(err).IsNil() {
+	if err == nil {
+		return func(_ *ddtrace.FinishConfig) {}
+	}
+	v := reflect.ValueOf(err)
+	if !v.IsValid() || v.IsNil() {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	return func(cfg *ddtrace.FinishConfig) {
