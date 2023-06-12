@@ -43,6 +43,7 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		h.cfg.serviceName,
 		spanOpts...,
 	)
+	ctx = context.WithValue(ctx, fullMethodNameKey{}, rti.FullMethodName)
 	return ctx
 }
 
@@ -52,8 +53,16 @@ func (h *serverStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 	if !ok {
 		return
 	}
+	val := ctx.Value(fullMethodNameKey{})
+	if val == nil {
+		return
+	}
+	fullMethod, ok := val.(string)
+	if !ok {
+		return
+	}
 	if v, ok := rs.(*stats.End); ok {
-		finishWithError(span, v.Error, h.cfg)
+		finishWithError(span, v.Error, fullMethod, h.cfg)
 	}
 }
 

@@ -59,7 +59,15 @@ func (h *clientStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 			span.SetTag(ext.TargetPort, port)
 		}
 	case *stats.End:
-		finishWithError(span, rs.Error, h.cfg)
+		val := ctx.Value(fullMethodNameKey{})
+		if val == nil {
+			return
+		}
+		fullMethod, ok := val.(string)
+		if !ok {
+			return
+		}
+		finishWithError(span, rs.Error, fullMethod, h.cfg)
 	}
 }
 
