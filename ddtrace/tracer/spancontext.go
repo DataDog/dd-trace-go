@@ -244,7 +244,7 @@ type trace struct {
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
 	priority         *float64          // sampling priority
-	locked           bool              // specifies if the sampling priority can be altered
+	locked           bool              // indicates if the sampling priority is locked and thus cannot be changed
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
@@ -360,9 +360,9 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// setTraceTags sets all "trace level" tags on the provided span
+// setTraceTagsLocked sets all "trace level" tags on the provided span.
 // t must already be locked.
-func (t *trace) setTraceTags(s *span) {
+func (t *trace) setTraceTagsLocked(s *span) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -389,6 +389,8 @@ func (t *trace) finishedOne(s *span) {
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
+		//
+		// TODO: consider performing a partial flush in this scenario
 		return
 	}
 	t.finished++
@@ -396,8 +398,13 @@ func (t *trace) finishedOne(s *span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		s.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
+	}
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		// could this ever happen? Should we log an internal error or something?
+		return
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
 		// first span in chunk finished, lock down the tags
@@ -405,47 +412,45 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
-	}
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
-		return
-	}
-	// we have a tracer that can receive completed traces.
-	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
-	if tr.config.partialFlushMinSpans > 0 && t.finished >= tr.config.partialFlushMinSpans && len(t.spans) != t.finished {
-		log.Debug("Partial flush triggered with %d finished spans", t.finished)
-		//TODO: is there a metric we should bump when doing this?
-		finishedSpans := make([]*span, 0, t.finished)
-		leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
-		for _, s2 := range t.spans {
-			if s2.finished {
-				s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
-				finishedSpans = append(finishedSpans, s2)
-			} else {
-				leftoverSpans = append(leftoverSpans, s2)
-			}
+		if hn := tr.hostname(); hn != "" {
+			s.setMeta(keyTracerHostname, hn)
 		}
-		t.spans = leftoverSpans
-		t.finished = 0
-		tr.pushTrace(&flushableTraceChunk{
-			spans:    finishedSpans,
+		t.setTraceTagsLocked(s)
+	}
+
+	if len(t.spans) == t.finished { // perform a full flush of all spans
+		t.finishChunk(tr, &chunk{
+			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
-	}
-	if len(t.spans) != t.finished {
+		t.spans = nil
 		return
 	}
-	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
-	}()
-	//TODO: should this be a tag on the trace? Should this be sent for partial chunks? (probably)
-	if hn := tr.hostname(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
+
+	if tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans {
+		return // The trace hasn't completed and partial flushing will not occur
 	}
-	tr.pushTrace(&flushableTraceChunk{
-		spans:    t.spans,
+	log.Debug("Partial flush triggered with %d finished spans", t.finished)
+	//TODO: is there a metric we should bump when doing this?
+	finishedSpans := make([]*span, 0, t.finished)
+	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+	for _, s2 := range t.spans {
+		if s2.finished {
+			s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
+			finishedSpans = append(finishedSpans, s2)
+		} else {
+			leftoverSpans = append(leftoverSpans, s2)
+		}
+	}
+	t.finishChunk(tr, &chunk{
+		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+	t.spans = leftoverSpans
+}
+
+func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	t.finished = 0 // important, because a buffer can be used for several flushes
+	tr.pushChunk(ch)
 }
