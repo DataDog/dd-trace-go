@@ -897,6 +897,8 @@ func WithError(err error) FinishOption {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	v := reflect.ValueOf(err)
+	// Here be dragons: https://go.dev/doc/faq#nil_error
+	// https://github.com/DataDog/dd-trace-go/issues/2029
 	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
