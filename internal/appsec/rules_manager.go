@@ -68,8 +68,9 @@ type (
 		ID         string `json:"id"`
 		Type       string `json:"type"`
 		Parameters struct {
-			StatusCode int    `json:"status_code"`
-			StrParam   string `json:"-"`
+			StatusCode     int    `json:"status_code"`
+			GRPCStatusCode int    `json:"grpc_status_code,omitempty"`
+			StrParam       string `json:"-"`
 		} `json:"parameters,omitempty"`
 	}
 )

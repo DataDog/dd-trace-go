@@ -104,7 +104,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	switch e.Type {
 	case "block_request":
-		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.StrParam)
+		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.GRPCStatusCode, e.Parameters.StrParam)
 	case "redirect_request":
 		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.StrParam)
 	default:
@@ -115,7 +115,7 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	handle, err := waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 	actions := map[string]*sharedsec.Action{
-		"block": sharedsec.NewBlockRequestAction(403, "auto"),
+		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
 	}
 
 	for _, entry := range rules.Actions {
@@ -302,7 +302,7 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+		op.On(sharedsec.OnUserIDOperationStart(func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]interface{}{}
 			for addr := range addresses {
 				if addr == userIDAddr {
@@ -313,7 +313,7 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			if len(matches) > 0 {
 				for _, id := range actionIds {
 					if a, ok := handle.actions[id]; ok && a.Blocking() {
-						op.SendData(sharedsec.NewSDKMonitoringError("Request blocked"))
+						userIDOp.SendData(a.SDKMonitoringError())
 					}
 				}
 				addSecurityEvents(op, limiter, matches)

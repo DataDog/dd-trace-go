@@ -8,7 +8,6 @@ package sharedsec
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -35,14 +34,24 @@ type (
 
 	// SDKMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
 	SDKMonitoringError struct {
-		error
+		msg        string
+		grpcStatus uint32
 	}
 )
 
+func (e *SDKMonitoringError) GRPCStatus() uint32 {
+	return e.grpcStatus
+}
+
+func (e *SDKMonitoringError) String() string {
+	return e.msg
+}
+
 // NewSDKMonitoringError creates a new SDK monitoring error that returns `msg` upon calling `Error()`
-func NewSDKMonitoringError(msg string) *SDKMonitoringError {
+func NewSDKMonitoringError(msg string, grpcStatus uint32) *SDKMonitoringError {
 	return &SDKMonitoringError{
-		errors.New(msg),
+		msg:        msg,
+		grpcStatus: grpcStatus,
 	}
 }
 

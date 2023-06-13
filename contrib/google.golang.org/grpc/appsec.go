@@ -28,9 +28,17 @@ import (
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
+		var err error
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		op := grpcsec.NewHandlerOperation(nil)
+		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			op.AddTag(instrumentation.BlockedRequestTag, true)
+			err = status.Error(codes.Code(code), e.Error())
+
+		}))
+		ctx = grpcsec.StartHandlerOperation(op, ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -40,18 +48,9 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			setAppSecEventsTags(ctx, span, events)
 		}()
 
-		var err error
-		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
-			code, e := a.GRPC()(md)
-			op.AddTag(instrumentation.BlockedRequestTag, true)
-			err = status.Error(codes.Code(code), e.Error())
-
-		})
-		op.OnData(reflect.TypeOf(err), l)
 		if err != nil {
 			return nil, err
 		}
-
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
 		return handler(ctx, req)
 	}
@@ -61,23 +60,25 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
+		var err error
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		op := grpcsec.NewHandlerOperation(nil)
+		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			op.AddTag(instrumentation.BlockedRequestTag, true)
+			err = status.Error(codes.Code(code), e.Error())
+
+		}))
+		ctx = grpcsec.StartHandlerOperation(op, ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
+		dyngo.StartOperation(op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,
 			ctx:              ctx,
 		}
-		var err error
-		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
-			code, e := a.GRPC()(md)
-			op.AddTag(instrumentation.BlockedRequestTag, true)
-			err = status.Error(codes.Code(code), e.Error())
-		})
-		op.OnData(reflect.TypeOf(err), l)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())

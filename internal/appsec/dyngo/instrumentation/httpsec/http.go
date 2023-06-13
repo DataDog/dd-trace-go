@@ -106,15 +106,15 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		instrumentation.SetStringTags(span, ipTags)
 
 		var bypassHandler http.Handler
-		l := dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
-			bypassHandler = a.HTTP()
-		})
-		listeners := map[reflect.Type]dyngo.DataListener{
-			reflect.TypeOf(&sharedsec.Action{}): l,
-		}
-
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, listeners)
+		op := NewOperation(nil)
+		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+			bypassHandler = a.HTTP()
+			if a.Blocking() {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
+			}
+		}))
+		ctx := StartOperation(op, r.Context(), args)
 		r = r.WithContext(ctx)
 
 		defer func() {
@@ -208,21 +208,21 @@ type (
 	}
 )
 
+func NewOperation(parent dyngo.Operation) *Operation {
+	return &Operation{
+		Operation:  dyngo.NewOperation(parent),
+		TagsHolder: instrumentation.NewTagsHolder(),
+	}
+}
+
 // StartOperation starts an HTTP handler operation, along with the given
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners map[reflect.Type]dyngo.DataListener) (context.Context, *Operation) {
-	op := &Operation{
-		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: instrumentation.NewTagsHolder(),
-	}
-	for t, l := range listeners {
-		op.OnData(t, l)
-	}
+func StartOperation(op *Operation, ctx context.Context, args HandlerOperationArgs) context.Context {
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
-	return newCtx, op
+	return newCtx
 }
 
 // fromContext returns the Operation object stored in the context, if any

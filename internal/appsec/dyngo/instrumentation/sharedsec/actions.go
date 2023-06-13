@@ -104,10 +104,10 @@ func newGRPCRedirectHandler(status int, loc string) grpcWrapper {
 	}
 }
 
-func NewBlockRequestAction(status int, template string) *Action {
+func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
 	return &Action{
-		http:     NewBlockHandler(status, template),
-		grpc:     newGRPCBlockHandler(status),
+		http:     NewBlockHandler(httpStatus, template),
+		grpc:     newGRPCBlockHandler(grpcStatus),
 		blocking: true,
 	}
 }
