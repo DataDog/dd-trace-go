@@ -247,9 +247,6 @@ func TestSpanFinishPriority(t *testing.T) {
 }
 
 func TestSpanPeerService(t *testing.T) {
-	tracer, transport, flush, stop := startTestTracer(t)
-	defer stop()
-
 	testCases := []struct {
 		name                        string
 		spanOpts                    []StartSpanOption
@@ -424,6 +421,9 @@ func TestSpanPeerService(t *testing.T) {
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
+			tracer, transport, flush, stop := startTestTracer(t)
+			defer stop()
+
 			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
 			tracer.config.peerServiceMappings = tc.peerServiceMappings
 

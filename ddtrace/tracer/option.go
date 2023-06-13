@@ -639,8 +639,9 @@ func WithServiceMapping(from, to string) StartOption {
 	}
 }
 
-// WithPeerServiceDefaultsEnabled allows to enable or disable defaults calculation for peer.service.
-func WithPeerServiceDefaultsEnabled(enabled bool) StartOption {
+// WithPeerServiceDefaults sets default calculation for peer.service.
+func WithPeerServiceDefaults(enabled bool) StartOption {
+	//TODO: add link to public docs
 	return func(c *config) {
 		c.peerServiceDefaultsEnabled = enabled
 	}

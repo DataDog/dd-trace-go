@@ -401,12 +401,12 @@ func (t *trace) finishedOne(s *span) {
 			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 		}
 	}
-	defer func() {
-		if len(t.spans) == t.finished {
+	if len(t.spans) == t.finished {
+		defer func() {
 			t.spans = nil
 			t.finished = 0 // important, because a buffer can be used for several flushes
-		}
-	}()
+		}()
+	}
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
 		return
@@ -463,6 +463,7 @@ func setPeerServiceFromSource(s *span) string {
 	}
 	var sources []string
 	switch {
+	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case has("aws_service"):
 		sources = []string{
 			"queuename",

@@ -539,7 +539,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		t.Run("options", func(t *testing.T) {
 			c := newConfig()
-			WithPeerServiceDefaultsEnabled(true)(c)
+			WithPeerServiceDefaults(true)(c)
 			WithPeerServiceMapping("old", "new")(c)
 			WithPeerServiceMapping("old2", "new2")(c)
 			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
