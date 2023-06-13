@@ -48,6 +48,20 @@ func TestConfig(t *testing.T) {
 				queryString: true,
 			},
 		},
+		{
+			name: "enable-set-internal-server-error",
+			env:  map[string]string{envSetInternalServerErrorDisabled: ""},
+			cfg: config{
+				setInternalServerError: true,
+			},
+		},
+		{
+			name: "disable-set-internal-server-error",
+			env:  map[string]string{envSetInternalServerErrorDisabled: "true"},
+			cfg: config{
+				setInternalServerError: false,
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer cleanEnv()()
