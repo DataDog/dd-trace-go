@@ -24,7 +24,7 @@ const (
 type Option func(*config)
 
 type config struct {
-	serviceName         string
+	serviceName         func() string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
@@ -60,16 +60,20 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultClientServiceName,
-		namingschema.WithOverrideV0(defaultClientServiceName),
-	).GetName()
+	cfg.serviceName = func() string {
+		return namingschema.NewDefaultServiceName(
+			defaultClientServiceName,
+			namingschema.WithOverrideV0(defaultClientServiceName),
+		).GetName()
+	}
 	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+	cfg.serviceName = func() string {
+		return namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+	}
 	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
 	defaults(cfg)
 }
@@ -77,7 +81,7 @@ func serverDefaults(cfg *config) {
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.serviceName = func() string { return name }
 	}
 }
 

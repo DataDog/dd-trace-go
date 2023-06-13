@@ -46,7 +46,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serviceName,
+			ss.cfg.serviceName(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -68,7 +68,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.ctx,
 			ss.method,
 			"grpc.message",
-			ss.cfg.serviceName,
+			ss.cfg.serviceName(),
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -97,7 +97,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 				ctx,
 				info.FullMethod,
 				cfg.spanName,
-				cfg.serviceName,
+				cfg.serviceName(),
 				cfg.startSpanOptions(tracer.Measured(),
 					tracer.Tag(ext.Component, componentName),
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
@@ -145,7 +145,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			ctx,
 			info.FullMethod,
 			cfg.spanName,
-			cfg.serviceName,
+			cfg.serviceName(),
 			cfg.startSpanOptions(tracer.Measured(),
 				tracer.Tag(ext.Component, componentName),
 				tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
