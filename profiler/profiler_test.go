@@ -580,3 +580,27 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	}
 	t.Errorf("did not see an execution trace")
 }
+
+func TestExecutionTraceEnabledFlag(t *testing.T) {
+	for _, status := range []string{"true", "false"} {
+		t.Run(status, func(t *testing.T) {
+			got := make(chan profileMeta)
+			server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
+			err := Start(
+				WithHTTPClient(client),
+				WithProfileTypes(),
+				WithPeriod(1*time.Second),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			m := <-got
+			t.Log(m.event.Attachments, m.tags)
+			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
+		})
+	}
+}

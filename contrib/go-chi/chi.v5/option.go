@@ -24,6 +24,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
+	resourceNamer      func(r *http.Request) string
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -39,6 +40,8 @@ func defaults(cfg *config) {
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
+	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
+	cfg.resourceNamer = nil
 }
 
 // WithServiceName sets the given service name for the router.
@@ -103,5 +106,13 @@ func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 func WithModifyResourceName(fn func(resourceName string) string) Option {
 	return func(cfg *config) {
 		cfg.modifyResourceName = fn
+	}
+}
+
+// WithResourceNamer specifies a function to use for determining the resource
+// name of the span.
+func WithResourceNamer(fn func(r *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = fn
 	}
 }

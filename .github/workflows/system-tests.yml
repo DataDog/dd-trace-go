@@ -36,7 +36,7 @@ jobs:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
-          - APPSEC_IP_BLOCKING
+          - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
