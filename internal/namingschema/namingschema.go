@@ -81,8 +81,8 @@ func GetRemoveIntegrationServiceNamesEnabled() bool {
 
 // SetRemoveIntegrationServiceNamesEnabled sets the value of the RemoveIntegrationServiceNames setting used for this application.
 func SetRemoveIntegrationServiceNamesEnabled(v bool) {
-	rmIntegrationServiceNamesMu.RLock()
-	defer rmIntegrationServiceNamesMu.RUnlock()
+	rmIntegrationServiceNamesMu.Lock()
+	defer rmIntegrationServiceNamesMu.Unlock()
 	rmIntegrationServiceNames = v
 }
 
