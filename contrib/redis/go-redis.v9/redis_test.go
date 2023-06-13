@@ -7,7 +7,7 @@ package redis
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -30,11 +30,11 @@ const debug = false
 var _ redis.Hook = (*datadogHook)(nil)
 
 func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
-	if !ok {
-		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
-		os.Exit(0)
-	}
+	//_, ok := os.LookupEnv("INTEGRATION")
+	//if !ok {
+	//	fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
+	//	os.Exit(0)
+	//}
 	os.Exit(m.Run())
 }
 
@@ -514,6 +514,36 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("1", span.Tag("redis.pipeline_length"))
+		assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		opts := &redis.Options{Addr: "127.0.0.1:6379"}
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		errCheckFn := func(err error) bool {
+			return err != nil && !errors.Is(err, context.Canceled)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		client := NewClient(opts, WithServiceName("my-redis"), WithErrorCheck(errCheckFn))
+		_, err := client.Get(ctx, "test_key").Result()
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+
+		assert.Equal(context.Canceled, err)
+		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal("redis.command", span.OperationName())
+		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+		assert.Equal("6379", span.Tag(ext.TargetPort))
+		assert.Equal("get test_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("redis/go-redis.v9", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
