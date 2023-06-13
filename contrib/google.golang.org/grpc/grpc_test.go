@@ -1260,9 +1260,6 @@ func TestRegressionServiceNames(t *testing.T) {
 			},
 		},
 	}
-	tracer.Start(tracer.WithHTTPClient(httpClient))
-	defer tracer.Stop()
-
 	serverInterceptors := []grpc.ServerOption{
 		grpc.UnaryInterceptor(UnaryServerInterceptor()),
 		grpc.StreamInterceptor(StreamServerInterceptor()),
@@ -1275,6 +1272,10 @@ func TestRegressionServiceNames(t *testing.T) {
 	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
 	require.NoError(t, err)
 	defer rig.Close()
+
+	// call tracer.Start after integration is initialized, to reproduce the issue
+	tracer.Start(tracer.WithHTTPClient(httpClient))
+	defer tracer.Stop()
 
 	_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
 	require.NoError(t, err)
