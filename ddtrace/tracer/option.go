@@ -897,7 +897,7 @@ func WithError(err error) FinishOption {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	v := reflect.ValueOf(err)
-	if !v.IsValid() || v.IsNil() {
+	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	return func(cfg *ddtrace.FinishConfig) {
