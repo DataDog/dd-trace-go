@@ -36,8 +36,8 @@ var (
 	sv   Version
 	svMu sync.RWMutex
 
-	rmIntegrationServiceNames   bool
-	rmIntegrationServiceNamesMu sync.RWMutex
+	useGlobalServiceName   bool
+	useGlobalServiceNameMu sync.RWMutex
 )
 
 // ParseVersion attempts to parse the version string.
@@ -72,18 +72,18 @@ func SetDefaultVersion() Version {
 	return defaultSchemaVersion
 }
 
-// GetRemoveIntegrationServiceNamesEnabled returns the value of the RemoveIntegrationServiceNames setting for this application.
-func GetRemoveIntegrationServiceNamesEnabled() bool {
-	rmIntegrationServiceNamesMu.RLock()
-	defer rmIntegrationServiceNamesMu.RUnlock()
-	return rmIntegrationServiceNames
+// UseGlobalServiceName returns the value of the RemoveIntegrationServiceNames setting for this application.
+func UseGlobalServiceName() bool {
+	useGlobalServiceNameMu.RLock()
+	defer useGlobalServiceNameMu.RUnlock()
+	return useGlobalServiceName
 }
 
-// SetRemoveIntegrationServiceNamesEnabled sets the value of the RemoveIntegrationServiceNames setting used for this application.
-func SetRemoveIntegrationServiceNamesEnabled(v bool) {
-	rmIntegrationServiceNamesMu.Lock()
-	defer rmIntegrationServiceNamesMu.Unlock()
-	rmIntegrationServiceNames = v
+// SetUseGlobalServiceName sets the value of the RemoveIntegrationServiceNames setting used for this application.
+func SetUseGlobalServiceName(v bool) {
+	useGlobalServiceNameMu.Lock()
+	defer useGlobalServiceNameMu.Unlock()
+	useGlobalServiceName = v
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.

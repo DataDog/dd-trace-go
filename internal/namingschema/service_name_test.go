@@ -19,71 +19,71 @@ func TestNewDefaultServiceName(t *testing.T) {
 	optOverrideV0 := namingschema.WithOverrideV0("override-v0")
 
 	testCases := []struct {
-		name           string
-		schemaVersion  namingschema.Version
-		ddService      string
-		beforeTestHook func(t *testing.T) func()
-		opts           []namingschema.Option
-		want           string
+		name          string
+		schemaVersion namingschema.Version
+		ddService     string
+		setup         func() func()
+		opts          []namingschema.Option
+		want          string
 	}{
 		{
-			name:          "schema v0",
+			name:          "v0",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "",
 			opts:          nil,
 			want:          "default",
 		},
 		{
-			name:          "schema v0 with DD_SERVICE",
+			name:          "v0-DD_SERVICE",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			opts:          nil,
 			want:          "dd-service",
 		},
 		{
-			name:          "schema v0 with override",
+			name:          "v0-override",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
 			opts:          []namingschema.Option{optOverrideV0},
 			want:          "override-v0",
 		},
 		{
-			name:          "schema v1",
+			name:          "v1",
 			schemaVersion: namingschema.SchemaV1,
 			ddService:     "",
 			opts:          nil,
 			want:          "default",
 		},
 		{
-			name:          "schema v1 with DD_SERVICE",
+			name:          "v1-DD_SERVICE",
 			schemaVersion: namingschema.SchemaV1,
 			ddService:     "dd-service",
 			opts:          nil,
 			want:          "dd-service",
 		},
 		{
-			name:          "schema v0 without rm integration service names",
+			name:          "v0-UseGlobalServiceName",
 			schemaVersion: namingschema.SchemaV0,
 			ddService:     "dd-service",
-			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetRemoveIntegrationServiceNamesEnabled()
-				namingschema.SetRemoveIntegrationServiceNamesEnabled(false)
+			setup: func() func() {
+				prev := namingschema.UseGlobalServiceName()
+				namingschema.SetUseGlobalServiceName(true)
 				return func() {
-					namingschema.SetRemoveIntegrationServiceNamesEnabled(prev)
+					namingschema.SetUseGlobalServiceName(prev)
 				}
 			},
 			opts: []namingschema.Option{optOverrideV0},
-			want: "override-v0",
+			want: "dd-service",
 		},
 		{
-			name:          "schema v0 with rm integration service names",
-			schemaVersion: namingschema.SchemaV0,
+			name:          "v0-UseGlobalServiceName",
+			schemaVersion: namingschema.SchemaV1,
 			ddService:     "dd-service",
-			beforeTestHook: func(_ *testing.T) func() {
-				prev := namingschema.GetRemoveIntegrationServiceNamesEnabled()
-				namingschema.SetRemoveIntegrationServiceNamesEnabled(true)
+			setup: func() func() {
+				prev := namingschema.UseGlobalServiceName()
+				namingschema.SetUseGlobalServiceName(true)
 				return func() {
-					namingschema.SetRemoveIntegrationServiceNamesEnabled(prev)
+					namingschema.SetUseGlobalServiceName(prev)
 				}
 			},
 			opts: []namingschema.Option{optOverrideV0},
@@ -96,8 +96,8 @@ func TestNewDefaultServiceName(t *testing.T) {
 			defer namingschema.SetVersion(version)
 			namingschema.SetVersion(tc.schemaVersion)
 
-			if tc.beforeTestHook != nil {
-				cleanup := tc.beforeTestHook(t)
+			if tc.setup != nil {
+				cleanup := tc.setup()
 				defer cleanup()
 			}
 			if tc.ddService != "" {
