@@ -1017,3 +1017,63 @@ func repeat(s string, n int) []string {
 	}
 	return r
 }
+
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     []Option
+		errExist bool
+	}{
+		{
+			name:     "with defaults",
+			opts:     nil,
+			errExist: true,
+		},
+		{
+			name: "with errCheck true",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return true
+			})},
+			errExist: true,
+		}, {
+			name: "with errCheck false",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return false
+			})},
+			errExist: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(400)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg, tt.opts...)
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+			s := spans[0]
+			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
+		})
+	}
+}
