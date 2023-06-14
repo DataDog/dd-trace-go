@@ -21,21 +21,14 @@ import (
 const defaultServiceName = "mux.router"
 
 type routerConfig struct {
-	serviceName     string
-	spanOpts        []ddtrace.StartSpanOption // additional span options to be applied
-	finishOpts      []ddtrace.FinishOption    // span finish options to be applied
-	analyticsRate   float64
-	resourceNamer   func(*Router, *http.Request) string
-	ignoreRequest   func(*http.Request) bool
-	queryParams     bool
-	headerTagsLocal bool
-}
-
-var headerTagsMap = make(map[string]string)
-
-func headerTag(header string) (tag string, ok bool) {
-	tag, ok = headerTagsMap[header]
-	return tag, ok
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
+	analyticsRate float64
+	resourceNamer func(*Router, *http.Request) string
+	ignoreRequest func(*http.Request) bool
+	queryParams   bool
+	headerTags    func(string) (string, bool)
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -59,7 +52,7 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headerTagsLocal = false
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.serviceName = "mux.router"
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
@@ -137,12 +130,16 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) RouterOption {
+	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *routerConfig) {
-		cfg.headerTagsLocal = true
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }
 

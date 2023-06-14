@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -50,11 +49,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			if cfg.headerTagsLocal {
-				opts = append(opts, httptrace.HeaderTagsFromRequest(r, headerTag))
-			} else {
-				opts = append(opts, httptrace.HeaderTagsFromRequest(r, globalconfig.HeaderTag))
-			}
+			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {

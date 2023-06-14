@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -108,11 +107,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-	if r.config.headerTagsLocal {
-		spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, headerTag))
-	} else {
-		spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, globalconfig.HeaderTag))
-	}
+	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:     r.config.serviceName,

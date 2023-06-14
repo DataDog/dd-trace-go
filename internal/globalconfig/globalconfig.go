@@ -65,6 +65,7 @@ func RuntimeID() string {
 	return cfg.runtimeID
 }
 
+// HeaderTag returns the tag assigned to the given header
 func HeaderTag(header string) (tag string, ok bool) {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
@@ -79,12 +80,15 @@ func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
-// TODO: can we remove this? If not, probably put it behind a read lock
+// HeaderTagsLen returns the length of globalconfig's headersAsTags map
 func HeaderTagsLen() int {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
 	return len(cfg.headersAsTags)
 }
 
-// TODO: can we remove this?
+// ClearHeaderTags assigns headersAsTags to a new, empty map
+// It's essentially a helper function to ensure every time WithHeaderTags is called, it rewrites the config.
 func ClearHeaderTags() {
 	cfg.headersAsTags = make(map[string]string)
 }

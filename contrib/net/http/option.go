@@ -21,20 +21,13 @@ import (
 const defaultServiceName = "http.router"
 
 type config struct {
-	serviceName     string
-	analyticsRate   float64
-	spanOpts        []ddtrace.StartSpanOption
-	finishOpts      []ddtrace.FinishOption
-	ignoreRequest   func(*http.Request) bool
-	resourceNamer   func(*http.Request) string
-	headerTagsLocal bool
-}
-
-var headerTagsMap = make(map[string]string)
-
-func headerTag(header string) (tag string, ok bool) {
-	tag, ok = headerTagsMap[header]
-	return tag, ok
+	serviceName   string
+	analyticsRate float64
+	spanOpts      []ddtrace.StartSpanOption
+	finishOpts    []ddtrace.FinishOption
+	ignoreRequest func(*http.Request) bool
+	resourceNamer func(*http.Request) string
+	headerTags    func(string) (string, bool)
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -50,7 +43,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = "http.router"
-	cfg.headerTagsLocal = false
+	cfg.headerTags = globalconfig.HeaderTag
 	if svc := globalconfig.ServiceName(); svc != "" {
 		cfg.serviceName = svc
 	}
@@ -83,12 +76,16 @@ func WithServiceName(name string) MuxOption {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *config) {
-		cfg.headerTagsLocal = true
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }
 

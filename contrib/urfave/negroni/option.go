@@ -20,19 +20,12 @@ import (
 const defaultServiceName = "negroni.router"
 
 type config struct {
-	serviceName     string
-	spanOpts        []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate   float64
-	isStatusError   func(statusCode int) bool
-	resourceNamer   func(r *http.Request) string
-	headerTagsLocal bool
-}
-
-var headerTagsMap = make(map[string]string)
-
-func headerTag(header string) (tag string, ok bool) {
-	tag, ok = headerTagsMap[header]
-	return tag, ok
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate float64
+	isStatusError func(statusCode int) bool
+	resourceNamer func(r *http.Request) string
+	headerTags    func(string) (string, bool)
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -45,7 +38,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headerTagsLocal = false
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 }
@@ -117,11 +110,15 @@ func defaultResourceNamer(_ *http.Request) string {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *config) {
-		cfg.headerTagsLocal = true
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }

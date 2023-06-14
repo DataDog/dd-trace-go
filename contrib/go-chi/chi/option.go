@@ -21,20 +21,13 @@ import (
 const defaultServiceName = "chi.router"
 
 type config struct {
-	serviceName     string
-	spanOpts        []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate   float64
-	isStatusError   func(statusCode int) bool
-	ignoreRequest   func(r *http.Request) bool
-	resourceNamer   func(r *http.Request) string
-	headerTagsLocal bool
-}
-
-var headerTagsMap = make(map[string]string)
-
-func headerTag(header string) (tag string, ok bool) {
-	tag, ok = headerTagsMap[header]
-	return tag, ok
+	serviceName   string
+	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate float64
+	isStatusError func(statusCode int) bool
+	ignoreRequest func(r *http.Request) bool
+	resourceNamer func(r *http.Request) string
+	headerTags    func(string) (string, bool)
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -47,7 +40,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headerTagsLocal = false
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(r *http.Request) string {
@@ -115,12 +108,16 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
 func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *config) {
-		cfg.headerTagsLocal = true
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }
 

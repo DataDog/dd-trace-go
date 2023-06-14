@@ -75,7 +75,7 @@ func WithAnalyticsRate(rate float64) Option {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // In the case of special headers such as Cookies, the entire value will be transmitted as a tag,
-// i.e. there is no way to sub-select a single part of a header value.
+// i.e. there is no way to sub-select a header value.
 func WithHeaderTags(headers []string) Option {
 	headerAsTags := make(map[string]string)
 	for _, h := range headers {

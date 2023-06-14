@@ -14,7 +14,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -34,11 +33,7 @@ type DatadogMiddleware struct {
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	opts := append(m.cfg.spanOpts, tracer.ServiceName(m.cfg.serviceName), tracer.ResourceName(m.cfg.resourceNamer(r)))
-	if m.cfg.headerTagsLocal {
-		opts = append(opts, httptrace.HeaderTagsFromRequest(r, headerTag))
-	} else {
-		opts = append(opts, httptrace.HeaderTagsFromRequest(r, globalconfig.HeaderTag))
-	}
+	opts = append(opts, httptrace.HeaderTagsFromRequest(r, m.cfg.headerTags))
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
