@@ -72,14 +72,14 @@ func SetDefaultVersion() Version {
 	return defaultSchemaVersion
 }
 
-// UseGlobalServiceName returns the value of the RemoveIntegrationServiceNames setting for this application.
+// UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
 func UseGlobalServiceName() bool {
 	useGlobalServiceNameMu.RLock()
 	defer useGlobalServiceNameMu.RUnlock()
 	return useGlobalServiceName
 }
 
-// SetUseGlobalServiceName sets the value of the RemoveIntegrationServiceNames setting used for this application.
+// SetUseGlobalServiceName sets the value of the useGlobalServiceName setting used for this application.
 func SetUseGlobalServiceName(v bool) {
 	useGlobalServiceNameMu.Lock()
 	defer useGlobalServiceNameMu.Unlock()
