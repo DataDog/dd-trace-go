@@ -7,7 +7,6 @@ package sharedsec
 
 import (
 	"context"
-	_ "embed"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -32,23 +31,25 @@ type (
 	// operation starts.
 	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
 
-	// SDKMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	SDKMonitoringError struct {
+	// MonitoringError wraps an error interface to decorate it with additional appsec data, if needed
+	MonitoringError struct {
 		error
 	}
 )
 
-func (e *SDKMonitoringError) Error() string {
+// Error implements the error interface
+func (e *MonitoringError) Error() string {
 	return e.error.Error()
 }
 
-func (e *SDKMonitoringError) Unpack() error {
+// Unpack returns the wrapped error
+func (e *MonitoringError) Unpack() error {
 	return e.error
 }
 
-// NewSDKMonitoringError creates a new SDK monitoring error that returns `msg` upon calling `Error()`
-func NewSDKMonitoringError(e error) *SDKMonitoringError {
-	return &SDKMonitoringError{
+// NewMonitoringError creates and returns a new monitoring error
+func NewMonitoringError(e error) *MonitoringError {
+	return &MonitoringError{
 		error: e,
 	}
 }
@@ -60,9 +61,9 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	op.OnData(reflect.TypeOf((*SDKMonitoringError)(nil)), dyngo.NewDataListener[*SDKMonitoringError](func(e *SDKMonitoringError) {
-		err = e.Unpack()
-	}))
+	OnData(op, func(e *MonitoringError) {
+		err = e.Unpack() // Unpack the real underlying error
+	})
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err
@@ -88,4 +89,9 @@ func MonitorUser(ctx context.Context, userID string) error {
 	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 	return nil
 
+}
+
+// OnData is a facilitator that wraps a dyngo.Operation.OnData() call
+func OnData[T any](op dyngo.Operation, f func(T)) {
+	op.OnData(reflect.TypeOf((*T)(nil)).Elem(), dyngo.NewDataListener(f))
 }

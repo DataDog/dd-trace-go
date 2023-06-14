@@ -58,7 +58,8 @@ func TestUsage(t *testing.T) {
 				}))
 			}))
 
-			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), grpcsec.HandlerOperationArgs{}, localRootOp)
+			rpcOp := grpcsec.NewHandlerOperation(localRootOp)
+			grpcsec.StartHandlerOperation(context.Background(), rpcOp, grpcsec.HandlerOperationArgs{})
 
 			for i := 1; i <= expectedRecvOperation; i++ {
 				recvOp := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, rpcOp)

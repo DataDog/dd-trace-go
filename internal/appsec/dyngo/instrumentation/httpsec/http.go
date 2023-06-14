@@ -84,9 +84,9 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
 	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	op.OnData(reflect.TypeOf(&sharedsec.SDKMonitoringError{}), dyngo.NewDataListener[error](func(e error) {
+	sharedsec.OnData(op, func(e *sharedsec.MonitoringError) {
 		err = e
-	}))
+	})
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
 	return err
@@ -108,13 +108,13 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
 		op := NewOperation(nil)
-		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+		sharedsec.OnData(op, func(a *sharedsec.Action) {
 			bypassHandler = a.HTTP()
 			if a.Blocking() {
 				op.AddTag(instrumentation.BlockedRequestTag, true)
 			}
-		}))
-		ctx := StartOperation(op, r.Context(), args)
+		})
+		ctx := StartOperation(r.Context(), op, args)
 		r = r.WithContext(ctx)
 
 		defer func() {
@@ -208,6 +208,7 @@ type (
 	}
 )
 
+// NewOperation creates and returns a new Operation
 func NewOperation(parent dyngo.Operation) *Operation {
 	return &Operation{
 		Operation:  dyngo.NewOperation(parent),
@@ -219,7 +220,7 @@ func NewOperation(parent dyngo.Operation) *Operation {
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(op *Operation, ctx context.Context, args HandlerOperationArgs) context.Context {
+func StartOperation(ctx context.Context, op *Operation, args HandlerOperationArgs) context.Context {
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx

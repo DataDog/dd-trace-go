@@ -218,12 +218,10 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
-			for _, id := range actionIds {
-				op.SendData(handle.actions[id])
-			}
+			interrupt := processActions(op, handle.actions, actionIds)
 			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
-			if len(actionIds) > 0 {
+			if interrupt {
 				wafCtx.Close()
 				return
 			}
@@ -314,8 +312,7 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 				for _, id := range actionIds {
 					if a, ok := handle.actions[id]; ok && a.Blocking() {
 						code, err := a.GRPC()(map[string][]string{})
-						err = grpcsec.NewSDKMonitoringError(err.Error(), code)
-						userIDOp.SendData(sharedsec.NewSDKMonitoringError(err))
+						userIDOp.SendData(grpcsec.NewMonitoringError(err.Error(), code))
 					}
 				}
 				addSecurityEvents(op, limiter, matches)
@@ -333,12 +330,10 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 		matches, actionIds := runWAF(wafCtx, values, timeout)
 		if len(matches) > 0 {
-			for _, id := range actionIds {
-				op.SendData(handle.actions[id])
-			}
+			interrupt := processActions(op, handle.actions, actionIds)
 			addSecurityEvents(op, limiter, matches)
 			log.Debug("appsec: WAF detected an attack before executing the request")
-			if len(actionIds) > 0 {
+			if interrupt {
 				wafCtx.Close()
 				return
 			}
@@ -536,6 +531,22 @@ func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches ...json.
 	}
 }
 
+// processActions sends the relevant actions to the operation's data listener.
+// It returns true if at least one of those actions require interrupting the request handler
+func processActions(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) (interrupt bool) {
+	for _, id := range actionIds {
+		if a, ok := actions[id]; ok {
+			op.SendData(actions[id])
+			interrupt = interrupt || a.Blocking()
+		}
+	}
+	return interrupt
+}
+
+// processSDKAction does two things:
+//   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
+//   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
+//     their handler.
 func processSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) {
 	for _, id := range actionIds {
 		if action, ok := actions[id]; ok {
@@ -543,7 +554,7 @@ func processSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, 
 				op.Parent().SendData(action) // Send the action so that the handler gets executed
 			}
 			if action.Blocking() { // Send the error to be returned by the SDK
-				op.SendData(sharedsec.NewSDKMonitoringError(errors.New("Request blocked"))) // Send error
+				op.SendData(sharedsec.NewMonitoringError(errors.New("Request blocked"))) // Send error
 			}
 		}
 	}

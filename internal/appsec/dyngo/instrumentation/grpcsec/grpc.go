@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -70,27 +71,33 @@ type (
 		Message interface{}
 	}
 
-	SDKMonitoringError struct {
+	// MonitoringError is used to vehicle a gRPC error that also embeds a request status code
+	MonitoringError struct {
 		msg    string
 		status uint32
 	}
 )
 
-func NewSDKMonitoringError(msg string, code uint32) *SDKMonitoringError {
-	return &SDKMonitoringError{
+// NewMonitoringError creates and returns a new gRPC monitoring error, wrapped under
+// sharedesec.MonitoringError
+func NewMonitoringError(msg string, code uint32) *sharedsec.MonitoringError {
+	return sharedsec.NewMonitoringError(&MonitoringError{
 		msg:    msg,
 		status: code,
-	}
+	})
 }
 
-func (e *SDKMonitoringError) GRPCStatus() uint32 {
+// GRPCStatus returns the gRPC status code embedded in the error
+func (e *MonitoringError) GRPCStatus() uint32 {
 	return e.status
 }
 
-func (e *SDKMonitoringError) Error() string {
+// Error implements the error interface
+func (e *MonitoringError) Error() string {
 	return e.msg
 }
 
+// NewHandlerOperation returns a new HandlerOperation
 func NewHandlerOperation(parent dyngo.Operation) *HandlerOperation {
 	return &HandlerOperation{
 		Operation:  dyngo.NewOperation(parent),
@@ -104,7 +111,7 @@ func NewHandlerOperation(parent dyngo.Operation) *HandlerOperation {
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(op *HandlerOperation, ctx context.Context, args HandlerOperationArgs) context.Context {
+func StartHandlerOperation(ctx context.Context, op *HandlerOperation, args HandlerOperationArgs) context.Context {
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx

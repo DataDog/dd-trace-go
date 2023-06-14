@@ -7,21 +7,20 @@ package grpc
 
 import (
 	"encoding/json"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+
+	"github.com/DataDog/appsec-internal-go/netip"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"reflect"
-
-	"github.com/DataDog/appsec-internal-go/netip"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
@@ -32,13 +31,12 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 		op := grpcsec.NewHandlerOperation(nil)
-		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+		sharedsec.OnData(op, func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
 			err = status.Error(codes.Code(code), e.Error())
-
-		}))
-		ctx = grpcsec.StartHandlerOperation(op, ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
+		})
+		ctx = grpcsec.StartHandlerOperation(ctx, op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
@@ -66,13 +64,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		clientIP := setClientIP(ctx, span, md)
 
 		op := grpcsec.NewHandlerOperation(nil)
-		op.OnData(reflect.TypeOf(&sharedsec.Action{}), dyngo.NewDataListener[*sharedsec.Action](func(a *sharedsec.Action) {
+		sharedsec.OnData(op, func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			op.AddTag(instrumentation.BlockedRequestTag, true)
 			err = status.Error(codes.Code(code), e.Error())
-
-		}))
-		ctx = grpcsec.StartHandlerOperation(op, ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
+		})
+		ctx = grpcsec.StartHandlerOperation(ctx, op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		dyngo.StartOperation(op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		stream = appsecServerStream{
 			ServerStream:     stream,
