@@ -240,6 +240,10 @@ func newConfig(opts ...StartOption) *config {
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
+	// These default service names are always disabled for v1 onwards.
+	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+
 	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
 	c.peerServiceDefaultsEnabled = true
 	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
@@ -609,6 +613,14 @@ func WithService(name string) StartOption {
 	}
 }
 
+// WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
+// This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
+func WithGlobalServiceName(enabled bool) StartOption {
+	return func(_ *config) {
+		namingschema.SetUseGlobalServiceName(enabled)
+	}
+}
+
 // WithAgentAddr sets the address where the agent is located. The default is
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
@@ -641,7 +653,7 @@ func WithServiceMapping(from, to string) StartOption {
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
 func WithPeerServiceDefaults(enabled bool) StartOption {
-	//TODO: add link to public docs
+	// TODO: add link to public docs
 	return func(c *config) {
 		c.peerServiceDefaultsEnabled = enabled
 	}
