@@ -378,6 +378,9 @@ func (s *appsecFixtureServer) StreamPing(stream Fixture_StreamPingServer) (err e
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
 	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+		if e, ok := err.(pappsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
 		return err
 	}
 	return s.s.StreamPing(stream)
@@ -386,6 +389,9 @@ func (s *appsecFixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*Fi
 	md, _ := metadata.FromIncomingContext(ctx)
 	ids := md.Get("user-id")
 	if err := pappsec.SetUser(ctx, ids[0]); err != nil {
+		if e, ok := err.(pappsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
 		return nil, err
 	}
 

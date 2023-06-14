@@ -313,7 +313,9 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			if len(matches) > 0 {
 				for _, id := range actionIds {
 					if a, ok := handle.actions[id]; ok && a.Blocking() {
-						userIDOp.SendData(a.SDKMonitoringError())
+						code, err := a.GRPC()(map[string][]string{})
+						err = grpcsec.NewSDKMonitoringError(err.Error(), code)
+						userIDOp.SendData(sharedsec.NewSDKMonitoringError(err))
 					}
 				}
 				addSecurityEvents(op, limiter, matches)
@@ -541,7 +543,7 @@ func processSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, 
 				op.Parent().SendData(action) // Send the action so that the handler gets executed
 			}
 			if action.Blocking() { // Send the error to be returned by the SDK
-				op.SendData(sharedsec.NewSDKMonitoringError("Request blocked")) // Send error
+				op.SendData(sharedsec.NewSDKMonitoringError(errors.New("Request blocked"))) // Send error
 			}
 		}
 	}

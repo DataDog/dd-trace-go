@@ -69,7 +69,27 @@ type (
 		// Corresponds to the address `grpc.server.request.message`.
 		Message interface{}
 	}
+
+	SDKMonitoringError struct {
+		msg    string
+		status uint32
+	}
 )
+
+func NewSDKMonitoringError(msg string, code uint32) *SDKMonitoringError {
+	return &SDKMonitoringError{
+		msg:    msg,
+		status: code,
+	}
+}
+
+func (e *SDKMonitoringError) GRPCStatus() uint32 {
+	return e.status
+}
+
+func (e *SDKMonitoringError) Error() string {
+	return e.msg
+}
 
 func NewHandlerOperation(parent dyngo.Operation) *HandlerOperation {
 	return &HandlerOperation{

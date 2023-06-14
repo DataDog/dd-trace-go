@@ -25,6 +25,11 @@ import (
 
 var appsecDisabledLog sync.Once
 
+type MonitoringError interface {
+	GRPCStatus() uint32
+	Error() string
+}
+
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
 // HTTP request body and returns if the HTTP request is suspicious and configured to be blocked.
 // The given context must be the HTTP request context as returned

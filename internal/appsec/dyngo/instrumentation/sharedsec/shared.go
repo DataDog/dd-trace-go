@@ -34,24 +34,22 @@ type (
 
 	// SDKMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
 	SDKMonitoringError struct {
-		msg        string
-		grpcStatus uint32
+		error
 	}
 )
 
-func (e *SDKMonitoringError) GRPCStatus() uint32 {
-	return e.grpcStatus
+func (e *SDKMonitoringError) Error() string {
+	return e.error.Error()
 }
 
-func (e *SDKMonitoringError) String() string {
-	return e.msg
+func (e *SDKMonitoringError) Unpack() error {
+	return e.error
 }
 
 // NewSDKMonitoringError creates a new SDK monitoring error that returns `msg` upon calling `Error()`
-func NewSDKMonitoringError(msg string, grpcStatus uint32) *SDKMonitoringError {
+func NewSDKMonitoringError(e error) *SDKMonitoringError {
 	return &SDKMonitoringError{
-		msg:        msg,
-		grpcStatus: grpcStatus,
+		error: e,
 	}
 }
 
@@ -62,8 +60,8 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	op.OnData(reflect.TypeOf(&SDKMonitoringError{}), dyngo.NewDataListener[error](func(e error) {
-		err = e
+	op.OnData(reflect.TypeOf((*SDKMonitoringError)(nil)), dyngo.NewDataListener[*SDKMonitoringError](func(e *SDKMonitoringError) {
+		err = e.Unpack()
 	}))
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
