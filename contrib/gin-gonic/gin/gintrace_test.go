@@ -161,7 +161,7 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Contains(span.Tag(ext.ResourceName), "GET /user/:id")
-	assert.Equal("133", span.Tag(ext.HTTPCode)) // Will be fixed by https://github.com/gin-gonic/gin/pull/2627 once merged and released
+	assert.Equal("142", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
