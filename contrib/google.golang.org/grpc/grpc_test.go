@@ -6,12 +6,19 @@
 package grpc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/tinylib/msgp/msgp"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
@@ -1202,4 +1209,83 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})
+}
+
+type roundTripper struct {
+	assertSpanFromRequest func(r *http.Request)
+}
+
+func (rt *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	rt.assertSpanFromRequest(r)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestRegressionServiceNames(t *testing.T) {
+	t.Setenv("DD_SERVICE", "some-dd-service")
+
+	spansFound := make(chan bool, 1)
+
+	httpClient := &http.Client{
+		Transport: &roundTripper{
+			assertSpanFromRequest: func(r *http.Request) {
+				if r.URL.Path != "/v0.4/traces" {
+					return
+				}
+				req := r.Clone(context.Background())
+				defer req.Body.Close()
+
+				buf, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+
+				var payload bytes.Buffer
+				_, err = msgp.UnmarshalAsJSON(&payload, buf)
+				require.NoError(t, err)
+
+				var trace [][]map[string]interface{}
+				err = json.Unmarshal(payload.Bytes(), &trace)
+				require.NoError(t, err)
+
+				if len(trace) == 0 {
+					return
+				}
+				require.Len(t, trace, 2)
+				s0 := trace[0][0]
+				s1 := trace[1][0]
+
+				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "some-dd-service", s0["service"])
+
+				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "grpc.client", s1["service"])
+				close(spansFound)
+			},
+		},
+	}
+	serverInterceptors := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+	}
+	clientInterceptors := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor()),
+	}
+	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+	require.NoError(t, err)
+	defer rig.Close()
+
+	// call tracer.Start after integration is initialized, to reproduce the issue
+	tracer.Start(tracer.WithHTTPClient(httpClient))
+	defer tracer.Stop()
+
+	_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	select {
+	case <-spansFound:
+		return
+
+	case <-time.After(5 * time.Second):
+		assert.Fail(t, "spans not found")
+	}
 }
