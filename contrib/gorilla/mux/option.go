@@ -53,10 +53,6 @@ func defaults(cfg *routerConfig) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.headerTags = globalconfig.HeaderTag
-	cfg.serviceName = "mux.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
