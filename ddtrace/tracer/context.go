@@ -43,6 +43,7 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	// we will add at least 1, at most 2 items
 	optsLocal := make([]StartSpanOption, len(opts), len(opts)+2)
 	copy(optsLocal, opts)
+
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
