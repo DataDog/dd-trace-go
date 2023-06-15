@@ -1219,7 +1219,8 @@ func (rt *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-func TestRegressionServiceNames(t *testing.T) {
+func TestIssue2050(t *testing.T) {
+	// https://github.com/DataDog/dd-trace-go/issues/2050
 	t.Setenv("DD_SERVICE", "some-dd-service")
 
 	spansFound := make(chan bool, 1)
