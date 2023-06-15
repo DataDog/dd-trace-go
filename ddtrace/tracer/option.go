@@ -244,6 +244,9 @@ func newConfig(opts ...StartOption) *config {
 			c.partialFlushMinSpans = partialFlushMinSpansDefault
 		}
 	}
+	// TODO(partialFlush): consider logging a warning here if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
+	// if it's explicitly set.
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
