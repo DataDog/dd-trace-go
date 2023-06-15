@@ -78,7 +78,7 @@ func serverDefaults(cfg *config) {
 		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
 		cfg.serviceName = func() string { return sn }
 	} else {
-		log.Warn("No service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name per span. " +
+		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
 			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
 		ns := namingschema.NewDefaultServiceName(defaultServerServiceName)
 		cfg.serviceName = ns.GetName
