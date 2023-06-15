@@ -22,10 +22,6 @@ func NewDefaultServiceName(fallbackName string, opts ...Option) *Schema {
 	})
 }
 
-func HasConfiguredServiceName() bool {
-	return globalconfig.ServiceName() != ""
-}
-
 type standardServiceNameSchema struct {
 	fallbackName         string
 	useGlobalServiceName bool
