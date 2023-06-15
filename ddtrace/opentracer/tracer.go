@@ -44,6 +44,8 @@ func New(opts ...tracer.StartOption) opentracing.Tracer {
 
 var _ opentracing.Tracer = (*opentracer)(nil)
 
+var telemetryTags = []string{"opentracing"}
+
 // opentracer implements opentracing.Tracer on top of ddtrace.Tracer.
 type opentracer struct{ ddtrace.Tracer }
 
@@ -122,5 +124,3 @@ func translateError(err error) error {
 		return err
 	}
 }
-
-var telemetryTags = []string{"opentracing"}

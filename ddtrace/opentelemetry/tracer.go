@@ -19,6 +19,8 @@ import (
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
+var telemetryTags = []string{"otel"}
+
 type oteltracer struct {
 	provider *TracerProvider
 	ddtrace.Tracer
@@ -95,5 +97,3 @@ type noopOteltracer struct{}
 func (n *noopOteltracer) Start(_ context.Context, _ string, _ ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	return nil, nil
 }
-
-var telemetryTags = []string{"otel"}
