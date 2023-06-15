@@ -35,7 +35,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceTracers]; ok {
-			if initTime, ok := metrics["tracer_init_time"]; ok {
+			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
 				return
 			}

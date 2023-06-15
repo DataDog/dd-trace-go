@@ -197,7 +197,7 @@ func TestSpanTelemetry(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 	_, _ = tr.Start(context.Background(), "otel.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.spans_created", 1.0, *new([]string), true)
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "span_created", 1.0, []string{"otel"}, true)
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
