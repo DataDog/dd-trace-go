@@ -153,3 +153,51 @@ func TestNewBlockRequestAction(t *testing.T) {
 		}
 	})
 }
+
+func TestNewRedirectRequestAction(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/redirect1", NewRedirectRequestAction(http.StatusFound, "/redirect2").HTTP().ServeHTTP)
+	mux.HandleFunc("/redirect2", NewRedirectRequestAction(http.StatusFound, "/redirected").HTTP().ServeHTTP)
+	mux.HandleFunc("/redirected", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK) // Shouldn't matter since we write 302 before arriving here
+		w.Write([]byte("Redirected"))
+	})
+	srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		require.GreaterOrEqual(t, len(via), 1)
+		require.Equal(t, "/redirect1", via[0].URL.Path)
+		if len(via) == 2 {
+			require.Equal(t, "/redirect2", via[1].URL.Path)
+			require.NotNil(t, via[1].Response)
+			require.Equal(t, http.StatusFound, via[1].Response.StatusCode)
+		}
+		return nil
+	}
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "no-redirect",
+			url:  "/redirected",
+		},
+		{
+			name: "redirect",
+			url:  "/redirect1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest("POST", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			body, err := io.ReadAll(res.Body)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			require.Equal(t, "Redirected", string(body))
+		})
+	}
+
+}
