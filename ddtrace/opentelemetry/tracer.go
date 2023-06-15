@@ -19,7 +19,7 @@ import (
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
-var telemetryTags = []string{"otel"}
+var telemetryTags = []string{`"integration_name":"otel"`}
 
 type oteltracer struct {
 	provider *TracerProvider
