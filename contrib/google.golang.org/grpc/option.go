@@ -72,7 +72,7 @@ func clientDefaults(cfg *config) {
 }
 
 func serverDefaults(cfg *config) {
-	// We check for a configured service name, so we don't break users who are accidentally creating their server
+	// We check for a configured service name, so we don't break users who are incorrectly creating their server
 	// before the call `tracer.Start()`
 	if globalconfig.ServiceName() != "" {
 		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
