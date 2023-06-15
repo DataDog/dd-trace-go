@@ -128,7 +128,7 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
-// Cookies will not be sub-selected. If the header Cookie is activated, then all cookies will be transmitted.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) RouterOption {
 	headerTagsMap := make(map[string]string)
 	for _, h := range headers {

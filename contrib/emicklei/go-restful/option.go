@@ -74,8 +74,7 @@ func WithAnalyticsRate(rate float64) Option {
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
-// In the case of special headers such as Cookies, the entire value will be transmitted as a tag,
-// i.e. there is no way to sub-select a header value.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
 	headerAsTags := make(map[string]string)
 	for _, h := range headers {

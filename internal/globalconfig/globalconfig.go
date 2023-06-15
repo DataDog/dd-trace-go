@@ -80,7 +80,7 @@ func SetHeaderTag(from, to string) {
 	cfg.headersAsTags[from] = to
 }
 
-// HeaderTagsLen returns the length of globalconfig's headersAsTags map
+// HeaderTagsLen returns the length of globalconfig's headersAsTags map, 0 for empty map
 func HeaderTagsLen() int {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
@@ -88,7 +88,7 @@ func HeaderTagsLen() int {
 }
 
 // ClearHeaderTags assigns headersAsTags to a new, empty map
-// It's essentially a helper function to ensure every time WithHeaderTags is called, it rewrites the config.
+// It is invoked when WithHeaderTags is called, in order to overwrite the config
 func ClearHeaderTags() {
 	cfg.headersAsTags = make(map[string]string)
 }

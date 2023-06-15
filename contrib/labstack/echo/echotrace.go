@@ -20,7 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -55,12 +54,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			if cfg.headerTagsLocal {
-				opts = append(opts, httptrace.HeaderTagsFromRequest(request, headerTag))
-			} else {
-				opts = append(opts, httptrace.HeaderTagsFromRequest(request, globalconfig.HeaderTag))
-			}
-
+			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
