@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestHeaderTags(t *testing.T) {
+func TestHeaderTag(t *testing.T) {
 	SetHeaderTag("header1", "tag1")
 	SetHeaderTag("header2", "tag2")
 
