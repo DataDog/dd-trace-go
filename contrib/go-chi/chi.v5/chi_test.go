@@ -563,3 +563,49 @@ func TestNamingSchema(t *testing.T) {
 	})
 	namingschematest.NewHTTPServerTest(genSpans, "chi.router")(t)
 }
+
+func TestCustomResourceName(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware(WithServiceName("service-name"), WithResourceNamer(func(r *http.Request) string {
+		return "custom-resource-name"
+	})))
+	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+		_, ok := tracer.SpanFromContext(r.Context())
+		assert.True(ok)
+	})
+
+	r := httptest.NewRequest("GET", "/user/123", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, r)
+	spans := mt.FinishedSpans()
+	require.Equal(t, "/user/{id}", spans[0].Tag(ext.HTTPRoute))
+	require.Equal(t, "service-name", spans[0].Tag(ext.ServiceName))
+	require.Equal(t, "custom-resource-name", spans[0].Tag(ext.ResourceName))
+}
+
+func TestUnknownResourceName(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware(WithServiceName("service-name")))
+	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+		_, ok := tracer.SpanFromContext(r.Context())
+		assert.True(ok)
+	})
+
+	r := httptest.NewRequest("GET", "/other/123", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, r)
+	spans := mt.FinishedSpans()
+	require.Equal(t, "", spans[0].Tag(ext.HTTPRoute))
+	require.Equal(t, "service-name", spans[0].Tag(ext.ServiceName))
+	require.Equal(t, "GET unknown", spans[0].Tag(ext.ResourceName))
+}
