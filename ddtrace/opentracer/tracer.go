@@ -65,7 +65,7 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	for k, v := range sso.Tags {
 		opts = append(opts, tracer.Tag(k, v))
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, []string{"opentracing"}, true)
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	return &span{
 		Span:       t.Tracer.StartSpan(operationName, opts...),
 		opentracer: t,
@@ -122,3 +122,5 @@ func translateError(err error) error {
 		return err
 	}
 }
+
+var telemetryTags = []string{"opentracing"}
