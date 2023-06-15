@@ -360,9 +360,8 @@ func (t *trace) push(sp *span) {
 	}
 }
 
-// setTraceTagsLocked sets all "trace level" tags on the provided span.
-// t must already be locked.
-func (t *trace) setTraceTagsLocked(s *span) {
+// setTraceTags sets all "trace level" tags on the provided span.
+func (t *trace) setTraceTags(s *span, tr *tracer) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -375,47 +374,45 @@ func (t *trace) setTraceTagsLocked(s *span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
+	}
 }
 
 // finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
+// The provided span must be locked.
 func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
 		//
-		// TODO: consider performing a partial flush in this scenario
+		// TODO(partialFlush): should we do a partial flush in this scenario?
 		return
 	}
 	t.finished++
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return
+	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		s.setMetric(keySamplingPriority, *t.priority)
+		// TODO(partialFlush): This is probably a bug, since the sampling priority should be in every chunk.
+		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
-		// could this ever happen? Should we log an internal error or something?
-		return
-	}
+
 	if len(t.spans) > 0 && s == t.spans[0] {
-		// first span in chunk finished, lock down the tags
-		//
-		// TODO(barbayar): make sure this doesn't happen in vain when switching to
-		// the new wire format. We won't need to set the tags on the first span
-		// in the chunk there.
-		if hn := tr.hostname(); hn != "" {
-			s.setMeta(keyTracerHostname, hn)
-		}
-		t.setTraceTagsLocked(s)
+		t.setTraceTags(s, tr)
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
@@ -427,7 +424,8 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 
-	if tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans {
+	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
+	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
@@ -436,11 +434,16 @@ func (t *trace) finishedOne(s *span) {
 	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
 		if s2.finished {
-			s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
 			finishedSpans = append(finishedSpans, s2)
 		} else {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
+	}
+	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+	if s != t.spans[0] {
+		// add trace-level tags on the first finished span in the chunk,
+		// even though it's not the first absolute span in the chunk
+		t.setTraceTags(finishedSpans[0], tr)
 	}
 	t.finishChunk(tr, &chunk{
 		spans:    finishedSpans,
@@ -451,6 +454,6 @@ func (t *trace) finishedOne(s *span) {
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
-	t.finished = 0 // important, because a buffer can be used for several flushes
 	tr.pushChunk(ch)
+	t.finished = 0 // important, because a buffer can be used for several flushes
 }
