@@ -9,6 +9,7 @@ import (
 	"time"
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/gomemcache/memcache"
+	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -25,11 +26,13 @@ type Integration interface {
 func TestIntegrations(t *testing.T) {
 	ths := []Integration{
 		memcachetest.New(),
+		dnstest.New(),
 	}
 	for _, th := range ths {
 		name := th.Name()
 		t.Run(name, func(t *testing.T) {
 			sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
+			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 			t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
 
