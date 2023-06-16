@@ -49,7 +49,7 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives flushableTraceChunk with spans  to be added to the payload.
+	// out receives chunk with spans to be added to the payload.
 	out chan *chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
