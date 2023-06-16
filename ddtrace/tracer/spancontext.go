@@ -428,7 +428,7 @@ func (t *trace) finishedOne(s *span) {
 		}
 		t.spans = leftoverSpans
 		t.finished = 0
-		tr.pushTrace(&flushableTraceChunk{
+		tr.pushChunk(&chunk{
 			spans:    finishedSpans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
@@ -444,7 +444,7 @@ func (t *trace) finishedOne(s *span) {
 	if hn := tr.hostname(); hn != "" {
 		s.setMeta(keyTracerHostname, hn)
 	}
-	tr.pushTrace(&flushableTraceChunk{
+	tr.pushChunk(&chunk{
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
