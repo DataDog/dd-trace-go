@@ -388,9 +388,9 @@ func TestCassandraContactPoints(t *testing.T) {
 
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
-	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	err = q.Iter().Close()
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -425,10 +425,10 @@ func TestWithWrapOptions(t *testing.T) {
 
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
-	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 	q = q.WithWrapOptions(WithResourceName("test-resource"))
 	err = q.Iter().Close()
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)

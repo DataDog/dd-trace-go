@@ -28,6 +28,7 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
+// ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
 type ClusterConfig struct {
 	*gocql.ClusterConfig
 	hosts []string
@@ -43,12 +44,14 @@ func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
 	}
 }
 
+// Session embeds gocql.Session and keeps information relevant to tracing.
 type Session struct {
 	*gocql.Session
 	hosts []string
 	opts  []WrapOption
 }
 
+// CreateSession calls the underlying gocql.ClusterConfig's CreateSession method and returns a new Session augmented with tracing.
 func (c *ClusterConfig) CreateSession() (*Session, error) {
 	s, err := c.ClusterConfig.CreateSession()
 	if err != nil {
@@ -68,6 +71,7 @@ type Query struct {
 	ctx context.Context
 }
 
+// Query calls the underlying gocql.Session's Query method and returns a new Query augmented with tracing.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	q := s.Session.Query(stmt, values...)
 	return wrapQuery(q, s.hosts, s.opts...)
@@ -80,6 +84,7 @@ type Batch struct {
 	ctx context.Context
 }
 
+// NewBatch calls the underlying gocql.Session's NewBatch method and returns a new Batch augmented with tracing.
 func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
 	b := s.Session.NewBatch(typ)
 	return wrapBatch(b, s.hosts, s.opts...)
@@ -134,7 +139,7 @@ func (tq *Query) WithContext(ctx context.Context) *Query {
 	return tq
 }
 
-// WithWrapOptions allows to specify options specific to the query.
+// WithWrapOptions specifies options specific to the query.
 func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
 	for _, fn := range opts {
 		fn(tq.params.config)
@@ -310,7 +315,7 @@ func (tb *Batch) WithContext(ctx context.Context) *Batch {
 	return tb
 }
 
-// WithWrapOptions allows to specify options specific to the batch.
+// WithWrapOptions specifies options specific to the batch.
 func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
 	for _, fn := range opts {
 		fn(tb.params.config)
