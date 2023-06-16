@@ -429,7 +429,7 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 
-	doPartialFlush := t.finished >= tr.config.partialFlushMinSpans
+	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
 	}

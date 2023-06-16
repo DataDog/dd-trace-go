@@ -155,6 +155,7 @@ func TestSpanTracePushOne(t *testing.T) {
 }
 
 func TestPartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 	tracer, transport, flush, stop := startTestTracer(t)
 	defer stop()
