@@ -444,6 +444,8 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
+	// TODO(partialFlush): This isn't going to work if the root span hasn't
+	// finished yet. (And in fact can panic in some situations, as repro'd by TestSpanTracePushSeveral)
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
