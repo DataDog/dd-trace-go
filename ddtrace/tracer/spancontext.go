@@ -394,6 +394,8 @@ func (t *trace) finishedOne(s *span) {
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
+		//
+		// TODO(partialFlush): should we do a partial flush in this scenario?
 		return
 	}
 	t.finished++
@@ -408,6 +410,7 @@ func (t *trace) finishedOne(s *span) {
 		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
+
 	if len(t.spans) > 0 && s == t.spans[0] {
 		// first span in chunk finished, lock down the tags
 		//
@@ -441,8 +444,6 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
-	// TODO(partialFlush): This isn't going to work if the root span hasn't
-	// finished yet. (And in fact can panic in some situations, as repro'd by TestSpanTracePushSeveral)
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags

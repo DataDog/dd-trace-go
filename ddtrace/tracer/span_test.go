@@ -514,6 +514,7 @@ func TestSpanError(t *testing.T) {
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
+	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
