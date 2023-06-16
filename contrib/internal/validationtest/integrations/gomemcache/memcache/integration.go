@@ -10,7 +10,7 @@ import (
 )
 
 type Integration struct {
-	cl       *memcachetrace.Client
+	client   *memcachetrace.Client
 	numSpans int
 }
 
@@ -22,12 +22,14 @@ func (i *Integration) Name() string {
 	return "contrib/bradfitz/gomemcache/memcache"
 }
 
-func (i *Integration) Init(_ *testing.T) {
-	i.cl = memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"))
+func (i *Integration) Init(_ *testing.T) func() {
+	i.client = memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"))
+	return func() {}
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
-	err := i.cl.Set(&memcache.Item{Key: "myKey", Value: []byte("myValue")})
+	t.Helper()
+	err := i.client.Set(&memcache.Item{Key: "myKey", Value: []byte("myValue")})
 	require.NoError(t, err)
 	i.numSpans++
 }

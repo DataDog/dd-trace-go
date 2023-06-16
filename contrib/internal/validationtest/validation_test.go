@@ -16,20 +16,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Integration is an interface that should be implemented by integrations (packages under the contrib/ folder) in
+// order to be tested.
 type Integration interface {
+	// Name returns name of the integration (usually the import path starting from /contrib).
 	Name() string
-	Init(t *testing.T)
+
+	// Init initializes the integration (start a server in the background, initialize the client, etc.).
+	// It should return a cleanup function that will be executed after the test finishes.
+	// It should also call t.Helper() before making any assertions.
+	Init(t *testing.T) func()
+
+	// GenSpans performs any operation(s) from the integration that generate spans.
+	// It should call t.Helper() before making any assertions.
 	GenSpans(t *testing.T)
+
+	// NumSpans returns the number of spans that should have been generated during the test.
 	NumSpans() int
 }
 
 func TestIntegrations(t *testing.T) {
-	ths := []Integration{
+	integrations := []Integration{
 		memcachetest.New(),
 		dnstest.New(),
 	}
-	for _, th := range ths {
-		name := th.Name()
+	for _, ig := range integrations {
+		name := ig.Name()
 		t.Run(name, func(t *testing.T) {
 			sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
 			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
@@ -39,18 +51,21 @@ func TestIntegrations(t *testing.T) {
 			tracer.Start(tracer.WithAgentAddr("localhost:9126"))
 			defer tracer.Stop()
 
-			th.Init(t)
-			th.GenSpans(t)
+			cleanup := ig.Init(t)
+			defer cleanup()
+
+			ig.GenSpans(t)
 
 			tracer.Flush()
 
-			assertNumSpans(t, sessionToken, th.NumSpans())
+			assertNumSpans(t, sessionToken, ig.NumSpans())
 			checkFailures(t, sessionToken)
 		})
 	}
 }
 
-func assertNumSpans(t *testing.T, sessionToken string, numSpans int) {
+func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
+	t.Helper()
 	run := func() bool {
 		req, err := http.NewRequest("GET", "http://localhost:9126/test/session/traces", nil)
 		require.NoError(t, err)
@@ -68,11 +83,14 @@ func assertNumSpans(t *testing.T, sessionToken string, numSpans int) {
 		var traces [][]map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &traces))
 
-		if len(traces) == 0 {
-			return false
+		receivedSpans := 0
+		for _, traceSpans := range traces {
+			receivedSpans += len(traceSpans)
 		}
-		assert.Len(t, traces[0], numSpans)
-		return true
+		if receivedSpans > wantSpans {
+			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
+		}
+		return receivedSpans == wantSpans
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -94,6 +112,7 @@ func assertNumSpans(t *testing.T, sessionToken string, numSpans int) {
 }
 
 func checkFailures(t *testing.T, sessionToken string) {
+	t.Helper()
 	req, err := http.NewRequest("GET", "http://localhost:9126/test/trace_check/failures", nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
