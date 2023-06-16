@@ -57,18 +57,6 @@ jobs:
         ports:
           - 8125:8125/udp
           - 8126:8126
-      testagent:
-        image: williamconti549/dd-apm-test-agent:service-naming
-        ports:
-        - "127.0.0.1:9126:9126"
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          DISABLED_CHECKS: trace_content_length,meta_tracer_version_header
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -121,6 +109,18 @@ jobs:
         ports:
           - 8125:8125/udp
           - 8126:8126
+      testagent:
+        image: williamconti549/dd-apm-test-agent:service-naming
+        ports:
+          - 9126:9126
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          DISABLED_CHECKS: trace_content_length,meta_tracer_version_header
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
       cassandra:
         image: cassandra:3.7
         env:
@@ -252,6 +252,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash)
+
+      - name: Get Datadog APM Test Agent Logs
+        if: always()
+        shell: bash
+        run: docker logs ${{ job.services.testagent.id }}
 
       - name: Testing outlier google.golang.org/api
         run: |
