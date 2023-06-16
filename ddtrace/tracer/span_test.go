@@ -412,6 +412,7 @@ func TestSpanStart(t *testing.T) {
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
+	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -479,6 +480,7 @@ func TestSpanSetMetric(t *testing.T) {
 }
 
 func TestSpanError(t *testing.T) {
+	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
 	internal.SetGlobalTracer(tracer)
@@ -492,6 +494,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal("Something wrong", span.Meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
 	assert.NotEqual("", span.Meta[ext.ErrorStack])
+	span.Finish()
 
 	// operating on a finished span is a no-op
 	span = tracer.newRootSpan("flask.request", "flask", "/")
@@ -501,6 +504,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(0), span.Error)
 
 	// '+1' is `_dd.p.dm`
+	t.Logf("%q\n", span.Meta)
 	assert.Equal(nMeta+1, len(span.Meta))
 	assert.Equal("", span.Meta[ext.ErrorMsg])
 	assert.Equal("", span.Meta[ext.ErrorType])
@@ -510,7 +514,6 @@ func TestSpanError(t *testing.T) {
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
