@@ -78,10 +78,10 @@ func (e *MonitoringError) Error() string {
 
 // NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
 // sharedesec.MonitoringError
-func NewMonitoringError(msg string) *sharedsec.MonitoringError {
-	return sharedsec.NewMonitoringError(&MonitoringError{
+func NewMonitoringError(msg string) error {
+	return &MonitoringError{
 		msg: msg,
-	})
+	}
 }
 
 // MonitorParsedBody starts and finishes the SDK body operation.
@@ -102,7 +102,7 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
 	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	sharedsec.OnData(op, func(e *sharedsec.MonitoringError) {
+	sharedsec.OnErrorData(op, func(e error) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)

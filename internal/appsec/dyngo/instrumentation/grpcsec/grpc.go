@@ -14,11 +14,9 @@ import (
 	"encoding/json"
 	"reflect"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-
-	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two
@@ -80,11 +78,11 @@ type (
 
 // NewMonitoringError creates and returns a new gRPC monitoring error, wrapped under
 // sharedesec.MonitoringError
-func NewMonitoringError(msg string, code uint32) *sharedsec.MonitoringError {
-	return sharedsec.NewMonitoringError(&MonitoringError{
+func NewMonitoringError(msg string, code uint32) error {
+	return &MonitoringError{
 		msg:    msg,
 		status: code,
-	})
+	}
 }
 
 // GRPCStatus returns the gRPC status code embedded in the error

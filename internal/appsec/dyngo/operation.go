@@ -303,8 +303,12 @@ func (b *dataBroadcaster) emitData(key reflect.Type, v any) {
 	}()
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	for _, listener := range b.listeners[key] {
-		listener(v)
+	for t := range b.listeners {
+		if key == t || key.Implements(t) {
+			for _, listener := range b.listeners[t] {
+				listener(v)
+			}
+		}
 	}
 }
 

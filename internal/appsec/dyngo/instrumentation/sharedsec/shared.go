@@ -30,29 +30,7 @@ type (
 	// OnUserIDOperationStart function type, called when a user ID
 	// operation starts.
 	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
-
-	// MonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	MonitoringError struct {
-		error
-	}
 )
-
-// Error implements the error interface
-func (e *MonitoringError) Error() string {
-	return e.error.Error()
-}
-
-// Unpack returns the wrapped error
-func (e *MonitoringError) Unpack() error {
-	return e.error
-}
-
-// NewMonitoringError creates and returns a new monitoring error
-func NewMonitoringError(e error) *MonitoringError {
-	return &MonitoringError{
-		error: e,
-	}
-}
 
 var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 
@@ -61,8 +39,8 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	OnData(op, func(e *MonitoringError) {
-		err = e.Unpack() // Unpack the real underlying error
+	OnErrorData(op, func(e error) {
+		err = e
 	})
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
@@ -93,5 +71,10 @@ func MonitorUser(ctx context.Context, userID string) error {
 
 // OnData is a facilitator that wraps a dyngo.Operation.OnData() call
 func OnData[T any](op dyngo.Operation, f func(T)) {
+	op.OnData(reflect.TypeOf((*T)(nil)).Elem(), dyngo.NewDataListener(f))
+}
+
+// OnErrorData is a facilitator that wraps a dyngo.Operation.OnData() call with an error type constraint
+func OnErrorData[T error](op dyngo.Operation, f func(T)) {
 	op.OnData(reflect.TypeOf((*T)(nil)).Elem(), dyngo.NewDataListener(f))
 }
