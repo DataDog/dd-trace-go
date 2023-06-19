@@ -52,6 +52,7 @@ const (
 	tagAWSRequestID     = "aws.request_id"
 	tagQueueName        = "queuename"
 	tagTopicName        = "topicname"
+	tagTargetName       = "targetname"
 	tagTableName        = "tablename"
 	tagStreamName       = "streamname"
 	tagBucketName       = "bucketname"
@@ -141,7 +142,7 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 	case "S3":
 		k, v = tagBucketName, bucketName(requestInput)
 	case "SNS":
-		k, v = tagTopicName, topicName(requestInput)
+		k, v = destinationTagValue(requestInput)
 	case "DynamoDB":
 		k, v = tagTableName, tableName(requestInput)
 	case "Kinesis":
@@ -193,28 +194,37 @@ func bucketName(requestInput middleware.InitializeInput) string {
 	return ""
 }
 
-func topicName(requestInput middleware.InitializeInput) string {
-	var topicArn string
+func destinationTagValue(requestInput middleware.InitializeInput) (tag string, value string) {
+	tag = tagTopicName
+	var s string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
-		topicArn = *params.TopicArn
+		switch {
+		case params.TopicArn != nil:
+			s = *params.TopicArn
+		case params.TargetArn != nil:
+			tag = tagTargetName
+			s = *params.TargetArn
+		default:
+			return "destination", "empty"
+		}
 	case *sns.PublishBatchInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.GetTopicAttributesInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.ListSubscriptionsByTopicInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.RemovePermissionInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.SetTopicAttributesInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.SubscribeInput:
-		topicArn = *params.TopicArn
+		s = *params.TopicArn
 	case *sns.CreateTopicInput:
-		return *params.Name
+		return tag, *params.Name
 	}
-	parts := strings.Split(topicArn, ":")
-	return parts[len(parts)-1]
+	parts := strings.Split(s, ":")
+	return tag, parts[len(parts)-1]
 }
 
 func tableName(requestInput middleware.InitializeInput) string {
