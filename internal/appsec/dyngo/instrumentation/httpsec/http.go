@@ -64,7 +64,25 @@ type (
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
+
+	// MonitoringError is used to vehicle an HTTP error, usually resurfaced through Appsec SDKs.
+	MonitoringError struct {
+		msg string
+	}
 )
+
+// Error implements the Error interface
+func (e *MonitoringError) Error() string {
+	return e.msg
+}
+
+// NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
+// sharedesec.MonitoringError
+func NewMonitoringError(msg string) *sharedsec.MonitoringError {
+	return sharedsec.NewMonitoringError(&MonitoringError{
+		msg: msg,
+	})
+}
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to

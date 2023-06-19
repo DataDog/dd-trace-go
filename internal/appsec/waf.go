@@ -179,7 +179,7 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
 				if len(matches) > 0 {
-					processSDKAction(operation, handle.actions, actionIds)
+					processHTTPSDKAction(operation, handle.actions, actionIds)
 					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
@@ -231,7 +231,7 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
 				matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
 				if len(matches) > 0 {
-					processSDKAction(sdkBodyOp, handle.actions, actionIds)
+					processHTTPSDKAction(sdkBodyOp, handle.actions, actionIds)
 					addSecurityEvents(op, limiter, matches)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
@@ -543,18 +543,18 @@ func processActions(op dyngo.Operation, actions map[string]*sharedsec.Action, ac
 	return interrupt
 }
 
-// processSDKAction does two things:
+// processHTTPSDKAction does two things:
 //   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
 //   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
 //     their handler.
-func processSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) {
+func processHTTPSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) {
 	for _, id := range actionIds {
 		if action, ok := actions[id]; ok {
 			if op.Parent() != nil {
 				op.Parent().SendData(action) // Send the action so that the handler gets executed
 			}
 			if action.Blocking() { // Send the error to be returned by the SDK
-				op.SendData(sharedsec.NewMonitoringError(errors.New("Request blocked"))) // Send error
+				op.SendData(httpsec.NewMonitoringError("Request blocked")) // Send error
 			}
 		}
 	}
