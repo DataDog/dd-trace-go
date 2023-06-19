@@ -139,7 +139,7 @@ func (tq *Query) WithContext(ctx context.Context) *Query {
 	return tq
 }
 
-// WithWrapOptions specifies options specific to the query.
+// WithWrapOptions applies the given set of options to the query.
 func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
 	for _, fn := range opts {
 		fn(tq.params.config)
@@ -315,7 +315,7 @@ func (tb *Batch) WithContext(ctx context.Context) *Batch {
 	return tb
 }
 
-// WithWrapOptions specifies options specific to the batch.
+// WithWrapOptions applies the given set of options to the batch.
 func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
 	for _, fn := range opts {
 		fn(tb.params.config)
