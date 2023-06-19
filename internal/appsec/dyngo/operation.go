@@ -38,10 +38,10 @@ type Operation interface {
 	// listener will be removed from the operation once it finishes.
 	On(EventListener)
 
-	// OnData blablabla
+	// OnData allows to register a data listener to the operation
 	OnData(reflect.Type, DataListener)
 
-	// SendData blabla
+	// SendData sends data to the data listeners of the operation
 	SendData(any)
 
 	// Parent return the parent operation. It returns nil for the root
