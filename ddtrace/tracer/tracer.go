@@ -124,7 +124,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	defer telemetry.Time(telemetry.NamespaceTracers, "tracer_init_time", nil, true)()
+	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
