@@ -293,8 +293,7 @@ func TestControlFlow(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				status := spans[0].Tag(ext.HTTPCode).(string)
-				// AppSec doesn't see past the handler so the latest status code recorded will be that set by the handler
-				require.Equal(t, fmt.Sprint(handlerResponseStatus), status)
+				require.Equal(t, fmt.Sprint(middlewareResponseStatus), status)
 			},
 		},
 		{
@@ -405,7 +404,7 @@ func TestBlocking(t *testing.T) {
 		// Check that the request was blocked
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
-		require.NotEqual(t, "Hello World!\n", string(b))
+		require.NotContains(t, string(b), "Hello World!\n")
 		require.Equal(t, 403, res.StatusCode)
 	})
 

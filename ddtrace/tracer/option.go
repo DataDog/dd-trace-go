@@ -154,6 +154,12 @@ type config struct {
 
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
+
+	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
+	peerServiceDefaultsEnabled bool
+
+	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
+	peerServiceMappings map[string]string
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -233,6 +239,19 @@ func newConfig(opts ...StartOption) *config {
 		v := namingschema.SetDefaultVersion()
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
+	// These default service names are always disabled for v1 onwards.
+	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+
+	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
+	c.peerServiceDefaultsEnabled = true
+	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
+		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	c.peerServiceMappings = make(map[string]string)
+	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
+		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
@@ -594,6 +613,14 @@ func WithService(name string) StartOption {
 	}
 }
 
+// WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
+// This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
+func WithGlobalServiceName(enabled bool) StartOption {
+	return func(_ *config) {
+		namingschema.SetUseGlobalServiceName(enabled)
+	}
+}
+
 // WithAgentAddr sets the address where the agent is located. The default is
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
@@ -621,6 +648,24 @@ func WithServiceMapping(from, to string) StartOption {
 			c.serviceMappings = make(map[string]string)
 		}
 		c.serviceMappings[from] = to
+	}
+}
+
+// WithPeerServiceDefaults sets default calculation for peer.service.
+func WithPeerServiceDefaults(enabled bool) StartOption {
+	// TODO: add link to public docs
+	return func(c *config) {
+		c.peerServiceDefaultsEnabled = enabled
+	}
+}
+
+// WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
+func WithPeerServiceMapping(from, to string) StartOption {
+	return func(c *config) {
+		if c.peerServiceMappings == nil {
+			c.peerServiceMappings = make(map[string]string)
+		}
+		c.peerServiceMappings[from] = to
 	}
 }
 

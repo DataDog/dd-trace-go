@@ -106,7 +106,6 @@ type config struct {
 	blockRate            int
 	outputDir            string
 	deltaProfiles        bool
-	deltaMethod          string
 	logStartup           bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
@@ -123,7 +122,6 @@ func logStartup(c *config) {
 		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
 		Hostname             string   `json:"hostname"`
 		DeltaProfiles        bool     `json:"delta_profiles"`
-		DeltaMethod          string   `json:"delta_method"`
 		Service              string   `json:"service"`
 		Env                  string   `json:"env"`
 		TargetURL            string   `json:"target_url"`
@@ -150,7 +148,6 @@ func logStartup(c *config) {
 		LangVersion:          runtime.Version(),
 		Hostname:             c.hostname,
 		DeltaProfiles:        c.deltaProfiles,
-		DeltaMethod:          c.deltaMethod,
 		Service:              c.service,
 		Env:                  c.env,
 		TargetURL:            c.targetURL,
@@ -218,7 +215,6 @@ func defaultConfig() (*config, error) {
 		uploadTimeout:        DefaultUploadTimeout,
 		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
-		deltaMethod:          os.Getenv("DD_PROFILING_DELTA_METHOD"),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
 	}

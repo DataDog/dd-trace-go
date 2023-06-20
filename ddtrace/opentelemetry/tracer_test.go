@@ -12,17 +12,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	oteltrace "go.opentelemetry.io/otel/trace"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+
+	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -197,11 +197,11 @@ func TestSpanTelemetry(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 	_, _ = tr.Start(context.Background(), "otel.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.spans_created", 1.0, *new([]string), true)
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
-func BenchmarkApiWithNoTags(b *testing.B) {
+func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	testData := struct {
 		env, srv, op string
 	}{"test_env", "test_srv", "op_name"}
@@ -229,7 +229,8 @@ func BenchmarkApiWithNoTags(b *testing.B) {
 		}
 	})
 }
-func BenchmarkApiWithCustomTags(b *testing.B) {
+
+func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	testData := struct {
 		env, srv, oldOp, newOp, tagKey, tagValue string
 	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
@@ -262,7 +263,7 @@ func BenchmarkApiWithCustomTags(b *testing.B) {
 	})
 }
 
-func BenchmarkOtelConcurrentTracing(b *testing.B) {
+func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tp := NewTracerProvider()
 	defer tp.Shutdown()
 	otel.SetTracerProvider(NewTracerProvider())

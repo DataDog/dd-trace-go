@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +89,12 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, true, s1.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s1.Tag(ext.Component))
+	assert.Equal(t, "127.0.0.1", s1.Tag(ext.NetworkDestinationName))
+
+	wantPort, err := strconv.Atoi(strings.TrimPrefix(s.URL, "http://127.0.0.1:"))
+	require.NoError(t, err)
+	require.NotEmpty(t, wantPort)
+	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
 }
 
 func TestRoundTripperServerError(t *testing.T) {
@@ -414,6 +421,33 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 	assert.Len(t, spans, 1)
 }
 
+func TestRoundTripperURLWithoutPort(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := &http.Client{
+		Transport: WrapRoundTripper(http.DefaultTransport),
+		Timeout:   1 * time.Millisecond,
+	}
+	_, err := client.Get("http://localhost/hello/world") //nolint:bodyclose
+	require.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s0 := spans[0]
+	assert.Equal(t, "http.request", s0.OperationName())
+	assert.Equal(t, "http.request", s0.Tag(ext.ResourceName))
+	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
+	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
+	assert.Equal(t, "http://localhost/hello/world", s0.Tag(ext.HTTPURL))
+	assert.NotNil(t, s0.Tag(ext.Error))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "net/http", s0.Tag(ext.Component))
+	assert.Equal(t, "localhost", s0.Tag(ext.NetworkDestinationName))
+	assert.NotContains(t, s0.Tags(), ext.NetworkDestinationPort)
+}
+
 func TestServiceName(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
@@ -552,6 +586,6 @@ func TestClientNamingSchema(t *testing.T) {
 		WithDDService:            []string{""},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

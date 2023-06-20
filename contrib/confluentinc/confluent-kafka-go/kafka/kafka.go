@@ -31,6 +31,8 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	opts = append(opts, WithConfig(conf))
 	return WrapConsumer(c, opts...), nil
 }
 
@@ -40,6 +42,7 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapProducer(p, opts...), nil
 }
 
@@ -105,8 +108,12 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag("offset", msg.TopicPartition.Offset),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Measured(),
+	}
+
+	if c.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, c.cfg.bootstrapServers))
 	}
 	if c.cfg.tagFns != nil {
 		for key, tagFn := range c.cfg.tagFns {
@@ -121,7 +128,7 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, c.cfg.consumerOperationName, opts...)
+	span, _ := tracer.StartSpanFromContext(c.cfg.ctx, c.cfg.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span
@@ -217,8 +224,12 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
+	}
+
+	if p.cfg.bootstrapServers != "" {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, p.cfg.bootstrapServers))
 	}
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
@@ -229,7 +240,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 
-	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerOperationName, opts...)
+	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerSpanName, opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
 	return span
