@@ -394,8 +394,6 @@ func (t *trace) finishedOne(s *span) {
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
-		//
-		// TODO(partialFlush): should we do a partial flush in this scenario?
 		return
 	}
 	t.finished++
