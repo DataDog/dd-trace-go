@@ -376,6 +376,7 @@ func TestCapabilities(t *testing.T) {
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
 				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
+				remoteconfig.ASMCustomBlockingResponse,
 			},
 		},
 		{
