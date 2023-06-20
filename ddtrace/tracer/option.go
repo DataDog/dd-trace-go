@@ -239,8 +239,12 @@ func newConfig(opts ...StartOption) *config {
 	if internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false) {
 		c.partialFlushEnabled = true
 		c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
+		// TODO(partialFlush): add a test for the below two cases
 		if c.partialFlushMinSpans <= 0 {
 			log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
+			c.partialFlushMinSpans = partialFlushMinSpansDefault
+		} else if c.partialFlushMinSpans >= traceMaxSize {
+			log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
 			c.partialFlushMinSpans = partialFlushMinSpansDefault
 		}
 	}
