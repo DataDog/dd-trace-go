@@ -49,8 +49,8 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives flushableTraceChunk with spans  to be added to the payload.
-	out chan *flushableTraceChunk
+	// out receives chunk with spans to be added to the payload.
+	out chan *chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -229,7 +229,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *flushableTraceChunk, payloadQueueSize),
+		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
@@ -349,16 +349,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// flushableTraceChunk holds information about a trace chunk to be flushed, including its spans.
+// chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
-type flushableTraceChunk struct {
+type chunk struct {
 	spans    []*span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
 // sampleFlushableChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleFlushableChunk(info *flushableTraceChunk) {
+func (t *tracer) sampleFlushableChunk(info *chunk) {
 	if len(info.spans) > 0 {
 		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
@@ -387,7 +387,7 @@ func (t *tracer) sampleFlushableChunk(info *flushableTraceChunk) {
 	}
 }
 
-func (t *tracer) pushTrace(trace *flushableTraceChunk) {
+func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case <-t.stop:
 		return
