@@ -8,7 +8,10 @@ package sql
 import (
 	"context"
 	"database/sql/driver"
+	"runtime/trace"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 var _ driver.Tx = (*tracedTx)(nil)
@@ -20,8 +23,35 @@ type tracedTx struct {
 	ctx context.Context
 }
 
+func noopTaskEnd() {}
+
+// startTraceTask creates an execution trace task with the given name, and
+// returns a context.Context associated with the task, and a function to end the
+// task.
+//
+// This is intended for cases where a span would normally be created after an
+// operation, where the operation may have been skipped and a span would be
+// noisy. Execution trace tasks must cover the actual duration of the operation
+// and can't be altered after the fact.
+func startTraceTask(ctx context.Context, name string) (context.Context, func()) {
+	if !trace.IsEnabled() {
+		return ctx, noopTaskEnd
+	}
+	// TODO: we could consider skipping the name. Normally we would try to
+	// name the task the Resource, but we skip it due to PII concerns and
+	// just give it the name "sql". The callers are giving the span the
+	// QueryType* name right now. That's PII safe, too, but maybe we don't
+	// even need it.
+	ctx, task := trace.NewTask(ctx, name)
+	return internal.WithExecutionTraced(ctx), task.End
+}
+
 // Commit sends a span at the end of the transaction
 func (t *tracedTx) Commit() (err error) {
+	ctx, end := startTraceTask(t.ctx, QueryTypeCommit)
+	t.ctx = ctx
+	defer end()
+
 	start := time.Now()
 	err = t.Tx.Commit()
 	t.tryTrace(t.ctx, QueryTypeCommit, "", start, err)
@@ -30,6 +60,10 @@ func (t *tracedTx) Commit() (err error) {
 
 // Rollback sends a span if the connection is aborted
 func (t *tracedTx) Rollback() (err error) {
+	ctx, end := startTraceTask(t.ctx, QueryTypeRollback)
+	t.ctx = ctx
+	defer end()
+
 	start := time.Now()
 	err = t.Tx.Rollback()
 	t.tryTrace(t.ctx, QueryTypeRollback, "", start, err)
