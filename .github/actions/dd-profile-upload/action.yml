@@ -25,7 +25,7 @@ runs:
           -H "DD-API-KEY: ${{ inputs.dd-api-key }}" \
           -F "go.trace=@${{ inputs.files }}" \
           -F "event=@-;type=application/json" \
-          https://intake.profile.datad0g.com/api/v2/profile <<END
+          https://intake.profile.datadoghq.com/api/v2/profile <<END
         {
          "attachments":[ "go.trace"],
          "tags_profiler":"service:${{ inputs.service }},${{ inputs.tags }}",
