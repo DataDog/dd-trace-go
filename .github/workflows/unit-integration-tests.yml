@@ -73,7 +73,7 @@ jobs:
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./... | grep ddtrace/opentelemetry)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -trace=${TEST_RESULTS}/go.trace -cpuprofile=${TEST_RESULTS}/cpu.pprof -memprofile=heap.pprof
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -trace=${TEST_RESULTS}/go.trace -cpuprofile=${TEST_RESULTS}/cpu.pprof -memprofile=${TEST_RESULTS}/heap.pprof
             ls -lah $TEST_RESULTS
 
       - name: Upload profiles
