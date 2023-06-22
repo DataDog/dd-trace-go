@@ -72,18 +72,9 @@ jobs:
       - name: Test Core
         run: |
             mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./... | grep ddtrace/opentelemetry)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -trace=${TEST_RESULTS}/go.trace -cpuprofile=${TEST_RESULTS}/cpu.pprof -memprofile=${TEST_RESULTS}/heap.pprof
-            ls -lah $TEST_RESULTS
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
-      - name: Upload profiles
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/dd-profile-upload
-        with:
-          dd-api-key: ${{ secrets.DD_TEST_APP_API_KEY }}
-          dir: ${{ env.TEST_RESULTS }}
-          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -233,7 +224,16 @@ jobs:
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic -trace=${TEST_RESULTS}/go.trace -cpuprofile=${TEST_RESULTS}/cpu.pprof -memprofile=${TEST_RESULTS}/heap.pprof
+
+      - name: Upload the profiles to Datadog Profiler
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-profile-upload
+        with:
+          dd-api-key: ${{ secrets.DD_TEST_APP_API_KEY }}
+          dir: ${{ env.TEST_RESULTS }}
+          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload the results to Datadog CI App
         if: always()
