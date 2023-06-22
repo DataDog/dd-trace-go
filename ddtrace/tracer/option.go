@@ -343,6 +343,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
+
 	return c
 }
 
@@ -1005,22 +1006,5 @@ func WithUserScope(scope string) UserMonitoringOption {
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.PropagateID = true
-	}
-}
-
-func WithAdditionalTransportHeaders(headers map[string]string) StartOption {
-	return func(c *config) {
-		tr, ok := c.transport.(*httpTransport)
-		if ok {
-			for key, value := range headers {
-				tr.headers[key] = value
-			}
-		} else if tr == nil {
-			tr = newHTTPTransport(c.agentURL.String(), c.httpClient)
-			for key, value := range headers {
-				tr.headers[key] = value
-			}
-			c.transport = tr
-		}
 	}
 }
