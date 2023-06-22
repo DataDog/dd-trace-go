@@ -57,6 +57,7 @@ func TestAsyncSpanRace(t *testing.T) {
 }
 
 func TestAsyncSpanRacePartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
 	testAsyncSpanRace(t)
 }
