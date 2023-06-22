@@ -238,17 +238,16 @@ func newConfig(opts ...StartOption) *config {
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
 	if internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false) {
 		c.partialFlushEnabled = true
-		c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
-		// TODO(partialFlush): add a test for the below two cases
-		if c.partialFlushMinSpans <= 0 {
-			log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
-			c.partialFlushMinSpans = partialFlushMinSpansDefault
-		} else if c.partialFlushMinSpans >= traceMaxSize {
-			log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
-			c.partialFlushMinSpans = partialFlushMinSpansDefault
-		}
 	}
-	// TODO(partialFlush): consider logging a warning here if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
+	if c.partialFlushMinSpans <= 0 {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	} else if c.partialFlushMinSpans >= traceMaxSize {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	}
+	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
 
