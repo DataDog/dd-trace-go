@@ -364,7 +364,7 @@ func (t *trace) push(sp *span) {
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *span) {
+func (t *trace) setTraceTags(s *span, tr *tracer) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -377,12 +377,16 @@ func (t *trace) setTraceTags(s *span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
+	}
 }
 
 // finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
+// The provided span must be locked.
 func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -395,6 +399,10 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return
+	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
@@ -408,17 +416,14 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTags(s, tr)
 	}
+
 	if len(t.spans) == t.finished {
 		defer func() {
 			t.spans = nil
 			t.finished = 0 // important, because a buffer can be used for several flushes
 		}()
-	}
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
-		return
 	}
 	setPeerService(s, tr.config)
 	// we have a tracer that can receive completed traces.
@@ -442,22 +447,43 @@ func (t *trace) finishedOne(s *span) {
 			spans:    finishedSpans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
-	}
-	if len(t.spans) != t.finished {
+		t.spans = nil
 		return
 	}
-	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
-	}()
-	//TODO: should this be a tag on the trace? Should this be sent for partial chunks? (probably)
-	if hn := tr.hostname(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
+
+	doPartialFlush := t.finished >= tr.config.partialFlushMinSpans
+	if !doPartialFlush {
+		return // The trace hasn't completed and partial flushing will not occur
 	}
-	tr.pushChunk(&chunk{
-		spans:    t.spans,
+	log.Debug("Partial flush triggered with %d finished spans", t.finished)
+	//TODO: is there a metric we should bump when doing this?
+	finishedSpans := make([]*span, 0, t.finished)
+	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+	for _, s2 := range t.spans {
+		if s2.finished {
+			finishedSpans = append(finishedSpans, s2)
+		} else {
+			leftoverSpans = append(leftoverSpans, s2)
+		}
+	}
+	// TODO(partialFlush): This isn't going to work if the root span hasn't
+	// finished yet. (And in fact can panic in some situations, as repro'd by TestSpanTracePushSeveral)
+	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+	if s != t.spans[0] {
+		// Make sure the first span in the chunk has the trace-level tags
+		t.setTraceTags(finishedSpans[0], tr)
+	}
+	t.finishChunk(tr, &chunk{
+		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+	t.spans = leftoverSpans
+}
+
+func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	tr.pushChunk(ch)
+	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
