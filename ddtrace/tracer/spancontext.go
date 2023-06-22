@@ -431,7 +431,7 @@ func (t *trace) finishedOne(s *span) {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
-	//TODO: is there a metric we should bump when doing this?
+	// TODO: is there a metric we should bump when doing this?
 	finishedSpans := make([]*span, 0, t.finished)
 	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
