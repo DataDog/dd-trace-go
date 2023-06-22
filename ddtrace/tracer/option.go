@@ -236,9 +236,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
-	if internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false) {
-		c.partialFlushEnabled = true
-	}
+	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
 		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
