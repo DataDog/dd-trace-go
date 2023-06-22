@@ -71,7 +71,8 @@ type (
 		Parameters struct {
 			StatusCode     int    `json:"status_code"`
 			GRPCStatusCode int    `json:"grpc_status_code,omitempty"`
-			StrParam       string `json:"-"`
+			Type           string `json:"type,omitempty"`
+			Location       string `json:"location,omitempty"`
 		} `json:"parameters,omitempty"`
 	}
 )
@@ -180,7 +181,6 @@ func (r *rulesManager) compile() {
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		r.latest.RulesData = append(r.latest.RulesData, v.RulesData...)
 		r.latest.CustomRules = append(r.latest.CustomRules, v.CustomRules...)
-		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 }
 

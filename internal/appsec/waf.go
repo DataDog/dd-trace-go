@@ -46,17 +46,6 @@ type wafHandle struct {
 	actions map[string]*sharedsec.Action
 }
 
-// RegisterAction registers a specific action to the handler. If the action kind is unknown
-// the action will not be registered
-func (h *wafHandle) RegisterAction(id string, a *sharedsec.Action) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.actions == nil {
-		h.actions = make(map[string]*sharedsec.Action)
-	}
-	h.actions[id] = a
-}
-
 func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
 	newHandle, err := newWAFHandle(rules, a.cfg)
@@ -104,9 +93,9 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	switch e.Type {
 	case "block_request":
-		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.GRPCStatusCode, e.Parameters.StrParam)
+		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.GRPCStatusCode, e.Parameters.Type)
 	case "redirect_request":
-		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.StrParam)
+		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
 	default:
 		return nil
 	}

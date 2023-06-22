@@ -61,6 +61,9 @@ func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.Prod
 updateLoop:
 	// Process rules related updates
 	for p, u := range updates {
+		if u != nil && len(u) == 0 {
+			continue
+		}
 		switch p {
 		case rc.ProductASMData:
 			// Merge all rules data entries together and store them as a rulesManager edit entry
@@ -371,6 +374,7 @@ func (a *appsec) enableRCBlocking() {
 		a.registerRCCapability(remoteconfig.ASMDDRules)
 		a.registerRCCapability(remoteconfig.ASMExclusions)
 		a.registerRCCapability(remoteconfig.ASMCustomRules)
+		a.registerRCCapability(remoteconfig.ASMCustomBlockingResponse)
 	}
 }
 
