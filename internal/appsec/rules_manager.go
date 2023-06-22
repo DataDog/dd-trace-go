@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 type (

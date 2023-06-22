@@ -14,9 +14,10 @@ import (
 	"encoding/json"
 	"reflect"
 
-	"github.com/DataDog/appsec-internal-go/netip"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+
+	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // Abstract gRPC server handler operation definitions. It is based on two

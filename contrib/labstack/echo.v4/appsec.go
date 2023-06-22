@@ -8,9 +8,10 @@ package echo
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+
+	"github.com/labstack/echo/v4"
 )
 
 func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
