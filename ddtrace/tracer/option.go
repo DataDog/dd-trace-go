@@ -168,19 +168,6 @@ func (c *config) HasFeature(f string) bool {
 	return ok
 }
 
-func (c *config) DumpForTestAgent() string {
-	envVars := map[string]string{
-		"DD_SERVICE":                             c.serviceName,
-		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", c.spanAttributeSchemaVersion),
-		"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": strconv.FormatBool(c.peerServiceDefaultsEnabled),
-	}
-	values := make([]string, 0, len(envVars))
-	for k, v := range envVars {
-		values = append(values, fmt.Sprintf("%s=%s", k, v))
-	}
-	return strings.Join(values, ",")
-}
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -355,13 +342,6 @@ func newConfig(opts ...StartOption) *config {
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
 		c.dogstatsdAddr = addr
-	}
-	if testSessionToken := os.Getenv("CI_TEST_AGENT_SESSION_TOKEN"); testSessionToken != "" {
-		tr, ok := c.transport.(*httpTransport)
-		if ok {
-			tr.headers["X-Datadog-Trace-Env-Variables"] = c.DumpForTestAgent()
-			tr.headers["X-Datadog-Test-Session-Token"] = testSessionToken
-		}
 	}
 	return c
 }
@@ -1025,5 +1005,22 @@ func WithUserScope(scope string) UserMonitoringOption {
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.PropagateID = true
+	}
+}
+
+func WithAdditionalTransportHeaders(headers map[string]string) StartOption {
+	return func(c *config) {
+		tr, ok := c.transport.(*httpTransport)
+		if ok {
+			for key, value := range headers {
+				tr.headers[key] = value
+			}
+		} else if tr == nil {
+			tr = newHTTPTransport(c.agentURL.String(), c.httpClient)
+			for key, value := range headers {
+				tr.headers[key] = value
+			}
+			c.transport = tr
+		}
 	}
 }

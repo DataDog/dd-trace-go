@@ -4,13 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/gomemcache/memcache"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +42,51 @@ type Integration interface {
 	NumSpans() int
 }
 
+var defaultDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+	DualStack: true,
+}
+
+var testAgentClient = &http.Client{
+	// We copy the transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           defaultDialer.DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+	Timeout: 2 * time.Second,
+}
+
+func getDatadogTracerEnvString() string {
+	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
+		namingschema.SetVersion(v)
+	} else {
+		v := namingschema.SetDefaultVersion()
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	peerServiceDefaultsEnabled := false
+	if int(namingschema.GetVersion()) == int(namingschema.SchemaV0) {
+		peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	ddEnvVars := map[string]string{
+		"DD_SERVICE":                             "Datadog-Test-Agent-Trace-Checks",
+		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", namingschema.GetVersion()),
+		"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": strconv.FormatBool(peerServiceDefaultsEnabled),
+	}
+	values := make([]string, 0, len(ddEnvVars))
+	for k, v := range ddEnvVars {
+		values = append(values, fmt.Sprintf("%s=%s", k, v))
+	}
+	return strings.Join(values, ",")
+}
+
 func TestIntegrations(t *testing.T) {
 	integrations := []Integration{
 		memcachetest.New(),
@@ -45,10 +97,13 @@ func TestIntegrations(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
 			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
-			t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
 
-			tracer.Start(tracer.WithAgentAddr("localhost:9126"))
+			headers := map[string]string{}
+			headers["X-Datadog-Trace-Env-Variables"] = getDatadogTracerEnvString()
+			headers["X-Datadog-Test-Session-Token"] = sessionToken
+
+			tracer.Start(tracer.WithAgentAddr("localhost:9126"), tracer.WithHTTPClient(testAgentClient), tracer.WithAdditionalTransportHeaders(headers))
 			defer tracer.Stop()
 
 			cleanup := ig.Init(t)
