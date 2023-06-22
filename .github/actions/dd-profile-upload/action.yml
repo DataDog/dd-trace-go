@@ -28,7 +28,7 @@ runs:
           https://intake.profile.datad0g.com/api/v2/profile <<END
         {
          "attachments":[ "go.trace"],
-         "tags_profiler":"service:{{ inputs.service }},{{ inputs.tags }}",
+         "tags_profiler":"service:${{ inputs.service }},${{ inputs.tags }}",
          "start":"$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')",
          "end":"$(date -d '+1 min' -u --iso-8601=seconds | sed 's/\+.*/Z/')",
          "family":"go",

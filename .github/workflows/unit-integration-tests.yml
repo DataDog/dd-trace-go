@@ -83,6 +83,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_TEST_AND_DEMO_API_KEY }}
           files: ${{ env.TEST_RESULTS }}/go.trace
+          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
