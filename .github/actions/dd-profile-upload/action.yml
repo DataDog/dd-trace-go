@@ -9,9 +9,9 @@ inputs:
     required: false
     default: dd-trace-go
     description: Service name to use with the uploaded test results.
-  files:
+  dir:
     required: true
-    description: Profiles to upload
+    description: Directory with profile data to upload. Must have cpu.pprof, heap.pprof and go.trace.
   tags:
     required: false
     description: Datadog tags to associate with the uploaded test results.
@@ -23,11 +23,13 @@ runs:
       run: |
         curl -i  \
           -H "DD-API-KEY: ${{ inputs.dd-api-key }}" \
-          -F "go.trace=@${{ inputs.files }}" \
+          -F "go.trace=@${{ inputs.dir }}/go.trace" \
+          -F "cpu.pprof=@${{ inputs.dir }}/cpu.pprof" \
+          -F "heap.pprof=@${{ inputs.dir }}/heap.pprof" \
           -F "event=@-;type=application/json" \
           https://intake.profile.datadoghq.com/api/v2/profile <<END
         {
-         "attachments":[ "go.trace"],
+         "attachments":["go.trace", "cpu.pprof", "heap.pprof"],
          "tags_profiler":"service:${{ inputs.service }},${{ inputs.tags }}",
          "start":"$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')",
          "end":"$(date -d '+1 min' -u --iso-8601=seconds | sed 's/\+.*/Z/')",
