@@ -1,0 +1,37 @@
+# Composite action to upload profiling data
+name: 'Datadog Profile Upload'
+description: 'Upload junit test result files to Datadog CI App'
+inputs:
+  dd-api-key:
+    required: true
+    description: Datadog API key to use to upload the junit files
+  service:
+    required: false
+    default: dd-trace-go
+    description: Service name to use with the uploaded test results.
+  files:
+    required: true
+    description: Profiles to upload
+  tags:
+    required: false
+    description: Datadog tags to associate with the uploaded test results.
+runs:
+  using: "composite"
+  steps:
+    - name: Upload the profiles
+      shell: bash
+      run: |
+        curl -i  \
+          -H "DD-API-KEY: ${{ inputs.dd-api-key }}" \
+          -F "go.trace=@${{ inputs.files }}" \
+          -F "event=@-;type=application/json" \
+          https://intake.profile.datad0g.com/api/v2/profile <<END
+        {
+         "attachments":[ "go.trace"],
+         "tags_profiler":"service:{{ inputs.service }},{{ inputs.tags }}",
+         "start":"$(date -u --iso-8601=seconds | sed 's/\+.*/Z/')",
+         "end":"$(date -d '+1 min' -u --iso-8601=seconds | sed 's/\+.*/Z/')",
+         "family":"go",
+         "version":"4"
+        }
+        END
