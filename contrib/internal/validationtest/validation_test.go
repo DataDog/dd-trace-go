@@ -48,21 +48,6 @@ var defaultDialer = &net.Dialer{
 	DualStack: true,
 }
 
-var testAgentClient = &http.Client{
-	// We copy the transport to avoid using the default one, as it might be
-	// augmented with tracing and we don't want these calls to be recorded.
-	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           defaultDialer.DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-	Timeout: 2 * time.Second,
-}
-
 func getDatadogTracerEnvString() string {
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -87,6 +72,33 @@ func getDatadogTracerEnvString() string {
 	return strings.Join(values, ",")
 }
 
+type testAgentTransport struct {
+	*http.Transport
+}
+
+func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Add("X-Datadog-Trace-Env-Variables", getDatadogTracerEnvString())
+	req.Header.Add("X-Datadog-Test-Session-Token", os.Getenv("CI_TEST_AGENT_SESSION_TOKEN"))
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+var testAgentClient = &http.Client{
+	// We copy the transport to avoid using the default one, as it might be
+	// augmented with tracing and we don't want these calls to be recorded.
+	// See https://golang.org/pkg/net/http/#DefaultTransport .
+	Transport: &testAgentTransport{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           defaultDialer.DialContext,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	},
+	Timeout: 2 * time.Second,
+}
+
 func TestIntegrations(t *testing.T) {
 	integrations := []Integration{
 		memcachetest.New(),
@@ -98,12 +110,9 @@ func TestIntegrations(t *testing.T) {
 			sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
 			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 
-			headers := map[string]string{}
-			headers["X-Datadog-Trace-Env-Variables"] = getDatadogTracerEnvString()
-			headers["X-Datadog-Test-Session-Token"] = sessionToken
-
-			tracer.Start(tracer.WithAgentAddr("localhost:9126"), tracer.WithHTTPClient(testAgentClient), tracer.WithAdditionalTransportHeaders(headers))
+			tracer.Start(tracer.WithAgentAddr("localhost:9126"), tracer.WithHTTPClient(testAgentClient))
 			defer tracer.Stop()
 
 			cleanup := ig.Init(t)
