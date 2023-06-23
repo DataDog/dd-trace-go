@@ -15,10 +15,15 @@ import (
 type MockDriver struct {
 	Prepared []string
 	Executed []string
+	// Hook is an optional function to run during a DB operation
+	Hook func()
 }
 
 // Open implements the Conn interface
 func (d *MockDriver) Open(_ string) (driver.Conn, error) {
+	if d.Hook != nil {
+		d.Hook()
+	}
 	return &mockConn{driver: d}, nil
 }
 
@@ -41,6 +46,9 @@ func (m *mockConn) QueryContext(_ context.Context, query string, _ []driver.Name
 // ExecContext implements the ExecerContext interface
 func (m *mockConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
 	m.driver.Executed = append(m.driver.Executed, query)
+	if m.driver.Hook != nil {
+		m.driver.Hook()
+	}
 	return &mockResult{}, nil
 }
 
