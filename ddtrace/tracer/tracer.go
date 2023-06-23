@@ -497,6 +497,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	isRootSpan := context == nil || context.span == nil
 	if isRootSpan {
+		traceprof.SetProfilerRootTags(span)
 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
 	if isRootSpan || context.span.Service != span.Service {
