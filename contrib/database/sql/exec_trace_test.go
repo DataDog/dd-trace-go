@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gotraceui "honnef.co/go/gotraceui/trace"
 )
@@ -56,6 +57,25 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	_, err = db.ExecContext(ctx, "foobar")
 	require.NoError(t, err, "executing mock statement")
+	conn, err := db.Conn(ctx)
+	require.NoError(t, err, "connecting to DB")
+	rows, err := conn.QueryContext(ctx, "foobar")
+	require.NoError(t, err, "executing mock query")
+	rows.Close()
+	stmt, err := conn.PrepareContext(ctx, "prepared")
+	require.NoError(t, err, "preparing mock statement")
+	_, err = stmt.Exec()
+	require.NoError(t, err, "executing mock perpared statement")
+	rows, err = stmt.Query()
+	require.NoError(t, err, "executing mock perpared query")
+	rows.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	require.NoError(t, err, "beginning mock transaction")
+	_, err = tx.ExecContext(ctx, "foobar")
+	require.NoError(t, err, "executing query in mock transaction")
+	require.NoError(t, tx.Commit(), "commiting mock transaction")
+	require.NoError(t, conn.Close())
+
 	span.Finish()
 
 	trace.Stop()
@@ -64,41 +84,43 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	tasks, err := tasksFromTrace(buf)
 	require.NoError(t, err, "getting tasks from trace")
 
-	// We expect 3 tasks:
-	//	* The parent span
-	//	* A span for connecting to the mock database
-	//	* A span for executing the mock query
-	// The database spans should take at least sleepDuration and be
-	// connected to the parent.
+	expectedParentChildTasks := []string{"Connect", "Exec", "Query", "Prepare", "Begin", "Exec"}
+	expectedPreparedStatementTasks := []string{"Exec", "Query"}
 
-	var parent, connect, execute int
+	var foundParent, foundPrepared bool
 	for id, task := range tasks {
 		t.Logf("task %d: %+v", id, task)
 		switch task.name {
 		case "parent":
-			parent = id
-		case "Connect":
-			connect = id
-		case "Exec":
-			execute = id
+			foundParent = true
+			var gotParentChildTasks []string
+			for _, id := range tasks[id].children {
+				gotParentChildTasks = append(gotParentChildTasks, tasks[id].name)
+			}
+			assert.ElementsMatch(t, expectedParentChildTasks, gotParentChildTasks)
+		case "Prepare":
+			foundPrepared = true
+			var gotPerparedStatementTasks []string
+			for _, id := range tasks[id].children {
+				gotPerparedStatementTasks = append(gotPerparedStatementTasks, tasks[id].name)
+			}
+			assert.ElementsMatch(t, expectedPreparedStatementTasks, gotPerparedStatementTasks)
+			assert.GreaterOrEqual(t, task.duration, sleepDuration, "task %s", task.name)
+		case "Connect", "Exec", "Begin", "Commit", "Query":
+			assert.GreaterOrEqual(t, task.duration, sleepDuration, "task %s", task.name)
+		default:
+			continue
 		}
 	}
-
-	require.NotZero(t, parent)
-	require.NotZero(t, connect)
-	require.NotZero(t, execute)
-	require.Equal(t, parent, tasks[connect].parent)
-	require.Equal(t, parent, tasks[execute].parent)
-	require.GreaterOrEqual(t, tasks[parent].duration, tasks[connect].duration+tasks[execute].duration)
-	require.GreaterOrEqual(t, tasks[connect].duration, sleepDuration)
-	require.GreaterOrEqual(t, tasks[execute].duration, sleepDuration)
+	assert.True(t, foundParent, "need parent task")
+	assert.True(t, foundPrepared, "need prepared statement task")
 }
 
 type traceTask struct {
 	name     string
 	duration time.Duration
 	parent   int
-	// logs?
+	children []int
 }
 
 func tasksFromTrace(r io.Reader) (map[int]traceTask, error) {
@@ -109,16 +131,24 @@ func tasksFromTrace(r io.Reader) (map[int]traceTask, error) {
 
 	tasks := make(map[int]traceTask)
 	for _, ev := range execTrace.Events {
-		if ev.Type != gotraceui.EvUserTaskCreate || ev.Link == -1 {
-			continue
-		}
-		id := int(ev.Args[0])
-		parent := int(ev.Args[1])
-		name := execTrace.Strings[ev.Args[2]]
-		tasks[id] = traceTask{
-			name:     name,
-			parent:   parent,
-			duration: time.Duration(execTrace.Events[ev.Link].Ts - ev.Ts),
+		switch ev.Type {
+		case gotraceui.EvUserTaskCreate:
+			if ev.Link == -1 {
+				continue
+			}
+			id := int(ev.Args[0])
+			parent := int(ev.Args[1])
+			if parent != 0 {
+				t := tasks[parent]
+				t.children = append(t.children, id)
+				tasks[parent] = t
+			}
+			name := execTrace.Strings[ev.Args[2]]
+			tasks[id] = traceTask{
+				name:     name,
+				parent:   parent,
+				duration: time.Duration(execTrace.Events[ev.Link].Ts - ev.Ts),
+			}
 		}
 	}
 	return tasks, nil

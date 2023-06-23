@@ -34,12 +34,18 @@ type mockConn struct {
 // Prepare implements the driver.Conn interface
 func (m *mockConn) Prepare(query string) (driver.Stmt, error) {
 	m.driver.Prepared = append(m.driver.Prepared, query)
+	if m.driver.Hook != nil {
+		m.driver.Hook()
+	}
 	return &mockStmt{stmt: query, driver: m.driver}, nil
 }
 
 // QueryContext implements the QueryerContext interface
 func (m *mockConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	m.driver.Executed = append(m.driver.Executed, query)
+	if m.driver.Hook != nil {
+		m.driver.Hook()
+	}
 	return &rows{}, nil
 }
 
@@ -59,6 +65,9 @@ func (m *mockConn) Close() (err error) {
 
 // Begin implements the Conn interface
 func (m *mockConn) Begin() (driver.Tx, error) {
+	if m.driver.Hook != nil {
+		m.driver.Hook()
+	}
 	return &mockTx{driver: m.driver}, nil
 }
 
@@ -85,6 +94,9 @@ type mockTx struct {
 
 // Commit implements the Tx interface
 func (t *mockTx) Commit() error {
+	if t.driver.Hook != nil {
+		t.driver.Hook()
+	}
 	return nil
 }
 
@@ -123,12 +135,18 @@ func (s *mockStmt) Query(_ []driver.Value) (driver.Rows, error) {
 // ExecContext implements the StmtExecContext interface
 func (s *mockStmt) ExecContext(_ context.Context, _ []driver.NamedValue) (driver.Result, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
+	if s.driver.Hook != nil {
+		s.driver.Hook()
+	}
 	return &mockResult{}, nil
 }
 
 // QueryContext implements the StmtQueryContext interface
 func (s *mockStmt) QueryContext(_ context.Context, _ []driver.NamedValue) (driver.Rows, error) {
 	s.driver.Executed = append(s.driver.Executed, s.stmt)
+	if s.driver.Hook != nil {
+		s.driver.Hook()
+	}
 	return &rows{}, nil
 }
 
