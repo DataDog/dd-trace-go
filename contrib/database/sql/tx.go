@@ -37,11 +37,6 @@ func startTraceTask(ctx context.Context, name string) (context.Context, func()) 
 	if !trace.IsEnabled() {
 		return ctx, noopTaskEnd
 	}
-	// TODO: we could consider skipping the name. Normally we would try to
-	// name the task the Resource, but we skip it due to PII concerns and
-	// just give it the name "sql". The callers are giving the span the
-	// QueryType* name right now. That's PII safe, too, but maybe we don't
-	// even need it.
 	ctx, task := trace.NewTask(ctx, name)
 	return internal.WithExecutionTraced(ctx), task.End
 }

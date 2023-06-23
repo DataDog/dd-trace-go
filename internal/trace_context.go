@@ -17,7 +17,7 @@ type executionTracedKey struct{}
 //
 // This is intended for a specific case where the database/sql contrib package
 // only creates spans *after* an operation, in case the operation was
-// unvailable, and thus execution trace tasks tied to the span only capture the
+// unavailable, and thus execution trace tasks tied to the span only capture the
 // very end. This function enables creating a task *before* creating a span, and
 // communicating to the APM tracer that it does not need to create a task. In
 // general, APM instrumentation should prefer creating tasks around the

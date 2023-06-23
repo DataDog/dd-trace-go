@@ -3,7 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-// TODO: skip if Go >= 1.21, until gotraceui handles those format changes?
+// TODO: gotraceui does not currently handle Go 1.21 execution tracer changes,
+// so we need to skip this test for that version. We still have coverage for
+// older Go versions due to our support policy, and Go 1.21 shouldn't fundamentally
+// change the behavior this test is covering. Remove this build constraint
+// once gotraceui supports Go 1.21
+//
+//go:build !go1.21
 
 package sql
 
@@ -35,6 +41,7 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer s.Close()
 	tracer.Start(tracer.WithHTTPClient(c), tracer.WithLogStartup(false))
+	defer tracer.Stop()
 
 	buf := new(bytes.Buffer)
 	require.NoError(t, trace.Start(buf), "starting execution tracing")
@@ -79,7 +86,6 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	span.Finish()
 
 	trace.Stop()
-	tracer.Stop()
 
 	tasks, err := tasksFromTrace(buf)
 	require.NoError(t, err, "getting tasks from trace")
