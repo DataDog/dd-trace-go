@@ -212,6 +212,7 @@ jobs:
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api -e /kafka)
+            go clean -testcache
             go test $PACKAGE_NAMES
 
       - name: Upload the results to Datadog CI App
