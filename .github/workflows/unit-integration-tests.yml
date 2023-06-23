@@ -214,7 +214,7 @@ jobs:
         run: |
             mkdir -p $TEST_RESULTS
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api -e /kafka)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v
+            go test $PACKAGE_NAMES
 
       - name: Upload the results to Datadog CI App
         if: always()
