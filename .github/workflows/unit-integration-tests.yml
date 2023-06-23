@@ -206,6 +206,8 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ inputs.go-version }}
+          check-latest: true
+          cache: true
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@latest
       - name: Test Contrib
