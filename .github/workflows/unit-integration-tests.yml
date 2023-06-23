@@ -194,16 +194,6 @@ jobs:
           ALLOW_ANONYMOUS_LOGIN: "yes"
         ports:
           - 2181:2181
-      kafka:
-        image: wurstmeister/kafka:2.13-2.8.1
-        env:
-          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-          KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
-          KAFKA_BROKER_ID: 1
-        ports:
-          - 9092:9092
       localstack:
         image: localstack/localstack:latest
         ports:
@@ -223,7 +213,7 @@ jobs:
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api -e /kafaka)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload the results to Datadog CI App
@@ -264,3 +254,52 @@ jobs:
               git fetch origin && git checkout v1.0.0 && cd ../..
 
               go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+  test-contrib-kafka:
+    runs-on: ubuntu-latest
+    env:
+       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+       INTEGRATION: true
+    services:
+      kafka:
+        image: wurstmeister/kafka:2.13-2.8.1
+        env:
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+          KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
+          KAFKA_BROKER_ID: 1
+        ports:
+          - 9092:9092
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: true
+          cache: true
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+      - name: Test Kafka
+        run: |
+            mkdir -p $TEST_RESULTS
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -e /kafaka)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash)
