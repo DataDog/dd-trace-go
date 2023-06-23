@@ -358,7 +358,7 @@ func TestAgentlessRetry(t *testing.T) {
 }
 
 func TestCollectDependencies(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	received := make(chan *Dependencies)
 
