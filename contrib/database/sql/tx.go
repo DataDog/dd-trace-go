@@ -49,23 +49,21 @@ func startTraceTask(ctx context.Context, name string) (context.Context, func()) 
 // Commit sends a span at the end of the transaction
 func (t *tracedTx) Commit() (err error) {
 	ctx, end := startTraceTask(t.ctx, QueryTypeCommit)
-	t.ctx = ctx
 	defer end()
 
 	start := time.Now()
 	err = t.Tx.Commit()
-	t.tryTrace(t.ctx, QueryTypeCommit, "", start, err)
+	t.tryTrace(ctx, QueryTypeCommit, "", start, err)
 	return err
 }
 
 // Rollback sends a span if the connection is aborted
 func (t *tracedTx) Rollback() (err error) {
 	ctx, end := startTraceTask(t.ctx, QueryTypeRollback)
-	t.ctx = ctx
 	defer end()
 
 	start := time.Now()
 	err = t.Tx.Rollback()
-	t.tryTrace(t.ctx, QueryTypeRollback, "", start, err)
+	t.tryTrace(ctx, QueryTypeRollback, "", start, err)
 	return err
 }
