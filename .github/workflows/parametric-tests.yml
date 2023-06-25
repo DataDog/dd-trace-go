@@ -48,6 +48,13 @@ jobs:
         with:
           python-version: '3.9'
 
+      - uses: actions/cache@v3
+        with:
+          path: ./venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-
+
       - name: Build
         run: ./build.sh -i runner
 
