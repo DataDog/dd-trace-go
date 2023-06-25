@@ -55,5 +55,5 @@ jobs:
         run: |
           cd system-tests
           pip install -r requirements.txt
-          time TEST_LIBRARY=golang ./build.sh -i runner
-          time TEST_LIBRARY=golang ./run.sh
+          time export TEST_LIBRARY=golang && ./build.sh -i runner
+          time export TEST_LIBRARY=golang && ./run.sh
