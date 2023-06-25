@@ -24,8 +24,9 @@ on:
 jobs:
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
-    runs-on:
-      group: "APM Larger Runners"
+    # Note: Not using large runners because the jobs spawned by this pipeline
+    # don't seem to get a noticable speedup from using larger runners.
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         weblog-variant:
