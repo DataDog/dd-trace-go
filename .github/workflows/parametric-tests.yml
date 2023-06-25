@@ -39,8 +39,9 @@ jobs:
 
       - name: Patch dd-trace-go version
         run: |
+          ddtg="$(pwd)/dd-trace-go"
           cd utils/build/docker/golang/parametric/
-          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => $(pwd)/dd-trace-go" >> go.mod
+          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ${ddtg}" >> go.mod
           go mod tidy
 
       - uses: actions/setup-python@v4
