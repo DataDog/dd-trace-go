@@ -11,7 +11,8 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     permissions:
       actions: read
       contents: read
