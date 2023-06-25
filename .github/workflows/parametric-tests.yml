@@ -27,7 +27,11 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          path: system-tests
+
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@v3
+        with:
+          path: dd-trace-go
 
       - uses: actions/setup-go@v3
         with:
@@ -35,8 +39,8 @@ jobs:
 
       - name: Patch dd-trace-go version
         run: |
-          cd system-tests/utils/build/docker/golang/parametric/
-          go get gopkg.in/DataDog/dd-trace-go.v1@$COMMIT_SHA
+          cd utils/build/docker/golang/parametric/
+          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
           go mod tidy
 
       - uses: actions/setup-python@v4
