@@ -20,7 +20,8 @@ jobs:
           go run checkcopyright.go
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     steps:
       - uses: actions/setup-go@v4
         with:
