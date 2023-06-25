@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }} 
+      TEST_LIBRARY: golang
     steps:
       - name: Checkout system tests
         uses: actions/checkout@v3
@@ -28,32 +29,22 @@ jobs:
           repository: 'DataDog/system-tests'
           path: system-tests
 
-      - name: Checkout Go
-        uses: actions/checkout@v3
-        with:
-          path: system-tests/golang
       - uses: actions/setup-go@v3
         with:
           go-version: '1.18'
+
       - name: Patch dd-trace-go version
         run: |
           cd system-tests/utils/build/docker/golang/parametric/
           go get gopkg.in/DataDog/dd-trace-go.v1@$COMMIT_SHA
           go mod tidy
 
-      - name: Checkout Python
-        uses: actions/checkout@v3
-        with:
-          path: system-tests/python
       - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Install
-        run: |
-          pip install wheel
+
+      - name: Build
+        run: cd system-tests && ./build.sh -i runner
+
       - name: Run
-        run: |
-          cd system-tests
-          pip install -r requirements.txt
-          time export TEST_LIBRARY=golang && ./build.sh -i runner
-          time export TEST_LIBRARY=golang && ./run.sh
+        run: cd system-tests && ./run.sh PARAMETRIC
