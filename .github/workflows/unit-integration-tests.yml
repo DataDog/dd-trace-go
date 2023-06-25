@@ -37,7 +37,8 @@ jobs:
           reporter: github-pr-review
 
   test-core:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
@@ -89,7 +90,8 @@ jobs:
         run: bash <(curl -s https://codecov.io/bash)
 
   test-contrib:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
