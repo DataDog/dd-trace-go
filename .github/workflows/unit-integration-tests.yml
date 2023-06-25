@@ -23,6 +23,12 @@ jobs:
           go-version: ${{ inputs.go-version }}
             #check-latest: true
             #cache: true
+      - name: Print cache size
+        run: |
+            find "$(go env GOCACHE)" | wc -l
+      - name: Print CPU count
+        run: |
+          grep -E '^processor' /proc/cpuinfo | wc -l
       - name: Test Contrib
         run: |
-            go test -v -run '^$' ./...
+            go test -run '^$' ./...
