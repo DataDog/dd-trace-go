@@ -49,7 +49,7 @@ jobs:
           python-version: '3.9'
 
       - name: Build
-        run: cd system-tests && ./build.sh -i runner
+        run: ./build.sh -i runner
 
       - name: Run
-        run: cd system-tests && ./run.sh PARAMETRIC
+        run: ./run.sh PARAMETRIC
