@@ -11,9 +11,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-integration-tests:
-    name: PR Unit and Integration Tests
-    uses: ./.github/workflows/unit-integration-tests.yml
-    with:
-      go-version: "1.18"
-    secrets: inherit
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.18
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Get the list of packages
+        id: packages
+        run: |
+          PACKAGES=$(go list ./... | grep -v /vendor/)
+          echo "PACKAGES=$PACKAGES" >> $GITHUB_ENV
+
+      - name: Create package matrix
+        id: matrix
+        run: |
+          PACKAGE_MATRIX=$(echo $PACKAGES | jq -R -s 'split("\n")[:-1] | to_entries | map({ "index": .key, "name": .value })')
+          echo "::set-output name=packages::$PACKAGE_MATRIX"
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{fromJson(needs.build.outputs.matrix)}}
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.18
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Test package
+        run: |
+          go test -run '^$' ${{ matrix.name }}
