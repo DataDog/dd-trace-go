@@ -53,6 +53,6 @@ jobs:
           pip install wheel
       - name: Run
         run: |
-          pip install -r system-tests/requirements.txt
-          cd system-tests/parametric
-          CLIENTS_ENABLED=golang ./run.sh
+          cd system-tests
+          pip install -r requirements.txt
+          time TEST_LIBRARY=golang ./run.sh
