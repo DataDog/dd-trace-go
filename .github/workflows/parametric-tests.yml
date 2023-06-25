@@ -34,7 +34,7 @@ jobs:
           path: system-tests/golang
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.18.7'
+          go-version: '1.18'
       - name: Patch dd-trace-go version
         run: |
           cd system-tests/utils/build/docker/golang/parametric/
@@ -55,4 +55,5 @@ jobs:
         run: |
           cd system-tests
           pip install -r requirements.txt
+          time TEST_LIBRARY=golang ./build.sh -i runner
           time TEST_LIBRARY=golang ./run.sh
