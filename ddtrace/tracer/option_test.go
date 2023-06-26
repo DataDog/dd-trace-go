@@ -1002,4 +1002,5 @@ func TestPartialFlushing(t *testing.T) {
 		assert.True(t, c.partialFlushEnabled)
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
+	// TODO: add tests here for WithPartialFlush
 }
