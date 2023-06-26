@@ -166,7 +166,15 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
           check-latest: true
-          cache: true
+          cache: false
+      - name: Cache go
+        uses: actions/cache@v3
+        with:
+          path: |
+            /home/runner/.cache/go-build
+            /home/runner/go/pkg/mod
+            /home/runner/go/bin
+          key: ${{ runner.os }}-go-${{ inputs.go-version }}
       - name: Install gotestsum
         run: |
           time go install -v gotest.tools/gotestsum@v1.10.0
