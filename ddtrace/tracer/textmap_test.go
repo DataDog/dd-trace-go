@@ -2019,4 +2019,21 @@ func TestMalformedTID(t *testing.T) {
 		root.Finish()
 		assert.NotContains(root.Meta, keyTraceID128)
 	})
+
+	t.Run("datadog, valid tid", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE", "Datadog")
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+	})
 }
