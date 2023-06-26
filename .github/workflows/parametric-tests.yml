@@ -18,7 +18,8 @@ on:
 jobs:
   parametric-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     env:
       TEST_LIBRARY: golang
     steps:
