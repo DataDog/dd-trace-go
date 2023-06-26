@@ -168,7 +168,9 @@ jobs:
           check-latest: true
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+        run: |
+          time go install gotest.tools/gotestsum@latest
+          which gotestsum
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
