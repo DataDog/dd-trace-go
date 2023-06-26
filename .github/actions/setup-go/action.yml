@@ -1,4 +1,3 @@
-# Composite action to upload junit test result files to Datadog CI App
 name: 'Setup Go'
 description: 'Setup Go and gotestsum for running tests.'
 inputs:
@@ -14,6 +13,11 @@ runs:
         cache: false
         check-latest: true
 
+    # We're not using the cache feature provided by setup-go so that we can
+    # also cache the gotestsum install below. This can save up to 60s of CI
+    # time. It's not entirely clear why the gotestsum install step is slow
+    # sometimes, but from my debugging it seems hanging on some Off-CPU,
+    # perhaps network activity ocassionally.
     - name: Cache go
       id: cache-go
       uses: actions/cache@v3
