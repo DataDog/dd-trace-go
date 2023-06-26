@@ -12,23 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
+        uses: actions/checkout@v3
+
       - name: Copyright
         run: |
           go run checkcopyright.go
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     steps:
-      - uses: actions/setup-go@v4
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          cache: true
-      - uses: actions/checkout@v3
-        with:
-          repository: 'DataDog/dd-trace-go'
+
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
@@ -159,16 +160,13 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - uses: actions/setup-go@v3
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
@@ -238,16 +236,13 @@ jobs:
           - 8126:8126
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - uses: actions/setup-go@v3
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+
       - name: Test Core
         run: |
             mkdir -p $TEST_RESULTS
