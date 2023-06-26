@@ -8,8 +8,8 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
 	"net/http"
-	"strings"
 
+	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -107,10 +107,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-
-	if r.config.headerTags {
-		spanopts = append(spanopts, headerTagsFromRequest(req))
-	}
+	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:     r.config.serviceName,
@@ -147,14 +144,4 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
-}
-
-func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		for k := range req.Header {
-			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
-				cfg.Tags["http.request.headers."+k] = strings.Join(req.Header.Values(k), ",")
-			}
-		}
-	}
 }
