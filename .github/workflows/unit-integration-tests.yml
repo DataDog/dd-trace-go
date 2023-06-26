@@ -25,7 +25,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
 
@@ -161,7 +162,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
 
@@ -236,7 +238,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - uses: ./.github/actions/setup-go
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
 

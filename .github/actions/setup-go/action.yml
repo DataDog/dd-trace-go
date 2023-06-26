@@ -1,6 +1,6 @@
 # Composite action to upload junit test result files to Datadog CI App
 name: 'Setup Go'
-description: 'Setup Go'
+description: 'Setup Go and gotestsum for running tests.'
 inputs:
   go-version:
     required: true
