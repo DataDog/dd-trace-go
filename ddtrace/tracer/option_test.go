@@ -970,3 +970,42 @@ func TestHostnameDisabled(t *testing.T) {
 		assert.False(t, c.enableHostnameDetection)
 	})
 }
+
+func TestPartialFlushing(t *testing.T) {
+	t.Run("None", func(t *testing.T) {
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Default-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("WithPartialFlushOption", func(t *testing.T) {
+		c := newConfig()
+		WithPartialFlushing(20)(c)
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 20, c.partialFlushMinSpans)
+	})
+}

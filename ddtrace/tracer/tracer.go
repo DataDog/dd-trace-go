@@ -250,6 +250,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	return t
 }
 
+// newTracer creates a new no-op tracer for testing.
+// NOTE: This function does NOT set the global tracer, which is required for
+// most finish span/flushing operations to work as expected. If you are calling
+// span.Finish and/or expecting flushing to work, you must call
+// internal.SetGlobalTracer(...) with the tracer provided by this function.
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
