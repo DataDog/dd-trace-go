@@ -177,7 +177,7 @@ jobs:
           key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
       - name: Install gotestsum
         run: |
-          time go install -v gotest.tools/gotestsum@v1.10.0
+          time go install -x -v gotest.tools/gotestsum@v1.10.0
           which gotestsum
       - name: Test Contrib
         run: |
