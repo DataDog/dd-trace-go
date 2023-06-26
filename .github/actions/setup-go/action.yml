@@ -17,7 +17,7 @@ runs:
     # also cache the gotestsum install below. This can save up to 60s of CI
     # time. It's not entirely clear why the gotestsum install step is slow
     # sometimes, but from my debugging it seems hanging on some Off-CPU,
-    # perhaps network activity ocassionally.
+    # perhaps network activity occasionally.
     - name: Cache go
       id: cache-go
       uses: actions/cache@v3
