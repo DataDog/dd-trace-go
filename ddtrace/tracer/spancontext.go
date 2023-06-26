@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -48,13 +49,13 @@ func (t *traceID) SetUpper(i uint64) {
 	binary.BigEndian.PutUint64(t[:8], i)
 }
 
-func (t *traceID) SetUpperFromHex(s string) {
+func (t *traceID) SetUpperFromHex(s string) error {
 	u, err := strconv.ParseUint(s, 16, 64)
 	if err != nil {
-		log.Debug("Attempted to decode an invalid hex traceID %s", s)
-		return
+		return fmt.Errorf("malformed: %q", s)
 	}
 	t.SetUpper(u)
+	return nil
 }
 
 func (t *traceID) Empty() bool {
