@@ -1819,6 +1819,19 @@ func BenchmarkExtractDatadog(b *testing.B) {
 	}
 }
 
+func BenchmarkExtractW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
 func FuzzMarshalPropagatingTags(f *testing.F) {
 	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
 	f.Fuzz(func(t *testing.T, key1 string, val1 string,
