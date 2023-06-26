@@ -826,6 +826,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
+		c.partialFlushEnabled = true
 		c.partialFlushMinSpans = numSpans
 	}
 }
