@@ -1045,6 +1045,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 
 		// the tracer must create child spans
 		tracer := newTracer(withTransport(newDefaultTransport()))
+		internal.SetGlobalTracer(tracer)
 		defer tracer.Stop()
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", parent)
@@ -2244,6 +2245,7 @@ func TestUserMonitoring(t *testing.T) {
 	}
 	tr := newTracer()
 	defer tr.Stop()
+	internal.SetGlobalTracer(tr)
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
