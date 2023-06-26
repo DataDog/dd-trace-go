@@ -706,6 +706,7 @@ func TestTracerStartSpanOptions(t *testing.T) {
 
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
+	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	assert := assert.New(t)
 	t.Run("64-bit-trace-id", func(t *testing.T) {
@@ -1044,6 +1045,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 
 		// the tracer must create child spans
 		tracer := newTracer(withTransport(newDefaultTransport()))
+		internal.SetGlobalTracer(tracer)
 		defer tracer.Stop()
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", parent)
@@ -1889,6 +1891,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
 	b.Run("Enabled", func(b *testing.B) {
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
 		genBigTraces(b)
 	})
@@ -2242,6 +2245,7 @@ func TestUserMonitoring(t *testing.T) {
 	}
 	tr := newTracer()
 	defer tr.Stop()
+	internal.SetGlobalTracer(tr)
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
