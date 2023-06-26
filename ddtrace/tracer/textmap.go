@@ -397,7 +397,11 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, err
 	}
 	if ctx.trace != nil {
-		if err := setTID(ctx.trace, ctx.traceID); err != nil {
+		tid := ctx.trace.propagatingTag(keyTraceID128)
+		if err := validateTID(tid); err != nil {
+			log.Debug("Invalid hex traceID: %s", err)
+			ctx.trace.unsetPropagatingTag(keyTraceID128)
+		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
 			log.Debug("Attempted to set an invalid hex traceID: %s", err)
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
@@ -408,15 +412,14 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	return &ctx, nil
 }
 
-func setTID(trace *trace, traceID traceID) error {
-	tid := trace.propagatingTag(keyTraceID128)
+func validateTID(tid string) error {
 	if len(tid) != 16 {
 		return fmt.Errorf("invalid length: %q", tid)
 	}
 	if !validIDRgx.MatchString(tid) {
 		return fmt.Errorf("malformed: %q", tid)
 	}
-	return traceID.SetUpperFromHex(tid)
+	return nil
 }
 
 // unmarshalPropagatingTags unmarshals tags from v into ctx
