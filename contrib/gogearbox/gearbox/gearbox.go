@@ -50,6 +50,8 @@ func Middleware(service string) func(gctx gearbox.Context) {
 		fctx.SetUserValue(tracer.GetActiveSpanKey(), span)
 
 		gctx.Next()
+
+		span.SetTag(ext.ResourceName, cfg.resourceNamer(gctx))
 	}
 }
 

@@ -7,10 +7,13 @@ package gearbox
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/gogearbox/gearbox"
 )
 
 type config struct {
 	serviceName string
+	resourceNamer func(gearbox.Context) string
 }
 
 func newConfig(service string) *config {
@@ -23,5 +26,11 @@ func newConfig(service string) *config {
 	
 	return &config{
 		serviceName: service,
+		resourceNamer: defaultResourceNamer,
 	}
+}
+
+func defaultResourceNamer(gctx gearbox.Context) string {
+	fctx := gctx.Context()
+	return string(fctx.Method()) + " " + string(fctx.Path())
 }
