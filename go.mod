@@ -99,6 +99,7 @@ require (
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.24.6
+	honnef.co/go/gotraceui v0.2.0
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
 )
@@ -247,7 +248,6 @@ require (
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	honnef.co/go/gotraceui v0.2.0 // indirect
 	inet.af/netaddr v0.0.0-20220811202034-502d2d690317 // indirect
 	k8s.io/api v0.23.17 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
