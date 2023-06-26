@@ -169,7 +169,7 @@ jobs:
           cache: true
       - name: Install gotestsum
         run: |
-          time go install -xv gotest.tools/gotestsum@v1.10.0
+          time go install -v gotest.tools/gotestsum@v1.10.0
           which gotestsum
       - name: Test Contrib
         run: |
