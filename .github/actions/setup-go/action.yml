@@ -1,0 +1,30 @@
+# Composite action to upload junit test result files to Datadog CI App
+name: 'Setup Go'
+description: 'Setup Go'
+inputs:
+  go-version:
+    required: true
+    description: Go version to setup.
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@v4
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: false
+        check-latest: true
+
+    - name: Cache go
+      id: cache-go
+      uses: actions/cache@v3
+      with:
+        path: |
+          /home/runner/.cache/go-build
+          /home/runner/go/pkg/mod
+          /home/runner/go/bin
+        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
+
+    - name: Install gotestsum
+      if: steps.cache-go.outputs.cache-hit != 'true'
+      run: |
+        go install gotest.tools/gotestsum@latest
