@@ -43,7 +43,7 @@ jobs:
           echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
           go mod tidy
 
-      - name: Install runner
+      - name: Build runner
         uses: ./.github/actions/install_runner
 
       - name: Run
