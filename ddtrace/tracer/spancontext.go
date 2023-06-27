@@ -433,7 +433,7 @@ func (t *trace) finishedOne(s *span) {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
-	//TODO: is there a metric we should bump when doing this?
+	// TODO: is there a metric we should bump when doing this?
 	finishedSpans := make([]*span, 0, t.finished)
 	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
@@ -443,8 +443,6 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
-	// TODO(partialFlush): This isn't going to work if the root span hasn't
-	// finished yet. (And in fact can panic in some situations, as repro'd by TestSpanTracePushSeveral)
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
