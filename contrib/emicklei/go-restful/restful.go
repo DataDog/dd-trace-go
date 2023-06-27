@@ -41,6 +41,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
+		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headerTags))
 		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))

@@ -78,18 +78,12 @@ func (p *profiler) doRequest(bat batch) error {
 		// PROF-5612 (internal) for more details.
 		fmt.Sprintf("profile_seq:%d", bat.seq),
 	)
+	tags = append(tags, bat.extraTags...)
 	// If the user did not configure an "env" in the client, we should omit
 	// the tag so that the agent has a chance to supply a default tag.
 	// Otherwise, the tag supplied by the client will have priority.
 	if p.cfg.env != "" {
 		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
-	}
-	// If the profile batch includes a runtime execution trace, add a tag so
-	// that the uploads are more easily discoverable in the UI.
-	for _, b := range bat.profiles {
-		if b.pt == executionTrace {
-			tags = append(tags, "go_execution_traced:yes")
-		}
 	}
 	contentType, body, err := encode(bat, tags)
 	if err != nil {

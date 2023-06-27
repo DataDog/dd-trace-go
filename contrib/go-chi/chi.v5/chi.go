@@ -49,6 +49,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
+			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
@@ -73,13 +74,18 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			// set the resource name as we get it only once the handler is executed
-			resourceName := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
-			span.SetTag(ext.HTTPRoute, resourceName)
-			if resourceName == "" {
-				resourceName = "unknown"
+			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
+			span.SetTag(ext.HTTPRoute, routePattern)
+			var resourceName string
+			if cfg.resourceNamer != nil {
+				resourceName = cfg.resourceNamer(r)
+			} else {
+				resourceName = routePattern
+				if resourceName == "" {
+					resourceName = "unknown"
+				}
+				resourceName = r.Method + " " + resourceName
 			}
-			resourceName = r.Method + " " + resourceName
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}

@@ -24,6 +24,8 @@ on:
 jobs:
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    # Note: Not using large runners because the jobs spawned by this pipeline
+    # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -36,7 +38,7 @@ jobs:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
-          - APPSEC_IP_BLOCKING
+          - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
@@ -81,24 +83,25 @@ jobs:
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
-      - name: Setup python 3.9
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
       - name: Checkout system tests
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: 'binaries/dd-trace-go'
 
-      - name: Build
-        run: ./build.sh
+      - name: Build weblog
+        run: ./build.sh -i weblog
+
+      - name: Build runner
+        uses: ./.github/actions/install_runner
+
+      - name: Build agent
+        run: ./build.sh -i agent
 
       - name: Run
         run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
