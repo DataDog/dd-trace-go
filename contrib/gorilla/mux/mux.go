@@ -8,16 +8,23 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
 	"net/http"
-	"strings"
 
-	"github.com/gorilla/mux"
-
+	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/gorilla/mux"
 )
+
+const componentName = "gorilla/mux"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Router registers routes to be matched and dispatches a handler.
 type Router struct {
@@ -100,10 +107,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, r.config.spanOpts...)
-
-	if r.config.headerTags {
-		spanopts = append(spanopts, headerTagsFromRequest(req))
-	}
+	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:     r.config.serviceName,
@@ -120,7 +124,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg := newConfig(opts)
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "gorilla/mux"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
@@ -140,14 +144,4 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
-}
-
-func headerTagsFromRequest(req *http.Request) ddtrace.StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		for k := range req.Header {
-			if !strings.HasPrefix(strings.ToLower(k), "x-datadog-") {
-				cfg.Tags["http.request.headers."+k] = strings.Join(req.Header.Values(k), ",")
-			}
-		}
-	}
 }

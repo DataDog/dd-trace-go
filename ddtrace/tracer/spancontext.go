@@ -6,18 +6,75 @@
 package tracer
 
 import (
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
+
+type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+
+var emptyTraceID traceID
+
+func (t *traceID) HexEncoded() string {
+	return hex.EncodeToString(t[:])
+}
+
+func (t *traceID) Lower() uint64 {
+	return binary.BigEndian.Uint64(t[8:])
+}
+
+func (t *traceID) Upper() uint64 {
+	return binary.BigEndian.Uint64(t[:8])
+}
+
+func (t *traceID) SetLower(i uint64) {
+	binary.BigEndian.PutUint64(t[8:], i)
+}
+
+func (t *traceID) SetUpper(i uint64) {
+	binary.BigEndian.PutUint64(t[:8], i)
+}
+
+func (t *traceID) SetUpperFromHex(s string) error {
+	u, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
+		return fmt.Errorf("malformed %q: %s", s, err)
+	}
+	t.SetUpper(u)
+	return nil
+}
+
+func (t *traceID) Empty() bool {
+	return *t == emptyTraceID
+}
+
+func (t *traceID) HasUpper() bool {
+	//TODO: in go 1.20 we can simplify this
+	for _, b := range t[:8] {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *traceID) UpperHex() string {
+	return hex.EncodeToString(t[:8])
+}
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -34,7 +91,7 @@ type spanContext struct {
 
 	// the below group should propagate cross-process
 
-	traceID uint64
+	traceID traceID
 	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
@@ -50,11 +107,12 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		spanID: span.SpanID,
+		span:   span,
 	}
+	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
+		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
@@ -62,6 +120,15 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+		// add 128 bit trace id, if enabled, formatted as big-endian:
+		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+		id128 := time.Duration(span.Start) / time.Second
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -83,7 +150,17 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID }
+func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
+
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128() string {
+	return c.traceID.HexEncoded()
+}
+
+// TraceID128Bytes implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128Bytes() [16]byte {
+	return c.traceID
+}
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
@@ -226,33 +303,16 @@ func (t *trace) drop() {
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-// setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
-}
-
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
-// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
-	if t.propagatingTags == nil {
-		t.propagatingTags = make(map[string]string, 1)
-	}
-	t.propagatingTags[key] = value
-}
-
-// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.propagatingTags, key)
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
@@ -338,16 +398,22 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range ginternal.GetTracerGitMetadataTags() {
 			s.setMeta(k, v)
 		}
+		if s.context != nil && s.context.traceID.HasUpper() {
+			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		}
 	}
-	if len(t.spans) != t.finished {
-		return
+	if len(t.spans) == t.finished {
+		defer func() {
+			t.spans = nil
+			t.finished = 0 // important, because a buffer can be used for several flushes
+		}()
 	}
-	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
-	}()
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
+		return
+	}
+	setPeerService(s, tr.config)
+	if len(t.spans) != t.finished {
 		return
 	}
 	if hn := tr.hostname(); hn != "" {
@@ -359,4 +425,80 @@ func (t *trace) finishedOne(s *span) {
 		spans:    t.spans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+}
+
+// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// tags as applicable for the given span.
+func setPeerService(s *span, cfg *config) {
+	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else { // no peer.service currently set
+		spanKind := s.Meta[ext.SpanKind]
+		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		if !shouldSetDefaultPeerService {
+			return
+		}
+		source := setPeerServiceFromSource(s)
+		if source == "" {
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
+			return
+		}
+		s.setMeta(keyPeerServiceSource, source)
+	}
+	// Overwrite existing peer.service value if remapped by the user
+	ps := s.Meta[ext.PeerService]
+	if to, ok := cfg.peerServiceMappings[ps]; ok {
+		s.setMeta(keyPeerServiceRemappedFrom, ps)
+		s.setMeta(ext.PeerService, to)
+	}
+}
+
+// setPeerServiceFromSource sets peer.service from the sources determined
+// by the tags on the span. It returns the source tag name that it used for
+// the peer.service value, or the empty string if no valid source tag was available.
+func setPeerServiceFromSource(s *span) string {
+	has := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	var sources []string
+	switch {
+	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	case has("aws_service"):
+		sources = []string{
+			"queuename",
+			"topicname",
+			"streamname",
+			"tablename",
+			"bucketname",
+		}
+	case has(ext.DBSystem):
+		sources = []string{
+			ext.CassandraContactPoints,
+			ext.DBName,
+			ext.DBInstance,
+		}
+	case has(ext.MessagingSystem):
+		sources = []string{
+			ext.KafkaBootstrapServers,
+		}
+	case has(ext.RPCSystem):
+		sources = []string{
+			ext.RPCService,
+		}
+	}
+	// network destination tags will be used as fallback unless there are higher priority sources already set.
+	sources = append(sources, []string{
+		ext.NetworkDestinationName,
+		ext.PeerHostname,
+		ext.TargetHost,
+	}...)
+	for _, source := range sources {
+		if val, ok := s.Meta[source]; ok {
+			s.setMeta(ext.PeerService, val)
+			return source
+		}
+	}
+	return ""
 }

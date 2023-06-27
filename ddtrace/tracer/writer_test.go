@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestImplementsTraceWriter(t *testing.T) {
@@ -239,7 +239,7 @@ func TestLogWriter(t *testing.T) {
 }
 
 func TestLogWriterOverflow(t *testing.T) {
-	log.UseLogger(new(testLogger))
+	log.UseLogger(new(log.RecordLogger))
 	t.Run("single-too-big", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer

@@ -4,6 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package echo provides functions to trace the labstack/echo package (https://github.com/labstack/echo).
+// WARNING: The underlying v3 version of labstack/echo has known security vulnerabilities that have been resolved in v4
+// and is no longer under active development. As such consider this package deprecated.
+// It is highly recommended that you update to the latest version available at labstack/echo.v4.
 package echo
 
 import (
@@ -18,9 +21,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/labstack/echo"
 )
+
+const componentName = "labstack/echo"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns echo middleware which will trace incoming requests.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
@@ -32,7 +42,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, "labstack/echo"),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -44,7 +54,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-
+			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}

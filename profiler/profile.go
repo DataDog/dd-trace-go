@@ -13,16 +13,13 @@ import (
 	"io"
 	"runtime"
 	"runtime/trace"
-	"sync"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -193,15 +190,16 @@ var profileTypes = map[ProfileType]profileType{
 			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			lt := &limitedTraceCollector{
-				w:     buf,
-				limit: p.cfg.traceConfig.Limit,
-			}
+			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
-			p.interruptibleSleep(p.cfg.period)
-			lt.Stop()
+			select {
+			case <-p.exit: // Profiling was stopped
+			case <-time.After(p.cfg.period): // The profiling cycle has ended
+			case <-lt.done: // The trace size limit was exceeded
+			}
+			trace.Stop()
 			return buf.Bytes(), nil
 		},
 	},
@@ -217,14 +215,14 @@ const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
 
 type limitedTraceCollector struct {
 	w       io.Writer
-	limit   int
-	written int
-	// stop is used to control stopping the execution tracer. Since stopping
-	// tracing incurs a STW pause to even attempt(*), we'd like to only do
-	// it once.
-	//
-	// *: see https://cs.opensource.google/go/go/+/refs/tags/go1.20.1:src/runtime/trace.go;l=330;drc=40ed3591829f67e7a116180aec543dd15bfcf5f9
-	stop sync.Once
+	limit   int64
+	written int64
+	// done is closed to signal that the limit has been exceeded
+	done chan struct{}
+}
+
+func newLimitedTraceCollector(w io.Writer, limit int64) *limitedTraceCollector {
+	return &limitedTraceCollector{w: w, limit: limit, done: make(chan struct{})}
 }
 
 // Write calls the underlying writer's Write method, and stops tracing if the
@@ -235,21 +233,15 @@ func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
 		// TODO: still count n against the limit?
 		return
 	}
-	l.written += n
+	l.written += int64(n)
 	if l.written >= l.limit {
-		// We can't stop tracing within this method, because trace.Stop
-		// won't return until all pending events are written, which
-		// requires calling this function, meaning we'll deadlock.
-		go l.Stop()
+		select {
+		case <-l.done:
+		default:
+			close(l.done)
+		}
 	}
 	return
-}
-
-// Stop stops tracing
-func (l *limitedTraceCollector) Stop() {
-	l.stop.Do(func() {
-		trace.Stop()
-	})
 }
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
@@ -323,6 +315,9 @@ type batch struct {
 	host           string
 	profiles       []*profile
 	endpointCounts map[string]uint64
+	// extraTags are tags which might vary depending on which profile types
+	// actually run in a given profiling cycle
+	extraTags []string
 }
 
 func (b *batch) addProfile(p *profile) {
@@ -347,79 +342,6 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	return []*profile{{name: filename, pt: pt, data: data}}, nil
 }
 
-type deltaProfiler interface {
-	Delta(curData []byte) ([]byte, error)
-}
-
-type pprofileDeltaProfiler struct {
-	delta pprofutils.Delta
-	prev  *pprofile.Profile
-}
-
-// newDeltaProfiler returns an initialized delta profiler based on cfg.deltaMethod
-//
-// - fastdelta: uses internal/fastdelta
-// - comparing: executes both pprofile and fastdelta, comparing the two with statsd metrics
-// - any other value: pprofile delta
-//
-// If value types are given (e.g. "alloc_space", "alloc_objects"),
-// only those values will have deltas computed.
-// Otherwise, deltas will be computed for every value.
-func newDeltaProfiler(cfg *config, v ...pprofutils.ValueType) deltaProfiler {
-	switch cfg.deltaMethod {
-	// TODO: slowdelta and comparing implementation can be removed after 2023-04-11.
-	case "slowdelta":
-		return &pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}}
-	case "comparing":
-		return newComparingDeltaProfiler(
-			cfg,
-			&pprofileDeltaProfiler{delta: pprofutils.Delta{SampleTypes: v}},
-			newFastDeltaProfiler(v...))
-	default:
-		return newFastDeltaProfiler(v...)
-	}
-}
-
-// Delta derives the delta profile between curData and the profile passed to the
-// previous call to Delta. The first call to Delta will return the profile
-// unchanged.
-func (d *pprofileDeltaProfiler) Delta(curData []byte) ([]byte, error) {
-	curProf, err := pprofile.ParseData(curData)
-	if err != nil {
-		return nil, fmt.Errorf("delta prof parse: %v", err)
-	}
-	var deltaData []byte
-	prevProf := d.prev
-	if prevProf == nil {
-		// First time deltaProfile gets called for a type, there is no prevProf. In
-		// this case we emit the current profile as a delta profile.
-		deltaData = curData
-	} else {
-		// Delta profiling is also implemented in the Go core, see commit below.
-		// Unfortunately the core implementation isn't resuable via a API, so we do
-		// our own delta calculation below.
-		// https://github.com/golang/go/commit/2ff1e3ebf5de77325c0e96a6c2a229656fc7be50#diff-94594f8f13448da956b02997e50ca5a156b65085993e23bbfdda222da6508258R303-R304
-		deltaProf, err := d.delta.Convert(prevProf, curProf)
-		if err != nil {
-			return nil, fmt.Errorf("delta prof merge: %v", err)
-		}
-		// TimeNanos is supposed to be the time the profile was collected, see
-		// https://github.com/google/pprof/blob/master/proto/profile.proto.
-		deltaProf.TimeNanos = curProf.TimeNanos
-		// DurationNanos is the time period covered by the profile.
-		deltaProf.DurationNanos = curProf.TimeNanos - prevProf.TimeNanos
-		deltaBuf := &bytes.Buffer{}
-		if err := deltaProf.Write(deltaBuf); err != nil {
-			return nil, fmt.Errorf("delta prof write: %v", err)
-		}
-		deltaData = deltaBuf.Bytes()
-	}
-	// Keep the most recent profiles in memory for future diffing. This needs to
-	// be taken into account when enforcing memory limits going forward.
-	d.prev = curProf
-	return deltaData, nil
-}
-
 type fastDeltaProfiler struct {
 	dc  *fastdelta.DeltaComputer
 	buf bytes.Buffer
@@ -427,7 +349,7 @@ type fastDeltaProfiler struct {
 	gzw *gzip.Writer
 }
 
-func newFastDeltaProfiler(v ...pprofutils.ValueType) deltaProfiler {
+func newFastDeltaProfiler(v ...pprofutils.ValueType) *fastDeltaProfiler {
 	fd := &fastDeltaProfiler{
 		dc: fastdelta.NewDeltaComputer(v...),
 	}
@@ -467,115 +389,17 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	return b, nil
 }
 
-type comparingDeltaProfiler struct {
-	golden deltaProfiler
-	sut    deltaProfiler
-	tags   []string
-	statsd StatsdClient
-}
-
-func newComparingDeltaProfiler(cfg *config, golden, systemUnderTest deltaProfiler) deltaProfiler {
-	return &comparingDeltaProfiler{
-		golden: golden,
-		sut:    systemUnderTest,
-		tags:   cfg.tags.Slice(),
-		statsd: cfg.statsd,
-	}
-}
-
-func (cdp *comparingDeltaProfiler) Delta(data []byte) (res []byte, err error) {
-	sw := internal.NewStopwatch()
-	res, err = cdp.golden.Delta(data)
-	goldenDuration := sw.Tick()
-
-	if err != nil {
-		cdp.reportError(err.Error())
-		return nil, err
-	}
-
-	resSut, err := cdp.sut.Delta(data)
-	sutDuration := sw.Tick()
-
-	cdp.reportTiming("golden", goldenDuration)
-	cdp.reportTiming("sut", sutDuration)
-
-	if err != nil {
-		// sut errored, but return the golden result
-		cdp.reportError(err.Error())
-		return res, nil
-	}
-
-	pprofGolden, err := pprofile.ParseData(res)
-	if err != nil {
-		cdp.reportError(err.Error())
-		return res, nil
-	}
-
-	pprofSut, err := pprofile.ParseData(resSut)
-	if err != nil {
-		cdp.reportError(err.Error())
-		return res, nil
-	}
-
-	if pprofGolden.DurationNanos != pprofSut.DurationNanos {
-		log.Error("profiles differ: golden_dur=%d sut_dur=%d", pprofGolden.DurationNanos, pprofSut.DurationNanos)
-		cdp.reportError("compare_failed")
-		return res, nil
-	}
-
-	pprofDiff, err := PprofDiff(pprofSut, pprofGolden)
-	if err != nil {
-		cdp.reportError(err.Error())
-		return res, nil
-	}
-
-	cdp.reportTiming("overhead", sw.Tick())
-
-	if len(pprofDiff.Sample) > 0 {
-		var extraTags []string
-		for _, vt := range pprofSut.SampleType {
-			extraTags = append(extraTags, "sample_type:"+vt.Type)
-		}
-		pprofSut.Scale(-1) // so it prints correctly, PprofDiff mutated it
-		log.Error("profiles differ: golden: %v\n\nsut: %v\n\ndiff:%v", pprofGolden, pprofSut, pprofDiff)
-		cdp.reportError("compare_failed", extraTags...)
-	}
-
-	return res, nil
-}
-
-// interface hack to get around limitation of public profiler.StatsdClient
-// The public interface only offers a Timing method _which_should_not_be_used_
-// because histogram aggregation math is fundamentally broken.  It's unfortunate
-// that the public interface exposed Timing instead of Distribution given
-// Distribution was available at the time.
-type statsdDistribution interface {
-	// Distribution creates a distribution metric, prefer over Timing
-	Distribution(event string, value float64, tags []string, rate float64) error
-}
-
-func (cdp *comparingDeltaProfiler) reportTiming(section string, dur time.Duration) {
-	statsdClient, ok := cdp.statsd.(statsdDistribution)
-	if !ok {
-		return
-	}
-	_ = statsdClient.Distribution(
-		"datadog.profiling.go.delta_compare.dist",
-		float64(dur.Milliseconds()),
-		append(cdp.tags, "section:"+section),
-		1)
-}
-
-func (cdp *comparingDeltaProfiler) reportError(error string, extraTags ...string) {
-	tags := append(cdp.tags, "msg:"+error)
-	tags = append(tags, extraTags...)
-	_ = cdp.statsd.Count("datadog.profiling.go.delta_compare.error", 1, tags, 1)
-}
-
 // PprofDiff computes the delta between all values b-a and returns them as a new
 // profile. Samples that end up with a delta of 0 are dropped. WARNING: Profile
 // a will be mutated by this function. You should pass a copy if that's
 // undesirable.
+//
+// Deprecated: This function was introduced into our public API unintentionally.
+// It will be removed in the next release. If you need this functionality,
+// it can be implemented in two lines:
+//
+//	a.Scale(-1)
+//	return pprofile.Merge([]*pprofile.Profile{a, b})
 func PprofDiff(a, b *pprofile.Profile) (*pprofile.Profile, error) {
 	a.Scale(-1)
 	return pprofile.Merge([]*pprofile.Profile{a, b})
