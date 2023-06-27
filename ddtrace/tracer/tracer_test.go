@@ -1909,22 +1909,46 @@ func genBigTraces(b *testing.B) {
 	tracer, transport, flush, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
 	defer stop()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	m := runtime.MemStats{}
+	sumHeapUsageMB := float64(0)
+	heapCounts := 0
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				runtime.ReadMemStats(&m)
+				heapCounts++
+				sumHeapUsageMB += float64(m.HeapInuse) / 1_000_000
+			}
+		}
+	}()
+
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		for i := 0; i < 10; i++ {
 			parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 			for i := 0; i < 10_000; i++ {
-				tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
+				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
+				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
+				sp.Finish()
 			}
 			parent.Finish()
+			go flush(-1)         // act like a ticker
+			go transport.Reset() // pretend we sent any payloads
 		}
-		go flush(-1)         // act like a ticker
-		go transport.Reset() // pretend we sent any payloads
-		m := runtime.MemStats{}
-		runtime.ReadMemStats(&m)
-		b.ReportMetric(float64(m.HeapAlloc)/float64(b.N), "heapAlloc/op")
-		b.ReportMetric(float64(m.HeapInuse)/float64(b.N), "heapInUse/op")
 	}
+	b.StopTimer()
+	cancel()
+	wg.Wait()
+	b.ReportMetric(sumHeapUsageMB/float64(heapCounts), "avgHeapInUse(Mb)")
 }
 
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
