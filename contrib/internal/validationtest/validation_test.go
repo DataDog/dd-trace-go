@@ -16,7 +16,6 @@ import (
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
@@ -48,21 +47,21 @@ var defaultDialer = &net.Dialer{
 	DualStack: true,
 }
 
-func getDatadogTracerEnvString() string {
+func tracerEnv() string {
+	// Gets the current tracer configuration variables needed for Test Agent testing and places
+	// these env variables in a comma separated string of key=value pairs.
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
-		namingschema.SetVersion(v)
-	} else {
-		v := namingschema.SetDefaultVersion()
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
-	}
 	peerServiceDefaultsEnabled := false
-	if int(namingschema.GetVersion()) == int(namingschema.SchemaV0) {
-		peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	schemaVersion := namingschema.SchemaV1
+	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
+		schemaVersion = v
+		if int(v) == int(namingschema.SchemaV0) {
+			peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+		}
 	}
 	ddEnvVars := map[string]string{
 		"DD_SERVICE":                             "Datadog-Test-Agent-Trace-Checks",
-		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", namingschema.GetVersion()),
+		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", schemaVersion),
 		"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": strconv.FormatBool(peerServiceDefaultsEnabled),
 	}
 	values := make([]string, 0, len(ddEnvVars))
@@ -77,7 +76,8 @@ type testAgentTransport struct {
 }
 
 func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Add("X-Datadog-Trace-Env-Variables", getDatadogTracerEnvString())
+	// Adds the DD Tracer configuration environment and test session token to the trace headers
+	req.Header.Add("X-Datadog-Trace-Env-Variables", tracerEnv())
 	req.Header.Add("X-Datadog-Test-Session-Token", os.Getenv("CI_TEST_AGENT_SESSION_TOKEN"))
 	return http.DefaultTransport.RoundTrip(req)
 }
@@ -100,10 +100,11 @@ var testAgentClient = &http.Client{
 }
 
 func TestIntegrations(t *testing.T) {
-	integrations := []Integration{
-		memcachetest.New(),
-		dnstest.New(),
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
+
+	integrations := []Integration{memcachetest.New(), dnstest.New()}
 	for _, ig := range integrations {
 		name := ig.Name()
 		t.Run(name, func(t *testing.T) {
@@ -186,13 +187,13 @@ func checkFailures(t *testing.T, sessionToken string) {
 
 	defer resp.Body.Close()
 
+	// the Test Agent returns a 200 if no trace-failures occurred and 400 otherwise
 	if resp.StatusCode == http.StatusOK {
 		return
+	} else {
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		assert.Fail(t, "APM Test Agent detected failures: \n", string(body))
 	}
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	assert.Fail(t, "test agent detected failures: \n", string(body))
 }
