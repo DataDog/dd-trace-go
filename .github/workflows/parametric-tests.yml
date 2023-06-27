@@ -43,20 +43,8 @@ jobs:
           echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
           go mod tidy
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Cache venv
-        uses: actions/cache@v3
-        with:
-          path: ./venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-venv-
-
-      - name: Build
-        run: ./build.sh -i runner
+      - name: Build runner
+        uses: ./.github/actions/install_runner
 
       - name: Run
         run: ./run.sh PARAMETRIC
