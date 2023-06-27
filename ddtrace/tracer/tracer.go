@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -317,7 +318,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			t.sampleFlushableChunk(trace)
+			t.sampleChunk(trace)
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}
@@ -342,7 +343,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					t.sampleFlushableChunk(trace)
+					t.sampleChunk(trace)
 					if len(trace.spans) != 0 {
 						t.traceWriter.add(trace.spans)
 					}
@@ -363,10 +364,10 @@ type chunk struct {
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
-// sampleFlushableChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleFlushableChunk(info *chunk) {
-	if len(info.spans) > 0 {
-		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
+// sampleChunk applies single-span sampling to the provided trace.
+func (t *tracer) sampleChunk(c *chunk) {
+	if len(c.spans) > 0 {
+		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -374,12 +375,12 @@ func (t *tracer) sampleFlushableChunk(info *chunk) {
 	var kept []*span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
-		for _, span := range info.spans {
+		for _, span := range c.spans {
 			if t.rulesSampling.SampleSpan(span) {
 				kept = append(kept, span)
 			}
 		}
-		if len(kept) > 0 && len(kept) < len(info.spans) {
+		if len(kept) > 0 && len(kept) < len(c.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
@@ -387,9 +388,9 @@ func (t *tracer) sampleFlushableChunk(info *chunk) {
 	if len(kept) == 0 {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
-	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
-	if !info.willSend {
-		info.spans = kept
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
+	if !c.willSend {
+		c.spans = kept
 	}
 }
 
@@ -623,6 +624,7 @@ func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
 		span.context.trace.drop()
+		span.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
