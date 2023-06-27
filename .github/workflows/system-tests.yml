@@ -84,7 +84,7 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
@@ -95,13 +95,13 @@ jobs:
           path: 'binaries/dd-trace-go'
 
       - name: Build weblog
-        uses: ./build.sh -i weblog
+        run: ./build.sh -i weblog
 
       - name: Build runner
         uses: ./.github/actions/install_runner
 
       - name: Build agent
-        uses: ./build.sh -i agent
+        run: ./build.sh -i agent
 
       - name: Run
         run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
