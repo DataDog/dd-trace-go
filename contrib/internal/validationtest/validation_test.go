@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/gomemcache/memcache"
+	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/bradfitz/gomemcache/memcache"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -100,9 +100,9 @@ var testAgentClient = &http.Client{
 }
 
 func TestIntegrations(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
+	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	// }
 
 	integrations := []Integration{memcachetest.New(), dnstest.New()}
 	for _, ig := range integrations {
@@ -190,10 +190,9 @@ func checkFailures(t *testing.T, sessionToken string) {
 	// the Test Agent returns a 200 if no trace-failures occurred and 400 otherwise
 	if resp.StatusCode == http.StatusOK {
 		return
-	} else {
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Fail(t, "APM Test Agent detected failures: \n", string(body))
 	}
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Fail(t, "APM Test Agent detected failures: \n", string(body))
 }

@@ -110,7 +110,7 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: williamconti549/dd-apm-test-agent:service-naming
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:latest
         ports:
           - 9126:9126
         env:
