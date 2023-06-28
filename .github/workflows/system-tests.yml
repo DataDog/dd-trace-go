@@ -42,6 +42,7 @@ jobs:
           - APPSEC_REQUEST_BLOCKING
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
+          - APM_TRACING_E2E_OTEL
         include:
           - weblog-variant: net-http
             scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
@@ -69,6 +70,11 @@ jobs:
               DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
               DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+          - scenario: APM_TRACING_E2E_OTEL
             env:
               DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
               DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
