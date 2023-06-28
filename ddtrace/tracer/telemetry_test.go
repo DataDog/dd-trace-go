@@ -34,12 +34,12 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
-		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceTracers]; ok {
-			if initTime, ok := metrics["tracer_init_time"]; ok {
+		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
+			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
 				return
 			}
-			t.Fatalf("could not find tracer init time in telemetry client metrics")
+			t.Fatalf("could not find general init time in telemetry client metrics")
 		}
 		t.Fatalf("could not find tracer namespace in telemetry client metrics")
 	})

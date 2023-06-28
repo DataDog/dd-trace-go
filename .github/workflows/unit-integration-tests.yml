@@ -12,23 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
+        uses: actions/checkout@v3
+
       - name: Copyright
         run: |
           go run checkcopyright.go
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     steps:
-      - uses: actions/setup-go@v4
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          cache: true
-      - uses: actions/checkout@v3
-        with:
-          repository: 'DataDog/dd-trace-go'
+
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
@@ -36,60 +37,9 @@ jobs:
           fail_on_error: true
           reporter: github-pr-review
 
-  test-core:
-    runs-on: ubuntu-latest
-    env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-       INTEGRATION: true
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - uses: actions/setup-go@v3
-        with:
-          go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
-      - name: Test Core
-        run: |
-            mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
-
-      - name: Upload the results to Datadog CI App
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
-          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-      - name: Upload Coverage
-        if: always()
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash)
-
   test-contrib:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: "APM Larger Runners"
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
@@ -210,16 +160,13 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          repository: 'DataDog/dd-trace-go'
-      - uses: actions/setup-go@v3
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
@@ -264,3 +211,53 @@ jobs:
               git fetch origin && git checkout v1.0.0 && cd ../..
 
               go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+  test-core:
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+       INTEGRATION: true
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
+        # we don't fully configure it with a valid API key (and possibly other reasons)
+        # This command just checks for our ability to connect to port 8126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Test Core
+        run: |
+            mkdir -p $TEST_RESULTS
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash)
