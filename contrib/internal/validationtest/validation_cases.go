@@ -4,7 +4,7 @@ import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 // ValidationTestCase represents configuration replicating real tracer configuration, where there is a combination
 // of environment variables and tracer Start Options
-type ValidationTestCase struct {
+type Case struct {
 	EnvVars      map[string]string
 	StartOptions []tracer.StartOption
 }
@@ -31,14 +31,14 @@ func getStartOptions() [][]tracer.StartOption {
 }
 
 // GetValidationTestCases creates a matrix of testCases to run, combining the different Env configs with tracer StartOptions
-func GetValidationTestCases() []ValidationTestCase {
+func GetValidationTestCases() []Case {
 	envConfigs := getEnvConfigs()
 	startOptionConfigs := getStartOptions()
-	var validationTestCases []ValidationTestCase
+	var validationTestCases []Case
 
 	for _, env := range envConfigs {
 		for _, startOptions := range startOptionConfigs {
-			testCase := ValidationTestCase{
+			testCase := Case{
 				EnvVars:      env,
 				StartOptions: startOptions,
 			}
