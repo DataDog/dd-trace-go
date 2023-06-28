@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/bradfitz/gomemcache/memcache"
-	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/integrations/miekg/dns"
+	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
+	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -41,17 +41,12 @@ type Integration interface {
 	NumSpans() int
 }
 
-var defaultDialer = &net.Dialer{
-	Timeout:   30 * time.Second,
-	KeepAlive: 30 * time.Second,
-	DualStack: true,
-}
-
+// tracerEnv gets the current tracer configuration variables needed for Test Agent testing and places
+// these env variables in a comma separated string of key=value pairs.
 func tracerEnv() string {
-	// Gets the current tracer configuration variables needed for Test Agent testing and places
-	// these env variables in a comma separated string of key=value pairs.
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	peerServiceDefaultsEnabled := false
+	// Use a default schema version of V1 and only update if the env variable is a valid schema
 	schemaVersion := namingschema.SchemaV1
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
 		schemaVersion = v
@@ -75,13 +70,18 @@ type testAgentTransport struct {
 	*http.Transport
 }
 
+// RoundTrip adds the DD Tracer configuration environment and test session token to the trace request headers
 func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Adds the DD Tracer configuration environment and test session token to the trace headers
-	req.Header.Add("X-Datadog-Trace-Env-Variables", tracerEnv())
-	req.Header.Add("X-Datadog-Test-Session-Token", os.Getenv("CI_TEST_AGENT_SESSION_TOKEN"))
+	req.Header.Add("X-Datadog-Trace-Env-Variables", currentTracerEnv)
+	req.Header.Add("X-Datadog-Test-Session-Token", sessionToken)
 	return http.DefaultTransport.RoundTrip(req)
 }
 
+var defaultDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+	DualStack: true,
+}
 var testAgentClient = &http.Client{
 	// We copy the transport to avoid using the default one, as it might be
 	// augmented with tracing and we don't want these calls to be recorded.
@@ -95,25 +95,45 @@ var testAgentClient = &http.Client{
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-	},
-	Timeout: 2 * time.Second,
+	}, Timeout: 2 * time.Second,
 }
 
+func testAgentDetails() string {
+	testAgentHost, exists := os.LookupEnv("DD_TEST_AGENT_HOST")
+	if !exists {
+		testAgentHost = "localhost"
+	}
+
+	testAgentPort, exists := os.LookupEnv("DD_TEST_AGENT_PORT")
+	if !exists {
+		testAgentPort = "9126"
+	}
+	return fmt.Sprintf("%s:%s", testAgentHost, testAgentPort)
+}
+
+var (
+	testAgentConnection = testAgentDetails()
+	sessionToken        = "default"
+	currentTracerEnv    = tracerEnv()
+)
+
 func TestIntegrations(t *testing.T) {
-	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	// }
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
 
 	integrations := []Integration{memcachetest.New(), dnstest.New()}
 	for _, ig := range integrations {
 		name := ig.Name()
 		t.Run(name, func(t *testing.T) {
-			sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
+			sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
 			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
 			t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 
-			tracer.Start(tracer.WithAgentAddr("localhost:9126"), tracer.WithHTTPClient(testAgentClient))
+			currentTracerEnv = tracerEnv()
+
+			tracer.Start(tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))
 			defer tracer.Stop()
 
 			cleanup := ig.Init(t)
@@ -129,10 +149,12 @@ func TestIntegrations(t *testing.T) {
 	}
 }
 
+// assertNumSpans makes an http request to the Test Agent for all traces produced with the included
+// sessionToken and asserts that the correct number of spans was returned
 func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	t.Helper()
 	run := func() bool {
-		req, err := http.NewRequest("GET", "http://localhost:9126/test/session/traces", nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
 		require.NoError(t, err)
 		req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
 
@@ -176,9 +198,11 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	}
 }
 
+// checkFailures makes an HTTP request to the Test Agent for any Trace Check failures and passes or fails the test
+// depending on if failures exist.
 func checkFailures(t *testing.T, sessionToken string) {
 	t.Helper()
-	req, err := http.NewRequest("GET", "http://localhost:9126/test/trace_check/failures", nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/trace_check/failures", testAgentConnection), nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
 

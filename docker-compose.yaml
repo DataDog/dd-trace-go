@@ -91,7 +91,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:latest
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.10.1
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang

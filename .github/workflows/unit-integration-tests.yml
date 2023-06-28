@@ -101,6 +101,8 @@ jobs:
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
+          DD_TEST_AGENT_HOST: "localhost"
+          DD_TEST_AGENT_PORT: 9126
         # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
         # we don't fully configure it with a valid API key (and possibly other reasons)
         # This command just checks for our ability to connect to port 8126
@@ -110,7 +112,7 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:latest
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.10.1
         ports:
           - 9126:9126
         env:
