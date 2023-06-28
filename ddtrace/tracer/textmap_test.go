@@ -1819,6 +1819,19 @@ func BenchmarkExtractDatadog(b *testing.B) {
 	}
 }
 
+func BenchmarkExtractW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
 func FuzzMarshalPropagatingTags(f *testing.F) {
 	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
 	f.Fuzz(func(t *testing.T, key1 string, val1 string,
@@ -1984,4 +1997,55 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 		}
 		wg.Wait()
 	}
+}
+
+func TestMalformedTID(t *testing.T) {
+	assert := assert.New(t)
+	t.Run("datadog, short tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, malformed tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, valid tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+	})
 }

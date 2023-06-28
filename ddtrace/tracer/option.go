@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -210,6 +211,9 @@ func newConfig(opts ...StartOption) *config {
 	}
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
+	}
+	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
+		WithHeaderTags(strings.Split(v, ","))(c)
 	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
@@ -959,6 +963,20 @@ func StackFrames(n, skip uint) FinishOption {
 	return func(cfg *ddtrace.FinishConfig) {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headerAsTags []string) StartOption {
+	return func(c *config) {
+		globalconfig.ClearHeaderTags()
+		for _, h := range headerAsTags {
+			header, tag := normalizer.NormalizeHeaderTag(h)
+			globalconfig.SetHeaderTag(header, tag)
+		}
 	}
 }
 

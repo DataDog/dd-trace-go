@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -496,6 +497,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	isRootSpan := context == nil || context.span == nil
 	if isRootSpan {
+		traceprof.SetProfilerRootTags(span)
 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
 	if isRootSpan || context.span.Service != span.Service {
@@ -639,10 +641,24 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.Type
 	}
-	ctx, task := rt.NewTask(ctx, taskName)
+	end := noopTaskEnd
+	if !globalinternal.IsExecutionTraced(ctx) {
+		var task *rt.Task
+		ctx, task = rt.NewTask(ctx, taskName)
+		end = task.End
+	} else {
+		// We only want to skip task creation for this particular span,
+		// not necessarily for child spans which can come from different
+		// integrations. So update this context to be "not" execution
+		// traced so that derived contexts used by child spans don't get
+		// skipped.
+		ctx = globalinternal.WithExecutionNotTraced(ctx)
+	}
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
-	return ctx, task.End
+	return ctx, end
 }
+
+func noopTaskEnd() {}
 
 func (t *tracer) hostname() string {
 	if !t.config.enableHostnameDetection {
