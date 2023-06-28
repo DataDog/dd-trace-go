@@ -54,10 +54,10 @@ type (
 	}
 
 	exclusionEntry struct {
-		ID          string        `json:"id"`
-		Conditions  []interface{} `json:"conditions,omitempty"`
-		Inputs      []interface{} `json:"inputs,omitempty"`
-		RulesTarget []interface{} `json:"rules_target,omitempty"`
+		ID          string      `json:"id"`
+		Conditions  interface{} `json:"conditions,omitempty"`
+		Inputs      interface{} `json:"inputs,omitempty"`
+		RulesTarget interface{} `json:"rules_target,omitempty"`
 	}
 
 	ruleDataEntry rc.ASMDataRuleData
@@ -73,32 +73,6 @@ func defaultRulesFragment() rulesFragment {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f
-}
-
-// validate checks that a rule override entry complies with the rule override RFC
-func (o *rulesOverrideEntry) validate() bool {
-	return len(o.ID) > 0 || o.RulesTarget != nil
-}
-
-// validate checks that an exclusion entry complies with the exclusion filter RFC
-func (e *exclusionEntry) validate() bool {
-	return len(e.Inputs) > 0 || len(e.Conditions) > 0 || len(e.RulesTarget) > 0
-}
-
-// validate checks that the rules fragment's fields comply with all relevant RFCs
-func (r_ *rulesFragment) validate() bool {
-	for _, o := range r_.Overrides {
-		if !o.validate() {
-			return false
-		}
-	}
-	for _, e := range r_.Exclusions {
-		if !e.validate() {
-			return false
-		}
-	}
-	// TODO (Francois): validate more fields once we implement more RC capabilities
-	return true
 }
 
 func (r_ *rulesFragment) clone() rulesFragment {
