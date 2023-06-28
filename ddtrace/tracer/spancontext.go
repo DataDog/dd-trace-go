@@ -405,6 +405,7 @@ func (t *trace) finishedOne(s *span) {
 	if !ok {
 		return
 	}
+	setPeerService(s, tr.config)
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
@@ -421,32 +422,9 @@ func (t *trace) finishedOne(s *span) {
 		t.setTraceTags(s, tr)
 	}
 
-	if len(t.spans) == t.finished {
-		defer func() {
-			t.spans = nil
-			t.finished = 0 // important, because a buffer can be used for several flushes
-		}()
-	}
-	setPeerService(s, tr.config)
-	// we have a tracer that can receive completed traces.
-	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
-	if tr.config.partialFlushMinSpans > 0 && t.finished >= tr.config.partialFlushMinSpans && len(t.spans) != t.finished {
-		log.Debug("Partial flush triggered with %d finished spans", t.finished)
-		//TODO: is there a metric we should bump when doing this?
-		finishedSpans := make([]*span, 0, t.finished)
-		leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
-		for _, s2 := range t.spans {
-			if s2.finished {
-				s2.setMetric(keySamplingPriority, *t.priority) //TODO: maybe we don't have to do this for every span
-				finishedSpans = append(finishedSpans, s2)
-			} else {
-				leftoverSpans = append(leftoverSpans, s2)
-			}
-		}
-		t.spans = leftoverSpans
-		t.finished = 0
-		tr.pushChunk(&chunk{
-			spans:    finishedSpans,
+	if len(t.spans) == t.finished { // perform a full flush of all spans
+		t.finishChunk(tr, &chunk{
+			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
 		t.spans = nil
