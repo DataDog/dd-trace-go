@@ -115,37 +115,40 @@ var (
 	testAgentConnection = testAgentDetails()
 	sessionToken        = "default"
 	currentTracerEnv    = tracerEnv()
+	testCases           = getTestCases()
 )
 
 func TestIntegrations(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
-
+	t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 	integrations := []Integration{memcachetest.New(), dnstest.New()}
 	for _, ig := range integrations {
 		name := ig.Name()
-		t.Run(name, func(t *testing.T) {
-			sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
-			t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
-			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-			t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
+		sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
+		t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
+		for _, testCase := range testCases {
+			t.Run(name, func(t *testing.T) {
+				for k, v := range testCase {
+					t.Setenv(k, v)
+				}
+				currentTracerEnv = tracerEnv()
 
-			currentTracerEnv = tracerEnv()
+				tracer.Start(tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))
+				defer tracer.Stop()
 
-			tracer.Start(tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))
-			defer tracer.Stop()
+				cleanup := ig.Init(t)
+				defer cleanup()
 
-			cleanup := ig.Init(t)
-			defer cleanup()
+				ig.GenSpans(t)
 
-			ig.GenSpans(t)
+				tracer.Flush()
 
-			tracer.Flush()
-
-			assertNumSpans(t, sessionToken, ig.NumSpans())
-			checkFailures(t, sessionToken)
-		})
+				assertNumSpans(t, sessionToken, ig.NumSpans())
+				checkFailures(t, sessionToken)
+			})
+		}
 	}
 }
 
