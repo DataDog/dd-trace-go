@@ -16,6 +16,7 @@ import (
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"github.com/stretchr/testify/assert"
@@ -54,8 +55,13 @@ func tracerEnv() string {
 			peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 		}
 	}
+	serviceName := os.Getenv("DD_SERVICE")
+	// override DD_SERVICE if a global service name is set in order to replicate real tracer service name resolution
+	if v := globalconfig.ServiceName(); v != "" {
+		serviceName = v
+	}
 	ddEnvVars := map[string]string{
-		"DD_SERVICE":                             "Datadog-Test-Agent-Trace-Checks",
+		"DD_SERVICE":                             serviceName,
 		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", schemaVersion),
 		"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": strconv.FormatBool(peerServiceDefaultsEnabled),
 	}
@@ -115,14 +121,13 @@ var (
 	testAgentConnection = testAgentDetails()
 	sessionToken        = "default"
 	currentTracerEnv    = tracerEnv()
-	testCases           = getTestCases()
+	testCases           = GetValidationTestCases()
 )
 
 func TestIntegrations(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
-	t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 	integrations := []Integration{memcachetest.New(), dnstest.New()}
 	for _, ig := range integrations {
 		name := ig.Name()
@@ -130,12 +135,18 @@ func TestIntegrations(t *testing.T) {
 		t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 		for _, testCase := range testCases {
 			t.Run(name, func(t *testing.T) {
-				for k, v := range testCase {
+				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
+				// loop through all our environment for the testCase and set each variable
+				for k, v := range testCase.EnvVars {
 					t.Setenv(k, v)
 				}
+
+				// also include the testCase start options within the tracer config
+				tracer.Start(append(testCase.StartOptions, tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))...)
+
+				// get the current Tracer Environment after it has been started with configuration
 				currentTracerEnv = tracerEnv()
 
-				tracer.Start(tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))
 				defer tracer.Stop()
 
 				cleanup := ig.Init(t)
