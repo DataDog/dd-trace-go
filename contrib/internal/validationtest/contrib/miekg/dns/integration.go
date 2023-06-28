@@ -14,11 +14,9 @@ import (
 )
 
 type Integration struct {
-	msg *dns.Msg
-	mux *dns.ServeMux
-
-	addr string
-
+	msg      *dns.Msg
+	mux      *dns.ServeMux
+	addr     string
 	numSpans int
 }
 
@@ -38,15 +36,12 @@ func (i *Integration) Init(t *testing.T) func() {
 		Net:     "udp",
 		Handler: dnstrace.WrapHandler(&handler{t: t, ig: i}),
 	}
-
 	// start the traced server
 	go func() {
 		require.NoError(t, server.ListenAndServe())
 	}()
-
 	// wait for the server to be ready
 	waitServerReady(t, server.Addr)
-
 	cleanup := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -58,7 +53,6 @@ func (i *Integration) Init(t *testing.T) func() {
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
 	msg := newMessage()
-
 	_, err := dnstrace.Exchange(msg, i.addr)
 	require.NoError(t, err)
 	i.numSpans++
@@ -98,7 +92,6 @@ func waitServerReady(t *testing.T, addr string) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	timeoutChan := time.After(5 * time.Second)
-
 	for {
 		m := new(dns.Msg)
 		m.SetQuestion("miek.nl.", dns.TypeMX)
