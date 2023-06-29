@@ -250,12 +250,13 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 	}
 }
 
-
 // RTWithPropagation enables/disables propagation for tracing headers.
 // Disabling propagation will disconnect this trace from any downstream traces.
 func RTWithPropagation(propagation bool) RoundTripperOption {
 	return func(cfg *roundTripperConfig) {
 		cfg.propagation = propagation
+	}
+}
 
 // RTWithIgnoreRequest holds the function to use for determining if the
 // outgoing HTTP request should not be traced.
