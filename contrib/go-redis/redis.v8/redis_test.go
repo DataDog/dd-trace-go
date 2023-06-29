@@ -489,7 +489,7 @@ func TestError(t *testing.T) {
 		assert.Equal("redis.command", span.OperationName())
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
-		assert.Equal("get test_key: ", span.Tag("redis.raw_command"))
+		assert.Equal("get test_key:", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis.v8", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
