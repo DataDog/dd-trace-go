@@ -45,7 +45,8 @@ func GetGlobalTracer() ddtrace.Tracer {
 	return nil
 }
 
-// Testing returns if there is a currently running tracer in testing mode.
+// Testing returns true if there is a currently running tracer in testing mode.
+// else false
 func Testing() bool {
 	if gt := globalTracer.Load().(*tracerCfg); gt != nil {
 		return gt.testing
