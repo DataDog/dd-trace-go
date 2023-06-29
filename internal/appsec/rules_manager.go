@@ -47,7 +47,7 @@ type (
 		Type       string `json:"type"`
 		Parameters struct {
 			StatusCode     int    `json:"status_code"`
-			GRPCStatusCode int    `json:"grpc_status_code,omitempty"`
+			GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
 			Type           string `json:"type,omitempty"`
 			Location       string `json:"location,omitempty"`
 		} `json:"parameters,omitempty"`

@@ -92,7 +92,11 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	switch e.Type {
 	case "block_request":
-		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, e.Parameters.GRPCStatusCode, e.Parameters.Type)
+		grpcCode := 10 // use the grpc.Codes value for "Aborted" by default
+		if e.Parameters.GRPCStatusCode != nil {
+			grpcCode = *e.Parameters.GRPCStatusCode
+		}
+		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, grpcCode, e.Parameters.Type)
 	case "redirect_request":
 		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
 	default:
