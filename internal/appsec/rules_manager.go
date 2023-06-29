@@ -33,7 +33,7 @@ type (
 		Overrides   []interface{}   `json:"rules_override,omitempty"`
 		Exclusions  []interface{}   `json:"exclusions,omitempty"`
 		RulesData   []ruleDataEntry `json:"rules_data,omitempty"`
-		Actions     []interface{}   `json:"actions,omitempty"`
+		Actions     []actionEntry   `json:"actions,omitempty"`
 		CustomRules []interface{}   `json:"custom_rules,omitempty"`
 	}
 
