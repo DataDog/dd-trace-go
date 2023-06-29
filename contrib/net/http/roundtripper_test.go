@@ -573,7 +573,6 @@ func TestRoundTripperPropagation(t *testing.T) {
 
 	rt := WrapRoundTripper(http.DefaultTransport,
 		RTWithPropagation(false))
-
 	client := &http.Client{
 		Transport: rt,
 	}
