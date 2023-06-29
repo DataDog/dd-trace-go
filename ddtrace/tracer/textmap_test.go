@@ -1784,8 +1784,6 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 	ctx := root.Context().(*spanContext)
 
-	setPropagatingTag(ctx, w3cTraceIDTag,
-		"4bf92f3577b34da6a3ce929d0e0e4736")
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
