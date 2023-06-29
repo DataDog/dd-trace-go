@@ -66,20 +66,14 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
+	r2 := req.Clone(ctx)
 	if rt.cfg.propagation {
-		// inject the span context into the http request
-		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
+		// inject the span context into the http request copy
+		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
 		if err != nil {
 			// this should never happen
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 		}
-  }
-	r2 := req.Clone(ctx)
-	// inject the span context into the http request copy
-	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
-	if err != nil {
-		// this should never happen
-		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 	}
 	res, err = rt.base.RoundTrip(r2)
 	if err != nil {
