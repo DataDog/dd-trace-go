@@ -578,7 +578,9 @@ func TestRoundTripperPropagation(t *testing.T) {
 		Transport: rt,
 	}
 
-	client.Get(s.URL + "/hello/world")
+	resp, err := client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
 }
 
 func TestClientNamingSchema(t *testing.T) {
