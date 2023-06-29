@@ -9,6 +9,12 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+  merge_group: # on merge groups touching appsec files
+    paths:
+      - '.github/workflows/appsec.yml'
+      - 'internal/appsec/**'
+      - 'appsec/**'
+      - 'contrib/**/appsec.go'
   push:
     branches: release-v*
 env:
@@ -20,7 +26,7 @@ jobs:
   native:
     strategy:
       matrix:
-        runs-on: [ macos-12, macos-11, macos-10.15, ubuntu-22.04, ubuntu-20.04, ubuntu-18.04, windows-latest ]
+        runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04, windows-latest ]
         go-version: [ "1.20", "1.19", "1.18" ]
         cgo_enabled: # test it compiles with and without cgo
           - 0
@@ -52,7 +58,7 @@ jobs:
           # Install gotestsum to get the results in a junit file 
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -99,7 +105,7 @@ jobs:
           # Install gotestsum to get the results in a junit file 
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v ${{ matrix.build_tags != '' && format('-tags="{0}"', matrix.build_tags) || ''}} $TO_TEST || true
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine

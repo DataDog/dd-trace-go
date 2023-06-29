@@ -15,6 +15,7 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"reflect"
@@ -25,12 +26,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"github.com/DataDog/appsec-internal-go/netip"
 )
 
 // Abstract HTTP handler operation definition.
 type (
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
+		// Method is the http method verb of the request, address is `server.request.method`
+		Method string
 		// RequestURI corresponds to the address `server.request.uri.raw`
 		RequestURI string
 		// Headers corresponds to the address `server.request.headers.no_cookies`
@@ -41,8 +46,8 @@ type (
 		Query map[string][]string
 		// PathParams corresponds to the address `server.request.path_params`
 		PathParams map[string]string
-		// ClientIP corresponds to the addres `http.client_ip`
-		ClientIP instrumentation.NetaddrIP
+		// ClientIP corresponds to the address `http.client_ip`
+		ClientIP netip.Addr
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -59,17 +64,30 @@ type (
 
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
+
+	// BodyMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
+	BodyMonitoringError struct {
+		error
+	}
 )
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
-func MonitorParsedBody(ctx context.Context, body interface{}) {
-	if parent := fromContext(ctx); parent != nil {
-		op := StartSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
-		op.Finish()
-	} else {
+func MonitorParsedBody(ctx context.Context, body interface{}) error {
+	parent := fromContext(ctx)
+	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
+		return nil
+	}
+
+	return ExecuteSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
+}
+
+// NewBodyMonitoringError creates a new body sdk monitoring error that returns `msg` upon calling `Error()`
+func NewBodyMonitoringError(msg string) *BodyMonitoringError {
+	return &BodyMonitoringError{
+		errors.New(msg),
 	}
 }
 
@@ -88,12 +106,26 @@ func applyActions(op *Operation) http.Handler {
 	return nil
 }
 
+// ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
+// An error is returned if the body associated to that operation must be blocked
+func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
+	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
+	dyngo.StartOperation(op, args)
+	dyngo.FinishOperation(op, SDKBodyOperationRes{})
+	return op.Error
+}
+
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
-func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string) http.Handler {
+// The onBlock params are used to cleanup the context when needed.
+// It is a specific patch meant for Gin, for which we must abort the
+// context since it uses a queue of handlers and it's the only way to make
+// sure other queued handlers don't get executed.
+// TODO: this patch must be removed/improved when we rework our actions/operations system
+func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ipTags, clientIP := ClientIPTags(r.Header, r.RemoteAddr)
+		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
@@ -113,6 +145,13 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			if h := applyActions(op); h != nil {
 				h.ServeHTTP(w, r)
 			}
+			// Execute the onBlock functions to make sure blocking works properly
+			// in case we are instrumenting the Gin framework
+			if _, ok := op.Tags()[instrumentation.BlockedRequestTag]; ok {
+				for _, f := range onBlock {
+					f()
+				}
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
@@ -128,7 +167,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 // MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
 // http.Request along with the given current span. It returns an empty structure
 // when appsec is disabled.
-func MakeHandlerOperationArgs(r *http.Request, clientIP instrumentation.NetaddrIP, pathParams map[string]string) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
 		k := strings.ToLower(k)
@@ -141,6 +180,7 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP instrumentation.NetaddrI
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
+		Method:     r.Method,
 		RequestURI: r.RequestURI,
 		Headers:    headers,
 		Cookies:    cookies,
@@ -181,6 +221,7 @@ type (
 	// StartSDKBodyOperation() and finished with its Finish() method.
 	SDKBodyOperation struct {
 		dyngo.Operation
+		Error error
 	}
 )
 

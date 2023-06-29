@@ -11,12 +11,13 @@ package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.or
 import (
 	"errors"
 	"io"
-	"math"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -24,17 +25,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const componentName = "google.golang.org/grpc"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
+
 // cache a constant option: saves one allocation per call
 var spanTypeRPC = tracer.SpanType(ext.AppTypeRPC)
 
 func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.StartSpanOption {
-	if len(cfg.tags) == 0 && math.IsNaN(cfg.analyticsRate) {
+	if len(cfg.tags) == 0 && len(cfg.spanOpts) == 0 {
 		return opts
 	}
 
 	ret := make([]tracer.StartSpanOption, 0, 1+len(cfg.tags)+len(opts))
-	ret = append(ret, tracer.AnalyticsRate(cfg.analyticsRate))
 	for _, opt := range opts {
+		ret = append(ret, opt)
+	}
+	for _, opt := range cfg.spanOpts {
 		ret = append(ret, opt)
 	}
 	for key, tag := range cfg.tags {
@@ -44,13 +53,17 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 }
 
 func startSpanFromContext(
-	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
+	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
+	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
-		tracer.ServiceName(service),
+		tracer.ServiceName(serviceFn()),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
+		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
+		tracer.Tag(ext.GRPCFullMethod, method),
+		tracer.Tag(ext.RPCService, methodElements[0]),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

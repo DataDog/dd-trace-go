@@ -9,14 +9,14 @@ import (
 	"log"
 	"strings"
 
-	elasticsearch "github.com/elastic/go-elasticsearch/v7"
-	"github.com/elastic/go-elasticsearch/v7/esapi"
-
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	elasticsearch "github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-func Example_v7() {
+func Example_v8() {
 	cfg := elasticsearch.Config{
 		Transport: elastictrace.NewRoundTripper(elastictrace.WithServiceName("my-es-service")),
 		Addresses: []string{
@@ -29,10 +29,9 @@ func Example_v7() {
 	}
 
 	_, err = esapi.IndexRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
-		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:      "twitter",
+		DocumentID: "1",
+		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), es)
 
 	if err != nil {
@@ -46,9 +45,8 @@ func Example_v7() {
 	)
 
 	_, err = esapi.GetRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
+		Index:      "twitter",
+		DocumentID: "1",
 	}.Do(ctx, es)
 
 	if err != nil {

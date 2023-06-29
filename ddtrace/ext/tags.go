@@ -9,10 +9,21 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
+	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
+	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
+	NetworkDestinationName = "network.destination.name"
+
+	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
+	NetworkDestinationIP = "network.destination.ip"
+
 	// TargetPort sets the target host port.
+	// Deprecated: Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// NetworkDestinationPort is the remote port number of the outbound connection.
+	NetworkDestinationPort = "network.destination.port"
 
 	// SamplingPriority is the tag that marks the sampling priority of a span.
 	// Deprecated in favor of ManualKeep and ManualDrop.
@@ -106,13 +117,4 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
-
-	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
-	MessagingSystem = "messaging.system"
-)
-
-// Messaging tags.
-const (
-	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
-	MessagingKafkaPartition = "messaging.kafka.partition"
 )

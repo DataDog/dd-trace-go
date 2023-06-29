@@ -5,9 +5,27 @@
 
 package pubsub
 
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+)
+
 type config struct {
-	serviceName string
-	measured    bool
+	serviceName     string
+	publishSpanName string
+	receiveSpanName string
+	measured        bool
+}
+
+func defaultConfig() *config {
+	return &config{
+		serviceName: namingschema.NewDefaultServiceName(
+			"",
+			namingschema.WithOverrideV0(""),
+		).GetName(),
+		publishSpanName: namingschema.NewGCPPubsubOutboundOp().GetName(),
+		receiveSpanName: namingschema.NewGCPPubsubInboundOp().GetName(),
+		measured:        false,
+	}
 }
 
 // A Option is used to customize spans started by WrapReceiveHandler or Publish.

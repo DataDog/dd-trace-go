@@ -10,11 +10,16 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
+
+const defaultServiceName = "go-restful"
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	headerTags    func(string) (string, bool)
 }
 
 func newConfig() *config {
@@ -22,9 +27,14 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
+	serviceName := namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
 	return &config{
-		serviceName:   "go-restful",
+		serviceName:   serviceName,
 		analyticsRate: rate,
+		headerTags:    globalconfig.HeaderTag,
 	}
 }
 
@@ -57,6 +67,24 @@ func WithAnalyticsRate(rate float64) Option {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
+		}
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerAsTags := make(map[string]string)
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerAsTags[header] = tag
+	}
+	return func(cfg *config) {
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerAsTags[k]
+			return tag, ok
 		}
 	}
 }

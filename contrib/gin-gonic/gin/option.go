@@ -9,25 +9,27 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+
+	"github.com/gin-gonic/gin"
 )
+
+const defaultServiceName = "gin.router"
 
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
+	headerTags    func(string) (string, bool)
 }
 
-func newConfig(service string) *config {
-	if service == "" {
-		service = "gin.router"
-		if svc := globalconfig.ServiceName(); svc != "" {
-			service = svc
-		}
+func newConfig(serviceName string) *config {
+	if serviceName == "" {
+		serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	}
 	rate := globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
@@ -36,8 +38,9 @@ func newConfig(service string) *config {
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
-		serviceName:   service,
+		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
+		headerTags:    globalconfig.HeaderTag,
 	}
 }
 
@@ -72,6 +75,24 @@ func WithAnalyticsRate(rate float64) Option {
 func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
+	return func(cfg *config) {
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }
 

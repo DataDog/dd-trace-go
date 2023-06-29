@@ -16,14 +16,14 @@ type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (*raceTestTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
 	return NoopSpan{}
 }
-func (*raceTestTracer) SetServiceInfo(name, app, appType string) {}
-func (*raceTestTracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
+func (*raceTestTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
 	return NoopSpanContext{}, nil
 }
-func (*raceTestTracer) Inject(context ddtrace.SpanContext, carrier interface{}) error { return nil }
+func (*raceTestTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }

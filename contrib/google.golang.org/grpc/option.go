@@ -6,12 +6,19 @@
 package grpc
 
 import (
-	"math"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"google.golang.org/grpc/codes"
+)
+
+const (
+	defaultClientServiceName = "grpc.client"
+	defaultServerServiceName = "grpc.server"
 )
 
 // Option specifies a configuration option for the grpc package. Not all options apply
@@ -19,9 +26,9 @@ import (
 type Option func(*config)
 
 type config struct {
-	serviceName         string
+	serviceName         func() string
+	spanName            string
 	nonErrorCodes       map[codes.Code]bool
-	analyticsRate       float64
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
@@ -30,24 +37,8 @@ type config struct {
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
+	spanOpts            []ddtrace.StartSpanOption
 	tags                map[string]interface{}
-}
-
-func (cfg *config) serverServiceName() string {
-	if cfg.serviceName != "" {
-		return cfg.serviceName
-	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		return svc
-	}
-	return "grpc.server"
-}
-
-func (cfg *config) clientServiceName() string {
-	if cfg.serviceName == "" {
-		return "grpc.client"
-	}
-	return cfg.serviceName
 }
 
 // InterceptorOption represents an option that can be passed to the grpc unary
@@ -56,15 +47,12 @@ func (cfg *config) clientServiceName() string {
 type InterceptorOption = Option
 
 func defaults(cfg *config) {
-	// cfg.serviceName defaults are set in interceptors
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	// cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(globalconfig.AnalyticsRate()))
 	if internal.BoolEnv("DD_TRACE_GRPC_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
+		cfg.spanOpts = append(cfg.spanOpts, tracer.AnalyticsRate(1.0))
 	}
 	cfg.ignoredMetadata = map[string]struct{}{
 		"x-datadog-trace-id":          {},
@@ -73,10 +61,36 @@ func defaults(cfg *config) {
 	}
 }
 
+func clientDefaults(cfg *config) {
+	sn := namingschema.NewDefaultServiceName(
+		defaultClientServiceName,
+		namingschema.WithOverrideV0(defaultClientServiceName),
+	).GetName()
+	cfg.serviceName = func() string { return sn }
+	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	defaults(cfg)
+}
+
+func serverDefaults(cfg *config) {
+	// We check for a configured service name, so we don't break users who are incorrectly creating their server
+	// before the call `tracer.Start()`
+	if globalconfig.ServiceName() != "" {
+		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+		cfg.serviceName = func() string { return sn }
+	} else {
+		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
+			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
+		ns := namingschema.NewDefaultServiceName(defaultServerServiceName)
+		cfg.serviceName = ns.GetName
+	}
+	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	defaults(cfg)
+}
+
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.serviceName = func() string { return name }
 	}
 }
 
@@ -119,9 +133,7 @@ func NonErrorCodes(cs ...codes.Code) InterceptorOption {
 func WithAnalytics(on bool) Option {
 	return func(cfg *config) {
 		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
 		}
 	}
 }
@@ -131,9 +143,7 @@ func WithAnalytics(on bool) Option {
 func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
+			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
 		}
 	}
 }
@@ -196,5 +206,13 @@ func WithCustomTag(key string, value interface{}) Option {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
+	}
+}
+
+// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// to spans started by the integration.
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+	return func(cfg *config) {
+		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
 }

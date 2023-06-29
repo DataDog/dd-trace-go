@@ -1,11 +1,7 @@
-variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/relenv-microbenchmarking-platform/-/jobs/201492583
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/relenv-microbenchmarking-platform:dd-trace-go_knusbaum
-  INDEX_FILE: index.txt
-
 benchmark:
   stage: benchmarks
   image: $BASE_CI_IMAGE
+  when: on_success
   timeout: 1h
   only:
     refs:
@@ -13,16 +9,16 @@ benchmark:
   interruptible: true
   tags: ["runner:apm-k8s-tweaked-metal"]
   script:
-    - ./.gitlab/scripts/capture-hardware-software-info.sh
-    - ./.gitlab/scripts/run-benchmarks.sh
-    - ./.gitlab/scripts/upload-results-to-s3.sh
-    - ./.gitlab/scripts/analyze-results.sh
-    - ./.gitlab/scripts/post-pr-comment.sh
+    - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+    - git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    - ./steps/capture-hardware-software-info.sh
+    - ./steps/run-benchmarks.sh
+    - ./steps/analyze-results.sh
+    - "./steps/upload-results-to-s3.sh || :"
+    - "./steps/post-pr-comment.sh || :"
   artifacts:
     name: "reports"
     paths:
       - reports/
     expire_in: 3 months
-  variables:
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"

@@ -11,15 +11,16 @@ import (
 	"os"
 	"testing"
 
-	"github.com/globalsign/mgo"
-	"github.com/globalsign/mgo/bson"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -62,6 +63,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 		if val.OperationName() == "mongodb.query" {
 			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
 			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
+			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
 		}
 	}
 
@@ -120,6 +122,7 @@ func TestCollection_Insert(t *testing.T) {
 	assert.Equal("mongodb.query", spans[0].OperationName())
 	assert.Equal(ext.SpanKindClient, spans[0].Tag(ext.SpanKind))
 	assert.Equal("mongodb", spans[0].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_Update(t *testing.T) {
@@ -142,6 +145,7 @@ func TestCollection_Update(t *testing.T) {
 	assert.Equal("mongodb.query", spans[1].OperationName())
 	assert.Equal(ext.SpanKindClient, spans[1].Tag(ext.SpanKind))
 	assert.Equal("mongodb", spans[1].Tag(ext.DBSystem))
+	assert.Equal("localhost", spans[0].Tag(ext.NetworkDestinationName))
 }
 
 func TestCollection_UpdateId(t *testing.T) {
@@ -521,4 +525,26 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []DialOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		session, err := Dial("localhost:27017", opts...)
+		require.NoError(t, err)
+		err = session.
+			DB("my_db").
+			C("MyCollection").
+			Insert(bson.D{bson.DocElem{Name: "entity", Value: bson.DocElem{Name: "index", Value: 0}}})
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewMongoDBTest(genSpans, "mongodb")(t)
 }
