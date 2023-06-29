@@ -41,8 +41,8 @@ type Operation interface {
 	// OnData allows to register a data listener to the operation
 	OnData(reflect.Type, DataListener)
 
-	// SendData sends data to the data listeners of the operation
-	SendData(any)
+	// EmitData sends data to the data listeners of the operation
+	EmitData(any)
 
 	// Parent return the parent operation. It returns nil for the root
 	// operation.
@@ -241,7 +241,7 @@ func (o *operation) OnData(t reflect.Type, l DataListener) {
 	o.dataBroadcaster.add(t, l)
 }
 
-func (o *operation) SendData(data any) {
+func (o *operation) EmitData(data any) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {

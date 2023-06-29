@@ -301,7 +301,7 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 				for _, id := range actionIds {
 					if a, ok := handle.actions[id]; ok && a.Blocking() {
 						code, err := a.GRPC()(map[string][]string{})
-						userIDOp.SendData(grpcsec.NewMonitoringError(err.Error(), code))
+						userIDOp.EmitData(grpcsec.NewMonitoringError(err.Error(), code))
 					}
 				}
 				addSecurityEvents(op, limiter, matches)
@@ -525,7 +525,7 @@ func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches ...json.
 func processActions(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) (interrupt bool) {
 	for _, id := range actionIds {
 		if a, ok := actions[id]; ok {
-			op.SendData(actions[id])
+			op.EmitData(actions[id])
 			interrupt = interrupt || a.Blocking()
 		}
 	}
@@ -540,10 +540,10 @@ func processHTTPSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Acti
 	for _, id := range actionIds {
 		if action, ok := actions[id]; ok {
 			if op.Parent() != nil {
-				op.Parent().SendData(action) // Send the action so that the handler gets executed
+				op.Parent().EmitData(action) // Send the action so that the handler gets executed
 			}
 			if action.Blocking() { // Send the error to be returned by the SDK
-				op.SendData(httpsec.NewMonitoringError("Request blocked")) // Send error
+				op.EmitData(httpsec.NewMonitoringError("Request blocked")) // Send error
 			}
 		}
 	}
