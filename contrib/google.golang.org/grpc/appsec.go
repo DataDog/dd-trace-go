@@ -71,7 +71,6 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			err = status.Error(codes.Code(code), e.Error())
 		})
 		ctx = grpcsec.StartHandlerOperation(ctx, op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
-		dyngo.StartOperation(op, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP})
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,

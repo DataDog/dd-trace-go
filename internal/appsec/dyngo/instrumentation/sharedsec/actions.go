@@ -35,7 +35,7 @@ func init() {
 	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
 		if path, ok := os.LookupEnv(env); ok {
 			if t, err := os.ReadFile(path); err != nil {
-				log.Warn("Could not read template at %s: %v", path, err)
+				log.Error("Could not read template at %s: %v", path, err)
 			} else {
 				*template = t
 			}
@@ -54,8 +54,12 @@ type (
 		blocking bool
 	}
 
-	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler
+	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that takes metadata as input and returns a status code and an error
+	// TODO: rely on strongly typed actions (with the actual grpc types) by introducing WAF constructors
+	//     living in the contrib packages, along with their dependencies - something like `appsec.RegisterWAFConstructor(newGRPCWAF)`
+	//    Such constructors would receive the full appsec config and rules, so that they would be able to build
+	//    specific blocking actions.
 	GRPCWrapper func(map[string][]string) (uint32, error)
 )
 

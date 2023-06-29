@@ -40,7 +40,6 @@ const (
 )
 
 type wafHandle struct {
-	mu sync.Mutex
 	*waf.Handle
 	// Actions are tightly link to a ruleset, which is linked to a waf handle
 	actions map[string]*sharedsec.Action
@@ -97,6 +96,7 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	case "redirect_request":
 		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
 	default:
+		log.Debug("appsec: unknown action type `%s`", e.Type)
 		return nil
 	}
 }
@@ -104,6 +104,7 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	handle, err := waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 	actions := map[string]*sharedsec.Action{
+		// Default built-in block action
 		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
 	}
 
