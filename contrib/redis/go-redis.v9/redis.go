@@ -154,7 +154,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		err := hook(ctx, cmd)
 
 		var finishOpts []ddtrace.FinishOption
-		if err != nil && err != redis.Nil {
+		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
 		span.Finish(finishOpts...)
@@ -184,7 +184,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		err := hook(ctx, cmds)
 
 		var finishOpts []ddtrace.FinishOption
-		if err != nil && err != redis.Nil {
+		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
 		span.Finish(finishOpts...)
