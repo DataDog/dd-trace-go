@@ -19,7 +19,7 @@ import (
 	"github.com/emicklei/go-restful/v3"
 )
 
-const componentName = "emicklei/go-restful"
+const componentName = "emicklei/go-restful/v3"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
