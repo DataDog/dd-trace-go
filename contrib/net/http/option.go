@@ -151,6 +151,7 @@ type roundTripperConfig struct {
 	spanNamer     func(req *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
+	propagation   bool
 	errCheck      func(err error) bool
 }
 
@@ -169,6 +170,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		).GetName(),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 	}
@@ -245,6 +247,14 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// RTWithPropagation enables/disables propagation for tracing headers.
+// Disabling propagation will disconnect this trace from any downstream traces.
+func RTWithPropagation(propagation bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.propagation = propagation
 	}
 }
 

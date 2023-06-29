@@ -635,7 +635,6 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 const (
 	traceparentHeader = "traceparent"
 	tracestateHeader  = "tracestate"
-	w3cTraceIDTag     = "w3cTraceID"
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
