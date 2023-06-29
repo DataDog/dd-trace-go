@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"regexp"
@@ -22,7 +21,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "elastic/go-elasticsearch.v6"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.
 func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
@@ -58,11 +64,15 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
+		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
+	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.operationName, opts...)
 	defer span.Finish()
 
 	contentEncoding := req.Header.Get("Content-Encoding")
@@ -93,7 +103,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 var (
-	idRegexp         = regexp.MustCompile("/([0-9]+)([/\\?]|$)")
+	idRegexp         = regexp.MustCompile(`/([0-9]+)([/\?]|$)`)
 	idPlaceholder    = []byte("/?$2")
 	indexRegexp      = regexp.MustCompile("[0-9]{2,}")
 	indexPlaceholder = []byte("?")
@@ -143,7 +153,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 			return string(snip), rc2, nil
 		}
 		defer gzr.Close()
-		snip, err = ioutil.ReadAll(gzr)
+		snip, err = io.ReadAll(gzr)
 	}
 	return string(snip), rc2, err
 }

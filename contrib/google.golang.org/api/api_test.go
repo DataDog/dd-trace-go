@@ -6,19 +6,22 @@
 package api
 
 import (
-	"io/ioutil"
+	"context"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	books "google.golang.org/api/books/v1"
-	civicinfo "google.golang.org/api/civicinfo/v2"
-	urlshortener "google.golang.org/api/urlshortener/v1"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/books/v1"
+	"google.golang.org/api/civicinfo/v2"
+	"google.golang.org/api/option"
+	"google.golang.org/api/urlshortener/v1"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -32,7 +35,7 @@ var badRequestTransport roundTripperFunc = func(req *http.Request) (*http.Respon
 		Header:     make(http.Header),
 		Request:    req,
 		StatusCode: http.StatusBadRequest,
-		Body:       ioutil.NopCloser(strings.NewReader("")),
+		Body:       io.NopCloser(strings.NewReader("")),
 	}
 	return res, nil
 }
@@ -41,9 +44,9 @@ func TestBooks(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	svc, err := books.New(&http.Client{
+	svc, err := books.NewService(context.Background(), option.WithHTTPClient(&http.Client{
 		Transport: WrapRoundTripper(badRequestTransport),
-	})
+	}))
 	assert.NoError(t, err)
 	svc.Bookshelves.
 		List("montana.banana").
@@ -59,16 +62,18 @@ func TestBooks(t *testing.T) {
 	assert.Equal(t, "books.bookshelves.list", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/books/v1/users/montana.banana/bookshelves", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, svc.BasePath+"books/v1/users/montana.banana/bookshelves?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
 func TestCivicInfo(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	svc, err := civicinfo.New(&http.Client{
+	svc, err := civicinfo.NewService(context.Background(), option.WithHTTPClient(&http.Client{
 		Transport: WrapRoundTripper(badRequestTransport),
-	})
+	}))
 	assert.NoError(t, err)
 	svc.Representatives.RepresentativeInfoByAddress().Do()
 
@@ -78,20 +83,22 @@ func TestCivicInfo(t *testing.T) {
 	s0 := spans[0]
 	assert.Equal(t, "http.request", s0.OperationName())
 	assert.Equal(t, "http", s0.Tag(ext.SpanType))
-	assert.Equal(t, "google", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "google.civicinfo", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "civicinfo.representatives.representativeInfoByAddress", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/civicinfo/v2/representatives", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
 func TestURLShortener(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	svc, err := urlshortener.New(&http.Client{
+	svc, err := urlshortener.NewService(context.Background(), option.WithHTTPClient(&http.Client{
 		Transport: WrapRoundTripper(badRequestTransport),
-	})
+	}))
 	assert.NoError(t, err)
 	svc.Url.
 		List().
@@ -107,7 +114,34 @@ func TestURLShortener(t *testing.T) {
 	assert.Equal(t, "urlshortener.url.list", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, "/urlshortener/v1/url/history", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, "https://www.googleapis.com/urlshortener/v1/url/history?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
+}
+
+func TestWithEndpointMetadataDisabled(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	svc, err := civicinfo.NewService(context.Background(), option.WithHTTPClient(&http.Client{
+		Transport: WrapRoundTripper(badRequestTransport, WithEndpointMetadataDisabled()),
+	}))
+	require.NoError(t, err)
+	svc.Representatives.RepresentativeInfoByAddress().Do()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s0 := spans[0]
+	assert.Equal(t, "http.request", s0.OperationName())
+	assert.Equal(t, "http", s0.Tag(ext.SpanType))
+	assert.Equal(t, "google", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
+	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
+	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

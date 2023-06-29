@@ -8,17 +8,17 @@ package grpc
 import (
 	"net"
 
-	context "golang.org/x/net/context"
-	"google.golang.org/grpc/stats"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	context "golang.org/x/net/context"
+	"google.golang.org/grpc/stats"
 )
 
 // NewClientStatsHandler returns a gRPC client stats.Handler to trace RPC calls.
 func NewClientStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
-	defaults(cfg)
+	clientDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -31,12 +31,13 @@ type clientStatsHandler struct{ cfg *config }
 
 // TagRPC starts a new span for the initiated RPC request.
 func (h *clientStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) context.Context {
+	spanOpts := append([]tracer.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindClient)}, h.cfg.spanOpts...)
 	_, ctx = startSpanFromContext(
 		ctx,
 		rti.FullMethodName,
-		"grpc.client",
-		h.cfg.clientServiceName(),
-		tracer.AnalyticsRate(h.cfg.analyticsRate),
+		h.cfg.spanName,
+		h.cfg.serviceName,
+		spanOpts...,
 	)
 	ctx = injectSpanIntoContext(ctx)
 	return ctx

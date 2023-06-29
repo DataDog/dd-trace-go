@@ -1,0 +1,263 @@
+name: Unit and Integration Tests
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+
+jobs:
+  copyright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Copyright
+        run: |
+          go run checkcopyright.go
+
+  lint:
+    runs-on:
+      group: "APM Larger Runners"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: golangci-lint
+        uses: reviewdog/action-golangci-lint@v2
+        with:
+          golangci_lint_version: v1.52.2
+          fail_on_error: true
+          reporter: github-pr-review
+
+  test-contrib:
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+       INTEGRATION: true
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
+        # we don't fully configure it with a valid API key (and possibly other reasons)
+        # This command just checks for our ability to connect to port 8126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+      cassandra:
+        image: cassandra:3.7
+        env:
+          JVM_OPTS: "-Xms750m -Xmx750m"
+        ports:
+          - 9042:9042
+      mysql:
+        image: circleci/mysql:5.7
+        env:
+          MYSQL_ROOT_PASSWORD: admin
+          MYSQL_PASSWORD: test
+          MYSQL_USER: test
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+      postgres:
+        image: circleci/postgres:9.5
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        env:
+         SA_PASSWORD: myPassw0rd
+         ACCEPT_EULA: Y
+        ports:
+          - 1433:1433
+      consul:
+        image: consul:1.6.0
+        ports:
+          - 8500:8500
+      redis:
+        image: redis:3.2
+        ports:
+          - 6379:6379
+      elasticsearch2:
+        image: elasticsearch:2
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+        ports:
+          - 9200:9200
+      elasticsearch5:
+        image: elasticsearch:5
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+        ports:
+          - 9201:9200
+      elasticsearch6:
+        image: elasticsearch:6.8.13
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+        ports:
+          - 9202:9200
+      elasticsearch7:
+        image: elasticsearch:7.14.1
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          discovery.type: single-node
+        ports:
+          - 9203:9200
+      elasticsearch8:
+        image: elasticsearch:8.6.2
+        env:
+          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          discovery.type: single-node
+          xpack.security.enabled: false
+        ports:
+          - 9204:9200
+      mongo:
+        image: circleci/mongo:latest-ram
+        ports:
+          - 27017:27017
+      memcached:
+        image: memcached:1.5.9
+        ports:
+          - 11211:11211
+      zookeeper:
+        image: bitnami/zookeeper:latest
+        env:
+          ALLOW_ANONYMOUS_LOGIN: "yes"
+        ports:
+          - 2181:2181
+      kafka:
+        image: wurstmeister/kafka:2.13-2.8.1
+        env:
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+          KAFKA_CREATE_TOPICS: gotest:1:1,gosegtest:1:1
+          KAFKA_BROKER_ID: 1
+        ports:
+          - 9092:9092
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Test Contrib
+        run: |
+            mkdir -p $TEST_RESULTS
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash)
+
+      - name: Testing outlier google.golang.org/api
+        run: |
+              go get google.golang.org/api@v0.121.0 # version used to generate code
+              go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
+              go test -v ./contrib/google.golang.org/api/...
+
+      - name: Testing outlier gRPC v1.2
+        run: |
+              # This hacky approach is necessary because running the tests regularly
+              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
+              go mod vendor
+
+              # Checkout grpc-go@v1.2.0
+              cd vendor/google.golang.org && rm -rf grpc
+              git clone https://github.com/grpc/grpc-go grpc && cd grpc
+              git fetch origin && git checkout v1.2.0 && cd ../..
+
+              # Checkout sketches-go@v1.0.0
+              cd vendor/github.com/DataDog && rm -rf sketches-go
+              git clone https://github.com/DataDog/sketches-go && cd sketches-go
+              git fetch origin && git checkout v1.0.0 && cd ../..
+
+              go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
+
+  test-core:
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+       INTEGRATION: true
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
+        # we don't fully configure it with a valid API key (and possibly other reasons)
+        # This command just checks for our ability to connect to port 8126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      - name: Test Core
+        run: |
+            mkdir -p $TEST_RESULTS
+            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
+            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash)

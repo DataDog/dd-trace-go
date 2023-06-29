@@ -12,31 +12,39 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
+const defaultServiceName = "chi.router"
+
 type config struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate float64
-	isStatusError func(statusCode int) bool
-	ignoreRequest func(r *http.Request) bool
+	serviceName        string
+	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
+	analyticsRate      float64
+	isStatusError      func(statusCode int) bool
+	ignoreRequest      func(r *http.Request) bool
+	modifyResourceName func(resourceName string) string
+	headerTags         func(string) (string, bool)
+	resourceNamer      func(r *http.Request) string
 }
 
 // Option represents an option that can be passed to NewRouter.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = "chi.router"
-	if svc := globalconfig.ServiceName(); svc != "" {
-		cfg.serviceName = svc
-	}
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
+	cfg.modifyResourceName = func(s string) string { return s }
+	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
+	cfg.resourceNamer = nil
 }
 
 // WithServiceName sets the given service name for the router.
@@ -94,5 +102,38 @@ func isServerError(statusCode int) bool {
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = fn
+	}
+}
+
+// WithModifyResourceName specifies a function to use to modify the resource name.
+func WithModifyResourceName(fn func(resourceName string) string) Option {
+	return func(cfg *config) {
+		cfg.modifyResourceName = fn
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
+	return func(cfg *config) {
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
+	}
+}
+
+// WithResourceNamer specifies a function to use for determining the resource
+// name of the span.
+func WithResourceNamer(fn func(r *http.Request) string) Option {
+	return func(cfg *config) {
+		cfg.resourceNamer = fn
 	}
 }

@@ -20,11 +20,18 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
 	"github.com/graph-gophers/graphql-go/trace"
 )
+
+const componentName = "graph-gophers/graphql-go"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 const (
 	tagGraphqlField         = "graphql.field"
@@ -42,17 +49,18 @@ type Tracer struct {
 var _ trace.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
-func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, varTypes map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
+func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, _ map[string]interface{}, _ map[string]*introspection.Type) (context.Context, trace.TraceQueryFinishFunc) {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlQuery, queryString),
 		tracer.Tag(tagGraphqlOperationName, operationName),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.request", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
@@ -69,7 +77,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 }
 
 // TraceField traces a GraphQL field access.
-func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, args map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
+func (t *Tracer) TraceField(ctx context.Context, _ string, typeName string, fieldName string, trivial bool, _ map[string]interface{}) (context.Context, trace.TraceFieldFinishFunc) {
 	if t.cfg.omitTrivial && trivial {
 		return ctx, func(queryError *errors.QueryError) {}
 	}
@@ -77,6 +85,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.Tag(tagGraphqlField, fieldName),
 		tracer.Tag(tagGraphqlType, typeName),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {

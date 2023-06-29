@@ -7,7 +7,6 @@ package internal
 
 import (
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -37,6 +36,20 @@ func TestReadContainerID(t *testing.T) {
 		`1:name=systemd:/nope
 2:pids:/docker/34dc0b5e626f2c5c4c5170e34b10e7654ce36f0fcd532739f4445baabea03376
 3:cpu:/invalid`: "34dc0b5e626f2c5c4c5170e34b10e7654ce36f0fcd532739f4445baabea03376",
+		`other_line
+12:memory:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+11:rdma:/
+10:freezer:/garden/6f265890-5165-7fab-6b52-18d1
+9:hugetlb:/garden/6f265890-5165-7fab-6b52-18d1
+8:pids:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+7:perf_event:/garden/6f265890-5165-7fab-6b52-18d1
+6:cpu,cpuacct:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+5:net_cls,net_prio:/garden/6f265890-5165-7fab-6b52-18d1
+4:cpuset:/garden/6f265890-5165-7fab-6b52-18d1
+3:blkio:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+2:devices:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+1:name=systemd:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1`: "6f265890-5165-7fab-6b52-18d1",
+		"1:name=systemd:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1": "6f265890-5165-7fab-6b52-18d1",
 	} {
 		id := parseContainerID(strings.NewReader(in))
 		if id != out {
@@ -49,7 +62,7 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 	cid := "8c046cb0b72cd4c99f51b5591cd5b095967f58ee003710a45280c28ee1a9c7fa"
 	cgroupContents := "10:hugetlb:/kubepods/burstable/podfd52ef25-a87d-11e9-9423-0800271a638e/" + cid
 
-	tmpFile, err := ioutil.TempFile(os.TempDir(), "fake-cgroup-")
+	tmpFile, err := os.CreateTemp(os.TempDir(), "fake-cgroup-")
 	if err != nil {
 		t.Fatalf("failed to create fake cgroup file: %v", err)
 	}

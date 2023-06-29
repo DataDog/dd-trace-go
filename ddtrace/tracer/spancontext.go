@@ -6,39 +6,97 @@
 package tracer
 
 import (
-	"math"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
 
+type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+
+var emptyTraceID traceID
+
+func (t *traceID) HexEncoded() string {
+	return hex.EncodeToString(t[:])
+}
+
+func (t *traceID) Lower() uint64 {
+	return binary.BigEndian.Uint64(t[8:])
+}
+
+func (t *traceID) Upper() uint64 {
+	return binary.BigEndian.Uint64(t[:8])
+}
+
+func (t *traceID) SetLower(i uint64) {
+	binary.BigEndian.PutUint64(t[8:], i)
+}
+
+func (t *traceID) SetUpper(i uint64) {
+	binary.BigEndian.PutUint64(t[:8], i)
+}
+
+func (t *traceID) SetUpperFromHex(s string) error {
+	u, err := strconv.ParseUint(s, 16, 64)
+	if err != nil {
+		return fmt.Errorf("malformed %q: %s", s, err)
+	}
+	t.SetUpper(u)
+	return nil
+}
+
+func (t *traceID) Empty() bool {
+	return *t == emptyTraceID
+}
+
+func (t *traceID) HasUpper() bool {
+	//TODO: in go 1.20 we can simplify this
+	for _, b := range t[:8] {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *traceID) UpperHex() string {
+	return hex.EncodeToString(t[:8])
+}
+
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type spanContext struct {
+	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
+
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
 	span   *span  // reference to the span that hosts this context
-	errors int64  // number of spans with errors in this trace
+	errors int32  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
 
-	traceID uint64
+	traceID traceID
 	spanID  uint64
 
 	mu         sync.RWMutex // guards below fields
 	baggage    map[string]string
-	hasBaggage int32  // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
 }
 
@@ -49,11 +107,12 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		traceID: span.TraceID,
-		spanID:  span.SpanID,
-		span:    span,
+		spanID: span.SpanID,
+		span:   span,
 	}
+	context.traceID.SetLower(span.TraceID)
 	if parent != nil {
+		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
 		context.errors = parent.errors
@@ -61,6 +120,15 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
+		// add 128 bit trace id, if enabled, formatted as big-endian:
+		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+		id128 := time.Duration(span.Start) / time.Second
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -71,6 +139,10 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// setting context.updated to false here is necessary to distinguish
+	// between initializing properties of the span (priority)
+	// and updating them after extracting context through propagators
+	context.updated = false
 	return context
 }
 
@@ -78,11 +150,21 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 func (c *spanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID }
+func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
+
+// TraceID128 implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128() string {
+	return c.traceID.HexEncoded()
+}
+
+// TraceID128Bytes implements ddtrace.SpanContextW3C.
+func (c *spanContext) TraceID128Bytes() [16]byte {
+	return c.traceID
+}
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
-	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
 	c.mu.RLock()
@@ -94,11 +176,14 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	c.trace.setSamplingPriority(service, p, sampler, rate)
+	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+		c.updated = true
+	}
+	c.trace.setSamplingPriority(p, sampler)
 }
 
 func (c *spanContext) samplingPriority() (p int, ok bool) {
@@ -112,14 +197,14 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.baggage == nil {
-		atomic.StoreInt32(&c.hasBaggage, 1)
+		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
 }
 
 func (c *spanContext) baggageItem(key string) string {
-	if atomic.LoadInt32(&c.hasBaggage) == 0 {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
 	c.mu.RLock()
@@ -127,11 +212,18 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
+func (c *spanContext) meta(key string) (val string, ok bool) {
+	c.span.RLock()
+	defer c.span.RUnlock()
+	val, ok = c.span.Meta[key]
+	return val, ok
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
 // samplingDecision is the decision to send a trace to the agent or not.
-type samplingDecision int64
+type samplingDecision uint32
 
 const (
 	// decisionNone is the default state of a trace.
@@ -150,7 +242,7 @@ type trace struct {
 	mu               sync.RWMutex      // guards below fields
 	spans            []*span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
-	upstreamServices string            // _dd.p.upstream_services value from the upstream service
+	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
 	priority         *float64          // sampling priority
@@ -196,46 +288,49 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(service, p, sampler, rate)
+	t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
-	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionKeep))
+	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionKeep))
 }
 
 func (t *trace) drop() {
-	atomic.CompareAndSwapInt64((*int64)(&t.samplingDecision), int64(decisionNone), int64(decisionDrop))
+	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionDrop))
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(service string, p int, sampler samplernames.SamplerName, rate float64) {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
 	if t.locked {
 		return
-	}
-	if t.root == nil {
-		// this trace is distributed (no local root); modifications
-		// to the sampling priority are not allowed.
-		t.locked = true
 	}
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
 	*t.priority = float64(p)
-	if sampler != samplernames.Upstream {
-		if t.upstreamServices != "" {
-			t.setTag(keyUpstreamServices, t.upstreamServices+";"+compactUpstreamServices(service, p, sampler, rate))
-		} else {
-			t.setTag(keyUpstreamServices, compactUpstreamServices(service, p, sampler, rate))
-		}
+	_, ok := t.propagatingTags[keyDecisionMaker]
+	if p > 0 && !ok && sampler != samplernames.Unknown {
+		// We have a positive priority and the sampling mechanism isn't set.
+		// Send nothing when sampler is `Unknown` for RFC compliance.
+		t.setPropagatingTagLocked(keyDecisionMaker, "-"+strconv.Itoa(int(sampler)))
+	}
+	if p <= 0 && ok {
+		delete(t.propagatingTags, keyDecisionMaker)
 	}
 }
 
@@ -254,20 +349,20 @@ func (t *trace) push(sp *span) {
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
 		if haveTracer {
-			atomic.AddInt64(&tr.tracesDropped, 1)
+			atomic.AddUint32(&tr.tracesDropped, 1)
 		}
 		return
 	}
 	if v, ok := sp.Metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(sp.Service, int(v), samplernames.Upstream, math.NaN())
+		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
 	if haveTracer {
-		atomic.AddInt64(&tr.spansStarted, 1)
+		atomic.AddUint32(&tr.spansStarted, 1)
 	}
 }
 
-// finishedOne aknowledges that another span in the trace has finished, and checks
+// finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span.
 func (t *trace) finishedOne(s *span) {
@@ -297,38 +392,113 @@ func (t *trace) finishedOne(s *span) {
 		for k, v := range t.tags {
 			s.setMeta(k, v)
 		}
+		for k, v := range t.propagatingTags {
+			s.setMeta(k, v)
+		}
+		for k, v := range ginternal.GetTracerGitMetadataTags() {
+			s.setMeta(k, v)
+		}
+		if s.context != nil && s.context.traceID.HasUpper() {
+			s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		}
 	}
-	if len(t.spans) != t.finished {
-		return
+	if len(t.spans) == t.finished {
+		defer func() {
+			t.spans = nil
+			t.finished = 0 // important, because a buffer can be used for several flushes
+		}()
 	}
-	defer func() {
-		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
-	}()
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
 		return
 	}
-	// we have a tracer that can receive completed traces.
-	atomic.AddInt64(&tr.spansFinished, int64(len(t.spans)))
-	sd := samplingDecision(atomic.LoadInt64((*int64)(&t.samplingDecision)))
-	if sd != decisionKeep {
-		if p, ok := t.samplingPriorityLocked(); ok && p == ext.PriorityAutoReject {
-			atomic.AddUint64(&tr.droppedP0Spans, uint64(len(t.spans)))
-			atomic.AddUint64(&tr.droppedP0Traces, 1)
-		}
+	setPeerService(s, tr.config)
+	if len(t.spans) != t.finished {
 		return
 	}
-	tr.pushTrace(t.spans)
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
+	}
+	// we have a tracer that can receive completed traces.
+	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
+	tr.pushTrace(&finishedTrace{
+		spans:    t.spans,
+		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+	})
 }
 
-func compactUpstreamServices(service string, priority int, sampler samplernames.SamplerName, rate float64) string {
-	sb64 := b64Encode(service)
-	p := strconv.Itoa(priority)
-	s := strconv.Itoa(int(sampler))
-	r := ""
-	if !math.IsNaN(rate) {
-		r = strconv.FormatFloat(rate, 'f', 4, 64)
+// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// tags as applicable for the given span.
+func setPeerService(s *span, cfg *config) {
+	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else { // no peer.service currently set
+		spanKind := s.Meta[ext.SpanKind]
+		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		if !shouldSetDefaultPeerService {
+			return
+		}
+		source := setPeerServiceFromSource(s)
+		if source == "" {
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
+			return
+		}
+		s.setMeta(keyPeerServiceSource, source)
 	}
-	return sb64 + "|" + p + "|" + s + "|" + r
+	// Overwrite existing peer.service value if remapped by the user
+	ps := s.Meta[ext.PeerService]
+	if to, ok := cfg.peerServiceMappings[ps]; ok {
+		s.setMeta(keyPeerServiceRemappedFrom, ps)
+		s.setMeta(ext.PeerService, to)
+	}
+}
+
+// setPeerServiceFromSource sets peer.service from the sources determined
+// by the tags on the span. It returns the source tag name that it used for
+// the peer.service value, or the empty string if no valid source tag was available.
+func setPeerServiceFromSource(s *span) string {
+	has := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	var sources []string
+	switch {
+	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	case has("aws_service"):
+		sources = []string{
+			"queuename",
+			"topicname",
+			"streamname",
+			"tablename",
+			"bucketname",
+		}
+	case has(ext.DBSystem):
+		sources = []string{
+			ext.CassandraContactPoints,
+			ext.DBName,
+			ext.DBInstance,
+		}
+	case has(ext.MessagingSystem):
+		sources = []string{
+			ext.KafkaBootstrapServers,
+		}
+	case has(ext.RPCSystem):
+		sources = []string{
+			ext.RPCService,
+		}
+	}
+	// network destination tags will be used as fallback unless there are higher priority sources already set.
+	sources = append(sources, []string{
+		ext.NetworkDestinationName,
+		ext.PeerHostname,
+		ext.TargetHost,
+	}...)
+	for _, source := range sources {
+		if val, ok := s.Meta[source]; ok {
+			s.setMeta(ext.PeerService, val)
+			return source
+		}
+	}
+	return ""
 }

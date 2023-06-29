@@ -16,9 +16,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/zenazn/goji/web"
 )
+
+const componentName = "zenazn/goji.v1/web"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Middleware returns a goji middleware function that will trace incoming requests.
 // If goji's Router middleware is also installed, the tracer will be able to determine
@@ -36,6 +43,9 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+
 	log.Debug("contrib/zenazn/goji.v1/web: Configuring Middleware: %#v", cfg)
 	return func(c *web.C, h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

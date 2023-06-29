@@ -1,0 +1,57 @@
+name: Multi-OS Unit and Integration Tests
+
+on:
+  workflow_dispatch: # manually
+    inputs:
+      go-version:
+        required: true
+        type: string
+      runs-on:
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+      runs-on:
+        required: true
+        type: string
+
+jobs:
+  test-multi-os:
+    runs-on: ${{ inputs.runs-on }}
+    env:
+      REPORT: gotestsum-report.xml # path to where test results will be saved
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ inputs.go-version }}
+          check-latest: true
+          cache: true
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+      - name: Mac OS Coreutils
+        if: inputs.runs-on == 'macos-latest'
+        run: brew install coreutils
+      - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
+        shell: bash
+        run: |
+          go list ./... | grep -v -e grpc.v12 -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
+          gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+      - name: Upload the results to Datadog CI App
+        if: always()
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.REPORT }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash)

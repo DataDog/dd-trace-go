@@ -7,13 +7,13 @@ package grpc
 
 import (
 	"encoding/json"
-	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -22,18 +22,24 @@ import (
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
-	httpsec.SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		clientIP := setClientIP(ctx, span, md)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(ctx, span, events)
+			setAppSecEventsTags(ctx, span, events)
 		}()
+
+		if op.Error != nil {
+			return nil, op.Error
+		}
+
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
 		return handler(ctx, req)
 	}
@@ -41,25 +47,39 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
-	httpsec.SetAppSecTags(span)
+	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
-		md, _ := metadata.FromIncomingContext(stream.Context())
-		op := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{Metadata: md}, nil)
+		ctx := stream.Context()
+		md, _ := metadata.FromIncomingContext(ctx)
+		clientIP := setClientIP(ctx, span, md)
+
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		stream = appsecServerStream{
+			ServerStream:     stream,
+			handlerOperation: op,
+			ctx:              ctx,
+		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
 			}
-			setAppSecTags(stream.Context(), span, events)
+			setAppSecEventsTags(stream.Context(), span, events)
 		}()
-		return handler(srv, appsecServerStream{ServerStream: stream, handlerOperation: op})
+
+		if op.Error != nil {
+			return op.Error
+		}
+
+		return handler(srv, stream)
 	}
 }
 
 type appsecServerStream struct {
 	grpc.ServerStream
 	handlerOperation *grpcsec.HandlerOperation
+	ctx              context.Context
 }
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
@@ -72,12 +92,24 @@ func (ss appsecServerStream) RecvMsg(m interface{}) error {
 	return ss.ServerStream.RecvMsg(m)
 }
 
+func (ss appsecServerStream) Context() context.Context {
+	return ss.ctx
+}
+
 // Set the AppSec tags when security events were found.
-func setAppSecTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
+func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	var addr net.Addr
+	grpcsec.SetSecurityEventTags(span, events, md)
+}
+
+func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
+	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
-		addr = p.Addr
+		remoteAddr = p.Addr.String()
 	}
-	grpcsec.SetSecurityEventTags(span, events, addr, md)
+	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	if len(ipTags) > 0 {
+		instrumentation.SetStringTags(span, ipTags)
+	}
+	return clientIP
 }

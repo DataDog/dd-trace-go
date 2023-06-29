@@ -6,15 +6,19 @@
 package grpc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -22,9 +26,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -32,10 +39,8 @@ import (
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
 
-	rig, err := newRig(true, WithRequestTags())
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
+	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+	require.NoError(t, err, "error setting up rig")
 	defer rig.Close()
 	client := rig.client
 
@@ -102,12 +107,23 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
+			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
+			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
+			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
+
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
 			assert.Equal(serverSpan.Tag(ext.ResourceName), "/grpc.Fixture/Ping")
 			assert.Equal(serverSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(serverSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(serverSpan.Tag(tagMethodKind), methodKindUnary)
 			assert.Equal(serverSpan.Tag(tagRequest), tt.wantReqTag)
+			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
+			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
+			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
+			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
 }
@@ -150,8 +166,9 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "grpc", span.Tag(ext.ServiceName),
 					"expected service name to be grpc in span: %v",
 					span)
+				assert.Equal(t, "grpc", span.Tag(ext.RPCSystem))
+				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.GRPCFullMethod))
 			}
-
 			switch span.OperationName() {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
@@ -178,6 +195,25 @@ func TestStreaming(t *testing.T) {
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
 					"expected grpc method name to be set in span: %v", span)
 			}
+
+			switch span.OperationName() { //checks spankind and component without fallthrough
+			case "grpc.client":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
+					" expected spankind to be client in span %v", span)
+			case "grpc.server":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.Equal(t, ext.SpanKindServer, span.Tag(ext.SpanKind),
+					" expected spankind to be server in span %v, %v", span, span.OperationName())
+			case "grpc.message":
+				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
+					" expected component to be grpc-go in span %v", span)
+				assert.NotContains(t, span.Tags(), ext.SpanKind,
+					" expected no spankind tag to be in span %v", span)
+			}
+
 		}
 	}
 
@@ -185,10 +221,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -199,7 +233,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 13, 5*time.Second)
+		waitForSpans(mt, 13)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 13,
@@ -212,10 +246,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithStreamMessages(false))
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithStreamMessages(false))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -226,7 +258,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 3, 5*time.Second)
+		waitForSpans(mt, 3)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3,
@@ -239,10 +271,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithStreamCalls(false))
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithStreamCalls(false))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -253,7 +283,7 @@ func TestStreaming(t *testing.T) {
 
 		span.Finish()
 
-		waitForSpans(mt, 11, 5*time.Second)
+		waitForSpans(mt, 11)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 11,
@@ -283,10 +313,8 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		{
@@ -320,10 +348,8 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags(), WithMetadataTags())
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 		client := rig.client
 
@@ -335,6 +361,7 @@ func TestSpanTree(t *testing.T) {
 			//  -> server receive message -> server send message
 			//  -> client receive message
 			ctx, cancel := context.WithCancel(ctx)
+			ctx = metadata.AppendToOutgoingContext(ctx, "custom_metadata_key", "custom_metadata_value")
 			stream, err := client.StreamPing(ctx)
 			assert.NoError(err)
 			err = stream.SendMsg(&FixtureRequest{Name: "break"})
@@ -348,31 +375,56 @@ func TestSpanTree(t *testing.T) {
 
 			// Wait until the client stream tracer goroutine gets awoken by the context
 			// cancellation and finishes its span
-			waitForSpans(mt, 6, time.Second)
+			waitForSpans(mt, 6)
 
 			rootSpan.Finish()
 		}
 
 		assert.Empty(mt.OpenSpans())
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 7)
+		require.Len(t, spans, 7)
 
-		// Ping spans
-		rootSpan := spans[6]
-		clientStreamSpan := spans[5]
-		clientStreamSendMsgSpan := spans[4]
-		serverStreamSpan := spans[3]
-		serverStreamRecvMsgSpan := spans[2]
-		serverStreamSendMsgSpan := spans[1]
-		clientStreamRecvMsgSpan := spans[0]
+		var rootSpan, clientStreamSpan, serverStreamSpan mocktracer.Span
+		var messageSpans []mocktracer.Span
+		for _, s := range spans {
+			switch n := s.OperationName(); n {
+			case "root":
+				rootSpan = s
+			case "grpc.client":
+				clientStreamSpan = s
+			case "grpc.server":
+				serverStreamSpan = s
+			case "grpc.message":
+				messageSpans = append(messageSpans, s)
+			}
+		}
+		require.NotNil(t, rootSpan)
+		require.NotNil(t, clientStreamSpan)
+		require.NotNil(t, serverStreamSpan)
 
 		assert.Zero(rootSpan.ParentID())
 		assertSpan(t, clientStreamSpan, rootSpan, "grpc.client", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamSendMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
 		assertSpan(t, serverStreamSpan, clientStreamSpan, "grpc.server", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamRecvMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, serverStreamSendMsgSpan, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
-		assertSpan(t, clientStreamRecvMsgSpan, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+		var clientSpans, serverSpans int
+		var reqMsgFound bool
+		for _, ms := range messageSpans {
+			if ms.ParentID() == clientStreamSpan.SpanID() {
+				assertSpan(t, ms, clientStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				clientSpans++
+			} else {
+				assertSpan(t, ms, serverStreamSpan, "grpc.message", "/grpc.Fixture/StreamPing")
+				serverSpans++
+				if !reqMsgFound {
+					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
+					assert.Len(metadataTag, 1)
+					assert.Equal("custom_metadata_value", metadataTag[0])
+					reqMsgFound = true
+				}
+			}
+		}
+		assert.Equal(2, clientSpans)
+		assert.Equal(2, serverSpans)
 	})
 }
 
@@ -381,12 +433,9 @@ func TestPass(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(false)
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
+	rig, err := newRig(false, WithServiceName("grpc"))
+	require.NoError(t, err, "error setting up rig")
 	defer rig.Close()
-
 	client := rig.client
 
 	ctx := context.Background()
@@ -407,6 +456,9 @@ func TestPass(t *testing.T) {
 	assert.NotContains(s.Tags(), tagRequest)
 	assert.NotContains(s.Tags(), tagMetadataPrefix+"test-key")
 	assert.True(s.FinishTime().Sub(s.StartTime()) >= 0)
+	assert.Equal("grpc", s.Tag(ext.RPCSystem))
+	assert.Equal("/grpc.Fixture/Ping", s.Tag(ext.GRPCFullMethod))
+	assert.Equal(codes.OK.String(), s.Tag(tagCode))
 }
 
 func TestPreservesMetadata(t *testing.T) {
@@ -548,16 +600,13 @@ func (r *rig) Close() {
 	r.conn.Close()
 }
 
-func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
-	interceptorOpts = append([]InterceptorOption{WithServiceName("grpc")}, interceptorOpts...)
-
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),
-		grpc.StreamInterceptor(StreamServerInterceptor(interceptorOpts...)),
-	)
-
-	fixtureServer := new(fixtureServer)
-	RegisterFixtureServer(server, fixtureServer)
+func newRigWithInterceptors(
+	serverInterceptors []grpc.ServerOption,
+	clientInterceptors []grpc.DialOption,
+) (*rig, error) {
+	server := grpc.NewServer(serverInterceptors...)
+	fixtureSrv := new(fixtureServer)
+	RegisterFixtureServer(server, fixtureSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -567,19 +616,12 @@ func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
-	if traceClient {
-		opts = append(opts,
-			grpc.WithUnaryInterceptor(UnaryClientInterceptor(interceptorOpts...)),
-			grpc.WithStreamInterceptor(StreamClientInterceptor(interceptorOpts...)),
-		)
-	}
-	conn, err := grpc.Dial(li.Addr().String(), opts...)
+	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
 	return &rig{
-		fixtureServer: fixtureServer,
+		fixtureServer: fixtureSrv,
 		listener:      li,
 		port:          port,
 		server:        server,
@@ -588,9 +630,26 @@ func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 	}, err
 }
 
+func newRig(traceClient bool, opts ...Option) (*rig, error) {
+	serverInterceptors := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
+		grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
+	}
+	clientInterceptors := []grpc.DialOption{
+		grpc.WithInsecure(),
+	}
+	if traceClient {
+		clientInterceptors = append(clientInterceptors,
+			grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
+		)
+	}
+	return newRigWithInterceptors(serverInterceptors, clientInterceptors)
+}
+
 // waitForSpans polls the mock tracer until the expected number of spans
 // appears
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -679,6 +738,13 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+
+	t.Run("spanOpts", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.33), WithSpanOptions(tracer.AnalyticsRate(0.23)))
+	})
 }
 
 func TestIgnoredMethods(t *testing.T) {
@@ -745,7 +811,80 @@ func TestIgnoredMethods(t *testing.T) {
 			done() // close stream from client side
 			rig.Close()
 
-			waitForSpans(mt, c.exp, 5*time.Second)
+			waitForSpans(mt, c.exp)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			mt.Reset()
+		}
+	})
+}
+
+func TestUntracedMethods(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			{ignore: []string{}, exp: 2},
+			{ignore: []string{"/some/endpoint"}, exp: 2},
+			{ignore: []string{"/grpc.Fixture/Ping"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/Ping", "/additional/endpoint"}, exp: 0},
+		} {
+			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+			client := rig.client
+			resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+			assert.Nil(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, c.exp)
+			rig.Close()
+			mt.Reset()
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		for _, c := range []struct {
+			ignore []string
+			exp    int
+		}{
+			// client span: 1 send + 1 recv(OK) + 1 stream finish (OK)
+			// server span: 1 send + 2 recv(OK + EOF) + 1 stream finish(EOF)
+			{ignore: []string{}, exp: 7},
+			{ignore: []string{"/some/endpoint"}, exp: 7},
+			{ignore: []string{"/grpc.Fixture/StreamPing"}, exp: 0},
+			{ignore: []string{"/grpc.Fixture/StreamPing", "/additional/endpoint"}, exp: 0},
+		} {
+			rig, err := newRig(true, WithUntracedMethods(c.ignore...))
+			if err != nil {
+				t.Fatalf("error setting up rig: %s", err)
+			}
+
+			ctx, done := context.WithCancel(context.Background())
+			client := rig.client
+			stream, err := client.StreamPing(ctx)
+			assert.NoError(t, err)
+
+			err = stream.Send(&FixtureRequest{Name: "pass"})
+			assert.NoError(t, err)
+
+			resp, err := stream.Recv()
+			assert.NoError(t, err)
+			assert.Equal(t, resp.Message, "passed")
+
+			assert.NoError(t, stream.CloseSend())
+			done() // close stream from client side
+			rig.Close()
+
+			waitForSpans(mt, c.exp)
 
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, c.exp)
@@ -794,6 +933,195 @@ func TestIgnoredMetadata(t *testing.T) {
 		assert.Equal(t, c.exp, cnt)
 		rig.Close()
 		mt.Reset()
+	}
+}
+
+func TestSpanOpts(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		client := rig.client
+		resp, err := client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		assert.Nil(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		rig.Close()
+		mt.Reset()
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rig, err := newRig(true, WithSpanOptions(tracer.Tag("foo", "bar")))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+
+		ctx, done := context.WithCancel(context.Background())
+		client := rig.client
+		stream, err := client.StreamPing(ctx)
+		assert.NoError(t, err)
+
+		err = stream.Send(&FixtureRequest{Name: "pass"})
+		assert.NoError(t, err)
+
+		resp, err := stream.Recv()
+		assert.NoError(t, err)
+		assert.Equal(t, resp.Message, "passed")
+
+		assert.NoError(t, stream.CloseSend())
+		done() // close stream from client side
+		rig.Close()
+
+		waitForSpans(mt, 7)
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 7)
+		for _, span := range spans {
+			assert.Equal(t, span.Tags()["foo"], "bar")
+		}
+		mt.Reset()
+	})
+}
+
+func TestCustomTag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		key   string
+		value interface{}
+	}{
+		{key: "foo", value: "bar"},
+		{key: "val", value: 123},
+	} {
+		rig, err := newRig(true, WithCustomTag(c.key, c.value))
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		ctx := context.Background()
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "pass"})
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		assert.NotNil(t, serverSpan)
+		assert.Equal(t, c.value, serverSpan.Tag(c.key))
+		rig.Close()
+		mt.Reset()
+	}
+}
+
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(false, true)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.server", 4),
+		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(true, false)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.client", 4),
+		WithDDService:            lists.RepeatString("grpc.client", 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
+	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		// exclude the grpc.message spans as they are not affected by naming schema
+		opts = append(opts, WithStreamMessages(false))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		var serverInterceptors []grpc.ServerOption
+		if traceServer {
+			serverInterceptors = append(serverInterceptors,
+				grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
+				grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
+				grpc.StatsHandler(NewServerStatsHandler(opts...)),
+			)
+		}
+		clientInterceptors := []grpc.DialOption{grpc.WithInsecure()}
+		if traceClient {
+			clientInterceptors = append(clientInterceptors,
+				grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
+				grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
+				grpc.WithStatsHandler(NewClientStatsHandler(opts...)),
+			)
+		}
+		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+		require.NoError(t, err)
+		defer rig.Close()
+		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		require.NoError(t, err)
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		err = stream.Send(&FixtureRequest{Name: "break"})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		// to flush the spans
+		_, _ = stream.Recv()
+
+		waitForSpans(mt, 4)
+		return mt.FinishedSpans()
 	}
 }
 
@@ -880,4 +1208,84 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})
+}
+
+type roundTripper struct {
+	assertSpanFromRequest func(r *http.Request)
+}
+
+func (rt *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	rt.assertSpanFromRequest(r)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestIssue2050(t *testing.T) {
+	// https://github.com/DataDog/dd-trace-go/issues/2050
+	t.Setenv("DD_SERVICE", "some-dd-service")
+
+	spansFound := make(chan bool, 1)
+
+	httpClient := &http.Client{
+		Transport: &roundTripper{
+			assertSpanFromRequest: func(r *http.Request) {
+				if r.URL.Path != "/v0.4/traces" {
+					return
+				}
+				req := r.Clone(context.Background())
+				defer req.Body.Close()
+
+				buf, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+
+				var payload bytes.Buffer
+				_, err = msgp.UnmarshalAsJSON(&payload, buf)
+				require.NoError(t, err)
+
+				var trace [][]map[string]interface{}
+				err = json.Unmarshal(payload.Bytes(), &trace)
+				require.NoError(t, err)
+
+				if len(trace) == 0 {
+					return
+				}
+				require.Len(t, trace, 2)
+				s0 := trace[0][0]
+				s1 := trace[1][0]
+
+				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "some-dd-service", s0["service"])
+
+				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "grpc.client", s1["service"])
+				close(spansFound)
+			},
+		},
+	}
+	serverInterceptors := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+	}
+	clientInterceptors := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor()),
+	}
+	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+	require.NoError(t, err)
+	defer rig.Close()
+
+	// call tracer.Start after integration is initialized, to reproduce the issue
+	tracer.Start(tracer.WithHTTPClient(httpClient))
+	defer tracer.Stop()
+
+	_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	select {
+	case <-spansFound:
+		return
+
+	case <-time.After(5 * time.Second):
+		assert.Fail(t, "spans not found")
+	}
 }

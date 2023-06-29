@@ -10,13 +10,78 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
+	var opts []Option
+	if serviceOverride != "" {
+		opts = append(opts, WithServiceName(serviceOverride))
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	broker := sarama.NewMockBroker(t, 1)
+	defer broker.Close()
+
+	broker.SetHandlerByMap(map[string]sarama.MockResponse{
+		"MetadataRequest": sarama.NewMockMetadataResponse(t).
+			SetBroker(broker.Addr(), broker.BrokerID()).
+			SetLeader("test-topic", 0, broker.BrokerID()),
+		"OffsetRequest": sarama.NewMockOffsetResponse(t).
+			SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
+			SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
+		"FetchRequest": sarama.NewMockFetchResponse(t, 1).
+			SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")),
+		"ProduceRequest": sarama.NewMockProduceResponse(t).
+			SetError("test-topic", 0, sarama.ErrNoError),
+	})
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.MinVersion
+	cfg.Producer.Return.Successes = true
+	cfg.Producer.Flush.Messages = 1
+
+	producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, cfg)
+	require.NoError(t, err)
+	producer = WrapSyncProducer(cfg, producer, opts...)
+
+	c, err := sarama.NewConsumer([]string{broker.Addr()}, cfg)
+	require.NoError(t, err)
+	defer func(c sarama.Consumer) {
+		err := c.Close()
+		require.NoError(t, err)
+	}(c)
+	c = WrapConsumer(c, opts...)
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    "test-topic",
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = producer.SendMessage(msg1)
+	require.NoError(t, err)
+
+	pc, err := c.ConsumePartition("test-topic", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = <-pc.Messages()
+	err = pc.Close()
+	require.NoError(t, err)
+	// wait for the channel to be closed
+	<-pc.Messages()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	return spans
+}
 
 func TestConsumer(t *testing.T) {
 	mt := mocktracer.Start()
@@ -71,12 +136,15 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, int64(0), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 	{
 		s := spans[1]
@@ -85,12 +153,15 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, int64(1), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "kafka.consume", s.OperationName())
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -138,8 +209,11 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -190,7 +264,10 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag("partition"))
+		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 }
 
@@ -219,7 +296,7 @@ func TestAsyncProducer(t *testing.T) {
 		}
 		producer.Input() <- msg1
 
-		waitForSpans(mt, 1, time.Second*10)
+		waitForSpans(mt, 1)
 
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 1)
@@ -229,8 +306,11 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, int32(0), s.Tag("partition"))
+			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 		}
 	})
 
@@ -267,10 +347,17 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, int32(0), s.Tag("partition"))
+			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, "Shopify/sarama", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 		}
 	})
+}
+
+func TestNamingSchema(t *testing.T) {
+	namingschematest.NewKafkaTest(genTestSpans)(t)
 }
 
 func newMockBroker(t *testing.T) *sarama.MockBroker {
@@ -291,7 +378,7 @@ func newMockBroker(t *testing.T) *sarama.MockBroker {
 
 // waitForSpans polls the mock tracer until the expected number of spans
 // appear
-func waitForSpans(mt mocktracer.Tracer, sz int, maxWait time.Duration) {
+func waitForSpans(mt mocktracer.Tracer, sz int) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 

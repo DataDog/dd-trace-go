@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -29,18 +31,28 @@ const (
 )
 
 func newCassandraCluster() *gocql.ClusterConfig {
-	cluster := gocql.NewCluster(cassandraHost)
+	cfg := gocql.NewCluster(cassandraHost)
+	updateTestClusterConfig(cfg)
+	return cfg
+}
+
+func newTracedCassandraCluster(opts ...WrapOption) *ClusterConfig {
+	cfg := NewCluster([]string{cassandraHost}, opts...)
+	updateTestClusterConfig(cfg.ClusterConfig)
+	return cfg
+}
+
+func updateTestClusterConfig(cfg *gocql.ClusterConfig) {
 	// the InitialHostLookup must be disabled in newer versions of
 	// gocql otherwise "no connections were made when creating the session"
 	// error is returned for Cassandra misconfiguration (that we don't need
 	// since we're testing another behavior and not the client).
 	// Check: https://github.com/gocql/gocql/issues/946
-	cluster.DisableInitialHostLookup = true
+	cfg.DisableInitialHostLookup = true
 	// the default timeouts (600ms) are sometimes too short in CI and cause
 	// PRs being tested to flake due to this integration.
-	cluster.ConnectTimeout = 2 * time.Second
-	cluster.Timeout = 2 * time.Second
-	return cluster
+	cfg.ConnectTimeout = 2 * time.Second
+	cfg.Timeout = 2 * time.Second
 }
 
 // TestMain sets up the Keyspace and table if they do not exist
@@ -80,11 +92,15 @@ func TestErrorWrapper(t *testing.T) {
 	span := spans[0]
 
 	assert.Equal(span.Tag(ext.Error).(error), err)
-	assert.Equal(span.OperationName(), ext.CassandraQuery)
+	assert.Equal(span.OperationName(), "cassandra.query")
 	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
 	assert.Equal(span.Tag(ext.CassandraConsistencyLevel), "QUORUM")
 	assert.Equal(span.Tag(ext.CassandraPaginated), "false")
+	assert.Equal(span.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(span.Tag(ext.SpanKind), ext.SpanKindClient)
+	assert.Equal(span.Tag(ext.DBSystem), "cassandra")
+	assert.NotContains(span.Tags(), ext.CassandraContactPoints)
 
 	if iter.Host() != nil {
 		assert.Equal(span.Tag(ext.TargetPort), "9042")
@@ -106,7 +122,7 @@ func TestChildWrapperSpan(t *testing.T) {
 
 	// Call WithContext before WrapQuery to prove WrapQuery needs to use the query.Context()
 	// instead of context.Background()
-	q := session.Query("SELECT * from trace.person").WithContext(ctx)
+	q := session.Query("SELECT * FROM trace.person").WithContext(ctx)
 	tq := WrapQuery(q, WithServiceName("TestServiceName"))
 	iter := tq.Iter()
 	iter.Close()
@@ -125,14 +141,74 @@ func TestChildWrapperSpan(t *testing.T) {
 	}
 	assert.Equal(pSpan.OperationName(), "parentSpan")
 	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
-	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
-	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
+	assert.Equal(childSpan.OperationName(), "cassandra.query")
+	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * FROM trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
+
 	if iter.Host() != nil {
 		assert.Equal(childSpan.Tag(ext.TargetPort), "9042")
 		assert.Equal(childSpan.Tag(ext.TargetHost), iter.Host().HostID())
 		assert.Equal(childSpan.Tag(ext.CassandraCluster), "datacenter1")
 	}
+}
+
+func TestErrNotFound(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cluster := newCassandraCluster()
+	session, err := cluster.CreateSession()
+	assert.Nil(err)
+
+	q := session.Query("SELECT name, age FROM trace.person WHERE name = 'This does not exist'")
+	var name string
+	var age int
+
+	t.Run("default", func(t *testing.T) {
+		tq := WrapQuery(q,
+			WithServiceName("TestServiceName"),
+			// By default, not using WithErrorCheck, any error is an error from tracing POV
+		)
+		err = tq.Scan(&name, &age)
+		assert.Equal(gocql.ErrNotFound, err, "expected error: there is no data")
+		assert.Equal("", name)
+		assert.Equal(0, age)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+
+		span := spans[0]
+		assert.Equal(span.OperationName(), "cassandra.query")
+		assert.Equal(span.Tag(ext.ResourceName), "SELECT name, age FROM trace.person WHERE name = 'This does not exist'")
+		assert.NotNil(span.Tag(ext.Error), "trace is marked as an error, default behavior")
+	})
+
+	t.Run("WithErrorCheck", func(t *testing.T) {
+		tq := WrapQuery(q,
+			WithServiceName("TestServiceName"),
+			// Typical use of WithErrorCheck -> do not return errors when the error is
+			// gocql.ErrNotFound, most of the time this is fine, there is just zero rows
+			// of data, but this can be perfectly acceptable. The gocql API returns this
+			// as it's a way to figure out when scanning of data should be stopped.
+			WithErrorCheck(func(err error) bool { return err != gocql.ErrNotFound }))
+		err = tq.Scan(&name, &age)
+		assert.Equal(gocql.ErrNotFound, err, "expected error: there is no data")
+		assert.Equal("", name)
+		assert.Equal(0, age)
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 2)
+
+		span := spans[1]
+		assert.Equal(span.OperationName(), "cassandra.query")
+		assert.Equal(span.Tag(ext.ResourceName), "SELECT name, age FROM trace.person WHERE name = 'This does not exist'")
+		assert.Nil(span.Tag(ext.Error), "trace is not marked as an error, it just has no data")
+	})
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -247,9 +323,13 @@ func TestIterScanner(t *testing.T) {
 
 	assert.Equal(pSpan.OperationName(), "parentSpan")
 	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
-	assert.Equal(childSpan.OperationName(), ext.CassandraQuery)
+	assert.Equal(childSpan.OperationName(), "cassandra.query")
 	assert.Equal(childSpan.Tag(ext.ResourceName), "SELECT * from trace.person")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
 }
 
 func TestBatch(t *testing.T) {
@@ -289,7 +369,142 @@ func TestBatch(t *testing.T) {
 
 	assert.Equal(pSpan.OperationName(), "parentSpan")
 	assert.Equal(childSpan.ParentID(), pSpan.SpanID())
-	assert.Equal(childSpan.OperationName(), ext.CassandraBatch)
+	assert.Equal(childSpan.OperationName(), "cassandra.batch")
 	assert.Equal(childSpan.Tag(ext.ResourceName), "BatchInsert")
 	assert.Equal(childSpan.Tag(ext.CassandraKeyspace), "trace")
+	assert.Equal(childSpan.Tag(ext.Component), "gocql/gocql")
+	assert.Equal(childSpan.Tag(ext.SpanKind), ext.SpanKindClient)
+	assert.Equal(childSpan.Tag(ext.DBSystem), "cassandra")
+	assert.NotContains(childSpan.Tags(), ext.CassandraContactPoints)
+}
+
+func TestCassandraContactPoints(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cluster := NewCluster([]string{cassandraHost, "127.0.0.1:9043"})
+	updateTestClusterConfig(cluster.ClusterConfig)
+
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	err = q.Iter().Close()
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.query")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+
+	mt.Reset()
+
+	tb := session.NewBatch(gocql.UnloggedBatch)
+	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+	tb.Query(stmt, "Lucas", 60, "Another person")
+	err = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session.Session)
+	require.NoError(t, err)
+
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span = spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.batch")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+}
+
+func TestWithWrapOptions(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cluster := newTracedCassandraCluster(WithServiceName("test-service"), WithResourceName("cluster-resource"))
+
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+	q = q.WithWrapOptions(WithResourceName("test-resource"))
+	err = q.Iter().Close()
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.query")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
+	assert.Equal(span.Tag(ext.ServiceName), "test-service")
+	assert.Equal(span.Tag(ext.ResourceName), "test-resource")
+
+	mt.Reset()
+
+	tb := session.NewBatch(gocql.UnloggedBatch)
+	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+	tb.Query(stmt, "Lucas", 60, "Another person")
+	tb = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3)
+	tb = tb.WithWrapOptions(WithResourceName("test-resource"))
+
+	err = tb.ExecuteBatch(session.Session)
+	require.NoError(t, err)
+
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span = spans[0]
+
+	assert.Equal(span.OperationName(), "cassandra.batch")
+	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
+	assert.Equal(span.Tag(ext.ServiceName), "test-service")
+	assert.Equal(span.Tag(ext.ResourceName), "test-resource")
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []WrapOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		cluster := newTracedCassandraCluster(opts...)
+		session, err := cluster.CreateSession()
+		require.NoError(t, err)
+
+		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+
+		// generate query span
+		err = session.Query(stmt, "name", 30, "description").Exec()
+		require.NoError(t, err)
+
+		// generate batch span
+		tb := session.NewBatch(gocql.UnloggedBatch)
+
+		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+		tb.Query(stmt, "Lucas", 60, "Another person")
+		err = tb.ExecuteBatch(session.Session)
+		require.NoError(t, err)
+
+		return mt.FinishedSpans()
+	})
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "cassandra.query", spans[0].OperationName())
+		assert.Equal(t, "cassandra.batch", spans[1].OperationName())
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 2)
+		assert.Equal(t, "cassandra.query", spans[0].OperationName())
+		assert.Equal(t, "cassandra.query", spans[1].OperationName())
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"gocql.query", "gocql.query"},
+		WithDDService:            []string{"gocql.query", "gocql.query"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

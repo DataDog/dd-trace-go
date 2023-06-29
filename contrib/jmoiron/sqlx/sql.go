@@ -9,14 +9,20 @@
 //
 // For more information on registering and why this needs to happen, please check the
 // github.com/DataDog/dd-trace-go/contrib/database/sql package.
-//
 package sqlx // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 
 import (
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/jmoiron/sqlx"
 )
+
+const componentName = "jmoiron/sqlx"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Open opens a new (traced) connection to the database using the given driver and source.
 // Note that the driver must formerly be registered using database/sql integration's Register.

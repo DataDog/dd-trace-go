@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"cloud.google.com/go/pubsub"
 )
+
+const componentName = "cloud.google.com/go/pubsub.v1"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
 // This function is functionally equivalent to t.Publish(ctx, msg), but it also starts a publish
@@ -24,14 +31,30 @@ import (
 // the published message.
 // It is required to call (*PublishResult).Get(ctx) on the value returned by Publish to complete
 // the span.
-func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message) *PublishResult {
-	span, ctx := tracer.StartSpanFromContext(
-		ctx,
-		"pubsub.publish",
+func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(t.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag("message_size", len(msg.Data)),
 		tracer.Tag("ordering_key", msg.OrderingKey),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+	}
+	if cfg.serviceName != "" {
+		spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
+	}
+	if cfg.measured {
+		spanOpts = append(spanOpts, tracer.Measured())
+	}
+	span, ctx := tracer.StartSpanFromContext(
+		ctx,
+		cfg.publishSpanName,
+		spanOpts...,
 	)
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
@@ -64,27 +87,13 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 	return serverID, err
 }
 
-type config struct {
-	serviceName string
-}
-
-// A ReceiveOption is used to customize spans started by WrapReceiveHandler.
-type ReceiveOption func(cfg *config)
-
-// WithServiceName sets the service name tag for traces started by WrapReceiveHandler.
-func WithServiceName(serviceName string) ReceiveOption {
-	return func(cfg *config) {
-		cfg.serviceName = serviceName
-	}
-}
-
 // WrapReceiveHandler returns a receive handler that wraps the supplied handler,
 // extracts any tracing metadata attached to the received message, and starts a
 // receive span.
-func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...ReceiveOption) func(context.Context, *pubsub.Message) {
-	var cfg config
+func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
+	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(&cfg)
+		opt(cfg)
 	}
 	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {
@@ -97,12 +106,18 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 			tracer.Tag("ordering_key", msg.OrderingKey),
 			tracer.Tag("message_id", msg.ID),
 			tracer.Tag("publish_time", msg.PublishTime.String()),
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, tracer.ServiceName(cfg.serviceName))
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, "pubsub.receive", opts...)
+		if cfg.measured {
+			opts = append(opts, tracer.Measured())
+		}
+		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
 			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)
 		}

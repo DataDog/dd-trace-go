@@ -8,10 +8,10 @@ package kafka_test
 import (
 	"fmt"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-
 	kafkatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/kafka"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 )
 
 // This example shows how a span context can be passed from a producer to a consumer.
-func ExampleDistributedTracing() {
+func Example() {
 
 	tracer.Start()
 	defer tracer.Stop()
@@ -41,7 +41,7 @@ func ExampleDistributedTracing() {
 	// Create the span to be passed
 	parentSpan := tracer.StartSpan("test_parent_span")
 
-	/// Produce a message with a span
+	// Produce a message with a span
 	go func() {
 		msg := &kafka.Message{
 			TopicPartition: kafka.TopicPartition{

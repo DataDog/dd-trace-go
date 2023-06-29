@@ -12,18 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-
 	"github.com/stretchr/testify/assert"
 )
 
-// testLogger implements a mock ddtrace.Logger.
+// testLogger implements a mock Logger.
 type testLogger struct {
 	mu    sync.RWMutex
 	lines []string
 }
 
-// Print implements ddtrace.Logger.
+// Print implements Logger.
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
@@ -45,7 +43,7 @@ func (tp *testLogger) Reset() {
 }
 
 func TestLog(t *testing.T) {
-	defer func(old ddtrace.Logger) { UseLogger(old) }(logger)
+	defer func(old Logger) { UseLogger(old) }(logger)
 	tp := &testLogger{}
 	UseLogger(tp)
 
@@ -127,6 +125,19 @@ func TestLog(t *testing.T) {
 			assert.Len(t, tp.Lines(), 1)
 		})
 	})
+}
+
+func TestRecordLoggerIgnore(t *testing.T) {
+	tp := new(RecordLogger)
+	tp.Ignore("appsec")
+	tp.Log("this is an appsec log")
+	tp.Log("this is a tracer log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.NotContains(t, tp.Logs()[0], "appsec")
+	tp.Reset()
+	tp.Log("this is an appsec log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.Contains(t, tp.Logs()[0], "appsec")
 }
 
 func BenchmarkError(b *testing.B) {

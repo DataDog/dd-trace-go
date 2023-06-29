@@ -11,14 +11,33 @@ import (
 	"strings"
 	"testing"
 
-	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
-	esapi6 "github.com/elastic/go-elasticsearch/v6/esapi"
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	elasticsearch6 "github.com/elastic/go-elasticsearch/v6"
+	esapi6 "github.com/elastic/go-elasticsearch/v6/esapi"
+	"github.com/stretchr/testify/assert"
 )
+
+func checkGETTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /twitter/tweet/?", span.Tag(ext.ResourceName))
+	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
+	assert.Equal("GET", span.Tag("elasticsearch.method"))
+	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
+}
+
+func checkErrTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
+	span := mt.FinishedSpans()[0]
+	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
+	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
+	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
+	assert.NotEmpty(span.Tag(ext.Error))
+	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
+}
 
 func TestClientV6(t *testing.T) {
 	assert := assert.New(t)
@@ -49,7 +68,7 @@ func TestClientV6(t *testing.T) {
 		DocumentType: "tweet",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkGETTrace(assert, mt)
+	checkGETTraceV6(assert, mt)
 
 	mt.Reset()
 	_, err = esapi6.GetRequest{
@@ -57,7 +76,7 @@ func TestClientV6(t *testing.T) {
 		DocumentID: "1",
 	}.Do(context.Background(), client)
 	assert.NoError(err)
-	checkErrTrace(assert, mt)
+	checkErrTraceV6(assert, mt)
 
 }
 
@@ -105,16 +124,13 @@ func TestClientV6Failure(t *testing.T) {
 	assert.NoError(err)
 
 	_, err = esapi6.IndexRequest{
-		Index:        "twitter",
-		DocumentID:   "1",
-		DocumentType: "tweet",
-		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
+		Index:      "twitter",
+		DocumentID: "1",
+		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), client)
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt)
-
 	assert.NotEmpty(spans[0].Tag(ext.Error))
 	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
 }

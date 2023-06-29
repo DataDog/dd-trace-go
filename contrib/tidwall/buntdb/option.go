@@ -10,16 +10,24 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "buntdb"
 
 type config struct {
 	ctx           context.Context
 	serviceName   string
+	spanName      string
 	analyticsRate float64
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = "buntdb"
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewDBOutboundOp("buntdb").GetName()
 	cfg.ctx = context.Background()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_BUNTDB_ANALYTICS_ENABLED", false) {

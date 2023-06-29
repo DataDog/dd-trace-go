@@ -9,25 +9,40 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+const defaultServiceName = "gocql.query"
+
 type queryConfig struct {
-	serviceName, resourceName string
-	noDebugStack              bool
-	analyticsRate             float64
+	serviceName, resourceName    string
+	querySpanName, batchSpanName string
+	noDebugStack                 bool
+	analyticsRate                float64
+	errCheck                     func(err error) bool
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
-func defaults(cfg *queryConfig) {
-	cfg.serviceName = "gocql.query"
+func defaultConfig() *queryConfig {
+	cfg := &queryConfig{}
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
+	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
+		namingschema.WithOverrideV0("cassandra.batch"),
+	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.errCheck = func(error) bool { return true }
+	return cfg
 }
 
 // WithServiceName sets the given service name for the returned query.
@@ -78,5 +93,27 @@ func WithAnalyticsRate(rate float64) WrapOption {
 func NoDebugStack() WrapOption {
 	return func(cfg *queryConfig) {
 		cfg.noDebugStack = true
+	}
+}
+
+func (c *queryConfig) shouldIgnoreError(err error) bool {
+	return c != nil && c.errCheck != nil && !c.errCheck(err)
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a CQL request
+// finishes with an error.
+func WithErrorCheck(fn func(err error) bool) WrapOption {
+	return func(cfg *queryConfig) {
+		// When the error is explicitly marked as not-an-error, that is
+		// when this errCheck function returns false, the APM code will
+		// just skip the error and pretend the span was successful.
+		//
+		// A typical use-case is gocql.ErrNotFound which is returned when scanning data,
+		// but no data is available so zero rows are returned.
+		//
+		// This only affects whether the span/trace is marked as success/error,
+		// the calls to the gocql API still return the upstream error code.
+		cfg.errCheck = fn
 	}
 }

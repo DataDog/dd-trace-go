@@ -15,8 +15,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
 
+	waf "github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,4 +30,13 @@ func TestEnabled(t *testing.T) {
 	assert.Equal(t, canBeEnabled, appsec.Enabled())
 	tracer.Stop()
 	assert.False(t, appsec.Enabled())
+}
+
+// Test that everything goes well when simply starting and stopping appsec
+func TestStartStop(t *testing.T) {
+	// Use t.Setenv() to automatically restore the initial env var value, if set
+	t.Setenv("DD_APPSEC_ENABLED", "")
+	os.Unsetenv("DD_APPSEC_ENABLED")
+	appsec.Start()
+	appsec.Stop()
 }

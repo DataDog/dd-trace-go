@@ -9,12 +9,14 @@ package tracer
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -59,7 +62,7 @@ type errorConfig struct {
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
-	sync.RWMutex `msg:"-"`
+	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	Name     string             `msg:"name"`              // operation name
 	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
@@ -70,10 +73,11 @@ type span struct {
 	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
 	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
 	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // identifier of the root span
+	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
+	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
 	context      *spanContext `msg:"-"` // span propagation context
@@ -163,15 +167,85 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName, rate float64) {
+func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
-	s.setSamplingPriorityLocked(priority, sampler, rate)
+	s.setSamplingPriorityLocked(priority, sampler)
+}
+
+// Root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+func (s *span) Root() Span {
+	return s.root()
+}
+
+// root returns the root span of the span's trace. The return value shouldn't be
+// nil as long as the root span is valid and not finished.
+// As opposed to the public Root method, this one returns the actual span type
+// when internal usage requires it (to avoid type assertions from Root's return
+// value).
+func (s *span) root() *span {
+	if s == nil || s.context == nil {
+		return nil
+	}
+	if s.context.trace == nil {
+		return nil
+	}
+	return s.context.trace.root
+}
+
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
+func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
+	var cfg UserMonitoringConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+	root := s.root()
+	trace := root.context.trace
+	root.Lock()
+	defer root.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if root.finished {
+		return
+	}
+	if cfg.PropagateID {
+		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+		delete(root.Meta, keyUserID)
+		idenc := base64.StdEncoding.EncodeToString([]byte(id))
+		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+		s.context.updated = true
+	} else {
+		if trace.hasPropagatingTag(keyPropagatedUserID) {
+			// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+			trace.unsetPropagatingTag(keyPropagatedUserID)
+			s.context.updated = true
+		}
+		delete(root.Meta, keyPropagatedUserID)
+	}
+	for k, v := range map[string]string{
+		keyUserID:        id,
+		keyUserEmail:     cfg.Email,
+		keyUserName:      cfg.Name,
+		keyUserScope:     cfg.Scope,
+		keyUserRole:      cfg.Role,
+		keyUserSessionID: cfg.SessionID,
+	} {
+		if v != "" {
+			// setMeta is used since the span is already locked
+			root.setMeta(k, v)
+		}
+	}
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName, rate float64) {
+func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -179,7 +253,7 @@ func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
-	s.context.setSamplingPriority(s.Service, priority, sampler, rate)
+	s.context.setSamplingPriority(priority, sampler)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -189,13 +263,13 @@ func (s *span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.Error == 0 {
 				// new error
-				atomic.AddInt64(&s.context.errors, 1)
+				atomic.AddInt32(&s.context.errors, 1)
 			}
 			s.Error = 1
 		} else {
 			if s.Error > 0 {
 				// flip from active to inactive
-				atomic.AddInt64(&s.context.errors, -1)
+				atomic.AddInt32(&s.context.errors, -1)
 			}
 			s.Error = 0
 		}
@@ -300,11 +374,11 @@ func (s *span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
 		}
 	default:
 		if v {
@@ -325,12 +399,12 @@ func (s *span) setMetric(key string, v float64) {
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec, math.NaN())
+			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.AppSec)
 		}
 	case ext.SamplingPriority:
 		// ext.SamplingPriority is deprecated in favor of ext.ManualKeep and ext.ManualDrop.
 		// We have it here for backward compatibility.
-		s.setSamplingPriorityLocked(int(v), samplernames.Manual, math.NaN())
+		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
 		s.Metrics[key] = v
 	}
@@ -363,6 +437,22 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	if s.taskEnd != nil {
 		s.taskEnd()
 	}
+	if s.goExecTraced && rt.IsEnabled() {
+		// Only tag spans as traced if they both started & ended with
+		// execution tracing enabled. This is technically not sufficient
+		// for spans which could straddle the boundary between two
+		// execution traces, but there's really nothing we can do in
+		// those cases since execution tracing tasks aren't recorded in
+		// traces if they started before the trace.
+		s.SetTag("go_execution_traced", "yes")
+	} else if s.goExecTraced {
+		// If the span started with tracing enabled, but tracing wasn't
+		// enabled when the span finished, we still have some data to
+		// show. If tracing wasn't enabled when the span started, we
+		// won't have data in the execution trace to identify it so
+		// there's nothign we can show.
+		s.SetTag("go_execution_traced", "partial")
+	}
 	s.finish(t)
 
 	if s.pprofCtxRestore != nil {
@@ -376,7 +466,13 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 func (s *span) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
-
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		// already finished
+		return
+	}
 	s.Name = operationName
 }
 
@@ -418,6 +514,11 @@ func (s *span) finish(finishTime int64) {
 	if keep {
 		// a single kept span keeps the whole trace.
 		s.context.trace.keep()
+	}
+	if log.DebugEnabled() {
+		// avoid allocating the ...interface{} argument if debug logging is disabled
+		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
 	s.context.finish()
 }
@@ -480,7 +581,7 @@ func shouldKeep(s *span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt64(&s.context.errors) > 0 {
+	if atomic.LoadInt32(&s.context.errors) > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
@@ -505,11 +606,14 @@ func shouldComputeStats(s *span) bool {
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *span) String() string {
+	s.RLock()
+	defer s.RUnlock()
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
 		fmt.Sprintf("Resource: %s", s.Resource),
 		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
 		fmt.Sprintf("SpanID: %d", s.SpanID),
 		fmt.Sprintf("ParentID: %d", s.ParentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
@@ -518,14 +622,12 @@ func (s *span) String() string {
 		fmt.Sprintf("Type: %s", s.Type),
 		"Tags:",
 	}
-	s.RLock()
 	for key, val := range s.Meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 	}
 	for key, val := range s.Metrics {
 		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
 	}
-	s.RUnlock()
 	return strings.Join(lines, "\n")
 }
 
@@ -553,17 +655,27 @@ func (s *span) Format(f fmt.State, c rune) {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
-		fmt.Fprintf(f, `dd.trace_id="%d" dd.span_id="%d"`, s.TraceID, s.SpanID)
+		var traceID string
+		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
+			traceID = s.context.TraceID128()
+		} else {
+			traceID = fmt.Sprintf("%d", s.TraceID)
+		}
+		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
+		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
 }
 
 const (
-	keySamplingPriority        = "_sampling_priority_v1"
-	keySamplingPriorityRate    = "_dd.agent_psr"
-	keyUpstreamServices        = "_dd.p.upstream_services"
-	keyOrigin                  = "_dd.origin"
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
 	keyHostname                = "_dd.hostname"
 	keyRulesSamplerAppliedRate = "_dd.rule_psr"
 	keyRulesSamplerLimiterRate = "_dd.limit_psr"
@@ -571,4 +683,35 @@ const (
 	// keyTopLevel is the key of top level metric indicating if a span is top level.
 	// A top level span is a local root (parent span of the local trace) or the first span of each service.
 	keyTopLevel = "_dd.top_level"
+	// keyPropagationError holds any error from propagated trace tags (if any)
+	keyPropagationError = "_dd.propagation_error"
+	// keySpanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
+	keySpanSamplingMechanism = "_dd.span_sampling.mechanism"
+	// keySingleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
+	keySingleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
+	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
+	// that the span matched. If there is no configured limit, then this tag is omitted.
+	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
+	keyPropagatedUserID = "_dd.p.usr.id"
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
+	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
+	keyTraceID128 = "_dd.p.tid"
+	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
+	// keyPeerServiceSource indicates the precursor tag that was used as the value of peer.service.
+	keyPeerServiceSource = "_dd.peer.service.source"
+	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
+	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
+)
+
+// The following set of tags is used for user monitoring and set through calls to span.SetUser().
+const (
+	keyUserID        = "usr.id"
+	keyUserEmail     = "usr.email"
+	keyUserName      = "usr.name"
+	keyUserRole      = "usr.role"
+	keyUserScope     = "usr.scope"
+	keyUserSessionID = "usr.session_id"
 )

@@ -7,9 +7,10 @@ package tracer
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,10 +33,10 @@ func newSpanList(n int) spanList {
 // allows us to read the same content as would have been encoded by
 // the codec.
 func TestPayloadIntegrity(t *testing.T) {
-	assert := assert.New(t)
 	want := new(bytes.Buffer)
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newPayload()
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {
@@ -49,7 +50,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			assert.Equal(want.Len(), p.size())
 			assert.Equal(p.itemCount(), n)
 
-			got, err := ioutil.ReadAll(p)
+			got, err := io.ReadAll(p)
 			assert.NoError(err)
 			assert.Equal(want.Bytes(), got)
 		})
@@ -96,7 +97,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		reset := func() {
 			p.header = make([]byte, 8)
 			p.off = 8
-			p.count = 0
+			atomic.StoreUint32(&p.count, 0)
 			p.buf.Reset()
 		}
 		for i := 0; i < b.N; i++ {

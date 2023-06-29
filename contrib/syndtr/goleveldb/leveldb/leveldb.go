@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -21,6 +22,12 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
+
+const componentName = "syndtr/goleveldb/leveldb"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // A DB wraps a leveldb.DB and traces all queries.
 type DB struct {
@@ -271,10 +278,13 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemLevelDB),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	return span
 }

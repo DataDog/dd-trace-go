@@ -12,8 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 )
 
-// ParseDSN parses various supported DSN types (currently mysql and postgres) into a
-// map of key/value pairs which can be used as valid tags.
+// ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
 func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	meta = make(map[string]string)
 	switch driverName {
@@ -42,11 +41,12 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 // map containing only the keys relevant as tracing tags, if any.
 func reduceKeys(meta map[string]string) map[string]string {
 	var keysOfInterest = map[string]string{
-		"user":             ext.DBUser,
-		"application_name": ext.DBApplication,
-		"dbname":           ext.DBName,
-		"host":             ext.TargetHost,
-		"port":             ext.TargetPort,
+		"user":                             ext.DBUser,
+		"application_name":                 ext.DBApplication,
+		"dbname":                           ext.DBName,
+		"host":                             ext.TargetHost,
+		"port":                             ext.TargetPort,
+		ext.MicrosoftSQLServerInstanceName: ext.MicrosoftSQLServerInstanceName,
 	}
 	m := make(map[string]string)
 	for k, v := range meta {

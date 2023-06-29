@@ -13,9 +13,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/go-pg/pg/v10"
 )
+
+const componentName = "go-pg/pg.v10"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Wrap augments the given DB with tracing.
 func Wrap(db *pg.DB, opts ...Option) {
@@ -43,6 +50,8 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))

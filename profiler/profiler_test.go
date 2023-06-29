@@ -6,17 +6,24 @@
 package profiler
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/trace"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,8 +51,8 @@ func TestStart(t *testing.T) {
 		// that we log some default configuration, e.g. enabled profiles
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
 		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "cpu")
-		assert.Contains(t, startupLog, "heap")
+		assert.Contains(t, startupLog, "\"cpu\"")
+		assert.Contains(t, startupLog, "\"heap\"")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
@@ -121,177 +128,100 @@ func TestStart(t *testing.T) {
 	})
 }
 
-func TestStartStopIdempotency(t *testing.T) {
-	t.Run("linear", func(t *testing.T) {
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
-		Start()
+// TestStartWithoutStopReconfigures verifies that calling Start while the
+// profiler is already running will restart it with the given configuration.
+func TestStartWithoutStopReconfigures(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
 
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-		Stop()
-	})
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
+	defer Stop()
 
-	t.Run("parallel", func(t *testing.T) {
-		var wg sync.WaitGroup
+	m := <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; !ok {
+		t.Errorf("did not see a heap profile")
+	}
 
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 1000; j++ {
-					// startup logging makes this test very slow
-					Start(WithLogStartup(false))
-				}
-			}()
-		}
-		for i := 0; i < 5; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 1000; j++ {
-					Stop()
-				}
-			}()
-		}
-		wg.Wait()
-	})
+	// Disable the heap profile, verify that we're not sending it
+	err = Start(
+		WithHTTPClient(client),
+		WithProfileTypes(),
+		WithPeriod(200*time.Millisecond),
+	)
+	require.NoError(t, err)
 
-	t.Run("stop", func(t *testing.T) {
-		Start(WithPeriod(time.Minute))
-		defer Stop()
-
-		mu.Lock()
-		require.NotNil(t, activeProfiler)
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		activeProfiler.stop()
-		mu.Unlock()
-	})
+	m = <-got
+	if _, ok := m.attachments["delta-heap.pprof"]; ok {
+		t.Errorf("unexpectedly saw a heap profile")
+	}
 }
 
 // TestStopLatency tries to make sure that calling Stop() doesn't hang, i.e.
 // that ongoing profiling or upload operations are immediately canceled.
 func TestStopLatency(t *testing.T) {
-	p, err := newProfiler(
-		WithURL("http://invalid.invalid/"),
-		WithPeriod(1000*time.Millisecond),
-		CPUDuration(500*time.Millisecond),
-	)
-	require.NoError(t, err)
-	uploadStart := make(chan struct{}, 1)
-	uploadFunc := p.uploadFunc
-	p.uploadFunc = func(b batch) error {
+	received := make(chan struct{})
+	stop := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case uploadStart <- struct{}{}:
+		case received <- struct{}{}:
 		default:
-			// uploadFunc may be called more than once, don't leak this goroutine
 		}
-		return uploadFunc(b)
+		<-stop
+	}))
+	defer server.Close()
+	defer close(stop)
+
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(time.Second),
+		WithUploadTimeout(time.Hour),
+	)
+
+	<-received
+	// received indicates that an upload has started, and due to waiting on
+	// stop the upload won't actually complete. So we know calling Stop()
+	// should interrupt the upload. Ideally profiling is also currently
+	// running, though that is harder to detect and guarantee.
+	start := time.Now()
+	Stop()
+
+	// CPU profiling can take up to 200ms to stop. This is because the inner
+	// loop of CPU profiling has an uninterruptible 100ms sleep. Each
+	// iteration reads available profile samples, so it can take two
+	// iterations to stop: one to read the remaining samples, and a second
+	// to detect that there are no more samples and exit. We give extra time
+	// on top of that to account for CI slowness.
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("profiler took %v to stop", elapsed)
 	}
-	p.run()
-
-	<-uploadStart
-	// Wait for uploadFunc(b) to run. A bit racy, but worst case is the test
-	// passing for the wrong reasons.
-	time.Sleep(10 * time.Millisecond)
-
-	stopped := make(chan struct{}, 1)
-	go func() {
-		p.stop()
-		stopped <- struct{}{}
-	}()
-
-	timeout := 20 * time.Millisecond
-	select {
-	case <-stopped:
-	case <-time.After(timeout):
-		// Capture stacks so we can see which goroutines are hanging and why.
-		stacks := make([]byte, 64*1024)
-		stacks = stacks[0:runtime.Stack(stacks, true)]
-		t.Fatalf("Stop() took longer than %s:\n%s", timeout, stacks)
-	}
-}
-
-func TestProfilerInternal(t *testing.T) {
-	t.Run("collect", func(t *testing.T) {
-		p, err := unstartedProfiler(
-			CPUDuration(1*time.Millisecond),
-			WithProfileTypes(HeapProfile, CPUProfile),
-		)
-		require.NoError(t, err)
-		var startCPU, stopCPU, writeHeap uint64
-		defer func(old func(_ io.Writer) error) { startCPUProfile = old }(startCPUProfile)
-		startCPUProfile = func(_ io.Writer) error {
-			atomic.AddUint64(&startCPU, 1)
-			return nil
-		}
-		defer func(old func()) { stopCPUProfile = old }(stopCPUProfile)
-		stopCPUProfile = func() { atomic.AddUint64(&stopCPU, 1) }
-		defer func(old func(_ string, w io.Writer, _ int) error) { lookupProfile = old }(lookupProfile)
-		lookupProfile = func(name string, w io.Writer, _ int) error {
-			if name == "heap" {
-				atomic.AddUint64(&writeHeap, 1)
-			}
-			_, err := w.Write(textProfile{Text: "main 5\n"}.Protobuf())
-			return err
-		}
-
-		tick := make(chan time.Time)
-		wait := make(chan struct{})
-
-		go func() {
-			p.collect(tick)
-			close(wait)
-		}()
-
-		tick <- time.Now()
-
-		var bat batch
-		select {
-		case bat = <-p.out:
-		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("missing batch")
-		}
-
-		assert := assert.New(t)
-		assert.EqualValues(1, writeHeap)
-		assert.EqualValues(1, startCPU)
-		assert.EqualValues(1, stopCPU)
-
-		// should contain cpu.pprof, metrics.json, delta-heap.pprof
-		assert.Equal(3, len(bat.profiles))
-
-		p.exit <- struct{}{}
-		<-wait
-	})
 }
 
 func TestSetProfileFraction(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
-		start := runtime.SetMutexProfileFraction(-1)
+		start := runtime.SetMutexProfileFraction(0)
 		defer runtime.SetMutexProfileFraction(start)
 		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
 		require.NoError(t, err)
 		p.run()
 		p.stop()
-		assert.NotEqual(t, start, runtime.SetMutexProfileFraction(-1))
+		assert.Equal(t, DefaultMutexFraction, runtime.SetMutexProfileFraction(-1))
 	})
 
 	t.Run("off", func(t *testing.T) {
-		start := runtime.SetMutexProfileFraction(-1)
+		start := runtime.SetMutexProfileFraction(0)
 		defer runtime.SetMutexProfileFraction(start)
 		p, err := unstartedProfiler()
 		require.NoError(t, err)
 		p.run()
 		p.stop()
-		assert.Equal(t, start, runtime.SetMutexProfileFraction(-1))
+		assert.Zero(t, runtime.SetMutexProfileFraction(-1))
 	})
 }
 
@@ -333,4 +263,344 @@ func unstartedProfiler(opts ...Option) (*profiler, error) {
 	}
 	p.uploadFunc = func(_ batch) error { return nil }
 	return p, nil
+}
+
+type profileMeta struct {
+	tags        []string
+	headers     http.Header
+	event       uploadEvent
+	attachments map[string][]byte
+}
+
+type mockBackend struct {
+	t        *testing.T
+	profiles chan profileMeta
+}
+
+func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
+		return
+	}
+	profile := profileMeta{
+		attachments: make(map[string][]byte),
+	}
+	defer func() {
+		select {
+		case m.profiles <- profile:
+		default:
+		}
+	}()
+	profile.headers = r.Header.Clone()
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		m.t.Fatalf("bad multipart form: %s", err)
+		return
+	}
+	file, _, err := r.FormFile("event")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("getting event.json: %s", err)
+		return
+	}
+	if err := json.NewDecoder(file).Decode(&profile.event); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		m.t.Fatalf("decoding event payload: %s", err)
+		return
+	}
+
+	profile.tags = append(profile.tags, strings.Split(profile.event.Tags, ",")...)
+	for _, name := range profile.event.Attachments {
+		f, _, err := r.FormFile(name)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("event attachment %s is missing from upload: %s", name, err)
+			return
+		}
+		defer f.Close()
+		data, err := io.ReadAll(f)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			m.t.Fatalf("reading attachment %s: %s", name, err)
+			return
+		}
+		profile.attachments[name] = data
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func TestAllUploaded(t *testing.T) {
+	// This is a kind of end-to-end test that runs the real profiles (i.e.
+	// not mocking/replacing any internal functions) and verifies that the
+	// profiles are at least uploaded.
+	//
+	// TODO: Further check that the uploaded profiles are all valid
+
+	// received indicates that the server has received a profile upload.
+	// This is used similarly to a sync.WaitGroup but avoids a potential
+	// panic if too many requests are received before profiling is stopped
+	// and the WaitGroup count goes negative.
+	//
+	// The channel is buffered with 2 entries so we can check that the
+	// second batch of profiles is correct in case the profiler gets in a
+	// bad state after the first round of profiling.
+	received := make(chan profileMeta, 2)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			BlockProfile,
+			CPUProfile,
+			GoroutineProfile,
+			HeapProfile,
+			MutexProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		CPUDuration(1*time.Millisecond),
+	)
+	defer Stop()
+
+	validateProfile := func(profile profileMeta, seq uint64) {
+		expected := []string{
+			"cpu.pprof",
+			"delta-block.pprof",
+			"delta-heap.pprof",
+			"delta-mutex.pprof",
+			"goroutines.pprof",
+			"goroutineswait.pprof",
+		}
+		assert.ElementsMatch(t, expected, profile.event.Attachments)
+
+		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
+	}
+
+	validateProfile(<-received, 0)
+	validateProfile(<-received, 1)
+}
+
+func TestCorrectTags(t *testing.T) {
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(
+			HeapProfile,
+		),
+		WithPeriod(10*time.Millisecond),
+		WithService("xyz"),
+		WithEnv("testing"),
+		WithTags("foo:bar", "baz:bonk"),
+		WithHostname("example"),
+	)
+	defer Stop()
+	expected := []string{
+		"baz:bonk",
+		"env:testing",
+		"foo:bar",
+		"service:xyz",
+		"host:example",
+	}
+	for i := 0; i < 20; i++ {
+		// We check the tags we get several times to try to have a
+		// better chance of catching a bug where the some of the tags
+		// are clobbered due to a bug caused by the same
+		// profiler-internal tag slice being appended to from different
+		// goroutines concurrently.
+		p := <-got
+		for _, tag := range expected {
+			require.Contains(t, p.tags, tag)
+		}
+	}
+}
+
+func TestImmediateProfile(t *testing.T) {
+	received := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- struct{}{}:
+		default:
+		}
+	}))
+	defer server.Close()
+
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(HeapProfile),
+		WithPeriod(3*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	// Wait a little less than 2 profile periods. We should start profiling
+	// immediately. If it takes significantly longer than 1 profile period to get
+	// a profile, consider the test failed
+	timeout := time.After(5 * time.Second)
+	select {
+	case <-timeout:
+		t.Fatal("should have received a profile already")
+	case <-received:
+	}
+}
+
+func TestExecutionTrace(t *testing.T) {
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(CPUProfile),
+		WithPeriod(1*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	contains := func(haystack []string, needle string) bool {
+		for _, s := range haystack {
+			if s == needle {
+				return true
+			}
+		}
+		return false
+	}
+	seenTraces := 0
+	for i := 0; i < 4; i++ {
+		m := <-got
+		t.Log(m.event.Attachments, m.tags)
+		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
+			seenTraces++
+		}
+	}
+	// With a trace frequency of 3 seconds and a profiling period of 1
+	// second, we should see 2 traces after 4 profile collections: one at
+	// the start, and one 3 seconds later.
+	if seenTraces != 2 {
+		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
+	}
+}
+
+// TestEndpointCounts verfies that the unit of work feature works end to end.
+func TestEndpointCounts(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		name := fmt.Sprintf("enabled=%v", enabled)
+		t.Run(name, func(t *testing.T) {
+			// Spin up mock backend
+			got := make(chan profileMeta, 1)
+			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			// Configure endpoint counting
+			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
+
+			// Start the tracer (before profiler to avoid race in case of slow tracer start)
+			tracer.Start()
+			defer tracer.Stop()
+
+			// Start profiler
+			err := Start(
+				WithAgentAddr(server.Listener.Addr().String()),
+				WithProfileTypes(CPUProfile),
+				WithPeriod(100*time.Millisecond),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			// Create spans until the first profile is finished
+			var m profileMeta
+			for m.attachments == nil {
+				select {
+				case m = <-got:
+				default:
+					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
+					span.Finish()
+				}
+			}
+
+			// Check that the first uploaded profile matches our expectations
+			if enabled {
+				require.Equal(t, 1, len(m.event.EndpointCounts))
+				require.Greater(t, m.event.EndpointCounts["/foo/bar"], uint64(0))
+			} else {
+				require.Empty(t, m.event.EndpointCounts)
+			}
+		})
+	}
+}
+
+func TestExecutionTraceSizeLimit(t *testing.T) {
+	got := make(chan profileMeta)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	done := make(chan struct{})
+	// bigMessage just forces a bunch of data to be written to the trace buffer.
+	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
+	// a trace duration of 2 seconds, so we should stop early.
+	bigMessage := string(make([]byte, 1024))
+	tick := time.NewTicker(3 * time.Millisecond)
+	defer tick.Stop()
+	go func() {
+		for {
+			select {
+			case <-tick.C:
+				trace.Log(context.Background(), "msg", bigMessage)
+			case <-done:
+				return
+			}
+		}
+	}()
+	defer close(done)
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
+	err := Start(
+		WithHTTPClient(client),
+		WithProfileTypes(), // just want the execution trace
+		WithPeriod(2*time.Second),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	const expectedSize = 300 * 1024
+	for i := 0; i < 5; i++ {
+		m := <-got
+		if p, ok := m.attachments["go.trace"]; ok {
+			if len(p) > expectedSize {
+				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
+			}
+			return
+		}
+	}
+	t.Errorf("did not see an execution trace")
+}
+
+func TestExecutionTraceEnabledFlag(t *testing.T) {
+	for _, status := range []string{"true", "false"} {
+		t.Run(status, func(t *testing.T) {
+			got := make(chan profileMeta)
+			server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+			defer server.Close()
+
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
+			err := Start(
+				WithHTTPClient(client),
+				WithProfileTypes(),
+				WithPeriod(1*time.Second),
+			)
+			require.NoError(t, err)
+			defer Stop()
+
+			m := <-got
+			t.Log(m.event.Attachments, m.tags)
+			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
+		})
+	}
 }

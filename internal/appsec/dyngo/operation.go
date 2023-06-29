@@ -22,11 +22,11 @@ package dyngo
 
 import (
 	"reflect"
-	"sort"
 	"sync"
-	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	"go.uber.org/atomic"
 )
 
 // Operation interface type allowing to register event listeners to the
@@ -48,11 +48,10 @@ type Operation interface {
 	// that no other package can define it.
 	emitEvent(argsType reflect.Type, op Operation, v interface{})
 
-	// register the given event listeners and return the unregistration
-	// function allowing to remove the event listener from the operation.
-	// register is a private method implemented by the operation struct type so
+	// add the given event listeners to the operation.
+	// add is a private method implemented by the operation struct type so
 	// that no other package can define it.
-	register(...EventListener) UnregisterFunc
+	add(...EventListener)
 
 	// finish the operation. This method allows to pass the operation value to
 	// use to emit the finish event.
@@ -72,15 +71,18 @@ type EventListener interface {
 	Call(op Operation, v interface{})
 }
 
-// UnregisterFunc is a function allowing to unregister from an operation the
-// previously registered event listeners.
-type UnregisterFunc func()
+// Atomic *Operation so we can atomically read or swap it.
+var rootOperation atomic.Pointer[Operation]
 
-var rootOperation = newOperation(nil)
-
-// Register global operation event listeners to listen to.
-func Register(listeners ...EventListener) UnregisterFunc {
-	return rootOperation.register(listeners...)
+// SwapRootOperation allows to atomically swap the current root operation with
+// the given new one. Concurrent uses of the old root operation on already
+// existing and running operation are still valid.
+func SwapRootOperation(new Operation) {
+	rootOperation.Swap(&new)
+	// Note: calling FinishOperation(old) could result into mem leaks because
+	// some finish event listeners, possibly releasing memory and resources,
+	// wouldn't be called anymore (because finish() disables the operation and
+	// removes the event listeners).
 }
 
 // operation structure allowing to subscribe to operation events and to
@@ -95,32 +97,44 @@ type operation struct {
 	mu       sync.RWMutex
 }
 
-// NewOperation creates and returns a new operationIt must be started by calling
+// NewRootOperation creates and returns a new root operation, with no parent
+// operation. Root operations are meant to be the top-level operation of an
+// operation stack, therefore receiving all the operation events. It allows to
+// prepare a new set of event listeners, to then atomically swap it with the
+// current one.
+func NewRootOperation() Operation {
+	return newOperation(nil)
+}
+
+// NewOperation creates and returns a new operation. It must be started by calling
 // StartOperation, and finished by calling FinishOperation. The returned
 // operation should be used in wrapper types to provide statically typed start
 // and finish functions. The following example shows how to wrap an operation
 // so that its functions are statically typed (instead of dyngo's interface{}
 // values):
-//   package mypackage
-//   import "dyngo"
-//   type (
-//     MyOperation struct {
-//       dyngo.Operation
-//     }
-//     MyOperationArgs { /* ... */ }
-//     MyOperationRes { /* ... */ }
-//   )
-//   func StartOperation(args MyOperationArgs, parent dyngo.Operation) MyOperation {
-//     op := MyOperation{Operation: dyngo.NewOperation(parent)}
-//     dyngo.StartOperation(op, args)
-//     return op
-//   }
-//   func (op MyOperation) Finish(res MyOperationRes) {
-//       dyngo.FinishOperation(op, res)
-//     }
+//
+//	package mypackage
+//	import "dyngo"
+//	type (
+//	  MyOperation struct {
+//	    dyngo.Operation
+//	  }
+//	  MyOperationArgs { /* ... */ }
+//	  MyOperationRes { /* ... */ }
+//	)
+//	func StartOperation(args MyOperationArgs, parent dyngo.Operation) MyOperation {
+//	  op := MyOperation{Operation: dyngo.NewOperation(parent)}
+//	  dyngo.StartOperation(op, args)
+//	  return op
+//	}
+//	func (op MyOperation) Finish(res MyOperationRes) {
+//	    dyngo.FinishOperation(op, res)
+//	  }
 func NewOperation(parent Operation) Operation {
 	if parent == nil {
-		parent = rootOperation
+		if root := rootOperation.Load(); root != nil {
+			parent = *root
+		}
 	}
 	return newOperation(parent)
 }
@@ -177,45 +191,29 @@ func (o *operation) disable() {
 	o.eventRegister.clear()
 }
 
-// Register allows to register the given event listeners to the operation. An
-// unregistration function is returned allowing to unregister the event
-// listeners from the operation.
-func (o *operation) register(l ...EventListener) UnregisterFunc {
-	// eventRegisterIndex allows to lookup for the event listener in the event register.
-	type eventRegisterIndex struct {
-		key reflect.Type
-		id  eventListenerID
-	}
+// Add the given event listeners to the operation.
+func (o *operation) add(l ...EventListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {
-		return func() {}
+		return
 	}
-	indices := make([]eventRegisterIndex, len(l))
-	for i, l := range l {
+	for _, l := range l {
 		if l == nil {
 			continue
 		}
 		key := l.ListenedType()
-		id := o.eventRegister.add(key, l)
-		indices[i] = eventRegisterIndex{
-			key: key,
-			id:  id,
-		}
-	}
-	return func() {
-		for _, ix := range indices {
-			o.eventRegister.remove(ix.key, ix.id)
-		}
+		o.eventRegister.add(key, l)
 	}
 }
 
 // On registers the event listener. The difference with the Register() is that
 // it doesn't return a function closure, which avoids unnecessary allocations
 // For example:
-//     op.On(MyOperationStart(func (op MyOperation, args MyOperationArgs) {
-//         // ...
-//     }))
+//
+//	op.On(MyOperationStart(func (op MyOperation, args MyOperationArgs) {
+//	    // ...
+//	}))
 func (o *operation) On(l EventListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -235,60 +233,16 @@ type (
 	// eventListenerMap is the map of event listeners. The list of listeners are
 	// indexed by the operation argument or result type the event listener
 	// expects.
-	eventListenerMap      map[reflect.Type][]eventListenerMapEntry
-	eventListenerMapEntry struct {
-		id       eventListenerID
-		listener EventListener
-	}
-
-	// eventListenerID is the unique ID of an event when registering it. It
-	// allows to find it back and remove it from the list of event listeners
-	// when unregistering it.
-	eventListenerID uint32
+	eventListenerMap map[reflect.Type][]EventListener
 )
 
-// lastID is the last event listener ID that was given to the latest event
-// listener.
-var lastID eventListenerID
-
-// nextID atomically increments lastID and returns the new event listener ID to
-// use.
-func nextID() eventListenerID {
-	return eventListenerID(atomic.AddUint32((*uint32)(&lastID), 1))
-}
-
-func (r *eventRegister) add(key reflect.Type, l EventListener) eventListenerID {
+func (r *eventRegister) add(key reflect.Type, l EventListener) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.listeners == nil {
 		r.listeners = make(eventListenerMap)
 	}
-	// id is computed when the lock is exclusively taken so that we know
-	// listeners are added in incremental id order.
-	// This allows to use the optimized sort.Search() function to remove the
-	// entry.
-	id := nextID()
-	r.listeners[key] = append(r.listeners[key], eventListenerMapEntry{
-		id:       id,
-		listener: l,
-	})
-	return id
-}
-
-func (r *eventRegister) remove(key reflect.Type, id eventListenerID) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.listeners == nil {
-		return
-	}
-	listeners := r.listeners[key]
-	length := len(listeners)
-	i := sort.Search(length, func(i int) bool {
-		return listeners[i].id >= id
-	})
-	if i < length && listeners[i].id == id {
-		r.listeners[key] = append(listeners[:i], listeners[i+1:]...)
-	}
+	r.listeners[key] = append(r.listeners[key], l)
 }
 
 func (r *eventRegister) clear() {
@@ -305,7 +259,7 @@ func (r *eventRegister) emitEvent(key reflect.Type, op Operation, v interface{})
 	}()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, e := range r.listeners[key] {
-		e.listener.Call(op, v)
+	for _, listener := range r.listeners[key] {
+		listener.Call(op, v)
 	}
 }

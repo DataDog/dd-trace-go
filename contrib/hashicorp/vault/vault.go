@@ -18,15 +18,23 @@ package vault
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/helper/consts"
 )
+
+const componentName = "hashicorp/vault"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // NewHTTPClient returns an http.Client for use in the Vault API config
 // Client. A set of options can be passed in for further configuration.
@@ -50,12 +58,21 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
 		httptrace.RTWithAnalyticsRate(conf.analyticsRate),
+		httptrace.RTWithSpanNamer(func(_ *http.Request) string {
+			return conf.spanName
+		}),
 		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
 			s.SetTag(ext.ResourceName, r.Method+" "+r.URL.Path)
 			s.SetTag(ext.SpanType, ext.SpanTypeHTTP)
+			s.SetTag(ext.Component, "hashicorp/vault")
+			s.SetTag(ext.SpanKind, ext.SpanKindClient)
+			if host, _, err := net.SplitHostPort(r.Host); err == nil {
+				s.SetTag(ext.NetworkDestinationName, host)
+			}
+
 			if ns := r.Header.Get(consts.NamespaceHeaderName); ns != "" {
 				s.SetTag("vault.namespace", ns)
 			}

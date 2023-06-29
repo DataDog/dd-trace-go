@@ -8,19 +8,16 @@ package profiler
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
-	"mime"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -29,6 +26,7 @@ import (
 )
 
 var testBatch = batch{
+	seq:   23,
 	start: time.Now().Add(-10 * time.Second),
 	end:   time.Now(),
 	host:  "my-host",
@@ -49,10 +47,11 @@ func TestTryUpload(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = ""
 
-	srv := startHTTPTestServer(t, 200)
-	defer srv.close()
+	profiles := make(chan profileMeta, 1)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+	defer server.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(srv.address),
+		WithAgentAddr(server.Listener.Addr().String()),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -60,66 +59,76 @@ func TestTryUpload(t *testing.T) {
 	require.NoError(t, err)
 	err = p.doRequest(testBatch)
 	require.NoError(t, err)
-	header, fields, tags := srv.wait()
+	profile := <-profiles
 
 	assert := assert.New(t)
-	assert.Empty(header.Get("Datadog-Container-ID"))
-	assert.ElementsMatch([]string{
+	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
+	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
 		"service:my-service",
 		"env:my-env",
+		"profile_seq:23",
 		"tag1:1",
 		"tag2:2",
-		fmt.Sprintf("pid:%d", os.Getpid()),
+		fmt.Sprintf("process_id:%d", os.Getpid()),
 		fmt.Sprintf("profiler_version:%s", version.Tag),
 		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
 		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
-	}, tags)
-	for k, v := range map[string]string{
-		"version":          "3",
-		"family":           "go",
-		"data[cpu.pprof]":  "my-cpu-profile",
-		"data[heap.pprof]": "my-heap-profile",
+	})
+	assert.Equal(profile.event.Version, "4")
+	assert.Equal(profile.event.Family, "go")
+	assert.NotNil(profile.event.Start)
+	assert.NotNil(profile.event.End)
+	for k, v := range map[string][]byte{
+		"cpu.pprof":  []byte("my-cpu-profile"),
+		"heap.pprof": []byte("my-heap-profile"),
 	} {
-		assert.Equal(v, fields[k], k)
-	}
-	for _, k := range []string{"start", "end"} {
-		_, ok := fields[k]
-		assert.True(ok, "key should be present: %s", k)
-	}
-	for _, k := range []string{"runtime", "format"} {
-		_, ok := fields[k]
-		assert.False(ok, "key should not be present: %s", k)
+		assert.Equal(v, profile.attachments[k])
 	}
 }
 
 func TestTryUploadUDS(t *testing.T) {
-	srv := startSocketTestServer(t, 200)
-	defer srv.close()
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix domain sockets are non-functional on windows.")
+	}
+	profiles := make(chan profileMeta, 1)
+	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
+	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
+	l, err := net.Listen("unix", udsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	server.Listener = l
+	server.Start()
+	defer server.Close()
+
 	p, err := unstartedProfiler(
-		WithUDS(srv.address),
+		WithUDS(udsPath),
 	)
 	require.NoError(t, err)
 	err = p.doRequest(testBatch)
 	require.NoError(t, err)
-	_, _, tags := srv.wait()
+	profile := <-profiles
 
 	assert := assert.New(t)
-	assert.ElementsMatch([]string{
+	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
-	}, tags[0:2])
+	})
 }
 
 func Test202Accepted(t *testing.T) {
-	srv := startHTTPTestServer(t, 202)
-	defer srv.close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(srv.address),
+		WithAgentAddr(server.Listener.Addr().String()),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -130,10 +139,12 @@ func Test202Accepted(t *testing.T) {
 }
 
 func TestOldAgent(t *testing.T) {
-	srv := startHTTPTestServer(t, 404)
-	defer srv.close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(srv.address),
+		WithAgentAddr(server.Listener.Addr().String()),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -148,10 +159,11 @@ func TestContainerIDHeader(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = "fakeContainerID"
 
-	srv := startHTTPTestServer(t, 200)
-	defer srv.close()
+	profiles := make(chan profileMeta, 1)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+	defer server.Close()
 	p, err := unstartedProfiler(
-		WithAgentAddr(srv.address),
+		WithAgentAddr(server.Listener.Addr().String()),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
@@ -160,13 +172,13 @@ func TestContainerIDHeader(t *testing.T) {
 	err = p.doRequest(testBatch)
 	require.NoError(t, err)
 
-	header, _, _ := srv.wait()
-	assert.Equal(t, containerID, header.Get("Datadog-Container-Id"))
+	profile := <-profiles
+	assert.Equal(t, containerID, profile.headers.Get("Datadog-Container-Id"))
 }
 
 func BenchmarkDoRequest(b *testing.B) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, err := ioutil.ReadAll(req.Body)
+		_, err := io.ReadAll(req.Body)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -194,107 +206,75 @@ func BenchmarkDoRequest(b *testing.B) {
 	}
 }
 
-type testServerWaiter func() (http.Header, map[string]string, []string)
+func TestGitMetadata(t *testing.T) {
+	maininternal.ResetGitMetadataTags()
+	defer maininternal.ResetGitMetadataTags()
 
-type testServer struct {
-	t       *testing.T
-	handler http.HandlerFunc
+	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 
-	// for recording request state
-	waitc  chan struct{}
-	header http.Header
-	fields map[string]string
-	tags   []string
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
 
-	address string
-	close   func() error
-}
-
-func newTestServer(t *testing.T, statusCode int) *testServer {
-	ts := &testServer{
-		t:      t,
-		waitc:  make(chan struct{}),
-		fields: make(map[string]string),
-	}
-	ts.handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		t.Helper()
-		w.WriteHeader(statusCode)
-		ts.header = req.Header
-		_, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		mr := multipart.NewReader(req.Body, params["boundary"])
-		defer req.Body.Close()
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			slurp, err := ioutil.ReadAll(p)
-			if err != nil {
-				t.Fatal(err)
-			}
-			switch k := p.FormName(); k {
-			case "tags[]":
-				ts.tags = append(ts.tags, string(slurp))
-			default:
-				ts.fields[k] = string(slurp)
-			}
-		}
-		close(ts.waitc)
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
+		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo")
+		assert.Contains(profile.tags, "go_path:somepath")
 	})
-	return ts
-}
+	t.Run("git-metadata-from-env", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
-func (ts *testServer) wait() (http.Header, map[string]string, []string) {
-	ts.t.Helper()
-	select {
-	case <-ts.waitc:
-		// OK
-		return ts.header, ts.fields, ts.tags
-	case <-time.After(time.Second):
-		ts.t.Fatalf("timeout")
-		return nil, nil, nil
-	}
-}
+		// git metadata env has priority under DD_TAGS
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
-func startHTTPTestServer(t *testing.T, statusCode int) *testServer {
-	t.Helper()
-	ts := newTestServer(t, statusCode)
-	server := httptest.NewServer(ts.handler)
-	ts.close = func() error {
-		server.Close()
-		return nil
-	}
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
 
-	srvURL, err := url.Parse(server.URL)
-	if err != nil {
-		server.Close()
-		t.Fatalf("failed to parse server url")
-		return nil
-	}
-	ts.address = srvURL.Host
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
+		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo_new")
+	})
 
-	return ts
-}
+	t.Run("git-metadata-disabled", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
 
-func startSocketTestServer(t *testing.T, statusCode int) *testServer {
-	t.Helper()
-	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
-	ts := newTestServer(t, statusCode)
-	server := http.Server{Handler: ts.handler}
-	ts.close = server.Close
-	ts.address = udsPath
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
+		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCD")
 
-	unixListener, err := net.Listen("unix", udsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(unixListener)
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
 
-	return ts
+		assert := assert.New(t)
+		assert.NotContains(profile.tags, "git.commit.sha:123456789ABCD")
+		assert.NotContains(profile.tags, "git.repository_url:github.com/user/repo")
+	})
 }

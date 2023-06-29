@@ -14,9 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/tidwall/buntdb"
 )
+
+const componentName = "tidwall/buntdb"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
 type DB struct {
@@ -98,11 +105,14 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemBuntDB),
 	}
 	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, tx.cfg.spanName, opts...)
 	return span
 }
 

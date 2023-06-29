@@ -13,9 +13,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/Shopify/sarama"
 )
+
+const componentName = "Shopify/sarama"
+
+func init() {
+	telemetry.LoadIntegration("Shopify/sarama")
+}
 
 type partitionConsumer struct {
 	sarama.PartitionConsumer
@@ -50,8 +57,11 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.ServiceName(cfg.consumerServiceName),
 				tracer.ResourceName("Consume Topic " + msg.Topic),
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
-				tracer.Tag("partition", msg.Partition),
+				tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
 				tracer.Tag("offset", msg.Offset),
+				tracer.Tag(ext.Component, componentName),
+				tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+				tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 				tracer.Measured(),
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
@@ -62,7 +72,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 			if spanctx, err := tracer.Extract(carrier); err == nil {
 				opts = append(opts, tracer.ChildOf(spanctx))
 			}
-			next := tracer.StartSpan("kafka.consume", opts...)
+			next := tracer.StartSpan(cfg.consumerSpanName, opts...)
 			// reinject the span context so consumers can pick it up
 			tracer.Inject(next.Context(), carrier)
 
@@ -258,6 +268,9 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.ServiceName(cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -266,7 +279,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-	span := tracer.StartSpan("kafka.produce", opts...)
+	span := tracer.StartSpan(cfg.producerSpanName, opts...)
 	if version.IsAtLeast(sarama.V0_11_0_0) {
 		// re-inject the span context so consumers can pick it up
 		tracer.Inject(span.Context(), carrier)
@@ -275,7 +288,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 }
 
 func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
-	span.SetTag("partition", partition)
+	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
 }

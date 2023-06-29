@@ -8,17 +8,17 @@ package profiler
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	pprofile "github.com/google/pprof/profile"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -30,11 +30,15 @@ var (
 	containerID    = internal.ContainerID() // replaced in tests
 )
 
-// Start starts the profiler. It may return an error if an API key is not provided by means of
-// the WithAPIKey option, or if a hostname is not found.
+// Start starts the profiler. If the profiler is already running, it will be
+// stopped and restarted with the given options.
+//
+// It may return an error if an API key is not provided by means of the
+// WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
+
 	if activeProfiler != nil {
 		activeProfiler.stop()
 	}
@@ -44,6 +48,7 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
+	traceprof.SetProfilerEnabled(true)
 	return nil
 }
 
@@ -54,6 +59,7 @@ func Stop() {
 	if activeProfiler != nil {
 		activeProfiler.stop()
 		activeProfiler = nil
+		traceprof.SetProfilerEnabled(false)
 	}
 	mu.Unlock()
 }
@@ -61,14 +67,60 @@ func Stop() {
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
-	cfg        *config                           // profile configuration
-	out        chan batch                        // upload queue
-	uploadFunc func(batch) error                 // defaults to (*profiler).upload; replaced in tests
-	exit       chan struct{}                     // exit signals the profiler to stop; it is closed after stopping
-	stopOnce   sync.Once                         // stopOnce ensures the profiler is stopped exactly once.
-	wg         sync.WaitGroup                    // wg waits for all goroutines to exit when stopping.
-	met        *metrics                          // metric collector state
-	prev       map[ProfileType]*pprofile.Profile // previous collection results for delta profiling
+	cfg             *config           // profile configuration
+	out             chan batch        // upload queue
+	uploadFunc      func(batch) error // defaults to (*profiler).upload; replaced in tests
+	exit            chan struct{}     // exit signals the profiler to stop; it is closed after stopping
+	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
+	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
+	met             *metrics          // metric collector state
+	deltas          map[ProfileType]*fastDeltaProfiler
+	seq             uint64         // seq is the value of the profile_seq tag
+	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
+
+	testHooks testHooks
+
+	// lastTrace is the last time an execution trace was collected
+	lastTrace time.Time
+}
+
+func (p *profiler) shouldTrace() bool {
+	p.cfg.traceConfig.Refresh()
+	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
+}
+
+// testHooks are functions that are replaced during testing which would normally
+// depend on accessing runtime state that is not needed/available for the test
+type testHooks struct {
+	startCPUProfile func(w io.Writer) error
+	stopCPUProfile  func()
+	lookupProfile   func(name string, w io.Writer, debug int) error
+}
+
+func (p *profiler) startCPUProfile(w io.Writer) error {
+	if p.testHooks.startCPUProfile != nil {
+		return p.testHooks.startCPUProfile(w)
+	}
+	return pprof.StartCPUProfile(w)
+}
+
+func (p *profiler) stopCPUProfile() {
+	if p.testHooks.startCPUProfile != nil {
+		p.testHooks.stopCPUProfile()
+		return
+	}
+	pprof.StopCPUProfile()
+}
+
+func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
+	if p.testHooks.lookupProfile != nil {
+		return p.testHooks.lookupProfile(name, w, debug)
+	}
+	prof := pprof.Lookup(name)
+	if prof == nil {
+		return errors.New("profile not found")
+	}
+	return prof.WriteTo(w, debug)
 }
 
 // newProfiler creates a new, unstarted profiler.
@@ -131,16 +183,24 @@ func newProfiler(opts ...Option) (*profiler, error) {
 			return nil, fmt.Errorf("unknown profile type: %d", pt)
 		}
 	}
+	if cfg.cpuDuration > cfg.period {
+		cfg.cpuDuration = cfg.period
+	}
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
 
 	p := profiler{
-		cfg:  cfg,
-		out:  make(chan batch, outChannelSize),
-		exit: make(chan struct{}),
-		met:  newMetrics(),
-		prev: make(map[ProfileType]*pprofile.Profile),
+		cfg:    cfg,
+		out:    make(chan batch, outChannelSize),
+		exit:   make(chan struct{}),
+		met:    newMetrics(),
+		deltas: make(map[ProfileType]*fastDeltaProfiler),
+	}
+	for pt := range cfg.types {
+		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
+			p.deltas[pt] = newFastDeltaProfiler(d...)
+		}
 	}
 	p.uploadFunc = p.upload
 	return &p, nil
@@ -148,12 +208,17 @@ func newProfiler(opts ...Option) (*profiler, error) {
 
 // run runs the profiler.
 func (p *profiler) run() {
-	if _, ok := p.cfg.types[MutexProfile]; ok {
+	profileEnabled := func(t ProfileType) bool {
+		_, ok := p.cfg.types[t]
+		return ok
+	}
+	if profileEnabled(MutexProfile) {
 		runtime.SetMutexProfileFraction(p.cfg.mutexFraction)
 	}
-	if _, ok := p.cfg.types[BlockProfile]; ok {
+	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
+	startTelemetry(p.cfg)
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -173,35 +238,110 @@ func (p *profiler) run() {
 // an item.
 func (p *profiler) collect(ticker <-chan time.Time) {
 	defer close(p.out)
-	for {
-		select {
-		case <-ticker:
-			now := now()
-			bat := batch{
-				host:  p.cfg.hostname,
-				start: now,
-				// NB: while this is technically wrong in that it does not
-				// record the actual start and end timestamps for the batch,
-				// it is how the backend understands the client-side
-				// configured CPU profile duration: (start-end).
-				end: now.Add(p.cfg.cpuDuration),
-			}
+	var (
+		// mu guards completed
+		mu        sync.Mutex
+		completed []*profile
+		wg        sync.WaitGroup
+	)
 
-			for _, t := range p.enabledProfileTypes() {
+	// Enable endpoint counting (if configured). This causes some minimal
+	// overhead to the tracer, see BenchmarkEndpointCounter.
+	endpointCounter := traceprof.GlobalEndpointCounter()
+	endpointCounter.SetEnabled(p.cfg.endpointCountEnabled)
+	// Disable and reset when func returns (profiler stopped) to remove tracer
+	// overhead, free up the counter map, and avoid it from growing again.
+	defer func() {
+		endpointCounter.SetEnabled(false)
+		endpointCounter.GetAndReset()
+	}()
+
+	for {
+		bat := batch{
+			seq:   p.seq,
+			host:  p.cfg.hostname,
+			start: now(),
+			extraTags: []string{
+				// _dd.profiler.go_execution_trace_enabled indicates whether execution
+				// tracing is enabled, to distinguish between missing a trace
+				// because we don't collect them every profiling cycle from
+				// missing a trace because the feature isn't turned on.
+				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+			},
+		}
+		p.seq++
+
+		completed = completed[:0]
+		// We need to increment pendingProfiles for every non-CPU
+		// profile _before_ entering the next loop so that we know CPU
+		// profiling will not complete until every other profile is
+		// finished (because p.pendingProfiles will have been
+		// incremented to count every non-CPU profile before CPU
+		// profiling starts)
+		profileTypes := p.enabledProfileTypes()
+		if p.shouldTrace() {
+			profileTypes = append(profileTypes, executionTrace)
+		}
+		for _, t := range profileTypes {
+			if t != CPUProfile {
+				p.pendingProfiles.Add(1)
+			}
+		}
+		for _, t := range profileTypes {
+			wg.Add(1)
+			go func(t ProfileType) {
+				defer wg.Done()
+				if t != CPUProfile {
+					defer p.pendingProfiles.Done()
+				}
 				profs, err := p.runProfile(t)
 				if err != nil {
 					log.Error("Error getting %s profile: %v; skipping.", t, err)
-					p.cfg.statsd.Count("datadog.profiler.go.collect_error", 1, append(p.cfg.tags, t.Tag()), 1)
-					continue
+					tags := append(p.cfg.tags.Slice(), t.Tag())
+					p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 				}
-				for _, prof := range profs {
-					bat.addProfile(prof)
-				}
+				mu.Lock()
+				defer mu.Unlock()
+				completed = append(completed, profs...)
+			}(t)
+		}
+		wg.Wait()
+		for _, prof := range completed {
+			if prof.pt == executionTrace {
+				// If the profile batch includes a runtime execution trace, add a tag so
+				// that the uploads are more easily discoverable in the UI.
+				bat.extraTags = append(bat.extraTags, "go_execution_traced:yes")
 			}
-			p.enqueueUpload(bat)
+			bat.addProfile(prof)
+		}
+
+		// Wait until the next profiling period starts or the profiler is stopped.
+		select {
+		case <-ticker:
+			// Usually ticker triggers right away because the non-CPU profiles cause
+			// the wg.Wait above to sleep until the end of the profiling period.
+			// Edge case: If only the CPU profile is enabled, and the cpu duration is
+			// is less than the configured profiling period, the ticker will block
+			// until the end of the profiling period.
 		case <-p.exit:
 			return
 		}
+
+		// Include endpoint hits from tracer in profile `event.json`.
+		// Also reset the counters for the next profile period.
+		bat.endpointCounts = endpointCounter.GetAndReset()
+		// Record the end time of the profile.
+		// This is used by the backend to upscale the endpoint counts if the cpu
+		// duration is less than the profile duration. The formula is:
+		//
+		// factor = (end - start) / cpuDuration
+		// counts = counts * factor
+		//
+		// The default configuration of the profiler (cpu duration = profiling
+		// period) results in a factor of 1.
+		bat.end = time.Now()
+		// Upload profiling data.
+		p.enqueueUpload(bat)
 	}
 }
 
@@ -219,6 +359,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		GoroutineProfile,
 		expGoroutineWaitProfile,
 		MetricsProfile,
+		executionTrace,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {
@@ -240,7 +381,7 @@ func (p *profiler) enqueueUpload(bat batch) {
 			// queue is full; evict oldest
 			select {
 			case <-p.out:
-				p.cfg.statsd.Count("datadog.profiler.go.queue_full", 1, p.cfg.tags, 1)
+				p.cfg.statsd.Count("datadog.profiling.go.queue_full", 1, p.cfg.tags.Slice(), 1)
 				log.Warn("Evicting one profile batch from the upload queue to make room.")
 			default:
 				// this case should be almost impossible to trigger, it would require a
@@ -283,7 +424,7 @@ func (p *profiler) outputDir(bat batch) error {
 	for _, prof := range bat.profiles {
 		filePath := filepath.Join(dirPath, prof.name)
 		// 0644 is what touch does, should be reasonable for the use cases here.
-		if err := ioutil.WriteFile(filePath, prof.data, 0644); err != nil {
+		if err := os.WriteFile(filePath, prof.data, 0644); err != nil {
 			return err
 		}
 	}
@@ -305,6 +446,9 @@ func (p *profiler) stop() {
 		close(p.exit)
 	})
 	p.wg.Wait()
+	if p.cfg.logStartup {
+		log.Info("Profiling stopped")
+	}
 }
 
 // StatsdClient implementations can count and time certain event occurrences that happen
@@ -312,6 +456,6 @@ func (p *profiler) stop() {
 type StatsdClient interface {
 	// Count counts how many times an event happened, at the given rate using the given tags.
 	Count(event string, times int64, tags []string, rate float64) error
-	// Timing creates a distribution of the values registered as the duration of a certain event.
+	// Timing creates a histogram metric of the values registered as the duration of a certain event.
 	Timing(event string, duration time.Duration, tags []string, rate float64) error
 }

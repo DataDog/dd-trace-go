@@ -9,7 +9,6 @@
 package appsec
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -18,8 +17,10 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	expectedDefaultConfig := &config{
-		rules:          []byte(staticRecommendedRule),
+	r, err := newRulesManager(nil)
+	require.NoError(t, err)
+	expectedDefaultConfig := &Config{
+		rulesManager:   r,
 		wafTimeout:     defaultWAFTimeout,
 		traceRateLimit: defaultTraceRate,
 		obfuscator: ObfuscatorConfig{
@@ -118,16 +119,16 @@ func TestConfig(t *testing.T) {
 		t.Run("local-file", func(t *testing.T) {
 			restoreEnv := cleanEnv()
 			defer restoreEnv()
-			file, err := ioutil.TempFile("", "example-*")
+			file, err := os.CreateTemp("", "example-*")
 			require.NoError(t, err)
 			defer func() {
 				file.Close()
 				os.Remove(file.Name())
 			}()
-			expectedRules := `custom rule file content`
 			expCfg := *expectedDefaultConfig
-			expCfg.rules = []byte(expectedRules)
-			_, err = file.WriteString(expectedRules)
+			expCfg.rulesManager, err = newRulesManager([]byte(staticRecommendedRules))
+			require.NoError(t, err)
+			_, err = file.WriteString(staticRecommendedRules)
 			require.NoError(t, err)
 			os.Setenv(rulesEnvVar, file.Name())
 			cfg, err := newConfig()
@@ -258,7 +259,7 @@ func cleanEnv() func() {
 		obfuscatorKeyEnvVar:   os.Getenv(obfuscatorKeyEnvVar),
 		obfuscatorValueEnvVar: os.Getenv(obfuscatorValueEnvVar),
 	}
-	for k, _ := range env {
+	for k := range env {
 		if err := os.Unsetenv(k); err != nil {
 			panic(err)
 		}
