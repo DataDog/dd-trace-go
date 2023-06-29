@@ -22,3 +22,7 @@
 
 # linter rules
 .golangci.yml                   @DataDog/tracing-go @DataDog/profiling-go @DataDog/appsec-go
+
+# Gitlab configuration
+.gitlab-ci.yml                  @DataDog/apm-go @DataDog/apm-core-reliability-and-performance
+/.gitlab-ci                     @DataDog/apm-go @DataDog/apm-core-reliability-and-performance

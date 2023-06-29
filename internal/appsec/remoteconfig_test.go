@@ -17,11 +17,11 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	waf "github.com/DataDog/go-libddwaf"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
@@ -434,37 +434,45 @@ func craftRCUpdates(fragments map[string]rulesFragment) map[string]remoteconfig.
 	return update
 }
 
+type testRulesOverrideEntry struct {
+	ID          string        `json:"id,omitempty"`
+	RulesTarget []interface{} `json:"rules_target,omitempty"`
+	Enabled     interface{}   `json:"enabled,omitempty"`
+	OnMatch     interface{}   `json:"on_match,omitempty"`
+}
+
 func TestOnRCUpdate(t *testing.T) {
+
 	baseRuleset, err := newRulesManager(nil)
 	require.NoError(t, err)
 	baseRuleset.compile()
 
 	rules := rulesFragment{
 		Version: baseRuleset.latest.Version,
-		Rules: []ruleEntry{
+		Rules: []interface{}{
 			baseRuleset.base.Rules[0],
 		},
 	}
 
 	overrides1 := rulesFragment{
-		Overrides: []rulesOverrideEntry{
-			{
+		Overrides: []interface{}{
+			testRulesOverrideEntry{
 				ID:      "crs-941-290",
 				Enabled: false,
 			},
-			{
+			testRulesOverrideEntry{
 				ID:      "crs-930-100",
 				Enabled: false,
 			},
 		},
 	}
 	overrides2 := rulesFragment{
-		Overrides: []rulesOverrideEntry{
-			{
+		Overrides: []interface{}{
+			testRulesOverrideEntry{
 				ID:      "crs-941-300",
 				Enabled: false,
 			},
-			{
+			testRulesOverrideEntry{
 				Enabled: false,
 				ID:      "crs-921-160",
 			},
@@ -534,10 +542,7 @@ func TestOnRCUpdate(t *testing.T) {
 			updates := craftRCUpdates(tc.ruleset.edits)
 			activeAppSec.onRCRulesUpdate(updates)
 			// Compare rulesets
-			require.ElementsMatch(t, tc.ruleset.latest.Rules, activeAppSec.cfg.rulesManager.latest.Rules)
-			require.ElementsMatch(t, tc.ruleset.latest.Overrides, activeAppSec.cfg.rulesManager.latest.Overrides)
-			require.ElementsMatch(t, tc.ruleset.latest.Exclusions, activeAppSec.cfg.rulesManager.latest.Exclusions)
-			require.ElementsMatch(t, tc.ruleset.latest.Actions, activeAppSec.cfg.rulesManager.latest.Actions)
+			require.Equal(t, activeAppSec.cfg.rulesManager.raw(), activeAppSec.cfg.rulesManager.raw())
 		})
 	}
 
@@ -579,39 +584,31 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 	require.NoError(t, err)
 	invalidRules := invalidRuleset.base
 	overrides := rulesFragment{
-		Overrides: []rulesOverrideEntry{
-			{
+		Overrides: []interface{}{
+			testRulesOverrideEntry{
 				ID:      "rule-1",
 				Enabled: true,
 			},
-			{
+			testRulesOverrideEntry{
 				ID:      "rule-2",
 				Enabled: false,
 			},
 		},
 	}
 	overrides2 := rulesFragment{
-		Overrides: []rulesOverrideEntry{
-			{
+		Overrides: []interface{}{
+			testRulesOverrideEntry{
 				ID:      "rule-3",
 				Enabled: true,
 			},
-			{
+			testRulesOverrideEntry{
 				ID:      "rule-4",
 				Enabled: false,
 			},
 		},
 	}
 	invalidOverrides := rulesFragment{
-		Overrides: []rulesOverrideEntry{
-			{
-				Enabled: false,
-			},
-			{
-				ID:      "crs-930-100",
-				Enabled: false,
-			},
-		},
+		Overrides: []interface{}{1, 2, 3, 4, "random data"},
 	}
 	ackStatus := genApplyStatus(true, nil)
 
@@ -629,7 +626,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("invalid configuration payload"))},
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the waf rule"))},
 		},
 		{
 			name:     "multiple/ack",
@@ -640,8 +637,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(false, nil),
-				"invalid":   genApplyStatus(true, errors.New("invalid configuration payload")),
+				"overrides": genApplyStatus(true, errors.New("could not instantiate the waf rule")),
+				"invalid":   genApplyStatus(true, errors.New("could not instantiate the waf rule")),
 			},
 		},
 		{
@@ -677,8 +674,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 func TestWafRCUpdate(t *testing.T) {
 	override := rulesFragment{
 		// Override the already existing and enabled rule crs-913-120 with the "block" action
-		Overrides: []rulesOverrideEntry{
-			{
+		Overrides: []interface{}{
+			testRulesOverrideEntry{
 				ID:      "crs-913-120",
 				OnMatch: []string{"block"},
 			},

@@ -19,7 +19,11 @@ const (
 	NetworkDestinationIP = "network.destination.ip"
 
 	// TargetPort sets the target host port.
+	// Deprecated: Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// NetworkDestinationPort is the remote port number of the outbound connection.
+	NetworkDestinationPort = "network.destination.port"
 
 	// SamplingPriority is the tag that marks the sampling priority of a span.
 	// Deprecated in favor of ManualKeep and ManualDrop.
@@ -113,16 +117,4 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
-
-	// MessagingSystem identifies which messaging system created this span (kafka, rabbitmq, amazonsqs, googlepubsub...)
-	MessagingSystem = "messaging.system"
-
-	// KafkaBootstrapServers holds a comma separated list of bootstrap servers as defined in producer or consumer config.
-	KafkaBootstrapServers = "messaging.kafka.bootstrap.servers"
-)
-
-// Messaging tags.
-const (
-	// MessagingKafkaPartition defines the Kafka partition the trace is associated with.
-	MessagingKafkaPartition = "messaging.kafka.partition"
 )

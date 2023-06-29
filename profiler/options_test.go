@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // testAPIKey is an example API key for validation purposes

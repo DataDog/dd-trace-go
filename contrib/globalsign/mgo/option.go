@@ -28,10 +28,9 @@ func newConfig() *mongoConfig {
 		rate = 1.0
 	}
 	return &mongoConfig{
-		serviceName: namingschema.NewServiceNameSchema(
-			"",
+		serviceName: namingschema.NewDefaultServiceName(
 			defaultServiceName,
-			namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+			namingschema.WithOverrideV0(defaultServiceName),
 		).GetName(),
 		spanName: namingschema.NewMongoDBOutboundOp().GetName(),
 		ctx:      context.Background(),

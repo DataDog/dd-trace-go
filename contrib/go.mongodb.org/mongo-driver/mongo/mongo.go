@@ -54,6 +54,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(m.cfg.spanName, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
+		tracer.Tag(ext.NetworkDestinationName, hostname),
 		tracer.Tag(ext.PeerPort, port),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),

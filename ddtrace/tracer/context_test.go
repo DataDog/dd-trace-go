@@ -11,10 +11,10 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestContextWithSpan(t *testing.T) {
