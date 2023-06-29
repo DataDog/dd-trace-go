@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
@@ -37,6 +39,11 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	return func(c *config) {
 		c.tickChan = ch
 	}
+}
+
+func headerTagVal(header string) (tag string) {
+	tag, _ = globalconfig.HeaderTag(header)
+	return tag
 }
 
 // testStatsd asserts that the given statsd.Client can successfully send metrics
@@ -514,6 +521,68 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
+
+	t.Run("attribute-schema", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, 0, c.spanAttributeSchemaVersion)
+			assert.Equal(t, false, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			assert.Equal(t, 1, c.spanAttributeSchemaVersion)
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("options", func(t *testing.T) {
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			WithGlobalServiceName(true)(c)
+
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
+		})
+	})
+
+	t.Run("peer-service", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, false)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("defaults-with-schema-v1", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+			t.Setenv("DD_TRACE_PEER_SERVICE_MAPPING", "old:new,old2:new2")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+
+		t.Run("options", func(t *testing.T) {
+			c := newConfig()
+			WithPeerServiceDefaults(true)(c)
+			WithPeerServiceMapping("old", "new")(c)
+			WithPeerServiceMapping("old2", "new2")(c)
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+	})
 }
 
 func TestDefaultHTTPClient(t *testing.T) {
@@ -952,6 +1021,63 @@ func TestWithLogStartup(t *testing.T) {
 	assert.False(t, c.logStartup)
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	t.Run("default-off", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig()
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+	t.Run("single-header", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "header"
+		newConfig(WithHeaderTags([]string{header}))
+		assert.Equal("http.request.headers.header", headerTagVal(header))
+	})
+
+	t.Run("header-and-tag", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "header"
+		tag := "tag"
+		newConfig(WithHeaderTags([]string{header + ":" + tag}))
+		assert.Equal("tag", headerTagVal(header))
+	})
+
+	t.Run("multi-header", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		assert.Equal("1tag", headerTagVal("1header"))
+		assert.Equal("http.request.headers.2header", headerTagVal("2header"))
+		assert.Equal("3tag", headerTagVal("3header"))
+	})
+
+	t.Run("normalization", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", headerTagVal("h!e@a-d.e*r"))
+		assert.Equal("t!a@g.", headerTagVal("2header"))
+	})
+
+	t.Run("envvar-only", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal("1tag", headerTagVal("1header"))
+		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", headerTagVal("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+		newConfig(WithHeaderTags([]string{"expected"}))
+		assert.Equal(ext.HTTPRequestHeaders+".expected", headerTagVal("expected"))
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+	})
 }
 
 func TestHostnameDisabled(t *testing.T) {

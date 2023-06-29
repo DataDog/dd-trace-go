@@ -71,7 +71,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.Tag("offset", msg.Offset),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.KafkaBootstrapServers, r.bootstrapServers),
 		tracer.Measured(),
 	}
@@ -158,7 +158,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, "kafka"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.KafkaBootstrapServers, w.bootstrapServers),
 	}
 	if w.Writer.Topic != "" {
