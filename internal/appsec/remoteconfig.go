@@ -103,10 +103,7 @@ updateLoop:
 					continue
 				}
 				var f rulesFragment
-				if err = json.Unmarshal(data, &f); err != nil || !f.validate() {
-					if err == nil {
-						err = errors.New("invalid configuration payload")
-					}
+				if err = json.Unmarshal(data, &f); err != nil {
 					log.Debug("appsec: Remote config: error processing ASM config %s: %v", path, err)
 					statuses[path] = genApplyStatus(true, err)
 					break updateLoop

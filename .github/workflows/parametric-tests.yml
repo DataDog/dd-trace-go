@@ -21,39 +21,30 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-      COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }} 
+      TEST_LIBRARY: golang
     steps:
       - name: Checkout system tests
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          path: system-tests
 
-      - name: Checkout Go
+      - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
-          path: system-tests/golang
+          path: utils/build/docker/golang/parametric/dd-trace-go
+
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.18.7'
+          go-version: '1.18'
+
       - name: Patch dd-trace-go version
         run: |
-          cd system-tests/utils/build/docker/golang/parametric/
-          go get gopkg.in/DataDog/dd-trace-go.v1@$COMMIT_SHA
+          cd utils/build/docker/golang/parametric/
+          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
           go mod tidy
 
-      - name: Checkout Python
-        uses: actions/checkout@v3
-        with:
-          path: system-tests/python
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-      - name: Install
-        run: |
-          pip install wheel
+      - name: Build runner
+        uses: ./.github/actions/install_runner
+
       - name: Run
-        run: |
-          pip install -r system-tests/requirements.txt
-          cd system-tests/parametric
-          CLIENTS_ENABLED=golang ./run.sh
+        run: ./run.sh PARAMETRIC
