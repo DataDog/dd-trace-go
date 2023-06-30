@@ -217,7 +217,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		case "datadog":
 			list = append(list, dd)
 		case "tracecontext":
-			list = append([]Propagator{&propagatorW3c{}}, list...)
+			list = append(list, &propagatorW3c{})
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
