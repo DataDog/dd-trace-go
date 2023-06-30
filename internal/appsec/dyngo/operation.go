@@ -247,7 +247,12 @@ func (o *operation) EmitData(data any) {
 	if o.disabled {
 		return
 	}
-	o.dataBroadcaster.emitData(reflect.TypeOf(data), data)
+	// Bubble up the data to the stack of operations. Contrary to events,
+	// we also send the data to ourselves since SDK operations are leaf operations
+	// that both emit and listen for data (errors).
+	for current := Operation(o); current != nil; current = current.Parent() {
+		current.emitData(reflect.TypeOf(data), data)
+	}
 }
 
 type (
