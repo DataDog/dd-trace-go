@@ -39,7 +39,7 @@ type Operation interface {
 	On(EventListener)
 
 	// OnData allows to register a data listener to the operation
-	OnData(reflect.Type, DataListener)
+	OnData(DataListener)
 
 	// EmitData sends data to the data listeners of the operation
 	EmitData(any)
@@ -232,13 +232,13 @@ func (o *operation) On(l EventListener) {
 	o.eventRegister.add(l.ListenedType(), l)
 }
 
-func (o *operation) OnData(t reflect.Type, l DataListener) {
+func (o *operation) OnData(l DataListener) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	if o.disabled {
 		return
 	}
-	o.dataBroadcaster.add(t, l)
+	o.dataBroadcaster.add(l.ListenedType(), l)
 }
 
 func (o *operation) EmitData(data any) {
@@ -272,15 +272,22 @@ type (
 		listeners dataListenerMap
 	}
 
-	DataListenerSpec[T any] func(data T)
-	DataListener            func(v any)
+	dataListenerSpec[T any] func(data T)
+	DataListener            EventListener
 	dataListenerMap         map[reflect.Type][]DataListener
 )
 
+func (l dataListenerSpec[T]) Call(_ Operation, v interface{}) {
+	l(v.(T))
+}
+
+func (l dataListenerSpec[T]) ListenedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil)).Elem()
+}
+
+// NewDataListener creates a specialized generic data listener, wrapped under a DataListener interface
 func NewDataListener[T any](f func(data T)) DataListener {
-	return (func(v any) {
-		f(v.(T))
-	})
+	return dataListenerSpec[T](f)
 }
 
 func (b *dataBroadcaster) add(key reflect.Type, l DataListener) {
@@ -311,7 +318,7 @@ func (b *dataBroadcaster) emitData(key reflect.Type, v any) {
 	for t := range b.listeners {
 		if key == t || key.Implements(t) {
 			for _, listener := range b.listeners[t] {
-				listener(v)
+				listener.Call(nil, v)
 			}
 		}
 	}

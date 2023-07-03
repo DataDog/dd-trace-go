@@ -71,10 +71,10 @@ func MonitorUser(ctx context.Context, userID string) error {
 
 // OnData is a facilitator that wraps a dyngo.Operation.OnData() call
 func OnData[T any](op dyngo.Operation, f func(T)) {
-	op.OnData(reflect.TypeOf((*T)(nil)).Elem(), dyngo.NewDataListener(f))
+	op.OnData(dyngo.NewDataListener(f))
 }
 
 // OnErrorData is a facilitator that wraps a dyngo.Operation.OnData() call with an error type constraint
 func OnErrorData[T error](op dyngo.Operation, f func(T)) {
-	op.OnData(reflect.TypeOf((*T)(nil)).Elem(), dyngo.NewDataListener(f))
+	op.OnData(dyngo.NewDataListener(f))
 }
