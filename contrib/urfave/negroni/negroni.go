@@ -33,6 +33,7 @@ type DatadogMiddleware struct {
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	opts := append(m.cfg.spanOpts, tracer.ServiceName(m.cfg.serviceName), tracer.ResourceName(m.cfg.resourceNamer(r)))
+	opts = append(opts, httptrace.HeaderTagsFromRequest(r, m.cfg.headerTags))
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}

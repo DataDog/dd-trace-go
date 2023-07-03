@@ -19,6 +19,8 @@ import (
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
+var telemetryTags = []string{`"integration_name":"otel"`}
+
 type oteltracer struct {
 	provider *TracerProvider
 	ddtrace.Tracer
@@ -50,7 +52,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.spans_created", 1.0, nil, true)
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
