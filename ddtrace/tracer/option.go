@@ -989,10 +989,19 @@ type UserMonitoringConfig struct {
 	Role        string
 	SessionID   string
 	Scope       string
+	Metadata    map[string]string
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
 type UserMonitoringOption func(*UserMonitoringConfig)
+
+// WithUserMetadata returns the option setting additional metadata of the authenticated user.
+// This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
+func WithUserMetadata(key, value string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Metadata[key] = value
+	}
+}
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
