@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 const defaultServiceName = "negroni.router"
@@ -24,6 +25,7 @@ type config struct {
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	resourceNamer func(r *http.Request) string
+	headerTags    func(string) (string, bool)
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -36,6 +38,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 }
@@ -100,4 +103,22 @@ func WithResourceNamer(namer func(r *http.Request) string) Option {
 
 func defaultResourceNamer(_ *http.Request) string {
 	return ""
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
+	return func(cfg *config) {
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
+	}
 }
