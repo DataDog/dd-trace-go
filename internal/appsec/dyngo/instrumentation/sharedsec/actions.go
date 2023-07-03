@@ -106,11 +106,8 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	}
 }
 
-func newGRPCRedirectHandler(status int, loc string) GRPCWrapper {
-	return func(m map[string][]string) (uint32, error) {
-		m = pairs(m, "location", loc)
-		return uint32(status), errors.New("Redirected")
-	}
+func grpcNoopHandler(map[string][]string) (uint32, error) {
+	return 0, nil
 }
 
 // NewBlockRequestAction creates an action for the "block" action type
@@ -126,7 +123,7 @@ func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action 
 func NewRedirectRequestAction(status int, loc string) *Action {
 	return &Action{
 		http: http.RedirectHandler(loc, status),
-		grpc: newGRPCRedirectHandler(status, loc),
+		grpc: grpcNoopHandler,
 	}
 }
 
