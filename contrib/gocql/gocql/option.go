@@ -25,15 +25,15 @@ type queryConfig struct {
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
-func defaults(cfg *queryConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+func defaultConfig() *queryConfig {
+	cfg := &queryConfig{}
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
 	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "cassandra.batch"),
+		namingschema.WithOverrideV0("cassandra.batch"),
 	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
@@ -42,6 +42,7 @@ func defaults(cfg *queryConfig) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.errCheck = func(error) bool { return true }
+	return cfg
 }
 
 // WithServiceName sets the given service name for the returned query.

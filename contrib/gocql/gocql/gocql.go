@@ -28,6 +28,42 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
+// ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
+type ClusterConfig struct {
+	*gocql.ClusterConfig
+	hosts []string
+	opts  []WrapOption
+}
+
+// NewCluster calls gocql.NewCluster and returns a wrapped instrumented version of it.
+func NewCluster(hosts []string, opts ...WrapOption) *ClusterConfig {
+	return &ClusterConfig{
+		ClusterConfig: gocql.NewCluster(hosts...),
+		hosts:         hosts,
+		opts:          opts,
+	}
+}
+
+// Session embeds gocql.Session and keeps information relevant to tracing.
+type Session struct {
+	*gocql.Session
+	hosts []string
+	opts  []WrapOption
+}
+
+// CreateSession calls the underlying gocql.ClusterConfig's CreateSession method and returns a new Session augmented with tracing.
+func (c *ClusterConfig) CreateSession() (*Session, error) {
+	s, err := c.ClusterConfig.CreateSession()
+	if err != nil {
+		return nil, err
+	}
+	return &Session{
+		Session: s,
+		hosts:   c.hosts,
+		opts:    c.opts,
+	}, nil
+}
+
 // Query inherits from gocql.Query, it keeps the tracer and the context.
 type Query struct {
 	*gocql.Query
@@ -35,16 +71,10 @@ type Query struct {
 	ctx context.Context
 }
 
-// Iter inherits from gocql.Iter and contains a span.
-type Iter struct {
-	*gocql.Iter
-	span ddtrace.Span
-}
-
-// Scanner inherits from a gocql.Scanner derived from an Iter
-type Scanner struct {
-	gocql.Scanner
-	span ddtrace.Span
+// Query calls the underlying gocql.Session's Query method and returns a new Query augmented with tracing.
+func (s *Session) Query(stmt string, values ...interface{}) *Query {
+	q := s.Session.Query(stmt, values...)
+	return wrapQuery(q, s.hosts, s.opts...)
 }
 
 // Batch inherits from gocql.Batch, it keeps the tracer and the context.
@@ -54,11 +84,18 @@ type Batch struct {
 	ctx context.Context
 }
 
-// params containes fields and metadata useful for command tracing
+// NewBatch calls the underlying gocql.Session's NewBatch method and returns a new Batch augmented with tracing.
+func (s *Session) NewBatch(typ gocql.BatchType) *Batch {
+	b := s.Session.NewBatch(typ)
+	return wrapBatch(b, s.hosts, s.opts...)
+}
+
+// params contains fields and metadata useful for command tracing
 type params struct {
-	config    *queryConfig
-	keyspace  string
-	paginated bool
+	config               *queryConfig
+	keyspace             string
+	paginated            bool
+	clusterContactPoints string
 }
 
 // WrapQuery wraps a gocql.Query into a traced Query under the given service name.
@@ -70,9 +107,14 @@ type params struct {
 // To be more specific: it is ok (and recommended) to use and chain the return value
 // of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
 // `Observer`, etc.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
 func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
-	cfg := new(queryConfig)
-	defaults(cfg)
+	return wrapQuery(q, nil, opts...)
+}
+
+func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
+	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -81,8 +123,12 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 			cfg.resourceName = parts[1]
 		}
 	}
+	p := &params{config: cfg}
+	if len(hosts) > 0 {
+		p.clusterContactPoints = strings.Join(hosts, ",")
+	}
 	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
-	tq := &Query{q, &params{config: cfg}, q.Context()}
+	tq := &Query{Query: q, params: p, ctx: q.Context()}
 	return tq
 }
 
@@ -90,6 +136,14 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 func (tq *Query) WithContext(ctx context.Context) *Query {
 	tq.ctx = ctx
 	tq.Query = tq.Query.WithContext(ctx)
+	return tq
+}
+
+// WithWrapOptions applies the given set of options to the query.
+func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
+	for _, fn := range opts {
+		fn(tq.params.config)
+	}
 	return tq
 }
 
@@ -115,6 +169,9 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+	}
+	if tq.clusterContactPoints != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tq.clusterContactPoints))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
 	return span
@@ -160,6 +217,12 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return applied, err
 }
 
+// Iter inherits from gocql.Iter and contains a span.
+type Iter struct {
+	*gocql.Iter
+	span ddtrace.Span
+}
+
 // Iter starts a new span at query.Iter call.
 func (tq *Query) Iter() *Iter {
 	span := tq.newChildSpan(tq.ctx)
@@ -188,6 +251,12 @@ func (tIter *Iter) Close() error {
 	}
 	tIter.span.Finish()
 	return err
+}
+
+// Scanner inherits from a gocql.Scanner derived from an Iter
+type Scanner struct {
+	gocql.Scanner
+	span ddtrace.Span
 }
 
 // Scanner returns a row Scanner which provides an interface to scan rows in a
@@ -219,14 +288,23 @@ func (s *Scanner) Err() error {
 // To be more specific: it is ok (and recommended) to use and chain the return value
 // of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
 // `Observer`, etc.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
 func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
-	cfg := new(queryConfig)
-	defaults(cfg)
+	return wrapBatch(b, nil, opts...)
+}
+
+func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
+	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
 	}
+	p := &params{config: cfg}
+	if len(hosts) > 0 {
+		p.clusterContactPoints = strings.Join(hosts, ",")
+	}
 	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
-	tb := &Batch{b, &params{config: cfg}, b.Context()}
+	tb := &Batch{Batch: b, params: p, ctx: b.Context()}
 	return tb
 }
 
@@ -234,6 +312,14 @@ func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 func (tb *Batch) WithContext(ctx context.Context) *Batch {
 	tb.ctx = ctx
 	tb.Batch = tb.Batch.WithContext(ctx)
+	return tb
+}
+
+// WithWrapOptions applies the given set of options to the batch.
+func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
+	for _, fn := range opts {
+		fn(tb.params.config)
+	}
 	return tb
 }
 
@@ -269,6 +355,9 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 	}
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+	}
+	if tb.clusterContactPoints != "" {
+		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tb.clusterContactPoints))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.batchSpanName, opts...)
 	return span

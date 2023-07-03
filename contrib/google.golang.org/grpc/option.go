@@ -9,6 +9,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"google.golang.org/grpc/codes"
@@ -24,7 +26,7 @@ const (
 type Option func(*config)
 
 type config struct {
-	serviceName         string
+	serviceName         func() string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
@@ -60,20 +62,27 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	sn := namingschema.NewDefaultServiceName(
 		defaultClientServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultClientServiceName),
+		namingschema.WithOverrideV0(defaultClientServiceName),
 	).GetName()
+	cfg.serviceName = func() string { return sn }
 	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
-		defaultServerServiceName,
-	).GetName()
+	// We check for a configured service name, so we don't break users who are incorrectly creating their server
+	// before the call `tracer.Start()`
+	if globalconfig.ServiceName() != "" {
+		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+		cfg.serviceName = func() string { return sn }
+	} else {
+		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
+			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
+		ns := namingschema.NewDefaultServiceName(defaultServerServiceName)
+		cfg.serviceName = ns.GetName
+	}
 	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
 	defaults(cfg)
 }
@@ -81,7 +90,7 @@ func serverDefaults(cfg *config) {
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.serviceName = func() string { return name }
 	}
 }
 

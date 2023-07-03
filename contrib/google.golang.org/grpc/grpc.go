@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -52,15 +53,17 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 }
 
 func startSpanFromContext(
-	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
+	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
+	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
-		tracer.ServiceName(service),
+		tracer.ServiceName(serviceFn()),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
 		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
 		tracer.Tag(ext.GRPCFullMethod, method),
+		tracer.Tag(ext.RPCService, methodElements[0]),
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

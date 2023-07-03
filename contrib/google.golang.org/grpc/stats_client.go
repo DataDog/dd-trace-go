@@ -10,7 +10,6 @@ import (
 	"net"
 
 	"google.golang.org/grpc/stats"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 const defaultServiceName = "http.router"
@@ -26,6 +27,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
+	headerTags    func(string) (string, bool)
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -40,7 +42,8 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewServiceNameSchema("", defaultServiceName).GetName()
+	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -61,6 +64,24 @@ func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
 func WithServiceName(name string) MuxOption {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := make(map[string]string)
+	for _, h := range headers {
+		header, tag := normalizer.NormalizeHeaderTag(h)
+		headerTagsMap[header] = tag
+	}
+	return func(cfg *config) {
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
+		}
 	}
 }
 
@@ -130,6 +151,7 @@ type roundTripperConfig struct {
 	spanNamer     func(req *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	spanOpts      []ddtrace.StartSpanOption
+	propagation   bool
 	errCheck      func(err error) bool
 }
 
@@ -142,13 +164,13 @@ func newRoundTripperConfig() *roundTripperConfig {
 		return spanName
 	}
 	return &roundTripperConfig{
-		serviceName: namingschema.NewServiceNameSchema(
+		serviceName: namingschema.NewDefaultServiceName(
 			"",
-			"",
-			namingschema.WithVersionOverride(namingschema.SchemaV0, ""),
+			namingschema.WithOverrideV0(""),
 		).GetName(),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
+		propagation:   true,
 		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
 	}
@@ -225,6 +247,14 @@ func RTWithAnalyticsRate(rate float64) RoundTripperOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// RTWithPropagation enables/disables propagation for tracing headers.
+// Disabling propagation will disconnect this trace from any downstream traces.
+func RTWithPropagation(propagation bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.propagation = propagation
 	}
 }
 

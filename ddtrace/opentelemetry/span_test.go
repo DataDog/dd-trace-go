@@ -16,16 +16,16 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 )
 
 func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {
@@ -241,6 +241,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	p, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
+	}
+	if strings.Count(p, "span_id") != 2 {
+		t.Fatalf("payload does not contain two spans\n%s", p)
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
