@@ -123,15 +123,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		instrumentation.SetStringTags(span, ipTags)
 
 		var bypassHandler http.Handler
+		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		op := NewOperation(nil)
-		sharedsec.OnData(op, func(a *sharedsec.Action) {
+		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *sharedsec.Action) {
 			bypassHandler = a.HTTP()
-			if a.Blocking() {
-				op.AddTag(instrumentation.BlockedRequestTag, true)
-			}
-		})
-		ctx := StartOperation(r.Context(), op, args)
+			blocking = a.Blocking()
+		}))
 		r = r.WithContext(ctx)
 
 		defer func() {
@@ -143,7 +140,8 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			events := op.Finish(HandlerOperationRes{Status: status})
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
-			if _, ok := op.Tags()[instrumentation.BlockedRequestTag]; ok {
+			if blocking {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
 				for _, f := range onBlock {
 					f()
 				}
@@ -225,22 +223,21 @@ type (
 	}
 )
 
-// NewOperation creates and returns a new Operation
-func NewOperation(parent dyngo.Operation) *Operation {
-	return &Operation{
-		Operation:  dyngo.NewOperation(parent),
-		TagsHolder: instrumentation.NewTagsHolder(),
-	}
-}
-
 // StartOperation starts an HTTP handler operation, along with the given
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, op *Operation, args HandlerOperationArgs) context.Context {
+func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners ...dyngo.DataListener) (context.Context, *Operation) {
+	op := &Operation{
+		Operation:  dyngo.NewOperation(nil),
+		TagsHolder: instrumentation.NewTagsHolder(),
+	}
+	for _, l := range listeners {
+		op.OnData(l)
+	}
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
-	return newCtx
+	return newCtx, op
 }
 
 // fromContext returns the Operation object stored in the context, if any

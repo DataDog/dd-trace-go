@@ -96,24 +96,23 @@ func (e *MonitoringError) Error() string {
 	return e.msg
 }
 
-// NewHandlerOperation returns a new HandlerOperation
-func NewHandlerOperation(parent dyngo.Operation) *HandlerOperation {
-	return &HandlerOperation{
-		Operation:  dyngo.NewOperation(parent),
-		TagsHolder: instrumentation.NewTagsHolder(),
-	}
-}
-
 // TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
 
 // StartHandlerOperation starts an gRPC server handler operation, along with the
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(ctx context.Context, op *HandlerOperation, args HandlerOperationArgs) context.Context {
+func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, parent dyngo.Operation, listeners ...dyngo.DataListener) (context.Context, *HandlerOperation) {
+	op := &HandlerOperation{
+		Operation:  dyngo.NewOperation(parent),
+		TagsHolder: instrumentation.NewTagsHolder(),
+	}
+	for _, l := range listeners {
+		op.OnData(l)
+	}
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
-	return newCtx
+	return newCtx, op
 }
 
 // Finish the gRPC handler operation, along with the given results, and emit a
