@@ -175,6 +175,7 @@ func (a *appsec) stop() {
 	dyngo.SwapRootOperation(nil)
 	if a.wafHandle != nil {
 		a.wafHandle.Close()
+		a.wafHandle = nil
 	}
 	// TODO: block until no more requests are using dyngo operations
 
