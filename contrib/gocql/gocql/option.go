@@ -25,7 +25,8 @@ type queryConfig struct {
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
-func defaults(cfg *queryConfig) {
+func defaultConfig() *queryConfig {
+	cfg := &queryConfig{}
 	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
 		namingschema.WithOverrideV0(defaultServiceName),
@@ -41,6 +42,7 @@ func defaults(cfg *queryConfig) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.errCheck = func(error) bool { return true }
+	return cfg
 }
 
 // WithServiceName sets the given service name for the returned query.

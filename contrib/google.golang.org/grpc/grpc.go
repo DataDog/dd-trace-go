@@ -55,11 +55,11 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 }
 
 func startSpanFromContext(
-	ctx context.Context, method, operation, service string, opts ...tracer.StartSpanOption,
+	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
 ) (ddtrace.Span, context.Context) {
 	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
-		tracer.ServiceName(service),
+		tracer.ServiceName(serviceFn()),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,

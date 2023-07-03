@@ -27,37 +27,14 @@ type (
 	}
 	// rulesFragment can represent a full ruleset or a fragment of it.
 	rulesFragment struct {
-		Version     string               `json:"version,omitempty"`
-		Metadata    interface{}          `json:"metadata,omitempty"`
-		Rules       []ruleEntry          `json:"rules,omitempty"`
-		Overrides   []rulesOverrideEntry `json:"rules_override,omitempty"`
-		Exclusions  []exclusionEntry     `json:"exclusions,omitempty"`
-		RulesData   []ruleDataEntry      `json:"rules_data,omitempty"`
-		Actions     []interface{}        `json:"actions,omitempty"`
-		CustomRules []interface{}        `json:"custom_rules,omitempty"`
-	}
-
-	ruleEntry struct {
-		ID           string        `json:"id"`
-		Name         interface{}   `json:"name,omitempty"`
-		Tags         interface{}   `json:"tags"`
-		Conditions   interface{}   `json:"conditions"`
-		Transformers interface{}   `json:"transformers"`
-		OnMatch      []interface{} `json:"on_match,omitempty"`
-	}
-
-	rulesOverrideEntry struct {
-		ID          string        `json:"id,omitempty"`
-		RulesTarget []interface{} `json:"rules_target,omitempty"`
-		Enabled     interface{}   `json:"enabled,omitempty"`
-		OnMatch     interface{}   `json:"on_match,omitempty"`
-	}
-
-	exclusionEntry struct {
-		ID          string        `json:"id"`
-		Conditions  []interface{} `json:"conditions,omitempty"`
-		Inputs      []interface{} `json:"inputs,omitempty"`
-		RulesTarget []interface{} `json:"rules_target,omitempty"`
+		Version     string          `json:"version,omitempty"`
+		Metadata    interface{}     `json:"metadata,omitempty"`
+		Rules       []interface{}   `json:"rules,omitempty"`
+		Overrides   []interface{}   `json:"rules_override,omitempty"`
+		Exclusions  []interface{}   `json:"exclusions,omitempty"`
+		RulesData   []ruleDataEntry `json:"rules_data,omitempty"`
+		Actions     []interface{}   `json:"actions,omitempty"`
+		CustomRules []interface{}   `json:"custom_rules,omitempty"`
 	}
 
 	ruleDataEntry rc.ASMDataRuleData
@@ -73,32 +50,6 @@ func defaultRulesFragment() rulesFragment {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f
-}
-
-// validate checks that a rule override entry complies with the rule override RFC
-func (o *rulesOverrideEntry) validate() bool {
-	return len(o.ID) > 0 || o.RulesTarget != nil
-}
-
-// validate checks that an exclusion entry complies with the exclusion filter RFC
-func (e *exclusionEntry) validate() bool {
-	return len(e.Inputs) > 0 || len(e.Conditions) > 0 || len(e.RulesTarget) > 0
-}
-
-// validate checks that the rules fragment's fields comply with all relevant RFCs
-func (r_ *rulesFragment) validate() bool {
-	for _, o := range r_.Overrides {
-		if !o.validate() {
-			return false
-		}
-	}
-	for _, e := range r_.Exclusions {
-		if !e.validate() {
-			return false
-		}
-	}
-	// TODO (Francois): validate more fields once we implement more RC capabilities
-	return true
 }
 
 func (r_ *rulesFragment) clone() rulesFragment {
