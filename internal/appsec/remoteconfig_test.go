@@ -626,7 +626,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the waf rule"))},
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the WAF"))},
 		},
 		{
 			name:     "multiple/ack",
@@ -637,8 +637,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("could not instantiate the waf rule")),
-				"invalid":   genApplyStatus(true, errors.New("could not instantiate the waf rule")),
+				"overrides": genApplyStatus(true, errors.New("could not instantiate the WAF")),
+				"invalid":   genApplyStatus(true, errors.New("could not instantiate the WAF")),
 			},
 		},
 		{
