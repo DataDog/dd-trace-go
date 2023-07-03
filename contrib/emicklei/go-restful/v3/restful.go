@@ -31,7 +31,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	for _, opt := range configOpts {
 		opt(cfg)
 	}
-	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
+	log.Debug("contrib/emicklei/go-restful/v3: Creating tracing filter: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
