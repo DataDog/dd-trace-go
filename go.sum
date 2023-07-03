@@ -633,6 +633,8 @@ github.com/DataDog/datadog-go/v5 v5.1.1 h1:JLZ6s2K1pG2h9GkvEvMdEGqMDyVLEAccdX5Tl
 github.com/DataDog/datadog-go/v5 v5.1.1/go.mod h1:KhiYb2Badlv9/rofz+OznKoEF5XKTonWyhx5K83AP8E=
 github.com/DataDog/go-libddwaf v1.2.1-0.20230703214908-4e37339999f4 h1:9AvcFElwPVsYcyjItvrzqxKTuGYOLIDR9J1QdTUUeNE=
 github.com/DataDog/go-libddwaf v1.2.1-0.20230703214908-4e37339999f4/go.mod h1:qLZEuaF5amEVMP5NTYtr/6m30m73voPL4i7SK7dnnt4=
+github.com/DataDog/go-libddwaf v1.2.1-0.20230703215755-e2e73528138d h1:6OzyuD5b7ODVSoHtOuWIzNuDijqfuqpL/VQ6ieTGDhU=
+github.com/DataDog/go-libddwaf v1.2.1-0.20230703215755-e2e73528138d/go.mod h1:qLZEuaF5amEVMP5NTYtr/6m30m73voPL4i7SK7dnnt4=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork h1:yBq5PrAtrM4yVeSzQ+bn050+Ysp++RKF1QmtkL4VqvU=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork/go.mod h1:yA5JwkZsHTLuqq3zaRgUQf35DfDkpOZqgtBqHKpwrBs=
 github.com/DataDog/gostackparse v0.5.0 h1:jb72P6GFHPHz2W0onsN51cS3FkaMDcjb0QzgxxA4gDk=
