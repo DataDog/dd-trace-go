@@ -689,7 +689,7 @@ func TestWafRCUpdate(t *testing.T) {
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := newConfig()
 		require.NoError(t, err)
-		wafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		wafHandle, err := waf.NewHandle(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer wafHandle.Close()
 		wafCtx := waf.NewContext(wafHandle)
@@ -707,7 +707,7 @@ func TestWafRCUpdate(t *testing.T) {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
 		}
 		cfg.rulesManager.compile()
-		newWafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		newWafHandle, err := waf.NewHandle(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer newWafHandle.Close()
 		newWafCtx := waf.NewContext(newWafHandle)

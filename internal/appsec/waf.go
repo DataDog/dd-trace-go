@@ -84,7 +84,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 }
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
-	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 }
 
 func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
@@ -253,9 +253,9 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		var (
 			nbEvents          uint32
 			logOnce           sync.Once // per request
-			overallRuntimeNs  waf.AtomicU64
-			internalRuntimeNs waf.AtomicU64
-			nbTimeouts        waf.AtomicU64
+			overallRuntimeNs  atomic.Uint64
+			internalRuntimeNs atomic.Uint64
+			nbTimeouts        atomic.Uint64
 
 			events []json.RawMessage
 			mu     sync.Mutex // events mutex
