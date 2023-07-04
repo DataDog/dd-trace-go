@@ -53,7 +53,11 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			return nil, err
 		}
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
-		return handler(ctx, req)
+		rv, err := handler(ctx, req)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return rv, err
 	}
 }
 
@@ -93,7 +97,11 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			return err
 		}
 
-		return handler(srv, stream)
+		err = handler(srv, stream)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return err
 	}
 }
 
