@@ -7,6 +7,7 @@
 package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -22,6 +23,12 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/eventbridge"
+	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sfn"
+	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
@@ -158,7 +165,13 @@ func awsRegion(req *request.Request) string {
 }
 
 var serviceTags = map[string]func(params interface{}) (map[string]string, error){
-	"sqs": sqsTags,
+	"sqs":         sqsTags,
+	"s3":          s3Tags,
+	"sns":         snsTags,
+	"dynamodb":    dynamoDBTags,
+	"kinesis":     kinesisTags,
+	"EventBridge": eventBridgeTags,
+	"states":      sfnTags,
 }
 
 func extraTagsForService(req *request.Request) map[string]string {
@@ -169,7 +182,7 @@ func extraTagsForService(req *request.Request) map[string]string {
 	}
 	r, err := fn(req.Params)
 	if err != nil {
-		log.Debug("failed to extract tags for AWS service %s: %v", service, err)
+		log.Debug("failed to extract tags for AWS service %q: %v", service, err)
 	}
 	return r
 }
@@ -187,11 +200,187 @@ func sqsTags(params interface{}) (map[string]string, error) {
 		queueURL = *input.QueueUrl
 	case *sqs.SendMessageBatchInput:
 		queueURL = *input.QueueUrl
+	default:
+		return nil, nil
 	}
 	parts := strings.Split(queueURL, "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("got unexpected queue URL format: %q", queueURL)
+	}
 	queueName := parts[len(parts)-1]
 
 	return map[string]string{
 		tags.SQSQueueName: queueName,
+	}, nil
+}
+
+func s3Tags(params interface{}) (map[string]string, error) {
+	var bucket string
+	switch input := params.(type) {
+	case *s3.ListObjectsInput:
+		bucket = *input.Bucket
+	case *s3.ListObjectsV2Input:
+		bucket = *input.Bucket
+	case *s3.PutObjectInput:
+		bucket = *input.Bucket
+	case *s3.GetObjectInput:
+		bucket = *input.Bucket
+	case *s3.DeleteObjectInput:
+		bucket = *input.Bucket
+	case *s3.DeleteObjectsInput:
+		bucket = *input.Bucket
+	default:
+		return nil, nil
+	}
+	return map[string]string{
+		tags.S3BucketName: bucket,
+	}, nil
+}
+
+func snsTags(params interface{}) (map[string]string, error) {
+	var destTag, destName, destARN string
+	switch input := params.(type) {
+	case *sns.PublishInput:
+		if input.TopicArn != nil {
+			destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		} else {
+			destTag, destARN = tags.SNSTargetName, *input.TargetArn
+		}
+	case *sns.GetTopicAttributesInput:
+		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+	case *sns.ListSubscriptionsByTopicInput:
+		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+	case *sns.RemovePermissionInput:
+		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+	case *sns.SetTopicAttributesInput:
+		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+	case *sns.SubscribeInput:
+		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+	case *sns.CreateTopicInput:
+		destTag, destName = tags.SNSTopicName, *input.Name
+	default:
+		return nil, nil
+	}
+	if destName == "" {
+		parts := strings.Split(destARN, ":")
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("got unexpected ARN format: %q", destARN)
+		}
+		destName = parts[len(parts)-1]
+	}
+	return map[string]string{
+		destTag: destName,
+	}, nil
+}
+
+func dynamoDBTags(params interface{}) (map[string]string, error) {
+	var tableName string
+	switch input := params.(type) {
+	case *dynamodb.GetItemInput:
+		tableName = *input.TableName
+	case *dynamodb.PutItemInput:
+		tableName = *input.TableName
+	case *dynamodb.QueryInput:
+		tableName = *input.TableName
+	case *dynamodb.ScanInput:
+		tableName = *input.TableName
+	case *dynamodb.UpdateItemInput:
+		tableName = *input.TableName
+	default:
+		return nil, nil
+	}
+	return map[string]string{
+		tags.DynamoDBTableName: tableName,
+	}, nil
+}
+
+func kinesisTags(params interface{}) (map[string]string, error) {
+	var streamName string
+	switch input := params.(type) {
+	case *kinesis.PutRecordInput:
+		streamName = *input.StreamName
+	case *kinesis.PutRecordsInput:
+		streamName = *input.StreamName
+	case *kinesis.AddTagsToStreamInput:
+		streamName = *input.StreamName
+	case *kinesis.RemoveTagsFromStreamInput:
+		streamName = *input.StreamName
+	case *kinesis.CreateStreamInput:
+		streamName = *input.StreamName
+	case *kinesis.DeleteStreamInput:
+		streamName = *input.StreamName
+	case *kinesis.DescribeStreamInput:
+		streamName = *input.StreamName
+	case *kinesis.DescribeStreamSummaryInput:
+		streamName = *input.StreamName
+	case *kinesis.GetShardIteratorInput:
+		streamName = *input.StreamName
+	default:
+		return nil, nil
+	}
+	return map[string]string{
+		tags.KinesisStreamName: streamName,
+	}, nil
+}
+
+func eventBridgeTags(params interface{}) (map[string]string, error) {
+	var ruleName string
+	switch input := params.(type) {
+	case *eventbridge.PutRuleInput:
+		ruleName = *input.Name
+	case *eventbridge.DescribeRuleInput:
+		ruleName = *input.Name
+	case *eventbridge.DeleteRuleInput:
+		ruleName = *input.Name
+	case *eventbridge.DisableRuleInput:
+		ruleName = *input.Name
+	case *eventbridge.EnableRuleInput:
+		ruleName = *input.Name
+	case *eventbridge.PutTargetsInput:
+		ruleName = *input.Rule
+	case *eventbridge.RemoveTargetsInput:
+		ruleName = *input.Rule
+	default:
+		return nil, nil
+	}
+	return map[string]string{
+		tags.EventBridgeRuleName: ruleName,
+	}, nil
+}
+
+func sfnTags(params interface{}) (map[string]string, error) {
+	nameFromExecutionARN := func(arn string) string {
+		parts := strings.Split(arn, ":")
+		return parts[len(parts)-2]
+	}
+	var stateMachineName, stateMachineArn string
+	switch input := params.(type) {
+	case *sfn.CreateStateMachineInput:
+		stateMachineName = *input.Name
+	case *sfn.DescribeStateMachineInput:
+		stateMachineArn = *input.StateMachineArn
+	case *sfn.StartExecutionInput:
+		stateMachineArn = *input.StateMachineArn
+	case *sfn.StopExecutionInput:
+		if input.ExecutionArn != nil {
+			stateMachineName = nameFromExecutionARN(*input.ExecutionArn)
+		}
+	case *sfn.DescribeExecutionInput:
+		if input.ExecutionArn != nil {
+			stateMachineName = nameFromExecutionARN(*input.ExecutionArn)
+		}
+	case *sfn.ListExecutionsInput:
+		stateMachineArn = *input.StateMachineArn
+	case *sfn.UpdateStateMachineInput:
+		stateMachineArn = *input.StateMachineArn
+	case *sfn.DeleteStateMachineInput:
+		stateMachineArn = *input.StateMachineArn
+	}
+	if stateMachineName == "" {
+		parts := strings.Split(stateMachineArn, ":")
+		stateMachineName = parts[len(parts)-1]
+	}
+	return map[string]string{
+		tags.SFNStateMachineName: stateMachineName,
 	}, nil
 }
