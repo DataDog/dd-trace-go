@@ -70,7 +70,7 @@ func Start(opts ...StartOption) {
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
-		log.Debug("appsec: %s is not set and won't start until activated through remote configuration", enabledEnvVar)
+		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", enabledEnvVar)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)
@@ -158,7 +158,7 @@ func (a *appsec) start() error {
 	a.started = true
 	log.Info("appsec: up and running")
 	// TODO: log the config like the APM tracer does but we first need to define
-	//   and user-friendly string representation of our config and its sources
+	//   an user-friendly string representation of our config and its sources
 	return nil
 }
 
