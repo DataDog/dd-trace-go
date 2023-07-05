@@ -9,8 +9,10 @@ package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aw
 import (
 	"math"
 	"strconv"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
 const componentName = "aws/aws-sdk-go/aws"
@@ -29,11 +32,9 @@ func init() {
 }
 
 const (
-	tagAWSAgent      = "aws.agent"
-	tagAWSOperation  = "aws.operation"
-	tagAWSRegion     = "aws.region"
+	tagOldAWSRegion  = "aws.region"
 	tagAWSRetryCount = "aws.retry_count"
-	tagAWSRequestID  = "aws.request_id"
+
 	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
 	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
 	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
@@ -72,17 +73,25 @@ func (h *handlers) Send(req *request.Request) {
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.HTTPRequest.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
+
+	region := awsRegion(req)
+
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(resourceName(req)),
-		tracer.Tag(tagAWSAgent, awsAgent(req)),
-		tracer.Tag(tagAWSOperation, awsOperation(req)),
-		tracer.Tag(tagAWSRegion, awsRegion(req)),
+		tracer.Tag(tags.AWSAgent, awsAgent(req)),
+		tracer.Tag(tags.AWSOperation, awsOperation(req)),
+		tracer.Tag(tagOldAWSRegion, region),
+		tracer.Tag(tags.AWSRegion, region),
+		tracer.Tag(tags.AWSService, awsService(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+	}
+	for k, v := range extraTagsForService(req) {
+		opts = append(opts, tracer.Tag(k, v))
 	}
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
@@ -97,7 +106,7 @@ func (h *handlers) Complete(req *request.Request) {
 		return
 	}
 	span.SetTag(tagAWSRetryCount, req.RetryCount)
-	span.SetTag(tagAWSRequestID, req.RequestID)
+	span.SetTag(tags.AWSRequestID, req.RequestID)
 	if req.HTTPResponse != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(req.HTTPResponse.StatusCode))
 	}
@@ -146,4 +155,43 @@ func awsAgent(req *request.Request) string {
 
 func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
+}
+
+var serviceTags = map[string]func(params interface{}) (map[string]string, error){
+	"sqs": sqsTags,
+}
+
+func extraTagsForService(req *request.Request) map[string]string {
+	service := awsService(req)
+	fn, ok := serviceTags[service]
+	if !ok {
+		return nil
+	}
+	r, err := fn(req.Params)
+	if err != nil {
+		log.Debug("failed to extract tags for AWS service %s: %v", service, err)
+	}
+	return r
+}
+
+func sqsTags(params interface{}) (map[string]string, error) {
+	var queueURL string
+	switch input := params.(type) {
+	case *sqs.SendMessageInput:
+		queueURL = *input.QueueUrl
+	case *sqs.DeleteMessageInput:
+		queueURL = *input.QueueUrl
+	case *sqs.DeleteMessageBatchInput:
+		queueURL = *input.QueueUrl
+	case *sqs.ReceiveMessageInput:
+		queueURL = *input.QueueUrl
+	case *sqs.SendMessageBatchInput:
+		queueURL = *input.QueueUrl
+	}
+	parts := strings.Split(queueURL, "/")
+	queueName := parts[len(parts)-1]
+
+	return map[string]string{
+		tags.SQSQueueName: queueName,
+	}, nil
 }

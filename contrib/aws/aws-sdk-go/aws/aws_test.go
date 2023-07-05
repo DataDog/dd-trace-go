@@ -74,9 +74,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "s3.command", s.OperationName())
-		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
-		assert.Equal(t, "CreateBucket", s.Tag(tagAWSOperation))
-		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
+		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
+		assert.Equal(t, "CreateBucket", s.Tag("aws.operation"))
+		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -84,7 +84,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "http://s3.us-west-2.amazonaws.com/BUCKET", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-		assert.NotNil(t, s.Tag(tagAWSRequestID))
+		assert.NotNil(t, s.Tag("aws.request_id"))
 	})
 
 	t.Run("ec2", func(t *testing.T) {
@@ -102,9 +102,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "ec2.command", s.OperationName())
-		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
-		assert.Equal(t, "DescribeInstances", s.Tag(tagAWSOperation))
-		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
+		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
+		assert.Equal(t, "DescribeInstances", s.Tag("aws.operation"))
+		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
