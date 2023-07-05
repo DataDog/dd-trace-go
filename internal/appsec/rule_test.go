@@ -17,7 +17,7 @@ import (
 )
 
 func TestStaticRule(t *testing.T) {
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("waf disabled")
 		return
 	}

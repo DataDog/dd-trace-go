@@ -25,7 +25,7 @@ import (
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
@@ -321,7 +321,7 @@ func TestMergeRulesDataEntries(t *testing.T) {
 
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 
@@ -547,7 +547,7 @@ func TestOnRCUpdate(t *testing.T) {
 	}
 
 	t.Run("post-stop", func(t *testing.T) {
-		if waf.Health() != nil {
+		if supported, _ := waf.SupportsTarget(); !supported {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
@@ -682,7 +682,7 @@ func TestWafRCUpdate(t *testing.T) {
 		},
 	}
 
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF needs to be available for this test")
 	}
 

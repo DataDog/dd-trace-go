@@ -9,7 +9,6 @@
 package appsec
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
@@ -48,21 +47,10 @@ func Start(opts ...StartOption) {
 		return
 	}
 
-	// Check whether libddwaf - required for Threats Detection - can be enabled or not
-	if ok, err := waf.Load(); err != nil {
-		// Handle the error differently according to the following cases:
-		// 1. If the error is about the unsupported target: log as an expected error case and quit appsec
-		if actual := (*waf.UnsupportedTargetError)(nil); errors.As(err, &actual) {
-			log.Error("appsec: unsupported operating-system or architecture: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
-			return
-		}
-		// 2. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
-		if !ok {
-			logUnexpectedStartError(fmt.Errorf("error while loading libddwaf: %w", err))
-			return
-		}
-		// 3. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+	// Check whether libddwaf - required for Threats Detection - is supported or not
+	if supported, err := waf.SupportsTarget(); !supported {
+		log.Error("appsec: threats detection is not supported: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		return
 	}
 
 	// From this point we know that AppSec is either enabled or can be enabled through remote config
@@ -148,6 +136,18 @@ func newAppSec(cfg *Config) *appsec {
 
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start() error {
+	// Load the waf to catch early errors if any
+	if ok, err := waf.Load(); err != nil {
+		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
+		// Note that we assume here that the test for the unsupported target has been done before calling
+		// this method, so it is now considered an error for this method
+		if !ok {
+			return fmt.Errorf("error while loading libddwaf: %w", err)
+		}
+		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
+		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+	}
+
 	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
 	a.limiter.Start()
 	// Register the WAF operation event listener

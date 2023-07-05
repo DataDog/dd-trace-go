@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.46.0-rc.4
 	github.com/DataDog/datadog-go/v5 v5.1.1
-	github.com/DataDog/go-libddwaf v1.3.0
+	github.com/DataDog/go-libddwaf v1.3.1-0.20230705103332-28f73a97f513
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
