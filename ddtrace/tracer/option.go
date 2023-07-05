@@ -940,7 +940,7 @@ func FinishTime(t time.Time) FinishOption {
 
 // WithError marks the span as having had an error. It uses the information from
 // err to set tags such as the error message, error type and stack trace. It has
-// no effect if the error is nil.
+// no effect if the error is nil or the underlying object is a nil pointer (https://go.dev/doc/faq#nil_error).
 func WithError(err error) FinishOption {
 	if err == nil {
 		return func(_ *ddtrace.FinishConfig) {}
