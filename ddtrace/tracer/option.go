@@ -949,6 +949,7 @@ func WithError(err error) FinishOption {
 	// Here be dragons: https://go.dev/doc/faq#nil_error
 	// https://github.com/DataDog/dd-trace-go/issues/2029
 	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
+		log.Debug("Underlying error value is nil pointer, ignoring. See https://go.dev/doc/faq#nil_error for details.")
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	return func(cfg *ddtrace.FinishConfig) {
