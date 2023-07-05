@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -26,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	waf "github.com/DataDog/go-libddwaf"
+	"go.uber.org/atomic"
 )
 
 const (
@@ -84,7 +84,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 }
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*waf.Handle, error) {
-	return waf.NewHandleFromRuleSet(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+	return waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 }
 
 func newWAFEventListeners(waf *waf.Handle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
@@ -251,11 +251,11 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
-			nbEvents          uint32
+			nbEvents          atomic.Uint32
 			logOnce           sync.Once // per request
-			overallRuntimeNs  waf.AtomicU64
-			internalRuntimeNs waf.AtomicU64
-			nbTimeouts        waf.AtomicU64
+			overallRuntimeNs  atomic.Uint64
+			internalRuntimeNs atomic.Uint64
+			nbTimeouts        atomic.Uint64
 
 			events []json.RawMessage
 			mu     sync.Mutex // events mutex
@@ -311,7 +311,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 		}
 
 		op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
-			if atomic.LoadUint32(&nbEvents) == maxWAFEventsPerRequest {
+			if nbEvents.Load() == maxWAFEventsPerRequest {
 				logOnce.Do(func() {
 					log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
 				})
@@ -355,7 +355,7 @@ func newGRPCWAFEventListener(handle *waf.Handle, addresses map[string]struct{}, 
 				return
 			}
 			log.Debug("appsec: attack detected by the grpc waf")
-			atomic.AddUint32(&nbEvents, 1)
+			nbEvents.Inc()
 			mu.Lock()
 			events = append(events, event)
 			mu.Unlock()
