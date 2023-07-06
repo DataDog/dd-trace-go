@@ -424,3 +424,33 @@ func TestWith_outputDir(t *testing.T) {
 	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
 	require.Equal(t, want, fileData)
 }
+
+func TestParseDataSize(t *testing.T) {
+	cases := []struct {
+		Input      string
+		Output     int
+		ShouldFail bool
+	}{
+		{Input: "1000", Output: 1000},
+		{Input: "123B", Output: 123},
+		{Input: "5MiB", Output: 5 * 1024 * 1024},
+		{Input: "10MB", Output: 10 * 1024 * 1024},
+		{Input: "512KB", Output: 512 * 1024},
+		{Input: "256KiB", Output: 256 * 1024},
+		{Input: "MB", ShouldFail: true},
+		{Input: "1GiB", ShouldFail: true},
+		{Input: "foobar", ShouldFail: true},
+	}
+
+	for _, tc := range cases {
+		n, err := parseDataSize(tc.Input)
+		switch {
+		case err != nil && !tc.ShouldFail:
+			t.Errorf("input: %s, failed with error: %s", tc.Input, err)
+		case err == nil && tc.ShouldFail:
+			t.Errorf("input: %s, unexpectedly succeded with output %d", tc.Input, n)
+		case err == nil && tc.Output != n:
+			t.Errorf("input: %s, want %d, got %d", tc.Input, tc.Output, n)
+		}
+	}
+}

@@ -552,19 +552,62 @@ type executionTraceConfig struct {
 	warned bool
 }
 
+// parseDataSize reads a data size from s, such as "10MiB", and returns the
+// number of bytes represented by the size, e.g 1048576. Sizes with no suffix
+// are treated as plain bytes. Only kibibytes and mebibytes are currently
+// supported, since nothing this library does right now should need bigger than
+// that.
+func parseDataSize(s string) (bytes int, err error) {
+	lastDigit := strings.LastIndexAny(s, "0123456789")
+	if lastDigit == -1 {
+		return 0, fmt.Errorf("size value is not numeric")
+	}
+	baseSize, err := strconv.Atoi(s[:lastDigit+1])
+	if err != nil {
+		return 0, fmt.Errorf("reading data size: %w", err)
+	}
+	suffix := s[lastDigit+1:]
+	var multiplier int
+	switch suffix {
+	case "", "B":
+		multiplier = 1
+	case "KiB", "KB":
+		multiplier = 1024
+	case "MiB", "MB":
+		multiplier = 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unrecognized size suffix %s", suffix)
+	}
+	return baseSize * multiplier, nil
+}
+
+func (e *executionTraceConfig) maybeWarn(fmt string, args ...interface{}) {
+	if e.warned {
+		return
+	}
+	e.warned = true
+	log.Warn(fmt, args...)
+}
+
 // Refresh updates the execution trace configuration to reflect any run-time
 // changes to the configuration environment variables, applying defaults as
 // needed.
 func (e *executionTraceConfig) Refresh() {
 	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
 	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
-	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
+	e.Limit = defaultExecutionTraceSizeLimit
+	if v := os.Getenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES"); v != "" {
+		limit, err := parseDataSize(v)
+		if err != nil {
+			e.maybeWarn("invalid execution trace size: %s", err)
+			e.Enabled = false
+			return
+		}
+		e.Limit = limit
+	}
 
 	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
-		if !e.warned {
-			e.warned = true
-			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
-		}
+		e.maybeWarn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
 		e.Enabled = false
 		return
 	}

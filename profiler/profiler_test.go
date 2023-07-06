@@ -559,7 +559,7 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100KiB")
 	err := Start(
 		WithHTTPClient(client),
 		WithProfileTypes(), // just want the execution trace
