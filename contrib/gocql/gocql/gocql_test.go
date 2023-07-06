@@ -379,13 +379,12 @@ func TestBatch(t *testing.T) {
 }
 
 func TestWrappedClusterConfig(t *testing.T) {
-	assert := assert.New(t)
-
 	cluster := NewCluster([]string{cassandraHost, "127.0.0.1:9043"})
 	updateTestClusterConfig(cluster.ClusterConfig)
 
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
+	t.Cleanup(session.Close)
 
 	t.Run("query", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -399,8 +398,8 @@ func TestWrappedClusterConfig(t *testing.T) {
 		require.Len(t, spans, 1)
 		span := spans[0]
 
-		assert.Equal(span.OperationName(), "cassandra.query")
-		assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+		assert.Equal(t, "cassandra.query", span.OperationName())
+		assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
 	})
 	t.Run("batch", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -418,8 +417,34 @@ func TestWrappedClusterConfig(t *testing.T) {
 		require.Len(t, spans, 1)
 		s0 := spans[0]
 
-		assert.Equal(s0.OperationName(), "cassandra.batch")
-		assert.Equal(s0.Tag(ext.CassandraContactPoints), "127.0.0.1:9042,127.0.0.1:9043")
+		assert.Equal(t, "cassandra.batch", s0.OperationName())
+		assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", s0.Tag(ext.CassandraContactPoints))
+	})
+	t.Run("changeEmbeddedStruct", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		correctHost, wrongHost := cassandraHost, "127.0.0.1:9043"
+
+		c := NewCluster([]string{wrongHost})
+		updateTestClusterConfig(c.ClusterConfig)
+		c.Hosts = []string{correctHost}
+
+		s, err := c.CreateSession()
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+
+		q := s.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		err = q.Iter().Close()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		span := spans[0]
+
+		assert.Equal(t, "cassandra.query", span.OperationName())
+		// the value should be the one we updated before creating the session, not the one provided to NewCluster
+		assert.Equal(t, correctHost, span.Tag(ext.CassandraContactPoints))
 	})
 }
 
