@@ -797,6 +797,22 @@ func TestSpanLog(t *testing.T) {
 		v, _ := span.context.meta(keyTraceID128)
 		assert.Equal("0000000000000001", v)
 	})
+
+	t.Run("128-bit-logging-with-empty-upper-bits", func(t *testing.T) {
+		// Logging 128-bit trace ids is enabled, and but the upper 64 bits
+		// are empty, so a quoted 16 byte hex string should be printed for the
+		// dd.trace_id.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
+		assert := assert.New(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		defer stop()
+		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
+		span.Finish()
+		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
+		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
+		v, _ := span.context.meta(keyTraceID128)
+		assert.Equal("", v)
+	})
 }
 
 func TestRootSpanAccessor(t *testing.T) {
