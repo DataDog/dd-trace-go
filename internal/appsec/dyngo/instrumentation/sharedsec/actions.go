@@ -8,7 +8,6 @@ package sharedsec
 import (
 	_ "embed" // Blank import
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -106,10 +105,6 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 	}
 }
 
-func grpcNoopHandler(map[string][]string) (uint32, error) {
-	return 0, nil
-}
-
 // NewBlockRequestAction creates an action for the "block" action type
 func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action {
 	return &Action{
@@ -123,7 +118,9 @@ func NewBlockRequestAction(httpStatus, grpcStatus int, template string) *Action 
 func NewRedirectRequestAction(status int, loc string) *Action {
 	return &Action{
 		http: http.RedirectHandler(loc, status),
-		grpc: grpcNoopHandler,
+		// gRPC is not handled by our SRB RFCs so far
+		// Use the default block handler for now
+		grpc: newGRPCBlockHandler(10),
 	}
 }
 
@@ -135,16 +132,4 @@ func (a *Action) HTTP() http.Handler {
 // GRPC returns the gRPC handler linked to the action object
 func (a *Action) GRPC() GRPCWrapper {
 	return a.grpc
-}
-
-// Copied from grpc.Metadata.Pairs and tweaked to use existing md
-func pairs(md map[string][]string, kv ...string) map[string][]string {
-	if len(kv)%2 == 1 {
-		panic(fmt.Sprintf("metadata: Pairs got the odd number of input pairs for metadata: %d", len(kv)))
-	}
-	for i := 0; i < len(kv); i += 2 {
-		key := strings.ToLower(kv[i])
-		md[key] = append(md[key], kv[i+1])
-	}
-	return md
 }
