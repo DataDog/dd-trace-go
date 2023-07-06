@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,6 +159,9 @@ func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 	t.Run("WithFlush", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		telemetryClient.ProductStart(telemetry.NamespaceTracers, nil)
+		defer telemetry.MockGlobalClient(telemetryClient)()
 		tracer, transport, flush, stop := startTestTracer(t)
 		defer stop()
 
@@ -181,6 +185,10 @@ func TestPartialFlush(t *testing.T) {
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
 
+		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "trace_partial_flush.count", 1.0, []string{"reason:large_trace"}, true)
+		telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", 2.0, []string(nil), true) // Typed-nil here to not break usage of reflection in `mock` library.
+		telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", 1.0, []string(nil), true)
+
 		root.Finish()
 		flush(1)
 		tsRoot := transport.Traces()
@@ -192,6 +200,8 @@ func TestPartialFlush(t *testing.T) {
 		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root.(*span), tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
+		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+		telemetryClient.AssertNumberOfCalls(t, "Record", 2)
 	})
 
 	// This test covers an issue where partial flushing + a rate sampler would panic

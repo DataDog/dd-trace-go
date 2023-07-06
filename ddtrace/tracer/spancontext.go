@@ -21,6 +21,7 @@ import (
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -436,7 +437,7 @@ func (t *trace) finishedOne(s *span) {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
-	// TODO: is there a metric we should bump when doing this?
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", 1, []string{"reason:large_trace"}, true)
 	finishedSpans := make([]*span, 0, t.finished)
 	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
@@ -446,6 +447,8 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
+	telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
+	telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
