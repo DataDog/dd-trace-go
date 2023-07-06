@@ -25,7 +25,7 @@ import (
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
@@ -321,7 +321,7 @@ func TestMergeRulesDataEntries(t *testing.T) {
 
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 
@@ -376,6 +376,7 @@ func TestCapabilities(t *testing.T) {
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
 				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
+				remoteconfig.ASMCustomBlockingResponse,
 			},
 		},
 		{
@@ -547,7 +548,7 @@ func TestOnRCUpdate(t *testing.T) {
 	}
 
 	t.Run("post-stop", func(t *testing.T) {
-		if waf.Health() != nil {
+		if supported, _ := waf.SupportsTarget(); !supported {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
@@ -626,7 +627,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the waf rule"))},
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the WAF"))},
 		},
 		{
 			name:     "multiple/ack",
@@ -637,8 +638,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("could not instantiate the waf rule")),
-				"invalid":   genApplyStatus(true, errors.New("could not instantiate the waf rule")),
+				"overrides": genApplyStatus(true, errors.New("could not instantiate the WAF")),
+				"invalid":   genApplyStatus(true, errors.New("could not instantiate the WAF")),
 			},
 		},
 		{
@@ -682,14 +683,14 @@ func TestWafRCUpdate(t *testing.T) {
 		},
 	}
 
-	if waf.Health() != nil {
+	if supported, _ := waf.SupportsTarget(); !supported {
 		t.Skip("WAF needs to be available for this test")
 	}
 
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := newConfig()
 		require.NoError(t, err)
-		wafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		wafHandle, err := waf.NewHandle(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer wafHandle.Close()
 		wafCtx := waf.NewContext(wafHandle)
@@ -707,7 +708,7 @@ func TestWafRCUpdate(t *testing.T) {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
 		}
 		cfg.rulesManager.compile()
-		newWafHandle, err := waf.NewHandleFromRuleSet(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+		newWafHandle, err := waf.NewHandle(cfg.rulesManager.latest, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
 		require.NoError(t, err)
 		defer newWafHandle.Close()
 		newWafCtx := waf.NewContext(newWafHandle)
