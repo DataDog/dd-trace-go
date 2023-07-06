@@ -15,9 +15,7 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"net/http"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -25,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -65,11 +64,24 @@ type (
 	// SDKBodyOperationRes is the SDK body operation results.
 	SDKBodyOperationRes struct{}
 
-	// BodyMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	BodyMonitoringError struct {
-		error
+	// MonitoringError is used to vehicle an HTTP error, usually resurfaced through Appsec SDKs.
+	MonitoringError struct {
+		msg string
 	}
 )
+
+// Error implements the Error interface
+func (e *MonitoringError) Error() string {
+	return e.msg
+}
+
+// NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
+// sharedesec.MonitoringError
+func NewMonitoringError(msg string) error {
+	return &MonitoringError{
+		msg: msg,
+	}
+}
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
@@ -84,35 +96,17 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 	return ExecuteSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
 }
 
-// NewBodyMonitoringError creates a new body sdk monitoring error that returns `msg` upon calling `Error()`
-func NewBodyMonitoringError(msg string) *BodyMonitoringError {
-	return &BodyMonitoringError{
-		errors.New(msg),
-	}
-}
-
-// applyActions executes the operation's actions and returns the resulting http handler
-func applyActions(op *Operation) http.Handler {
-	defer op.ClearActions()
-	for _, action := range op.Actions() {
-		switch a := action.(type) {
-		case *BlockRequestAction:
-			op.AddTag(instrumentation.BlockedRequestTag, true)
-			return a.handler
-		default:
-			log.Error("appsec: ignoring security action: unexpected action type %T", a)
-		}
-	}
-	return nil
-}
-
 // ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
 // An error is returned if the body associated to that operation must be blocked
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
+	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
+	sharedsec.OnErrorData(op, func(e error) {
+		err = e
+	})
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-	return op.Error
+	return err
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
@@ -128,13 +122,15 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
 		instrumentation.SetStringTags(span, ipTags)
 
+		var bypassHandler http.Handler
+		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args)
+		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *sharedsec.Action) {
+			bypassHandler = a.HTTP()
+			blocking = a.Blocking()
+		}))
 		r = r.WithContext(ctx)
 
-		if h := applyActions(op); h != nil {
-			handler = h
-		}
 		defer func() {
 			var status int
 			if mw, ok := w.(interface{ Status() int }); ok {
@@ -142,15 +138,16 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			events := op.Finish(HandlerOperationRes{Status: status})
-			if h := applyActions(op); h != nil {
-				h.ServeHTTP(w, r)
-			}
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
-			if _, ok := op.Tags()[instrumentation.BlockedRequestTag]; ok {
+			if blocking {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
 				for _, f := range onBlock {
 					f()
 				}
+			}
+			if bypassHandler != nil {
+				bypassHandler.ServeHTTP(w, r)
 			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
@@ -159,6 +156,10 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
+		if bypassHandler != nil {
+			handler = bypassHandler
+			bypassHandler = nil
+		}
 		handler.ServeHTTP(w, r)
 
 	})
@@ -213,15 +214,12 @@ type (
 		dyngo.Operation
 		instrumentation.TagsHolder
 		instrumentation.SecurityEventsHolder
-		mu      sync.RWMutex
-		actions []Action
+		mu sync.RWMutex
 	}
 
-	// SDKBodyOperation type representing an SDK body. It must be created with
-	// StartSDKBodyOperation() and finished with its Finish() method.
+	// SDKBodyOperation type representing an SDK body
 	SDKBodyOperation struct {
 		dyngo.Operation
-		Error error
 	}
 )
 
@@ -229,10 +227,13 @@ type (
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args HandlerOperationArgs) (context.Context, *Operation) {
+func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners ...dyngo.DataListener) (context.Context, *Operation) {
 	op := &Operation{
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: instrumentation.NewTagsHolder(),
+	}
+	for _, l := range listeners {
+		op.OnData(l)
 	}
 	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
@@ -251,34 +252,6 @@ func fromContext(ctx context.Context) *Operation {
 func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
-}
-
-// Actions returns the actions linked to the operation
-func (op *Operation) Actions() []Action {
-	op.mu.RLock()
-	defer op.mu.RUnlock()
-	return op.actions
-}
-
-// AddAction adds an action to the operation
-func (op *Operation) AddAction(a Action) {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	op.actions = append(op.actions, a)
-}
-
-// ClearActions clears all the actions linked to the operation
-func (op *Operation) ClearActions() {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	op.actions = op.actions[0:0]
-}
-
-// StartSDKBodyOperation starts the SDKBody operation and emits a start event
-func StartSDKBodyOperation(parent *Operation, args SDKBodyOperationArgs) *SDKBodyOperation {
-	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	dyngo.StartOperation(op, args)
-	return op
 }
 
 // Finish finishes the SDKBody operation and emits a finish event
@@ -347,32 +320,4 @@ func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOper
 // type-assertion on v whose type is the one returned by ListenedType().
 func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
 	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
-}
-
-// blockedTemplateJSON is the default JSON template used to write responses for blocked requests
-//
-//go:embed blocked-template.json
-var blockedTemplateJSON []byte
-
-// blockedTemplateHTML is the default HTML template used to write responses for blocked requests
-//
-//go:embed blocked-template.html
-var blockedTemplateHTML []byte
-
-const (
-	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
-	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
-)
-
-func init() {
-	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
-		if path, ok := os.LookupEnv(env); ok {
-			if t, err := os.ReadFile(path); err != nil {
-				log.Warn("Could not read template at %s: %v", path, err)
-			} else {
-				*template = t
-			}
-		}
-
-	}
 }
