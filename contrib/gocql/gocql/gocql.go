@@ -173,6 +173,11 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	if tq.clusterContactPoints != "" {
 		opts = append(opts, tracer.Tag(ext.CassandraContactPoints, tq.clusterContactPoints))
 	}
+	if len(tq.config.tags) > 0 {
+		for k, v := range tq.config.tags {
+			opts = append(opts, tracer.Tag(k, v))
+		}
+	}
 	span, _ := tracer.StartSpanFromContext(ctx, p.config.querySpanName, opts...)
 	return span
 }

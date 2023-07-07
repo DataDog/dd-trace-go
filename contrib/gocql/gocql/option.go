@@ -15,11 +15,14 @@ import (
 const defaultServiceName = "gocql.query"
 
 type queryConfig struct {
-	serviceName, resourceName    string
-	querySpanName, batchSpanName string
-	noDebugStack                 bool
-	analyticsRate                float64
-	errCheck                     func(err error) bool
+	serviceName   string
+	resourceName  string
+	querySpanName string
+	batchSpanName string
+	tags          map[string]interface{}
+	noDebugStack  bool
+	analyticsRate float64
+	errCheck      func(err error) bool
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
@@ -93,6 +96,16 @@ func WithAnalyticsRate(rate float64) WrapOption {
 func NoDebugStack() WrapOption {
 	return func(cfg *queryConfig) {
 		cfg.noDebugStack = true
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key
+func WithCustomTag(key string, value interface{}) WrapOption {
+	return func(cfg *queryConfig) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }
 
