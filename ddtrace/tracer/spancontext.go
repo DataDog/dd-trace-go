@@ -474,8 +474,16 @@ func setPeerServiceFromSource(s *span) string {
 			"tablename",
 			"bucketname",
 		}
+	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
+		sources = []string{
+			ext.CassandraContactPoints,
+		}
+		useTargetHost = false
 	case has(ext.DBSystem):
-		sources, useTargetHost = dbSources(s)
+		sources = []string{
+			ext.DBName,
+			ext.DBInstance,
+		}
 	case has(ext.MessagingSystem):
 		sources = []string{
 			ext.KafkaBootstrapServers,
@@ -500,15 +508,4 @@ func setPeerServiceFromSource(s *span) string {
 		}
 	}
 	return ""
-}
-
-func dbSources(s *span) ([]string, bool) {
-	switch s.Meta[ext.DBSystem] {
-	case ext.DBSystemCassandra:
-		return []string{ext.CassandraContactPoints}, false
-	}
-	return []string{
-		ext.DBName,
-		ext.DBInstance,
-	}, true
 }
