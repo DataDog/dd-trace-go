@@ -57,11 +57,24 @@ type TracerProvider struct {
 // NewTracerProvider returns an instance of OpenTelemetry TracerProvider with Datadog Tracer start options.
 // This allows propagation of the parameters to tracer.Start.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
+	return &TracerProvider{ddopts: opts}
+}
+
+// Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
+// If the TracerProvider has already been shut down, this will return a no-op tracer.
+func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
+	if atomic.LoadUint32(&p.stopped) != 0 {
+		return &noopOteltracer{}
+	}
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_INJECT",
 		"DD_PROPAGATION_STYLE_INJECT", "DD_TRACE_PROPAGATION_STYLE")
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_EXTRACT",
 		"DD_PROPAGATION_STYLE_EXTRACT", "DD_TRACE_PROPAGATION_STYLE")
-	return &TracerProvider{ddopts: opts}
+	tracer.Start(p.ddopts...)
+	return &oteltracer{
+		Tracer:   internal.GetGlobalTracer(),
+		provider: p,
+	}
 }
 
 const w3cPropagator = "tracecontext"
@@ -80,19 +93,6 @@ func setW3CPropagationStyle(env ...string) {
 	}
 	// trace context propagation not configured, setting it to tracecontext
 	os.Setenv("DD_TRACE_PROPAGATION_STYLE", w3cPropagator)
-}
-
-// Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
-// If the TracerProvider has already been shut down, this will return a no-op tracer.
-func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
-	if atomic.LoadUint32(&p.stopped) != 0 {
-		return &noopOteltracer{}
-	}
-	tracer.Start(p.ddopts...)
-	return &oteltracer{
-		Tracer:   internal.GetGlobalTracer(),
-		provider: p,
-	}
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
