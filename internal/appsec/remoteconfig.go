@@ -18,7 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
@@ -61,6 +60,9 @@ func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.Prod
 updateLoop:
 	// Process rules related updates
 	for p, u := range updates {
+		if u != nil && len(u) == 0 {
+			continue
+		}
 		switch p {
 		case rc.ProductASMData:
 			// Merge all rules data entries together and store them as a rulesManager edit entry
@@ -337,13 +339,6 @@ func (a *appsec) enableRemoteActivation() error {
 	if a.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	// First verify that the WAF is in good health. We perform this check in order not to falsely "allow" users to
-	// activate ASM through remote config if activation would fail when trying to register a WAF handle
-	// (ex: if the service runs on an unsupported platform).
-	if err := waf.Health(); err != nil {
-		log.Debug("appsec: WAF health check failed, remote activation will be disabled: %v", err)
-		return err
-	}
 	a.registerRCProduct(rc.ProductASMFeatures)
 	a.registerRCCapability(remoteconfig.ASMActivation)
 	a.rc.RegisterCallback(a.onRemoteActivation)
@@ -368,6 +363,7 @@ func (a *appsec) enableRCBlocking() {
 		a.registerRCCapability(remoteconfig.ASMDDRules)
 		a.registerRCCapability(remoteconfig.ASMExclusions)
 		a.registerRCCapability(remoteconfig.ASMCustomRules)
+		a.registerRCCapability(remoteconfig.ASMCustomBlockingResponse)
 	}
 }
 
