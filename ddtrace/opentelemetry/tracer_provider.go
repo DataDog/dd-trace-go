@@ -60,6 +60,11 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	return &TracerProvider{ddopts: opts}
 }
 
+const (
+	w3cPropagator                 = "tracecontext"
+	genericHeaderPropagationStyle = "DD_TRACE_PROPAGATION_STYLE"
+)
+
 // Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
@@ -67,17 +72,15 @@ func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace
 		return &noopOteltracer{}
 	}
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_INJECT",
-		"DD_PROPAGATION_STYLE_INJECT", "DD_TRACE_PROPAGATION_STYLE")
+		"DD_PROPAGATION_STYLE_INJECT", genericHeaderPropagationStyle)
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_EXTRACT",
-		"DD_PROPAGATION_STYLE_EXTRACT", "DD_TRACE_PROPAGATION_STYLE")
+		"DD_PROPAGATION_STYLE_EXTRACT", genericHeaderPropagationStyle)
 	tracer.Start(p.ddopts...)
 	return &oteltracer{
 		Tracer:   internal.GetGlobalTracer(),
 		provider: p,
 	}
 }
-
-const w3cPropagator = "tracecontext"
 
 func setW3CPropagationStyle(env ...string) {
 	for _, key := range env {
@@ -87,12 +90,17 @@ func setW3CPropagationStyle(env ...string) {
 			style := fmt.Sprintf("%s,%s", v, w3cPropagator)
 			os.Setenv(key, style)
 			log.Info(fmt.Sprintf("W3C context propagation not enabled. "+
-				"Updating '%s' from '%s' to '%s' to ", key, v, style))
+				"Updating '%s' from '%s' to '%s'.", key, v, style))
 			return
 		}
 	}
-	// trace context propagation not configured, setting it to tracecontext
-	os.Setenv("DD_TRACE_PROPAGATION_STYLE", w3cPropagator)
+	// trace context propagation was not configured through environment variable,
+	// setting propagation style to tracecontext
+	if v := os.Getenv(genericHeaderPropagationStyle); v == "" {
+		log.Info(fmt.Sprintf("Trace context propagation style not configured. "+
+			"Setting '%s' to '%s'.", genericHeaderPropagationStyle, w3cPropagator))
+		os.Setenv(genericHeaderPropagationStyle, w3cPropagator)
+	}
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
