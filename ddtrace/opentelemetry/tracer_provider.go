@@ -27,6 +27,9 @@
 package opentelemetry
 
 import (
+	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,16 +60,46 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	return &TracerProvider{ddopts: opts}
 }
 
+const (
+	w3cPropagator                 = "tracecontext"
+	genericHeaderPropagationStyle = "DD_TRACE_PROPAGATION_STYLE"
+)
+
 // Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
 		return &noopOteltracer{}
 	}
+	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_INJECT",
+		"DD_PROPAGATION_STYLE_INJECT", genericHeaderPropagationStyle)
+	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+		"DD_PROPAGATION_STYLE_EXTRACT", genericHeaderPropagationStyle)
 	tracer.Start(p.ddopts...)
 	return &oteltracer{
 		Tracer:   internal.GetGlobalTracer(),
 		provider: p,
+	}
+}
+
+func setW3CPropagationStyle(env ...string) {
+	for _, key := range env {
+		// if trace context propagation style was set but does not contain w3c propagator,
+		// append the w3c propagator
+		if v := os.Getenv(key); v != "" && !strings.Contains(v, w3cPropagator) {
+			style := fmt.Sprintf("%s,%s", v, w3cPropagator)
+			os.Setenv(key, style)
+			log.Info(fmt.Sprintf("W3C context propagation not enabled. "+
+				"Updating '%s' from '%s' to '%s'.", key, v, style))
+			return
+		}
+	}
+	// trace context propagation was not configured through environment variable,
+	// setting propagation style to tracecontext
+	if v := os.Getenv(genericHeaderPropagationStyle); v == "" {
+		log.Info(fmt.Sprintf("Trace context propagation style not configured. "+
+			"Setting '%s' to '%s'.", genericHeaderPropagationStyle, w3cPropagator))
+		os.Setenv(genericHeaderPropagationStyle, w3cPropagator)
 	}
 }
 
