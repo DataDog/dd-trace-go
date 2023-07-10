@@ -7,6 +7,7 @@
 package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -349,10 +350,6 @@ func eventBridgeTags(params interface{}) (map[string]string, error) {
 }
 
 func sfnTags(params interface{}) (map[string]string, error) {
-	nameFromExecutionARN := func(arn string) string {
-		parts := strings.Split(arn, ":")
-		return parts[len(parts)-2]
-	}
 	var stateMachineName, stateMachineArn string
 	switch input := params.(type) {
 	case *sfn.CreateStateMachineInput:
@@ -362,13 +359,17 @@ func sfnTags(params interface{}) (map[string]string, error) {
 	case *sfn.StartExecutionInput:
 		stateMachineArn = *input.StateMachineArn
 	case *sfn.StopExecutionInput:
-		if input.ExecutionArn != nil {
-			stateMachineName = nameFromExecutionARN(*input.ExecutionArn)
+		name, err := stateMachineNameFromExecutionARN(input.ExecutionArn)
+		if err != nil {
+			return nil, err
 		}
+		stateMachineName = name
 	case *sfn.DescribeExecutionInput:
-		if input.ExecutionArn != nil {
-			stateMachineName = nameFromExecutionARN(*input.ExecutionArn)
+		name, err := stateMachineNameFromExecutionARN(input.ExecutionArn)
+		if err != nil {
+			return nil, err
 		}
+		stateMachineName = name
 	case *sfn.ListExecutionsInput:
 		stateMachineArn = *input.StateMachineArn
 	case *sfn.UpdateStateMachineInput:
@@ -383,4 +384,17 @@ func sfnTags(params interface{}) (map[string]string, error) {
 	return map[string]string{
 		tags.SFNStateMachineName: stateMachineName,
 	}, nil
+}
+
+// stateMachineNameFromExecutionARN returns the state machine name from the given execution ARN.
+// The execution ARN should have a format like: arn:aws:states:us-east-1:123456789012:execution:stateMachineName:executionName
+func stateMachineNameFromExecutionARN(arn *string) (string, error) {
+	if arn == nil {
+		return "", errors.New("got empty execution ARN")
+	}
+	parts := strings.Split(*arn, ":")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("got unexpected execution ARN format: %q", arn)
+	}
+	return parts[len(parts)-2], nil
 }
