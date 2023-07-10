@@ -13,7 +13,16 @@ import (
 	"time"
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
+	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
+	redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
+	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
+	redistest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis"
+	redisV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v7"
+	redisV8test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v8"
+	mongotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go.mongodb.org/mongo-driver/mongo"
+	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -128,13 +137,24 @@ func TestIntegrations(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
-	integrations := []Integration{memcachetest.New(), dnstest.New()}
+	integrations := []Integration{
+		memcachetest.New(),
+		dnstest.New(),
+		redigotest.New(),
+		pgtest.New(),
+		redistest.New(),
+		redisV7test.New(),
+		redisV8test.New(),
+		mongotest.New(),
+		gocqltrace.New(),
+		gomodule_redigotest.New(),
+	}
 	for _, ig := range integrations {
 		name := ig.Name()
 		sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
-		t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 		for _, testCase := range testCases {
 			t.Run(name, func(t *testing.T) {
+				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 				// loop through all our environment for the testCase and set each variable
 				for k, v := range testCase.EnvVars {
