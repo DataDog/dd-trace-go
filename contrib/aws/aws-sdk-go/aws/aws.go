@@ -394,7 +394,7 @@ func stateMachineNameFromExecutionARN(arn *string) (string, error) {
 	}
 	parts := strings.Split(*arn, ":")
 	if len(parts) < 3 {
-		return "", fmt.Errorf("got unexpected execution ARN format: %q", arn)
+		return "", fmt.Errorf("got unexpected execution ARN format: %q", *arn)
 	}
 	return parts[len(parts)-2], nil
 }
