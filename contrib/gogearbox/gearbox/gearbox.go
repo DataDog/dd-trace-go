@@ -7,6 +7,9 @@
 package gearbox // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox"
 
 import (
+	"fmt"
+	"strconv"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -50,6 +53,13 @@ func Middleware(service string) func(gctx gearbox.Context) {
 		fctx.SetUserValue(tracer.GetActiveSpanKey(), span)
 
 		gctx.Next()
+
+		// TODO: Implement config for users to define error status codes
+		if status := fctx.Response.Header.StatusCode(); status >= 400 {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
+		} else {
+			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+		}
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(gctx))
 	}

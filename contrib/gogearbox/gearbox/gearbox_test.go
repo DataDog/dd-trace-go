@@ -6,7 +6,6 @@
 package gearbox
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/gogearbox/gearbox"
@@ -14,6 +13,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestTrace200(t *testing.T) {
@@ -44,19 +44,18 @@ func TestTrace200(t *testing.T) {
 }
 
 func TestChildSpan(t *testing.T) {
-	// assert := assert.New(t)
+	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	var reqctx *fasthttp.RequestCtx
+	reqctx := &fasthttp.RequestCtx{}
 	reqctx.URI().SetPath("/any")
 	reqctx.Request.Header.SetMethod("GET")
 	reqctx.Response.SetStatusCode(200)
 	gb := &GearboxContextMock{requestCtx: reqctx}
 	Middleware("gb")(gb)
-	fmt.Println("MTOFF", reqctx)
-	// _, ok := tracer.SpanFromContext(reqctx)
-	// assert.True(ok)
+	_, ok := tracer.SpanFromContext(reqctx)
+	assert.True(ok)
 }
 
 type GearboxContextMock struct {
