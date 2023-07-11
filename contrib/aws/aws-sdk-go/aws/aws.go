@@ -164,7 +164,6 @@ func awsRegion(req *request.Request) string {
 
 func extraTagsForService(req *request.Request) map[string]interface{} {
 	service := awsService(req)
-
 	var (
 		extraTags map[string]interface{}
 		err       error
@@ -189,6 +188,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	}
 	if err != nil {
 		log.Debug("failed to extract tags for AWS service %q: %v", service, err)
+		return nil
 	}
 	return extraTags
 }
