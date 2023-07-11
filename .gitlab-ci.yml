@@ -1,5 +1,6 @@
 stages:
   - benchmarks
+  - macrobenchmarks
   - test-apps
 
 variables:
@@ -12,4 +13,5 @@ variables:
 
 include:
   - ".gitlab/benchmarks.yml"
+  - ".gitlab/macrobenchmarks.yml"
   - ".gitlab/test-apps.yml"
