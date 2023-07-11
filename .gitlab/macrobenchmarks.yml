@@ -6,8 +6,8 @@ variables:
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
-    #- if: $CI_PIPELINE_SOURCE == "schedule"
-    #  when: always
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: always
     - when: manual
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
