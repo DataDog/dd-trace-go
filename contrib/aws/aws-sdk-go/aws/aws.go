@@ -40,9 +40,6 @@ func init() {
 }
 
 const (
-	tagOldAWSRegion  = "aws.region"
-	tagAWSRetryCount = "aws.retry_count"
-
 	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
 	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
 	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
@@ -90,7 +87,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.ResourceName(resourceName(req)),
 		tracer.Tag(tags.AWSAgent, awsAgent(req)),
 		tracer.Tag(tags.AWSOperation, awsOperation(req)),
-		tracer.Tag(tagOldAWSRegion, region),
+		tracer.Tag(tags.OldAWSRegion, region),
 		tracer.Tag(tags.AWSRegion, region),
 		tracer.Tag(tags.AWSService, awsService(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
@@ -113,7 +110,7 @@ func (h *handlers) Complete(req *request.Request) {
 	if !ok {
 		return
 	}
-	span.SetTag(tagAWSRetryCount, req.RetryCount)
+	span.SetTag(tags.AWSRetryCount, req.RetryCount)
 	span.SetTag(tags.AWSRequestID, req.RequestID)
 	if req.HTTPResponse != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(req.HTTPResponse.StatusCode))
@@ -165,30 +162,38 @@ func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
 }
 
-var serviceTags = map[string]func(params interface{}) (map[string]string, error){
-	"sqs":         sqsTags,
-	"s3":          s3Tags,
-	"sns":         snsTags,
-	"dynamodb":    dynamoDBTags,
-	"kinesis":     kinesisTags,
-	"EventBridge": eventBridgeTags,
-	"states":      sfnTags,
-}
-
-func extraTagsForService(req *request.Request) map[string]string {
+func extraTagsForService(req *request.Request) map[string]interface{} {
 	service := awsService(req)
-	fn, ok := serviceTags[service]
-	if !ok {
+
+	var (
+		extraTags map[string]interface{}
+		err       error
+	)
+	switch service {
+	case sqs.ServiceName:
+		extraTags, err = sqsTags(req.Params)
+	case s3.ServiceName:
+		extraTags, err = s3Tags(req.Params)
+	case sns.ServiceName:
+		extraTags, err = snsTags(req.Params)
+	case dynamodb.ServiceName:
+		extraTags, err = dynamoDBTags(req.Params)
+	case kinesis.ServiceName:
+		extraTags, err = kinesisTags(req.Params)
+	case eventbridge.ServiceName:
+		extraTags, err = eventBridgeTags(req.Params)
+	case sfn.ServiceName:
+		extraTags, err = sfnTags(req.Params)
+	default:
 		return nil
 	}
-	r, err := fn(req.Params)
 	if err != nil {
 		log.Debug("failed to extract tags for AWS service %q: %v", service, err)
 	}
-	return r
+	return extraTags
 }
 
-func sqsTags(params interface{}) (map[string]string, error) {
+func sqsTags(params interface{}) (map[string]interface{}, error) {
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
@@ -210,12 +215,12 @@ func sqsTags(params interface{}) (map[string]string, error) {
 	}
 	queueName := parts[len(parts)-1]
 
-	return map[string]string{
+	return map[string]interface{}{
 		tags.SQSQueueName: queueName,
 	}, nil
 }
 
-func s3Tags(params interface{}) (map[string]string, error) {
+func s3Tags(params interface{}) (map[string]interface{}, error) {
 	var bucket string
 	switch input := params.(type) {
 	case *s3.ListObjectsInput:
@@ -233,12 +238,12 @@ func s3Tags(params interface{}) (map[string]string, error) {
 	default:
 		return nil, nil
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		tags.S3BucketName: bucket,
 	}, nil
 }
 
-func snsTags(params interface{}) (map[string]string, error) {
+func snsTags(params interface{}) (map[string]interface{}, error) {
 	var destTag, destName, destARN string
 	switch input := params.(type) {
 	case *sns.PublishInput:
@@ -269,12 +274,12 @@ func snsTags(params interface{}) (map[string]string, error) {
 		}
 		destName = parts[len(parts)-1]
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		destTag: destName,
 	}, nil
 }
 
-func dynamoDBTags(params interface{}) (map[string]string, error) {
+func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
 	var tableName string
 	switch input := params.(type) {
 	case *dynamodb.GetItemInput:
@@ -290,12 +295,12 @@ func dynamoDBTags(params interface{}) (map[string]string, error) {
 	default:
 		return nil, nil
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		tags.DynamoDBTableName: tableName,
 	}, nil
 }
 
-func kinesisTags(params interface{}) (map[string]string, error) {
+func kinesisTags(params interface{}) (map[string]interface{}, error) {
 	var streamName string
 	switch input := params.(type) {
 	case *kinesis.PutRecordInput:
@@ -319,12 +324,12 @@ func kinesisTags(params interface{}) (map[string]string, error) {
 	default:
 		return nil, nil
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		tags.KinesisStreamName: streamName,
 	}, nil
 }
 
-func eventBridgeTags(params interface{}) (map[string]string, error) {
+func eventBridgeTags(params interface{}) (map[string]interface{}, error) {
 	var ruleName string
 	switch input := params.(type) {
 	case *eventbridge.PutRuleInput:
@@ -344,12 +349,12 @@ func eventBridgeTags(params interface{}) (map[string]string, error) {
 	default:
 		return nil, nil
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		tags.EventBridgeRuleName: ruleName,
 	}, nil
 }
 
-func sfnTags(params interface{}) (map[string]string, error) {
+func sfnTags(params interface{}) (map[string]interface{}, error) {
 	var stateMachineName, stateMachineArn string
 	switch input := params.(type) {
 	case *sfn.CreateStateMachineInput:
@@ -381,7 +386,7 @@ func sfnTags(params interface{}) (map[string]string, error) {
 		parts := strings.Split(stateMachineArn, ":")
 		stateMachineName = parts[len(parts)-1]
 	}
-	return map[string]string{
+	return map[string]interface{}{
 		tags.SFNStateMachineName: stateMachineName,
 	}, nil
 }

@@ -211,7 +211,7 @@ func TestRetries(t *testing.T) {
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Equal(t, mt.FinishedSpans()[0].Tag(tagAWSRetryCount), 3)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3)
 }
 
 func TestHTTPCredentials(t *testing.T) {
@@ -488,6 +488,22 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "states", span3.Tag("aws_service"))
 		assert.Equal(t, "DescribeExecution", span3.Tag("aws.operation"))
 		assert.Equal(t, sfnStateMachineName, span3.Tag("statemachinename"))
+	})
+	t.Run("EC2", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := ec2.New(sess)
+		_, err := c.DescribeInstances(&ec2.DescribeInstancesInput{})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "ec2", s0.Tag("aws_service"))
+		assert.Equal(t, "DescribeInstances", s0.Tag("aws.operation"))
+		// no extra tags set at this point for EC2
 	})
 }
 

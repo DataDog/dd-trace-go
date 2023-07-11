@@ -40,12 +40,6 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
-// duplicate tags that will be phased out in favor of aws_service & region
-const (
-	tagOldAWSService = "aws.service"
-	tagOldAWSRegion  = "aws.region"
-)
-
 type spanTimestampKey struct{}
 
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
@@ -91,10 +85,10 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
-			tracer.Tag(tagOldAWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
 			tracer.Tag(tags.AWSOperation, operation),
-			tracer.Tag(tagOldAWSService, serviceID),
+			tracer.Tag(tags.OldAWSService, serviceID),
 			tracer.Tag(tags.AWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),

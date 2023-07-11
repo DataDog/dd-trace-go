@@ -6,11 +6,17 @@
 package tags
 
 const (
-	AWSAgent     = "aws.agent"
-	AWSService   = "aws_service"
-	AWSOperation = "aws.operation"
-	AWSRegion    = "region"
-	AWSRequestID = "aws.request_id"
+	// OldAWSService is a duplicate tag that will be phased out in favor of AWSService.
+	OldAWSService = "aws.service"
+	// OldAWSRegion is a duplicate tag that will be phased out in favor of AWSRegion.
+	OldAWSRegion = "aws.region"
+
+	AWSAgent      = "aws.agent"
+	AWSService    = "aws_service"
+	AWSOperation  = "aws.operation"
+	AWSRegion     = "region"
+	AWSRequestID  = "aws.request_id"
+	AWSRetryCount = "aws.retry_count"
 
 	SQSQueueName = "queuename"
 
