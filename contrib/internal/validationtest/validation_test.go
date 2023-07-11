@@ -21,7 +21,11 @@ import (
 	mongotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go.mongodb.org/mongo-driver/mongo"
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
 	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
+
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
+	leveldbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/syndtr/goleveldb/leveldb"
+	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -134,9 +138,9 @@ var (
 )
 
 func TestIntegrations(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
+	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	// }
 	integrations := []Integration{
 		memcachetest.New(),
 		dnstest.New(),
@@ -148,6 +152,9 @@ func TestIntegrations(t *testing.T) {
 		mongotest.New(),
 		gocqltrace.New(),
 		gomodule_redigotest.New(),
+		redisV9test.New(),
+		leveldbtest.New(),
+		buntdbtest.New(),
 	}
 	for _, ig := range integrations {
 		name := ig.Name()
