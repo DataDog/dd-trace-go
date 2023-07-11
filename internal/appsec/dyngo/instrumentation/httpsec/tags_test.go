@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
 	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
 )
 
