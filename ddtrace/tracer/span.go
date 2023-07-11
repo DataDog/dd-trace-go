@@ -200,7 +200,9 @@ func (s *span) root() *span {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
-	var cfg UserMonitoringConfig
+	cfg := UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
 	for _, fn := range opts {
 		fn(&cfg)
 	}
@@ -228,14 +230,19 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		}
 		delete(root.Meta, keyPropagatedUserID)
 	}
-	for k, v := range map[string]string{
+
+	usrData := map[string]string{
 		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
 		keyUserRole:      cfg.Role,
 		keyUserSessionID: cfg.SessionID,
-	} {
+	}
+	for k, v := range cfg.Metadata {
+		usrData[fmt.Sprintf("usr.%s", k)] = v
+	}
+	for k, v := range usrData {
 		if v != "" {
 			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
@@ -700,6 +707,10 @@ const (
 	keyTraceID128 = "_dd.p.tid"
 	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
+	// keyPeerServiceSource indicates the precursor tag that was used as the value of peer.service.
+	keyPeerServiceSource = "_dd.peer.service.source"
+	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
+	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

@@ -353,17 +353,43 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 func TestAppendMiddlewareSnsPublish(t *testing.T) {
 	tests := []struct {
 		name               string
+		publishInput       *sns.PublishInput
+		tagKey             string
+		expectedTagValue   string
 		responseStatus     int
 		responseBody       []byte
 		expectedStatusCode int
 	}{
 		{
-			name:               "test mocked sns failure request",
+			name: "test mocked sns failure request",
+			publishInput: &sns.PublishInput{
+				Message:  aws.String("Hello world!"),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
+			},
+			tagKey:             tagTopicName,
+			expectedTagValue:   "MyTopicName",
 			responseStatus:     400,
 			expectedStatusCode: 400,
 		},
 		{
-			name:               "test mocked sns success request",
+			name: "test mocked sns destination topic arn success request",
+			publishInput: &sns.PublishInput{
+				Message:  aws.String("Hello world!"),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
+			},
+			tagKey:             tagTopicName,
+			expectedTagValue:   "MyTopicName",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+		{
+			name: "test mocked sns destination target arn success request",
+			publishInput: &sns.PublishInput{
+				Message:   aws.String("Hello world!"),
+				TargetArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTargetName"),
+			},
+			tagKey:             tagTargetName,
+			expectedTagValue:   "MyTargetName",
 			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
@@ -393,10 +419,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			snsClient := sns.NewFromConfig(awsCfg)
-			snsClient.Publish(context.Background(), &sns.PublishInput{
-				Message:  aws.String("Hello world!"),
-				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
-			})
+			snsClient.Publish(context.Background(), tt.publishInput)
 
 			spans := mt.FinishedSpans()
 
@@ -406,7 +429,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "Publish", s.Tag(tagAWSOperation))
 			assert.Equal(t, "SNS", s.Tag(tagAWSService))
 			assert.Equal(t, "SNS", s.Tag(tagService))
-			assert.Equal(t, "MyTopicName", s.Tag(tagTopicName))
+			assert.Equal(t, tt.expectedTagValue, s.Tag(tt.tagKey))
 
 			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
 			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
@@ -920,8 +943,8 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
 		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestMessagingNamingSchema(t *testing.T) {
@@ -983,8 +1006,8 @@ func TestMessagingNamingSchema(t *testing.T) {
 		WithDDService:            []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
 		WithDDServiceAndOverride: repeat(serviceOverride, 5),
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func repeat(s string, n int) []string {
@@ -993,4 +1016,64 @@ func repeat(s string, n int) []string {
 		r[i] = s
 	}
 	return r
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     []Option
+		errExist bool
+	}{
+		{
+			name:     "with defaults",
+			opts:     nil,
+			errExist: true,
+		},
+		{
+			name: "with errCheck true",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return true
+			})},
+			errExist: true,
+		}, {
+			name: "with errCheck false",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return false
+			})},
+			errExist: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(400)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg, tt.opts...)
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+			s := spans[0]
+			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
+		})
+	}
 }

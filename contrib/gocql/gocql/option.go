@@ -20,20 +20,21 @@ type queryConfig struct {
 	noDebugStack                 bool
 	analyticsRate                float64
 	errCheck                     func(err error) bool
+	customTags                   map[string]interface{}
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
-func defaults(cfg *queryConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+func defaultConfig() *queryConfig {
+	cfg := &queryConfig{}
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
 	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "cassandra.batch"),
+		namingschema.WithOverrideV0("cassandra.batch"),
 	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
@@ -42,6 +43,7 @@ func defaults(cfg *queryConfig) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.errCheck = func(error) bool { return true }
+	return cfg
 }
 
 // WithServiceName sets the given service name for the returned query.
@@ -114,5 +116,15 @@ func WithErrorCheck(fn func(err error) bool) WrapOption {
 		// This only affects whether the span/trace is marked as success/error,
 		// the calls to the gocql API still return the upstream error code.
 		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key.
+func WithCustomTag(key string, value interface{}) WrapOption {
+	return func(cfg *queryConfig) {
+		if cfg.customTags == nil {
+			cfg.customTags = make(map[string]interface{})
+		}
+		cfg.customTags[key] = value
 	}
 }

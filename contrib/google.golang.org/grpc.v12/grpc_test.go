@@ -69,6 +69,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 	assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+	assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
 	assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
 	assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -77,6 +78,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 	assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+	assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 	assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 }
 
@@ -125,6 +127,7 @@ func TestChild(t *testing.T) {
 	assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 	assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+	assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 	assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 }
 
@@ -156,6 +159,7 @@ func TestPass(t *testing.T) {
 	assert.True(s.FinishTime().Sub(s.StartTime()) > 0)
 	assert.Equal(s.Tag(ext.Component), "google.golang.org/grpc.v12")
 	assert.Equal(s.Tag(ext.SpanKind), ext.SpanKindServer)
+	assert.Equal(s.Tag(ext.RPCService), "grpc.Fixture")
 }
 
 // fixtureServer a dummy implemenation of our grpc fixtureServer.
@@ -373,8 +377,8 @@ func TestServerNamingSchema(t *testing.T) {
 		WithDDService:            []string{ddService},
 		WithDDServiceAndOverride: []string{serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func TestClientNamingSchema(t *testing.T) {
@@ -408,6 +412,6 @@ func TestClientNamingSchema(t *testing.T) {
 		WithDDService:            []string{"grpc.client"},
 		WithDDServiceAndOverride: []string{serviceOverride},
 	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, "", wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

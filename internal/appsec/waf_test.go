@@ -64,8 +64,9 @@ func TestCustomRules(t *testing.T) {
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
-			_, err = srv.Client().Do(req)
+			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -98,23 +99,40 @@ func TestUserRules(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	t.Run("custom-001", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	for _, tc := range []struct {
+		name string
+		url  string
+		rule string
+	}{
+		{
+			name: "custom-001",
+			rule: "custom-001",
+		},
+		{
+			name: "custom-action",
+			url:  "?match=match",
+			rule: "query-002",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		req, err := http.NewRequest("GET", srv.URL, nil)
-		require.NoError(t, err)
+			req, err := http.NewRequest("GET", srv.URL+tc.url, nil)
+			require.NoError(t, err)
 
-		_, err = srv.Client().Do(req)
-		require.NoError(t, err)
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
 
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
-		event := spans[0].Tag("_dd.appsec.json")
-		require.Contains(t, event, "custom-001")
-	})
+			event := spans[0].Tag("_dd.appsec.json")
+			require.Contains(t, event, tc.rule)
 
+		})
+	}
 }
 
 // TestWAF is a simple validation test of the WAF protecting a net/http server. It only mockups the agent and tests that
@@ -151,6 +169,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -182,6 +201,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -247,6 +267,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -380,6 +401,7 @@ func TestBlocking(t *testing.T) {
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)

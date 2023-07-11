@@ -16,16 +16,16 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func traceIDFrom64Bits(i uint64) traceID {
@@ -819,6 +819,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
 			{headerPropagationStyle: "datadog"},
+			{headerPropagationStyle: ""},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1130,11 +1131,10 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
-	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
+	t.Run("w3c extract / datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
-			{headerPropagationStyle: "traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1155,8 +1155,6 @@ func TestEnvVars(t *testing.T) {
 						tracestateHeader:  "foo=1,dd=s:-1",
 					},
 					outHeaders: TextMapCarrier{
-						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-						tracestateHeader:      "dd=s:-1;o:synthetics;t.tid:4bf92f3577b34da6,foo=1",
 						DefaultPriorityHeader: "-1",
 						DefaultTraceIDHeader:  "4bf92f3577b34da6a3ce929d0e0e4736",
 						DefaultParentIDHeader: "00f067aa0ba902b7",
@@ -1624,6 +1622,7 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
 	tracer := newTracer()
 	defer tracer.Stop()
 	headers := TextMapCarrier{
@@ -1784,8 +1783,6 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 	ctx := root.Context().(*spanContext)
 
-	setPropagatingTag(ctx, w3cTraceIDTag,
-		"4bf92f3577b34da6a3ce929d0e0e4736")
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
@@ -1812,6 +1809,19 @@ func BenchmarkExtractDatadog(b *testing.B) {
 		DefaultPriorityHeader: "-1",
 		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
+func BenchmarkExtractW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1984,4 +1994,55 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 		}
 		wg.Wait()
 	}
+}
+
+func TestMalformedTID(t *testing.T) {
+	assert := assert.New(t)
+	t.Run("datadog, short tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, malformed tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, valid tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+	})
 }

@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -51,6 +51,8 @@ const (
 	ASMUserBlocking
 	// ASMCustomRules represents the capability for ASM to receive and use user-defined security rules
 	ASMCustomRules
+	// ASMCustomRules represents the capability for ASM to receive and use user-defined blocking responses
+	ASMCustomBlockingResponse
 )
 
 // ProductUpdate represents an update for a specific product.
