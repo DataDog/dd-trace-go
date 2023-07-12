@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTags(t *testing.T) {

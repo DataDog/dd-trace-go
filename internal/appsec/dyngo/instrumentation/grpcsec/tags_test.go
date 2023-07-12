@@ -11,12 +11,12 @@ import (
 	"net"
 	"testing"
 
+	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+
 	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
-
-	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 )
 
 func TestTags(t *testing.T) {
