@@ -9,26 +9,39 @@ import (
 	"encoding/json"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
+		var err error
+		var blocked bool
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			blocked = a.Blocking()
+			err = status.Error(codes.Code(code), e.Error())
+		}))
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
+			if blocked {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
@@ -36,12 +49,15 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 			setAppSecEventsTags(ctx, span, events)
 		}()
 
-		if op.Error != nil {
-			return nil, op.Error
+		if err != nil {
+			return nil, err
 		}
-
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
-		return handler(ctx, req)
+		rv, err := handler(ctx, req)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return rv, err
 	}
 }
 
@@ -49,11 +65,17 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
+		var err error
+		var blocked bool
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			blocked = a.Blocking()
+			err = status.Error(codes.Code(code), e.Error())
+		}))
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,
@@ -61,6 +83,9 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
+			if blocked {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
+			}
 			instrumentation.SetTags(span, op.Tags())
 			if len(events) == 0 {
 				return
@@ -68,11 +93,15 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 			setAppSecEventsTags(stream.Context(), span, events)
 		}()
 
-		if op.Error != nil {
-			return op.Error
+		if err != nil {
+			return err
 		}
 
-		return handler(srv, stream)
+		err = handler(srv, stream)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return err
 	}
 }
 
