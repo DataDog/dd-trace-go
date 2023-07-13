@@ -9,8 +9,8 @@ package gearbox // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gea
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -27,19 +27,23 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
-func Middleware(service string) func(gctx gearbox.Context) {
-	cfg := newConfig(service)
-
-	log.Debug("contrib/gogearbox/gearbox: Configuring Middleware: Service: %s", service)
-
+func Middleware(opts ...Option) func(gctx gearbox.Context) {
+	cfg := newConfig()
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	log.Debug("contrib/gogearbox/gearbox: Configuring Middleware: Service: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 	}
-	spanOpts = append(spanOpts, tracer.Tag(ext.Component, componentName), tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-
 	return func(gctx gearbox.Context) {
+		if cfg.ignoreRequest(gctx) {
+			gctx.Next()
+			return
+		}
 		fctx := gctx.Context()
 		spanOpts = defaultSpanTags(spanOpts, fctx)
+		// Create an instance of FasthttpContextCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
 		fcc := &FasthttpContextCarrier{
 			reqCtx: fctx,
 		}
@@ -47,26 +51,30 @@ func Middleware(service string) func(gctx gearbox.Context) {
 			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
 		}
 		span, _ := tracer.StartSpanFromContext(fctx, "http.request", spanOpts...)
-		defer func() {
-			httptrace.FinishRequestSpan(span, fctx.Response.StatusCode())
-		}()
+		defer span.Finish()
+
 		fctx.SetUserValue(tracer.GetActiveSpanKey(), span)
 
 		gctx.Next()
 
-		// TODO: Implement config for users to define error status codes
-		if status := fctx.Response.Header.StatusCode(); status >= 400 {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
-		} else {
-			span.SetTag(ext.HTTPCode, strconv.Itoa(status))
-		}
-
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(gctx))
+
+		// TODO: Implement config for users to define error status codes
+		status := fctx.Response.StatusCode()
+		if cfg.isStatusError(status) {
+			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
+		}
+		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	}
 }
 
+// MTOFF: Does it matter when these span tags are added?
+// other integrations have some tags added after startSpan/before FinishSpan, 
+// whereas I'm adding as many as possible before startSpan, since none of these depend on operations that happen further down the req chain AFAICT
 func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
-	opts = append([]ddtrace.StartSpanOption{ 
+	opts = append([]ddtrace.StartSpanOption{
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(ctx.Method())),
 		tracer.Tag(ext.HTTPURL, string(ctx.URI().FullURI())),
@@ -79,14 +87,14 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 	return opts
 }
 
-// this will be useful if we add a fasthttp integration
-// might also be useful for the fiber integration
+// This will be useful if we add a fasthttp integration
+// Might also be useful for the fiber integration
 type FasthttpContextCarrier struct {
 	reqCtx *fasthttp.RequestCtx
 }
 
-func (gcc *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error) error {
-	reqHeader := &gcc.reqCtx.Request.Header
+func (f *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error) error {
+	reqHeader := &f.reqCtx.Request.Header
 	keys := reqHeader.PeekKeys()
 	for h := range keys {
 		header := string(keys[h])
@@ -94,8 +102,17 @@ func (gcc *FasthttpContextCarrier) ForeachKey(handler func(key, val string) erro
 		for v := range vals {
 			if err := handler(header, string(vals[v])); err != nil {
 				return err
-		}
+			}
 		}
 	}
 	return nil
+}
+
+func (f *FasthttpContextCarrier) Set(key, val string) {
+	k := strings.ToLower(key)
+	f.reqCtx.Request.Header.Set(k, val)
+}
+
+func (f *FasthttpContextCarrier) Get(key string) string {
+	return string(f.reqCtx.Request.Header.Peek(key))
 }
