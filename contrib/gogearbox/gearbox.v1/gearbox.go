@@ -87,12 +87,17 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 	return opts
 }
 
-// This will be useful if we add a fasthttp integration
-// Might also be useful for the fiber integration
+// MTOFF: This will be useful if we add a fasthttp integration. Might also be useful for the fiber integration.
+// But should the implement it be separated into a gearboxutils pkg? Really it's a fashttp util....
+
+// FasthttpContextCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
+// of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
+// distributed tracing.
 type FasthttpContextCarrier struct {
 	reqCtx *fasthttp.RequestCtx
 }
 
+// ForeachKey iterates over fasthttp request header keys and values
 func (f *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error) error {
 	reqHeader := &f.reqCtx.Request.Header
 	keys := reqHeader.PeekKeys()
@@ -108,11 +113,14 @@ func (f *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error)
 	return nil
 }
 
+// Set adds the given value to request header for key. Key will be lowercased to match
+// the metadata implementation.
 func (f *FasthttpContextCarrier) Set(key, val string) {
 	k := strings.ToLower(key)
 	f.reqCtx.Request.Header.Set(k, val)
 }
 
+// Get will return the first entry in the metadata at the given key.
 func (f *FasthttpContextCarrier) Get(key string) string {
 	return string(f.reqCtx.Request.Header.Peek(key))
 }

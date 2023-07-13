@@ -19,20 +19,27 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+func newReqCtx(code int) *fasthttp.RequestCtx {
+	reqctx := &fasthttp.RequestCtx{}
+	reqctx.URI().SetPath("/any")
+	reqctx.Request.Header.SetMethod("GET")
+	reqctx.Response.SetStatusCode(code)
+	return reqctx
+}
+
+// Test all of the expected span metadata on a "default" span
 func TestTrace200(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/any")
-	reqctx.Request.Header.SetMethod("GET")
-	reqctx.Response.SetStatusCode(200)
+	reqctx := newReqCtx(200)
 	gb := &GearboxContextMock{requestCtx: reqctx}
 	Middleware(WithServiceName("gb"))(gb)
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
+
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(span.Tag(ext.ResourceName), "GET /any")
@@ -46,15 +53,13 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
+// Test that the gearbox request context retains the tracer context
 func TestChildSpan(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/any")
-	reqctx.Request.Header.SetMethod("GET")
-	reqctx.Response.SetStatusCode(200)
+	reqctx := newReqCtx(200)
 	gb := &GearboxContextMock{requestCtx: reqctx}
 	Middleware(WithServiceName("gb"))(gb)
 	_, ok := tracer.SpanFromContext(reqctx)
@@ -66,10 +71,8 @@ func TestStatusError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/err")
-	reqctx.Request.Header.SetMethod("GET")
 	code := 500
+	reqctx := newReqCtx(code)
 	errMsg := "This is an error"
 	wantErr := fmt.Sprintf("%d: %s", code, errMsg)
 	reqctx.Error(errMsg, code)
@@ -86,15 +89,16 @@ func TestStatusError(t *testing.T) {
 }
 
 func TestWithStatusCheck(t *testing.T) {
+	customErrChecker := func(statusCode int) bool {
+		return statusCode >= 600
+	}
 	t.Run("isError", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		reqctx := &fasthttp.RequestCtx{}
-		reqctx.URI().SetPath("/err")
-		reqctx.Request.Header.SetMethod("GET")
 		code := 600
+		reqctx := newReqCtx(code)
 		msg := "This is an error"
 		reqctx.Error(msg, code)
 		gb := &GearboxContextMock{requestCtx: reqctx}
@@ -112,10 +116,8 @@ func TestWithStatusCheck(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		reqctx := &fasthttp.RequestCtx{}
-		reqctx.URI().SetPath("/err")
-		reqctx.Request.Header.SetMethod("GET")
 		code := 500
+		reqctx := newReqCtx(code)
 		reqctx.Error("This is an error", code)
 		gb := &GearboxContextMock{requestCtx: reqctx}
 
@@ -128,17 +130,18 @@ func TestWithStatusCheck(t *testing.T) {
 	})
 }
 func TestCustomResourceNamer(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	reqctx := newReqCtx(200)
+	gb := &GearboxContextMock{requestCtx: reqctx}
+
 	customRsc := "custom resource"
 	namer := func(gctx gearbox.Context) string {
 		return customRsc
 	}
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/any/route")
-	reqctx.Request.Header.SetMethod("GET")
-	gb := &GearboxContextMock{requestCtx: reqctx}
+
 	Middleware(WithResourceNamer(namer))(gb)
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
@@ -153,11 +156,13 @@ func TestWithIgnoreRequest(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/skip")
-	reqctx.Request.Header.SetMethod("GET")
+	reqctx := newReqCtx(200)
 	// explicitly giving gb.index a value, so we can see it increment clearly
 	gb := &GearboxContextMock{requestCtx: reqctx, index: 0}
+
+	ignoreResources := func(c gearbox.Context) bool {
+		return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
+	}
 	Middleware(WithIgnoreRequest(ignoreResources))(gb)
 	assert.Len(mt.FinishedSpans(), 0)
 	assert.Equal(1, gb.index)
@@ -168,9 +173,7 @@ func TestPropagation(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		reqctx := &fasthttp.RequestCtx{}
-		reqctx.URI().SetPath("/any")
-		reqctx.Request.Header.SetMethod("GET")
+		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
 		fcc := &FasthttpContextCarrier{gb.Context()}
 
@@ -192,9 +195,7 @@ func TestPropagation(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		reqctx := &fasthttp.RequestCtx{}
-		reqctx.URI().SetPath("/any")
-		reqctx.Request.Header.SetMethod("GET")
+		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
 		fcc := &FasthttpContextCarrier{gb.Context()}
 
@@ -205,21 +206,16 @@ func TestPropagation(t *testing.T) {
 		}
 		Middleware(WithServiceName("gb"))(gb)
 		span, ok := tracer.SpanFromContext(gb.Context())
-		fmt.Println(span.Context().TraceID())
 		assert.True(ok)
 		assert.Equal(span.(mocktracer.Span).TraceID(), pspan.(mocktracer.Span).TraceID())
 		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
 	})
 }
 
-func ignoreResources(c gearbox.Context) bool {
-	return strings.HasPrefix(string(c.Context().URI().Path()), "/skip")
-}
-
-func customErrChecker(statusCode int) bool {
-	return statusCode >= 600
-}
-
+// GearboxContextMock provides a mock implementation the Gearbox library to be used in testing.
+// It mocks the way Gearbox.Context is interfaced with and updated when the library handles
+// real HTTP traffic without needing to spin up a server.
+// See: https://pkg.go.dev/github.com/gogearbox/gearbox#Context
 type GearboxContextMock struct {
 	requestCtx *fasthttp.RequestCtx
 	index      int
@@ -257,11 +253,9 @@ func (g *GearboxContextMock) Get(key string) (v string) {
 	return v
 }
 func (g *GearboxContextMock) SetLocal(key string, value interface{}) {
-	fmt.Println("setlocal")
 	g.requestCtx.SetUserValue(key, value)
 }
 func (g *GearboxContextMock) GetLocal(key string) (i interface{}) {
-	fmt.Println("getlocal")
 	return g.requestCtx.UserValue(key)
 }
 func (g *GearboxContextMock) Body() (b string) {
