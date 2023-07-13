@@ -146,9 +146,9 @@ func TestCustomResourceNamer(t *testing.T) {
 	assert.Equal(customRsc, span.Tag(ext.ResourceName))
 }
 
-// I can't create a real http request, but I can simulate middleware being run: 
+// I can't create a real http request, but I can simulate middleware being run:
 // by checking that the context's `index` has been incremented
-func TestWithIgnoreRequest(t *testing.T){
+func TestWithIgnoreRequest(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -221,8 +221,8 @@ func customErrChecker(statusCode int) bool {
 }
 
 type GearboxContextMock struct {
-	requestCtx  *fasthttp.RequestCtx
-	index int 
+	requestCtx *fasthttp.RequestCtx
+	index      int
 }
 
 func (g *GearboxContextMock) Next() {
@@ -240,7 +240,7 @@ func (g *GearboxContextMock) Query(key string) (v string) {
 func (g *GearboxContextMock) SendBytes(value []byte) (c gearbox.Context) {
 	return c
 }
-func (g *GearboxContextMock) SendString(value string) (gearbox.Context) {
+func (g *GearboxContextMock) SendString(value string) gearbox.Context {
 	g.requestCtx.SetBodyString(value)
 	return g
 }
@@ -270,6 +270,3 @@ func (g *GearboxContextMock) Body() (b string) {
 func (g *GearboxContextMock) ParseBody(out interface{}) (e error) {
 	return e
 }
-
-
-

@@ -23,7 +23,7 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 
 // MTOFF: I had to make add a getter b/c gearbox needs it
 // GetActiveSpanKey returns the activeSpanKey
-func GetActiveSpanKey() contextKey{
+func GetActiveSpanKey() contextKey {
 	return activeSpanKey
 }
 

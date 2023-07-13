@@ -69,7 +69,7 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 }
 
 // MTOFF: Does it matter when these span tags are added?
-// other integrations have some tags added after startSpan/before FinishSpan, 
+// other integrations have some tags added after startSpan/before FinishSpan,
 // whereas I'm adding as many as possible before startSpan, since none of these depend on operations that happen further down the req chain AFAICT
 func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	opts = append([]ddtrace.StartSpanOption{
@@ -82,7 +82,7 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 		tracer.Measured(),
 	}, opts...)
 	if host := string(ctx.Host()); len(host) > 0 {
-		opts = append([]ddtrace.StartSpanOption{ tracer.Tag("http.host", host)}, opts...)
+		opts = append([]ddtrace.StartSpanOption{tracer.Tag("http.host", host)}, opts...)
 	}
 	return opts
 }

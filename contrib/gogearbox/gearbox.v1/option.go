@@ -15,9 +15,9 @@ import (
 const defaultServiceName = "gearbox"
 
 type config struct {
-	serviceName string
-	spanName string
-	spanOpts []ddtrace.StartSpanOption
+	serviceName   string
+	spanName      string
+	spanOpts      []ddtrace.StartSpanOption
 	isStatusError func(int) bool
 	resourceNamer func(gearbox.Context) string
 	ignoreRequest func(gearbox.Context) bool
@@ -28,8 +28,8 @@ type Option func(*config)
 // MTOFF: Do we want to support app analytics on new integrations? As in, should I add support for it?
 func newConfig() *config {
 	return &config{
-		serviceName: namingschema.NewDefaultServiceName(defaultServiceName).GetName(),
-		spanName: namingschema.NewHTTPServerOp().GetName(),
+		serviceName:   namingschema.NewDefaultServiceName(defaultServiceName).GetName(),
+		spanName:      namingschema.NewHTTPServerOp().GetName(),
 		isStatusError: isServerError,
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: defaultResourcesIgnored,
