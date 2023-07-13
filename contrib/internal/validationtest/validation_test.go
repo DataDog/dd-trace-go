@@ -14,6 +14,7 @@ import (
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
 	redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
+	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
 	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
 	redistest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis"
 	redisV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v7"
@@ -157,6 +158,7 @@ func TestIntegrations(t *testing.T) {
 		leveldbtest.New(),
 		buntdbtest.New(),
 		gormv1test.New(),
+		mgotest.New(),
 	}
 	for _, ig := range integrations {
 		name := ig.Name()
