@@ -120,6 +120,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 	instrumentation.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
+		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
 		instrumentation.SetStringTags(span, ipTags)
 
 		var bypassHandler http.Handler
@@ -138,6 +139,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			}
 
 			events := op.Finish(HandlerOperationRes{Status: status})
+
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
 			if blocking {
@@ -146,14 +148,20 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 					f()
 				}
 			}
+
 			if bypassHandler != nil {
 				bypassHandler.ServeHTTP(w, r)
 			}
+
+			// Add the request headers span tags out of args.Headers instead of r.Header as it was normalized and some
+			// extra headers have been added such as the Host header which is removed from the original Go request headers
+			// map
+			setRequestHeadersTags(span, args.Headers)
+			setResponseHeadersTags(span, w.Header())
 			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			if len(events) > 0 {
+				SetSecurityEventsTags(span, events)
 			}
-			SetSecurityEventTags(span, events, args.Headers, w.Header())
 		}()
 
 		if bypassHandler != nil {
@@ -161,13 +169,10 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			bypassHandler = nil
 		}
 		handler.ServeHTTP(w, r)
-
 	})
 }
 
-// MakeHandlerOperationArgs creates the HandlerOperationArgs out of a standard
-// http.Request along with the given current span. It returns an empty structure
-// when appsec is disabled.
+// MakeHandlerOperationArgs creates the HandlerOperationArgs value.
 func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
 	headers := make(http.Header, len(r.Header))
 	for k, v := range r.Header {
@@ -189,6 +194,15 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 		PathParams: pathParams,
 		ClientIP:   clientIP,
 	}
+}
+
+// MakeHandlerOperationRes creates the HandlerOperationRes value.
+func MakeHandlerOperationRes(w http.ResponseWriter) HandlerOperationRes {
+	var status int
+	if mw, ok := w.(interface{ Status() int }); ok {
+		status = mw.Status()
+	}
+	return HandlerOperationRes{Status: status}
 }
 
 // Return the map of parsed cookies if any and following the specification of
