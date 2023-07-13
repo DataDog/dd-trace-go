@@ -24,6 +24,10 @@ func New() *Integration {
 	return &Integration{}
 }
 
+func (i *Integration) ResetNumSpans() {
+	i.numSpans = 0
+}
+
 func (i *Integration) Name() string {
 	return "contrib/gocql/gocql"
 }
@@ -51,15 +55,15 @@ func (i *Integration) Init(t *testing.T) func() {
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
 	q := i.session.Query("SELECT * from trace.person")
-	gocqltrace.WrapQuery(q, gocqltrace.WithServiceName("TestServiceName")).Exec()
+	gocqltrace.WrapQuery(q).Exec()
 	q2 := i.session.Query("SELECT * from trace.person")
-	gocqltrace.WrapQuery(q2, gocqltrace.WithServiceName("TestServiceName")).Exec()
+	gocqltrace.WrapQuery(q2).Exec()
 	q3 := i.session.Query("SELECT * from trace.person")
-	gocqltrace.WrapQuery(q3, gocqltrace.WithServiceName("TestServiceName")).Exec()
+	gocqltrace.WrapQuery(q3).Exec()
 	i.numSpans += 3
 
 	b := i.session.NewBatch(gocql.UnloggedBatch)
-	tb := gocqltrace.WrapBatch(b, gocqltrace.WithServiceName("TestServiceName"), gocqltrace.WithResourceName("BatchInsert"))
+	tb := gocqltrace.WrapBatch(b)
 
 	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")

@@ -34,8 +34,10 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) func() {
 	t.Helper()
-	defer sqltest.Prepare(gormtest.TableName)()
-	return func() {}
+	close_func := sqltest.Prepare(gormtest.TableName)
+	return func() {
+		close_func()
+	}
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -55,6 +57,5 @@ func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
 	return db.DB()
 }

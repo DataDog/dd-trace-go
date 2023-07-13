@@ -34,8 +34,10 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) func() {
 	t.Helper()
-	defer sqltest.Prepare(gormtest.TableName)()
-	return func() {}
+	close_func := sqltest.Prepare(gormtest.TableName)
+	return func() {
+		close_func()
+	}
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -44,6 +46,10 @@ func (i *Integration) GenSpans(t *testing.T) {
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) ResetNumSpans() {
+	i.numSpans = 0
 }
 
 func registerFunc(driverName string, driver driver.Driver) {

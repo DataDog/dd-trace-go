@@ -26,30 +26,33 @@ func Prepare(tableName string) func() {
 	queryDrop := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
 	queryCreate := fmt.Sprintf("CREATE TABLE %s (id integer NOT NULL DEFAULT '0', name text)", tableName)
 	mysql, err := sql.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
-	defer mysql.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	mysql.Exec(queryDrop)
 	mysql.Exec(queryCreate)
+
 	postgres, err := sql.Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
-	defer postgres.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	postgres.Exec(queryDrop)
 	postgres.Exec(queryCreate)
+
 	// mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
-	// defer mssql.Close()
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
 	// mssql.Exec(queryDrop)
 	// mssql.Exec(queryCreate)
+
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
 		//mssql.Exec(queryDrop)
+		mysql.Close()
+		postgres.Close()
+		// mssql.Close()
 	}
 }
 

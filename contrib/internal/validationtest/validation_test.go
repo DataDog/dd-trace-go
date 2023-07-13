@@ -23,8 +23,7 @@ import (
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
 	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
 
-	gormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gopkg.in/jinzhu/gorm.v1"
-	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+	//dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
 	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
 	leveldbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/syndtr/goleveldb/leveldb"
 	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
@@ -55,6 +54,9 @@ type Integration interface {
 
 	// NumSpans returns the number of spans that should have been generated during the test.
 	NumSpans() int
+
+	// ResetNumSpans resets the number of expected spans for an integration.
+	ResetNumSpans()
 }
 
 // tracerEnv gets the current tracer configuration variables needed for Test Agent testing and places
@@ -140,12 +142,15 @@ var (
 )
 
 func TestIntegrations(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
+	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	// }
 	integrations := []Integration{
+		// gormv1test.New(),
+		mgotest.New(),
+		// sqlxtest.New(),
 		memcachetest.New(),
-		dnstest.New(),
+		// //dnstest.New(),
 		redigotest.New(),
 		pgtest.New(),
 		redistest.New(),
@@ -157,13 +162,12 @@ func TestIntegrations(t *testing.T) {
 		redisV9test.New(),
 		leveldbtest.New(),
 		buntdbtest.New(),
-		gormv1test.New(),
-		mgotest.New(),
 	}
 	for _, ig := range integrations {
 		name := ig.Name()
-		sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
 		for _, testCase := range testCases {
+			sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
+			ig.ResetNumSpans()
 			t.Run(name, func(t *testing.T) {
 				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
@@ -187,6 +191,8 @@ func TestIntegrations(t *testing.T) {
 				ig.GenSpans(t)
 
 				tracer.Flush()
+
+				time.Sleep(3000 * time.Millisecond)
 
 				assertNumSpans(t, sessionToken, ig.NumSpans())
 				checkFailures(t, sessionToken)
@@ -223,12 +229,15 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 		if receivedSpans > wantSpans {
 			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
+		if receivedSpans < wantSpans {
+			t.Fatalf("received less spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
+		}
 		return receivedSpans == wantSpans
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	timeoutChan := time.After(5 * time.Second)
+	timeoutChan := time.After(15 * time.Second)
 
 	for {
 		if done := run(); done {

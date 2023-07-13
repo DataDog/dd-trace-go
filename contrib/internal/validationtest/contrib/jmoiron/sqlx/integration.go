@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package sqlx
+package gorm
 
 import (
 	"database/sql"
@@ -11,13 +11,12 @@ import (
 	"log"
 	"testing"
 
-	_ "github.com/lib/pq"
 	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 	"gorm.io/gorm"
 
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gopkg.in/jinzhu/gorm.v1"
+	sqlxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 )
 
 type Integration struct {
@@ -29,7 +28,7 @@ func New() *Integration {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/gopkg.in/jinzhu/gorm.v1"
+	return "contrib/jmoiron/sqlx"
 }
 
 func (i *Integration) Init(t *testing.T) func() {
@@ -50,11 +49,11 @@ func registerFunc(driverName string, driver driver.Driver) {
 	sqltrace.Register(driverName, driver)
 }
 
-func getDB(driverName string, connString string, dialectorFunc func(*sql.DB) gorm.Dialector) *sql.DB {
-	db, err := gormtrace.Open(driverName, connString)
+func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
+	db, err := sqlxtrace.Open(driverName, connString)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	return db.DB()
+	return db.DB
 }

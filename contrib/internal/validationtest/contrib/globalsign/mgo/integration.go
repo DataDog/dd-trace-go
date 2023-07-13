@@ -58,6 +58,10 @@ func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
+func (i *Integration) ResetNumSpans() {
+	i.numSpans = 0
+}
+
 var entity = bson.D{
 	bson.DocElem{
 		Name: "entity_new",

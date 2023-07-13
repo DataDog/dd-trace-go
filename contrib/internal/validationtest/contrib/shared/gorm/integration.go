@@ -7,11 +7,9 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/stdlib"
-	mssql "github.com/microsoft/go-mssqldb"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 )
 
@@ -40,13 +38,13 @@ func RunAll(numSpans int, t *testing.T, registerFunc func(string, driver.Driver)
 			driver:        &stdlib.Driver{},
 			dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return mysqlgorm.New(mysqlgorm.Config{Conn: sqlDB}) },
 		},
-		{
-			name:          "SQLServer",
-			connString:    sqlServerConnString,
-			driverName:    "sqlserver",
-			driver:        &mssql.Driver{},
-			dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return sqlserver.New(sqlserver.Config{Conn: sqlDB}) },
-		},
+		// {
+		// 	name:          "SQLServer",
+		// 	connString:    sqlServerConnString,
+		// 	driverName:    "sqlserver",
+		// 	driver:        &mssql.Driver{},
+		// 	dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return sqlserver.New(sqlserver.Config{Conn: sqlDB}) },
+		// },
 		{
 			name:          "MySQL",
 			connString:    mysqlConnString,

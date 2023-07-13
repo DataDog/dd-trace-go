@@ -18,6 +18,10 @@ func New() *Integration {
 	return &Integration{}
 }
 
+func (i *Integration) ResetNumSpans() {
+	i.numSpans = 0
+}
+
 func (i *Integration) Name() string {
 	return "contrib/bradfitz/gomemcache/memcache"
 }
