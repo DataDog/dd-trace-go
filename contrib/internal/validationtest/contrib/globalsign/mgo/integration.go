@@ -44,13 +44,13 @@ func (i *Integration) Init(t *testing.T) func() {
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
 
-	TestCollection_Insert(t, i)
+	i.collection.Insert(entity)
 	i.numSpans++
 
-	TestCollection_Update(t, i)
+	i.collection.Update(entity, entity)
 	i.numSpans++
 
-	TestCollection_Remove(t, i)
+	i.collection.Remove(entity)
 	i.numSpans++
 }
 
@@ -58,35 +58,9 @@ func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
-func TestCollection_Insert(t *testing.T, i *Integration) {
-	entity := bson.D{
-		bson.DocElem{
-			Name: "entity",
-			Value: bson.DocElem{
-				Name:  "index",
-				Value: 0}}}
-	i.collection.Insert(entity)
-	i.numSpans++
-}
-
-func TestCollection_Update(t *testing.T, i *Integration) {
-	entity := bson.D{
-		bson.DocElem{
-			Name: "entity_new",
-			Value: bson.DocElem{
-				Name:  "index",
-				Value: 0}}}
-
-	i.collection.Update(entity, entity)
-}
-
-func TestCollection_Remove(t *testing.T, i *Integration) {
-	entity := bson.D{
-		bson.DocElem{
-			Name: "entity_new",
-			Value: bson.DocElem{
-				Name:  "index",
-				Value: 0}}}
-
-	i.collection.Remove(entity)
-}
+var entity = bson.D{
+	bson.DocElem{
+		Name: "entity_new",
+		Value: bson.DocElem{
+			Name:  "index",
+			Value: 0}}}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/stdlib"
-	_ "github.com/lib/pq"
 	mssql "github.com/microsoft/go-mssqldb"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 	mysqlgorm "gorm.io/driver/mysql"

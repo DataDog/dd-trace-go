@@ -50,7 +50,7 @@ func registerFunc(driverName string, driver driver.Driver) {
 	sqltrace.Register(driverName, driver)
 }
 
-func getDB(driverName string, connString string, dialectorFunc func(*sql.DB) gorm.Dialector) *sql.DB {
+func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
 	db, err := gormtrace.Open(driverName, connString)
 	if err != nil {
 		log.Fatal(err)
