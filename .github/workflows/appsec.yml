@@ -139,3 +139,8 @@ jobs:
         with:
           platforms: arm64
       - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
+
+  smoke-tests:
+    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
+    with:
+      dd-trace-go-version: $GITHUB_SHA
