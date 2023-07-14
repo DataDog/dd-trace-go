@@ -819,6 +819,7 @@ func TestEnvVars(t *testing.T) {
 			{headerPropagationStyleInjectDeprecated: "datadog", headerPropagationStyleExtractDeprecated: "datadog"},
 			{headerPropagationStyleInject: "datadog", headerPropagationStyle: "datadog"},
 			{headerPropagationStyle: "datadog"},
+			{headerPropagationStyle: ""},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1130,11 +1131,10 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
-	t.Run("w3c extract / w3c,datadog inject", func(t *testing.T) {
+	t.Run("w3c extract / datadog inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "traceContext"},
 			{headerPropagationStyleExtractDeprecated: "traceContext,none" /* none should have no affect */},
-			{headerPropagationStyle: "traceContext"},
 		}
 		for _, testEnv := range testEnvs {
 			for k, v := range testEnv {
@@ -1155,8 +1155,6 @@ func TestEnvVars(t *testing.T) {
 						tracestateHeader:  "foo=1,dd=s:-1",
 					},
 					outHeaders: TextMapCarrier{
-						traceparentHeader:     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
-						tracestateHeader:      "dd=s:-1;o:synthetics;t.tid:4bf92f3577b34da6,foo=1",
 						DefaultPriorityHeader: "-1",
 						DefaultTraceIDHeader:  "4bf92f3577b34da6a3ce929d0e0e4736",
 						DefaultParentIDHeader: "00f067aa0ba902b7",
@@ -1624,6 +1622,7 @@ func checkSameElements(assert *assert.Assertions, want, got string) {
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
 	tracer := newTracer()
 	defer tracer.Stop()
 	headers := TextMapCarrier{
