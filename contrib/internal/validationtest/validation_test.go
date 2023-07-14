@@ -95,8 +95,12 @@ type testAgentTransport struct {
 
 // RoundTrip adds the DD Tracer configuration environment and test session token to the trace request headers
 func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	sessionTokenEnv, exists := os.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
+	if !exists {
+		sessionTokenEnv = "default"
+	}
 	req.Header.Add("X-Datadog-Trace-Env-Variables", currentTracerEnv)
-	req.Header.Add("X-Datadog-Test-Session-Token", sessionToken)
+	req.Header.Add("X-Datadog-Test-Session-Token", sessionTokenEnv)
 	return http.DefaultTransport.RoundTrip(req)
 }
 
@@ -136,7 +140,6 @@ func testAgentDetails() string {
 
 var (
 	testAgentConnection = testAgentDetails()
-	sessionToken        = "default"
 	currentTracerEnv    = tracerEnv()
 	testCases           = GetValidationTestCases()
 )
@@ -165,11 +168,10 @@ func TestIntegrations(t *testing.T) {
 	}
 	for _, ig := range integrations {
 		name := ig.Name()
+		sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
 		for _, testCase := range testCases {
-			sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
-			ig.ResetNumSpans()
 			t.Run(name, func(t *testing.T) {
-				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
+				os.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 				// loop through all our environment for the testCase and set each variable
 				for k, v := range testCase.EnvVars {
@@ -192,12 +194,11 @@ func TestIntegrations(t *testing.T) {
 
 				tracer.Flush()
 
-				time.Sleep(3000 * time.Millisecond)
-
-				assertNumSpans(t, sessionToken, ig.NumSpans())
 				checkFailures(t, sessionToken)
 			})
+
 		}
+		assertNumSpans(t, sessionToken, ig.NumSpans())
 	}
 }
 
@@ -230,7 +231,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
 		if receivedSpans < wantSpans {
-			t.Fatalf("received less spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
+			t.Logf("received less spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
 		return receivedSpans == wantSpans
 	}
