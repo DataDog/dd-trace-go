@@ -91,11 +91,11 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.10.1
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
-      DISABLED_CHECKS: trace_content_length,meta_tracer_version_header
+      ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
       PORT: 9126
       DD_SUPPRESS_TRACE_PARSE_ERRORS: true
       DD_POOL_TRACE_CHECK_FAILURES: true
