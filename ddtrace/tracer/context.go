@@ -12,19 +12,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
-type contextKey struct{}
+// MTOFF: I had to make this public b/c gearbox needs it
+type ContextKey struct{}
 
-var activeSpanKey = contextKey{}
+var activeSpanKey = ContextKey{}
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, activeSpanKey, s)
-}
-
-// MTOFF: I had to make add a getter b/c gearbox needs it
-// GetActiveSpanKey returns the activeSpanKey
-func GetActiveSpanKey() contextKey {
-	return activeSpanKey
 }
 
 // SpanFromContext returns the span contained in the given context. A second return

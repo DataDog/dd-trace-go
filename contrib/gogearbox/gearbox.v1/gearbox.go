@@ -53,13 +53,15 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		span, _ := tracer.StartSpanFromContext(fctx, "http.request", spanOpts...)
 		defer span.Finish()
 
-		fctx.SetUserValue(tracer.GetActiveSpanKey(), span)
+		// AFAICT, there is no automatic way to update the fashttp context with the context returned from tracer.StartSpanFromContext
+		// Instead I had to manually add the activeSpanKey onto the fashttp context
+		activeSpanKey := tracer.ContextKey{}
+		fctx.SetUserValue(activeSpanKey, span)
 
 		gctx.Next()
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(gctx))
 
-		// TODO: Implement config for users to define error status codes
 		status := fctx.Response.StatusCode()
 		if cfg.isStatusError(status) {
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
@@ -88,7 +90,7 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 }
 
 // MTOFF: This will be useful if we add a fasthttp integration. Might also be useful for the fiber integration.
-// But should the implement it be separated into a gearboxutils pkg? Really it's a fashttp util....
+// But should it be separated into a gearboxutils pkg? Or really a fashttputils....
 
 // FasthttpContextCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
 // of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
@@ -99,7 +101,7 @@ type FasthttpContextCarrier struct {
 
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error) error {
-	reqHeader := &f.reqCtx.Request.Header
+	reqHeader := &(f.reqCtx.Request.Header)
 	keys := reqHeader.PeekKeys()
 	for h := range keys {
 		header := string(keys[h])
