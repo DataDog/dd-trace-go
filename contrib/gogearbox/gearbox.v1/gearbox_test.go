@@ -21,7 +21,7 @@ import (
 
 func newReqCtx(code int) *fasthttp.RequestCtx {
 	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().SetPath("/any")
+	reqctx.URI().Update("//foobar.com/any")
 	reqctx.Request.Header.SetMethod("GET")
 	reqctx.Response.SetStatusCode(code)
 	return reqctx
@@ -41,14 +41,14 @@ func TestTrace200(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
+	fmt.Printf("\n%v", span)
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(span.Tag(ext.ResourceName), "GET /any")
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("gb", span.Tag(ext.ServiceName))
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	// TODO: Set a domain on the req context for this test.
-	// assert.Equal("http://example.com/any", span.Tag(ext.HTTPURL))
+	assert.Equal("http://foobar.com/any", span.Tag(ext.HTTPURL))
 	assert.Equal("gogearbox/gearbox", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
