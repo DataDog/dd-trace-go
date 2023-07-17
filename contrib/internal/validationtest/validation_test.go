@@ -89,40 +89,19 @@ func tracerEnv() string {
 	return strings.Join(values, ",")
 }
 
-type testAgentTransport struct {
-	*http.Transport
+type testAgentRoundTripper struct {
+	base http.RoundTripper
 }
 
 // RoundTrip adds the DD Tracer configuration environment and test session token to the trace request headers
-func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	sessionTokenEnv, exists := os.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
-	if !exists {
+func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	sessionTokenEnv, ok := os.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
+	if !ok {
 		sessionTokenEnv = "default"
 	}
 	req.Header.Add("X-Datadog-Trace-Env-Variables", currentTracerEnv)
 	req.Header.Add("X-Datadog-Test-Session-Token", sessionTokenEnv)
-	return http.DefaultTransport.RoundTrip(req)
-}
-
-var defaultDialer = &net.Dialer{
-	Timeout:   30 * time.Second,
-	KeepAlive: 30 * time.Second,
-	DualStack: true,
-}
-var testAgentClient = &http.Client{
-	// We copy the transport to avoid using the default one, as it might be
-	// augmented with tracing and we don't want these calls to be recorded.
-	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	Transport: &testAgentTransport{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           defaultDialer.DialContext,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}, Timeout: 2 * time.Second,
+	return rt.base.RoundTrip(req)
 }
 
 func testAgentDetails() string {
@@ -169,17 +148,21 @@ func TestIntegrations(t *testing.T) {
 	for _, ig := range integrations {
 		name := ig.Name()
 		sessionToken := fmt.Sprintf("%s-%d", name, time.Now().Unix())
-		for _, testCase := range testCases {
+		for _, tc := range testCases {
 			t.Run(name, func(t *testing.T) {
-				os.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
+				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
 				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 				// loop through all our environment for the testCase and set each variable
-				for k, v := range testCase.EnvVars {
+				for k, v := range tc.EnvVars {
 					t.Setenv(k, v)
 				}
 
 				// also include the testCase start options within the tracer config
-				tracer.Start(append(testCase.StartOptions, tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))...)
+				var tracerOpts []tracer.StartOption
+				tracerOpts = append(tracerOpts, tc.StartOptions...)
+				tracerOpts = append(tracerOpts, tracer.WithAgentAddr(testAgentConnection))
+				tracerOpts = append(tracerOpts, tracer.WithHTTPClient(tracerHTTPClient()))
+				tracer.Start(tracerOpts...)
 
 				// get the current Tracer Environment after it has been started with configuration
 				currentTracerEnv = tracerEnv()
@@ -187,12 +170,8 @@ func TestIntegrations(t *testing.T) {
 				defer tracer.Stop()
 
 				cleanup := ig.Init(t)
-				tracer.Flush()
 				defer cleanup()
-
 				ig.GenSpans(t)
-
-				tracer.Flush()
 
 				checkFailures(t, sessionToken)
 			})
@@ -275,4 +254,27 @@ func checkFailures(t *testing.T, sessionToken string) {
 	require.NoError(t, err)
 
 	assert.Fail(t, "APM Test Agent detected failures: \n", string(body))
+}
+
+func tracerHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Client{
+		// We copy the transport to avoid using the default one, as it might be
+		// augmented with tracing and we don't want these calls to be recorded.
+		// See https://golang.org/pkg/net/http/#DefaultTransport .
+		Transport: &testAgentRoundTripper{
+			base: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           dialer.DialContext,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
+		Timeout: 2 * time.Second,
+	}
 }
