@@ -103,15 +103,23 @@ func urlFromRequest(r *http.Request) string {
 	return url
 }
 
+// FoldHeaderTags applies f across the header tags map, returning the accumulated StartSpanOptions.
+type FoldHeaderTags func(func(acc []ddtrace.StartSpanOption, header, tag string) []ddtrace.StartSpanOption) []ddtrace.StartSpanOption
+
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, lookupHeader func(string) (string, bool)) ddtrace.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, foldHeaderTags FoldHeaderTags) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
-		for h, v := range req.Header {
-			h = strings.ToLower(h)
-			if tag, ok := lookupHeader(h); ok && !strings.HasPrefix(h, "x-datadog-") {
-				cfg.Tags[tag] = strings.TrimSpace(strings.Join(v, ","))
+		opts := foldHeaderTags(func(acc []ddtrace.StartSpanOption, cfgHeader string, tag string) []ddtrace.StartSpanOption {
+			if vs, ok := req.Header[cfgHeader]; ok {
+				return append(acc, func(cfg *ddtrace.StartSpanConfig) {
+					cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
+				})
 			}
+			return nil
+		})
+		for _, opt := range opts {
+			opt(cfg)
 		}
 	}
 }

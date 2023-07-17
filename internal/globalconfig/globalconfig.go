@@ -9,7 +9,10 @@ package globalconfig
 
 import (
 	"math"
+	"net/textproto"
 	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/google/uuid"
 )
@@ -73,11 +76,19 @@ func HeaderTag(header string) (tag string, ok bool) {
 	return tag, ok
 }
 
+// FoldHeaderTags applies f across the locked header tags map, returning the accumulator.
+func FoldHeaderTags[T any](f func(acc T, header, tag string) T) T {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	var acc T
+	return internal.FoldM(acc, f, cfg.headersAsTags)
+}
+
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	cfg.headersAsTags[from] = to
+	cfg.headersAsTags[textproto.CanonicalMIMEHeaderKey(from)] = to
 }
 
 // HeaderTagsLen returns the length of globalconfig's headersAsTags map, 0 for empty map
