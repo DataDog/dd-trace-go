@@ -33,6 +33,17 @@ import (
 	gormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gorm.io/gorm.v1"
 	jinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jinzhu/gorm"
 
+	elasticsearchV6test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v6"
+	elasticsearchV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v7"
+
+	//elasticsearchV8test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v8"
+
+	gorestfultest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/emicklei/go-restful"
+	ginGonicTest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gin-gonic/gin"
+
+	gochitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi"
+	gochiv5test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi.v5"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -132,6 +143,13 @@ func TestIntegrations(t *testing.T) {
 	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	// }
 	integrations := []Integration{
+		gochiv5test.New(),
+		gochitest.New(),
+		ginGonicTest.New(),
+		gorestfultest.New(),
+		elasticsearchV6test.New(),
+		elasticsearchV7test.New(),
+		// elasticsearchV8test.New(),
 		gopkgJinzhuGormv1test.New(),
 		jinzhuGormv1test.New(),
 		gormv1test.New(),
