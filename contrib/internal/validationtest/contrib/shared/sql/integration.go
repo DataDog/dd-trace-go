@@ -62,16 +62,20 @@ func RunAll(t *testing.T, cfg *Config) int {
 	cfg.DB.SetMaxIdleConns(0)
 
 	for name, test := range map[string]func(*Config) func(*testing.T){
-		"Connect": testConnect,
-		// "Ping":          testPing,
-		// "Query":         testQuery,
-		// "Statement":     testStatement,
-		// "BeginRollback": testBeginRollback,
-		// "Exec":          testExec,
+		"Connect":       testConnect,
+		"Ping":          testPing,
+		"Query":         testQuery,
+		"Statement":     testStatement,
+		"BeginRollback": testBeginRollback,
+		"Exec":          testExec,
 	} {
 		t.Run(name, test(cfg))
 	}
-	return cfg.NumSpans
+	var sum int = 0
+	for _, val := range cfg.OperationToNumSpans {
+		sum += val
+	}
+	return sum
 }
 
 func testConnect(cfg *Config) func(*testing.T) {
@@ -80,7 +84,7 @@ func testConnect(cfg *Config) func(*testing.T) {
 		err := cfg.DB.Ping()
 		assert.Nil(err)
 
-		cfg.NumSpans += 2
+		// 2 spans
 	}
 }
 
@@ -90,7 +94,7 @@ func testPing(cfg *Config) func(*testing.T) {
 		err := cfg.DB.Ping()
 		assert.Nil(err)
 
-		cfg.NumSpans += 2
+		// 2
 	}
 }
 
@@ -111,9 +115,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare, and query
-			cfg.NumSpans += 3
-		} else {
-			cfg.NumSpans += 2
+			cfg.OperationToNumSpans["Query"] += 3
 		}
 	}
 }
@@ -136,7 +138,7 @@ func testStatement(cfg *Config) func(*testing.T) {
 		_, err2 := stmt.Exec("New York")
 		assert.Equal(nil, err2)
 
-		cfg.NumSpans += 2
+		// 7
 	}
 }
 
@@ -150,7 +152,7 @@ func testBeginRollback(cfg *Config) func(*testing.T) {
 		err = tx.Rollback()
 		assert.Equal(nil, err)
 
-		cfg.NumSpans += 7
+		// 3
 	}
 }
 
@@ -176,17 +178,16 @@ func testExec(cfg *Config) func(*testing.T) {
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
-			cfg.NumSpans += 5
-		} else {
-			cfg.NumSpans += 3
+			cfg.OperationToNumSpans["Exec"] += 2
 		}
+		// 5
 	}
 }
 
 // Config holds the test configuration.
 type Config struct {
 	*sql.DB
-	NumSpans   int
-	DriverName string
-	TableName  string
+	OperationToNumSpans map[string]int
+	DriverName          string
+	TableName           string
 }

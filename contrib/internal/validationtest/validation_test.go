@@ -23,10 +23,15 @@ import (
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
 	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
 
+	sqlxtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jmoiron/sqlx"
 	//dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
 	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
 	leveldbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/syndtr/goleveldb/leveldb"
 	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
+
+	gopkgJinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gopkg.in/jinzhu/gorm.v1"
+	gormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gorm.io/gorm.v1"
+	jinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jinzhu/gorm"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -127,9 +132,11 @@ func TestIntegrations(t *testing.T) {
 	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	// }
 	integrations := []Integration{
-		// gormv1test.New(),
+		gopkgJinzhuGormv1test.New(),
+		jinzhuGormv1test.New(),
+		gormv1test.New(),
 		mgotest.New(),
-		// sqlxtest.New(),
+		sqlxtest.New(),
 		memcachetest.New(),
 		// //dnstest.New(),
 		redigotest.New(),

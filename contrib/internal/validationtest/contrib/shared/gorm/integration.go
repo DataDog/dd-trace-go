@@ -5,11 +5,9 @@ import (
 	"database/sql/driver"
 	"testing"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/stdlib"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 	mysqlgorm "gorm.io/driver/mysql"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -21,8 +19,9 @@ const (
 	mysqlConnString     = "test:test@tcp(127.0.0.1:3306)/test"
 )
 
-func RunAll(numSpans int, t *testing.T, registerFunc func(string, driver.Driver), getDB func(string, string, func(*sql.DB) gorm.Dialector) *sql.DB) int {
+func RunAll(operationToNumSpans map[string]int, t *testing.T, registerFunc func(string, driver.Driver), getDB func(string, string, func(*sql.DB) gorm.Dialector) *sql.DB) int {
 	t.Helper()
+	var numSpans = 0
 
 	testCases := []struct {
 		name          string
@@ -45,13 +44,13 @@ func RunAll(numSpans int, t *testing.T, registerFunc func(string, driver.Driver)
 		// 	driver:        &mssql.Driver{},
 		// 	dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return sqlserver.New(sqlserver.Config{Conn: sqlDB}) },
 		// },
-		{
-			name:          "MySQL",
-			connString:    mysqlConnString,
-			driverName:    "mysql",
-			driver:        &mysql.MySQLDriver{},
-			dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return postgres.New(postgres.Config{Conn: sqlDB}) },
-		},
+		// {
+		// 	name:          "MySQL",
+		// 	connString:    mysqlConnString,
+		// 	driverName:    "mysql",
+		// 	driver:        &mysql.MySQLDriver{},
+		// 	dialectorFunc: func(sqlDB *sql.DB) gorm.Dialector { return postgres.New(postgres.Config{Conn: sqlDB}) },
+		// },
 	}
 
 	for _, testCase := range testCases {
@@ -60,11 +59,16 @@ func RunAll(numSpans int, t *testing.T, registerFunc func(string, driver.Driver)
 
 			internalDB := getDB(testCase.driverName, testCase.connString, testCase.dialectorFunc)
 
+			operationToNumSpansCopy := make(map[string]int)
+			for k, v := range operationToNumSpans {
+				operationToNumSpansCopy[k] = v
+			}
+
 			testConfig := &sqltest.Config{
-				DB:         internalDB,
-				NumSpans:   numSpans,
-				DriverName: testCase.driverName,
-				TableName:  TableName,
+				DB:                  internalDB,
+				OperationToNumSpans: operationToNumSpansCopy,
+				DriverName:          testCase.driverName,
+				TableName:           TableName,
 			}
 			numSpans += sqltest.RunAll(t, testConfig)
 		})

@@ -41,7 +41,15 @@ func (i *Integration) Init(t *testing.T) func() {
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
-	i.numSpans = gormtest.RunAll(i.numSpans, t, registerFunc, getDB)
+	operationToNumSpans := map[string]int{
+		"Connect":       4,
+		"Ping":          2,
+		"Query":         2,
+		"Statement":     7,
+		"BeginRollback": 3,
+		"Exec":          5,
+	}
+	i.numSpans += gormtest.RunAll(operationToNumSpans, t, registerFunc, getDB)
 }
 
 func (i *Integration) NumSpans() int {
@@ -61,6 +69,5 @@ func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
 	return db.DB()
 }

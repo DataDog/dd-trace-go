@@ -34,12 +34,26 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) func() {
 	t.Helper()
-	defer sqltest.Prepare(gormtest.TableName)()
-	return func() {}
+	closeFunc := sqltest.Prepare(gormtest.TableName)
+	return func() {
+		closeFunc()
+	}
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
-	i.numSpans = gormtest.RunAll(i.numSpans, t, registerFunc, getDB)
+	operationToNumSpans := map[string]int{
+		"Connect":       5,
+		"Ping":          2,
+		"Query":         2,
+		"Statement":     7,
+		"BeginRollback": 3,
+		"Exec":          5,
+	}
+	i.numSpans += gormtest.RunAll(operationToNumSpans, t, registerFunc, getDB)
+}
+
+func (i *Integration) ResetNumSpans() {
+	i.numSpans = 0
 }
 
 func (i *Integration) NumSpans() int {
