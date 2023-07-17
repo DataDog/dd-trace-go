@@ -454,6 +454,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
+		Meta:         make(map[string]string, len(opts.Tags)+len(t.config.globalTags)+2),
 	}
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
