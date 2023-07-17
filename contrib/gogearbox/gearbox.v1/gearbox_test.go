@@ -66,6 +66,7 @@ func TestChildSpan(t *testing.T) {
 	assert.True(ok)
 }
 
+// Test that HTTP Status codes >= 500 get treated as error spans
 func TestStatusError(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -88,6 +89,7 @@ func TestStatusError(t *testing.T) {
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 }
 
+// Test that users can customize which HTTP status codes are considered an error
 func TestWithStatusCheck(t *testing.T) {
 	customErrChecker := func(statusCode int) bool {
 		return statusCode >= 600
@@ -129,6 +131,8 @@ func TestWithStatusCheck(t *testing.T) {
 		assert.Nil(span.Tag(ext.Error))
 	})
 }
+
+// Test that users can customize how resource_name is determined
 func TestCustomResourceNamer(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -149,7 +153,8 @@ func TestCustomResourceNamer(t *testing.T) {
 	assert.Equal(customRsc, span.Tag(ext.ResourceName))
 }
 
-// I can't create a real http request, but I can simulate middleware being run:
+// Test that the trace middleware passes the context off to the next handler in the req chain even if the request is not instrumented
+// MTOFF: I can't create a real http request, but I can simulate middleware being run
 // by checking that the context's `index` has been incremented
 func TestWithIgnoreRequest(t *testing.T) {
 	assert := assert.New(t)
@@ -213,8 +218,8 @@ func TestPropagation(t *testing.T) {
 }
 
 // GearboxContextMock provides a mock implementation the Gearbox library to be used in testing.
-// It mocks the way Gearbox.Context is interfaced with and updated when the library handles
-// real HTTP traffic without needing to spin up a server.
+// It fulfills the Gearbox.Context interface and its methods mock some of the core behavior of
+// Gearbox.Context when handling real HTTP traffic, without needing to spin up a server.
 // See: https://pkg.go.dev/github.com/gogearbox/gearbox#Context
 type GearboxContextMock struct {
 	requestCtx *fasthttp.RequestCtx

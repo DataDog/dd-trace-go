@@ -27,6 +27,7 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 }
 
+// Middleware returns middleware that will trace incoming requests.
 func Middleware(opts ...Option) func(gctx gearbox.Context) {
 	cfg := newConfig()
 	for _, fn := range opts {
