@@ -99,7 +99,7 @@ func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	if !ok {
 		sessionTokenEnv = "default"
 	}
-	req.Header.Add("X-Datadog-Trace-Env-Variables", currentTracerEnv)
+	req.Header.Add("X-Datadog-Trace-Env-Variables", tracerEnv())
 	req.Header.Add("X-Datadog-Test-Session-Token", sessionTokenEnv)
 	return rt.base.RoundTrip(req)
 }
@@ -119,7 +119,6 @@ func testAgentDetails() string {
 
 var (
 	testAgentConnection = testAgentDetails()
-	currentTracerEnv    = tracerEnv()
 	testCases           = GetValidationTestCases()
 )
 
@@ -163,9 +162,6 @@ func TestIntegrations(t *testing.T) {
 				tracerOpts = append(tracerOpts, tracer.WithAgentAddr(testAgentConnection))
 				tracerOpts = append(tracerOpts, tracer.WithHTTPClient(tracerHTTPClient()))
 				tracer.Start(tracerOpts...)
-
-				// get the current Tracer Environment after it has been started with configuration
-				currentTracerEnv = tracerEnv()
 
 				defer tracer.Stop()
 
