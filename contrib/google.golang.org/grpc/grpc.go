@@ -29,6 +29,7 @@ const componentName = "google.golang.org/grpc"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // cache a constant option: saves one allocation per call

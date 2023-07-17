@@ -23,6 +23,7 @@ const componentName = "dimfeld/httptreemux.v5"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // Router is a traced version of httptreemux.TreeMux.

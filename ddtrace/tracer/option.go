@@ -33,6 +33,64 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
+var agentIntegrations = map[string]struct {
+	name     string
+	imported bool
+}{
+	"99designs/gqlgen":                         {"gqlgen", false},
+	"aws/aws-sdk-go/aws":                       {"AWS SDK", false},
+	"aws/aws-sdk-go-v2/aws":                    {"AWS SDK v2", false},
+	"bradfitz/gomemcache/memcache":             {"Memcache", false},
+	"cloud.google.com/go/pubsub.v1":            {"Pub/Sub", false},
+	"confluentinc/confluent-kafka-go/kafka":    {"Kafka (confluent)", false},
+	"confluentinc/confluent-kafka-go/kafka.v2": {"Kafka (confluent) v2", false},
+	"database/sql":                             {"SQL", false},
+	"dimfeld/httptreemux.v5":                   {"HTTP Treemux", false},
+	"elastic/go-elasticsearch.v6":              {"Elasticsearch v6", false},
+	"emicklei/go-restful":                      {"go-restful", false},
+	"emicklei/go-restful/v3":                   {"go-restful v3", false},
+	"garyburd/redigo":                          {"Redigo", false},
+	"gin-gonic/gin":                            {"Gin", false},
+	"globalsign/mgo":                           {"MongoDB (mgo)", false},
+	"go-chi/chi":                               {"chi", false},
+	"go-chi/chi.v5":                            {"chi v5", false},
+	"go-pg/pg.v10":                             {"go-pg v10", false},
+	"go-redis/redis":                           {"Redis", false},
+	"go-redis/redis.v7":                        {"Redis v7", false},
+	"go-redis/redis.v8":                        {"Redis v8", false},
+	"go.mongodb.org/mongo-driver/mongo":        {"MongoDB", false},
+	"gocql/gocql":                              {"Cassandra", false},
+	"gofiber/fiber.v2":                         {"Fiber", false},
+	"gomodule/redigo":                          {"New redigo", false},
+	"google.golang.org/api":                    {"Google API", false},
+	"google.golang.org/grpc":                   {"gRPC", false},
+	"google.golang.org/grpc.v12":               {"gRPC v12", false},
+	"gopkg.in/jinzhu/gorm.v1":                  {"Gorm (gopkg)", false},
+	"gorilla/mux":                              {"Gorilla Mux", false},
+	"gorm.io/gorm.v1":                          {"Gorm v1", false},
+	"graph-gophers/graphql-go":                 {"GraphQL", false},
+	"hashicorp/consul":                         {"Consul", false},
+	"hashicorp/vault":                          {"Vault", false},
+	"jinzhu/gorm":                              {"Gorm", false},
+	"jmoiron/sqlx":                             {"SQLx", false},
+	"julienschmidt/httprouter":                 {"HTTP Router", false},
+	"k8s.io/client-go/kubernetes":              {"Kubernetes", false},
+	"labstack/echo":                            {"echo", false},
+	"labstack/echo.v4":                         {"echo v4", false},
+	"miekg/dns":                                {"miekg/dns", false},
+	"net/http":                                 {"HTTP", false},
+	"olivere/elastic":                          {"Elasticsearch", false},
+	"redis/go-redis.v9":                        {"Redis v9", false},
+	"segmentio/kafka.go.v0":                    {"Kafka v0", false},
+	"Shopify/sarama":                           {"Kafka (sarama)", false},
+	"sirupsen/logrus":                          {"Logrus", false},
+	"syndtr/goleveldb/leveldb":                 {"LevelDB", false},
+	"tidwall/buntdb":                           {"BuntDB", false},
+	"twitchtv/twirp":                           {"Twirp", false},
+	"urfave/negroni":                           {"Negroni", false},
+	"zenazn/goji.v1/web":                       {"Goji", false},
+}
+
 var (
 	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
 	// Replaced in tests
@@ -54,6 +112,9 @@ type config struct {
 	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	agent agentFeatures
+
+	// integrations reports if the user has instrumented an available integration
+	integrations map[string]integrationConfig
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -329,6 +390,7 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
+	c.loadAgentIntegrations()
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -413,6 +475,10 @@ func defaultDogstatsdAddr() string {
 	return net.JoinHostPort(host, port)
 }
 
+type integrationConfig struct {
+	Instrumented bool `json:"instrumented"`
+}
+
 // agentFeatures holds information about the trace-agent's capabilities.
 // When running WithLambdaMode, a zero-value of this struct will be used
 // as features.
@@ -480,6 +546,30 @@ func (c *config) loadAgentFeatures() {
 	for _, flag := range info.FeatureFlags {
 		c.agent.featureFlags[flag] = struct{}{}
 	}
+}
+
+// ImportIntegration labels the given integration as imported
+func ImportIntegration(ip string) bool {
+	s, ok := agentIntegrations[ip]
+	if !ok {
+		log.Error("Attempted to import invalid integration %s", ip)
+		return false
+	}
+	s.imported = true
+	agentIntegrations[ip] = s
+	return true
+}
+
+func (c *config) loadAgentIntegrations() {
+	integrations := map[string]integrationConfig{}
+	for _, s := range agentIntegrations {
+		ic := integrationConfig{
+			Instrumented: s.imported,
+		}
+
+		integrations[s.name] = ic
+	}
+	c.integrations = integrations
 }
 
 func (c *config) canComputeStats() bool {

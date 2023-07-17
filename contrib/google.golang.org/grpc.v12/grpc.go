@@ -30,6 +30,7 @@ const componentName = "google.golang.org/grpc.v12"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // UnaryServerInterceptor will trace requests to the given grpc server.

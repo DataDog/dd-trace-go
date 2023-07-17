@@ -61,6 +61,7 @@ const componentName = "99designs/gqlgen"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 const (

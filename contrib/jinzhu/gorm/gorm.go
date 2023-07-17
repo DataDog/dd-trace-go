@@ -25,6 +25,7 @@ const componentName = "jinzhu/gorm"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 const (

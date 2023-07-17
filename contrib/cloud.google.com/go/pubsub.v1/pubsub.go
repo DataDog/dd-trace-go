@@ -23,6 +23,7 @@ const componentName = "cloud.google.com/go/pubsub.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // Publish publishes a message on the specified topic and returns a PublishResult.

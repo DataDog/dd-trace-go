@@ -26,6 +26,7 @@ const componentName = "go-chi/chi"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // Middleware returns middleware that will trace incoming requests.

@@ -236,6 +236,48 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+func TestAgentIntegration(t *testing.T) {
+	t.Run("err", func(t *testing.T) {
+		assert.False(t, ImportIntegration("this-integration-does-not-exist"))
+	})
+
+	t.Run("default", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		assert.NotNil(t, cfg.integrations)
+		assert.NotEqual(t, len(cfg.integrations), 0)
+	})
+
+	t.Run("uninstrumented", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		cfg.loadAgentIntegrations()
+		for _, v := range cfg.integrations {
+			assert.False(t, v.Instrumented)
+		}
+	})
+
+	t.Run("OK import", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		ok := ImportIntegration("go-chi/chi")
+		assert.True(t, ok)
+		cfg.loadAgentIntegrations()
+		assert.True(t, cfg.integrations["chi"].Instrumented)
+	})
+}
+
 func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		assert := assert.New(t)

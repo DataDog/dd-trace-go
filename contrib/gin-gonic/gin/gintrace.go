@@ -24,6 +24,7 @@ const componentName = "gin-gonic/gin"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the

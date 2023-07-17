@@ -29,6 +29,7 @@ const componentName = "olivere/elastic"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.

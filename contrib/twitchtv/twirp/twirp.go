@@ -27,6 +27,7 @@ const componentName = "twitchtv/twirp"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 type (

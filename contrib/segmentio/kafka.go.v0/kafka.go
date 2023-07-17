@@ -23,6 +23,7 @@ const componentName = "segmentio/kafka.go.v0"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.

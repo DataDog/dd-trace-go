@@ -26,6 +26,7 @@ const componentName = "aws/aws-sdk-go/aws"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 const (

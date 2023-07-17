@@ -25,6 +25,7 @@ const componentName = "gopkg.in/jinzhu/gorm.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 const (

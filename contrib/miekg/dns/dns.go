@@ -24,6 +24,7 @@ const componentName = "miekg/dns"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.

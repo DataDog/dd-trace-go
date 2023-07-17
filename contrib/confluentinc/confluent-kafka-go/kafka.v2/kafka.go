@@ -23,6 +23,7 @@ const componentName = "confluentinc/confluent-kafka-go/kafka.v2"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.ImportIntegration(componentName)
 }
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
