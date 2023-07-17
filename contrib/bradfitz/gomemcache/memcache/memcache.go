@@ -98,6 +98,14 @@ func (c *Client) Add(item *memcache.Item) error {
 	return err
 }
 
+// Append invokes and traces Client.Append.
+func (c *Client) Append(item *memcache.Item) error {
+	span := c.startSpan("Append")
+	err := c.Client.Append(item)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
 // CompareAndSwap invokes and traces Client.CompareAndSwap.
 func (c *Client) CompareAndSwap(item *memcache.Item) error {
 	span := c.startSpan("CompareAndSwap")
@@ -160,6 +168,14 @@ func (c *Client) Increment(key string, delta uint64) (newValue uint64, err error
 	newValue, err = c.Client.Increment(key, delta)
 	span.Finish(tracer.WithError(err))
 	return newValue, err
+}
+
+// Prepend invokes and traces Client.Prepend.
+func (c *Client) Prepend(item *memcache.Item) error {
+	span := c.startSpan("Prepend")
+	err := c.Client.Prepend(item)
+	span.Finish(tracer.WithError(err))
+	return err
 }
 
 // Replace invokes and traces Client.Replace.

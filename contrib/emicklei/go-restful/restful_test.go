@@ -146,6 +146,7 @@ func TestTrace200(t *testing.T) {
 
 	container.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 200)
 
 	spans := mt.FinishedSpans()
@@ -183,6 +184,7 @@ func TestError(t *testing.T) {
 
 	container.ServeHTTP(w, r)
 	response := w.Result()
+	defer response.Body.Close()
 	assert.Equal(response.StatusCode, 500)
 
 	spans := mt.FinishedSpans()
