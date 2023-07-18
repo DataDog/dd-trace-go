@@ -27,7 +27,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
-	headerTags    internal.LockMap
+	headerTags    *internal.LockMap
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -74,7 +74,7 @@ func WithServiceName(name string) MuxOption {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 

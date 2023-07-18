@@ -5,32 +5,47 @@
 
 package internal
 
-type LockMap interface {
-	Iter(func(key, val string))
-	Len() int
-	Clear()
-}
+import "sync"
 
-// ReadOnlyLockMap is a read only version of LockMap which avoids using mutexes as the caller guarantees no writes.
-type ReadOnlyLockMap struct {
+// LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
+// This should not be used for cases with heavy write load and performance concerns.
+type LockMap struct {
+	sync.RWMutex
 	m map[string]string
 }
 
-func NewReadOnlyLockMap(m map[string]string) *ReadOnlyLockMap {
-	return &ReadOnlyLockMap{m: m}
+func NewLockMap(m map[string]string) *LockMap {
+	return &LockMap{m: m}
 }
 
-func (r *ReadOnlyLockMap) Iter(f func(key string, val string)) {
-	for k, v := range r.m {
+func (l *LockMap) Iter(f func(key string, val string)) {
+	l.RLock()
+	defer l.RUnlock()
+	for k, v := range l.m {
 		f(k, v)
 	}
 }
 
-func (r *ReadOnlyLockMap) Len() int {
-	return len(r.m)
+func (l *LockMap) Len() int {
+	l.RLock()
+	defer l.RUnlock()
+	return len(l.m)
 }
 
-// Clear does panics as it is not safe to clear a ReadOnly map
-func (r *ReadOnlyLockMap) Clear() {
-	panic("Not safe to call Clear on a ReadOnlyLockMap")
+func (l *LockMap) Clear() {
+	l.Lock()
+	defer l.Unlock()
+	l.m = map[string]string{}
+}
+
+func (l *LockMap) Set(k, v string) {
+	l.Lock()
+	defer l.Unlock()
+	l.m[k] = v
+}
+
+func (l *LockMap) Get(k string) string {
+	l.RLock()
+	defer l.RUnlock()
+	return l.m[k]
 }

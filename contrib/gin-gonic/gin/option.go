@@ -24,7 +24,7 @@ type config struct {
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
-	headerTags    internal.LockMap
+	headerTags    *internal.LockMap
 }
 
 func newConfig(serviceName string) *config {
@@ -85,7 +85,7 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 

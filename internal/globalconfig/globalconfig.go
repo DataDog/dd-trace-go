@@ -19,10 +19,7 @@ import (
 var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
-	headersAsTags: headerTagMap{
-		RWMutex:       sync.RWMutex{},
-		headersToTags: map[string]string{},
-	},
+	headersAsTags: internal.NewLockMap(map[string]string{}),
 }
 
 type config struct {
@@ -30,32 +27,7 @@ type config struct {
 	analyticsRate float64
 	serviceName   string
 	runtimeID     string
-	headersAsTags headerTagMap
-}
-
-type headerTagMap struct {
-	sync.RWMutex
-	headersToTags map[string]string
-}
-
-func (h *headerTagMap) Iter(f func(key, val string)) {
-	h.RLock()
-	defer h.RUnlock()
-	for h, t := range h.headersToTags {
-		f(h, t)
-	}
-}
-
-func (h *headerTagMap) Len() int {
-	h.RLock()
-	defer h.RUnlock()
-	return len(h.headersToTags)
-}
-
-func (h *headerTagMap) Clear() {
-	h.Lock()
-	defer h.Unlock()
-	h.headersToTags = map[string]string{}
+	headersAsTags *internal.LockMap
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -96,23 +68,19 @@ func RuntimeID() string {
 }
 
 // HeaderTagMap returns the mappings of headers to their tag values
-func HeaderTagMap() internal.LockMap {
-	return &cfg.headersAsTags
+func HeaderTagMap() *internal.LockMap {
+	return cfg.headersAsTags
 }
 
 // HeaderTag returns the configured tag for a given header.
 // This function exists for testing purposes, for performance you may want to use `HeaderTagMap`
 func HeaderTag(header string) string {
-	cfg.headersAsTags.RLock()
-	defer cfg.headersAsTags.RUnlock()
-	return cfg.headersAsTags.headersToTags[header]
+	return cfg.headersAsTags.Get(header)
 }
 
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
-	cfg.headersAsTags.Lock()
-	defer cfg.headersAsTags.Unlock()
-	cfg.headersAsTags.headersToTags[from] = to
+	cfg.headersAsTags.Set(from, to)
 }
 
 // HeaderTagsLen returns the length of globalconfig's headersAsTags map, 0 for empty map

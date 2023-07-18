@@ -19,7 +19,7 @@ const defaultServiceName = "go-restful"
 type config struct {
 	serviceName   string
 	analyticsRate float64
-	headerTags    internal.LockMap
+	headerTags    *internal.LockMap
 }
 
 func newConfig() *config {
@@ -78,6 +78,6 @@ func WithAnalyticsRate(rate float64) Option {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }

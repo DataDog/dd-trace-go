@@ -25,7 +25,7 @@ type config struct {
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	resourceNamer func(r *http.Request) string
-	headerTags    internal.LockMap
+	headerTags    *internal.LockMap
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -112,6 +112,6 @@ func defaultResourceNamer(_ *http.Request) string {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }

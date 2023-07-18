@@ -28,7 +28,7 @@ type routerConfig struct {
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
-	headerTags    internal.LockMap
+	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -128,7 +128,7 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 func WithHeaderTags(headers []string) RouterOption {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *routerConfig) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 

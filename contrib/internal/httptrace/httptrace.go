@@ -106,18 +106,12 @@ func urlFromRequest(r *http.Request) string {
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, headerCfg internal.LockMap) ddtrace.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
-		var opts []ddtrace.StartSpanOption
 		headerCfg.Iter(func(header, tag string) {
 			if vs, ok := req.Header[header]; ok {
-				opts = append(opts, func(cfg *ddtrace.StartSpanConfig) {
-					cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
-				})
+				cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
 			}
 		})
-		for _, opt := range opts {
-			opt(cfg)
-		}
 	}
 }

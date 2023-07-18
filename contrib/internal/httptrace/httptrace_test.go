@@ -39,7 +39,7 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	}
 
 	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3"}
-	ht := internal.NewReadOnlyLockMap(normalizer.HeaderTagSlice(hs))
+	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
 	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
 	s.Finish()
 	spans := mt.FinishedSpans()

@@ -25,7 +25,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
-	headerTags         internal.LockMap
+	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
 }
 
@@ -119,7 +119,7 @@ func WithModifyResourceName(fn func(resourceName string) string) Option {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
