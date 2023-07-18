@@ -100,6 +100,14 @@ func HeaderTagMap() internal.LockMap {
 	return &cfg.headersAsTags
 }
 
+// HeaderTag returns the configured tag for a given header.
+// This function exists for testing purposes, for performance you may want to use `HeaderTagMap`
+func HeaderTag(header string) string {
+	cfg.headersAsTags.RLock()
+	defer cfg.headersAsTags.RUnlock()
+	return cfg.headersAsTags.headersToTags[header]
+}
+
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
 	cfg.headersAsTags.Lock()
