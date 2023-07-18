@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
@@ -105,13 +106,12 @@ func urlFromRequest(r *http.Request) string {
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, lookupHeader func(string) (string, bool)) ddtrace.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtrace.StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
-		for h, v := range req.Header {
-			h = strings.ToLower(h)
-			if tag, ok := lookupHeader(h); ok && !strings.HasPrefix(h, "x-datadog-") {
-				cfg.Tags[tag] = strings.TrimSpace(strings.Join(v, ","))
+		headerCfg.Iter(func(header, tag string) {
+			if vs, ok := req.Header[header]; ok {
+				cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
 			}
-		}
+		})
 	}
 }
