@@ -7,7 +7,6 @@
 package normalizer
 
 import (
-	"net/textproto"
 	"regexp"
 	"strings"
 
@@ -21,7 +20,6 @@ var headerTagRegexp = regexp.MustCompile("[^a-zA-Z0-9 -]")
 // e.g, "header" or "header:tag" where `tag` will be the name of the header tag.
 // If multiple colons exist in the input, it splits on the last colon.
 // e.g, "first:second:third" gets split into `header = "first:second"` and `tag="third"`
-// The returned header is in canonical MIMEHeader format.
 func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	header = strings.ToLower(strings.TrimSpace(headerAsTag))
 	// if a colon is found in `headerAsTag`
@@ -31,5 +29,5 @@ func NormalizeHeaderTag(headerAsTag string) (header string, tag string) {
 	} else {
 		tag = ext.HTTPRequestHeaders + "." + headerTagRegexp.ReplaceAllString(header, "_")
 	}
-	return textproto.CanonicalMIMEHeaderKey(header), tag
+	return header, tag
 }

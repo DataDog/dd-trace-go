@@ -8,9 +8,7 @@ package http
 import (
 	"math"
 	"net/http"
-	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -29,7 +27,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
-	headerTags    httptrace.FoldHeaderTags
+	headerTags    func(string) (string, bool)
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -45,7 +43,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.headerTags = globalconfig.FoldHeaderTags[[]ddtrace.StartSpanOption]
+	cfg.headerTags = globalconfig.HeaderTag
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -77,14 +75,12 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
 		header, tag := normalizer.NormalizeHeaderTag(h)
-		if !strings.HasPrefix(header, "x-datadog-") {
-			headerTagsMap[header] = tag
-		}
+		headerTagsMap[header] = tag
 	}
 	return func(cfg *config) {
-		cfg.headerTags = func(f func(acc []ddtrace.StartSpanOption, header, tag string) []ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
-			var acc []ddtrace.StartSpanOption
-			return internal.FoldM(acc, f, headerTagsMap)
+		cfg.headerTags = func(k string) (string, bool) {
+			tag, ok := headerTagsMap[k]
+			return tag, ok
 		}
 	}
 }

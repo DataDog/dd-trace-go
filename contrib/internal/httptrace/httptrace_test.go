@@ -13,10 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -27,7 +25,6 @@ import (
 func TestHeaderTagsFromRequest(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	defer globalconfig.ClearHeaderTags()
 
 	r := httptest.NewRequest(http.MethodGet, "/test", nil)
 	r.Header.Set("header1", "val1")
@@ -35,14 +32,11 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	r.Header.Set("header3", "v a l 3")
 
 	headerTags := map[string]string{"header1": "tag1", "header2": "tag2", "header3": "tag3"}
-	for h, tag := range headerTags {
-		globalconfig.SetHeaderTag(h, tag)
+	headerTag := func(header string) (tag string, ok bool) {
+		tag, ok = headerTags[header]
+		return
 	}
-	globalconfig.SetHeaderTag("header1", "tag1")
-	globalconfig.SetHeaderTag("header2", "tag2")
-	globalconfig.SetHeaderTag("header3", "tag3")
-
-	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, globalconfig.FoldHeaderTags[[]ddtrace.StartSpanOption]))
+	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, headerTag))
 	s.Finish()
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
