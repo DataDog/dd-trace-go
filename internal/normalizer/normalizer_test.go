@@ -16,32 +16,32 @@ import (
 func TestNormalizeHeaderTag(t *testing.T) {
 	t.Run("single", func(t *testing.T) {
 		header, tag := HeaderTag("header")
-		assert.Equal(t, header, "header")
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
 	t.Run("mapped", func(t *testing.T) {
 		header, tag := HeaderTag("header:tag")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "tag", tag)
 	})
 	t.Run("whitespaces leading-trailing", func(t *testing.T) {
 		header, tag := HeaderTag("  header : tag   ")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "tag", tag)
 	})
 	t.Run("whitespaces tag", func(t *testing.T) {
 		header, tag := HeaderTag("header:t a g")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "t a g", tag)
 	})
 	t.Run("header special-chars", func(t *testing.T) {
 		// when no target tag is specified, the header tag gets normalized
 		// on all special chars except '-'
 		header, tag := HeaderTag("h-e-a-d-e-r")
-		assert.Equal(t, "h-e-a-d-e-r", header)
+		assert.Equal(t, "H-E-A-D-E-R", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".h-e-a-d-e-r", tag)
 		header, tag = HeaderTag("h.e.a.d.e.r")
-		assert.Equal(t, "h.e.a.d.e.r", header)
+		assert.Equal(t, "H.e.a.d.e.r", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".h_e_a_d_e_r", tag)
 		header, tag = HeaderTag("h!e@a*d/e)r")
 		assert.Equal(t, "h!e@a*d/e)r", header)
@@ -50,7 +50,7 @@ func TestNormalizeHeaderTag(t *testing.T) {
 	t.Run("tag special-chars", func(t *testing.T) {
 		// no normalization shoul occur on the tag when a target has been specified
 		header, tag := HeaderTag("header:t*a.g!")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "t*a.g!", tag)
 	})
 	t.Run("adjacent-special-chars", func(t *testing.T) {
@@ -63,14 +63,14 @@ func TestNormalizeHeaderTag(t *testing.T) {
 		assert.Equal(t, "header:tag", header)
 		assert.Equal(t, "extra", tag)
 	})
-	t.Run("lowercase-ify header", func(t *testing.T) {
+	t.Run("mime-ify header", func(t *testing.T) {
 		header, tag := HeaderTag("HEADER")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, ext.HTTPRequestHeaders+".header", tag)
 	})
 	t.Run("lowercase-ify tag", func(t *testing.T) {
 		header, tag := HeaderTag("header:TAG")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "tag", tag)
 	})
 	t.Run("leading colon", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestNormalizeHeaderTag(t *testing.T) {
 	})
 	t.Run("trailing colon", func(t *testing.T) {
 		header, tag := HeaderTag("header:")
-		assert.Equal(t, "header", header)
+		assert.Equal(t, "Header", header)
 		assert.Equal(t, "", tag)
 	})
 }
