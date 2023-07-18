@@ -19,7 +19,7 @@ const defaultServiceName = "go-restful"
 type config struct {
 	serviceName   string
 	analyticsRate float64
-	headerTags    func(string) (string, bool)
+	headerTags    internal.LockMap
 }
 
 func newConfig() *config {
@@ -34,7 +34,7 @@ func newConfig() *config {
 	return &config{
 		serviceName:   serviceName,
 		analyticsRate: rate,
-		headerTags:    globalconfig.HeaderTag,
+		headerTags:    globalconfig.HeaderTagMap(),
 	}
 }
 
@@ -76,15 +76,8 @@ func WithAnalyticsRate(rate float64) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerAsTags := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.HeaderTag(h)
-		headerAsTags[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerAsTags[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
 	}
 }

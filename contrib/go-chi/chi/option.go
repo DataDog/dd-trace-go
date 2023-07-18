@@ -27,7 +27,7 @@ type config struct {
 	isStatusError func(statusCode int) bool
 	ignoreRequest func(r *http.Request) bool
 	resourceNamer func(r *http.Request) string
-	headerTags    func(string) (string, bool)
+	headerTags    internal.LockMap
 }
 
 // Option represents an option that can be passed to NewRouter.
@@ -40,7 +40,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headerTags = globalconfig.HeaderTag
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.resourceNamer = func(r *http.Request) string {
@@ -108,16 +108,9 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.HeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewReadOnlyLockMap(headerTagsMap)
 	}
 }
 
