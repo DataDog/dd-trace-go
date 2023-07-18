@@ -22,22 +22,26 @@ import (
 
 type Integration struct {
 	numSpans int
+	opts     []gormtrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]gormtrace.Option, 0),
+	}
 }
 
 func (i *Integration) Name() string {
-	return "contrib/gopkg.in/jinzhu/gorm.v1"
+	return "gopkg.in/jinzhu/gorm.v1"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	closeFunc := sqltest.Prepare(gormtest.TableName)
-	return func() {
-		closeFunc()
-	}
+	t.Cleanup(func() {
+		defer closeFunc()
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -50,10 +54,6 @@ func (i *Integration) GenSpans(t *testing.T) {
 		"Exec":          5,
 	}
 	i.numSpans += gormtest.RunAll(operationToNumSpans, t, registerFunc, getDB)
-}
-
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
 }
 
 func (i *Integration) NumSpans() int {
@@ -79,4 +79,8 @@ func getDB(driverName string, connString string, dialectorFunc func(*sql.DB) gor
 		log.Fatal(err)
 	}
 	return internalDB
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, gormtrace.WithServiceName(name))
 }

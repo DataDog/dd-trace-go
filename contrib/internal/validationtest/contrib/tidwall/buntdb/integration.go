@@ -17,27 +17,31 @@ import (
 type Integration struct {
 	db       *buntdbtrace.DB
 	numSpans int
+	opts     []buntdbtrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]buntdbtrace.Option, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, buntdbtrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/tidwall/buntdb"
+	return "tidwall/buntdb"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
-	i.db = getDatabase(t)
+	i.db = getDatabase(t, i)
 
-	return func() {
+	t.Cleanup(func() {
 		i.db.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -75,7 +79,7 @@ func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
-func getDatabase(t *testing.T) *buntdbtrace.DB {
+func getDatabase(t *testing.T, i *Integration) *buntdbtrace.DB {
 	bdb, err := buntdb.Open(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -106,5 +110,5 @@ func getDatabase(t *testing.T) *buntdbtrace.DB {
 		t.Fatal(err)
 	}
 
-	return buntdbtrace.WrapDB(bdb)
+	return buntdbtrace.WrapDB(bdb, i.opts...)
 }

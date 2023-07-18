@@ -17,29 +17,33 @@ import (
 type Integration struct {
 	client   redis.Conn
 	numSpans int
+	opts     []redigotrace.DialOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]redigotrace.DialOption, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, redigotrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/garyburd/redigo"
+	return "garyburd/redigo"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
-	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379")
+	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 	i.client = client
 	assert.Nil(t, err)
 
-	return func() {
+	t.Cleanup(func() {
 		i.client.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -58,7 +62,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.Dial("tcp", "127.0.0.1:6379")
+			return redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 		},
 	}
 

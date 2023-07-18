@@ -17,28 +17,32 @@ import (
 type Integration struct {
 	collection *mgotrace.Collection
 	numSpans   int
+	opts       []mgotrace.DialOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]mgotrace.DialOption, 0),
+	}
 }
 
 func (i *Integration) Name() string {
-	return "contrib/globalsign/mgo"
+	return "globalsign/mgo"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	// connect to MongoDB
-	session, err := mgotrace.Dial("localhost:27017")
+	session, err := mgotrace.Dial("localhost:27017", i.opts...)
 	require.NoError(t, err)
 
 	db := session.DB("my_db")
 	i.collection = db.C("MyCollection")
 
-	return func() {
-		session.Close()
-	}
+	t.Cleanup(func() {
+		defer session.Close()
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -58,8 +62,8 @@ func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, mgotrace.WithServiceName(name))
 }
 
 var entity = bson.D{

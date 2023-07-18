@@ -20,29 +20,33 @@ import (
 type Integration struct {
 	db       *leveldbtrace.DB
 	numSpans int
+	opts     []leveldbtrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]leveldbtrace.Option, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, leveldbtrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/syndtr/goleveldb/leveldb"
+	return "syndtr/goleveldb/leveldb"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	var err error
-	i.db, err = leveldbtrace.Open(storage.NewMemStorage(), &opt.Options{})
+	i.db, err = leveldbtrace.Open(storage.NewMemStorage(), &opt.Options{}, i.opts...)
 	assert.NoError(t, err)
 
-	return func() {
+	t.Cleanup(func() {
 		i.db.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {

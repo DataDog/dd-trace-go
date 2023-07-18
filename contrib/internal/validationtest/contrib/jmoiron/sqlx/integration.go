@@ -23,22 +23,26 @@ import (
 
 type Integration struct {
 	numSpans int
+	opts     []sqltrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]sqltrace.Option, 0),
+	}
 }
 
 func (i *Integration) Name() string {
-	return "contrib/jmoiron/sqlx"
+	return "jmoiron/sqlx"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	closeFunc := sqltest.Prepare(gormtest.TableName)
-	return func() {
-		closeFunc()
-	}
+	t.Cleanup(func() {
+		defer closeFunc()
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -53,12 +57,12 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans += gormtest.RunAll(operationToNumSpans, t, registerFunc, getDB)
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
-}
-
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, sqltrace.WithServiceName(name))
 }
 
 func registerFunc(driverName string, driver driver.Driver) {

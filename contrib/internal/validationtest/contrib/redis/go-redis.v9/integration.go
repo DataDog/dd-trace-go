@@ -17,29 +17,33 @@ import (
 type Integration struct {
 	client   redis.UniversalClient
 	numSpans int
+	opts     []redistrace.ClientOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]redistrace.ClientOption, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, redistrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/redis/go-redis.v9"
+	return "redis/go-redis.v9"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 
-	i.client = redistrace.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	i.client = redistrace.NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, i.opts...)
 	i.numSpans++
 
-	return func() {
+	t.Cleanup(func() {
 		i.client.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
