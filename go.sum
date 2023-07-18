@@ -631,8 +631,8 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.46.0-rc.4/go.mod h1:V
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/datadog-go/v5 v5.1.1 h1:JLZ6s2K1pG2h9GkvEvMdEGqMDyVLEAccdX5TltWcLMU=
 github.com/DataDog/datadog-go/v5 v5.1.1/go.mod h1:KhiYb2Badlv9/rofz+OznKoEF5XKTonWyhx5K83AP8E=
-github.com/DataDog/go-libddwaf v1.4.0 h1:neu9r2KFfn71zHvRrzZgMtRyxb2yYVr3AozIoMj6mf4=
-github.com/DataDog/go-libddwaf v1.4.0/go.mod h1:qLZEuaF5amEVMP5NTYtr/6m30m73voPL4i7SK7dnnt4=
+github.com/DataDog/go-libddwaf v1.4.1 h1:dZTypHGyf38vDk5QbbsqaB8w5X213dFOZKT8SnMLmSI=
+github.com/DataDog/go-libddwaf v1.4.1/go.mod h1:qLZEuaF5amEVMP5NTYtr/6m30m73voPL4i7SK7dnnt4=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork h1:yBq5PrAtrM4yVeSzQ+bn050+Ysp++RKF1QmtkL4VqvU=
 github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork/go.mod h1:yA5JwkZsHTLuqq3zaRgUQf35DfDkpOZqgtBqHKpwrBs=
 github.com/DataDog/gostackparse v0.5.0 h1:jb72P6GFHPHz2W0onsN51cS3FkaMDcjb0QzgxxA4gDk=
