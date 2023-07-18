@@ -7,20 +7,16 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
-	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
+	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // Integration is an interface that should be implemented by integrations (packages under the contrib/ folder) in
@@ -30,9 +26,8 @@ type Integration interface {
 	Name() string
 
 	// Init initializes the integration (start a server in the background, initialize the client, etc.).
-	// It should return a cleanup function that will be executed after the test finishes.
 	// It should also call t.Helper() before making any assertions.
-	Init(t *testing.T) func()
+	Init(t *testing.T)
 
 	// GenSpans performs any operation(s) from the integration that generate spans.
 	// It should call t.Helper() before making any assertions.
@@ -40,36 +35,22 @@ type Integration interface {
 
 	// NumSpans returns the number of spans that should have been generated during the test.
 	NumSpans() int
+
+	// WithServiceName configures the integration to use the given service name.
+	WithServiceName(name string)
 }
 
 // tracerEnv gets the current tracer configuration variables needed for Test Agent testing and places
 // these env variables in a comma separated string of key=value pairs.
 func tracerEnv() string {
-	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	peerServiceDefaultsEnabled := false
-	// Use a default schema version of V1 and only update if the env variable is a valid schema
-	schemaVersion := namingschema.SchemaV1
-	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
-		schemaVersion = v
-		if int(v) == int(namingschema.SchemaV0) {
-			peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	var ddEnvVars []string
+	for _, keyValue := range os.Environ() {
+		if !strings.HasPrefix(keyValue, "DD_") {
+			continue
 		}
+		ddEnvVars = append(ddEnvVars, keyValue)
 	}
-	serviceName := os.Getenv("DD_SERVICE")
-	// override DD_SERVICE if a global service name is set in order to replicate real tracer service name resolution
-	if v := globalconfig.ServiceName(); v != "" {
-		serviceName = v
-	}
-	ddEnvVars := map[string]string{
-		"DD_SERVICE":                             serviceName,
-		"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":         fmt.Sprintf("v%d", schemaVersion),
-		"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": strconv.FormatBool(peerServiceDefaultsEnabled),
-	}
-	values := make([]string, 0, len(ddEnvVars))
-	for k, v := range ddEnvVars {
-		values = append(values, fmt.Sprintf("%s=%s", k, v))
-	}
-	return strings.Join(values, ",")
+	return strings.Join(ddEnvVars, ",")
 }
 
 type testAgentTransport struct {
@@ -121,39 +102,87 @@ var (
 	testAgentConnection = testAgentDetails()
 	sessionToken        = "default"
 	currentTracerEnv    = tracerEnv()
-	testCases           = GetValidationTestCases()
+	// testCases           = GetValidationTestCases()
 )
 
 func TestIntegrations(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
-	integrations := []Integration{memcachetest.New(), dnstest.New()}
+
+	integrations := []Integration{
+		memcachetest.New(),
+		dnstest.New(),
+	}
+
+	testCases := []struct {
+		name                   string
+		env                    map[string]string
+		integrationServiceName string
+	}{
+		{
+			"GlobalServiceConfigured",
+			map[string]string{
+				"DD_SERVICE": "Datadog-Test-Agent-Trace-Checks",
+			},
+			"",
+		},
+		{
+			"SpanAttributeSchemaV0",
+			map[string]string{
+				"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": "v0",
+				"DD_SERVICE":                     "Datadog-Test-Agent-Trace-Checks",
+			},
+			"",
+		},
+		{
+			"SpanAttributeSchemaV1",
+			map[string]string{
+				"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": "v1",
+				"DD_SERVICE":                     "Datadog-Test-Agent-Trace-Checks",
+			},
+			"",
+		},
+		{
+			"SpanAttributeSchemaV1WithIntegrationServiceName",
+			map[string]string{
+				"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": "v1",
+				"DD_SERVICE":                     "Datadog-Test-Agent-Trace-Checks",
+			},
+			"Datadog-Test-Agent-Trace-Checks-Override",
+		},
+	}
+
 	for _, ig := range integrations {
-		name := ig.Name()
-		sessionToken = fmt.Sprintf("%s-%d", name, time.Now().Unix())
-		t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
-		for _, testCase := range testCases {
-			t.Run(name, func(t *testing.T) {
-				t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
+		for _, tc := range testCases {
+			testName := fmt.Sprintf("contrib/%s/%s", ig.Name(), tc.name)
+
+			t.Run(testName, func(t *testing.T) {
+				sessionToken = fmt.Sprintf("%s-%d", testName, time.Now().Unix())
+				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
+				// t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 				// loop through all our environment for the testCase and set each variable
-				for k, v := range testCase.EnvVars {
+				for k, v := range tc.env {
 					t.Setenv(k, v)
 				}
 
 				// also include the testCase start options within the tracer config
-				tracer.Start(append(testCase.StartOptions, tracer.WithAgentAddr(testAgentConnection), tracer.WithHTTPClient(testAgentClient))...)
+				tracer.Start(
+					tracer.WithAgentAddr(testAgentConnection),
+					tracer.WithHTTPClient(testAgentClient),
+				)
+				defer tracer.Stop()
+
+				if tc.integrationServiceName != "" {
+					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", ig.Name()), tc.integrationServiceName)
+					ig.WithServiceName(tc.integrationServiceName)
+				}
 
 				// get the current Tracer Environment after it has been started with configuration
 				currentTracerEnv = tracerEnv()
 
-				defer tracer.Stop()
-
-				cleanup := ig.Init(t)
-				defer cleanup()
-
+				ig.Init(t)
 				ig.GenSpans(t)
-
 				tracer.Flush()
 
 				assertNumSpans(t, sessionToken, ig.NumSpans())
