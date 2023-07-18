@@ -18,6 +18,7 @@ func NewLockMap(m map[string]string) *LockMap {
 	return &LockMap{m: m}
 }
 
+// Iter iterates over all the map entries passing in keys and values to provided func f. Note this is READ ONLY.
 func (l *LockMap) Iter(f func(key string, val string)) {
 	l.RLock()
 	defer l.RUnlock()

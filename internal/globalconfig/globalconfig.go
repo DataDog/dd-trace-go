@@ -11,9 +11,9 @@ import (
 	"math"
 	"sync"
 
-	"github.com/google/uuid"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
+	"github.com/google/uuid"
 )
 
 var cfg = &config{
