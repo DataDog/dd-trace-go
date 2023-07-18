@@ -38,6 +38,8 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) {
 	t.Helper()
+	opts = i.opts
+
 	closeFunc := sqltest.Prepare(gormtest.TableName)
 	t.Cleanup(func() {
 		defer closeFunc()
@@ -65,12 +67,14 @@ func (i *Integration) WithServiceName(name string) {
 	i.opts = append(i.opts, sqltrace.WithServiceName(name))
 }
 
+var opts []sqltrace.Option
+
 func registerFunc(driverName string, driver driver.Driver) {
-	sqltrace.Register(driverName, driver)
+	sqltrace.Register(driverName, driver, opts...)
 }
 
 func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
-	db, err := sqlxtrace.Open(driverName, connString)
+	db, err := sqlxtrace.Open(driverName, connString, opts...)
 	if err != nil {
 		log.Fatal(err)
 	}

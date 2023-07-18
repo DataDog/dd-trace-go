@@ -36,7 +36,11 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) {
 	t.Helper()
-	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
+	var opt redigotrace.DialOption
+	if len(i.opts) > 0 {
+		opt = i.opts[0]
+	}
+	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", opt)
 	i.client = client
 	assert.Nil(t, err)
 
@@ -55,14 +59,17 @@ func (i *Integration) GenSpans(t *testing.T) {
 	_, err := i.client.Do("NOT_A_COMMAND", context.Background())
 	assert.NotNil(t, err)
 	i.numSpans++
-
+	var opt redigotrace.DialOption
+	if len(i.opts) > 0 {
+		opt = i.opts[0]
+	}
 	pool := &redis.Pool{
 		MaxIdle:     2,
 		MaxActive:   3,
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
+			return redigotrace.Dial("tcp", "127.0.0.1:6379", opt)
 		},
 	}
 

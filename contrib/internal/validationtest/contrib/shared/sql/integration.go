@@ -71,7 +71,7 @@ func RunAll(t *testing.T, cfg *Config) int {
 	} {
 		t.Run(name, test(cfg))
 	}
-	var sum int = 0
+	var sum int
 	for _, val := range cfg.OperationToNumSpans {
 		sum += val
 	}

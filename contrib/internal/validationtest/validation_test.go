@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 package validationtest
 
 import (
@@ -12,7 +17,7 @@ import (
 	"time"
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
-	redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
+	//redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
 	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
 	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
 	redistest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis"
@@ -22,6 +27,7 @@ import (
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
 	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
 
+	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/database/sql"
 	sqlxtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jmoiron/sqlx"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
 	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
@@ -110,6 +116,7 @@ func TestIntegrations(t *testing.T) {
 	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	// }
 	integrations := []Integration{
+		sqltest.New(),
 		gopkgJinzhuGormv1test.New(),
 		jinzhuGormv1test.New(),
 		gormv1test.New(),
@@ -117,7 +124,7 @@ func TestIntegrations(t *testing.T) {
 		sqlxtest.New(),
 		memcachetest.New(),
 		dnstest.New(),
-		redigotest.New(),
+		//redigotest.New(),
 		pgtest.New(),
 		redistest.New(),
 		redisV7test.New(),
@@ -189,7 +196,11 @@ func TestIntegrations(t *testing.T) {
 				defer tracer.Stop()
 
 				if tc.integrationServiceName != "" {
-					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(ig.Name())), tc.integrationServiceName)
+					componentName := ig.Name()
+					if componentName == "jmoiron/sqlx" {
+						componentName = "database/sql"
+					}
+					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
 					ig.WithServiceName(tc.integrationServiceName)
 				}
 

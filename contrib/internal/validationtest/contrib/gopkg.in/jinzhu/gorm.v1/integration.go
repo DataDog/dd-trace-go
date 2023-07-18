@@ -37,9 +37,9 @@ func (i *Integration) Name() string {
 
 func (i *Integration) Init(t *testing.T) {
 	t.Helper()
-	close_func := sqltest.Prepare(gormtest.TableName)
+	closeFunc := sqltest.Prepare(gormtest.TableName)
 	t.Cleanup(func() {
-		defer close_func()
+		defer closeFunc()
 		i.numSpans = 0
 	})
 }
