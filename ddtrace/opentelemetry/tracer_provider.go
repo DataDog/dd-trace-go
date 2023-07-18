@@ -66,20 +66,26 @@ const (
 )
 
 // Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
+// The name field is ignored, and will only ever instantiate one tracer. If called more
+// than once, the previously created tracer will be returned.
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
 		return &noopOteltracer{}
+	}
+	if p.tracer != nil {
+		return p.tracer
 	}
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_INJECT",
 		"DD_PROPAGATION_STYLE_INJECT", genericHeaderPropagationStyle)
 	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_EXTRACT",
 		"DD_PROPAGATION_STYLE_EXTRACT", genericHeaderPropagationStyle)
 	tracer.Start(p.ddopts...)
-	return &oteltracer{
+	p.tracer = &oteltracer{
 		Tracer:   internal.GetGlobalTracer(),
 		provider: p,
 	}
+	return p.tracer
 }
 
 func setW3CPropagationStyle(env ...string) {

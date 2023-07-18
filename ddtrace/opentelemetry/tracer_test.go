@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +35,14 @@ func TestGetTracer(t *testing.T) {
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
 	assert.Equal(ott.Tracer, dd)
+}
+
+func TestGetTracerMultiple(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	tr := tp.Tracer("ot")
+	tr2 := tp.Tracer("ot")
+	assert.True(reflect.DeepEqual(tr, tr2))
 }
 
 func TestSpanWithContext(t *testing.T) {
