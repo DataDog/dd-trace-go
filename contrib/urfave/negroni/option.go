@@ -112,7 +112,7 @@ func defaultResourceNamer(_ *http.Request) string {
 func WithHeaderTags(headers []string) Option {
 	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
+		header, tag := normalizer.HeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *config) {

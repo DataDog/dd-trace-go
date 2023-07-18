@@ -12,12 +12,17 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
-	headersAsTags: make(map[string]string),
+	headersAsTags: headerTagMap{
+		RWMutex:       sync.RWMutex{},
+		headersToTags: map[string]string{},
+	},
 }
 
 type config struct {
@@ -25,7 +30,32 @@ type config struct {
 	analyticsRate float64
 	serviceName   string
 	runtimeID     string
-	headersAsTags map[string]string
+	headersAsTags headerTagMap
+}
+
+type headerTagMap struct {
+	sync.RWMutex
+	headersToTags map[string]string
+}
+
+func (h *headerTagMap) Iter(f func(key, val string)) {
+	h.RLock()
+	defer h.RUnlock()
+	for h, t := range h.headersToTags {
+		f(h, t)
+	}
+}
+
+func (h *headerTagMap) Len() int {
+	h.RLock()
+	defer h.RUnlock()
+	return len(h.headersToTags)
+}
+
+func (h *headerTagMap) Clear() {
+	h.Lock()
+	defer h.Unlock()
+	h.headersToTags = map[string]string{}
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -65,30 +95,25 @@ func RuntimeID() string {
 	return cfg.runtimeID
 }
 
-// HeaderTag returns the tag assigned to the given header
-func HeaderTag(header string) (tag string, ok bool) {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	tag, ok = cfg.headersAsTags[header]
-	return tag, ok
+// HeaderTagMap returns the mappings of headers to their tag values
+func HeaderTagMap() internal.LockMap {
+	return &cfg.headersAsTags
 }
 
 // SetHeaderTag adds config for header `from` with tag value `to`
 func SetHeaderTag(from, to string) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.headersAsTags[from] = to
+	cfg.headersAsTags.Lock()
+	defer cfg.headersAsTags.Unlock()
+	cfg.headersAsTags.headersToTags[from] = to
 }
 
 // HeaderTagsLen returns the length of globalconfig's headersAsTags map, 0 for empty map
 func HeaderTagsLen() int {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return len(cfg.headersAsTags)
+	return cfg.headersAsTags.Len()
 }
 
 // ClearHeaderTags assigns headersAsTags to a new, empty map
 // It is invoked when WithHeaderTags is called, in order to overwrite the config
 func ClearHeaderTags() {
-	cfg.headersAsTags = make(map[string]string)
+	cfg.headersAsTags.Clear()
 }

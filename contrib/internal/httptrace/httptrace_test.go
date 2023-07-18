@@ -10,12 +10,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/assert"
@@ -31,19 +32,21 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	r.Header.Set("header2", " val2 ")
 	r.Header.Set("header3", "v a l 3")
 
-	headerTags := map[string]string{"header1": "tag1", "header2": "tag2", "header3": "tag3"}
-	headerTag := func(header string) (tag string, ok bool) {
-		tag, ok = headerTags[header]
-		return
+	expectedHeaderTags := map[string]string{
+		"tag1": "val1",
+		"tag2": "val2",
+		"tag3": "v a l 3",
 	}
-	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, headerTag))
+
+	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3"}
+	ht := internal.NewReadOnlyLockMap(normalizer.HeaderTagSlice(hs))
+	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
 	s.Finish()
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 
-	for header, tag := range headerTags {
-		val := strings.TrimSpace(strings.Join(r.Header.Values(header), ","))
-		assert.Equal(t, val, spans[0].Tags()[tag])
+	for expectedTag, expectedTagVal := range expectedHeaderTags {
+		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
 	}
 }
 

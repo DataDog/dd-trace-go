@@ -128,7 +128,7 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 func WithHeaderTags(headers []string) RouterOption {
 	headerTagsMap := make(map[string]string)
 	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
+		header, tag := normalizer.HeaderTag(h)
 		headerTagsMap[header] = tag
 	}
 	return func(cfg *routerConfig) {

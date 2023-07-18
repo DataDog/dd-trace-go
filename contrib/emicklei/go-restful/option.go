@@ -78,7 +78,7 @@ func WithAnalyticsRate(rate float64) Option {
 func WithHeaderTags(headers []string) Option {
 	headerAsTags := make(map[string]string)
 	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
+		header, tag := normalizer.HeaderTag(h)
 		headerAsTags[header] = tag
 	}
 	return func(cfg *config) {
