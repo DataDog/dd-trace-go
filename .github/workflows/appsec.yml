@@ -143,4 +143,4 @@ jobs:
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
-      dd-trace-go-version: $GITHUB_SHA
+      dd-trace-go-version: ${{ github.sha }}
