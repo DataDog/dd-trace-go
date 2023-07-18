@@ -264,8 +264,6 @@ jobs:
         if: always()
         shell: bash
         run: |
-              sudo apt update
-              sudo apt install -y jq
               RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
               RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
 
@@ -277,13 +275,13 @@ jobs:
                   cat response.txt
                   echo " - All APM Test Agent Check Traces returned successful!"
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq '.'
+                  cat summary_response.txt
               else
                   echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
                   echo "Failures:"
                   cat response.txt
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq '.'
+                  cat summary_response.txt
                   exit 1
               fi
 
