@@ -18,6 +18,7 @@ import (
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/database/sql"
+
 	//redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
 	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
 	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
@@ -220,6 +221,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
+	var lastReceived int
 	run := func() bool {
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
@@ -237,6 +239,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 		for _, traceSpans := range traces {
 			receivedSpans += len(traceSpans)
 		}
+		lastReceived = receivedSpans
 		if receivedSpans > wantSpans {
 			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
@@ -259,7 +262,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 			continue
 
 		case <-timeoutChan:
-			t.Fatal("timeout waiting for spans")
+			t.Fatalf("timeout waiting for spans (wantSpans: %d, receivedSpans: %d)", wantSpans, lastReceived)
 		}
 	}
 }
