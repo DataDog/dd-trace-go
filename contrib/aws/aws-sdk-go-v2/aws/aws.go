@@ -342,7 +342,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 }
 
 func spanName(awsService, awsOperation string) string {
-	return namingschema.AWSOpName(awsService, awsOperation, s+".request")
+	return namingschema.AWSOpName(awsService, awsOperation, awsService+".request")
 }
 
 func serviceName(cfg *config, awsService string) string {

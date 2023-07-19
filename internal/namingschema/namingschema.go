@@ -16,7 +16,6 @@ package namingschema
 import (
 	"strings"
 	"sync"
-
 	"sync/atomic"
 )
 
