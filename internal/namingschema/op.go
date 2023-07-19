@@ -39,6 +39,7 @@ const (
 	LevelDBOutbound
 	BuntDBOutbound
 	ConsulOutbound
+	VaultOutbound
 )
 
 func opV1(s Service) string {
@@ -88,6 +89,8 @@ func opV1(s Service) string {
 		return "buntdb.query"
 	case ConsulOutbound:
 		return "consul.query"
+	case VaultOutbound:
+		return "vault.query"
 	}
 	return ""
 }
@@ -130,6 +133,8 @@ func opV0(s Service) string {
 		return "buntdb.query"
 	case ConsulOutbound:
 		return "consul.command"
+	case VaultOutbound:
+		return "http.request"
 	}
 	return ""
 }
