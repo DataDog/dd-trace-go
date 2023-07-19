@@ -126,10 +126,7 @@ func (h *handlers) serviceName(req *request.Request) string {
 		return h.cfg.serviceName
 	}
 	defaultName := "aws." + awsService(req)
-	return namingschema.NewDefaultServiceName(
-		defaultName,
-		namingschema.WithOverrideV0(defaultName),
-	).GetName()
+	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
 }
 
 func spanName(req *request.Request) string {

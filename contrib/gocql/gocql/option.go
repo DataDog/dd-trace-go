@@ -28,10 +28,7 @@ type WrapOption func(*queryConfig)
 
 func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
 	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
 		namingschema.WithOverrideV0("cassandra.batch"),

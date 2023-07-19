@@ -42,7 +42,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
@@ -157,10 +157,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 		return spanName
 	}
 	return &roundTripperConfig{
-		serviceName: namingschema.NewDefaultServiceName(
-			"",
-			namingschema.WithOverrideV0(""),
-		).GetName(),
+		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
 		propagation:   true,

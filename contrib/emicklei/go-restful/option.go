@@ -27,10 +27,7 @@ func newConfig() *config {
 	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
 		rate = 1.0
 	}
-	serviceName := namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
+	serviceName := namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	return &config{
 		serviceName:   serviceName,
 		analyticsRate: rate,

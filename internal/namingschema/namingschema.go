@@ -16,6 +16,8 @@ package namingschema
 import (
 	"strings"
 	"sync"
+
+	"sync/atomic"
 )
 
 // Version represents the available naming schema versions.
@@ -33,8 +35,7 @@ const (
 )
 
 var (
-	sv   Version
-	svMu sync.RWMutex
+	sv int32
 
 	useGlobalServiceName   bool
 	useGlobalServiceNameMu sync.RWMutex
@@ -54,16 +55,12 @@ func ParseVersion(v string) (Version, bool) {
 
 // GetVersion returns the global naming schema version used for this application.
 func GetVersion() Version {
-	svMu.RLock()
-	defer svMu.RUnlock()
-	return sv
+	return Version(atomic.LoadInt32(&sv))
 }
 
 // SetVersion sets the global naming schema version used for this application.
 func SetVersion(v Version) {
-	svMu.Lock()
-	defer svMu.Unlock()
-	sv = v
+	atomic.StoreInt32(&sv, int32(v))
 }
 
 // SetDefaultVersion sets the default global naming schema version.
