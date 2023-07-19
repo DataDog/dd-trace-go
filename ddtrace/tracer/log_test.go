@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -128,12 +129,15 @@ func TestStartupLog(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
 		defer stop()
-
 		tp.Reset()
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		logStartup(tracer)
 		require.Len(t, tp.Logs(), 2)
-		assert.Regexp(`.+"integrations":{"AWS SDK":{"instrumented":((true)|(false))},"AWS SDK v2":{"instrumented":((true)|(false))},"BuntDB":{"instrumented":((true)|(false))},"Cassandra":{"instrumented":((true)|(false))},"Consul":{"instrumented":((true)|(false))},"Elasticsearch":{"instrumented":((true)|(false))},"Elasticsearch v6":{"instrumented":((true)|(false))},"Fiber":{"instrumented":((true)|(false))},"Gin":{"instrumented":((true)|(false))},"Goji":{"instrumented":((true)|(false))},"Google API":{"instrumented":((true)|(false))},"Gorilla Mux":{"instrumented":((true)|(false))},"Gorm":{"instrumented":((true)|(false))},"Gorm \(gopkg\)":{"instrumented":((true)|(false))},"Gorm v1":{"instrumented":((true)|(false))},"GraphQL":{"instrumented":((true)|(false))},"HTTP":{"instrumented":((true)|(false))},"HTTP Router":{"instrumented":((true)|(false))},"HTTP Treemux":{"instrumented":((true)|(false))},"Kafka \(confluent\)":{"instrumented":((true)|(false))},"Kafka \(confluent\) v2":{"instrumented":((true)|(false))},"Kafka \(sarama\)":{"instrumented":((true)|(false))},"Kafka v0":{"instrumented":((true)|(false))},"Kubernetes":{"instrumented":((true)|(false))},"LevelDB":{"instrumented":((true)|(false))},"Logrus":{"instrumented":((true)|(false))},"Memcache":{"instrumented":((true)|(false))},"MongoDB":{"instrumented":((true)|(false))},"MongoDB \(mgo\)":{"instrumented":((true)|(false))},"Negroni":{"instrumented":((true)|(false))},"New redigo":{"instrumented":((true)|(false))},"Pub\/Sub":{"instrumented":((true)|(false))},"Redigo":{"instrumented":((true)|(false))},"Redis":{"instrumented":((true)|(false))},"Redis v7":{"instrumented":((true)|(false))},"Redis v8":{"instrumented":((true)|(false))},"Redis v9":{"instrumented":((true)|(false))},"SQL":{"instrumented":((true)|(false))},"SQLx":{"instrumented":((true)|(false))},"Twirp":{"instrumented":((true)|(false))},"Vault":{"instrumented":((true)|(false))},"chi":{"instrumented":((true)|(false))},"chi v5":{"instrumented":((true)|(false))},"echo":{"instrumented":((true)|(false))},"echo v4":{"instrumented":((true)|(false))},"gRPC":{"instrumented":((true)|(false))},"gRPC v12":{"instrumented":((true)|(false))},"go-pg v10":{"instrumented":((true)|(false))},"go-restful":{"instrumented":((true)|(false))},"go-restful v3":{"instrumented":((true)|(false))},"gqlgen":{"instrumented":((true)|(false))},"miekg\/dns":{"instrumented":((true)|(false))}}}`, tp.Logs()[1])
+
+		for n, s := range tracer.config.integrations {
+			expect := fmt.Sprintf("\"%s\":{\"instrumented\":%t,\"available\":%t,\"available_version\":\"%s\"}", n, s.Instrumented, s.Available, s.Version)
+			assert.Contains(tp.Logs()[1], expect, "expected integration %s", expect)
+		}
 	})
 }
 
