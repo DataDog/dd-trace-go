@@ -37,13 +37,32 @@ type serverInboundOp struct {
 	system string
 }
 
+type SimpleSchema func() string
+
+func (s SimpleSchema) Name() string { return s() }
+
+type Namer interface {
+	Name() string
+}
+
 // NewServerInboundOp creates a new naming schema for server inbound operations.
-func NewServerInboundOp(system string, opts ...Option) *Schema {
+func NewServerInboundOp(system string, opts ...Option) Namer {
 	cfg := &config{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return New(&serverInboundOp{cfg: cfg, system: system})
+	switch GetVersion() {
+	case SchemaV1:
+		s := fmt.Sprintf("%s.server.request", system)
+		return SimpleSchema(func() string { return s })
+	default:
+		if cfg.overrideV0 != nil {
+			return SimpleSchema(func() string { return *cfg.overrideV0 })
+		}
+		s := fmt.Sprintf("%s.request", system)
+		return SimpleSchema(func() string { return s })
+
+	}
 }
 
 func (s *serverInboundOp) V0() string {
@@ -63,7 +82,7 @@ func NewHTTPClientOp(opts ...Option) *Schema {
 }
 
 // NewHTTPServerOp creates a new schema for HTTP server inbound operations.
-func NewHTTPServerOp(opts ...Option) *Schema {
+func NewHTTPServerOp(opts ...Option) Namer {
 	return NewServerInboundOp("http", opts...)
 }
 
@@ -74,12 +93,12 @@ func NewGRPCClientOp(opts ...Option) *Schema {
 }
 
 // NewGRPCServerOp creates a new schema for gRPC server inbound operations.
-func NewGRPCServerOp(opts ...Option) *Schema {
+func NewGRPCServerOp(opts ...Option) Namer {
 	newOpts := append([]Option{WithOverrideV0("grpc.server")}, opts...)
 	return NewServerInboundOp("grpc", newOpts...)
 }
 
 // NewGraphqlServerOp creates a new schema for GraphQL server inbound operations.
-func NewGraphqlServerOp(opts ...Option) *Schema {
+func NewGraphqlServerOp(opts ...Option) Namer {
 	return NewServerInboundOp("graphql", opts...)
 }
