@@ -37,7 +37,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	if cfg.traceClientIP {
 		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
-	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+7+len(ipTags))
+	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(cfg *ddtrace.StartSpanConfig) {
 			if cfg.Tags == nil {

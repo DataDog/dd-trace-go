@@ -252,6 +252,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		tracer.ResourceName("SomeResource"),
 		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
 	}
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		StartRequestSpan(r, opts...)
 	}
