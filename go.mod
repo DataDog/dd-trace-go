@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.46.0-rc.4
 	github.com/DataDog/datadog-go/v5 v5.1.1
-	github.com/DataDog/go-libddwaf v1.4.0
+	github.com/DataDog/go-libddwaf v1.4.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
@@ -25,7 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.20.8
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.20.8
 	github.com/aws/smithy-go v1.13.5
-	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
+	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
 	github.com/denisenkom/go-mssqldb v0.11.0
