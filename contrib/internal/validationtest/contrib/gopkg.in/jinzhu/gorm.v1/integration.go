@@ -8,10 +8,10 @@ package gorm
 import (
 	"database/sql"
 	"database/sql/driver"
-	"log"
 	"testing"
 
 	_ "github.com/lib/pq" // need pg package for sql tests
+	"github.com/stretchr/testify/require"
 	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 	"gorm.io/gorm"
@@ -66,9 +66,7 @@ func registerFunc(driverName string, driver driver.Driver) {
 
 func getDB(t *testing.T, driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
 	db, err := gormtrace.Open(driverName, connString)
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	return db.DB()
 }
 
