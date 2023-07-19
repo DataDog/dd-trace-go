@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
@@ -485,14 +487,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -501,7 +503,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -510,8 +512,38 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
+		})
+	})
+
+	t.Run("attribute-schema", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, 0, c.spanAttributeSchemaVersion)
+			assert.Equal(t, false, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			assert.Equal(t, 1, c.spanAttributeSchemaVersion)
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("options", func(t *testing.T) {
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			WithGlobalServiceName(true)(c)
+
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
 		})
 	})
 
@@ -984,6 +1016,63 @@ func TestWithLogStartup(t *testing.T) {
 	assert.False(t, c.logStartup)
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	t.Run("default-off", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig()
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+	t.Run("single-header", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "Header"
+		newConfig(WithHeaderTags([]string{header}))
+		assert.Equal("http.request.headers.header", globalconfig.HeaderTag(header))
+	})
+
+	t.Run("header-and-tag", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "Header"
+		tag := "tag"
+		newConfig(WithHeaderTags([]string{header + ":" + tag}))
+		assert.Equal("tag", globalconfig.HeaderTag(header))
+	})
+
+	t.Run("multi-header", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.HeaderTag("2header"))
+		assert.Equal("3tag", globalconfig.HeaderTag("3header"))
+	})
+
+	t.Run("normalization", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
+		assert.Equal("t!a@g.", globalconfig.HeaderTag("2header"))
+	})
+
+	t.Run("envvar-only", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+		newConfig(WithHeaderTags([]string{"expected"}))
+		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+	})
 }
 
 func TestHostnameDisabled(t *testing.T) {

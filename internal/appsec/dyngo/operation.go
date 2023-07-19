@@ -38,6 +38,12 @@ type Operation interface {
 	// listener will be removed from the operation once it finishes.
 	On(EventListener)
 
+	// OnData allows to register a data listener to the operation
+	OnData(DataListener)
+
+	// EmitData sends data to the data listeners of the operation
+	EmitData(any)
+
 	// Parent return the parent operation. It returns nil for the root
 	// operation.
 	Parent() Operation
@@ -47,6 +53,8 @@ type Operation interface {
 	// emitEvent is a private method implemented by the operation struct type so
 	// that no other package can define it.
 	emitEvent(argsType reflect.Type, op Operation, v interface{})
+
+	emitData(argsType reflect.Type, v any)
 
 	// add the given event listeners to the operation.
 	// add is a private method implemented by the operation struct type so
@@ -92,6 +100,7 @@ func SwapRootOperation(new Operation) {
 type operation struct {
 	parent Operation
 	eventRegister
+	dataBroadcaster
 
 	disabled bool
 	mu       sync.RWMutex
@@ -223,6 +232,29 @@ func (o *operation) On(l EventListener) {
 	o.eventRegister.add(l.ListenedType(), l)
 }
 
+func (o *operation) OnData(l DataListener) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
+	o.dataBroadcaster.add(l.ListenedType(), l)
+}
+
+func (o *operation) EmitData(data any) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	if o.disabled {
+		return
+	}
+	// Bubble up the data to the stack of operations. Contrary to events,
+	// we also send the data to ourselves since SDK operations are leaf operations
+	// that both emit and listen for data (errors).
+	for current := Operation(o); current != nil; current = current.Parent() {
+		current.emitData(reflect.TypeOf(data), data)
+	}
+}
+
 type (
 	// eventRegister implements a thread-safe list of event listeners.
 	eventRegister struct {
@@ -234,7 +266,63 @@ type (
 	// indexed by the operation argument or result type the event listener
 	// expects.
 	eventListenerMap map[reflect.Type][]EventListener
+
+	dataBroadcaster struct {
+		mu        sync.RWMutex
+		listeners dataListenerMap
+	}
+
+	dataListenerSpec[T any] func(data T)
+	DataListener            EventListener
+	dataListenerMap         map[reflect.Type][]DataListener
 )
+
+func (l dataListenerSpec[T]) Call(_ Operation, v interface{}) {
+	l(v.(T))
+}
+
+func (l dataListenerSpec[T]) ListenedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil)).Elem()
+}
+
+// NewDataListener creates a specialized generic data listener, wrapped under a DataListener interface
+func NewDataListener[T any](f func(data T)) DataListener {
+	return dataListenerSpec[T](f)
+}
+
+func (b *dataBroadcaster) add(key reflect.Type, l DataListener) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.listeners == nil {
+		b.listeners = make(dataListenerMap)
+	}
+	b.listeners[key] = append(b.listeners[key], l)
+
+}
+
+func (b *dataBroadcaster) clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = nil
+}
+
+func (b *dataBroadcaster) emitData(key reflect.Type, v any) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("appsec: recovered from an unexpected panic from an event listener: %+v", r)
+		}
+	}()
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for t := range b.listeners {
+		if key == t || key.Implements(t) {
+			for _, listener := range b.listeners[t] {
+				listener.Call(nil, v)
+			}
+		}
+	}
+}
 
 func (r *eventRegister) add(key reflect.Type, l EventListener) {
 	r.mu.Lock()

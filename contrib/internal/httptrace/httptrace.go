@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
@@ -101,4 +102,16 @@ func urlFromRequest(r *http.Request) string {
 		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
+}
+
+// HeaderTagsFromRequest matches req headers to user-defined list of header tags
+// and creates span tags based on the header tag target and the req header value
+func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		headerCfg.Iter(func(header, tag string) {
+			if vs, ok := req.Header[header]; ok {
+				cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
+			}
+		})
+	}
 }

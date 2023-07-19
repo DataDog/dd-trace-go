@@ -193,7 +193,7 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPs := []Propagator{dd}
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 	}
@@ -217,7 +217,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		case "datadog":
 			list = append(list, dd)
 		case "tracecontext":
-			list = append([]Propagator{&propagatorW3c{}}, list...)
+			list = append(list, &propagatorW3c{})
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
@@ -397,13 +397,29 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, err
 	}
 	if ctx.trace != nil {
-		// TODO: this always assumed it was valid so I copied that logic here, maybe we shouldn't
-		ctx.traceID.SetUpperFromHex(ctx.trace.propagatingTag(keyTraceID128))
+		tid := ctx.trace.propagatingTag(keyTraceID128)
+		if err := validateTID(tid); err != nil {
+			log.Debug("Invalid hex traceID: %s", err)
+			ctx.trace.unsetPropagatingTag(keyTraceID128)
+		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
+			log.Debug("Attempted to set an invalid hex traceID: %s", err)
+			ctx.trace.unsetPropagatingTag(keyTraceID128)
+		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
+}
+
+func validateTID(tid string) error {
+	if len(tid) != 16 {
+		return fmt.Errorf("invalid length: %q", tid)
+	}
+	if !validIDRgx.MatchString(tid) {
+		return fmt.Errorf("malformed: %q", tid)
+	}
+	return nil
 }
 
 // unmarshalPropagatingTags unmarshals tags from v into ctx
@@ -619,7 +635,6 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 const (
 	traceparentHeader = "traceparent"
 	tracestateHeader  = "tracestate"
-	w3cTraceIDTag     = "w3cTraceID"
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
