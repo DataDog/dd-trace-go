@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package buntdb
 
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/buntdb"
 
 	buntdbtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/tidwall/buntdb"
@@ -81,19 +82,13 @@ func (i *Integration) NumSpans() int {
 
 func getDatabase(t *testing.T, i *Integration) *buntdbtrace.DB {
 	bdb, err := buntdb.Open(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = bdb.CreateIndex("test-index", "regular:*", buntdb.IndexBinary)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = bdb.CreateSpatialIndex("test-spatial-index", "spatial:*", buntdb.IndexRect)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	err = bdb.Update(func(tx *buntdb.Tx) error {
 		tx.Set("regular:a", "1", nil)
@@ -106,9 +101,7 @@ func getDatabase(t *testing.T, i *Integration) *buntdbtrace.DB {
 
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	return buntdbtrace.WrapDB(bdb, i.opts...)
 }
