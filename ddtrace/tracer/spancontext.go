@@ -503,6 +503,7 @@ func setPeerServiceFromSource(s *span) string {
 		return ok
 	}
 	var sources []string
+	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case has("aws_service"):
@@ -513,9 +514,13 @@ func setPeerServiceFromSource(s *span) string {
 			"tablename",
 			"bucketname",
 		}
-	case has(ext.DBSystem):
+	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
+		}
+		useTargetHost = false
+	case has(ext.DBSystem):
+		sources = []string{
 			ext.DBName,
 			ext.DBInstance,
 		}
@@ -529,11 +534,13 @@ func setPeerServiceFromSource(s *span) string {
 		}
 	}
 	// network destination tags will be used as fallback unless there are higher priority sources already set.
-	sources = append(sources, []string{
-		ext.NetworkDestinationName,
-		ext.PeerHostname,
-		ext.TargetHost,
-	}...)
+	if useTargetHost {
+		sources = append(sources, []string{
+			ext.NetworkDestinationName,
+			ext.PeerHostname,
+			ext.TargetHost,
+		}...)
+	}
 	for _, source := range sources {
 		if val, ok := s.Meta[source]; ok {
 			s.setMeta(ext.PeerService, val)

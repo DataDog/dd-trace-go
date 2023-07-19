@@ -41,11 +41,6 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
-func headerTagVal(header string) (tag string) {
-	tag, _ = globalconfig.HeaderTag(header)
-	return tag
-}
-
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
@@ -492,14 +487,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -508,7 +503,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -517,7 +512,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
@@ -1031,32 +1026,32 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 	t.Run("single-header", func(t *testing.T) {
 		assert := assert.New(t)
-		header := "header"
+		header := "Header"
 		newConfig(WithHeaderTags([]string{header}))
-		assert.Equal("http.request.headers.header", headerTagVal(header))
+		assert.Equal("http.request.headers.header", globalconfig.HeaderTag(header))
 	})
 
 	t.Run("header-and-tag", func(t *testing.T) {
 		assert := assert.New(t)
-		header := "header"
+		header := "Header"
 		tag := "tag"
 		newConfig(WithHeaderTags([]string{header + ":" + tag}))
-		assert.Equal("tag", headerTagVal(header))
+		assert.Equal("tag", globalconfig.HeaderTag(header))
 	})
 
 	t.Run("multi-header", func(t *testing.T) {
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
-		assert.Equal("1tag", headerTagVal("1header"))
-		assert.Equal("http.request.headers.2header", headerTagVal("2header"))
-		assert.Equal("3tag", headerTagVal("3header"))
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.HeaderTag("2header"))
+		assert.Equal("3tag", globalconfig.HeaderTag("3header"))
 	})
 
 	t.Run("normalization", func(t *testing.T) {
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
-		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", headerTagVal("h!e@a-d.e*r"))
-		assert.Equal("t!a@g.", headerTagVal("2header"))
+		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
+		assert.Equal("t!a@g.", globalconfig.HeaderTag("2header"))
 	})
 
 	t.Run("envvar-only", func(t *testing.T) {
@@ -1066,8 +1061,8 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		newConfig()
 
-		assert.Equal("1tag", headerTagVal("1header"))
-		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", headerTagVal("2.h.e.a.d.e.r"))
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
 	})
 
 	t.Run("env-override", func(t *testing.T) {
@@ -1075,7 +1070,7 @@ func TestWithHeaderTags(t *testing.T) {
 		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 		newConfig(WithHeaderTags([]string{"expected"}))
-		assert.Equal(ext.HTTPRequestHeaders+".expected", headerTagVal("expected"))
+		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
 }

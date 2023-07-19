@@ -4,9 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package restful provides functions to trace the emicklei/go-restful package (https://github.com/emicklei/go-restful).
-// WARNING: The underlying v2 version of emicklei/go-restful has known security vulnerabilities that have been resolved in v3
-// and is no longer under active development. As such consider this package DEPRECATED.
-// It is highly recommended that you update to the latest version available at emicklei/go-restful.v3.
 package restful
 
 import (
@@ -19,10 +16,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 )
 
-const componentName = "emicklei/go-restful"
+const componentName = "emicklei/go-restful/v3"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
@@ -34,7 +31,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	for _, opt := range configOpts {
 		opt(cfg)
 	}
-	log.Debug("contrib/emicklei/go-restful: Creating tracing filter: %#v", cfg)
+	log.Debug("contrib/emicklei/go-restful/v3: Creating tracing filter: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
 		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
@@ -54,16 +51,4 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		req.Request = req.Request.WithContext(ctx)
 		chain.ProcessFilter(req, resp)
 	}
-}
-
-// Filter is deprecated. Please use FilterFunc.
-func Filter(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-	span, ctx := httptrace.StartRequestSpan(req.Request, tracer.ResourceName(req.SelectedRoutePath()))
-	defer func() {
-		httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))
-	}()
-
-	// pass the span through the request context
-	req.Request = req.Request.WithContext(ctx)
-	chain.ProcessFilter(req, resp)
 }

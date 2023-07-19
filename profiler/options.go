@@ -557,7 +557,7 @@ type executionTraceConfig struct {
 // needed.
 func (e *executionTraceConfig) Refresh() {
 	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
-	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
+	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
 	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
 
 	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
