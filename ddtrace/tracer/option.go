@@ -116,7 +116,8 @@ type config struct {
 	// of the behaviour of the tracer.
 	agent agentFeatures
 
-	// integrations reports if the user has instrumented an available integration
+	// integrations reports if the user has instrumented a Datadog integration and
+	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
 	// featureFlags specifies any enabled feature flags.
