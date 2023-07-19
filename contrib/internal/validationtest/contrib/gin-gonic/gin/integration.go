@@ -19,10 +19,13 @@ import (
 type Integration struct {
 	router   *gin.Engine
 	numSpans int
+	opts     []gintrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]gintrace.Option, 0),
+	}
 }
 
 func (i *Integration) ResetNumSpans() {
@@ -30,17 +33,18 @@ func (i *Integration) ResetNumSpans() {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/gin-gonic/gin"
+	return "gin-gonic/gin"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode) // silence annoying log msgs
 
 	i.router = gin.New()
-	i.router.Use(gintrace.Middleware(""))
-
-	return func() {}
+	i.router.Use(gintrace.Middleware("", i.opts...))
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -78,4 +82,8 @@ func (i *Integration) GenSpans(t *testing.T) {
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	return
 }

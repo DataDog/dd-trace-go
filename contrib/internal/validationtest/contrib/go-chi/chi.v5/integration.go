@@ -21,10 +21,13 @@ import (
 type Integration struct {
 	router   *chi.Mux
 	numSpans int
+	opts     []chitrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]chitrace.Option, 0),
+	}
 }
 
 func (i *Integration) ResetNumSpans() {
@@ -32,16 +35,18 @@ func (i *Integration) ResetNumSpans() {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/go-chi/chi.v5"
+	return "go-chi/chi.v5"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 
 	i.router = chi.NewRouter()
-	i.router.Use(chitrace.Middleware())
+	i.router.Use(chitrace.Middleware(i.opts...))
 
-	return func() {}
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -79,4 +84,8 @@ func (i *Integration) GenSpans(t *testing.T) {
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, chitrace.WithServiceName(name))
 }

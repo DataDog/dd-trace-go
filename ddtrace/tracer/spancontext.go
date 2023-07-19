@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -48,13 +49,13 @@ func (t *traceID) SetUpper(i uint64) {
 	binary.BigEndian.PutUint64(t[:8], i)
 }
 
-func (t *traceID) SetUpperFromHex(s string) {
+func (t *traceID) SetUpperFromHex(s string) error {
 	u, err := strconv.ParseUint(s, 16, 64)
 	if err != nil {
-		log.Debug("Attempted to decode an invalid hex traceID %s", s)
-		return
+		return fmt.Errorf("malformed %q: %s", s, err)
 	}
 	t.SetUpper(u)
+	return nil
 }
 
 func (t *traceID) Empty() bool {
@@ -462,6 +463,7 @@ func setPeerServiceFromSource(s *span) string {
 		return ok
 	}
 	var sources []string
+	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case has("aws_service"):
@@ -472,9 +474,13 @@ func setPeerServiceFromSource(s *span) string {
 			"tablename",
 			"bucketname",
 		}
-	case has(ext.DBSystem):
+	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
+		}
+		useTargetHost = false
+	case has(ext.DBSystem):
+		sources = []string{
 			ext.DBName,
 			ext.DBInstance,
 		}
@@ -488,11 +494,13 @@ func setPeerServiceFromSource(s *span) string {
 		}
 	}
 	// network destination tags will be used as fallback unless there are higher priority sources already set.
-	sources = append(sources, []string{
-		ext.NetworkDestinationName,
-		ext.PeerHostname,
-		ext.TargetHost,
-	}...)
+	if useTargetHost {
+		sources = append(sources, []string{
+			ext.NetworkDestinationName,
+			ext.PeerHostname,
+			ext.TargetHost,
+		}...)
+	}
 	for _, source := range sources {
 		if val, ok := s.Meta[source]; ok {
 			s.setMeta(ext.PeerService, val)

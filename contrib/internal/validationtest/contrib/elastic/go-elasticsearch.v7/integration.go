@@ -12,7 +12,7 @@ import (
 
 	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
 	esapi7 "github.com/elastic/go-elasticsearch/v7/esapi"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
 )
 
@@ -25,10 +25,13 @@ const (
 type Integration struct {
 	client   *elasticsearch7.Client
 	numSpans int
+	opts     []elastictrace.ClientOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]elastictrace.ClientOption, 0),
+	}
 }
 
 func (i *Integration) ResetNumSpans() {
@@ -36,27 +39,27 @@ func (i *Integration) ResetNumSpans() {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/elastic/go-elasticsearch.v7"
+	return "elastic/go-elasticsearch.v7"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	cfg := elasticsearch7.Config{
-		Transport: elastictrace.NewRoundTripper(),
+		Transport: elastictrace.NewRoundTripper(i.opts...),
 		Addresses: []string{
 			elasticV6URL,
 		},
 	}
 	var err error
 	i.client, err = elasticsearch7.NewClient(cfg)
-	assert.NoError(t, err)
-
-	return func() {}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
-	assert := assert.New(t)
 
 	var err error
 	_, err = esapi7.IndexRequest{
@@ -65,7 +68,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 		DocumentType: "tweet",
 		Body:         strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans += 2
 
 	_, err = esapi7.GetRequest{
@@ -73,17 +76,21 @@ func (i *Integration) GenSpans(t *testing.T) {
 		DocumentID:   "1",
 		DocumentType: "tweet",
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans++
 
 	_, err = esapi7.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans++
 }
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, elastictrace.WithServiceName(name))
 }

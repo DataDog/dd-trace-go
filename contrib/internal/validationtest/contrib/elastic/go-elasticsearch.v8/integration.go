@@ -12,7 +12,7 @@ import (
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
 )
 
@@ -25,10 +25,13 @@ const (
 type Integration struct {
 	client   *elasticsearch8.Client
 	numSpans int
+	opts     []elastictrace.ClientOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]elastictrace.ClientOption, 0),
+	}
 }
 
 func (i *Integration) ResetNumSpans() {
@@ -36,27 +39,27 @@ func (i *Integration) ResetNumSpans() {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/elastic/go-elasticsearch.v8"
+	return "elastic/go-elasticsearch.v8"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	cfg := elasticsearch8.Config{
-		Transport: elastictrace.NewRoundTripper(),
+		Transport: elastictrace.NewRoundTripper(i.opts...),
 		Addresses: []string{
 			elasticV6URL,
 		},
 	}
 	var err error
 	i.client, err = elasticsearch8.NewClient(cfg)
-	assert.NoError(t, err)
-
-	return func() {}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
-	assert := assert.New(t)
 
 	var err error
 	_, err = esapi8.IndexRequest{
@@ -64,24 +67,28 @@ func (i *Integration) GenSpans(t *testing.T) {
 		DocumentID: "1",
 		Body:       strings.NewReader(`{"user": "test", "message": "hello"}`),
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans++
 
 	_, err = esapi8.GetRequest{
 		Index:      "twitter",
 		DocumentID: "1",
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans++
 
 	_, err = esapi8.GetRequest{
 		Index:      "not-real-index",
 		DocumentID: "1",
 	}.Do(context.Background(), i.client)
-	assert.NoError(err)
+	require.NoError(t, err)
 	i.numSpans++
 }
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, elastictrace.WithServiceName(name))
 }

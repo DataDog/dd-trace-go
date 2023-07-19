@@ -1,12 +1,11 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package pg
 
 import (
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,21 +18,24 @@ import (
 type Integration struct {
 	conn     *pg.DB
 	numSpans int
+	opts     []pgtrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]pgtrace.Option, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, pgtrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/go-pg/pg.v10"
+	return "go-pg/pg.v10"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	i.conn = pg.Connect(&pg.Options{
 		User:     "postgres",
@@ -42,17 +44,16 @@ func (i *Integration) Init(t *testing.T) func() {
 	})
 
 	// Wrap the connection with the APM hook.
-	pgtrace.Wrap(i.conn)
+	pgtrace.Wrap(i.conn, i.opts...)
 	var n int
 	_, err := i.conn.QueryOne(pg.Scan(&n), "SELECT 1")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	i.numSpans++
 
-	return func() {
+	t.Cleanup(func() {
 		i.conn.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {

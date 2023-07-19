@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package mongo
 
@@ -13,38 +13,39 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type Integration struct {
 	client   *mongo.Client
 	numSpans int
+	opts     []mongotrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]mongotrace.Option, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, mongotrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/go.mongodb.org/mongo-driver/mongo"
+	return "go.mongodb.org/mongo-driver/mongo"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	// connect to MongoDB
 	opts := options.Client()
-	opts.Monitor = mongotrace.NewMonitor()
+	opts.Monitor = mongotrace.NewMonitor(i.opts...)
 	opts.ApplyURI("mongodb://localhost:27017")
 	var err error
 	i.client, err = mongo.Connect(context.Background(), opts)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	db := i.client.Database("example")
 	inventory := db.Collection("inventory")
 
@@ -60,7 +61,9 @@ func (i *Integration) Init(t *testing.T) func() {
 	})
 	i.numSpans++
 
-	return func() {}
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -70,7 +73,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 		Collection("test-collection").
 		InsertOne(context.Background(), bson.D{{Key: "test-item", Value: "test-value"}})
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	i.numSpans++
 }
 

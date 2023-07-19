@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package mgo
 
@@ -17,28 +17,32 @@ import (
 type Integration struct {
 	collection *mgotrace.Collection
 	numSpans   int
+	opts       []mgotrace.DialOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]mgotrace.DialOption, 0),
+	}
 }
 
 func (i *Integration) Name() string {
-	return "contrib/globalsign/mgo"
+	return "globalsign/mgo"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	// connect to MongoDB
-	session, err := mgotrace.Dial("localhost:27017")
+	session, err := mgotrace.Dial("localhost:27017", i.opts...)
 	require.NoError(t, err)
 
 	db := session.DB("my_db")
 	i.collection = db.C("MyCollection")
 
-	return func() {
+	t.Cleanup(func() {
 		session.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -58,8 +62,8 @@ func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, mgotrace.WithServiceName(name))
 }
 
 var entity = bson.D{

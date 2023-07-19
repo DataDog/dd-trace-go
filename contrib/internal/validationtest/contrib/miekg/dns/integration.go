@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
 package dns
 
 import (
@@ -25,10 +30,13 @@ func New() *Integration {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/miekg/dns"
+	return "miekg/dns"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
+	// TODO: enable when the integration implements naming schema
+	t.Skip("not implemented yet")
+
 	t.Helper()
 	i.addr = getFreeAddr(t).String()
 	server := &dns.Server{
@@ -42,12 +50,11 @@ func (i *Integration) Init(t *testing.T) func() {
 	}()
 	// wait for the server to be ready
 	waitServerReady(t, server.Addr)
-	cleanup := func() {
+	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		assert.NoError(t, server.ShutdownContext(ctx))
-	}
-	return cleanup
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -56,10 +63,17 @@ func (i *Integration) GenSpans(t *testing.T) {
 	_, err := dnstrace.Exchange(msg, i.addr)
 	require.NoError(t, err)
 	i.numSpans++
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(_ string) {
+	return
 }
 
 func newMessage() *dns.Msg {

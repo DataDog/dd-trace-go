@@ -21,10 +21,13 @@ import (
 type Integration struct {
 	ws       *restful.WebService
 	numSpans int
+	opts     []restfultrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]restfultrace.Option, 0),
+	}
 }
 
 func (i *Integration) ResetNumSpans() {
@@ -32,21 +35,22 @@ func (i *Integration) ResetNumSpans() {
 }
 
 func (i *Integration) Name() string {
-	return "contrib/emicklei/go-restful"
+	return "emicklei/go-restful"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	i.ws = new(restful.WebService)
-
-	return func() {}
+	t.Cleanup(func() {
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
 	t.Helper()
 	assert := assert.New(t)
 
-	i.ws.Filter(restfultrace.FilterFunc())
+	i.ws.Filter(restfultrace.FilterFunc(i.opts...))
 	i.ws.Route(i.ws.GET("/user/{id}").Param(restful.PathParameter("id", "user ID")).
 		To(func(request *restful.Request, response *restful.Response) {
 			_, ok := tracer.SpanFromContext(request.Request.Context())
@@ -68,7 +72,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 
 	wantErr := errors.New("oh no")
 
-	i.ws.Filter(restfultrace.FilterFunc())
+	i.ws.Filter(restfultrace.FilterFunc(i.opts...))
 	i.ws.Route(i.ws.GET("/err").To(func(request *restful.Request, response *restful.Response) {
 		response.WriteError(500, wantErr)
 	}))
@@ -86,4 +90,8 @@ func (i *Integration) GenSpans(t *testing.T) {
 
 func (i *Integration) NumSpans() int {
 	return i.numSpans
+}
+
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, restfultrace.WithServiceName(name))
 }

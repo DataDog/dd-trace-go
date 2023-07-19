@@ -1,14 +1,14 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package leveldb
 
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -20,29 +20,33 @@ import (
 type Integration struct {
 	db       *leveldbtrace.DB
 	numSpans int
+	opts     []leveldbtrace.Option
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]leveldbtrace.Option, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, leveldbtrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/syndtr/goleveldb/leveldb"
+	return "syndtr/goleveldb/leveldb"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	var err error
-	i.db, err = leveldbtrace.Open(storage.NewMemStorage(), &opt.Options{})
-	assert.NoError(t, err)
+	i.db, err = leveldbtrace.Open(storage.NewMemStorage(), &opt.Options{}, i.opts...)
+	require.NoError(t, err)
 
-	return func() {
+	t.Cleanup(func() {
 		i.db.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -58,18 +62,18 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans += 5
 
 	snapshot, err := i.db.GetSnapshot()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer snapshot.Release()
 	snapshot.Get([]byte("hello"), nil)
 	i.numSpans++
 
 	transaction, err := i.db.OpenTransaction()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	transaction.Commit()
 	i.numSpans++
 
 	transaction, err = i.db.OpenTransaction()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer transaction.Discard()
 	transaction.Get([]byte("hello"), nil)
 	i.numSpans++

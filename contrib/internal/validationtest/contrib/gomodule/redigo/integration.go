@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2023 Datadog, Inc.
 
 package redigo
 
@@ -10,36 +10,40 @@ import (
 	"testing"
 
 	"github.com/gomodule/redigo/redis"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gomodule/redigo"
 )
 
 type Integration struct {
 	client   redis.Conn
 	numSpans int
+	opts     []redigotrace.DialOption
 }
 
 func New() *Integration {
-	return &Integration{}
+	return &Integration{
+		opts: make([]redigotrace.DialOption, 0),
+	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
+func (i *Integration) WithServiceName(name string) {
+	i.opts = append(i.opts, redigotrace.WithServiceName(name))
 }
 
 func (i *Integration) Name() string {
-	return "contrib/garyburd/redigo"
+	return "garyburd/redigo"
 }
 
-func (i *Integration) Init(t *testing.T) func() {
+func (i *Integration) Init(t *testing.T) {
 	t.Helper()
-	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379")
+	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 	i.client = client
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
-	return func() {
+	t.Cleanup(func() {
 		i.client.Close()
-	}
+		i.numSpans = 0
+	})
 }
 
 func (i *Integration) GenSpans(t *testing.T) {
@@ -49,7 +53,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans++
 
 	_, err := i.client.Do("NOT_A_COMMAND", context.Background())
-	assert.NotNil(t, err)
+	require.Error(t, err)
 	i.numSpans++
 
 	pool := &redis.Pool{
