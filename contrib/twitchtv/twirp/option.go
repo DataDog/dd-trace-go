@@ -37,7 +37,7 @@ func defaults(cfg *config) {
 
 func clientDefaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceName(defaultClientServiceName)
-	cfg.spanName = namingschema.NewClientOutboundOp("twirp").GetName()
+	cfg.spanName = namingschema.OpName(namingschema.TwirpClient)
 	defaults(cfg)
 }
 

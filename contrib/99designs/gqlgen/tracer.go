@@ -159,9 +159,7 @@ func serverSpanName(octx *graphql.OperationContext) string {
 	if octx != nil && octx.Operation != nil {
 		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
 	}
-	return namingschema.NewGraphqlServerOp(
-		namingschema.WithOverrideV0(nameV0),
-	).GetName()
+	return namingschema.OpNameOverrideV0(namingschema.GraphqlServer, nameV0)
 }
 
 // Ensure all of these interfaces are implemented.

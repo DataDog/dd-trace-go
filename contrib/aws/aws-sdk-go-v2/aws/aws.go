@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -343,9 +342,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 }
 
 func spanName(awsService, awsOperation string) string {
-	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, func(s string) string {
-		return s + ".request"
-	}).GetName()
+	return namingschema.AWSOpName(awsService, awsOperation, s+".request")
 }
 
 func serviceName(cfg *config, awsService string) string {

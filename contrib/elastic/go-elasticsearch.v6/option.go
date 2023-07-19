@@ -28,7 +28,7 @@ type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.NewElasticsearchOutboundOp().GetName()
+	cfg.operationName = namingschema.OpName(namingschema.ElasticSearchOutbound)
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
 	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {

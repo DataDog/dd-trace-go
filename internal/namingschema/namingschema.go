@@ -82,33 +82,3 @@ func SetUseGlobalServiceName(v bool) {
 	defer useGlobalServiceNameMu.Unlock()
 	useGlobalServiceName = v
 }
-
-// VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
-type VersionSupportSchema interface {
-	V0() string
-	V1() string
-}
-
-// Schema allows to select the proper name to use based on the given VersionSupportSchema.
-type Schema struct {
-	selectedVersion Version
-	vSchema         VersionSupportSchema
-}
-
-// New initializes a new Schema.
-func New(vSchema VersionSupportSchema) *Schema {
-	return &Schema{
-		selectedVersion: GetVersion(),
-		vSchema:         vSchema,
-	}
-}
-
-// GetName returns the proper name for this Schema for the user selected version.
-func (s *Schema) GetName() string {
-	switch s.selectedVersion {
-	case SchemaV1:
-		return s.vSchema.V1()
-	default:
-		return s.vSchema.V0()
-	}
-}

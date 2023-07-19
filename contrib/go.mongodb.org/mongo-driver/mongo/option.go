@@ -25,7 +25,7 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.NewMongoDBOutboundOp().GetName()
+	cfg.spanName = namingschema.OpName(namingschema.MongoDBOutbound)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_MONGO_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

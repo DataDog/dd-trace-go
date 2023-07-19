@@ -26,7 +26,7 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.querySpanName = namingschema.NewGraphqlServerOp().GetName()
+	cfg.querySpanName = namingschema.OpName(namingschema.GraphqlServer)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

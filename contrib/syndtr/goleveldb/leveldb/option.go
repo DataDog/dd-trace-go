@@ -25,7 +25,7 @@ type config struct {
 func newConfig(opts ...Option) *config {
 	cfg := &config{
 		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
-		spanName:    namingschema.NewDBOutboundOp("leveldb").GetName(),
+		spanName:    namingschema.OpName(namingschema.LevelDBOutbound),
 		ctx:         context.Background(),
 		// cfg.analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),

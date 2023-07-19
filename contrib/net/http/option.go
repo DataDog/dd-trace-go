@@ -152,7 +152,7 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
 	}
-	spanName := namingschema.NewHTTPClientOp().GetName()
+	spanName := namingschema.OpName(namingschema.HTTPClient)
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}

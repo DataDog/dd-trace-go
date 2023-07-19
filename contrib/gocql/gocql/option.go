@@ -29,10 +29,8 @@ type WrapOption func(*queryConfig)
 func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
-	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
-		namingschema.WithOverrideV0("cassandra.batch"),
-	).GetName()
+	cfg.querySpanName = namingschema.OpName(namingschema.CassandraOutbound)
+	cfg.batchSpanName = namingschema.OpName(namingschema.CassandraOutbound)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

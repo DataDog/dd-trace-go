@@ -52,7 +52,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			opts = append(opts, tracer.Tag(k, v))
 		}
 	}
-	return tracer.StartSpanFromContext(r.Context(), namingschema.NewHTTPServerOp().GetName(), opts...)
+	return tracer.StartSpanFromContext(r.Context(), namingschema.OpName(namingschema.HTTPServer), opts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status

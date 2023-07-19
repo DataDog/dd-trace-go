@@ -26,8 +26,8 @@ func defaults(cfg *config) {
 	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
 	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 
-	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
-	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
+	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
+	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {

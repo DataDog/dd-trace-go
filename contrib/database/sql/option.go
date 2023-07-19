@@ -78,10 +78,7 @@ func getSpanName(driverName string) string {
 	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
 		dbSystem = normalizedDBSystem
 	}
-	return namingschema.NewDBOutboundOp(
-		dbSystem,
-		namingschema.WithOverrideV0(fmt.Sprintf("%s.query", driverName)),
-	).GetName()
+	return namingschema.DBOpName(dbSystem, fmt.Sprintf("%s.query", driverName))
 }
 
 // WithServiceName sets the given service name when registering a driver,

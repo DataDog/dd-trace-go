@@ -29,7 +29,7 @@ func newConfig() *mongoConfig {
 	}
 	return &mongoConfig{
 		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
-		spanName:    namingschema.NewMongoDBOutboundOp().GetName(),
+		spanName:    namingschema.OpName(namingschema.MongoDBOutbound),
 		ctx:         context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: rate,

@@ -24,7 +24,7 @@ type config struct {
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.NewDBOutboundOp("buntdb").GetName()
+	cfg.spanName = namingschema.OpName(namingschema.BuntDBOutbound)
 	cfg.ctx = context.Background()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_BUNTDB_ANALYTICS_ENABLED", false) {

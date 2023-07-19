@@ -36,8 +36,8 @@ func newConfig(opts ...Option) *config {
 
 	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
 	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
-	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
+	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
+	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
 
 	for _, opt := range opts {
 		opt(cfg)
