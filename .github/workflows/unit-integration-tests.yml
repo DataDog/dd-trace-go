@@ -62,13 +62,13 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.10.1
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
         ports:
           - 9126:9126
         env:
           LOG_LEVEL: DEBUG
           TRACE_LANGUAGE: golang
-          DISABLED_CHECKS: trace_content_length,meta_tracer_version_header
+          DISABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
           PORT: 9126
           DD_SUPPRESS_TRACE_PARSE_ERRORS: true
           DD_POOL_TRACE_CHECK_FAILURES: true
@@ -222,13 +222,13 @@ jobs:
                   cat response.txt
                   echo " - All APM Test Agent Check Traces returned successful!"
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt
+                  cat summary_response.txt | jq "."
               else
                   echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
                   echo "Failures:"
                   cat response.txt
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt
+                  cat summary_response.txt | jq "."
                   exit 1
               fi
 
