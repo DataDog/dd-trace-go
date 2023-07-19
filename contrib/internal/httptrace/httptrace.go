@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	cfg      = newConfig()
-	serverOp = namingschema.NewHTTPServerOp().GetName()
+	cfg = newConfig()
 )
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
@@ -59,7 +58,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 		})
 	nopts = append(nopts, opts...)
-	return tracer.StartSpanFromContext(r.Context(), serverOp, nopts...)
+	return tracer.StartSpanFromContext(r.Context(), namingschema.NewHTTPServerOp().GetName(), nopts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
