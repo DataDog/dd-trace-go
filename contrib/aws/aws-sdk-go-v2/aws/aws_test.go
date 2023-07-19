@@ -111,14 +111,14 @@ func TestAppendMiddleware(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "SendMessage", s.Tag(tagAWSOperation))
-			assert.Equal(t, "SQS", s.Tag(tagAWSService))
-			assert.Equal(t, "SQS", s.Tag(tagService))
-			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "SendMessage", s.Tag("aws.operation"))
+			assert.Equal(t, "SQS", s.Tag("aws.service"))
+			assert.Equal(t, "SQS", s.Tag("aws_service"))
+			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -185,14 +185,14 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "DeleteMessage", s.Tag(tagAWSOperation))
-			assert.Equal(t, "SQS", s.Tag(tagAWSService))
-			assert.Equal(t, "SQS", s.Tag(tagService))
-			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "DeleteMessage", s.Tag("aws.operation"))
+			assert.Equal(t, "SQS", s.Tag("aws.service"))
+			assert.Equal(t, "SQS", s.Tag("aws_service"))
+			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -257,15 +257,15 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "ReceiveMessage", s.Tag(tagAWSOperation))
-			assert.Equal(t, "SQS", s.Tag(tagAWSService))
-			assert.Equal(t, "SQS", s.Tag(tagService))
-			assert.Equal(t, "MyQueueName", s.Tag(tagQueueName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "ReceiveMessage", s.Tag("aws.operation"))
+			assert.Equal(t, "SQS", s.Tag("aws.service"))
+			assert.Equal(t, "SQS", s.Tag("aws_service"))
+			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
-			assert.Equal(t, "SQS", s.Tag(tagAWSService))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -331,14 +331,14 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "S3.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "ListObjects", s.Tag(tagAWSOperation))
-			assert.Equal(t, "S3", s.Tag(tagAWSService))
-			assert.Equal(t, "S3", s.Tag(tagService))
-			assert.Equal(t, "MyBucketName", s.Tag(tagBucketName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "ListObjects", s.Tag("aws.operation"))
+			assert.Equal(t, "S3", s.Tag("aws.service"))
+			assert.Equal(t, "S3", s.Tag("aws_service"))
+			assert.Equal(t, "MyBucketName", s.Tag("bucketname"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -366,7 +366,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 				Message:  aws.String("Hello world!"),
 				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
 			},
-			tagKey:             tagTopicName,
+			tagKey:             "topicname",
 			expectedTagValue:   "MyTopicName",
 			responseStatus:     400,
 			expectedStatusCode: 400,
@@ -377,7 +377,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 				Message:  aws.String("Hello world!"),
 				TopicArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTopicName"),
 			},
-			tagKey:             tagTopicName,
+			tagKey:             "topicname",
 			expectedTagValue:   "MyTopicName",
 			responseStatus:     200,
 			expectedStatusCode: 200,
@@ -388,7 +388,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 				Message:   aws.String("Hello world!"),
 				TargetArn: aws.String("arn:aws:sns:us-east-1:111111111111:MyTargetName"),
 			},
-			tagKey:             tagTargetName,
+			tagKey:             "targetname",
 			expectedTagValue:   "MyTargetName",
 			responseStatus:     200,
 			expectedStatusCode: 200,
@@ -425,14 +425,14 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "SNS.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "Publish", s.Tag(tagAWSOperation))
-			assert.Equal(t, "SNS", s.Tag(tagAWSService))
-			assert.Equal(t, "SNS", s.Tag(tagService))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "Publish", s.Tag("aws.operation"))
+			assert.Equal(t, "SNS", s.Tag("aws.service"))
+			assert.Equal(t, "SNS", s.Tag("aws_service"))
 			assert.Equal(t, tt.expectedTagValue, s.Tag(tt.tagKey))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -495,14 +495,14 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "DynamoDB.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "Query", s.Tag(tagAWSOperation))
-			assert.Equal(t, "DynamoDB", s.Tag(tagAWSService))
-			assert.Equal(t, "DynamoDB", s.Tag(tagService))
-			assert.Equal(t, "MyTableName", s.Tag(tagTableName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "Query", s.Tag("aws.operation"))
+			assert.Equal(t, "DynamoDB", s.Tag("aws.service"))
+			assert.Equal(t, "DynamoDB", s.Tag("aws_service"))
+			assert.Equal(t, "MyTableName", s.Tag("tablename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -567,14 +567,14 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "Kinesis.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "PutRecord", s.Tag(tagAWSOperation))
-			assert.Equal(t, "Kinesis", s.Tag(tagAWSService))
-			assert.Equal(t, "Kinesis", s.Tag(tagService))
-			assert.Equal(t, "my-kinesis-stream", s.Tag(tagStreamName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "PutRecord", s.Tag("aws.operation"))
+			assert.Equal(t, "Kinesis", s.Tag("aws.service"))
+			assert.Equal(t, "Kinesis", s.Tag("aws_service"))
+			assert.Equal(t, "my-kinesis-stream", s.Tag("streamname"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -637,14 +637,14 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "EventBridge.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "PutRule", s.Tag(tagAWSOperation))
-			assert.Equal(t, "EventBridge", s.Tag(tagAWSService))
-			assert.Equal(t, "EventBridge", s.Tag(tagService))
-			assert.Equal(t, "my-event-rule-name", s.Tag(tagRuleName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "PutRule", s.Tag("aws.operation"))
+			assert.Equal(t, "EventBridge", s.Tag("aws.service"))
+			assert.Equal(t, "EventBridge", s.Tag("aws_service"))
+			assert.Equal(t, "my-event-rule-name", s.Tag("rulename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -707,14 +707,14 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 
 			s := spans[0]
 			assert.Equal(t, "SFN.request", s.OperationName())
-			assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go-v2")
-			assert.Equal(t, "DescribeStateMachine", s.Tag(tagAWSOperation))
-			assert.Equal(t, "SFN", s.Tag(tagAWSService))
-			assert.Equal(t, "SFN", s.Tag(tagService))
-			assert.Equal(t, "HelloWorld-StateMachine", s.Tag(tagStateMachineName))
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "DescribeStateMachine", s.Tag("aws.operation"))
+			assert.Equal(t, "SFN", s.Tag("aws.service"))
+			assert.Equal(t, "SFN", s.Tag("aws_service"))
+			assert.Equal(t, "HelloWorld-StateMachine", s.Tag("statemachinename"))
 
-			assert.Equal(t, "eu-west-1", s.Tag(tagAWSRegion))
-			assert.Equal(t, "eu-west-1", s.Tag(tagRegion))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
@@ -1016,4 +1016,64 @@ func repeat(s string, n int) []string {
 		r[i] = s
 	}
 	return r
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     []Option
+		errExist bool
+	}{
+		{
+			name:     "with defaults",
+			opts:     nil,
+			errExist: true,
+		},
+		{
+			name: "with errCheck true",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return true
+			})},
+			errExist: true,
+		}, {
+			name: "with errCheck false",
+			opts: []Option{WithErrorCheck(func(err error) bool {
+				return false
+			})},
+			errExist: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(400)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg, tt.opts...)
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 1)
+			s := spans[0]
+			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
+		})
+	}
 }

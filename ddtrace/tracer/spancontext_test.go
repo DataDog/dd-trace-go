@@ -176,19 +176,19 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	_, transport, flush, stop := startTestTracer(t)
+	trc, transport, flush, stop := startTestTracer(t)
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
-	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
-	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID)
+	root := trc.StartSpan("name1", WithSpanID(traceID))
+	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
+	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
+	span3a := trc.StartSpan("name3", ChildOf(span3.Context()))
 
-	trace := []*span{root, span2, span3, span3a}
+	trace := []*span{root.(*span), span2.(*span), span3.(*span), span3a.(*span)}
 
 	for i, span := range trace {
 		span.context.trace = buffer
@@ -345,6 +345,20 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceMappings:         nil,
 			wantPeerService:             "h1,h2,h3",
 			wantPeerServiceSource:       "db.cassandra.contact.points",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "DBCassandraWithoutContactPoints",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "cassandra"),
+				Tag("db.instance", "db-instance"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
