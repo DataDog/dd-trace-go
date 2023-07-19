@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
 package validationtest
 
 import (
@@ -11,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Integration is an interface that should be implemented by integrations (packages under the contrib/ folder) in
@@ -53,36 +58,19 @@ func tracerEnv() string {
 	return strings.Join(ddEnvVars, ",")
 }
 
-type testAgentTransport struct {
-	*http.Transport
+type testAgentRoundTripper struct {
+	base http.RoundTripper
 }
 
 // RoundTrip adds the DD Tracer configuration environment and test session token to the trace request headers
-func (t *testAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Add("X-Datadog-Trace-Env-Variables", currentTracerEnv)
-	req.Header.Add("X-Datadog-Test-Session-Token", sessionToken)
-	return http.DefaultTransport.RoundTrip(req)
-}
-
-var defaultDialer = &net.Dialer{
-	Timeout:   30 * time.Second,
-	KeepAlive: 30 * time.Second,
-	DualStack: true,
-}
-var testAgentClient = &http.Client{
-	// We copy the transport to avoid using the default one, as it might be
-	// augmented with tracing and we don't want these calls to be recorded.
-	// See https://golang.org/pkg/net/http/#DefaultTransport .
-	Transport: &testAgentTransport{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           defaultDialer.DialContext,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}, Timeout: 2 * time.Second,
+func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	sessionTokenEnv, ok := os.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
+	if !ok {
+		sessionTokenEnv = "default"
+	}
+	req.Header.Add("X-Datadog-Trace-Env-Variables", tracerEnv())
+	req.Header.Add("X-Datadog-Test-Session-Token", sessionTokenEnv)
+	return rt.base.RoundTrip(req)
 }
 
 func testAgentDetails() string {
@@ -101,15 +89,12 @@ func testAgentDetails() string {
 var (
 	testAgentConnection = testAgentDetails()
 	sessionToken        = "default"
-	currentTracerEnv    = tracerEnv()
-	// testCases           = GetValidationTestCases()
 )
 
 func TestIntegrations(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
-
+	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	// }
 	integrations := []Integration{
 		memcachetest.New(),
 		dnstest.New(),
@@ -169,17 +154,18 @@ func TestIntegrations(t *testing.T) {
 				// also include the testCase start options within the tracer config
 				tracer.Start(
 					tracer.WithAgentAddr(testAgentConnection),
-					tracer.WithHTTPClient(testAgentClient),
+					tracer.WithHTTPClient(tracerHTTPClient()),
 				)
 				defer tracer.Stop()
 
 				if tc.integrationServiceName != "" {
-					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", ig.Name()), tc.integrationServiceName)
+					componentName := ig.Name()
+					if componentName == "jmoiron/sqlx" {
+						componentName = "database/sql"
+					}
+					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
 					ig.WithServiceName(tc.integrationServiceName)
 				}
-
-				// get the current Tracer Environment after it has been started with configuration
-				currentTracerEnv = tracerEnv()
 
 				ig.Init(t)
 				ig.GenSpans(t)
@@ -188,6 +174,7 @@ func TestIntegrations(t *testing.T) {
 				assertNumSpans(t, sessionToken, ig.NumSpans())
 				checkFailures(t, sessionToken)
 			})
+
 		}
 	}
 }
@@ -196,12 +183,11 @@ func TestIntegrations(t *testing.T) {
 // sessionToken and asserts that the correct number of spans was returned
 func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	t.Helper()
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
 	var lastReceived int
 	run := func() bool {
-		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
-		require.NoError(t, err)
-		req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
-
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 
@@ -221,6 +207,9 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 		lastReceived = receivedSpans
 		if receivedSpans > wantSpans {
 			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
+		}
+		if receivedSpans < wantSpans {
+			t.Logf("received less spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
 		return receivedSpans == wantSpans
 	}
@@ -264,4 +253,27 @@ func checkFailures(t *testing.T, sessionToken string) {
 	require.NoError(t, err)
 
 	assert.Fail(t, "APM Test Agent detected failures: \n", string(body))
+}
+
+func tracerHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Client{
+		// We copy the transport to avoid using the default one, as it might be
+		// augmented with tracing and we don't want these calls to be recorded.
+		// See https://golang.org/pkg/net/http/#DefaultTransport .
+		Transport: &testAgentRoundTripper{
+			base: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           dialer.DialContext,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
+		Timeout: 2 * time.Second,
+	}
 }
