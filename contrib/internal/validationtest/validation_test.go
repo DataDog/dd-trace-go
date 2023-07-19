@@ -196,6 +196,7 @@ func TestIntegrations(t *testing.T) {
 // sessionToken and asserts that the correct number of spans was returned
 func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	t.Helper()
+	var lastReceived int
 	run := func() bool {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
 		require.NoError(t, err)
@@ -217,13 +218,14 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 		for _, traceSpans := range traces {
 			receivedSpans += len(traceSpans)
 		}
+		lastReceived = receivedSpans
 		if receivedSpans > wantSpans {
 			t.Fatalf("received more spans than expected (wantSpans: %d, receivedSpans: %d)", wantSpans, receivedSpans)
 		}
 		return receivedSpans == wantSpans
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	timeoutChan := time.After(5 * time.Second)
 
@@ -236,7 +238,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 			continue
 
 		case <-timeoutChan:
-			t.Fatal("timeout waiting for spans")
+			t.Fatalf("timeout waiting for spans (wantSpans: %d, receivedSpans: %d)", wantSpans, lastReceived)
 		}
 	}
 }
