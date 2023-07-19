@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -45,9 +45,7 @@ func (i *Integration) Init(t *testing.T) {
 	opts.ApplyURI("mongodb://localhost:27017")
 	var err error
 	i.client, err = mongo.Connect(context.Background(), opts)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	db := i.client.Database("example")
 	inventory := db.Collection("inventory")
 
@@ -75,7 +73,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 		Collection("test-collection").
 		InsertOne(context.Background(), bson.D{{Key: "test-item", Value: "test-value"}})
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	i.numSpans++
 }
 

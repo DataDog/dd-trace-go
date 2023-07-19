@@ -3,15 +3,16 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package gormtest
+package gorm
 
 import (
 	"database/sql"
 	"database/sql/driver"
 	"testing"
 
-	"github.com/jackc/pgx/v5/stdlib"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
+
+	"github.com/jackc/pgx/v5/stdlib"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -24,7 +25,7 @@ const (
 	mysqlConnString     = "test:test@tcp(127.0.0.1:3306)/test"
 )
 
-func RunAll(operationToNumSpans map[string]int, t *testing.T, registerFunc func(string, driver.Driver), getDB func(string, string, func(*sql.DB) gorm.Dialector) *sql.DB) int {
+func RunAll(t *testing.T, operationToNumSpans map[string]int, registerFunc func(string, driver.Driver), getDB func(*testing.T, string, string, func(*sql.DB) gorm.Dialector) *sql.DB) int {
 	t.Helper()
 	var numSpans = 0
 
@@ -62,7 +63,7 @@ func RunAll(operationToNumSpans map[string]int, t *testing.T, registerFunc func(
 		t.Run(testCase.name, func(t *testing.T) {
 			registerFunc(testCase.driverName, testCase.driver)
 
-			internalDB := getDB(testCase.driverName, testCase.connString, testCase.dialectorFunc)
+			internalDB := getDB(t, testCase.driverName, testCase.connString, testCase.dialectorFunc)
 
 			operationToNumSpansCopy := make(map[string]int)
 			for k, v := range operationToNumSpans {

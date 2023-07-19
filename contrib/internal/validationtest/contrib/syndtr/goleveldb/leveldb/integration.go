@@ -8,7 +8,7 @@ package leveldb
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -41,7 +41,7 @@ func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	var err error
 	i.db, err = leveldbtrace.Open(storage.NewMemStorage(), &opt.Options{}, i.opts...)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		i.db.Close()
@@ -62,18 +62,18 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans += 5
 
 	snapshot, err := i.db.GetSnapshot()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer snapshot.Release()
 	snapshot.Get([]byte("hello"), nil)
 	i.numSpans++
 
 	transaction, err := i.db.OpenTransaction()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	transaction.Commit()
 	i.numSpans++
 
 	transaction, err = i.db.OpenTransaction()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer transaction.Discard()
 	transaction.Get([]byte("hello"), nil)
 	i.numSpans++

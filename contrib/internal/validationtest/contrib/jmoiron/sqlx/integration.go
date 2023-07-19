@@ -8,7 +8,6 @@ package gorm
 import (
 	"database/sql"
 	"database/sql/driver"
-	"log"
 	"testing"
 
 	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
@@ -18,7 +17,8 @@ import (
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	sqlxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jmoiron/sqlx"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // need pg package for sql tests
+	"github.com/stretchr/testify/require"
 )
 
 type Integration struct {
@@ -40,9 +40,9 @@ func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	opts = i.opts
 
-	closeFunc := sqltest.Prepare(gormtest.TableName)
+	closeFunc := sqltest.Prepare(t, gormtest.TableName)
 	t.Cleanup(func() {
-		defer closeFunc()
+		closeFunc()
 		i.numSpans = 0
 	})
 }
@@ -56,7 +56,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 		"BeginRollback": 3,
 		"Exec":          5,
 	}
-	i.numSpans += gormtest.RunAll(operationToNumSpans, t, registerFunc, getDB)
+	i.numSpans += gormtest.RunAll(t, operationToNumSpans, registerFunc, getDB)
 }
 
 func (i *Integration) NumSpans() int {
@@ -73,10 +73,8 @@ func registerFunc(driverName string, driver driver.Driver) {
 	sqltrace.Register(driverName, driver, opts...)
 }
 
-func getDB(driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
+func getDB(t *testing.T, driverName string, connString string, _ func(*sql.DB) gorm.Dialector) *sql.DB {
 	db, err := sqlxtrace.Open(driverName, connString, opts...)
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	return db.DB
 }

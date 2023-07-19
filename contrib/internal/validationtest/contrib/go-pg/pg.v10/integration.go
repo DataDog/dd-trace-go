@@ -6,7 +6,6 @@
 package pg
 
 import (
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -48,9 +47,7 @@ func (i *Integration) Init(t *testing.T) {
 	pgtrace.Wrap(i.conn, i.opts...)
 	var n int
 	_, err := i.conn.QueryOne(pg.Scan(&n), "SELECT 1")
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(t, err)
 	i.numSpans++
 
 	t.Cleanup(func() {

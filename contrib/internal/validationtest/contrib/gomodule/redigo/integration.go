@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gomodule/redigo/redis"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gomodule/redigo"
 )
 
@@ -38,7 +38,7 @@ func (i *Integration) Init(t *testing.T) {
 	t.Helper()
 	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 	i.client = client
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
 		i.client.Close()
@@ -53,7 +53,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans++
 
 	_, err := i.client.Do("NOT_A_COMMAND", context.Background())
-	assert.NotNil(t, err)
+	require.Error(t, err)
 	i.numSpans++
 
 	pool := &redis.Pool{

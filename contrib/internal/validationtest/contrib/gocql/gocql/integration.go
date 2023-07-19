@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
 )
 
@@ -46,7 +46,7 @@ func (i *Integration) Init(t *testing.T) {
 	i.cluster.Timeout = 2 * time.Second
 	var err error
 	i.session, err = i.cluster.CreateSession()
-	assert.Nil(t, err)
+	require.NoError(t, err)
 
 	i.session.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec()
 	i.session.Query("CREATE TABLE if not exists trace.person (name text PRIMARY KEY, age int, description text)").Exec()
@@ -74,7 +74,7 @@ func (i *Integration) GenSpans(t *testing.T) {
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
 	tb.Query(stmt, "Lucas", 60, "Another person")
 	err := tb.WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(i.session)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	i.numSpans++
 }
 

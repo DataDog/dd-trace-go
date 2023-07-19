@@ -40,7 +40,7 @@ func (i *Integration) Init(t *testing.T) {
 	i.collection = db.C("MyCollection")
 
 	t.Cleanup(func() {
-		defer session.Close()
+		session.Close()
 		i.numSpans = 0
 	})
 }
