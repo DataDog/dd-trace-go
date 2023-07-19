@@ -1082,7 +1082,10 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
 		globalconfig.ClearHeaderTags()
 		for _, h := range headerAsTags {
-			header, tag := normalizer.NormalizeHeaderTag(h)
+			if strings.HasPrefix(h, "x-datadog-") {
+				continue
+			}
+			header, tag := normalizer.HeaderTag(h)
 			globalconfig.SetHeaderTag(header, tag)
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/awsnamingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -39,27 +40,6 @@ func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.ImportIntegration(componentName)
 }
-
-const (
-	// duplicate tags that will be phased out in favor of aws_service & region
-	tagAWSService = "aws.service"
-	tagAWSRegion  = "aws.region"
-)
-const (
-	tagAWSAgent         = "aws.agent"
-	tagService          = "aws_service" //Service aws-sdk request is heading to, ex. S3, SQS
-	tagAWSOperation     = "aws.operation"
-	tagRegion           = "region" //AWS Region used to pivot from AWS Integration metrics to traces
-	tagAWSRequestID     = "aws.request_id"
-	tagQueueName        = "queuename"
-	tagTopicName        = "topicname"
-	tagTargetName       = "targetname"
-	tagTableName        = "tablename"
-	tagStreamName       = "streamname"
-	tagBucketName       = "bucketname"
-	tagRuleName         = "rulename"
-	tagStateMachineName = "statemachinename"
-)
 
 type spanTimestampKey struct{}
 
@@ -106,11 +86,11 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
-			tracer.Tag(tagAWSRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tagRegion, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(tagAWSOperation, operation),
-			tracer.Tag(tagAWSService, serviceID),
-			tracer.Tag(tagService, serviceID),
+			tracer.Tag(tags.OldAWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tags.AWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(tags.AWSOperation, operation),
+			tracer.Tag(tags.OldAWSService, serviceID),
+			tracer.Tag(tags.AWSService, serviceID),
 			tracer.StartTime(ctx.Value(spanTimestampKey{}).(time.Time)),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -142,19 +122,19 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 
 	switch awsService {
 	case "SQS":
-		k, v = tagQueueName, queueName(requestInput)
+		k, v = tags.SQSQueueName, queueName(requestInput)
 	case "S3":
-		k, v = tagBucketName, bucketName(requestInput)
+		k, v = tags.S3BucketName, bucketName(requestInput)
 	case "SNS":
 		k, v = destinationTagValue(requestInput)
 	case "DynamoDB":
-		k, v = tagTableName, tableName(requestInput)
+		k, v = tags.DynamoDBTableName, tableName(requestInput)
 	case "Kinesis":
-		k, v = tagStreamName, streamName(requestInput)
+		k, v = tags.KinesisStreamName, streamName(requestInput)
 	case "EventBridge":
-		k, v = tagRuleName, ruleName(requestInput)
+		k, v = tags.EventBridgeRuleName, ruleName(requestInput)
 	case "SFN":
-		k, v = tagStateMachineName, stateMachineName(requestInput)
+		k, v = tags.SFNStateMachineName, stateMachineName(requestInput)
 	default:
 		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
@@ -199,7 +179,7 @@ func bucketName(requestInput middleware.InitializeInput) string {
 }
 
 func destinationTagValue(requestInput middleware.InitializeInput) (tag string, value string) {
-	tag = tagTopicName
+	tag = tags.SNSTopicName
 	var s string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
@@ -207,7 +187,7 @@ func destinationTagValue(requestInput middleware.InitializeInput) (tag string, v
 		case params.TopicArn != nil:
 			s = *params.TopicArn
 		case params.TargetArn != nil:
-			tag = tagTargetName
+			tag = tags.SNSTargetName
 			s = *params.TargetArn
 		default:
 			return "destination", "empty"
@@ -343,7 +323,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 			url.User = nil // Do not include userinfo in the HTTPURL tag.
 			span.SetTag(ext.HTTPMethod, req.Method)
 			span.SetTag(ext.HTTPURL, url.String())
-			span.SetTag(tagAWSAgent, req.Header.Get("User-Agent"))
+			span.SetTag(tags.AWSAgent, req.Header.Get("User-Agent"))
 		}
 
 		// Continue through the middleware chain which eventually sends the request.
@@ -356,7 +336,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 
 		// Extract the request id.
 		if requestID, ok := awsmiddleware.GetRequestIDMetadata(metadata); ok {
-			span.SetTag(tagAWSRequestID, requestID)
+			span.SetTag(tags.AWSRequestID, requestID)
 		}
 
 		return out, metadata, err

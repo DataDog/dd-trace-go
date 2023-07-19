@@ -24,7 +24,7 @@ type config struct {
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
-	headerTags    func(string) (string, bool)
+	headerTags    *internal.LockMap
 }
 
 func newConfig(serviceName string) *config {
@@ -40,7 +40,7 @@ func newConfig(serviceName string) *config {
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headerTags:    globalconfig.HeaderTag,
+		headerTags:    globalconfig.HeaderTagMap(),
 	}
 }
 
@@ -83,16 +83,9 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
