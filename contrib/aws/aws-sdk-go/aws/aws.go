@@ -131,7 +131,7 @@ func (h *handlers) serviceName(req *request.Request) string {
 func spanName(req *request.Request) string {
 	svc := awsService(req)
 	op := awsOperation(req)
-	namingschema.AWSOpName(svc, op, svc+".command")
+	return namingschema.AWSOpName(svc, op, svc+".command")
 }
 
 func awsService(req *request.Request) string {

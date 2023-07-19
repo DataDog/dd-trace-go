@@ -30,7 +30,7 @@ func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
 	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	cfg.querySpanName = namingschema.OpName(namingschema.CassandraOutbound)
-	cfg.batchSpanName = namingschema.OpName(namingschema.CassandraOutbound)
+	cfg.batchSpanName = namingschema.OpNameOverrideV0(namingschema.CassandraOutbound, "cassandra.batch")
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
