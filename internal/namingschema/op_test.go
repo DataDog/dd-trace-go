@@ -62,22 +62,6 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV0: "override-v0",
 			wantV1: "gcp.pubsub.process",
 		},
-		// 		{
-		// 			name: "messaging outbound override",
-		// 			newSchema: func() string {
-		// 				return namingschema//namingschema.NewMessagingOutboundOp("test", optOverrideV0)
-		// 			},
-		// 			wantV0: "override-v0",
-		// 			wantV1: "test.send",
-		// 		},
-		// 		{
-		// 			name: "messaging inbound override",
-		// 			newSchema: func() string {
-		// 				return namingschema.NewMessagingInboundOp("test", optOverrideV0)
-		// 			},
-		// 			wantV0: "override-v0",
-		// 			wantV1: "test.process",
-		// 		},
 		{
 			name: "http client",
 			newSchema: func() string {
@@ -118,22 +102,6 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV0: "graphql.request",
 			wantV1: "graphql.server.request",
 		},
-		// 		{
-		// 			name: "client outbound override",
-		// 			newSchema: func() string {
-		// 				return namingschema.NewClientOutboundOp("test", optOverrideV0)
-		// 			},
-		// 			wantV0: "override-v0",
-		// 			wantV1: "test.client.request",
-		// 		},
-		// 		{
-		// 			name: "server inbound override",
-		// 			newSchema: func() string {
-		// 				return namingschema.NewServerInboundOp("test", optOverrideV0)
-		// 			},
-		// 			wantV0: "override-v0",
-		// 			wantV1: "test.server.request",
-		// 		},
 		{
 			name: "memcached outbound",
 			newSchema: func() string {
@@ -150,14 +118,6 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV0: "redis.command",
 			wantV1: "redis.command",
 		},
-		// 		{
-		// 			name: "cache outbound override",
-		// 			newSchema: func() string {
-		// 				return namingschema.NewCacheOutboundOp("test", optOverrideV0)
-		// 			},
-		// 			wantV0: "override-v0",
-		// 			wantV1: "test.command",
-		// 		},
 		{
 			name: "elasticsearch outbound",
 			newSchema: func() string {
@@ -181,6 +141,54 @@ func TestOpContribSchemas(t *testing.T) {
 			},
 			wantV0: "cassandra.query",
 			wantV1: "cassandra.query",
+		},
+		{
+			name: "DBOpName",
+			newSchema: func() string {
+				return namingschema.DBOpName("my-custom-database", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "my-custom-database.query",
+		},
+		{
+			name: "AWSOpName",
+			newSchema: func() string {
+				return namingschema.AWSOpName("service", "operation", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "aws.service.request",
+		},
+		{
+			name: "AWSOpName-sns-send",
+			newSchema: func() string {
+				return namingschema.AWSOpName("sns", "publish", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "aws.sns.send",
+		},
+		{
+			name: "AWSOpName-sns-other",
+			newSchema: func() string {
+				return namingschema.AWSOpName("sns", "other", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "aws.sns.request",
+		},
+		{
+			name: "AWSOpName-sqs-send",
+			newSchema: func() string {
+				return namingschema.AWSOpName("sqs", "sendmessage-something", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "aws.sqs.send",
+		},
+		{
+			name: "AWSOpName-sqs-other",
+			newSchema: func() string {
+				return namingschema.AWSOpName("sqs", "other", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "aws.sqs.request",
 		},
 	}
 	for _, tc := range testCases {
