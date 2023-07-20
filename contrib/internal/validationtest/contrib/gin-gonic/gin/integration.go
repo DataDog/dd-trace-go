@@ -41,7 +41,7 @@ func (i *Integration) Init(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode) // silence annoying log msgs
 
 	i.router = gin.New()
-	i.router.Use(gintrace.Middleware("", i.opts...))
+	i.router.Use(gintrace.Middleware(serviceName, i.opts...))
 	t.Cleanup(func() {
 		i.numSpans = 0
 	})
@@ -80,10 +80,12 @@ func (i *Integration) GenSpans(t *testing.T) {
 	i.numSpans++
 }
 
+var serviceName string
+
 func (i *Integration) NumSpans() int {
 	return i.numSpans
 }
 
 func (i *Integration) WithServiceName(name string) {
-	return
+	serviceName = name
 }

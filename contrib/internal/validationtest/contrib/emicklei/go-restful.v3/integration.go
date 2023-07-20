@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/emicklei/go-restful"
+	"github.com/emicklei/go-restful/v3"
 
-	restfultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/emicklei/go-restful"
+	restfultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/emicklei/go-restful.v3"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -31,7 +31,7 @@ func New() *Integration {
 }
 
 func (i *Integration) Name() string {
-	return "emicklei/go-restful"
+	return "emicklei/go-restful.v3"
 }
 
 func (i *Integration) Init(t *testing.T) {

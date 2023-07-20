@@ -34,12 +34,8 @@ func New() *Integration {
 	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
-}
-
 func (i *Integration) Name() string {
-	return "elastic/go-elasticsearch.v8"
+	return "elastic/go-elasticsearch.v6"
 }
 
 func (i *Integration) Init(t *testing.T) {

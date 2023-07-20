@@ -16,38 +16,45 @@ import (
 	"testing"
 	"time"
 
+	// // clients
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/database/sql"
-
+	httptreemuxtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/dimfeld/httptreemux.v5"
+	gorestfultest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/emicklei/go-restful"
+	ginGonicTest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gin-gonic/gin"
 	//redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
 	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
+	gochitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi"
+	gochiv5test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi.v5"
 	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
 	redistest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis"
 	redisV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v7"
 	redisV8test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v8"
 	mongotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go.mongodb.org/mongo-driver/mongo"
 	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
+	gofibertest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gofiber/fiber.v2"
 	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
 	gopkgJinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gopkg.in/jinzhu/gorm.v1"
+	//googleapitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/google.golang.org/api"
+	muxtext "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gorilla/mux"
 	gormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gorm.io/gorm.v1"
+	graphqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/graph-gophers/graphql-go"
+	consultest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/hashicorp/consul"
+	vaulttest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/hashicorp/vault"
 	jinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jinzhu/gorm"
-
-	elasticsearchV6test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v6"
-	elasticsearchV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v7"
-
-	//elasticsearchV8test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/elastic/go-elasticsearch.v8"
-
-	gorestfultest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/emicklei/go-restful"
-	ginGonicTest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gin-gonic/gin"
-
-	gochitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi"
-	gochiv5test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-chi/chi.v5"
-
 	sqlxtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jmoiron/sqlx"
+	httproutertest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/julienschmidt/httprouter"
+	kubernetestest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/k8s.io/client-go/kubernetes"
+	echotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/labstack/echo"
+	echov4test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/labstack/echo.v4"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+	httptest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/net/http"
 	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
 	leveldbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/syndtr/goleveldb/leveldb"
 	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
+	twirptest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/twitchtv/twirp"
+	negronitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/urfave/negroni"
+	webtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/urfave/negroni"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -126,12 +133,28 @@ func TestIntegrations(t *testing.T) {
 	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	// }
 	integrations := []Integration{
+		httptreemuxtest.New(),
+		webtest.New(),
+		negronitest.New(),
+		twirptest.New(),
+		// elastictest.New(),
+		httptest.New(),
+		echov4test.New(),
+		echotest.New(),
+		kubernetestest.New(),
+		httproutertest.New(),
+		vaulttest.New(),
+		consultest.New(),
+		graphqltest.New(),
+		muxtext.New(),
+		//googleapitest.New(),
+		gofibertest.New(),
 		gochiv5test.New(),
 		gochitest.New(),
 		ginGonicTest.New(),
 		gorestfultest.New(),
-		elasticsearchV6test.New(),
-		elasticsearchV7test.New(),
+		// elasticsearchV6test.New(),
+		// elasticsearchV7test.New(),
 		// elasticsearchV8test.New(),
 		sqltest.New(),
 		gopkgJinzhuGormv1test.New(),

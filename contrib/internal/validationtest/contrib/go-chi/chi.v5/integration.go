@@ -30,10 +30,6 @@ func New() *Integration {
 	}
 }
 
-func (i *Integration) ResetNumSpans() {
-	i.numSpans = 0
-}
-
 func (i *Integration) Name() string {
 	return "go-chi/chi.v5"
 }
