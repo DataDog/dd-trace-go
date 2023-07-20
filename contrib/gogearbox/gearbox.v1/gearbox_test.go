@@ -14,6 +14,7 @@ import (
 	"github.com/gogearbox/gearbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -180,7 +181,7 @@ func TestPropagation(t *testing.T) {
 
 		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &FasthttpContextCarrier{gb.Context()}
+		fcc := &gearboxutil.FasthttpCarrier{ReqHeader: &gb.Context().Request.Header}
 
 		pspan := tracer.StartSpan("test")
 		err := tracer.Inject(pspan.Context(), fcc)
@@ -202,7 +203,7 @@ func TestPropagation(t *testing.T) {
 
 		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &FasthttpContextCarrier{gb.Context()}
+		fcc := &gearboxutil.FasthttpCarrier{ReqHeader: &gb.Context().Request.Header}
 
 		pspan := tracer.StartSpan("test")
 		err := tracer.Inject(pspan.Context(), fcc)

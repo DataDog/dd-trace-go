@@ -9,8 +9,8 @@ package gearbox // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gea
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -44,9 +44,9 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		}
 		fctx := gctx.Context()
 		spanOpts = defaultSpanTags(spanOpts, fctx)
-		// Create an instance of FasthttpContextCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
-		fcc := &FasthttpContextCarrier{
-			reqCtx: fctx,
+		// Create an instance of FasthttpCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
+		fcc := &gearboxutil.FasthttpCarrier{
+			ReqHeader: &fctx.Request.Header,
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
 			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
@@ -58,6 +58,7 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		// Instead I had to manually add the activeSpanKey onto the fashttp context
 		activeSpanKey := tracer.ContextKey{}
 		fctx.SetUserValue(activeSpanKey, span)
+
 
 		gctx.Next()
 
@@ -88,42 +89,4 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 		opts = append([]ddtrace.StartSpanOption{tracer.Tag("http.host", host)}, opts...)
 	}
 	return opts
-}
-
-// MTOFF: This will be useful if we add a fasthttp integration. Might also be useful for the fiber integration.
-// But should it be separated into a gearboxutils pkg? Or really a fashttputils....
-
-// FasthttpContextCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
-// of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
-// distributed tracing.
-type FasthttpContextCarrier struct {
-	reqCtx *fasthttp.RequestCtx
-}
-
-// ForeachKey iterates over fasthttp request header keys and values
-func (f *FasthttpContextCarrier) ForeachKey(handler func(key, val string) error) error {
-	reqHeader := &(f.reqCtx.Request.Header)
-	keys := reqHeader.PeekKeys()
-	for h := range keys {
-		header := string(keys[h])
-		vals := reqHeader.PeekAll(header)
-		for v := range vals {
-			if err := handler(header, string(vals[v])); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// Set adds the given value to request header for key. Key will be lowercased to match
-// the metadata implementation.
-func (f *FasthttpContextCarrier) Set(key, val string) {
-	k := strings.ToLower(key)
-	f.reqCtx.Request.Header.Set(k, val)
-}
-
-// Get will return the first entry in the metadata at the given key.
-func (f *FasthttpContextCarrier) Get(key string) string {
-	return string(f.reqCtx.Request.Header.Peek(key))
 }
