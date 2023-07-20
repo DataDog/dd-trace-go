@@ -92,9 +92,6 @@ func TestStatusError(t *testing.T) {
 
 // Test that users can customize which HTTP status codes are considered an error
 func TestWithStatusCheck(t *testing.T) {
-	customErrChecker := func(statusCode int) bool {
-		return statusCode >= 600
-	}
 	t.Run("isError", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
@@ -142,12 +139,7 @@ func TestCustomResourceNamer(t *testing.T) {
 	reqctx := newReqCtx(200)
 	gb := &GearboxContextMock{requestCtx: reqctx}
 
-	customRsc := "custom resource"
-	namer := func(gctx gearbox.Context) string {
-		return customRsc
-	}
-
-	Middleware(WithResourceNamer(namer))(gb)
+	Middleware(WithResourceNamer(resourceNamer))(gb)
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
@@ -166,9 +158,6 @@ func TestWithIgnoreRequest(t *testing.T) {
 	// explicitly giving gb.index a value, so we can see it increment clearly
 	gb := &GearboxContextMock{requestCtx: reqctx, index: 0}
 
-	ignoreResources := func(c gearbox.Context) bool {
-		return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
-	}
 	Middleware(WithIgnoreRequest(ignoreResources))(gb)
 	assert.Len(mt.FinishedSpans(), 0)
 	assert.Equal(1, gb.index)
@@ -216,6 +205,50 @@ func TestPropagation(t *testing.T) {
 		assert.Equal(span.(mocktracer.Span).TraceID(), pspan.(mocktracer.Span).TraceID())
 		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
 	})
+}
+func BenchmarkGearboxMiddleware(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	reqctx := newReqCtx(200)
+	gb := &GearboxContextMock{requestCtx: reqctx}
+	for i := 0; i < b.N; i++ {
+		Middleware()(gb)
+	}
+}
+func BenchmarkGearboxMiddlewareWithOptions(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	reqctx := newReqCtx(200)
+	gb := &GearboxContextMock{requestCtx: reqctx}
+	for i := 0; i < b.N; i++ {
+		Middleware(WithServiceName("gb"), WithStatusCheck(customErrChecker), WithResourceNamer(resourceNamer), WithIgnoreRequest(ignoreResources))(gb)
+	}
+}
+
+// BenchmarkGearbox is intended to serve as a comparison between gearbox with trace middleware v other middleware.
+// MTOFF: Not sure if this is the right approach especially since the other benchmarks use GearboxContextMock
+func BenchmarkGearbox(b *testing.B) {
+	gb := gearbox.New()
+	logMiddleware := func(ctx gearbox.Context) {
+		fmt.Println("log message!")
+		ctx.Next()
+	}
+	gb.Use(logMiddleware)
+}
+
+func customErrChecker(statusCode int) bool {
+	return statusCode >= 600
+}
+
+var customRsc = "custom resource"
+
+func resourceNamer(gctx gearbox.Context) string {
+	return customRsc
+}
+func ignoreResources(c gearbox.Context) bool {
+	return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
 }
 
 // GearboxContextMock provides a mock implementation the Gearbox library to be used in testing.
