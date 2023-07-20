@@ -21,7 +21,7 @@ import (
 const componentName = "Shopify/sarama"
 
 func init() {
-	telemetry.LoadIntegration("Shopify/sarama")
+	telemetry.LoadIntegration(componentName)
 	tracer.ImportIntegration(componentName)
 }
 
