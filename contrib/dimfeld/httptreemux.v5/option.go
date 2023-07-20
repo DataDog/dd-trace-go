@@ -27,7 +27,7 @@ type routerConfig struct {
 type RouterOption func(*routerConfig)
 
 func defaults(cfg *routerConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.resourceNamer = defaultResourceNamer
 }
 
