@@ -59,7 +59,6 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		activeSpanKey := tracer.ContextKey{}
 		fctx.SetUserValue(activeSpanKey, span)
 
-
 		gctx.Next()
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(gctx))

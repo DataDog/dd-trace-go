@@ -17,12 +17,8 @@ import (
 // FasthttpCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
 // of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
 // distributed tracing.
-// type FasthttpCarrier struct {
-// 	reqHeader *fasthttp.RequestHeader
-// }
-
 type FasthttpCarrier struct {
-	ReqHeader *fasthttp.RequestHeader 
+	ReqHeader *fasthttp.RequestHeader
 }
 
 // ForeachKey iterates over fasthttp request header keys and values
@@ -39,6 +35,7 @@ func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) error 
 	}
 	return nil
 }
+
 // func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) (err error) {
 // 	f.ReqHeader.VisitAll(func(k, v []byte) {
 // 		if e := handler(string(k), string(v)); e != nil {
@@ -58,7 +55,7 @@ func (f *FasthttpCarrier) Set(key, val string) {
 	f.ReqHeader.Add(k, val)
 }
 
-// Get will return the first entry in the metadata at the given key.
+// Get will return the first entry for the given req headers key.
 func (f *FasthttpCarrier) Get(key string) string {
 	return string(f.ReqHeader.Peek(key))
 }

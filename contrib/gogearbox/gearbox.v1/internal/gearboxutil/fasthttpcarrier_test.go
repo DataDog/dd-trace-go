@@ -54,7 +54,7 @@ func TestFasthttpCarrierForeachKey(t *testing.T) {
 	assert := assert.New(t)
 	h := new(fasthttp.RequestHeader)
 	headers := map[string][]string{
-		"K1": { "v1" },
+		"K1": {"v1"},
 		"K2": {"v2", "v22"},
 	}
 	assert.Len(headers, 2)
@@ -62,7 +62,7 @@ func TestFasthttpCarrierForeachKey(t *testing.T) {
 		for _, v := range vs {
 			h.Add(k, v)
 		}
-	} 
+	}
 	fcc := &FasthttpCarrier{
 		ReqHeader: h,
 	}
