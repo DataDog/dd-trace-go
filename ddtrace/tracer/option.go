@@ -35,7 +35,7 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
-var agentIntegrations = map[string]struct {
+var contribIntegrations = map[string]struct {
 	name     string // component name used in the contrib folder
 	gName    string // import path for local packages
 	imported bool   // true if the user has imported the integration
@@ -394,7 +394,7 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
-	c.loadAgentIntegrations()
+	c.loadContribIntegrations()
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -556,20 +556,20 @@ func (c *config) loadAgentFeatures() {
 
 // ImportIntegration labels the given integration as imported
 func ImportIntegration(ip string) bool {
-	s, ok := agentIntegrations[ip]
+	s, ok := contribIntegrations[ip]
 	if !ok {
 		log.Error("Attempted to import invalid integration %s", ip)
 		return false
 	}
 	s.imported = true
-	agentIntegrations[ip] = s
+	contribIntegrations[ip] = s
 	return true
 }
 
-func (c *config) loadAgentIntegrations() {
+func (c *config) loadContribIntegrations() {
 	integrations := map[string]integrationConfig{}
 	deps, ok := debug.ReadBuildInfo()
-	for _, s := range agentIntegrations {
+	for _, s := range contribIntegrations {
 		ic := integrationConfig{
 			Instrumented: s.imported,
 		}

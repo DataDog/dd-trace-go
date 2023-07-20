@@ -243,7 +243,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.NotNil(t, cfg.integrations)
-		assert.NotEqual(t, len(cfg.integrations), 0)
+		assert.Equal(t, len(cfg.integrations), 52)
 	})
 
 	t.Run("uninstrumented", func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 
-		cfg.loadAgentIntegrations()
+		cfg.loadContribIntegrations()
 		for _, v := range cfg.integrations {
 			assert.False(t, v.Instrumented)
 		}
@@ -268,7 +268,7 @@ func TestAgentIntegration(t *testing.T) {
 
 		ok := ImportIntegration("go-chi/chi")
 		assert.True(t, ok)
-		cfg.loadAgentIntegrations()
+		cfg.loadContribIntegrations()
 		assert.True(t, cfg.integrations["chi"].Instrumented)
 	})
 }
