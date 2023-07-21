@@ -1,0 +1,19 @@
+# Reference: https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+changelog:
+  exclude:
+    labels:
+      - no-changelog
+  categories:
+    - title: "Application Performance Monitoring (APM)"
+      labels:
+        - apm:core
+        - apm:ecosystem
+    - title: "Application Security Management (ASM)"
+      labels:
+        - appsec
+    - title: "Profiling"
+      labels:
+        - profiler
+    - title: "General"
+      labels:
+        - "*"
