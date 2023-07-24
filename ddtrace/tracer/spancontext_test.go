@@ -186,8 +186,9 @@ func TestPartialFlush(t *testing.T) {
 		comparePayloadSpans(t, children[1], ts[0][1])
 
 		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "trace_partial_flush.count", 1.0, []string{"reason:large_trace"}, true)
-		telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", 2.0, []string(nil), true) // Typed-nil here to not break usage of reflection in `mock` library.
-		telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", 1.0, []string(nil), true)
+		// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
+		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", 2.0, []string(nil), true) // Typed-nil here to not break usage of reflection in `mock` library.
+		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", 1.0, []string(nil), true)
 
 		root.Finish()
 		flush(1)
@@ -201,7 +202,8 @@ func TestPartialFlush(t *testing.T) {
 		comparePayloadSpans(t, root.(*span), tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
-		telemetryClient.AssertNumberOfCalls(t, "Record", 2)
+		// TODO: (Support MetricKindDist) Re-enable this when we actually support `MetricKindDist`
+		// telemetryClient.AssertNumberOfCalls(t, "Record", 2)
 	})
 
 	// This test covers an issue where partial flushing + a rate sampler would panic
