@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"container/list"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -94,6 +95,15 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// openSpans holds a linked list of open spans for all traces.
+	openSpans list.List
+
+	// cIn receives spans when they are created to be added to openSpans
+	cIn chan *span
+
+	// cOut receives spans when they finish to be removed from openSpans
+	cOut chan *span
 }
 
 const (
@@ -261,6 +271,17 @@ func newTracer(opts ...StartOption) *tracer {
 		go func() {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		}()
+	}
+	if c.debugOpenSpans {
+		log.Debug("Debug open spans enabled.")
+		t.openSpans.Init()
+		t.cIn = make(chan *span)
+		t.cOut = make(chan *span)
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportOpenSpans(t.config.spanTimeout)
 		}()
 	}
 	t.wg.Add(1)
@@ -530,6 +551,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
+	if t.config.debugOpenSpans {
+		t.cIn <- span
 	}
 	return span
 }

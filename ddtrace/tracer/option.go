@@ -161,6 +161,13 @@ type config struct {
 
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
+
+	// debugOpenSpans controls if the tracer should log when old, open spans are found
+	debugOpenSpans bool
+
+	// spanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration
+	spanTimeout time.Duration
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -234,6 +241,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.debugOpenSpans = internal.BoolEnv("DD_TRACE_DEBUG_OPEN_SPANS", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -350,6 +358,9 @@ func newConfig(opts ...StartOption) *config {
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
 		c.dogstatsdAddr = addr
+	}
+	if c.debugOpenSpans {
+		c.spanTimeout = internal.DurationEnv("DD_TRACE_OPEN_SPAN_TIMEOUT", 1*time.Second)
 	}
 
 	return c
@@ -839,6 +850,13 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
+	}
+}
+
+// WithDebugSpansMode enables or disables the debug mode for logging open spans.
+func WithDebugSpansMode(enabled bool) StartOption {
+	return func(c *config) {
+		c.debugOpenSpans = enabled
 	}
 }
 

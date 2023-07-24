@@ -517,6 +517,9 @@ func (s *span) finish(finishTime int64) {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
+		if t.config.debugOpenSpans {
+			t.cOut <- s
+		}
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
