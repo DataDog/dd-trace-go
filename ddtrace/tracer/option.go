@@ -96,6 +96,8 @@ type config struct {
 	// all spans.
 	globalTags map[string]interface{}
 
+	// TODO: globalServiceEntrySpanTags map[string]interface{}
+
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
@@ -115,6 +117,8 @@ type config struct {
 
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
+
+	traceMetrics bool
 
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
@@ -229,6 +233,7 @@ func newConfig(opts ...StartOption) *config {
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
+	c.traceMetrics = true
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
@@ -483,7 +488,7 @@ func (c *config) loadAgentFeatures() {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.traceMetrics && c.agent.Stats && c.HasFeature("discovery")
 }
 
 func (c *config) canDropP0s() bool {
@@ -1048,5 +1053,17 @@ func WithUserScope(scope string) UserMonitoringOption {
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.PropagateID = true
+	}
+}
+
+func withRuntimeMetrics(b bool) StartOption {
+	return func(c *config) {
+		c.runtimeMetrics = b
+	}
+}
+
+func withTraceMetrics(b bool) StartOption {
+	return func(c *config) {
+		c.traceMetrics = b
 	}
 }

@@ -531,7 +531,7 @@ func (s *span) finish(finishTime int64) {
 }
 
 // newAggregableSpan creates a new summary for the span s, within an application
-// version version.
+// version.
 func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
 	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {

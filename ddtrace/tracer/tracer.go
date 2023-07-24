@@ -126,6 +126,21 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
+	if os.Getenv("DD_APM_TRACING_ENABLED") == "false" {
+		opts = append(
+			opts,
+			WithGlobalTag("_dd.apm.enabled", 0),
+			WithSamplingRules([]SamplingRule{
+				{
+					Rate:         1,      // Keep 100% of the traces ...
+					MaxPerSecond: 1 / 60, // ... up to 1 trace per minute
+				},
+			}),
+			withTraceMetrics(false),
+			withRuntimeMetrics(false),
+			// TODO: withTraceFilter(func (trace) bool { return trace.Priority == 2 || trace.Meta[_dd.appsec.events] == true  }) ?
+		)
+	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
@@ -227,6 +242,10 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	var concentrator *concentrator
+	if c.traceMetrics {
+		concentrator = newConcentrator(c, defaultStatsBucketSize)
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -236,7 +255,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
-		stats:            newConcentrator(c, defaultStatsBucketSize),
+		stats:            concentrator,
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
@@ -279,7 +298,9 @@ func newTracer(opts ...StartOption) *tracer {
 		defer t.wg.Done()
 		t.reportHealthMetrics(statsInterval)
 	}()
-	t.stats.Start()
+	if t.stats != nil {
+		t.stats.Start()
+	}
 	return t
 }
 
@@ -324,7 +345,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			if t.stats != nil {
+				t.stats.flushAndSend(time.Now(), withCurrentBucket)
+			}
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
 			// when using the agent traceWriter. However, this functionnality is used
 			// in Lambda so for that purpose this mechanism should suffice.
@@ -587,7 +610,9 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
-	t.stats.Stop()
+	if t.stats != nil {
+		t.stats.Stop()
+	}
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.statsd.Close()
