@@ -30,7 +30,7 @@ const componentName = "labstack/echo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/labstack/echo")
 }
 
 // Middleware returns echo middleware which will trace incoming requests.

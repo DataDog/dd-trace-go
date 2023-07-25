@@ -30,7 +30,7 @@ const componentName = "go.mongodb.org/mongo-driver/mongo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("go.mongodb.org/mongo-driver")
 }
 
 type spanKey struct {

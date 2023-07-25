@@ -38,7 +38,7 @@ const componentName = "aws/aws-sdk-go-v2/aws"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go-v2")
 }
 
 type spanTimestampKey struct{}

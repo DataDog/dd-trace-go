@@ -268,7 +268,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 
-		ok := MarkIntegrationImported("go-chi/chi")
+		ok := MarkIntegrationImported("github.com/go-chi/chi")
 		assert.True(t, ok)
 		cfg.loadContribIntegrations()
 		assert.True(t, cfg.integrations["chi"].Instrumented)

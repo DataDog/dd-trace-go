@@ -17,7 +17,7 @@ const componentName = "sirupsen/logrus"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/sirupsen/logrus")
 }
 
 // DDContextLogHook ensures that any span in the log context is correlated to log output.

@@ -28,7 +28,7 @@ const componentName = "bradfitz/gomemcache/memcache"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/bradfitz/gomemcache")
 }
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the

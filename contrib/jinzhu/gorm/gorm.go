@@ -25,7 +25,7 @@ const componentName = "jinzhu/gorm"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/jinzhu/gorm")
 }
 
 const (

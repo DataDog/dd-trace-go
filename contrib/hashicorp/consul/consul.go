@@ -22,7 +22,7 @@ const componentName = "hashicorp/consul"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/hashicorp/consul/api")
 }
 
 // Client wraps the regular *consul.Client and augments it with tracing. Use NewClient to initialize it.

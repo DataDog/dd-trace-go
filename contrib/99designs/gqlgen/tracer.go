@@ -61,7 +61,7 @@ const componentName = "99designs/gqlgen"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/99designs/gqlgen")
 }
 
 const (

@@ -25,7 +25,7 @@ const componentName = "gofiber/fiber.v2"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/gofiber/fiber")
 }
 
 // Middleware returns middleware that will trace incoming requests.

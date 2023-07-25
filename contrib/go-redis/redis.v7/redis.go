@@ -27,7 +27,7 @@ const componentName = "go-redis/redis.v7"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/go-redis/redis/v7")
 }
 
 type datadogHook struct {

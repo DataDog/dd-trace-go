@@ -24,7 +24,7 @@ const componentName = "julienschmidt/httprouter"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
 }
 
 // Router is a traced version of httprouter.Router.
