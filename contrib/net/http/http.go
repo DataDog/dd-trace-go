@@ -53,11 +53,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resource == "" {
 		resource = r.Method + " " + route
 	}
-	mux.cfg.spanOpts = append(mux.cfg.spanOpts, httptrace.HeaderTagsFromRequest(r, mux.cfg.headerTags))
+	spanOpts := append(mux.cfg.spanOpts, httptrace.HeaderTagsFromRequest(r, mux.cfg.headerTags))
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
 		Service:  mux.cfg.serviceName,
 		Resource: resource,
-		SpanOpts: mux.cfg.spanOpts,
+		SpanOpts: spanOpts,
 		Route:    route,
 	})
 }
