@@ -26,6 +26,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -154,6 +155,12 @@ type config struct {
 
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
+
+	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
+	peerServiceDefaultsEnabled bool
+
+	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
+	peerServiceMappings map[string]string
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -205,6 +212,9 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
+	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
+		WithHeaderTags(strings.Split(v, ","))(c)
+	}
 	if v := os.Getenv("DD_TAGS"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
@@ -233,6 +243,19 @@ func newConfig(opts ...StartOption) *config {
 		v := namingschema.SetDefaultVersion()
 		c.spanAttributeSchemaVersion = int(v)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
+	// These default service names are always disabled for v1 onwards.
+	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+
+	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
+	c.peerServiceDefaultsEnabled = true
+	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
+		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	c.peerServiceMappings = make(map[string]string)
+	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
+		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 
 	for _, fn := range opts {
@@ -594,6 +617,14 @@ func WithService(name string) StartOption {
 	}
 }
 
+// WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
+// This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
+func WithGlobalServiceName(enabled bool) StartOption {
+	return func(_ *config) {
+		namingschema.SetUseGlobalServiceName(enabled)
+	}
+}
+
 // WithAgentAddr sets the address where the agent is located. The default is
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
@@ -621,6 +652,24 @@ func WithServiceMapping(from, to string) StartOption {
 			c.serviceMappings = make(map[string]string)
 		}
 		c.serviceMappings[from] = to
+	}
+}
+
+// WithPeerServiceDefaults sets default calculation for peer.service.
+func WithPeerServiceDefaults(enabled bool) StartOption {
+	// TODO: add link to public docs
+	return func(c *config) {
+		c.peerServiceDefaultsEnabled = enabled
+	}
+}
+
+// WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
+func WithPeerServiceMapping(from, to string) StartOption {
+	return func(c *config) {
+		if c.peerServiceMappings == nil {
+			c.peerServiceMappings = make(map[string]string)
+		}
+		c.peerServiceMappings[from] = to
 	}
 }
 
@@ -917,6 +966,23 @@ func StackFrames(n, skip uint) FinishOption {
 	}
 }
 
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headerAsTags []string) StartOption {
+	return func(c *config) {
+		globalconfig.ClearHeaderTags()
+		for _, h := range headerAsTags {
+			if strings.HasPrefix(h, "x-datadog-") {
+				continue
+			}
+			header, tag := normalizer.HeaderTag(h)
+			globalconfig.SetHeaderTag(header, tag)
+		}
+	}
+}
+
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
@@ -926,10 +992,19 @@ type UserMonitoringConfig struct {
 	Role        string
 	SessionID   string
 	Scope       string
+	Metadata    map[string]string
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
 type UserMonitoringOption func(*UserMonitoringConfig)
+
+// WithUserMetadata returns the option setting additional metadata of the authenticated user.
+// This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
+func WithUserMetadata(key, value string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Metadata[key] = value
+	}
+}
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {

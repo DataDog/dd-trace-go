@@ -13,11 +13,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -25,6 +22,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func traceIDFrom64Bits(i uint64) traceID {
@@ -942,14 +943,37 @@ func TestEnvVars(t *testing.T) {
 						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-03",
 						tracestateHeader:  "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 					},
-					out: []uint64{2459565876494606882, 1},
-					tid: traceIDFrom64Bits(1229782938247303441),
-
+					out:    []uint64{2459565876494606882, 1},
+					tid:    traceIDFrom64Bits(1229782938247303441),
 					origin: "rum",
 					propagatingTags: map[string]string{
-						"_dd.p.dm":     "-2",
+						"_dd.p.dm":     "-0",
 						"_dd.p.usr.id": "baz64==",
 						"tracestate":   "dd=s:0;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-00",
+						tracestateHeader:  "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+					},
+					out:    []uint64{2459565876494606882, 0},
+					tid:    traceIDFrom64Bits(1229782938247303441),
+					origin: "rum",
+					propagatingTags: map[string]string{
+						"_dd.p.usr.id": "baz64==",
+						"tracestate":   "dd=s:1;o:rum;t.dm:-2;t.usr.id:baz64~~,othervendor=t61rcWkgMzE"},
 				},
 				{
 					in: TextMapCarrier{
@@ -1760,8 +1784,6 @@ func BenchmarkInjectW3C(b *testing.B) {
 
 	ctx := root.Context().(*spanContext)
 
-	setPropagatingTag(ctx, w3cTraceIDTag,
-		"4bf92f3577b34da6a3ce929d0e0e4736")
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
@@ -1788,6 +1810,19 @@ func BenchmarkExtractDatadog(b *testing.B) {
 		DefaultPriorityHeader: "-1",
 		traceTagsHeader: `adad=ada2,adad=ada2,ad1d=ada2,adad=ada2,adad=ada2,
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		propagator.Extract(carrier)
+	}
+}
+
+func BenchmarkExtractW3C(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -1939,5 +1974,76 @@ func FuzzExtractTraceID128(f *testing.F) {
 	f.Fuzz(func(t *testing.T, v string) {
 		ctx := new(spanContext)
 		extractTraceID128(ctx, v) // make sure it doesn't panic
+	})
+}
+
+// Regression test for https://github.com/DataDog/dd-trace-go/issues/1944
+func TestPropagatingTagsConcurrency(_ *testing.T) {
+	// This test ensures Injection can be done concurrently.
+	trc := newTracer()
+	defer trc.Stop()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 1_000; i++ {
+		root := trc.StartSpan("test")
+		wg.Add(5)
+		for i := 0; i < 5; i++ {
+			go func() {
+				defer wg.Done()
+				trc.Inject(root.Context(), TextMapCarrier(make(map[string]string)))
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+func TestMalformedTID(t *testing.T) {
+	assert := assert.New(t)
+	t.Run("datadog, short tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, malformed tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.NotContains(root.Meta, keyTraceID128)
+	})
+
+	t.Run("datadog, valid tid", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleExtract, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "1234567890123456789",
+			DefaultParentIDHeader: "987654321",
+			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
+		})
+		sctx, err := tracer.Extract(headers)
+		assert.Nil(err)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root.Finish()
+		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
 	})
 }

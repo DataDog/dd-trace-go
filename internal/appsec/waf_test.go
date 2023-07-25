@@ -64,8 +64,9 @@ func TestCustomRules(t *testing.T) {
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
-			_, err = srv.Client().Do(req)
+			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -76,6 +77,60 @@ func TestCustomRules(t *testing.T) {
 				require.NotNil(t, event)
 				require.Contains(t, event, tc.ruleMatch)
 			}
+		})
+	}
+}
+
+func TestUserRules(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		rule string
+	}{
+		{
+			name: "custom-001",
+			rule: "custom-001",
+		},
+		{
+			name: "custom-action",
+			url:  "?match=match",
+			rule: "query-002",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			event := spans[0].Tag("_dd.appsec.json")
+			require.Contains(t, event, tc.rule)
+
 		})
 	}
 }
@@ -114,6 +169,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -145,6 +201,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -210,6 +267,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -343,6 +401,7 @@ func TestBlocking(t *testing.T) {
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)

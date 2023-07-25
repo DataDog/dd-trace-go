@@ -32,9 +32,9 @@ func init() {
 // It is required to call (*PublishResult).Get(ctx) on the value returned by Publish to complete
 // the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
-	var cfg config
+	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(&cfg)
+		opt(cfg)
 	}
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(t.String()),
@@ -43,7 +43,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 		tracer.Tag("ordering_key", msg.OrderingKey),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, "googlepubsub"),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
@@ -53,7 +53,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 	}
 	span, ctx := tracer.StartSpanFromContext(
 		ctx,
-		"pubsub.publish",
+		cfg.publishSpanName,
 		spanOpts...,
 	)
 	if msg.Attributes == nil {
@@ -91,9 +91,9 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 // extracts any tracing metadata attached to the received message, and starts a
 // receive span.
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
-	var cfg config
+	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(&cfg)
+		opt(cfg)
 	}
 	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {
@@ -108,7 +108,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 			tracer.Tag("publish_time", msg.PublishTime.String()),
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-			tracer.Tag(ext.MessagingSystem, "googlepubsub"),
+			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {
@@ -117,7 +117,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, "pubsub.receive", opts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
 			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)
 		}

@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
@@ -427,7 +428,7 @@ const (
 func TestSpanSetMetric(t *testing.T) {
 	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
 		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(5, len(span.Metrics))
+			assert.Equal(6, len(span.Metrics))
 			_, ok := span.Metrics[keySamplingPriority]
 			assert.True(ok)
 			_, ok = span.Metrics[keySamplingPriorityRate]
@@ -462,7 +463,7 @@ func TestSpanSetMetric(t *testing.T) {
 		"finished": func(assert *assert.Assertions, span *span) {
 			span.Finish()
 			span.SetTag("finished.test", 1337)
-			assert.Equal(5, len(span.Metrics))
+			assert.Equal(6, len(span.Metrics))
 			_, ok := span.Metrics["finished.test"]
 			assert.False(ok)
 		},
@@ -475,6 +476,29 @@ func TestSpanSetMetric(t *testing.T) {
 			tt(assert, span)
 		})
 	}
+}
+
+func TestSpanProfilingTags(t *testing.T) {
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	defer tracer.Stop()
+
+	for _, profilerEnabled := range []bool{false, true} {
+		name := fmt.Sprintf("profilerEnabled=%t", profilerEnabled)
+		t.Run(name, func(t *testing.T) {
+			oldVal := traceprof.SetProfilerEnabled(profilerEnabled)
+			defer func() { traceprof.SetProfilerEnabled(oldVal) }()
+
+			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			val, ok := span.Metrics["_dd.profiling.enabled"]
+			require.Equal(t, true, ok)
+			require.Equal(t, profilerEnabled, val != 0)
+
+			childSpan := tracer.newChildSpan("my.child", span)
+			_, ok = childSpan.Metrics["_dd.profiling.enabled"]
+			require.Equal(t, false, ok)
+		})
+	}
+
 }
 
 func TestSpanError(t *testing.T) {
@@ -857,6 +881,25 @@ func TestSpanStartAndFinishLogs(t *testing.T) {
 	}
 	require.True(t, started)
 	require.True(t, finished)
+}
+
+func TestSetUserPropagatedUserID(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	// Service 1, create span with propagated user
+	s := tracer.StartSpan("op")
+	s.(*span).SetUser("userino", WithPropagation())
+	m := make(map[string]string)
+	err := tracer.Inject(s.Context(), TextMapCarrier(m))
+	require.NoError(t, err)
+
+	// Service 2, extract user
+	c, err := tracer.Extract(TextMapCarrier(m))
+	require.NoError(t, err)
+	s = tracer.StartSpan("op", ChildOf(c))
+	s.(*span).SetUser("userino")
+	assert.True(t, s.(*span).context.updated)
 }
 
 func BenchmarkSetTagMetric(b *testing.B) {

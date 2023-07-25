@@ -22,16 +22,13 @@ func NewMessagingOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (m *messagingOutboundOp) V0() string {
-	if v, ok := m.cfg.versionOverrides[SchemaV0]; ok {
-		return v
+	if m.cfg.overrideV0 != nil {
+		return *m.cfg.overrideV0
 	}
 	return m.V1()
 }
 
 func (m *messagingOutboundOp) V1() string {
-	if v, ok := m.cfg.versionOverrides[SchemaV1]; ok {
-		return v
-	}
 	return fmt.Sprintf("%s.send", m.system)
 }
 
@@ -52,27 +49,36 @@ func NewMessagingInboundOp(system string, opts ...Option) *Schema {
 }
 
 func (m *messagingInboundOp) V0() string {
-	if v, ok := m.cfg.versionOverrides[SchemaV0]; ok {
-		return v
+	if m.cfg.overrideV0 != nil {
+		return *m.cfg.overrideV0
 	}
 	return m.V1()
 }
 
 func (m *messagingInboundOp) V1() string {
-	if v, ok := m.cfg.versionOverrides[SchemaV1]; ok {
-		return v
-	}
 	return fmt.Sprintf("%s.process", m.system)
 }
 
 // NewKafkaOutboundOp creates a new schema for Kafka (messaging) outbound operations.
 func NewKafkaOutboundOp(opts ...Option) *Schema {
-	newOpts := append([]Option{WithVersionOverride(SchemaV0, "kafka.produce")}, opts...)
+	newOpts := append([]Option{WithOverrideV0("kafka.produce")}, opts...)
 	return NewMessagingOutboundOp("kafka", newOpts...)
 }
 
 // NewKafkaInboundOp creates a new schema for Kafka (messaging) inbound operations.
 func NewKafkaInboundOp(opts ...Option) *Schema {
-	newOpts := append([]Option{WithVersionOverride(SchemaV0, "kafka.consume")}, opts...)
+	newOpts := append([]Option{WithOverrideV0("kafka.consume")}, opts...)
 	return NewMessagingInboundOp("kafka", newOpts...)
+}
+
+// NewGCPPubsubInboundOp creates a new schema for GCP Pubsub (messaging) inbound operations.
+func NewGCPPubsubInboundOp(opts ...Option) *Schema {
+	newOpts := append([]Option{WithOverrideV0("pubsub.receive")}, opts...)
+	return NewMessagingInboundOp("gcp.pubsub", newOpts...)
+}
+
+// NewGCPPubsubOutboundOp creates a new schema for GCP Pubsub (messaging) outbound operations.
+func NewGCPPubsubOutboundOp(opts ...Option) *Schema {
+	newOpts := append([]Option{WithOverrideV0("pubsub.publish")}, opts...)
+	return NewMessagingOutboundOp("gcp.pubsub", newOpts...)
 }

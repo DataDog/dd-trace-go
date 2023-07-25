@@ -125,7 +125,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	return ctx, nil
 }
 
@@ -134,7 +134,7 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
 	errRedis := cmd.Err()
-	if errRedis != redis.Nil {
+	if errRedis != redis.Nil && ddh.config.errCheck(errRedis) {
 		finishOpts = append(finishOpts, tracer.WithError(errRedis))
 	}
 	span.Finish(finishOpts...)
@@ -172,7 +172,7 @@ func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.C
 	var finishOpts []ddtrace.FinishOption
 	for _, cmd := range cmds {
 		errCmd := cmd.Err()
-		if errCmd != redis.Nil {
+		if errCmd != redis.Nil && ddh.config.errCheck(errCmd) {
 			finishOpts = append(finishOpts, tracer.WithError(errCmd))
 		}
 	}

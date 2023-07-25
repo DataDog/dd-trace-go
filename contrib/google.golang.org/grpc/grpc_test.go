@@ -6,15 +6,19 @@
 package grpc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -22,9 +26,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -32,10 +39,8 @@ import (
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
 
-	rig, err := newRig(true, WithRequestTags())
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
+	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+	require.NoError(t, err, "error setting up rig")
 	defer rig.Close()
 	client := rig.client
 
@@ -105,6 +110,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(clientSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(clientSpan.Tag(ext.SpanKind), ext.SpanKindClient)
 			assert.Equal("grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", clientSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", clientSpan.Tag(ext.GRPCFullMethod))
 
 			assert.Equal(serverSpan.Tag(ext.ServiceName), "grpc")
@@ -116,6 +122,7 @@ func TestUnary(t *testing.T) {
 			assert.Equal(serverSpan.Tag(ext.Component), "google.golang.org/grpc")
 			assert.Equal(serverSpan.Tag(ext.SpanKind), ext.SpanKindServer)
 			assert.Equal("grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal("grpc.Fixture", serverSpan.Tag(ext.RPCService))
 			assert.Equal("/grpc.Fixture/Ping", serverSpan.Tag(ext.GRPCFullMethod))
 		})
 	}
@@ -214,10 +221,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -241,10 +246,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithStreamMessages(false))
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithStreamMessages(false))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -268,10 +271,8 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithStreamCalls(false))
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithStreamCalls(false))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "a",
@@ -312,10 +313,8 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true)
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"))
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
 		{
@@ -349,10 +348,8 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithRequestTags(), WithMetadataTags())
-		if err != nil {
-			t.Fatalf("error setting up rig: %s", err)
-		}
+		rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags(), WithMetadataTags())
+		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 		client := rig.client
 
@@ -436,12 +433,9 @@ func TestPass(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(false)
-	if err != nil {
-		t.Fatalf("error setting up rig: %s", err)
-	}
+	rig, err := newRig(false, WithServiceName("grpc"))
+	require.NoError(t, err, "error setting up rig")
 	defer rig.Close()
-
 	client := rig.client
 
 	ctx := context.Background()
@@ -606,16 +600,13 @@ func (r *rig) Close() {
 	r.conn.Close()
 }
 
-func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
-	interceptorOpts = append([]InterceptorOption{WithServiceName("grpc")}, interceptorOpts...)
-
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),
-		grpc.StreamInterceptor(StreamServerInterceptor(interceptorOpts...)),
-	)
-
-	fixtureServer := new(fixtureServer)
-	RegisterFixtureServer(server, fixtureServer)
+func newRigWithInterceptors(
+	serverInterceptors []grpc.ServerOption,
+	clientInterceptors []grpc.DialOption,
+) (*rig, error) {
+	server := grpc.NewServer(serverInterceptors...)
+	fixtureSrv := new(fixtureServer)
+	RegisterFixtureServer(server, fixtureSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -625,25 +616,35 @@ func newRig(traceClient bool, interceptorOpts ...Option) (*rig, error) {
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
-	if traceClient {
-		opts = append(opts,
-			grpc.WithUnaryInterceptor(UnaryClientInterceptor(interceptorOpts...)),
-			grpc.WithStreamInterceptor(StreamClientInterceptor(interceptorOpts...)),
-		)
-	}
-	conn, err := grpc.Dial(li.Addr().String(), opts...)
+	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
 	return &rig{
-		fixtureServer: fixtureServer,
+		fixtureServer: fixtureSrv,
 		listener:      li,
 		port:          port,
 		server:        server,
 		conn:          conn,
 		client:        NewFixtureClient(conn),
 	}, err
+}
+
+func newRig(traceClient bool, opts ...Option) (*rig, error) {
+	serverInterceptors := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
+		grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
+	}
+	clientInterceptors := []grpc.DialOption{
+		grpc.WithInsecure(),
+	}
+	if traceClient {
+		clientInterceptors = append(clientInterceptors,
+			grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
+		)
+	}
+	return newRigWithInterceptors(serverInterceptors, clientInterceptors)
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans
@@ -1029,6 +1030,101 @@ func TestCustomTag(t *testing.T) {
 	}
 }
 
+func TestServerNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(false, true)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.server", 4),
+		WithDDService:            lists.RepeatString(namingschematest.TestDDService, 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestClientNamingSchema(t *testing.T) {
+	genSpans := getGenSpansFn(true, false)
+	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client", spans[i].OperationName())
+		}
+	}
+	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 4)
+		for i := 0; i < 4; i++ {
+			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
+		}
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             lists.RepeatString("grpc.client", 4),
+		WithDDService:            lists.RepeatString("grpc.client", 4),
+		WithDDServiceAndOverride: lists.RepeatString(namingschematest.TestServiceOverride, 4),
+	}
+	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
+	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		// exclude the grpc.message spans as they are not affected by naming schema
+		opts = append(opts, WithStreamMessages(false))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		var serverInterceptors []grpc.ServerOption
+		if traceServer {
+			serverInterceptors = append(serverInterceptors,
+				grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
+				grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
+				grpc.StatsHandler(NewServerStatsHandler(opts...)),
+			)
+		}
+		clientInterceptors := []grpc.DialOption{grpc.WithInsecure()}
+		if traceClient {
+			clientInterceptors = append(clientInterceptors,
+				grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
+				grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
+				grpc.WithStatsHandler(NewClientStatsHandler(opts...)),
+			)
+		}
+		rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+		require.NoError(t, err)
+		defer rig.Close()
+		_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+		require.NoError(t, err)
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		err = stream.Send(&FixtureRequest{Name: "break"})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		// to flush the spans
+		_, _ = stream.Recv()
+
+		waitForSpans(mt, 4)
+		return mt.FinishedSpans()
+	}
+}
+
 func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	// need to use the real tracer to get representative measurments
 	tracer.Start(tracer.WithLogger(log.DiscardLogger{}),
@@ -1112,4 +1208,84 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})
+}
+
+type roundTripper struct {
+	assertSpanFromRequest func(r *http.Request)
+}
+
+func (rt *roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	rt.assertSpanFromRequest(r)
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func TestIssue2050(t *testing.T) {
+	// https://github.com/DataDog/dd-trace-go/issues/2050
+	t.Setenv("DD_SERVICE", "some-dd-service")
+
+	spansFound := make(chan bool, 1)
+
+	httpClient := &http.Client{
+		Transport: &roundTripper{
+			assertSpanFromRequest: func(r *http.Request) {
+				if r.URL.Path != "/v0.4/traces" {
+					return
+				}
+				req := r.Clone(context.Background())
+				defer req.Body.Close()
+
+				buf, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+
+				var payload bytes.Buffer
+				_, err = msgp.UnmarshalAsJSON(&payload, buf)
+				require.NoError(t, err)
+
+				var trace [][]map[string]interface{}
+				err = json.Unmarshal(payload.Bytes(), &trace)
+				require.NoError(t, err)
+
+				if len(trace) == 0 {
+					return
+				}
+				require.Len(t, trace, 2)
+				s0 := trace[0][0]
+				s1 := trace[1][0]
+
+				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "some-dd-service", s0["service"])
+
+				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+				assert.Equal(t, "grpc.client", s1["service"])
+				close(spansFound)
+			},
+		},
+	}
+	serverInterceptors := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+	}
+	clientInterceptors := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor()),
+	}
+	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+	require.NoError(t, err)
+	defer rig.Close()
+
+	// call tracer.Start after integration is initialized, to reproduce the issue
+	tracer.Start(tracer.WithHTTPClient(httpClient))
+	defer tracer.Stop()
+
+	_, err = rig.client.Ping(context.Background(), &FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	select {
+	case <-spansFound:
+		return
+
+	case <-time.After(5 * time.Second):
+		assert.Fail(t, "spans not found")
+	}
 }

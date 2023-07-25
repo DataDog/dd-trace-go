@@ -48,6 +48,7 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
+	traceprof.SetProfilerEnabled(true)
 	return nil
 }
 
@@ -58,6 +59,7 @@ func Stop() {
 	if activeProfiler != nil {
 		activeProfiler.stop()
 		activeProfiler = nil
+		traceprof.SetProfilerEnabled(false)
 	}
 	mu.Unlock()
 }
@@ -72,7 +74,7 @@ type profiler struct {
 	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
-	deltas          map[ProfileType]deltaProfiler
+	deltas          map[ProfileType]*fastDeltaProfiler
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
@@ -83,7 +85,8 @@ type profiler struct {
 }
 
 func (p *profiler) shouldTrace() bool {
-	return p.cfg.traceEnabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
+	p.cfg.traceConfig.Refresh()
+	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
 }
 
 // testHooks are functions that are replaced during testing which would normally
@@ -192,11 +195,11 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		out:    make(chan batch, outChannelSize),
 		exit:   make(chan struct{}),
 		met:    newMetrics(),
-		deltas: make(map[ProfileType]deltaProfiler),
+		deltas: make(map[ProfileType]*fastDeltaProfiler),
 	}
 	for pt := range cfg.types {
 		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
-			p.deltas[pt] = newDeltaProfiler(p.cfg, d...)
+			p.deltas[pt] = newFastDeltaProfiler(d...)
 		}
 	}
 	p.uploadFunc = p.upload
@@ -258,6 +261,13 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			seq:   p.seq,
 			host:  p.cfg.hostname,
 			start: now(),
+			extraTags: []string{
+				// _dd.profiler.go_execution_trace_enabled indicates whether execution
+				// tracing is enabled, to distinguish between missing a trace
+				// because we don't collect them every profiling cycle from
+				// missing a trace because the feature isn't turned on.
+				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+			},
 		}
 		p.seq++
 
@@ -297,6 +307,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		}
 		wg.Wait()
 		for _, prof := range completed {
+			if prof.pt == executionTrace {
+				// If the profile batch includes a runtime execution trace, add a tag so
+				// that the uploads are more easily discoverable in the UI.
+				bat.extraTags = append(bat.extraTags, "go_execution_traced:yes")
+			}
 			bat.addProfile(prof)
 		}
 

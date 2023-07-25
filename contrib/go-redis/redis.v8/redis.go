@@ -106,14 +106,15 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
-	raw := cmd.String()
-	length := strings.Count(raw, " ")
+	raw := strings.TrimSpace(cmd.String())
+	first := strings.SplitN(raw, " ", 2)[0]
+	length := strings.Count(raw, " ") + 1
 	p := ddh.params
 	opts := make([]ddtrace.StartSpanOption, 0, 4+1+len(ddh.additionalTags)+1) // 4 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+		tracer.ResourceName(first),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -126,7 +127,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	return ctx, nil
 }
 
@@ -135,7 +136,7 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
 	errRedis := cmd.Err()
-	if errRedis != redis.Nil {
+	if errRedis != redis.Nil && ddh.config.errCheck(errRedis) {
 		finishOpts = append(finishOpts, tracer.WithError(errRedis))
 	}
 	span.Finish(finishOpts...)
@@ -143,14 +144,15 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 }
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-	raw := commandsToString(cmds)
-	length := strings.Count(raw, " ")
+	raw := strings.TrimSpace(commandsToString(cmds))
+	first := strings.SplitN(raw, " ", 2)[0]
+	length := strings.Count(raw, " ") + 1
 	p := ddh.params
 	opts := make([]ddtrace.StartSpanOption, 0, 5+1+len(ddh.additionalTags)+1) // 5 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
-		tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
+		tracer.ResourceName(first),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 		tracer.Tag(ext.Component, componentName),
@@ -164,7 +166,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	return ctx, nil
 }
 
@@ -174,7 +176,7 @@ func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.C
 	var finishOpts []ddtrace.FinishOption
 	for _, cmd := range cmds {
 		errCmd := cmd.Err()
-		if errCmd != redis.Nil {
+		if errCmd != redis.Nil && ddh.config.errCheck(errCmd) {
 			finishOpts = append(finishOpts, tracer.WithError(errCmd))
 		}
 	}

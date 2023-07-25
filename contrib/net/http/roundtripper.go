@@ -38,12 +38,16 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
 	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
 	}
 	if rt.cfg.serviceName != "" {
 		opts = append(opts, tracer.ServiceName(rt.cfg.serviceName))
+	}
+	if port, err := strconv.Atoi(url.Port()); err == nil {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
 	}
 	if len(rt.cfg.spanOpts) > 0 {
 		opts = append(opts, rt.cfg.spanOpts...)
@@ -63,11 +67,13 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		rt.cfg.before(req, span)
 	}
 	r2 := req.Clone(ctx)
-	// inject the span context into the http request copy
-	err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
-	if err != nil {
-		// this should never happen
-		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
+	if rt.cfg.propagation {
+		// inject the span context into the http request copy
+		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
+		if err != nil {
+			// this should never happen
+			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
+		}
 	}
 	res, err = rt.base.RoundTrip(r2)
 	if err != nil {

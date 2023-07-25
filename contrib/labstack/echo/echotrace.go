@@ -4,6 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package echo provides functions to trace the labstack/echo package (https://github.com/labstack/echo).
+// WARNING: The underlying v3 version of labstack/echo has known security vulnerabilities that have been resolved in v4
+// and is no longer under active development. As such consider this package deprecated.
+// It is highly recommended that you update to the latest version available at labstack/echo.v4.
 package echo
 
 import (
@@ -51,7 +54,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-
+			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
