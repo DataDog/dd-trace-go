@@ -177,5 +177,5 @@ func TestLogFormat(t *testing.T) {
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	tracer.StartSpan("test", ServiceName("test-service"), ResourceName("/"), WithSpanID(12345))
 	assert.Len(tp.Logs(), 1)
-	assert.Regexp(logPrefixRegexp+` DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Logs()[0])
+	assert.Regexp(logPrefixRegexp+` DEBUG: Started Span: dd.trace_id="12345" dd.span_id="12345" dd.parent_id="0", Operation: test, Resource: /, Tags: map.*, map.*`, tp.Logs()[0])
 }
