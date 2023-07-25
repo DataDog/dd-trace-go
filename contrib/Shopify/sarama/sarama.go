@@ -22,7 +22,7 @@ const componentName = "Shopify/sarama"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 type partitionConsumer struct {

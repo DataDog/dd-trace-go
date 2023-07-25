@@ -233,7 +233,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 
 func TestAgentIntegration(t *testing.T) {
 	t.Run("err", func(t *testing.T) {
-		assert.False(t, ImportIntegration("this-integration-does-not-exist"))
+		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
 	})
 
 	t.Run("default", func(t *testing.T) {
@@ -266,7 +266,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 
-		ok := ImportIntegration("go-chi/chi")
+		ok := MarkIntegrationImported("go-chi/chi")
 		assert.True(t, ok)
 		cfg.loadContribIntegrations()
 		assert.True(t, cfg.integrations["chi"].Instrumented)

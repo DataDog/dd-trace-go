@@ -24,7 +24,7 @@ const componentName = "gorm.io/gorm.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 type key string

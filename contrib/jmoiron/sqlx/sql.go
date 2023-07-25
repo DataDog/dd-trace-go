@@ -23,7 +23,7 @@ const componentName = "jmoiron/sqlx"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // Open opens a new (traced) connection to the database using the given driver and source.

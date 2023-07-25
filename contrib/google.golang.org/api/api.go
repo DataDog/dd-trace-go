@@ -43,7 +43,7 @@ var apiEndpointsTree *tree.Tree
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 	initAPIEndpointsTree()
 }
 

@@ -35,7 +35,7 @@ const componentName = "hashicorp/vault"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // NewHTTPClient returns an http.Client for use in the Vault API config

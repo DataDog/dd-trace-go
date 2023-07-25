@@ -24,7 +24,7 @@ const componentName = "globalsign/mgo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // Dial opens a connection to a MongoDB server and configures it

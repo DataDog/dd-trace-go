@@ -28,7 +28,7 @@ const componentName = "elastic/go-elasticsearch.v6"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.

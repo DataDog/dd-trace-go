@@ -23,7 +23,7 @@ const componentName = "k8s.io/client-go/kubernetes"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 const (

@@ -23,7 +23,7 @@ const componentName = "tidwall/buntdb"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.

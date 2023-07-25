@@ -25,7 +25,7 @@ const componentName = "zenazn/goji.v1/web"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // Middleware returns a goji middleware function that will trace incoming requests.

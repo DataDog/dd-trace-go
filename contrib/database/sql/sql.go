@@ -33,7 +33,7 @@ const componentName = "database/sql"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.ImportIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // registeredDrivers holds a registry of all drivers registered via the sqltrace package.
