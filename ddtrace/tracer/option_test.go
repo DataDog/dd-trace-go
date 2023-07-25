@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"math"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -271,6 +273,41 @@ func TestAgentIntegration(t *testing.T) {
 		cfg.loadContribIntegrations()
 		assert.True(t, cfg.integrations["chi"].Instrumented)
 	})
+}
+
+type contribPkg struct {
+	Dir        string
+	Root       string
+	ImportPath string
+	Name       string
+}
+
+func TestIntegrationEnabled(t *testing.T) {
+	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	var packages []contribPkg
+	stream := json.NewDecoder(strings.NewReader(string(body)))
+	for stream.More() {
+		var out contribPkg
+		err := stream.Decode(&out)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		packages = append(packages, out)
+	}
+	for _, pkg := range packages {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+			continue
+		}
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+	}
 }
 
 func TestTracerOptionsDefaults(t *testing.T) {
