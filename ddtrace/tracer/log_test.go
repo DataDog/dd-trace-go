@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -123,6 +124,22 @@ func TestStartupLog(t *testing.T) {
 		logStartup(tracer)
 		assert.Len(tp.Logs(), 1)
 		assert.Regexp(logPrefixRegexp+` INFO: DATADOG TRACER CONFIGURATION {"date":"[^"]*","os_name":"[^"]*","os_version":"[^"]*","version":"[^"]*","lang":"Go","lang_version":"[^"]*","env":"","service":"tracer\.test(\.exe)?","agent_url":"http://localhost:9/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"[^"]*"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":((false)|(true)),"profiler_endpoints_enabled":((false)|(true)),"dd_version":"","architecture":"[^"]*","global_service":"","lambda_mode":"true","appsec":((true)|(false)),"agent_features":{"DropP0s":false,"Stats":false,"StatsdPort":0},"partial_flush_enabled":false,"partial_flush_min_spans":1000}`, tp.Logs()[0])
+	})
+
+	t.Run("integrations", func(t *testing.T) {
+		assert := assert.New(t)
+		tp := new(log.RecordLogger)
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
+		defer stop()
+		tp.Reset()
+		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		logStartup(tracer)
+		require.Len(t, tp.Logs(), 2)
+
+		for n, s := range tracer.config.integrations {
+			expect := fmt.Sprintf("\"%s\":{\"instrumented\":%t,\"available\":%t,\"available_version\":\"%s\"}", n, s.Instrumented, s.Available, s.Version)
+			assert.Contains(tp.Logs()[1], expect, "expected integration %s", expect)
+		}
 	})
 }
 

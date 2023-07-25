@@ -22,6 +22,7 @@ const componentName = "go-pg/pg.v10"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/go-pg/pg/v10")
 }
 
 // Wrap augments the given DB with tracing.

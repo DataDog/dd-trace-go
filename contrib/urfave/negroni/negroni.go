@@ -24,6 +24,7 @@ const componentName = "urfave/negroni"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/urfave/negroni")
 }
 
 // DatadogMiddleware returns middleware that will trace incoming requests.

@@ -23,6 +23,7 @@ const componentName = "emicklei/go-restful.v3"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/emicklei/go-restful/v3")
 }
 
 // FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.

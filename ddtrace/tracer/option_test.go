@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"math"
@@ -14,8 +15,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -229,6 +232,158 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.Stats)
 		assert.Equal(t, 8999, cfg.agent.StatsdPort)
 	})
+}
+
+func TestAgentIntegration(t *testing.T) {
+	t.Run("err", func(t *testing.T) {
+		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
+	})
+
+	t.Run("default", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		assert.NotNil(t, cfg.integrations)
+		assert.Equal(t, len(cfg.integrations), 53)
+	})
+
+	t.Run("uninstrumented", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		cfg.loadContribIntegrations([]*debug.Module{})
+		for _, v := range cfg.integrations {
+			assert.False(t, v.Instrumented)
+		}
+	})
+
+	t.Run("OK import", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		ok := MarkIntegrationImported("github.com/go-chi/chi")
+		assert.True(t, ok)
+		cfg.loadContribIntegrations([]*debug.Module{})
+		assert.True(t, cfg.integrations["chi"].Instrumented)
+	})
+
+	t.Run("available", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "github.com/go-redis/redis",
+			Version: "v1.538",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["Redis"].Available)
+		assert.Equal(t, cfg.integrations["Redis"].Version, "v1.538")
+	})
+
+	t.Run("grpc", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.520",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC"].Available)
+		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+	})
+
+	t.Run("grpc v12", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+
+	t.Run("grpc bad", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v10.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+}
+
+type contribPkg struct {
+	Dir        string
+	Root       string
+	ImportPath string
+	Name       string
+}
+
+func TestIntegrationEnabled(t *testing.T) {
+	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	var packages []contribPkg
+	stream := json.NewDecoder(strings.NewReader(string(body)))
+	for stream.More() {
+		var out contribPkg
+		err := stream.Decode(&out)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		packages = append(packages, out)
+	}
+	for _, pkg := range packages {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+			continue
+		}
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+	}
 }
 
 func TestTracerOptionsDefaults(t *testing.T) {
