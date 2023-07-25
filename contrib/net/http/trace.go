@@ -23,6 +23,7 @@ const componentName = "net/http"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
