@@ -14,7 +14,7 @@ import (
 // reportOpenSpans periodically finds and reports old, open spans at
 // the given interval.
 func (t *tracer) reportOpenSpans(interval time.Duration) {
-	tick := time.NewTicker(1 * time.Second)
+	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		select {
