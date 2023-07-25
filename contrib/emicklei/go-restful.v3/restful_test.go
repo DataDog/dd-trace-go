@@ -59,7 +59,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 		for _, arg := range htArgs {
-			_, tag := normalizer.NormalizeHeaderTag(arg)
+			_, tag := normalizer.HeaderTag(arg)
 			assert.NotContains(s.Tags(), tag)
 		}
 	})
@@ -76,7 +76,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -86,7 +86,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.NormalizeHeaderTag("3header")
+		header, tag := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
 		globalconfig.SetHeaderTag("other", tag)
 
@@ -104,7 +104,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalH, globalT := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(globalH, globalT)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
@@ -115,7 +115,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -160,7 +160,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-	assert.Equal("emicklei/go-restful/v3", span.Tag(ext.Component))
+	assert.Equal("emicklei/go-restful.v3", span.Tag(ext.Component))
 }
 
 func TestError(t *testing.T) {
@@ -194,7 +194,7 @@ func TestError(t *testing.T) {
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-	assert.Equal("emicklei/go-restful/v3", span.Tag(ext.Component))
+	assert.Equal("emicklei/go-restful.v3", span.Tag(ext.Component))
 }
 
 func TestPropagation(t *testing.T) {
