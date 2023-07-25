@@ -7,10 +7,12 @@ package opentelemetry
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
-	"testing"
 )
 
 func TestTelemetry(t *testing.T) {
@@ -20,30 +22,23 @@ func TestTelemetry(t *testing.T) {
 		expectedExtract string
 	}{
 		{
-			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to tracecontext
-			expectedInject:  "tracecontext",
-			expectedExtract: "tracecontext",
+			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to tracecontext,datadog
+			expectedInject:  "tracecontext,datadog",
+			expectedExtract: "tracecontext,datadog",
 		},
 		{
 			env: map[string]string{
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "datadog",
 			},
-			expectedInject:  "tracecontext",
-			expectedExtract: "datadog,tracecontext",
+			expectedInject:  "tracecontext,datadog",
+			expectedExtract: "datadog",
 		},
 		{
 			env: map[string]string{
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "none",
 			},
-			expectedInject:  "tracecontext",
-			expectedExtract: "tracecontext",
-		},
-		{
-			env: map[string]string{
-				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "tracecontext,datadog",
-			},
-			expectedInject:  "tracecontext",
-			expectedExtract: "tracecontext,datadog",
+			expectedInject:  "tracecontext,datadog",
+			expectedExtract: "",
 		},
 		{
 			env: map[string]string{
@@ -51,16 +46,16 @@ func TestTelemetry(t *testing.T) {
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "none",
 			},
 			expectedInject:  "tracecontext,datadog",
-			expectedExtract: "tracecontext",
+			expectedExtract: "",
 		},
 		{
 			env: map[string]string{
 				// deprecated environment variable
-				"DD_PROPAGATION_STYLE_INJECT":        "tracecontext,datadog",
+				"DD_PROPAGATION_STYLE_INJECT":        "tracecontext",
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "",
 			},
-			expectedInject:  "tracecontext,datadog",
-			expectedExtract: "tracecontext",
+			expectedInject:  "tracecontext",
+			expectedExtract: "tracecontext,datadog",
 		},
 		{
 			env: map[string]string{
@@ -69,7 +64,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "b3",
 			},
 			expectedInject:  "tracecontext,datadog",
-			expectedExtract: "b3,tracecontext",
+			expectedExtract: "b3",
 		},
 	}
 

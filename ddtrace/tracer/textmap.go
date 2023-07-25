@@ -199,8 +199,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd}
-	defaultPsName := "datadog"
+	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPsName := "tracecontext,datadog"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
@@ -228,7 +228,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			list = append(list, dd)
 			listNames = append(listNames, v)
 		case "tracecontext":
-			list = append(list, &propagatorW3c{})
+			list = append([]Propagator{&propagatorW3c{}}, list...)
 			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
