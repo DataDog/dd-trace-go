@@ -36,65 +36,63 @@ import (
 )
 
 var contribIntegrations = map[string]struct {
-	name      string // user readable name for startup logs
-	cName     string // component name used in the contrib folder
-	imported  bool   // true if the user has imported the integration
-	available bool   // true if the user is using a library compatible with a contrib
-	version   string // if available is true, holds the version of the available library
+	name     string // user readable name for startup logs
+	cName    string // component name used in the contrib folder
+	imported bool   // true if the user has imported the integration
 }{
-	"github.com/99designs/gqlgen":                   {"gqlgen", "99designs/gqlgen", false, false, ""},
-	"github.com/aws/aws-sdk-go":                     {"AWS SDK", "aws/aws-sdk-go/aws", false, false, ""},
-	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", "aws/aws-sdk-go-v2/aws", false, false, ""},
-	"github.com/bradfitz/gomemcache":                {"Memcache", "bradfitz/gomemcache/memcache", false, false, ""},
-	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", "cloud.google.com/go/pubsub", false, false, ""},
-	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", "confluentinc/confluent-kafka-go/kafka", false, false, ""},
-	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", "confluentinc/confluent-kafka-go/kafka.v2", false, false, ""},
-	"database/sql":                                  {"SQL", "database/sql", false, false, ""},
-	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", "dimfeld/httptreemux.v5", false, false, ""},
-	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", "elastic/go-elasticsearch.v6", false, false, ""},
-	"github.com/emicklei/go-restful":                {"go-restful", "emicklei/go-restful", false, false, ""},
-	"github.com/emicklei/go-restful/v3":             {"go-restful v3", "emicklei/go-restful/v3", false, false, ""},
-	"github.com/garyburd/redigo":                    {"Redigo (dep)", "garyburd/redigo", false, false, ""},
-	"github.com/gin-gonic/gin":                      {"Gin", "gin-gonic/gin", false, false, ""},
-	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", "globalsign/mgo", false, false, ""},
-	"github.com/go-chi/chi":                         {"chi", "go-chi/chi", false, false, ""},
-	"github.com/go-chi/chi/v5":                      {"chi v5", "go-chi/chi.v5", false, false, ""},
-	"github.com/go-pg/pg/v10":                       {"go-pg v10", "go-pg/pg.v10", false, false, ""},
-	"github.com/go-redis/redis":                     {"Redis", "go-redis/redis", false, false, ""},
-	"github.com/go-redis/redis/v7":                  {"Redis v7", "go-redis/redis.v7", false, false, ""},
-	"github.com/go-redis/redis/v8":                  {"Redis v8", "go-redis/redis.v8", false, false, ""},
-	"go.mongodb.org/mongo-driver":                   {"MongoDB", "go.mongodb.org/mongo-driver/mongo", false, false, ""},
-	"github.com/gocql/gocql":                        {"Cassandra", "gocql/gocql", false, false, ""},
-	"github.com/gofiber/fiber":                      {"Fiber", "gofiber/fiber.v2", false, false, ""},
-	"github.com/gomodule/redigo":                    {"Redigo", "gomodule/redigo", false, false, ""},
-	"google.golang.org/api":                         {"Google API", "google.golang.org/api", false, false, ""},
-	"google.golang.org/grpc":                        {"gRPC", "google.golang.org/grpc", false, false, ""},
-	"google.golang.org/grpc/v12":                    {"gRPC v12", "google.golang.org/grpc.v12", false, false, ""},
-	"github.com/jinzhu/gorm.v1":                     {"Gorm (gopkg)", "gopkg.in/jinzhu/gorm.v1", false, false, ""},
-	"github.com/gorilla/mux":                        {"Gorilla Mux", "gorilla/mux", false, false, ""},
-	"gorm.io/gorm.v1":                               {"Gorm v1", "gorm.io/gorm", false, false, ""},
-	"github.com/graph-gophers/graphql-go":           {"GraphQL", "graph-gophers/graphql-go", false, false, ""},
-	"github.com/hashicorp/consul/api":               {"Consul", "hashicorp/consul", false, false, ""},
-	"github.com/hashicorp/vault/api":                {"Vault", "hashicorp/vault", false, false, ""},
-	"github.com/jinzhu/gorm":                        {"Gorm", "jinzhu/gorm", false, false, ""},
-	"github.com/jmoiron/sqlx":                       {"SQLx", "jmoiron/sqlx", false, false, ""},
-	"github.com/julienschmidt/httprouter":           {"HTTP Router", "julienschmidt/httprouter", false, false, ""},
-	"k8s.io/client-go/kubernetes":                   {"Kubernetes", "k8s.io/client-go", false, false, ""},
-	"github.com/labstack/echo":                      {"echo", "labstack/echo", false, false, ""},
-	"github.com/labstack/echo/v4":                   {"echo v4", "labstack/echo.v4", false, false, ""},
-	"github.com/miekg/dns":                          {"miekg/dns", "miekg/dns", false, false, ""},
-	"net/http":                                      {"HTTP", "net/http", false, false, ""},
-	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", "olivere/elastic", false, false, ""},
-	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", "olivere/elastic", false, false, ""},
-	"github.com/redis/go-redis/v9":                  {"Redis v9", "redis/go-redis.v9", false, false, ""},
-	"github.com/segmentio/kafka-go":                 {"Kafka v0", "segmentio/kafka.go.v0", false, false, ""},
-	"github.com/Shopify/sarama":                     {"Kafka (sarama)", "Shopify/sarama", false, false, ""},
-	"github.com/sirupsen/logrus":                    {"Logrus", "sirupsen/logrus", false, false, ""},
-	"github.com/syndtr/goleveldb":                   {"LevelDB", "syndtr/goleveldb/leveldb", false, false, ""},
-	"github.com/tidwall/buntdb":                     {"BuntDB", "tidwall/buntdb", false, false, ""},
-	"github.com/twitchtv/twirp":                     {"Twirp", "twitchtv/twirp", false, false, ""},
-	"github.com/urfave/negroni":                     {"Negroni", "urfave/negroni", false, false, ""},
-	"github.com/zenazn/goji":                        {"Goji", "zenazn/goji.v1/web", false, false, ""},
+	"github.com/99designs/gqlgen":                   {"gqlgen", "99designs/gqlgen", false},
+	"github.com/aws/aws-sdk-go":                     {"AWS SDK", "aws/aws-sdk-go/aws", false},
+	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", "aws/aws-sdk-go-v2/aws", false},
+	"github.com/bradfitz/gomemcache":                {"Memcache", "bradfitz/gomemcache/memcache", false},
+	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", "cloud.google.com/go/pubsub", false},
+	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", "confluentinc/confluent-kafka-go/kafka", false},
+	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", "confluentinc/confluent-kafka-go/kafka.v2", false},
+	"database/sql":                                  {"SQL", "database/sql", false},
+	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", "dimfeld/httptreemux.v5", false},
+	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", "elastic/go-elasticsearch.v6", false},
+	"github.com/emicklei/go-restful":                {"go-restful", "emicklei/go-restful", false},
+	"github.com/emicklei/go-restful/v3":             {"go-restful v3", "emicklei/go-restful/v3", false},
+	"github.com/garyburd/redigo":                    {"Redigo (dep)", "garyburd/redigo", false},
+	"github.com/gin-gonic/gin":                      {"Gin", "gin-gonic/gin", false},
+	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", "globalsign/mgo", false},
+	"github.com/go-chi/chi":                         {"chi", "go-chi/chi", false},
+	"github.com/go-chi/chi/v5":                      {"chi v5", "go-chi/chi.v5", false},
+	"github.com/go-pg/pg/v10":                       {"go-pg v10", "go-pg/pg.v10", false},
+	"github.com/go-redis/redis":                     {"Redis", "go-redis/redis", false},
+	"github.com/go-redis/redis/v7":                  {"Redis v7", "go-redis/redis.v7", false},
+	"github.com/go-redis/redis/v8":                  {"Redis v8", "go-redis/redis.v8", false},
+	"go.mongodb.org/mongo-driver":                   {"MongoDB", "go.mongodb.org/mongo-driver/mongo", false},
+	"github.com/gocql/gocql":                        {"Cassandra", "gocql/gocql", false},
+	"github.com/gofiber/fiber":                      {"Fiber", "gofiber/fiber.v2", false},
+	"github.com/gomodule/redigo":                    {"Redigo", "gomodule/redigo", false},
+	"google.golang.org/api":                         {"Google API", "google.golang.org/api", false},
+	"google.golang.org/grpc":                        {"gRPC", "google.golang.org/grpc", false},
+	"google.golang.org/grpc/v12":                    {"gRPC v12", "google.golang.org/grpc.v12", false},
+	"github.com/jinzhu/gorm.v1":                     {"Gorm (gopkg)", "gopkg.in/jinzhu/gorm.v1", false},
+	"github.com/gorilla/mux":                        {"Gorilla Mux", "gorilla/mux", false},
+	"gorm.io/gorm.v1":                               {"Gorm v1", "gorm.io/gorm", false},
+	"github.com/graph-gophers/graphql-go":           {"GraphQL", "graph-gophers/graphql-go", false},
+	"github.com/hashicorp/consul/api":               {"Consul", "hashicorp/consul", false},
+	"github.com/hashicorp/vault/api":                {"Vault", "hashicorp/vault", false},
+	"github.com/jinzhu/gorm":                        {"Gorm", "jinzhu/gorm", false},
+	"github.com/jmoiron/sqlx":                       {"SQLx", "jmoiron/sqlx", false},
+	"github.com/julienschmidt/httprouter":           {"HTTP Router", "julienschmidt/httprouter", false},
+	"k8s.io/client-go/kubernetes":                   {"Kubernetes", "k8s.io/client-go", false},
+	"github.com/labstack/echo":                      {"echo", "labstack/echo", false},
+	"github.com/labstack/echo/v4":                   {"echo v4", "labstack/echo.v4", false},
+	"github.com/miekg/dns":                          {"miekg/dns", "miekg/dns", false},
+	"net/http":                                      {"HTTP", "net/http", false},
+	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", "olivere/elastic", false},
+	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", "olivere/elastic", false},
+	"github.com/redis/go-redis/v9":                  {"Redis v9", "redis/go-redis.v9", false},
+	"github.com/segmentio/kafka-go":                 {"Kafka v0", "segmentio/kafka.go.v0", false},
+	"github.com/Shopify/sarama":                     {"Kafka (sarama)", "Shopify/sarama", false},
+	"github.com/sirupsen/logrus":                    {"Logrus", "sirupsen/logrus", false},
+	"github.com/syndtr/goleveldb":                   {"LevelDB", "syndtr/goleveldb/leveldb", false},
+	"github.com/tidwall/buntdb":                     {"BuntDB", "tidwall/buntdb", false},
+	"github.com/twitchtv/twirp":                     {"Twirp", "twitchtv/twirp", false},
+	"github.com/urfave/negroni":                     {"Negroni", "urfave/negroni", false},
+	"github.com/zenazn/goji":                        {"Goji", "zenazn/goji.v1/web", false},
 }
 
 var (
@@ -573,34 +571,39 @@ func MarkIntegrationImported(integration string) (ok bool) {
 func (c *config) loadContribIntegrations() {
 	integrations := map[string]integrationConfig{}
 	deps, ok := debug.ReadBuildInfo()
-	if ok {
-		for _, d := range deps.Deps {
-			p := d.Path
-			// special use case, since gRPC does not update version number
-			if p == "google.golang.org/grpc" {
-				re := regexp.MustCompile(`v(\d.\d)\d*`)
-				match := re.FindStringSubmatch(d.Version)[1]
-				ver, err := strconv.ParseFloat(match, 32)
-				if err != nil {
-					log.Warn("Unable to parse version of GRPC %v", d.Version)
-					continue
-				}
-				if ver <= 1.2 {
-					p = p + "/v12"
-				}
-			}
-			s := contribIntegrations[p]
-			s.available = true
-			s.version = d.Version
-			contribIntegrations[p] = s
-		}
-	}
 	for _, s := range contribIntegrations {
 		integrations[s.name] = integrationConfig{
 			Instrumented: s.imported,
-			Available:    s.available,
-			Version:      s.version,
 		}
+	}
+	if !ok {
+		c.integrations = integrations
+		return
+	}
+	for _, d := range deps.Deps {
+		p := d.Path
+		// special use case, since gRPC does not update version number
+		if p == "google.golang.org/grpc" {
+			re := regexp.MustCompile(`v(\d.\d)\d*`)
+			match := re.FindStringSubmatch(d.Version)[1]
+			ver, err := strconv.ParseFloat(match, 32)
+			if err != nil {
+				log.Warn("Unable to parse version of GRPC %v", d.Version)
+				continue
+			}
+			if ver <= 1.2 {
+				p = p + "/v12"
+			}
+		}
+		s, ok := contribIntegrations[p]
+		log.Info("here %v and %v", p, s.name)
+		if !ok {
+			continue
+		}
+		conf := integrations[s.name]
+		conf.Available = true
+		conf.Version = d.Version
+		integrations[s.name] = conf
 	}
 	c.integrations = integrations
 }
