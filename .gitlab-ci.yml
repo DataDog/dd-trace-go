@@ -8,7 +8,7 @@ variables:
   INDEX_FILE: index.txt
   KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
-  BENCHMARK_TARGETS: "BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C"
+  BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C"
 
 include:
   - ".gitlab/benchmarks.yml"
