@@ -41,16 +41,18 @@ type startupInfo struct {
 	SamplingRulesError          string            `json:"sampling_rules_error"`           // Any errors that occurred while parsing sampling rules
 	ServiceMappings             map[string]string `json:"service_mappings"`               // Service Mappings
 	Tags                        map[string]string `json:"tags"`                           // Global tags
-	RuntimeMetricsEnabled       bool              `json:"runtime_metrics_enabled"`        // Whether or not runtime metrics are enabled
-	HealthMetricsEnabled        bool              `json:"health_metrics_enabled"`         // Whether or not health metrics are enabled
-	ProfilerCodeHotspotsEnabled bool              `json:"profiler_code_hotspots_enabled"` // Whether or not profiler code hotspots are enabled
-	ProfilerEndpointsEnabled    bool              `json:"profiler_endpoints_enabled"`     // Whether or not profiler endpoints are enabled
+	RuntimeMetricsEnabled       bool              `json:"runtime_metrics_enabled"`        // Whether runtime metrics are enabled
+	HealthMetricsEnabled        bool              `json:"health_metrics_enabled"`         // Whether health metrics are enabled
+	ProfilerCodeHotspotsEnabled bool              `json:"profiler_code_hotspots_enabled"` // Whether profiler code hotspots are enabled
+	ProfilerEndpointsEnabled    bool              `json:"profiler_endpoints_enabled"`     // Whether profiler endpoints are enabled
 	ApplicationVersion          string            `json:"dd_version"`                     // Version of the user's application
 	Architecture                string            `json:"architecture"`                   // Architecture of host machine
 	GlobalService               string            `json:"global_service"`                 // Global service string. If not-nil should be same as Service. (#614)
-	LambdaMode                  string            `json:"lambda_mode"`                    // Whether or not the client has enabled lambda mode
+	LambdaMode                  string            `json:"lambda_mode"`                    // Whether the client has enabled lambda mode
 	AppSec                      bool              `json:"appsec"`                         // AppSec status: true when started, false otherwise.
 	AgentFeatures               agentFeatures     `json:"agent_features"`                 // Lists the capabilities of the agent.
+	PartialFlushEnabled         bool              `json:"partial_flush_enabled"`          // Whether Partial Flushing is enabled
+	PartialFlushMinSpans        int               `json:"partial_flush_min_spans"`        // The min number of spans to trigger a partial flush
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -106,6 +108,8 @@ func logStartup(t *tracer) {
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
 		AgentFeatures:               t.config.agent,
 		AppSec:                      appsec.Enabled(),
+		PartialFlushEnabled:         t.config.partialFlushEnabled,
+		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = fmt.Sprintf("%s", err)
