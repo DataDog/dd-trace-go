@@ -62,7 +62,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
 	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
 	"github.com/gocql/gocql":                        {"Cassandra", false},
-	"github.com/gofiber/fiber":                      {"Fiber", false},
+	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
 	"github.com/gomodule/redigo":                    {"Redigo", false},
 	"google.golang.org/api":                         {"Google API", false},
 	"google.golang.org/grpc":                        {"gRPC", false},
@@ -394,7 +394,12 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
-	c.loadContribIntegrations()
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		c.loadContribIntegrations([]*debug.Module{})
+	} else {
+		c.loadContribIntegrations(info.Deps)
+	}
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -565,27 +570,26 @@ func MarkIntegrationImported(integration string) bool {
 	return true
 }
 
-func (c *config) loadContribIntegrations() {
+func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	integrations := map[string]integrationConfig{}
-	deps, ok := debug.ReadBuildInfo()
 	for _, s := range contribIntegrations {
 		integrations[s.name] = integrationConfig{
 			Instrumented: s.imported,
 		}
 	}
-	if !ok {
-		c.integrations = integrations
-		return
-	}
-	for _, d := range deps.Deps {
+	for _, d := range deps {
 		p := d.Path
 		// special use case, since gRPC does not update version number
 		if p == "google.golang.org/grpc" {
 			re := regexp.MustCompile(`v(\d.\d)\d*`)
-			match := re.FindStringSubmatch(d.Version)[1]
-			ver, err := strconv.ParseFloat(match, 32)
-			if err != nil {
+			match := re.FindStringSubmatch(d.Version)
+			if match == nil {
 				log.Warn("Unable to parse version of GRPC %v", d.Version)
+				continue
+			}
+			ver, err := strconv.ParseFloat(match[1], 32)
+			if err != nil {
+				log.Warn("Unable to parse version of GRPC %v as a float", d.Version)
 				continue
 			}
 			if ver <= 1.2 {
