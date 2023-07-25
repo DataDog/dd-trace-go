@@ -27,7 +27,7 @@ type config struct {
 	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
 	resourceNamer func(*http.Request) string
-	headerTags    func(string) (string, bool)
+	headerTags    *internal.LockMap
 }
 
 // MuxOption has been deprecated in favor of Option.
@@ -43,7 +43,7 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.headerTags = globalconfig.HeaderTag
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -72,16 +72,9 @@ func WithServiceName(name string) MuxOption {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
