@@ -668,7 +668,8 @@ func (s *span) Format(f fmt.State, c rune) {
 			traceID = fmt.Sprintf("%d", s.TraceID)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
-		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
+		fmt.Fprintf(f, `dd.span_id="%d" `, s.SpanID)
+		fmt.Fprintf(f, `dd.parent_id="%d"`, s.ParentID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
