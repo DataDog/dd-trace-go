@@ -68,4 +68,3 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 #### Adding a new benchmark
 To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
 Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators. 
-
