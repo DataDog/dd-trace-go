@@ -39,8 +39,9 @@ type StartOption func(c *Config)
 
 // Config is the AppSec configuration.
 type Config struct {
-	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used.
-	rules []byte
+	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
+	// and live-updated with remote configuration.
+	rulesManager *rulesManager
 	// Maximum WAF execution time
 	wafTimeout time.Duration
 	// AppSec trace rate limit (traces per second).
@@ -65,8 +66,8 @@ type ObfuscatorConfig struct {
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
-// It also returns whether the env var is actually set in the env or not
 // DD_APPSEC_ENABLED is set to true.
+// It also returns whether the env var is actually set in the env or not.
 func isEnabled() (enabled bool, set bool, err error) {
 	enabledStr, set := os.LookupEnv(enabledEnvVar)
 	if enabledStr == "" {
@@ -83,8 +84,14 @@ func newConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	r, err := newRulesManager(rules)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
-		rules:          rules,
+		rulesManager:   r,
 		wafTimeout:     readWAFTimeoutConfig(),
 		traceRateLimit: readRateLimitConfig(),
 		obfuscator:     readObfuscatorConfig(),
@@ -159,7 +166,7 @@ func readRulesConfig() (rules []byte, err error) {
 	rules = []byte(staticRecommendedRules)
 	filepath := os.Getenv(rulesEnvVar)
 	if filepath == "" {
-		log.Info("appsec: starting with the default recommended security rules")
+		log.Debug("appsec: using the default built-in recommended security rules")
 		return rules, nil
 	}
 	buf, err := os.ReadFile(filepath)
@@ -169,7 +176,7 @@ func readRulesConfig() (rules []byte, err error) {
 		}
 		return nil, err
 	}
-	log.Info("appsec: starting with the security rules from file %s", filepath)
+	log.Debug("appsec: using the security rules from file %s", filepath)
 	return buf, nil
 }
 

@@ -55,6 +55,66 @@
             ]
         },
         {
+            "id": "crs-933-130-block",
+            "name": "PHP Injection Attack: Global Variables Found",
+            "tags": {
+                "type": "php_code_injection",
+                "crs_id": "933130",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            }
+                        ],
+                        "list": [
+                            "$globals",
+                            "$_cookie",
+                            "$_env",
+                            "$_files",
+                            "$_get",
+                            "$_post",
+                            "$_request",
+                            "$_server",
+                            "$_session",
+                            "$argc",
+                            "$argv",
+                            "$http_\\u200bresponse_\\u200bheader",
+                            "$php_\\u200berrormsg",
+                            "$http_cookie_vars",
+                            "$http_env_vars",
+                            "$http_get_vars",
+                            "$http_post_files",
+                            "$http_post_vars",
+                            "$http_raw_post_data",
+                            "$http_request_vars",
+                            "$http_server_vars"
+                        ]
+                    },
+                    "operator": "phrase_match"
+                }
+            ],
+            "transformers": [
+                "lowercase"
+            ],
+            "on_match": [
+                "block"
+            ]
+        },
+        {
             "id": "crs-941-110",
             "name": "XSS Filter - Category 1: Script Tag Vector",
             "tags": {

@@ -6,41 +6,58 @@
 package grpc
 
 import (
-	"encoding/json"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	"github.com/DataDog/appsec-internal-go/netip"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
 func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
+		var err error
+		var blocked bool
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		args := grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			blocked = a.Blocking()
+			err = status.Error(codes.Code(code), e.Error())
+		}))
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
-			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			if blocked {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
 			}
-			setAppSecEventsTags(ctx, span, events)
+			grpcsec.SetRequestMetadataTags(span, md)
+			instrumentation.SetTags(span, op.Tags())
+			if len(events) > 0 {
+				grpcsec.SetSecurityEventsTags(span, events)
+			}
 		}()
 
-		if op.Error != nil {
-			return nil, op.Error
+		if err != nil {
+			return nil, err
 		}
-
 		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
-		return handler(ctx, req)
+		rv, err := handler(ctx, req)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return rv, err
 	}
 }
 
@@ -48,11 +65,18 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	instrumentation.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
+		var err error
+		var blocked bool
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
+		grpcsec.SetRequestMetadataTags(span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+			code, e := a.GRPC()(md)
+			blocked = a.Blocking()
+			err = status.Error(codes.Code(code), e.Error())
+		}))
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,
@@ -60,18 +84,24 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		}
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
-			instrumentation.SetTags(span, op.Tags())
-			if len(events) == 0 {
-				return
+			if blocked {
+				op.AddTag(instrumentation.BlockedRequestTag, true)
 			}
-			setAppSecEventsTags(stream.Context(), span, events)
+			instrumentation.SetTags(span, op.Tags())
+			if len(events) > 0 {
+				grpcsec.SetSecurityEventsTags(span, events)
+			}
 		}()
 
-		if op.Error != nil {
-			return op.Error
+		if err != nil {
+			return err
 		}
 
-		return handler(srv, stream)
+		err = handler(srv, stream)
+		if e, ok := err.(*grpcsec.MonitoringError); ok {
+			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
+		}
+		return err
 	}
 }
 
@@ -95,18 +125,13 @@ func (ss appsecServerStream) Context() context.Context {
 	return ss.ctx
 }
 
-// Set the AppSec tags when security events were found.
-func setAppSecEventsTags(ctx context.Context, span ddtrace.Span, events []json.RawMessage) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	grpcsec.SetSecurityEventTags(span, events, md)
-}
-
-func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) instrumentation.NetaddrIP {
+func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
 	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()
 	}
 	ipTags, clientIP := httpsec.ClientIPTags(md, false, remoteAddr)
+	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, md)
 	if len(ipTags) > 0 {
 		instrumentation.SetStringTags(span, ipTags)
 	}

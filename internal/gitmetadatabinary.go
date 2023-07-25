@@ -19,7 +19,7 @@ func getTagsFromBinary() map[string]string {
 	res := make(map[string]string)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		log.Warn("ReadBuildInfo failed, skip source code metadata extracting")
+		log.Debug("ReadBuildInfo failed, skip source code metadata extracting")
 		return res
 	}
 	goPath := info.Path
@@ -32,7 +32,7 @@ func getTagsFromBinary() map[string]string {
 		}
 	}
 	if vcs != "git" {
-		log.Info("Unknown VCS: '%s', skip source code metadata extracting", vcs)
+		log.Debug("Unknown VCS: '%s', skip source code metadata extracting", vcs)
 		return res
 	}
 	res[TagCommitSha] = commitSha

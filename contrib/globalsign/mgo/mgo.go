@@ -8,15 +8,23 @@ package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 
 import (
 	"math"
+	"net"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/globalsign/mgo"
 )
+
+const componentName = "globalsign/mgo"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Dial opens a connection to a MongoDB server and configures it
 // for tracing.
@@ -29,13 +37,26 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 	if info, err := session.BuildInfo(); err == nil {
 		version = info.Version
 	}
+
+	tags := map[string]string{
+		"mgo_version": version,
+	}
+	if ls := session.LiveServers(); len(ls) > 0 {
+		tags["hosts"] = strings.Join(ls, ",")
+		// Note that these are all currently known hosts that are alive
+		// This is not guaranteed to be the exact server involved in the communication
+		for _, addr := range ls {
+			host, _, err := net.SplitHostPort(addr)
+			if err == nil {
+				tags[ext.NetworkDestinationName] = host
+				break
+			}
+		}
+	}
 	s := &Session{
 		Session: session,
 		cfg:     newConfig(),
-		tags: map[string]string{
-			"hosts":       strings.Join(session.LiveServers(), ", "),
-			"mgo_version": version,
-		},
+		tags:    tags,
 	}
 	for _, fn := range opts {
 		fn(s.cfg)
@@ -55,8 +76,8 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
-		tracer.ResourceName("mongodb.query"),
-		tracer.Tag(ext.Component, "globalsign/mgo"),
+		tracer.ResourceName(cfg.spanName),
+		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
 	}
 
@@ -67,7 +88,7 @@ func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.S
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	for key, value := range tags {
 		span.SetTag(key, value)
 	}

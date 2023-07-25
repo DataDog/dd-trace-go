@@ -10,10 +10,14 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "elastic.client"
 
 type clientConfig struct {
 	serviceName   string
+	operationName string
 	transport     http.RoundTripper
 	analyticsRate float64
 	resourceNamer func(url, method string) string
@@ -23,7 +27,11 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = "elastic.client"
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.operationName = namingschema.NewElasticsearchOutboundOp().GetName()
 	cfg.transport = http.DefaultTransport
 	cfg.resourceNamer = quantize
 	if internal.BoolEnv("DD_TRACE_ELASTIC_ANALYTICS_ENABLED", false) {

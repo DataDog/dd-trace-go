@@ -17,39 +17,48 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
-var cfg = newConfig()
+var (
+	cfg = newConfig()
+)
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
-	opts = append([]ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.Tag(ext.HTTPMethod, r.Method),
-		tracer.Tag(ext.HTTPURL, urlFromRequest(r)),
-		tracer.Tag(ext.HTTPUserAgent, r.UserAgent()),
-		tracer.Measured(),
-	}, opts...)
-	if r.Host != "" {
-		opts = append([]ddtrace.StartSpanOption{
-			tracer.Tag("http.host", r.Host),
-		}, opts...)
-	}
-	if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
+
+	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ := httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
-		for k, v := range ipTags {
-			opts = append(opts, tracer.Tag(k, v))
-		}
+		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
-	return tracer.StartSpanFromContext(r.Context(), "http.request", opts...)
+	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
+	nopts = append(nopts,
+		func(cfg *ddtrace.StartSpanConfig) {
+			if cfg.Tags == nil {
+				cfg.Tags = make(map[string]interface{})
+			}
+			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+			cfg.Tags[ext.HTTPMethod] = r.Method
+			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
+			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
+			cfg.Tags["_dd.measured"] = 1
+			if r.Host != "" {
+				cfg.Tags["http.host"] = r.Host
+			}
+			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
+				cfg.Parent = spanctx
+			}
+			for k, v := range ipTags {
+				cfg.Tags[k] = v
+			}
+		})
+	nopts = append(nopts, opts...)
+	return tracer.StartSpanFromContext(r.Context(), namingschema.NewHTTPServerOp().GetName(), nopts...)
 }
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
@@ -99,4 +108,16 @@ func urlFromRequest(r *http.Request) string {
 		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
+}
+
+// HeaderTagsFromRequest matches req headers to user-defined list of header tags
+// and creates span tags based on the header tag target and the req header value
+func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		headerCfg.Iter(func(header, tag string) {
+			if vs, ok := req.Header[header]; ok {
+				cfg.Tags[tag] = strings.TrimSpace(strings.Join(vs, ","))
+			}
+		})
+	}
 }

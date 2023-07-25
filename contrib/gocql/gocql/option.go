@@ -9,20 +9,33 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+const defaultServiceName = "gocql.query"
+
 type queryConfig struct {
-	serviceName, resourceName string
-	noDebugStack              bool
-	analyticsRate             float64
-	errCheck                  func(err error) bool
+	serviceName, resourceName    string
+	querySpanName, batchSpanName string
+	noDebugStack                 bool
+	analyticsRate                float64
+	errCheck                     func(err error) bool
+	customTags                   map[string]interface{}
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
 type WrapOption func(*queryConfig)
 
-func defaults(cfg *queryConfig) {
-	cfg.serviceName = "gocql.query"
+func defaultConfig() *queryConfig {
+	cfg := &queryConfig{}
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.querySpanName = namingschema.NewCassandraOutboundOp().GetName()
+	cfg.batchSpanName = namingschema.NewCassandraOutboundOp(
+		namingschema.WithOverrideV0("cassandra.batch"),
+	).GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GOCQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -30,6 +43,7 @@ func defaults(cfg *queryConfig) {
 		cfg.analyticsRate = math.NaN()
 	}
 	cfg.errCheck = func(error) bool { return true }
+	return cfg
 }
 
 // WithServiceName sets the given service name for the returned query.
@@ -102,5 +116,15 @@ func WithErrorCheck(fn func(err error) bool) WrapOption {
 		// This only affects whether the span/trace is marked as success/error,
 		// the calls to the gocql API still return the upstream error code.
 		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key.
+func WithCustomTag(key string, value interface{}) WrapOption {
+	return func(cfg *queryConfig) {
+		if cfg.customTags == nil {
+			cfg.customTags = make(map[string]interface{})
+		}
+		cfg.customTags[key] = value
 	}
 }

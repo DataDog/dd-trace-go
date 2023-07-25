@@ -18,10 +18,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -123,6 +125,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
+	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
@@ -146,7 +149,7 @@ func Start(opts ...StartOption) {
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
-	hostname.Get() // Prime the hostname cache
+	_ = t.hostname() // Prime the hostname cache
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -286,9 +289,9 @@ func newTracer(opts ...StartOption) *tracer {
 // use case described below.
 //
 // Flush is of use in Lambda environments, where starting and stopping
-// the tracer on each invokation may create too much latency. In this
+// the tracer on each invocation may create too much latency. In this
 // scenario, a tracer may be started and stopped by the parent process
-// whereas the invokation can make use of Flush to ensure any created spans
+// whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -421,6 +424,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 				// applyPPROFLabels() below.
 				pprofContext = ctx.span.pprofCtxActive
 			}
+		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
+			context = &spanContext{
+				traceID: p.TraceID128Bytes(),
+				spanID:  p.SpanID(),
+			}
 		}
 	}
 	if pprofContext == nil {
@@ -452,7 +460,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID
+		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
 		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
@@ -487,7 +495,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span.Service = newSvc
 		}
 	}
-	if context == nil || context.span == nil || context.span.Service != span.Service {
+	isRootSpan := context == nil || context.span == nil
+	if isRootSpan {
+		traceprof.SetProfilerRootTags(span)
+		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	}
+	if isRootSpan || context.span.Service != span.Service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.Metrics, keyMeasured)
@@ -530,7 +543,7 @@ func generateSpanID(startTime int64) uint64 {
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
 // endpoint filtering feature to span. When span finishes, any pprof labels
-// found in ctx are restored. Additionally this func informs the profiler how
+// found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 	var labels []string
@@ -579,7 +592,6 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	t.statsd.Close()
 	appsec.Stop()
-	stopTelemetry()
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -619,7 +631,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
-	span.SetTag("go_execution_traced", "yes")
+	span.goExecTraced = true
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
 	taskName := span.Resource
@@ -629,14 +641,28 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.Type
 	}
-	ctx, task := rt.NewTask(ctx, taskName)
+	end := noopTaskEnd
+	if !globalinternal.IsExecutionTraced(ctx) {
+		var task *rt.Task
+		ctx, task = rt.NewTask(ctx, taskName)
+		end = task.End
+	} else {
+		// We only want to skip task creation for this particular span,
+		// not necessarily for child spans which can come from different
+		// integrations. So update this context to be "not" execution
+		// traced so that derived contexts used by child spans don't get
+		// skipped.
+		ctx = globalinternal.WithExecutionNotTraced(ctx)
+	}
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
-	return ctx, task.End
+	return ctx, end
 }
 
+func noopTaskEnd() {}
+
 func (t *tracer) hostname() string {
-	if !t.config.disableHostnameDetection {
-		return hostname.Get()
+	if !t.config.enableHostnameDetection {
+		return ""
 	}
-	return ""
+	return hostname.Get()
 }

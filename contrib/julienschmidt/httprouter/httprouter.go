@@ -15,9 +15,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/julienschmidt/httprouter"
 )
+
+const componentName = "julienschmidt/httprouter"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+}
 
 // Router is a traced version of httprouter.Router.
 type Router struct {
@@ -37,7 +44,7 @@ func New(opts ...RouterOption) *Router {
 	}
 
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, "julienschmidt/httprouter"))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}

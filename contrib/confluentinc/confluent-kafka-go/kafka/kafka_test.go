@@ -12,19 +12,79 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
 	testGroupID = "gotest"
 	testTopic   = "gotest"
 )
+
+type consumerActionFn func(c *Consumer) (*kafka.Message, error)
+
+func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) []mocktracer.Span {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// first write a message to the topic
+	p, err := NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":   "127.0.0.1:9092",
+		"go.delivery.reports": true,
+	}, producerOpts...)
+	require.NoError(t, err)
+
+	delivery := make(chan kafka.Event, 1)
+	err = p.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &testTopic,
+			Partition: 0,
+		},
+		Key:   []byte("key2"),
+		Value: []byte("value2"),
+	}, delivery)
+	require.NoError(t, err)
+
+	msg1, _ := (<-delivery).(*kafka.Message)
+	p.Close()
+
+	// next attempt to consume the message
+	c, err := NewConsumer(&kafka.ConfigMap{
+		"group.id":                 testGroupID,
+		"bootstrap.servers":        "127.0.0.1:9092",
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
+		"enable.auto.offset.store": false,
+	}, consumerOpts...)
+	require.NoError(t, err)
+
+	err = c.Assign([]kafka.TopicPartition{
+		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
+	})
+	require.NoError(t, err)
+
+	msg2, err := consumerAction(c)
+	require.NoError(t, err)
+	assert.Equal(t, msg1.String(), msg2.String())
+	err = c.Close()
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	// they should be linked via headers
+	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+	return spans
+}
 
 func TestConsumerChannel(t *testing.T) {
 	// we can test consuming via the Events channel by artifically sending
@@ -116,13 +176,9 @@ to run the integration test locally:
 */
 
 func TestConsumerFunctional(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	}
-
 	for _, tt := range []struct {
 		name   string
-		action func(c *Consumer) (*kafka.Message, error)
+		action consumerActionFn
 	}{
 		{
 			name: "Poll",
@@ -143,56 +199,7 @@ func TestConsumerFunctional(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-
-			// first write a message to the topic
-
-			p, err := NewProducer(&kafka.ConfigMap{
-				"group.id":            testGroupID,
-				"bootstrap.servers":   "127.0.0.1:9092",
-				"go.delivery.reports": true,
-			}, WithAnalyticsRate(0.1))
-			assert.NoError(t, err)
-			delivery := make(chan kafka.Event, 1)
-			err = p.Produce(&kafka.Message{
-				TopicPartition: kafka.TopicPartition{
-					Topic:     &testTopic,
-					Partition: 0,
-				},
-				Key:   []byte("key2"),
-				Value: []byte("value2"),
-			}, delivery)
-			assert.NoError(t, err)
-			msg1, _ := (<-delivery).(*kafka.Message)
-			p.Close()
-
-			// next attempt to consume the message
-
-			c, err := NewConsumer(&kafka.ConfigMap{
-				"group.id":                 testGroupID,
-				"bootstrap.servers":        "127.0.0.1:9092",
-				"socket.timeout.ms":        1000,
-				"session.timeout.ms":       1000,
-				"enable.auto.offset.store": false,
-			})
-			assert.NoError(t, err)
-
-			err = c.Assign([]kafka.TopicPartition{
-				{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
-			})
-			assert.NoError(t, err)
-
-			msg2, err := tt.action(c)
-			assert.NoError(t, err)
-			assert.Equal(t, msg1.String(), msg2.String())
-			c.Close()
-
-			// now verify the spans
-			spans := mt.FinishedSpans()
-			assert.Len(t, spans, 2)
-			// they should be linked via headers
-			assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+			spans := genIntegrationTestSpans(t, tt.action, []Option{WithAnalyticsRate(0.1)}, nil)
 
 			s0 := spans[0] // produce
 			assert.Equal(t, "kafka.produce", s0.OperationName())
@@ -204,6 +211,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -215,6 +223,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
 		})
 	}
 }
@@ -331,4 +340,18 @@ func TestCustomTags(t *testing.T) {
 
 	assert.Equal(t, "bar", s.Tag("foo"))
 	assert.Equal(t, []byte("key1"), s.Tag("key"))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
+			return c.ReadMessage(3000 * time.Millisecond)
+		})
+		return genIntegrationTestSpans(t, consumerAction, opts, opts)
+	}
+	namingschematest.NewKafkaTest(genSpans)(t)
 }

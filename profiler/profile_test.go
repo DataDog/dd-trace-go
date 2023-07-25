@@ -14,24 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
-
-// This test should be removed When the DD_PROFILING_DELTA_METHOD env var is removed
-// This is to exercise delta profiles using the alternate delta computation methods
-func TestRunDeltaProfileAlternateImpls(t *testing.T) {
-	for _, deltaMethod := range []string{"slowdelta", "comparing"} {
-		// nb: we are not running under t.Parallel(); this would yield inconsistent results otherwise
-		t.Setenv("DD_PROFILING_DELTA_METHOD", deltaMethod)
-		t.Run(deltaMethod, func(t *testing.T) {
-			testRunDeltaProfile(t)
-		})
-	}
-}
 
 func testRunDeltaProfile(t *testing.T) {
 	t.Helper()
