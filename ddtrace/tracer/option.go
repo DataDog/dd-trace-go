@@ -15,7 +15,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +34,65 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
+
+var contribIntegrations = map[string]struct {
+	name     string // user readable name for startup logs
+	imported bool   // true if the user has imported the integration
+}{
+	"github.com/99designs/gqlgen":                   {"gqlgen", false},
+	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
+	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
+	"github.com/bradfitz/gomemcache":                {"Memcache", false},
+	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
+	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
+	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
+	"database/sql":                                  {"SQL", false},
+	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", false},
+	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
+	"github.com/emicklei/go-restful":                {"go-restful", false},
+	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
+	"github.com/garyburd/redigo":                    {"Redigo (dep)", false},
+	"github.com/gin-gonic/gin":                      {"Gin", false},
+	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
+	"github.com/go-chi/chi":                         {"chi", false},
+	"github.com/go-chi/chi/v5":                      {"chi v5", false},
+	"github.com/go-pg/pg/v10":                       {"go-pg v10", false},
+	"github.com/go-redis/redis":                     {"Redis", false},
+	"github.com/go-redis/redis/v7":                  {"Redis v7", false},
+	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
+	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
+	"github.com/gocql/gocql":                        {"Cassandra", false},
+	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
+	"github.com/gomodule/redigo":                    {"Redigo", false},
+	"google.golang.org/api":                         {"Google API", false},
+	"google.golang.org/grpc":                        {"gRPC", false},
+	"google.golang.org/grpc/v12":                    {"gRPC v12", false},
+	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
+	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
+	"gorm.io/gorm.v1":                               {"Gorm v1", false},
+	"github.com/graph-gophers/graphql-go":           {"GraphQL", false},
+	"github.com/hashicorp/consul/api":               {"Consul", false},
+	"github.com/hashicorp/vault/api":                {"Vault", false},
+	"github.com/jinzhu/gorm":                        {"Gorm", false},
+	"github.com/jmoiron/sqlx":                       {"SQLx", false},
+	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
+	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
+	"github.com/labstack/echo":                      {"echo", false},
+	"github.com/labstack/echo/v4":                   {"echo v4", false},
+	"github.com/miekg/dns":                          {"miekg/dns", false},
+	"net/http":                                      {"HTTP", false},
+	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
+	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
+	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
+	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
+	"github.com/Shopify/sarama":                     {"Kafka (sarama)", false},
+	"github.com/sirupsen/logrus":                    {"Logrus", false},
+	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
+	"github.com/tidwall/buntdb":                     {"BuntDB", false},
+	"github.com/twitchtv/twirp":                     {"Twirp", false},
+	"github.com/urfave/negroni":                     {"Negroni", false},
+	"github.com/zenazn/goji":                        {"Goji", false},
+}
 
 var (
 	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
@@ -54,6 +115,10 @@ type config struct {
 	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	agent agentFeatures
+
+	// integrations reports if the user has instrumented a Datadog integration and
+	// if they have a version of the library available to integrate.
+	integrations map[string]integrationConfig
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -329,6 +394,12 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		c.loadContribIntegrations([]*debug.Module{})
+	} else {
+		c.loadContribIntegrations(info.Deps)
+	}
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -413,6 +484,12 @@ func defaultDogstatsdAddr() string {
 	return net.JoinHostPort(host, port)
 }
 
+type integrationConfig struct {
+	Instrumented bool   `json:"instrumented"`      // indicates if the user has imported and used the integration
+	Available    bool   `json:"available"`         // indicates if the user is using a library that can be used with DataDog integrations
+	Version      string `json:"available_version"` // if available, indicates the version of the library the user has
+}
+
 // agentFeatures holds information about the trace-agent's capabilities.
 // When running WithLambdaMode, a zero-value of this struct will be used
 // as features.
@@ -480,6 +557,55 @@ func (c *config) loadAgentFeatures() {
 	for _, flag := range info.FeatureFlags {
 		c.agent.featureFlags[flag] = struct{}{}
 	}
+}
+
+// MarkIntegrationImported labels the given integration as imported
+func MarkIntegrationImported(integration string) bool {
+	s, ok := contribIntegrations[integration]
+	if !ok {
+		return false
+	}
+	s.imported = true
+	contribIntegrations[integration] = s
+	return true
+}
+
+func (c *config) loadContribIntegrations(deps []*debug.Module) {
+	integrations := map[string]integrationConfig{}
+	for _, s := range contribIntegrations {
+		integrations[s.name] = integrationConfig{
+			Instrumented: s.imported,
+		}
+	}
+	for _, d := range deps {
+		p := d.Path
+		// special use case, since gRPC does not update version number
+		if p == "google.golang.org/grpc" {
+			re := regexp.MustCompile(`v(\d.\d)\d*`)
+			match := re.FindStringSubmatch(d.Version)
+			if match == nil {
+				log.Warn("Unable to parse version of GRPC %v", d.Version)
+				continue
+			}
+			ver, err := strconv.ParseFloat(match[1], 32)
+			if err != nil {
+				log.Warn("Unable to parse version of GRPC %v as a float", d.Version)
+				continue
+			}
+			if ver <= 1.2 {
+				p = p + "/v12"
+			}
+		}
+		s, ok := contribIntegrations[p]
+		if !ok {
+			continue
+		}
+		conf := integrations[s.name]
+		conf.Available = true
+		conf.Version = d.Version
+		integrations[s.name] = conf
+	}
+	c.integrations = integrations
 }
 
 func (c *config) canComputeStats() bool {
@@ -974,7 +1100,10 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
 		globalconfig.ClearHeaderTags()
 		for _, h := range headerAsTags {
-			header, tag := normalizer.NormalizeHeaderTag(h)
+			if strings.HasPrefix(h, "x-datadog-") {
+				continue
+			}
+			header, tag := normalizer.HeaderTag(h)
 			globalconfig.SetHeaderTag(header, tag)
 		}
 	}
@@ -989,10 +1118,19 @@ type UserMonitoringConfig struct {
 	Role        string
 	SessionID   string
 	Scope       string
+	Metadata    map[string]string
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
 type UserMonitoringOption func(*UserMonitoringConfig)
+
+// WithUserMetadata returns the option setting additional metadata of the authenticated user.
+// This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
+func WithUserMetadata(key, value string) UserMonitoringOption {
+	return func(cfg *UserMonitoringConfig) {
+		cfg.Metadata[key] = value
+	}
+}
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {

@@ -7,7 +7,6 @@ package sharedsec
 
 import (
 	"context"
-	"errors"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -20,7 +19,6 @@ type (
 	// call to ExecuteUserIDOperation
 	UserIDOperation struct {
 		dyngo.Operation
-		Error error
 	}
 	// UserIDOperationArgs is the user ID operation arguments.
 	UserIDOperationArgs struct {
@@ -32,29 +30,21 @@ type (
 	// OnUserIDOperationStart function type, called when a user ID
 	// operation starts.
 	OnUserIDOperationStart func(operation *UserIDOperation, args UserIDOperationArgs)
-
-	// UserMonitoringError wraps an error interface to decorate it with additional appsec data, if needed
-	UserMonitoringError struct {
-		error
-	}
 )
-
-// NewUserMonitoringError creates a new user monitoring error that returns `msg` upon calling `Error()`
-func NewUserMonitoringError(msg string) *UserMonitoringError {
-	return &UserMonitoringError{
-		errors.New(msg),
-	}
-}
 
 var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 
 // ExecuteUserIDOperation starts and finishes the UserID operation by emitting a dyngo start and finish events
 // An error is returned if the user associated to that operation must be blocked
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
+	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
+	OnErrorData(op, func(e error) {
+		err = e
+	})
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
-	return op.Error
+	return err
 }
 
 // ListenedType returns the type a OnUserIDOperationStart event listener
@@ -77,4 +67,14 @@ func MonitorUser(ctx context.Context, userID string) error {
 	log.Error("appsec: user ID monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 	return nil
 
+}
+
+// OnData is a facilitator that wraps a dyngo.Operation.OnData() call
+func OnData[T any](op dyngo.Operation, f func(T)) {
+	op.OnData(dyngo.NewDataListener(f))
+}
+
+// OnErrorData is a facilitator that wraps a dyngo.Operation.OnData() call with an error type constraint
+func OnErrorData[T error](op dyngo.Operation, f func(T)) {
+	op.OnData(dyngo.NewDataListener(f))
 }
