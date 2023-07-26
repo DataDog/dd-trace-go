@@ -1067,9 +1067,3 @@ func WithPropagation() UserMonitoringOption {
 		cfg.PropagateID = true
 	}
 }
-
-func withRuntimeMetrics(b bool) StartOption {
-	return func(c *config) {
-		c.runtimeMetrics = b
-	}
-}
