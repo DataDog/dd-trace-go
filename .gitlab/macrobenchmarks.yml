@@ -31,15 +31,13 @@ variables:
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
   allow_failure: true
-    
+
 go118-baseline-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-baseline
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-baseline
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
@@ -47,16 +45,19 @@ go118-baseline-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-baseline
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go118-only-trace-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-only-trace
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-only-trace
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
@@ -64,16 +65,19 @@ go118-only-trace-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-only-trace
-
-go118-only-ddprofile-macrobenchmark:
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
+go118-only-profile-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-only-ddprofile
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-only-profile
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
@@ -81,16 +85,19 @@ go118-only-ddprofile-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-only-ddprofile
-
-go118-ddprofile-trace-macrobenchmark:
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
+go118-profile-trace-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-ddprofile-trace
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-profile-trace
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
@@ -98,16 +105,19 @@ go118-ddprofile-trace-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-ddprofile-trace
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go118-trace-asm-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-trace-asm
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-trace-asm
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
@@ -115,16 +125,19 @@ go118-trace-asm-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-trace-asm
-    
-go118-ddprofile-trace-asm-macrobenchmark:
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
+go118-profile-trace-asm-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go118-profile-trace-asm
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go118-profile-trace-asm
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
@@ -132,16 +145,19 @@ go118-ddprofile-trace-asm-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    SCENARIO: go118-profile-trace-asm
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-baseline-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-baseline
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-baseline
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
@@ -149,16 +165,19 @@ go119-baseline-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-baseline
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-only-trace-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-only-trace
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-only-trace
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
@@ -166,16 +185,19 @@ go119-only-trace-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-only-trace
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-only-profile-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-only-profile
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-only-profile
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
@@ -183,16 +205,19 @@ go119-only-profile-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-only-profile
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-profile-trace-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-profile-trace
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-profile-trace
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
@@ -200,16 +225,19 @@ go119-profile-trace-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-profile-trace
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-trace-asm-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-trace-asm
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-trace-asm
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
@@ -217,16 +245,19 @@ go119-trace-asm-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-trace-asm
-
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4
 go119-profile-trace-asm-macrobenchmark:
   extends: .dd-trace-go-macrobenchmarks
   variables:
-    DD_BENCHMARKS_CONFIGURATION: go119-profile-trace-asm
     K6_RUN_ID_PREFIX: ci
-    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_BENCHMARKS_CONFIGURATION: go119-profile-trace-asm
     ENABLE_DDPROF: "false"
-    DD_TRACE_GO_VERSION: latest
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
@@ -234,5 +265,11 @@ go119-profile-trace-asm-macrobenchmark:
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    SCENARIO: go119-profile-trace-asm
+    GO_PROF_APP_BUILD_VARIANT: candidate
+    DD_TRACE_GO_VERSION: latest
+    K6_RATE_: 15
+    K6_DURATION_: 20m
+    K6_GRACEFUL_STOP_: 1m
+    K6_PRE_ALLOCATED_VUS_: 4
+    K6_MAX_VUS_: 4   
 
