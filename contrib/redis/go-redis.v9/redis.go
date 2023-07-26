@@ -26,6 +26,7 @@ const componentName = "redis/go-redis.v9"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/redis/go-redis/v9")
 }
 
 type datadogHook struct {
@@ -154,7 +155,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		err := hook(ctx, cmd)
 
 		var finishOpts []ddtrace.FinishOption
-		if err != nil && err != redis.Nil {
+		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
 		span.Finish(finishOpts...)
@@ -184,7 +185,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		err := hook(ctx, cmds)
 
 		var finishOpts []ddtrace.FinishOption
-		if err != nil && err != redis.Nil {
+		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
 		span.Finish(finishOpts...)

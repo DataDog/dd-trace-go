@@ -21,7 +21,8 @@ import (
 const componentName = "Shopify/sarama"
 
 func init() {
-	telemetry.LoadIntegration("Shopify/sarama")
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/Shopify/sarama")
 }
 
 type partitionConsumer struct {

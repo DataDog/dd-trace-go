@@ -24,6 +24,7 @@ const componentName = "gorilla/mux"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gorilla/mux")
 }
 
 // Router registers routes to be matched and dispatches a handler.

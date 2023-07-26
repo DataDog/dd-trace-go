@@ -200,7 +200,9 @@ func (s *span) root() *span {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
-	var cfg UserMonitoringConfig
+	cfg := UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
 	for _, fn := range opts {
 		fn(&cfg)
 	}
@@ -228,14 +230,19 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		}
 		delete(root.Meta, keyPropagatedUserID)
 	}
-	for k, v := range map[string]string{
+
+	usrData := map[string]string{
 		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
 		keyUserRole:      cfg.Role,
 		keyUserSessionID: cfg.SessionID,
-	} {
+	}
+	for k, v := range cfg.Metadata {
+		usrData[fmt.Sprintf("usr.%s", k)] = v
+	}
+	for k, v := range usrData {
 		if v != "" {
 			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
@@ -662,7 +669,8 @@ func (s *span) Format(f fmt.State, c rune) {
 			traceID = fmt.Sprintf("%d", s.TraceID)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
-		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
+		fmt.Fprintf(f, `dd.span_id="%d" `, s.SpanID)
+		fmt.Fprintf(f, `dd.parent_id="%d"`, s.ParentID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}

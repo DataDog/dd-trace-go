@@ -7,9 +7,9 @@ require (
 	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/appsec-internal-go v1.0.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.46.0-rc.4
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df
 	github.com/DataDog/datadog-go/v5 v5.1.1
-	github.com/DataDog/go-libddwaf v1.2.0
+	github.com/DataDog/go-libddwaf v1.4.1
 	github.com/DataDog/gostackparse v0.5.0
 	github.com/DataDog/sketches-go v1.2.1
 	github.com/Shopify/sarama v1.22.0
@@ -25,7 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.20.8
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.20.8
 	github.com/aws/smithy-go v1.13.5
-	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
+	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
 	github.com/denisenkom/go-mssqldb v0.11.0
@@ -34,6 +34,7 @@ require (
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.4.0
 	github.com/emicklei/go-restful v2.16.0+incompatible
+	github.com/emicklei/go-restful/v3 v3.10.2
 	github.com/garyburd/redigo v1.6.3
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
@@ -71,8 +72,8 @@ require (
 	github.com/segmentio/kafka-go v0.4.29
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72
-	github.com/stretchr/testify v1.8.3
-	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
+	github.com/stretchr/testify v1.8.4
+	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
 	github.com/tidwall/buntdb v1.2.0
 	github.com/tinylib/msgp v1.1.8
 	github.com/twitchtv/twirp v8.1.1+incompatible
@@ -83,10 +84,10 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
 	go.opentelemetry.io/otel v1.16.0
 	go.opentelemetry.io/otel/trace v1.16.0
-	go.uber.org/atomic v1.10.0
+	go.uber.org/atomic v1.11.0
 	golang.org/x/net v0.10.0
 	golang.org/x/oauth2 v0.7.0
-	golang.org/x/sys v0.8.0
+	golang.org/x/sys v0.10.0
 	golang.org/x/time v0.3.0
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	google.golang.org/api v0.121.0
@@ -109,7 +110,7 @@ require (
 	cloud.google.com/go/compute v1.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/iam v0.13.0 // indirect
-	github.com/DataDog/go-tuf v0.3.0--fix-localmeta-fork // indirect
+	github.com/DataDog/go-tuf v1.0.1-0.5.2 // indirect
 	github.com/DataDog/zstd v1.3.5 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/agnivade/levenshtein v1.1.0 // indirect
@@ -135,10 +136,11 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/go-resiliency v1.1.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/ebitengine/purego v0.4.0-alpha.4.0.20230519103000-ee8dcecc618f // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
@@ -208,7 +210,7 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/savsgio/dictpool v0.0.0-20221023140959-7bf2e61cea94 // indirect
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.6.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tidwall/btree v1.1.0 // indirect
@@ -238,10 +240,10 @@ require (
 	go4.org/intern v0.0.0-20211027215823-ae77deb06f29 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20220617031537-928513b29760 // indirect
 	golang.org/x/arch v0.3.0 // indirect
-	golang.org/x/crypto v0.9.0 // indirect
+	golang.org/x/crypto v0.11.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/term v0.8.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/term v0.10.0 // indirect
+	golang.org/x/text v0.11.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
