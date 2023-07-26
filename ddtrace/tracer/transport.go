@@ -147,7 +147,9 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
+		if !t.config.apmEnabled || t.config.canComputeStats() {
+			// !t.config.apmEnabled allows to disable the agent-side stats computing
+			// by pretending it was already done client-side
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
