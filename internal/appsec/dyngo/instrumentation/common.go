@@ -101,25 +101,25 @@ func SetAppSecEnabledTags(span TagSetter) {
 	span.SetTag("_dd.runtime_family", "go")
 }
 
-// SetEventSpanTags sets the security event span tags into the service entry span.
-func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
+// SetWAFEventsTags sets the security event span tags into the service entry span.
+func SetWAFEventsTags(span TagSetter, events []json.RawMessage) error {
 	// Set the appsec event span tag
 	val, err := makeEventTagValue(events)
 	if err != nil {
 		return err
 	}
 	span.SetTag("_dd.appsec.json", string(val))
+	SetEventsTags(span)
+	return nil
+}
+
+func SetEventsTags(span TagSetter) {
 	// Keep this span due to the security event
-	//
-	// This is a workaround to tell the tracer that the trace was kept by AppSec.
-	// Passing any other value than `appsec.SamplerAppSec` has no effect.
-	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
-	// to keep the trace, manually.
 	span.SetTag(ext.ManualKeep, samplernames.AppSec)
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
-	return nil
+	// TODO: how to propagate appsec.event downstream?
 }
 
 // Create the value of the security event tag.

@@ -96,8 +96,6 @@ type config struct {
 	// all spans.
 	globalTags map[string]interface{}
 
-	// TODO: globalServiceEntrySpanTags map[string]interface{}
-
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
@@ -118,6 +116,7 @@ type config struct {
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
 
+	// runtimeMetrics specifies whether collection of APM trace metrics is enabled.
 	traceMetrics bool
 
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
@@ -151,8 +150,12 @@ type config struct {
 	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
 	profilerEndpoints bool
 
-	// enabled reports whether tracing is enabled.
+	// enabled reports whether the tracing library is enabled.
 	enabled bool
+
+	// apmEnabled reports whether APM tracing is enabled. If not, the tracer
+	// will start and disable its APM-only features such as trace metrics.
+	apmEnabled bool
 
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
@@ -355,6 +358,15 @@ func newConfig(opts ...StartOption) *config {
 			// not a valid TCP address, leave it as it is (could be a socket connection)
 		}
 		c.dogstatsdAddr = addr
+	}
+
+	c.apmEnabled = internal.BoolEnv("DD_APM_TRACING_ENABLED", true)
+	if !c.apmEnabled {
+		// Disable all the APM metrics
+		c.runtimeMetrics = false
+		c.traceMetrics = false
+		// Set the span tag _dd.apm.enabled:0 to all the spans
+		WithGlobalTag("_dd.apm.enabled", 0)(c)
 	}
 
 	return c
@@ -1059,11 +1071,5 @@ func WithPropagation() UserMonitoringOption {
 func withRuntimeMetrics(b bool) StartOption {
 	return func(c *config) {
 		c.runtimeMetrics = b
-	}
-}
-
-func withTraceMetrics(b bool) StartOption {
-	return func(c *config) {
-		c.traceMetrics = b
 	}
 }

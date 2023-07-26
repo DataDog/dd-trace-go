@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"math"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -126,21 +129,6 @@ func Start(opts ...StartOption) {
 		return // mock tracer active
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
-	if os.Getenv("DD_APM_TRACING_ENABLED") == "false" {
-		opts = append(
-			opts,
-			WithGlobalTag("_dd.apm.enabled", 0),
-			WithSamplingRules([]SamplingRule{
-				{
-					Rate:         1,      // Keep 100% of the traces ...
-					MaxPerSecond: 1 / 60, // ... up to 1 trace per minute
-				},
-			}),
-			withTraceMetrics(false),
-			withRuntimeMetrics(false),
-			// TODO: withTraceFilter(func (trace) bool { return trace.Priority == 2 || trace.Meta[_dd.appsec.events] == true  }) ?
-		)
-	}
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
@@ -153,14 +141,6 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
-	// Start AppSec with remote configuration
-	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.agentURL.String()
-	cfg.AppVersion = t.config.version
-	cfg.Env = t.config.env
-	cfg.HTTP = t.config.httpClient
-	cfg.ServiceName = t.config.serviceName
-	appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
@@ -273,6 +253,30 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
+
+	// Start AppSec with remote configuration
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentURL = t.config.agentURL.String()
+	cfg.AppVersion = t.config.version
+	cfg.Env = t.config.env
+	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.serviceName
+	appsec.Start(appsec.WithRCConfig(cfg))
+
+	if !c.apmEnabled && appsec.Enabled() {
+		// Standalone AppSec mode
+		t.rulesSampling.traces.globalRate = 1
+		rl := 1.0 / 60
+		t.rulesSampling.traces.limiter = &rateLimiter{
+			limiter:  rate.NewLimiter(rate.Limit(rl), int(math.Ceil(rl))),
+			prevTime: time.Now(),
+		}
+		// TODO: withTraceFilter(func (trace) bool { return trace.Priority == 2 || trace.Meta[_dd.appsec.events] == true  }) ?
+	} else if !c.apmEnabled && !appsec.Enabled() {
+		log.Error("Unknown execution mode with APM tracing disabled. All spans will be dropped.")
+		t.rulesSampling.traces.globalRate = 0
+	}
+
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")

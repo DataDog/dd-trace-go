@@ -25,7 +25,7 @@ func setSecurityEventsTags(span ddtrace.Span, events []json.RawMessage) error {
 	if events == nil {
 		return nil
 	}
-	return instrumentation.SetEventSpanTags(span, events)
+	return instrumentation.SetWAFEventsTags(span, events)
 }
 
 // SetRequestMetadataTags sets the gRPC request metadata span tags.

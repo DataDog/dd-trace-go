@@ -15,9 +15,9 @@ import (
 	"context"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -86,7 +86,7 @@ func TrackUserLoginSuccessEvent(ctx context.Context, uid string, md map[string]s
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	instrumentation.SetEventsTags(span)
 	return SetUser(ctx, uid, opts...)
 }
 
@@ -113,7 +113,7 @@ func TrackUserLoginFailureEvent(ctx context.Context, uid string, exists bool, md
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	instrumentation.SetEventsTags(span)
 }
 
 // TrackCustomEvent sets a custom event as service entry span tags. This span is
@@ -130,7 +130,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 
 	tagPrefix := "appsec.events." + name + "."
 	span.SetTag(tagPrefix+"track", true)
-	span.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
+	instrumentation.SetEventsTags(span)
 	for k, v := range md {
 		span.SetTag(tagPrefix+k, v)
 	}
