@@ -348,14 +348,14 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(t, "inject_max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 	})
 
-	t.Run("InvalidTraceTags", func(t *testing.T) {
+	t.Run("TracestateWithCommas", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		tracer := newTracer()
 		defer tracer.Stop()
 		internal.SetGlobalTracer(tracer)
 		child := tracer.StartSpan("test")
-		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
-		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello2", "world,") // invalid value
+		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")
+		child.Context().(*spanContext).trace.setPropagatingTag("tracestate", "rojo=00f067aa0ba902b7,congo=t61rcWkgMzE")
 		childSpanID := child.Context().(*spanContext).spanID
 		dst := map[string]string{}
 		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
@@ -364,7 +364,26 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 		assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-		assertTraceTags(t, "_dd.p.dm=-1,_dd.p.hello1=world", dst["x-datadog-tags"])
+		assertTraceTags(t, "_dd.p.dm=-1,_dd.p.hello1=world,tracestate=rojo=00f067aa0ba902b7,congo=t61rcWkgMzE", dst["x-datadog-tags"])
+		assert.Empty(t, child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
+	})
+
+	t.Run("InvalidTraceTag", func(t *testing.T) {
+		t.Setenv(headerPropagationStyleInject, "datadog")
+		tracer := newTracer()
+		defer tracer.Stop()
+		internal.SetGlobalTracer(tracer)
+		child := tracer.StartSpan("test")
+		child.Context().(*spanContext).trace.setPropagatingTag("bad", "ÜwÜ")
+		childSpanID := child.Context().(*spanContext).spanID
+		dst := map[string]string{}
+		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
+		assert.Nil(t, err)
+		assert.Len(t, dst, 4)
+		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
+		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
+		assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+		assertTraceTags(t, "_dd.p.dm=-1", dst["x-datadog-tags"])
 		assert.Equal(t, "encoding_error", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 	})
 

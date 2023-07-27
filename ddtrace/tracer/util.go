@@ -84,7 +84,7 @@ func isValidPropagatableTag(k, v string) error {
 		return fmt.Errorf("value length must be greater than zero")
 	}
 	for _, ch := range v {
-		if ch < 32 || ch > 126 || ch == ',' {
+		if ch < 32 || ch > 126 {
 			return fmt.Errorf("value contains an invalid character %d", ch)
 		}
 	}
