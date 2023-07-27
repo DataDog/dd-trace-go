@@ -997,7 +997,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // which point all finished spans in that trace will be flushed, freeing up
 // any memory they were consuming. This can also be configured by setting
 // DD_TRACE_PARTIAL_FLUSH_ENABLED to true, which will default to 1000 spans
-// unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Parital flushing
+// unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Partial flushing
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {

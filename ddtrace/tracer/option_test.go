@@ -1278,6 +1278,13 @@ func TestPartialFlushing(t *testing.T) {
 		assert.True(t, c.partialFlushEnabled)
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
+	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c := newConfig()
 		WithPartialFlushing(20)(c)
