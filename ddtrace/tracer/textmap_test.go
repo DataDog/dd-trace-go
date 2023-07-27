@@ -638,7 +638,7 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(test.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
 						require.NotNil(t, sctx.trace)
-						assert.Equal(float64(tc.out[2]), *sctx.trace.priority)
+						assert.EqualValues(tc.out[2], sctx.trace.priority)
 					}
 				})
 			}
@@ -1492,7 +1492,7 @@ func TestEnvVars(t *testing.T) {
 				in       TextMapCarrier
 				outMap   TextMapCarrier
 				out      []uint64 // contains [<trace_id>, <span_id>]
-				priority float64
+				priority int
 				origin   string
 			}{
 				{
@@ -1536,7 +1536,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[0], sctx.traceID.Lower())
 					assert.Equal(tc.out[1], sctx.spanID)
 					assert.Equal(tc.origin, sctx.origin)
-					assert.Equal(tc.priority, *sctx.trace.priority)
+					assert.Equal(tc.priority, sctx.trace.priority)
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)

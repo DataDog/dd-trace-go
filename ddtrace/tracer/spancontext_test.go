@@ -474,7 +474,8 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.TraceID)
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.NotNil(ctx.trace)
-		assert.Nil(ctx.trace.priority)
+		assert.Zero(ctx.trace.priority)
+		assert.False(ctx.trace.prioritySet)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -492,7 +493,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(ctx.trace.priority, 1)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -513,7 +514,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), sctx.traceID.Lower())
 		assert.EqualValues(2, sctx.spanID)
-		assert.EqualValues(3, *sctx.trace.priority)
+		assert.EqualValues(3, sctx.trace.priority)
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -536,7 +537,7 @@ func TestSpanContextParent(t *testing.T) {
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
-				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+				priority: func() int { return 2 }(),
 			},
 		},
 		"sampling_decision": {

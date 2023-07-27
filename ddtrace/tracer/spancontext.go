@@ -180,7 +180,7 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+	if c.trace.priority != p {
 		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
@@ -245,7 +245,8 @@ type trace struct {
 	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
-	priority         *float64          // sampling priority
+	priority         int               // sampling priority
+	prioritySet      bool              // whether the sampling priority on the trace has been set
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
 
@@ -276,10 +277,7 @@ func newTrace() *trace {
 }
 
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	if t.priority == nil {
-		return 0, false
-	}
-	return int(*t.priority), true
+	return t.priority, t.prioritySet
 }
 
 func (t *trace) samplingPriority() (p int, ok bool) {
@@ -319,10 +317,8 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if t.locked {
 		return
 	}
-	if t.priority == nil {
-		t.priority = new(float64)
-	}
-	*t.priority = float64(p)
+	t.prioritySet = true
+	t.priority = p
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -376,11 +372,11 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	if s == t.root && t.priority != nil {
+	if s == t.root && t.prioritySet {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		t.root.setMetric(keySamplingPriority, float64(t.priority))
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
