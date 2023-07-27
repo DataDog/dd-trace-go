@@ -31,6 +31,7 @@ const componentName = "graph-gophers/graphql-go"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/graph-gophers/graphql-go")
 }
 
 const (
