@@ -860,6 +860,13 @@ func WithDebugSpansMode(enabled bool) StartOption {
 	}
 }
 
+// WithDebugSpansMode enables or disables the debug mode for logging open spans.
+func WithDebugSpansTimeout(dur time.Duration) StartOption {
+	return func(c *config) {
+		c.spanTimeout = dur
+	}
+}
+
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.

@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"container/list"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -97,7 +96,7 @@ type tracer struct {
 	statsd statsdClient
 
 	// openSpans holds a linked list of open spans for all traces.
-	openSpans list.List
+	openSpans LList[*span]
 
 	// cIn receives spans when they are created to be added to openSpans
 	cIn chan *span
@@ -275,7 +274,7 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	if c.debugOpenSpans {
 		log.Debug("Debug open spans enabled.")
-		t.openSpans.Init()
+		t.openSpans = LList[*span]{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
 		t.wg.Add(1)

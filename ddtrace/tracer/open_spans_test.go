@@ -29,7 +29,6 @@ func TestReportOpenSpans(t *testing.T) {
 	t.Run("finished", func(t *testing.T) {
 		s := tracer.StartSpan("operation")
 		s.Finish()
-		time.Sleep(3 * time.Second)
 		expected := fmt.Sprintf("Datadog Tracer %v DEBUG: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
 		assert.NotContains(tp.Logs(), expected)
 	})
@@ -53,6 +52,43 @@ func TestReportOpenSpans(t *testing.T) {
 		assert.Contains(tp.Logs(), expected)
 		s.Finish()
 	})
+
+	t.Run("many", func(t *testing.T) {
+		expected := []string{}
+		finished := []string{}
+		for i := 0; i < 10; i++ {
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
+			e := fmt.Sprintf("Datadog Tracer %v DEBUG: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
+			if i%2 == 0 {
+				s.Finish()
+				finished = append(finished, e)
+				time.Sleep(2 * time.Second)
+			} else {
+				expected = append(expected, e)
+			}
+		}
+		time.Sleep(3 * time.Second)
+		l := tp.Logs()
+		for _, e := range expected {
+			assert.Contains(l, e)
+		}
+		for _, e := range finished {
+			assert.NotContains(l, e)
+		}
+	})
+
+	t.Run("wait", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(true), WithDebugMode(true), WithDebugSpansTimeout(3*time.Second))
+		defer stop()
+
+		s := tracer.StartSpan("operation")
+		expected := fmt.Sprintf("Datadog Tracer %v DEBUG: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
+
+		assert.NotContains(tp.Logs(), expected)
+		time.Sleep(3 * time.Second)
+		assert.Contains(tp.Logs(), expected)
+		s.Finish()
+	})
 }
 
 func TestDebugOpenSpansOff(t *testing.T) {
@@ -66,7 +102,7 @@ func TestDebugOpenSpansOff(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		assert.False(tracer.config.debugOpenSpans)
-		assert.Empty(tracer.openSpans)
+		assert.Equal(tracer.config.spanTimeout, 1*time.Second)
 		s := tracer.StartSpan("operation")
 		time.Sleep(3 * time.Second)
 		expected := fmt.Sprintf("Datadog Tracer %v DEBUG: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
