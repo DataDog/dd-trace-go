@@ -360,7 +360,7 @@ func newConfig(opts ...StartOption) *config {
 		c.dogstatsdAddr = addr
 	}
 	if c.debugOpenSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_OPEN_SPAN_TIMEOUT", 1*time.Second)
+		c.spanTimeout = internal.DurationEnv("DD_TRACE_OPEN_SPAN_TIMEOUT", time.Second)
 	}
 
 	return c
@@ -857,13 +857,6 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 func WithDebugSpansMode(enabled bool) StartOption {
 	return func(c *config) {
 		c.debugOpenSpans = enabled
-	}
-}
-
-// WithDebugSpansMode enables or disables the debug mode for logging open spans.
-func WithDebugSpansTimeout(dur time.Duration) StartOption {
-	return func(c *config) {
-		c.spanTimeout = dur
 	}
 }
 
