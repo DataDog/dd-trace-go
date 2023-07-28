@@ -10,11 +10,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
+	oteltrace "go.opentelemetry.io/otel/trace"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
-	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)

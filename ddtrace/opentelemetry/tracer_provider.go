@@ -31,11 +31,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	oteltrace "go.opentelemetry.io/otel/trace"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
