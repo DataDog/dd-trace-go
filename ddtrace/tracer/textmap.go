@@ -724,6 +724,8 @@ var (
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
+	// semi-colon (reserved for separator between entries in the dd list-member),
+	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
@@ -731,6 +733,8 @@ var (
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
+	// semi-colon (reserved for separator between entries in the dd list-member),
+	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
