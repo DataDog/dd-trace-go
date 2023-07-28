@@ -306,36 +306,36 @@ func TestTextMapPropagator(t *testing.T) {
 			tags:        bigMap,
 			errStr:      "inject_max_size",
 		}, {
-			name:               "InjectInvalidComma",
+			name:               "InvalidComma",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", "_dd.p.hello2": "malformed,"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 			errStr:             "encoding_error",
 		}, {
-			name:               "InjectInvalidChar",
+			name:               "InvalidChar",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello": "ÜwÜ"},
 			xDatadogTagsHeader: "_dd.p.dm=-1",
 			errStr:             "encoding_error",
 		}, {
-			name:               "InjectTracestate-Datadog",
+			name:               "Tracestate-Datadog",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=ignored"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		}, {
-			name:               "InjectTraceparent-Datadog",
+			name:               "Traceparent-Datadog",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		}, {
-			name:               "InjectTracestate-Datadog",
+			name:               "Tracestate-Datadog",
 			injectStyle:        "tracecontext,datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=kept"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("Inject-"+tc.name, func(t *testing.T) {
 			t.Setenv(headerPropagationStyleInject, tc.injectStyle)
 			tracer := newTracer()
 			defer tracer.Stop()
