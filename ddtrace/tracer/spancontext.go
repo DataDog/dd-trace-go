@@ -180,7 +180,7 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.priority != p {
+	if curP, set := c.trace.samplingPriorityLocked(); !set || p != curP {
 		c.updated = true
 	}
 	c.trace.setSamplingPriority(p, sampler)
@@ -245,8 +245,8 @@ type trace struct {
 	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
 	full             bool              // signifies that the span buffer is full
-	priority         int               // sampling priority
-	prioritySet      bool              // whether the sampling priority on the trace has been set
+	priority         int               // sampling priority, should only be accessed/set using the methods on trace or spanContext
+	prioritySet      bool              // whether the sampling priority on the trace has been set, should only be accessed/set using the methods on trace or spanContext
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
 
@@ -317,8 +317,8 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if t.locked {
 		return
 	}
-	t.prioritySet = true
 	t.priority = p
+	t.prioritySet = true
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -372,12 +372,14 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	if s == t.root && t.prioritySet {
-		// after the root has finished we lock down the priority;
-		// we won't be able to make changes to a span after finishing
-		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, float64(t.priority))
-		t.locked = true
+	if s == t.root {
+		if p, ok := t.samplingPriorityLocked(); ok {
+			// after the root has finished we lock down the priority;
+			// we won't be able to make changes to a span after finishing
+			// without causing a race condition.
+			t.root.setMetric(keySamplingPriority, float64(p))
+			t.locked = true
+		}
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
 		// first span in chunk finished, lock down the tags

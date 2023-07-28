@@ -648,33 +648,62 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 	}
 }
 
+func TestSetSamplingPriority(t *testing.T) {
+	t.Run("SetSamplingPriorityOne", func(t *testing.T) {
+		s := newSpan("test", "srv", "rs", 1234, 4321, 0)
+		assert.False(t, s.context.updated)
+		assert.False(t, s.root().context.trace.prioritySet)
+		s.context.setSamplingPriority(1, samplernames.Manual)
+		assert.True(t, s.context.updated)
+		assert.True(t, s.root().context.trace.prioritySet)
+	})
+	t.Run("SetSamplingPriorityZero", func(t *testing.T) {
+		// since the int default would be 0, make sure updated
+		// is still set to true if the priority is explicitly set.
+		s := newSpan("test", "srv", "rs", 1234, 4321, 0)
+		assert.False(t, s.context.updated)
+		assert.False(t, s.root().context.trace.prioritySet)
+		s.context.setSamplingPriority(0, samplernames.Manual)
+		assert.True(t, s.context.updated)
+		assert.True(t, s.root().context.trace.prioritySet)
+	})
+}
+
 func TestSetSamplingPriorityLocked(t *testing.T) {
 	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		assert.False(t, tr.prioritySet)
 		tr.setSamplingPriorityLocked(0, samplernames.RemoteRate)
+		assert.True(t, tr.prioritySet)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		assert.False(t, tr.prioritySet)
 		tr.setSamplingPriorityLocked(0, samplernames.Unknown)
+		assert.True(t, tr.prioritySet)
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		assert.False(t, tr.prioritySet)
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.True(t, tr.prioritySet)
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1IsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
+		assert.False(t, tr.prioritySet)
 		tr.setSamplingPriorityLocked(1, samplernames.RemoteRate)
+		assert.True(t, tr.prioritySet)
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 }
