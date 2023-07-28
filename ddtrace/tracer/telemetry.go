@@ -52,6 +52,12 @@ func startTelemetry(c *config) {
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_enabled", Value: c.enabled},
 	}
+	if chained, ok := c.propagator.(*chainedPropagator); ok {
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
+	}
 	for k, v := range c.featureFlags {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
 	}
