@@ -948,7 +948,6 @@ func parseTracestate(ctx *spanContext, header string) {
 			}
 			key, val := keyVal[0], keyVal[1]
 			if key == "o" {
-				// ctx.origin could be empty here, so shouldn't we use the origin in the key??
 				ctx.origin = strings.ReplaceAll(val, "~", "=")
 			} else if key == "s" {
 				stateP, err := strconv.Atoi(val)
