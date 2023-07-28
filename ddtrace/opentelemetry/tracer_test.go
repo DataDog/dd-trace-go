@@ -17,7 +17,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -29,11 +28,18 @@ func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
-	assert.True(ok)
+	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
 	assert.Equal(ott.Tracer, dd)
+}
+
+func TestGetTracerMultiple(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	tr := tp.Tracer("ot")
+	tr2 := tp.Tracer("ot")
+	assert.True(tr == tr2) // they should have the same pointer
 }
 
 func TestSpanWithContext(t *testing.T) {
