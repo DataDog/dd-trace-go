@@ -720,30 +720,26 @@ var (
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx = regexp.MustCompile(`,|=|[^\\x20-\\x7E]+`)
+	keyRgx = regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx = regexp.MustCompile(`,|;|~|[^\\x20-\\x7E]+`)
+	valueRgx = regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// equals (reserved for list-member key-value separator),
 	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(`,|~|;|[^\\x21-\\x7E]+`)
+	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
 
 	// validIDRgx is used to verify that the input is a valid hex string.
 	// The input must match the pattern from start to end.
 	// validIDRgx is applicable for both trace and span IDs.
-	validIDRgx = regexp.MustCompile(`^[a-f0-9]+$`)
+	validIDRgx = regexp.MustCompile("^[a-f0-9]+$")
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
@@ -948,6 +944,7 @@ func parseTracestate(ctx *spanContext, header string) {
 			}
 			key, val := keyVal[0], keyVal[1]
 			if key == "o" {
+				// ctx.origin could be empty here, so shouldn't we use the origin in the key??
 				ctx.origin = strings.ReplaceAll(val, "~", "=")
 			} else if key == "s" {
 				stateP, err := strconv.Atoi(val)
