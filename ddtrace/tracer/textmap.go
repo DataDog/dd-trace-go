@@ -324,6 +324,9 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 
 	var properr string
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
+		if k == tracestateHeader || k == traceparentHeader {
+			return true // don't propagate W3C headers with the DD propagator
+		}
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
 			properr = "encoding_error"
@@ -703,7 +706,7 @@ var (
 	// equals (reserved for list-member key-value separator),
 	// space and characters outside the ASCII range 0x20 to 0x7E.
 	// Disallowed characters must be replaced with the underscore.
-	keyRgx = regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
+	keyRgx = regexp.MustCompile(`,|=|[^\\x20-\\x7E]+`)
 
 	// valueRgx is used to sanitize the values of the datadog propagating tags.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -712,7 +715,7 @@ var (
 	// and characters outside the ASCII range 0x20 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	valueRgx = regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
+	valueRgx = regexp.MustCompile(`,|;|~|[^\\x20-\\x7E]+`)
 
 	// originRgx is used to sanitize the value of the datadog origin tag.
 	// Disallowed characters are comma (reserved as a list-member separator),
@@ -721,12 +724,12 @@ var (
 	// and characters outside the ASCII range 0x21 to 0x7E.
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
-	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
+	originRgx = regexp.MustCompile(`,|~|;|[^\\x21-\\x7E]+`)
 
 	// validIDRgx is used to verify that the input is a valid hex string.
 	// The input must match the pattern from start to end.
 	// validIDRgx is applicable for both trace and span IDs.
-	validIDRgx = regexp.MustCompile("^[a-f0-9]+$")
+	validIDRgx = regexp.MustCompile(`^[a-f0-9]+$`)
 )
 
 // composeTracestate creates a tracestateHeader from the spancontext.
