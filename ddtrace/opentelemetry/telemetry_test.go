@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTelemetry(t *testing.T) {
