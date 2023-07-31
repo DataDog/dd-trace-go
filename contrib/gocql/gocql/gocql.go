@@ -26,6 +26,7 @@ const componentName = "gocql/gocql"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gocql/gocql")
 }
 
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
