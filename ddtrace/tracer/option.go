@@ -226,6 +226,15 @@ type config struct {
 
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
+
+	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
+	// partial flush, or 0 if partial flushing is disabled.
+	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
+	partialFlushMinSpans int
+
+	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
+	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
+	partialFlushEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -239,6 +248,9 @@ type StartOption func(*config)
 
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
+
+// partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
+const partialFlushMinSpansDefault = 1000
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -299,6 +311,18 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
+	if c.partialFlushMinSpans <= 0 {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	} else if c.partialFlushMinSpans >= traceMaxSize {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	}
+	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
+	// if it's explicitly set, and don't require both variables to be configured.
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -965,6 +989,20 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
+	}
+}
+
+// WithPartialFlushing enables flushing of partially finished traces.
+// This is done after "numSpans" have finished in a single local trace at
+// which point all finished spans in that trace will be flushed, freeing up
+// any memory they were consuming. This can also be configured by setting
+// DD_TRACE_PARTIAL_FLUSH_ENABLED to true, which will default to 1000 spans
+// unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Partial flushing
+// is disabled by default.
+func WithPartialFlushing(numSpans int) StartOption {
+	return func(c *config) {
+		c.partialFlushEnabled = true
+		c.partialFlushMinSpans = numSpans
 	}
 }
 
