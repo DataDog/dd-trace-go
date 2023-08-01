@@ -79,7 +79,7 @@ type span struct {
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
+	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	context      *spanContext `msg:"-"` // span propagation context
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
@@ -499,7 +499,6 @@ func (s *span) finish(finishTime int64) {
 	if s.Duration < 0 {
 		s.Duration = 0
 	}
-	s.finished = true
 
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
