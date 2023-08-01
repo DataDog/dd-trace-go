@@ -854,9 +854,9 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 }
 
 // WithDebugSpansMode enables or disables the debug mode for logging open spans.
-func WithDebugSpansMode(enabled bool) StartOption {
+func WithDebugSpansMode() StartOption {
 	return func(c *config) {
-		c.debugOpenSpans = enabled
+		c.debugOpenSpans = true
 	}
 }
 

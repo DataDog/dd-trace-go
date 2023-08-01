@@ -273,7 +273,7 @@ func newTracer(opts ...StartOption) *tracer {
 		}()
 	}
 	if c.debugOpenSpans {
-		log.Debug("Debug open spans enabled.")
+		log.Warn("Debug open spans enabled.")
 		t.openSpans = LList[*span]{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)

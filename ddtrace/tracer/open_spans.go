@@ -96,7 +96,7 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 				sp := e.Element
 				life := now() - sp.Start
 				if life >= interval.Nanoseconds() {
-					log.Debug("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
+					log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
 					t.openSpans.RemoveNode(e)
 					e = t.openSpans.head
 				} else {
