@@ -27,6 +27,7 @@ const componentName = "syndtr/goleveldb/leveldb"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/syndtr/goleveldb")
 }
 
 // A DB wraps a leveldb.DB and traces all queries.
