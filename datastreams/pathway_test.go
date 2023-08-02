@@ -14,7 +14,7 @@ import (
 )
 
 func TestPathway(t *testing.T) {
-	t.Run("test SetCheckPoint", func(t *testing.T) {
+	t.Run("test SetCheckpoint", func(t *testing.T) {
 		aggregator := aggregator{
 			stopped:    1,
 			in:         make(chan statsPoint, 10),
@@ -160,6 +160,11 @@ func TestPathway(t *testing.T) {
 		h.Write([]byte("cat"))
 		h.Write([]byte("pig"))
 		assert.Equal(t, s1, h.Sum64())
+	})
+
+	t.Run("test GetHash", func(t *testing.T) {
+		pathway := NewPathway("type:kafka", "topic:my-topic", "direction:in")
+		assert.Equal(t, pathway.hash, pathway.GetHash())
 	})
 }
 

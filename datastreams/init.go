@@ -56,3 +56,10 @@ func Stop() {
 	p.Stop()
 	setGlobalAggregator(nil)
 }
+
+// Flush triggers a flush and waits for it to complete.
+func Flush() {
+	if p := getGlobalAggregator(); p != nil {
+		p.Flush()
+	}
+}

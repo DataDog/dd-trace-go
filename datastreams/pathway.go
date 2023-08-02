@@ -98,6 +98,11 @@ func newPathway(now time.Time, edgeTags ...string) Pathway {
 	return p.setCheckpoint(now, edgeTags)
 }
 
+// GetHash gets the hash of a pathway.
+func (p Pathway) GetHash() uint64 {
+	return p.hash
+}
+
 // SetCheckpoint sets a checkpoint on a pathway.
 func (p Pathway) SetCheckpoint(edgeTags ...string) Pathway {
 	return p.setCheckpoint(time.Now(), edgeTags)
