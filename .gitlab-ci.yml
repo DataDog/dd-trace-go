@@ -3,7 +3,7 @@ stages:
   - test-apps
 
 variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/17228699
+  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/18455613
   BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-18455613
   INDEX_FILE: index.txt
   KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
