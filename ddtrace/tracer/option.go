@@ -1006,6 +1006,8 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 func WithDebugSpansMode() StartOption {
 	return func(c *config) {
 		c.debugOpenSpans = true
+	}
+}
 
 // WithPartialFlushing enables flushing of partially finished traces.
 // This is done after "numSpans" have finished in a single local trace at
