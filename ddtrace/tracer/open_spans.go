@@ -90,23 +90,57 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 	for {
 		select {
 		case <-tick.C:
-			// check for open spans
+			b := t.openSpans.head
+			for b != nil {
+				e := b.Element.head
+				for e != nil {
+					sp := e.Element
+					life := now() - sp.Start
+					if life >= interval.Nanoseconds() {
+						log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
+						b.Element.RemoveNode(e)
+						e = b.Element.head
+					} else {
+						break
+					}
+				}
+				b = b.Next
+			}
+		case s := <-t.cIn:
 			e := t.openSpans.head
+			if e == nil {
+				t.openSpans.head = &listNode[LList[*span]]{
+					Element: LList[*span]{},
+				}
+				t.openSpans.head.Element.Append(s)
+				break
+			}
 			for e != nil {
-				sp := e.Element
-				life := now() - sp.Start
-				if life >= interval.Nanoseconds() {
-					log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
-					t.openSpans.RemoveNode(e)
-					e = t.openSpans.head
-				} else {
+				sp := e.Element.head
+				if sp == nil || sp.Element == nil {
+					e.Element.head = &listNode[*span]{
+						Element: s,
+					}
+					break
+				}
+				if s.Start-sp.Element.Start <= interval.Nanoseconds() {
+					e.Element.Append(s)
 					break
 				}
 			}
-		case s := <-t.cIn:
-			t.openSpans.Append(s)
 		case s := <-t.cOut:
-			t.openSpans.Remove(s)
+			for e := t.openSpans.head; e != nil; e = e.Next {
+				if e.Element.head == nil {
+					continue
+				}
+				if s.Start-e.Element.head.Element.Start <= interval.Nanoseconds() {
+					e.Element.Remove(s)
+					if e.Element.head == nil {
+						t.openSpans.RemoveNode(e)
+					}
+					break
+				}
+			}
 		case <-t.stop:
 			return
 		}

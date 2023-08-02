@@ -96,7 +96,7 @@ type tracer struct {
 	statsd statsdClient
 
 	// openSpans holds a linked list of open spans for all traces.
-	openSpans LList[*span]
+	openSpans LList[LList[*span]]
 
 	// cIn receives spans when they are created to be added to openSpans
 	cIn chan *span
@@ -274,7 +274,7 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	if c.debugOpenSpans {
 		log.Warn("Debug open spans enabled.")
-		t.openSpans = LList[*span]{}
+		t.openSpans = LList[LList[*span]]{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
 		t.wg.Add(1)
