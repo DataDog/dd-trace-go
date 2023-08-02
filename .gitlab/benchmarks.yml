@@ -18,6 +18,7 @@ benchmark:
     - "./steps/upload-results-to-s3.sh || :"
     - "./steps/post-pr-comment.sh || :"
   artifacts:
+    when: always
     name: "reports"
     paths:
       - reports/
