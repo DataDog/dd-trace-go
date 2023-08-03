@@ -19,11 +19,12 @@ on:
     branches: release-v*
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
-  GODEBUG: cgocheck=2
   JUNIT_REPORT: gotestsum-report.xml
   TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
 jobs:
   native:
+    env:
+      GODEBUG: cgocheck=2
     strategy:
       matrix:
         runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04, windows-latest ]
@@ -55,7 +56,7 @@ jobs:
       - name: go test
         shell: bash
         run: |
-          # Install gotestsum to get the results in a junit file 
+          # Install gotestsum to get the results in a junit file
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
@@ -74,8 +75,8 @@ jobs:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     strategy:
       matrix:
-        go-version: [ "1.20", "1.19", "1.18" ]
-        distribution: [ bullseye, buster, alpine ]
+        go-version: [ "1.21-rc", "1.20", "1.19", "1.18" ]
+        distribution: [ bookworm, bullseye, buster, alpine ]
         build_tags: # test it compiles with and without the appsec build tag
           - ""
           - "appsec"
@@ -86,6 +87,12 @@ jobs:
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
+        exclude:
+          - go-version: 1.18
+            distribution: bookworm
+          - go-version: 1.21-rc
+            distribution: buster
+
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
@@ -102,7 +109,7 @@ jobs:
 
       - name: go test
         run: |
-          # Install gotestsum to get the results in a junit file 
+          # Install gotestsum to get the results in a junit file
           env GOBIN=$PWD go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
           env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
@@ -139,3 +146,8 @@ jobs:
         with:
           platforms: arm64
       - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
+
+  smoke-tests:
+    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
+    with:
+      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

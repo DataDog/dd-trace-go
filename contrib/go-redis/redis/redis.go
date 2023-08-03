@@ -29,6 +29,7 @@ const componentName = "go-redis/redis"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/go-redis/redis")
 }
 
 // Client is used to trace requests to a redis server.
