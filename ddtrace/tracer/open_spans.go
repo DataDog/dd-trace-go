@@ -12,6 +12,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+type BLList[T comparable] struct {
+	mu   sync.Mutex
+	head *listNode[*LList[T]]
+	tail *listNode[*LList[T]]
+}
+
 type LList[T comparable] struct {
 	mu   sync.Mutex
 	head *listNode[T]
@@ -21,6 +27,47 @@ type LList[T comparable] struct {
 type listNode[T comparable] struct {
 	Element T
 	Next    *listNode[T]
+}
+
+func (l *BLList[T]) Extend() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := &listNode[*LList[T]]{
+		Element: &LList[T]{},
+		Next:    nil,
+	}
+	if l.head == nil {
+		l.head = n
+		l.tail = n
+		return
+	}
+	l.tail.Next = n
+	l.tail = n
+}
+
+func (l *BLList[T]) RemoveTail() {
+	n := l.head
+	if n == nil || n.Next == nil {
+		l.head = nil
+		return
+	}
+	for n.Next.Next != nil {
+		n = n.Next
+	}
+	n.Next = nil
+	l.tail = n
+}
+
+func (l *BLList[T]) RemoveBucket(b *listNode[*LList[T]]) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if b.Next != nil {
+		n := b.Next
+		b.Element = n.Element
+		b.Next = n.Next
+		return
+	}
+	l.RemoveTail()
 }
 
 func (l *LList[T]) Append(e T) {
@@ -57,31 +104,6 @@ func (l *LList[T]) Remove(e T) {
 	}
 }
 
-func (l *LList[T]) RemoveTail() {
-	n := l.head
-	if n == nil || n.Next == nil {
-		l.head = nil
-		return
-	}
-	for n.Next.Next != nil {
-		n = n.Next
-	}
-	n.Next = nil
-	l.tail = n
-}
-
-func (l *LList[T]) RemoveNode(s *listNode[T]) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if s.Next != nil {
-		n := s.Next
-		s.Element = n.Element
-		s.Next = n.Next
-		return
-	}
-	l.RemoveTail()
-}
-
 // reportOpenSpans periodically finds and reports old, open spans at
 // the given interval.
 func (t *tracer) reportOpenSpans(interval time.Duration) {
@@ -98,8 +120,9 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 					life := now() - sp.Start
 					if life >= interval.Nanoseconds() {
 						log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
-						b.Element.RemoveNode(e)
-						e = b.Element.head
+						// b.Element.RemoveNode(e)
+						// e = b.Element.head
+						e = e.Next
 					} else {
 						break
 					}
@@ -108,26 +131,21 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 			}
 		case s := <-t.cIn:
 			e := t.openSpans.head
-			if e == nil {
-				t.openSpans.head = &listNode[LList[*span]]{
-					Element: LList[*span]{},
-				}
-				t.openSpans.head.Element.Append(s)
-				break
-			}
 			for e != nil {
 				sp := e.Element.head
 				if sp == nil || sp.Element == nil {
-					e.Element.head = &listNode[*span]{
-						Element: s,
-					}
+					e.Element = &LList[*span]{}
+					e.Element.Append(s)
 					break
 				}
 				if s.Start-sp.Element.Start <= interval.Nanoseconds() {
 					e.Element.Append(s)
 					break
 				}
+				e = e.Next
 			}
+			t.openSpans.Extend()
+			t.openSpans.tail.Element.Append(s)
 		case s := <-t.cOut:
 			for e := t.openSpans.head; e != nil; e = e.Next {
 				if e.Element.head == nil {
@@ -136,7 +154,7 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 				if s.Start-e.Element.head.Element.Start <= interval.Nanoseconds() {
 					e.Element.Remove(s)
 					if e.Element.head == nil {
-						t.openSpans.RemoveNode(e)
+						t.openSpans.RemoveBucket(e)
 					}
 					break
 				}

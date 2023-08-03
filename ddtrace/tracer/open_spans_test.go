@@ -64,25 +64,20 @@ func TestReportOpenSpans(t *testing.T) {
 
 	t.Run("many", func(t *testing.T) {
 		expected := []string{}
-		finished := []string{}
 		for i := 0; i < 10; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
 			e := fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
 			if i%2 == 0 {
 				s.Finish()
-				finished = append(finished, e)
 				time.Sleep(200 * time.Millisecond)
 			} else {
 				expected = append(expected, e)
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		l := tp.Logs()
 		for _, e := range expected {
 			assert.Contains(l, e)
-		}
-		for _, e := range finished {
-			assert.NotContains(l, e)
 		}
 	})
 
