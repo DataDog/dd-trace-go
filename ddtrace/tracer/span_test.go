@@ -815,7 +815,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
 		span.Finish()
 		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
-		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321"`, fmt.Sprintf("%v", span))
+		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
 		v, _ := span.context.meta(keyTraceID128)
 		assert.Equal("", v)
 	})
