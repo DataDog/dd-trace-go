@@ -291,7 +291,84 @@ func TestExtractOriginSynthetics(t *testing.T) {
 }
 
 func TestTextMapPropagator(t *testing.T) {
-	t.Run("InvalidTraceTagsHeader", func(t *testing.T) {
+	bigMap := make(map[string]string)
+	for i := 0; i < 100; i++ {
+		bigMap[fmt.Sprintf("someKey%d", i)] = fmt.Sprintf("someValue%d", i)
+	}
+	tests := []struct {
+		name, injectStyle          string
+		tags                       map[string]string
+		xDatadogTagsHeader, errStr string
+	}{
+		{
+			name:        "InjectTooManyTags",
+			injectStyle: "datadog",
+			tags:        bigMap,
+			errStr:      "inject_max_size",
+		}, {
+			name:               "InvalidComma",
+			injectStyle:        "datadog",
+			tags:               map[string]string{"_dd.p.hello1": "world", "_dd.p.hello2": "malformed,"},
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+			errStr:             "encoding_error",
+		}, {
+			name:               "InvalidChar",
+			injectStyle:        "datadog",
+			tags:               map[string]string{"_dd.p.hello": "ÜwÜ"},
+			xDatadogTagsHeader: "_dd.p.dm=-1",
+			errStr:             "encoding_error",
+		}, {
+			name:               "Tracestate-Datadog",
+			injectStyle:        "datadog",
+			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=ignored"},
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+		}, {
+			name:               "Traceparent-Datadog",
+			injectStyle:        "datadog",
+			tags:               map[string]string{"_dd.p.hello1": "world", traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01"},
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+		}, {
+			name:               "Tracestate-Datadog",
+			injectStyle:        "tracecontext,datadog",
+			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=kept"},
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+		},
+	}
+	for _, tc := range tests {
+		t.Run("Inject-"+tc.name, func(t *testing.T) {
+			t.Setenv(headerPropagationStyleInject, tc.injectStyle)
+			tracer := newTracer()
+			defer tracer.Stop()
+			internal.SetGlobalTracer(tracer)
+			child := tracer.StartSpan("test")
+			for k, v := range tc.tags {
+				child.Context().(*spanContext).trace.setPropagatingTag(k, v)
+			}
+			childSpanID := child.Context().(*spanContext).spanID
+			dst := map[string]string{}
+			err := tracer.Inject(child.Context(), TextMapCarrier(dst))
+			assert.Nil(t, err)
+			ddHeadersLen := 3 // x-datadog-parent-id, x-datadog-trace-id, x-datadog-sampling-priority
+			if tc.xDatadogTagsHeader != "" {
+				ddHeadersLen++ // x-datadog-tags
+			}
+			if strings.Contains(tc.injectStyle, "tracecontext") {
+				ddHeadersLen += 2 // tracestate, traceparent
+			}
+			assert.Len(t, dst, ddHeadersLen) // ensure that no extra headers exist that shouldn't
+			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
+			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
+			assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+			assertTraceTags(t, tc.xDatadogTagsHeader, dst["x-datadog-tags"])
+			if strings.Contains(tc.injectStyle, "tracecontext") {
+				// other unit tests check the value of these W3C headers, so just make sure they're present
+				assert.NotEmpty(t, dst[tracestateHeader])
+				assert.NotEmpty(t, dst[traceparentHeader])
+			}
+			assert.Equal(t, tc.errStr, child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
+		})
+	}
+	t.Run("Extract-InvalidTraceTagsHeader", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		src := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1",
@@ -307,17 +384,12 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(t, "decoding_error", sctx.trace.tags["_dd.propagation_error"])
 	})
 
-	t.Run("ExtractTraceTagsTooLong", func(t *testing.T) {
+	t.Run("Extract-TooManyTags", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tags := make([]string, 0)
-		for i := 0; i < 100; i++ {
-			tags = append(tags, fmt.Sprintf("_dd.p.tag%d=value%d", i, i))
-		}
-		traceTags := strings.Join(tags, ",")
 		src := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1",
 			DefaultParentIDHeader: "1",
-			traceTagsHeader:       traceTags,
+			traceTagsHeader:       fmt.Sprintf("%s", bigMap),
 		})
 		tracer := newTracer()
 		defer tracer.Stop()
@@ -326,46 +398,6 @@ func TestTextMapPropagator(t *testing.T) {
 		sctx, ok := ctx.(*spanContext)
 		assert.True(t, ok)
 		assert.Equal(t, "extract_max_size", sctx.trace.tags["_dd.propagation_error"])
-	})
-
-	t.Run("InjectTraceTagsTooLong", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
-		child := tracer.StartSpan("test")
-		for i := 0; i < 100; i++ {
-			child.Context().(*spanContext).trace.setPropagatingTag(fmt.Sprintf("someKey%d", i), fmt.Sprintf("someValue%d", i))
-		}
-		childSpanID := child.Context().(*spanContext).spanID
-		dst := map[string]string{}
-		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
-		assert.Nil(t, err)
-		assert.Equal(t, map[string]string{
-			"x-datadog-parent-id":         strconv.Itoa(int(childSpanID)),
-			"x-datadog-trace-id":          strconv.Itoa(int(childSpanID)),
-			"x-datadog-sampling-priority": "1",
-		}, dst)
-		assert.Equal(t, "inject_max_size", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
-	})
-
-	t.Run("InvalidTraceTags", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
-		internal.SetGlobalTracer(tracer)
-		child := tracer.StartSpan("test")
-		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello1", "world")  // valid value
-		child.Context().(*spanContext).trace.setPropagatingTag("_dd.p.hello2", "world,") // invalid value
-		childSpanID := child.Context().(*spanContext).spanID
-		dst := map[string]string{}
-		err := tracer.Inject(child.Context(), TextMapCarrier(dst))
-		assert.Nil(t, err)
-		assert.Len(t, dst, 4)
-		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
-		assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
-		assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-		assertTraceTags(t, "_dd.p.dm=-1,_dd.p.hello1=world", dst["x-datadog-tags"])
-		assert.Equal(t, "encoding_error", child.Context().(*spanContext).trace.tags["_dd.propagation_error"])
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
