@@ -548,12 +548,6 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Service")
 				return
 			}
-		case "PrimaryTag":
-			z.PrimaryTag, err = dc.ReadString()
-			if err != nil {
-				err = msgp.WrapError(err, "PrimaryTag")
-				return
-			}
 		case "Stats":
 			var zb0002 uint32
 			zb0002, err = dc.ReadArrayHeader()
@@ -598,9 +592,9 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 6
+	// map header, size 5
 	// write "Env"
-	err = en.Append(0x86, 0xa3, 0x45, 0x6e, 0x76)
+	err = en.Append(0x85, 0xa3, 0x45, 0x6e, 0x76)
 	if err != nil {
 		return
 	}
@@ -617,16 +611,6 @@ func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteString(z.Service)
 	if err != nil {
 		err = msgp.WrapError(err, "Service")
-		return
-	}
-	// write "PrimaryTag"
-	err = en.Append(0xaa, 0x50, 0x72, 0x69, 0x6d, 0x61, 0x72, 0x79, 0x54, 0x61, 0x67)
-	if err != nil {
-		return
-	}
-	err = en.WriteString(z.PrimaryTag)
-	if err != nil {
-		err = msgp.WrapError(err, "PrimaryTag")
 		return
 	}
 	// write "Stats"
@@ -671,7 +655,7 @@ func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *StatsPayload) Msgsize() (s int) {
-	s = 1 + 4 + msgp.StringPrefixSize + len(z.Env) + 8 + msgp.StringPrefixSize + len(z.Service) + 11 + msgp.StringPrefixSize + len(z.PrimaryTag) + 6 + msgp.ArrayHeaderSize
+	s = 1 + 4 + msgp.StringPrefixSize + len(z.Env) + 8 + msgp.StringPrefixSize + len(z.Service) + 6 + msgp.ArrayHeaderSize
 	for za0001 := range z.Stats {
 		s += z.Stats[za0001].Msgsize()
 	}

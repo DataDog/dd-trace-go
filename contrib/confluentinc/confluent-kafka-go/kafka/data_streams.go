@@ -8,9 +8,10 @@ package kafka
 import (
 	"context"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 func TraceKafkaProduce(ctx context.Context, msg *kafka.Message) context.Context {
@@ -19,18 +20,18 @@ func TraceKafkaProduce(ctx context.Context, msg *kafka.Message) context.Context 
 		edges = append(edges, "topic:"+*msg.TopicPartition.Topic)
 	}
 	edges = append(edges, "type:kafka")
-	p, ctx := datastreams.SetCheckpoint(ctx, edges...)
-	msg.Headers = append(msg.Headers, kafka.Header{Key: datastreams.PropagationKey, Value: p.Encode()})
+	p, ctx := tracer.SetDataStreamsCheckpoint(ctx, edges...)
+	if p != nil {
+		msg.Headers = append(msg.Headers, kafka.Header{Key: datastreams.PropagationKey, Value: p.Encode()})
+	}
 	return ctx
 }
 
 func TraceKafkaConsume(ctx context.Context, msg *kafka.Message, group string) context.Context {
 	for _, header := range msg.Headers {
 		if header.Key == datastreams.PropagationKey {
-			p, err := datastreams.Decode(header.Value)
-			if err == nil {
-				ctx = datastreams.ContextWithPathway(ctx, p)
-			}
+			_, ctx, _ = datastreams.Decode(ctx, header.Value)
+			break
 		}
 	}
 	edges := []string{"direction:in", "group:" + group}
@@ -39,6 +40,6 @@ func TraceKafkaConsume(ctx context.Context, msg *kafka.Message, group string) co
 	}
 	edges = append(edges, "type:kafka")
 	edges = append(edges)
-	_, ctx = datastreams.SetCheckpoint(ctx, edges...)
+	_, ctx = tracer.SetDataStreamsCheckpoint(ctx, edges...)
 	return ctx
 }

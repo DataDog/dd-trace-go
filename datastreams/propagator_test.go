@@ -6,6 +6,7 @@
 package datastreams
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func testPathway() Pathway {
 func TestEncode(t *testing.T) {
 	p := testPathway()
 	encoded := p.Encode()
-	decoded, err := Decode(encoded)
+	decoded, _, err := Decode(context.Background(), encoded)
 	assert.Nil(t, err)
 	assert.Equal(t, p, decoded)
 }
@@ -32,7 +33,7 @@ func TestEncode(t *testing.T) {
 func TestEncodeStr(t *testing.T) {
 	p := testPathway()
 	encoded := p.EncodeStr()
-	decoded, err := DecodeStr(encoded)
+	decoded, _, err := DecodeStr(context.Background(), encoded)
 	assert.Nil(t, err)
 	assert.Equal(t, p, decoded)
 }

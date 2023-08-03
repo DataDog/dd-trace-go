@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -119,6 +121,10 @@ func (t *mocktracer) addFinishedSpan(s Span) {
 		t.finishedSpans = make([]Span, 0, 1)
 	}
 	t.finishedSpans = append(t.finishedSpans, s)
+}
+
+func (t *mocktracer) DataStreamsProcessor() dsminterface.Processor {
+	return &datastreams.Processor{}
 }
 
 const (

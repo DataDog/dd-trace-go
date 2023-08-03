@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -52,7 +55,7 @@ type httpTransport struct {
 	headers map[string]string // the Transport headers
 }
 
-func newHTTPTransport(addr string, site string, apiKey string, client *http.Client, agentLess bool) *httpTransport {
+func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -61,16 +64,10 @@ func newHTTPTransport(addr string, site string, apiKey string, client *http.Clie
 		"Content-Type":                  "application/msgpack",
 		"Content-Encoding":              "gzip",
 	}
-	if cid := ContainerID(); cid != "" {
+	if cid := internal.ContainerID(); cid != "" {
 		defaultHeaders["Datadog-Container-ID"] = cid
 	}
-	var url string
-	if agentLess {
-		defaultHeaders["DD-API-KEY"] = apiKey
-		url = fmt.Sprintf("https://trace.agent.%s/api/v0.1/pipeline_stats", site)
-	} else {
-		url = fmt.Sprintf("http://%s/v0.1/pipeline_stats", addr)
-	}
+	url := fmt.Sprintf("%s/v0.1/pipeline_stats", agentURL.String())
 	return &httpTransport{
 		url:     url,
 		client:  client,

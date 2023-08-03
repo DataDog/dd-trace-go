@@ -6,17 +6,18 @@
 package datastreams
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 func buildSketch(values ...float64) []byte {
@@ -29,7 +30,7 @@ func buildSketch(values ...float64) []byte {
 }
 
 func TestAggregator(t *testing.T) {
-	p := newAggregator(nil, "env", "datacenter:us1.prod.dog", "service", "agent-addr", nil, "datadoghq.com", "key", true)
+	p := NewProcessor(nil, "env", "service", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
 	tp1 := time.Now()
 	// Set tp2 to be some 40 seconds after the tp1, but also account for bucket alignments,
 	// otherwise the possible StatsPayload would change depending on when the test is run.
@@ -69,9 +70,8 @@ func TestAggregator(t *testing.T) {
 	})
 	// flush at tp2 doesn't flush points at tp2 (current bucket)
 	assert.Equal(t, StatsPayload{
-		Env:        "env",
-		Service:    "service",
-		PrimaryTag: "datacenter:us1.prod.dog",
+		Env:     "env",
+		Service: "service",
 		Stats: []StatsBucket{
 			{
 				Start:    uint64(alignTs(tp1.UnixNano(), bucketDuration.Nanoseconds())),
@@ -109,9 +109,8 @@ func TestAggregator(t *testing.T) {
 		return sp.Stats[0].Stats[i].Hash < sp.Stats[0].Stats[j].Hash
 	})
 	assert.Equal(t, StatsPayload{
-		Env:        "env",
-		Service:    "service",
-		PrimaryTag: "datacenter:us1.prod.dog",
+		Env:     "env",
+		Service: "service",
 		Stats: []StatsBucket{
 			{
 				Start:    uint64(alignTs(tp2.UnixNano(), bucketDuration.Nanoseconds())),
@@ -166,15 +165,15 @@ func TestAggregator(t *testing.T) {
 }
 
 func TestKafkaLag(t *testing.T) {
-	a := newAggregator(nil, "env", "datacenter:us1.prod.dog", "service", "agent-addr", nil, "datadoghq.com", "key", true)
+	p := NewProcessor(nil, "env", "service", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
 	tp1 := time.Now()
-	a.addKafkaOffset(kafkaOffset{offset: 1, topic: "topic1", partition: 1, group: "group1", offsetType: commitOffset})
-	a.addKafkaOffset(kafkaOffset{offset: 10, topic: "topic2", partition: 1, group: "group1", offsetType: commitOffset})
-	a.addKafkaOffset(kafkaOffset{offset: 5, topic: "topic1", partition: 1, offsetType: produceOffset})
-	a.addKafkaOffset(kafkaOffset{offset: 15, topic: "topic1", partition: 1, offsetType: produceOffset})
-	p := a.flush(tp1.Add(bucketDuration * 2))
-	sort.Slice(p.Stats[0].Backlogs, func(i, j int) bool {
-		return strings.Join(p.Stats[0].Backlogs[i].Tags, "") < strings.Join(p.Stats[0].Backlogs[j].Tags, "")
+	p.addKafkaOffset(kafkaOffset{offset: 1, topic: "topic1", partition: 1, group: "group1", offsetType: commitOffset})
+	p.addKafkaOffset(kafkaOffset{offset: 10, topic: "topic2", partition: 1, group: "group1", offsetType: commitOffset})
+	p.addKafkaOffset(kafkaOffset{offset: 5, topic: "topic1", partition: 1, offsetType: produceOffset})
+	p.addKafkaOffset(kafkaOffset{offset: 15, topic: "topic1", partition: 1, offsetType: produceOffset})
+	point := p.flush(tp1.Add(bucketDuration * 2))
+	sort.Slice(point.Stats[0].Backlogs, func(i, j int) bool {
+		return strings.Join(point.Stats[0].Backlogs[i].Tags, "") < strings.Join(point.Stats[0].Backlogs[j].Tags, "")
 	})
 	expectedBacklogs := []Backlog{
 		{
@@ -190,5 +189,5 @@ func TestKafkaLag(t *testing.T) {
 			Value: 15,
 		},
 	}
-	assert.Equal(t, expectedBacklogs, p.Stats[0].Backlogs)
+	assert.Equal(t, expectedBacklogs, point.Stats[0].Backlogs)
 }

@@ -13,8 +13,6 @@ type StatsPayload struct {
 	Env string
 	// Service is the service of the application
 	Service string
-	// PrimaryTag is the primary tag of the application.
-	PrimaryTag string
 	// Stats holds all stats buckets computed within this payload.
 	Stats []StatsBucket
 	// TracerVersion is the version of the tracer

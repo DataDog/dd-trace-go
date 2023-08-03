@@ -6,21 +6,24 @@
 package datastreams
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/datadog-go/v5/statsd"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
 	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/golang/protobuf/proto"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 const (
@@ -104,7 +107,7 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 	return exported
 }
 
-type aggregatorStats struct {
+type processorStats struct {
 	payloadsIn      int64
 	flushedPayloads int64
 	flushedBuckets  int64
@@ -139,7 +142,7 @@ type kafkaOffset struct {
 	timestamp  int64
 }
 
-type aggregator struct {
+type Processor struct {
 	in                   chan statsPoint
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[int64]bucket
@@ -148,16 +151,28 @@ type aggregator struct {
 	stopped              uint64
 	stop                 chan struct{} // closing this channel triggers shutdown
 	flushRequest         chan chan<- struct{}
-	stats                aggregatorStats
+	stats                processorStats
 	transport            *httpTransport
-	statsd               statsd.ClientInterface
+	statsd               internal.StatsdClient
 	env                  string
 	primaryTag           string
 	service              string
+	// used for tests
+	timeSource func() time.Time
 }
 
-func newAggregator(statsd statsd.ClientInterface, env, primaryTag, service, agentAddr string, httpClient *http.Client, site, apiKey string, agentLess bool) *aggregator {
-	return &aggregator{
+func (p *Processor) time() time.Time {
+	if p.timeSource != nil {
+		return p.timeSource()
+	}
+	return time.Now()
+}
+
+func NewProcessor(statsd internal.StatsdClient, env, service string, agentURL *url.URL, httpClient *http.Client) *Processor {
+	if service == "" {
+		service = defaultServiceName
+	}
+	return &Processor{
 		tsTypeCurrentBuckets: make(map[int64]bucket),
 		tsTypeOriginBuckets:  make(map[int64]bucket),
 		in:                   make(chan statsPoint, 10000),
@@ -165,9 +180,9 @@ func newAggregator(statsd statsd.ClientInterface, env, primaryTag, service, agen
 		stopped:              1,
 		statsd:               statsd,
 		env:                  env,
-		primaryTag:           primaryTag,
 		service:              service,
-		transport:            newHTTPTransport(agentAddr, site, apiKey, httpClient, agentLess),
+		transport:            newHTTPTransport(agentURL, httpClient),
+		timeSource:           time.Now,
 	}
 }
 
@@ -175,7 +190,7 @@ func newAggregator(statsd statsd.ClientInterface, env, primaryTag, service, agen
 // It gives us the start time of the time bucket in which such timestamp falls.
 func alignTs(ts, bucketSize int64) int64 { return ts - ts%bucketSize }
 
-func (a *aggregator) getBucket(btime int64, buckets map[int64]bucket) bucket {
+func (p *Processor) getBucket(btime int64, buckets map[int64]bucket) bucket {
 	b, ok := buckets[btime]
 	if !ok {
 		b = newBucket(uint64(btime), uint64(bucketDuration.Nanoseconds()))
@@ -183,8 +198,8 @@ func (a *aggregator) getBucket(btime int64, buckets map[int64]bucket) bucket {
 	}
 	return b
 }
-func (a *aggregator) addToBuckets(point statsPoint, btime int64, buckets map[int64]bucket) {
-	b := a.getBucket(btime, buckets)
+func (p *Processor) addToBuckets(point statsPoint, btime int64, buckets map[int64]bucket) {
+	b := p.getBucket(btime, buckets)
 	group, ok := b.points[point.hash]
 	if !ok {
 		group = statsGroup{
@@ -204,17 +219,17 @@ func (a *aggregator) addToBuckets(point statsPoint, btime int64, buckets map[int
 	}
 }
 
-func (a *aggregator) add(point statsPoint) {
+func (p *Processor) add(point statsPoint) {
 	currentBucketTime := alignTs(point.timestamp, bucketDuration.Nanoseconds())
-	a.addToBuckets(point, currentBucketTime, a.tsTypeCurrentBuckets)
+	p.addToBuckets(point, currentBucketTime, p.tsTypeCurrentBuckets)
 	originTimestamp := point.timestamp - point.pathwayLatency
 	originBucketTime := alignTs(originTimestamp, bucketDuration.Nanoseconds())
-	a.addToBuckets(point, originBucketTime, a.tsTypeOriginBuckets)
+	p.addToBuckets(point, originBucketTime, p.tsTypeOriginBuckets)
 }
 
-func (a *aggregator) addKafkaOffset(o kafkaOffset) {
+func (p *Processor) addKafkaOffset(o kafkaOffset) {
 	btime := alignTs(o.timestamp, bucketDuration.Nanoseconds())
-	b := a.getBucket(btime, a.tsTypeCurrentBuckets)
+	b := p.getBucket(btime, p.tsTypeCurrentBuckets)
 	if o.offsetType == produceOffset {
 		b.latestProduceOffsets[partitionKey{
 			partition: o.partition,
@@ -229,113 +244,171 @@ func (a *aggregator) addKafkaOffset(o kafkaOffset) {
 	}] = o.offset
 }
 
-func (a *aggregator) run(tick <-chan time.Time) {
+func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
-		case s := <-a.in:
-			atomic.AddInt64(&a.stats.payloadsIn, 1)
-			a.add(s)
-		case o := <-a.inKafka:
-			a.addKafkaOffset(o)
+		case s := <-p.in:
+			atomic.AddInt64(&p.stats.payloadsIn, 1)
+			p.add(s)
+		case o := <-p.inKafka:
+			p.addKafkaOffset(o)
 		case now := <-tick:
-			a.sendToAgent(a.flush(now))
-		case done := <-a.flushRequest:
-			a.sendToAgent(a.flush(time.Now().Add(bucketDuration * 10)))
+			p.sendToAgent(p.flush(now))
+		case done := <-p.flushRequest:
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
-		case <-a.stop:
+		case <-p.stop:
 			// drop in flight payloads on the input channel
-			a.sendToAgent(a.flush(time.Now().Add(bucketDuration * 10)))
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
 		}
 	}
 }
 
-func (a *aggregator) Start() {
-	if atomic.SwapUint64(&a.stopped, 0) == 0 {
+func (p *Processor) Start() {
+	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Print("WARN: (*aggregator).Start called more than once. This is likely a programming error.")
+		log.Print("WARN: (*Processor).Start called more than once. This is likely p programming error.")
 		return
 	}
-	a.stop = make(chan struct{})
-	a.flushRequest = make(chan chan<- struct{})
-	a.wg.Add(1)
-	go a.reportStats()
+	p.stop = make(chan struct{})
+	p.flushRequest = make(chan chan<- struct{})
+	p.wg.Add(1)
+	go p.reportStats()
 	go func() {
-		defer a.wg.Done()
+		defer p.wg.Done()
 		tick := time.NewTicker(bucketDuration)
 		defer tick.Stop()
-		a.run(tick.C)
+		p.run(tick.C)
 	}()
 }
 
 // Flush triggers a flush and waits for it to complete.
-func (a *aggregator) Flush() {
-	if atomic.LoadUint64(&a.stopped) > 0 {
+func (p *Processor) Flush() {
+	if atomic.LoadUint64(&p.stopped) > 0 {
 		return
 	}
 	done := make(chan struct{})
 	select {
-	case a.flushRequest <- done:
+	case p.flushRequest <- done:
 		<-done
-	case <-a.stop:
+	case <-p.stop:
 	}
 }
 
-func (a *aggregator) Stop() {
-	if atomic.SwapUint64(&a.stopped, 1) > 0 {
+func (p *Processor) Stop() {
+	if atomic.SwapUint64(&p.stopped, 1) > 0 {
 		return
 	}
-	close(a.stop)
-	a.wg.Wait()
+	close(p.stop)
+	p.wg.Wait()
 }
 
-func (a *aggregator) reportStats() {
+func (p *Processor) reportStats() {
 	for range time.NewTicker(time.Second * 10).C {
-		a.statsd.Count("datadog.datastreams.aggregator.payloads_in", atomic.SwapInt64(&a.stats.payloadsIn, 0), nil, 1)
-		a.statsd.Count("datadog.datastreams.aggregator.flushed_payloads", atomic.SwapInt64(&a.stats.flushedPayloads, 0), nil, 1)
-		a.statsd.Count("datadog.datastreams.aggregator.flushed_buckets", atomic.SwapInt64(&a.stats.flushedBuckets, 0), nil, 1)
-		a.statsd.Count("datadog.datastreams.aggregator.flush_errors", atomic.SwapInt64(&a.stats.flushErrors, 0), nil, 1)
-		a.statsd.Count("datadog.datastreams.dropped_payloads", atomic.SwapInt64(&a.stats.dropped, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.Processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.Processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.Processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.Processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
 	}
 }
 
-func (a *aggregator) flushBucket(buckets map[int64]bucket, bucketStart int64, timestampType TimestampType) StatsBucket {
+func (p *Processor) flushBucket(buckets map[int64]bucket, bucketStart int64, timestampType TimestampType) StatsBucket {
 	bucket := buckets[bucketStart]
 	delete(buckets, bucketStart)
 	return bucket.export(timestampType)
 }
 
-func (a *aggregator) flush(now time.Time) StatsPayload {
+func (p *Processor) flush(now time.Time) StatsPayload {
 	nowNano := now.UnixNano()
 	sp := StatsPayload{
-		Service:       a.service,
-		Env:           a.env,
-		PrimaryTag:    a.primaryTag,
+		Service:       p.service,
+		Env:           p.env,
 		Lang:          "go",
 		TracerVersion: version.Tag,
-		Stats:         make([]StatsBucket, 0, len(a.tsTypeCurrentBuckets)+len(a.tsTypeOriginBuckets)),
+		Stats:         make([]StatsBucket, 0, len(p.tsTypeCurrentBuckets)+len(p.tsTypeOriginBuckets)),
 	}
-	for ts := range a.tsTypeCurrentBuckets {
+	for ts := range p.tsTypeCurrentBuckets {
 		if ts > nowNano-bucketDuration.Nanoseconds() {
 			// do not flush the bucket at the current time
 			continue
 		}
-		sp.Stats = append(sp.Stats, a.flushBucket(a.tsTypeCurrentBuckets, ts, TimestampTypeCurrent))
+		sp.Stats = append(sp.Stats, p.flushBucket(p.tsTypeCurrentBuckets, ts, TimestampTypeCurrent))
 	}
-	for ts := range a.tsTypeOriginBuckets {
+	for ts := range p.tsTypeOriginBuckets {
 		if ts > nowNano-bucketDuration.Nanoseconds() {
 			// do not flush the bucket at the current time
 			continue
 		}
-		sp.Stats = append(sp.Stats, a.flushBucket(a.tsTypeOriginBuckets, ts, TimestampTypeOrigin))
+		sp.Stats = append(sp.Stats, p.flushBucket(p.tsTypeOriginBuckets, ts, TimestampTypeOrigin))
 	}
 	return sp
 }
 
-func (a *aggregator) sendToAgent(payload StatsPayload) {
-	atomic.AddInt64(&a.stats.flushedPayloads, 1)
-	atomic.AddInt64(&a.stats.flushedBuckets, int64(len(payload.Stats)))
-	if err := a.transport.sendPipelineStats(&payload); err != nil {
-		atomic.AddInt64(&a.stats.flushErrors, 1)
+func (p *Processor) sendToAgent(payload StatsPayload) {
+	atomic.AddInt64(&p.stats.flushedPayloads, 1)
+	atomic.AddInt64(&p.stats.flushedBuckets, int64(len(payload.Stats)))
+	if err := p.transport.sendPipelineStats(&payload); err != nil {
+		atomic.AddInt64(&p.stats.flushErrors, 1)
+	}
+}
+
+func (p *Processor) SetCheckpoint(ctx context.Context, edgeTags ...string) (dsminterface.Pathway, context.Context) {
+	parent := PathwayFromContext(ctx)
+	parentHash := uint64(0)
+	now := p.time()
+	pathwayStart := now
+	edgeStart := now
+	if parent != nil {
+		pathwayStart = parent.PathwayStart()
+		edgeStart = parent.EdgeStart()
+		parentHash = parent.GetHash()
+	}
+	child := Pathway{
+		hash:         pathwayHash(nodeHash(p.service, p.env, edgeTags), parentHash),
+		pathwayStart: pathwayStart,
+		edgeStart:    now,
+	}
+	select {
+	case p.in <- statsPoint{
+		edgeTags:       edgeTags,
+		parentHash:     parentHash,
+		hash:           child.hash,
+		timestamp:      now.UnixNano(),
+		pathwayLatency: now.Sub(pathwayStart).Nanoseconds(),
+		edgeLatency:    now.Sub(edgeStart).Nanoseconds(),
+	}:
+	default:
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
+	return child, ContextWithPathway(ctx, child)
+}
+func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
+	select {
+	case p.inKafka <- kafkaOffset{
+		offset:     offset,
+		group:      group,
+		topic:      topic,
+		partition:  partition,
+		offsetType: commitOffset,
+		timestamp:  p.time().UnixNano(),
+	}:
+	default:
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
+}
+
+func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
+	select {
+	case p.inKafka <- kafkaOffset{
+		offset:     offset,
+		topic:      topic,
+		partition:  partition,
+		offsetType: produceOffset,
+		timestamp:  p.time().UnixNano(),
+	}:
+	default:
+		atomic.AddInt64(&p.stats.dropped, 1)
 	}
 }

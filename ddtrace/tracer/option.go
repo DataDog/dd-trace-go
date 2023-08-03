@@ -188,7 +188,7 @@ type config struct {
 
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
-	statsdClient statsdClient
+	statsdClient internal.StatsdClient
 
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to a single span without affecting the entire trace
@@ -235,6 +235,9 @@ type config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+
+	// enableDataStreamsMonitoring enables monitoring of data streams
+	enableDataStreamsMonitoring bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -311,6 +314,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.enableDataStreamsMonitoring = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -450,7 +454,7 @@ func newConfig(opts ...StartOption) *config {
 	return c
 }
 
-func newStatsdClient(c *config) (statsdClient, error) {
+func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
@@ -526,6 +530,10 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
+	// DataStreams reports whether the agent can receive data streams stats on
+	// the /v0.1/pipeline_stats endpoint.
+	DataStreams bool
+
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -575,6 +583,8 @@ func (c *config) loadAgentFeatures() {
 		switch endpoint {
 		case "/v0.6/stats":
 			c.agent.Stats = true
+		case "/v0.1/pipeline_stats":
+			c.agent.DataStreams = true
 		}
 	}
 	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))

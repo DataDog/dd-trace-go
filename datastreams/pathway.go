@@ -12,8 +12,9 @@ import (
 	"math/rand"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 )
 
 var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "topic": {}, "type": {}, "direction": {}}
@@ -38,7 +39,7 @@ type Pathway struct {
 // Merge merges multiple pathways into one.
 // The current implementation samples one resulting Pathway. A future implementation could be more clever
 // and actually merge the Pathways.
-func Merge(pathways []Pathway) Pathway {
+func Merge(pathways []dsminterface.Pathway) dsminterface.Pathway {
 	if len(pathways) == 0 {
 		return Pathway{}
 	}
@@ -58,13 +59,11 @@ func isWellFormedEdgeTag(t string) bool {
 	return false
 }
 
-func nodeHash(service, env, primaryTag string, edgeTags []string) uint64 {
+func nodeHash(service, env string, edgeTags []string) uint64 {
 	h := fnv.New64()
 	sort.Strings(edgeTags)
-	fmt.Printf("service %s, env %s, primary tag %s, edge tags %v\n", service, env, primaryTag, edgeTags)
 	h.Write([]byte(service))
 	h.Write([]byte(env))
-	h.Write([]byte(primaryTag))
 	for _, t := range edgeTags {
 		if isWellFormedEdgeTag(t) {
 			h.Write([]byte(t))
@@ -84,58 +83,15 @@ func pathwayHash(nodeHash, parentHash uint64) uint64 {
 	return h.Sum64()
 }
 
-// NewPathway creates a new pathway.
-func NewPathway(edgeTags ...string) Pathway {
-	return newPathway(time.Now(), edgeTags...)
-}
-
-func newPathway(now time.Time, edgeTags ...string) Pathway {
-	p := Pathway{
-		hash:         0,
-		pathwayStart: now,
-		edgeStart:    now,
-	}
-	return p.setCheckpoint(now, edgeTags)
-}
-
 // GetHash gets the hash of a pathway.
 func (p Pathway) GetHash() uint64 {
 	return p.hash
 }
 
-// SetCheckpoint sets a checkpoint on a pathway.
-func (p Pathway) SetCheckpoint(edgeTags ...string) Pathway {
-	return p.setCheckpoint(time.Now(), edgeTags)
+// PathwayStart returns the start timestamp of the pathway
+func (p Pathway) PathwayStart() time.Time {
+	return p.pathwayStart
 }
-
-func (p Pathway) setCheckpoint(now time.Time, edgeTags []string) Pathway {
-	aggr := getGlobalAggregator()
-	service := defaultServiceName
-	primaryTag := ""
-	env := ""
-	if aggr != nil {
-		service = aggr.service
-		primaryTag = aggr.primaryTag
-		env = aggr.env
-	}
-	child := Pathway{
-		hash:         pathwayHash(nodeHash(service, env, primaryTag, edgeTags), p.hash),
-		pathwayStart: p.pathwayStart,
-		edgeStart:    now,
-	}
-	if aggregator := getGlobalAggregator(); aggregator != nil {
-		select {
-		case aggregator.in <- statsPoint{
-			edgeTags:       edgeTags,
-			parentHash:     p.hash,
-			hash:           child.hash,
-			timestamp:      now.UnixNano(),
-			pathwayLatency: now.Sub(p.pathwayStart).Nanoseconds(),
-			edgeLatency:    now.Sub(p.edgeStart).Nanoseconds(),
-		}:
-		default:
-			atomic.AddInt64(&aggregator.stats.dropped, 1)
-		}
-	}
-	return child
+func (p Pathway) EdgeStart() time.Time {
+	return p.edgeStart
 }

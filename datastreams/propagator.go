@@ -6,6 +6,7 @@
 package datastreams
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -30,23 +31,23 @@ func (p Pathway) Encode() []byte {
 }
 
 // Decode decodes a pathway
-func Decode(data []byte) (p Pathway, err error) {
+func Decode(ctx context.Context, data []byte) (p Pathway, outCtx context.Context, err error) {
 	if len(data) < 8 {
-		return p, errors.New("hash smaller than 8 bytes")
+		return p, ctx, errors.New("hash smaller than 8 bytes")
 	}
 	p.hash = binary.LittleEndian.Uint64(data)
 	data = data[8:]
 	pathwayStart, err := encoding.DecodeVarint64(&data)
 	if err != nil {
-		return p, err
+		return p, ctx, err
 	}
 	edgeStart, err := encoding.DecodeVarint64(&data)
 	if err != nil {
-		return p, err
+		return p, ctx, err
 	}
 	p.pathwayStart = time.Unix(0, pathwayStart*int64(time.Millisecond))
 	p.edgeStart = time.Unix(0, edgeStart*int64(time.Millisecond))
-	return p, nil
+	return p, ContextWithPathway(ctx, p), nil
 }
 
 // EncodeStr encodes a pathway context into a string using base64 encoding.
@@ -56,10 +57,10 @@ func (p Pathway) EncodeStr() string {
 }
 
 // DecodeStr decodes a pathway context from a string using base64 encoding.
-func DecodeStr(str string) (p Pathway, err error) {
+func DecodeStr(ctx context.Context, str string) (p Pathway, outCtx context.Context, err error) {
 	data, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
-		return p, err
+		return p, ctx, err
 	}
-	return Decode(data)
+	return Decode(ctx, data)
 }

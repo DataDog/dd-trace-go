@@ -6,6 +6,7 @@
 package datastreams
 
 import (
+	"context"
 	"hash/fnv"
 	"testing"
 	"time"
@@ -15,29 +16,27 @@ import (
 
 func TestPathway(t *testing.T) {
 	t.Run("test SetCheckpoint", func(t *testing.T) {
-		aggregator := aggregator{
+		start := time.Now()
+		processor := Processor{
 			stopped:    1,
 			in:         make(chan statsPoint, 10),
 			service:    "service-1",
 			env:        "env",
-			primaryTag: "d:1",
+			timeSource: func() time.Time { return start },
 		}
-		setGlobalAggregator(&aggregator)
-		defer setGlobalAggregator(nil)
-		start := time.Now()
+		_, ctx := processor.SetCheckpoint(context.Background())
 		middle := start.Add(time.Hour)
+		processor.timeSource = func() time.Time { return middle }
+		_, ctx = processor.SetCheckpoint(ctx, "edge-1")
 		end := middle.Add(time.Hour)
-		p := newPathway(start)
-		p = p.setCheckpoint(middle, []string{"edge-1"})
-		p = p.setCheckpoint(end, []string{"edge-2"})
-		hash1 := pathwayHash(nodeHash("service-1", "env", "d:1", nil), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", "d:1", []string{"edge-1"}), hash1)
-		hash3 := pathwayHash(nodeHash("service-1", "env", "d:1", []string{"edge-2"}), hash2)
-		assert.Equal(t, Pathway{
-			hash:         hash3,
-			pathwayStart: start,
-			edgeStart:    end,
-		}, p)
+		processor.timeSource = func() time.Time { return end }
+		p, ctx := processor.SetCheckpoint(ctx, "edge-2")
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"edge-1"}), hash1)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"edge-2"}), hash2)
+		assert.Equal(t, hash3, p.GetHash())
+		assert.Equal(t, start, p.PathwayStart())
+		assert.Equal(t, end, p.EdgeStart())
 		assert.Equal(t, statsPoint{
 			edgeTags:       nil,
 			hash:           hash1,
@@ -45,7 +44,7 @@ func TestPathway(t *testing.T) {
 			timestamp:      start.UnixNano(),
 			pathwayLatency: 0,
 			edgeLatency:    0,
-		}, <-aggregator.in)
+		}, <-processor.in)
 		assert.Equal(t, statsPoint{
 			edgeTags:       []string{"edge-1"},
 			hash:           hash2,
@@ -53,7 +52,7 @@ func TestPathway(t *testing.T) {
 			timestamp:      middle.UnixNano(),
 			pathwayLatency: middle.Sub(start).Nanoseconds(),
 			edgeLatency:    middle.Sub(start).Nanoseconds(),
-		}, <-aggregator.in)
+		}, <-processor.in)
 		assert.Equal(t, statsPoint{
 			edgeTags:       []string{"edge-2"},
 			hash:           hash3,
@@ -61,34 +60,32 @@ func TestPathway(t *testing.T) {
 			timestamp:      end.UnixNano(),
 			pathwayLatency: end.Sub(start).Nanoseconds(),
 			edgeLatency:    end.Sub(middle).Nanoseconds(),
-		}, <-aggregator.in)
+		}, <-processor.in)
 	})
 
-	t.Run("test NewPathway", func(t *testing.T) {
-		aggregator := aggregator{
+	t.Run("test new pathway creation", func(t *testing.T) {
+		processor := Processor{
 			stopped:    1,
 			in:         make(chan statsPoint, 10),
 			service:    "service-1",
 			env:        "env",
-			primaryTag: "d:1",
+			timeSource: time.Now,
 		}
-		setGlobalAggregator(&aggregator)
-		defer setGlobalAggregator(nil)
 
-		pathwayWithNoEdgeTags := NewPathway()
-		pathwayWith1EdgeTag := NewPathway("type:internal")
-		pathwayWith2EdgeTags := NewPathway("type:internal", "some_other_key:some_other_val")
+		pathwayWithNoEdgeTags, _ := processor.SetCheckpoint(context.Background())
+		pathwayWith1EdgeTag, _ := processor.SetCheckpoint(context.Background(), "type:internal")
+		pathwayWith2EdgeTags, _ := processor.SetCheckpoint(context.Background(), "type:internal", "some_other_key:some_other_val")
 
-		hash1 := pathwayHash(nodeHash("service-1", "env", "d:1", nil), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", "d:1", []string{"type:internal"}), 0)
-		hash3 := pathwayHash(nodeHash("service-1", "env", "d:1", []string{"type:internal", "some_other_key:some_other_val"}), 0)
-		assert.Equal(t, hash1, pathwayWithNoEdgeTags.hash)
-		assert.Equal(t, hash2, pathwayWith1EdgeTag.hash)
-		assert.Equal(t, hash3, pathwayWith2EdgeTags.hash)
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}), 0)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal", "some_other_key:some_other_val"}), 0)
+		assert.Equal(t, hash1, pathwayWithNoEdgeTags.GetHash())
+		assert.Equal(t, hash2, pathwayWith1EdgeTag.GetHash())
+		assert.Equal(t, hash3, pathwayWith2EdgeTags.GetHash())
 
-		var statsPointWithNoEdgeTags = <-aggregator.in
-		var statsPointWith1EdgeTag = <-aggregator.in
-		var statsPointWith2EdgeTags = <-aggregator.in
+		var statsPointWithNoEdgeTags = <-processor.in
+		var statsPointWith1EdgeTag = <-processor.in
+		var statsPointWith2EdgeTags = <-processor.in
 		assert.Equal(t, hash1, statsPointWithNoEdgeTags.hash)
 		assert.Equal(t, []string(nil), statsPointWithNoEdgeTags.edgeTags)
 		assert.Equal(t, hash2, statsPointWith1EdgeTag.hash)
@@ -99,28 +96,28 @@ func TestPathway(t *testing.T) {
 
 	t.Run("test nodeHash", func(t *testing.T) {
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", "d:1", []string{"type:internal"}),
-			nodeHash("service-1", "env", "d:1", []string{"type:kafka"}),
+			nodeHash("service-1", "env", []string{"type:internal"}),
+			nodeHash("service-1", "env", []string{"type:kafka"}),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", "d:1", []string{"exchange:1"}),
-			nodeHash("service-1", "env", "d:1", []string{"exchange:2"}),
+			nodeHash("service-1", "env", []string{"exchange:1"}),
+			nodeHash("service-1", "env", []string{"exchange:2"}),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", "d:1", []string{"topic:1"}),
-			nodeHash("service-1", "env", "d:1", []string{"topic:2"}),
+			nodeHash("service-1", "env", []string{"topic:1"}),
+			nodeHash("service-1", "env", []string{"topic:2"}),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", "d:1", []string{"group:1"}),
-			nodeHash("service-1", "env", "d:1", []string{"group:2"}),
+			nodeHash("service-1", "env", []string{"group:1"}),
+			nodeHash("service-1", "env", []string{"group:2"}),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", "d:1", []string{"event_type:1"}),
-			nodeHash("service-1", "env", "d:1", []string{"event_type:2"}),
+			nodeHash("service-1", "env", []string{"event_type:1"}),
+			nodeHash("service-1", "env", []string{"event_type:2"}),
 		)
 		assert.Equal(t,
-			nodeHash("service-1", "env", "d:1", []string{"partition:0"}),
-			nodeHash("service-1", "env", "d:1", []string{"partition:1"}),
+			nodeHash("service-1", "env", []string{"partition:0"}),
+			nodeHash("service-1", "env", []string{"partition:1"}),
 		)
 	})
 
@@ -163,7 +160,7 @@ func TestPathway(t *testing.T) {
 	})
 
 	t.Run("test GetHash", func(t *testing.T) {
-		pathway := NewPathway("type:kafka", "topic:my-topic", "direction:in")
+		pathway := Pathway{hash: nodeHash("service", "env", []string{"direction:in"})}
 		assert.Equal(t, pathway.hash, pathway.GetHash())
 	})
 }
@@ -177,9 +174,8 @@ func TestPathway(t *testing.T) {
 func BenchmarkNodeHash(b *testing.B) {
 	service := "benchmark-runner"
 	env := "test"
-	primaryTag := "foo:bar"
 	edgeTags := []string{"event_type:dog", "exchange:local", "group:all", "topic:off", "type:writer"}
 	for i := 0; i < b.N; i++ {
-		nodeHash(service, env, primaryTag, edgeTags)
+		nodeHash(service, env, edgeTags)
 	}
 }
