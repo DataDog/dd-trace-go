@@ -51,45 +51,45 @@ func (n *listNode[T]) String() string {
 	return fmt.Sprintf("[%v]", n.Element)
 }
 
-func (l *BLList[T]) Extend() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+func (b *BLList[T]) Extend() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	n := &listNode[*LList[T]]{
 		Element: &LList[T]{},
 		Next:    nil,
 	}
-	if l.head == nil {
-		l.head = n
-		l.tail = n
+	if b.head == nil {
+		b.head = n
+		b.tail = n
 		return
 	}
-	l.tail.Next = n
-	l.tail = n
+	b.tail.Next = n
+	b.tail = n
 }
 
-func (l *BLList[T]) RemoveTail() {
-	n := l.head
+func (b *BLList[T]) RemoveTail() {
+	n := b.head
 	if n == nil || n.Next == nil {
-		l.head = nil
+		b.head = nil
 		return
 	}
 	for n.Next.Next != nil {
 		n = n.Next
 	}
 	n.Next = nil
-	l.tail = n
+	b.tail = n
 }
 
-func (l *BLList[T]) RemoveBucket(b *listNode[*LList[T]]) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if b.Next != nil {
-		n := b.Next
-		b.Element = n.Element
-		b.Next = n.Next
+func (b *BLList[T]) RemoveBucket(l *listNode[*LList[T]]) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if l.Next != nil {
+		n := l.Next
+		l.Element = n.Element
+		l.Next = n.Next
 		return
 	}
-	l.RemoveTail()
+	b.RemoveTail()
 }
 
 func (l *LList[T]) Append(e T) {
