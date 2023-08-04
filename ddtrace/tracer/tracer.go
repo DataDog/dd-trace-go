@@ -104,6 +104,9 @@ type tracer struct {
 
 	// cOut receives spans when they finish to be removed from openSpans
 	cOut chan *span
+
+	// cPrint signals the tracer to print out all open spans
+	cPrint chan struct{}
 }
 
 const (
@@ -283,6 +286,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.openSpans = BLList[*span]{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
+		t.cPrint = make(chan struct{})
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
@@ -710,5 +714,5 @@ func PrintOpenSpans() {
 		log.Warn("Debugging open spans is not enabled")
 		return
 	}
-	log.Warn("Remaining open spans: %s", t.openSpans.String())
+	t.cPrint <- struct{}{}
 }

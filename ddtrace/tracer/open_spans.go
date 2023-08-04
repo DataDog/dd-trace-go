@@ -8,20 +8,17 @@ package tracer
 import (
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type BLList[T comparable] struct {
-	mu   sync.Mutex
 	head *listNode[*LList[T]]
 	tail *listNode[*LList[T]]
 }
 
 type LList[T comparable] struct {
-	mu   sync.Mutex
 	head *listNode[T]
 	tail *listNode[T]
 }
@@ -32,8 +29,6 @@ type listNode[T comparable] struct {
 }
 
 func (b *BLList[T]) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	var sb strings.Builder
 	for e := b.head; e != nil; e = e.Next {
 		fmt.Fprintf(&sb, "%v", e.String())
@@ -42,8 +37,6 @@ func (b *BLList[T]) String() string {
 }
 
 func (l *LList[T]) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	var sb strings.Builder
 	for e := l.head; e != nil; e = e.Next {
 		fmt.Fprintf(&sb, "%v", e.String())
@@ -56,8 +49,6 @@ func (n *listNode[T]) String() string {
 }
 
 func (b *BLList[T]) Extend() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	n := &listNode[*LList[T]]{
 		Element: &LList[T]{},
 		Next:    nil,
@@ -85,8 +76,6 @@ func (b *BLList[T]) RemoveTail() {
 }
 
 func (b *BLList[T]) RemoveBucket(l *listNode[*LList[T]]) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	if l.Next != nil {
 		n := l.Next
 		l.Element = n.Element
@@ -97,8 +86,6 @@ func (b *BLList[T]) RemoveBucket(l *listNode[*LList[T]]) {
 }
 
 func (l *LList[T]) Append(e T) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	n := &listNode[T]{Element: e}
 	if l.head == nil {
 		l.head = n
@@ -110,8 +97,6 @@ func (l *LList[T]) Append(e T) {
 }
 
 func (l *LList[T]) Remove(e T) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	if l.head == nil {
 		return
 	}
@@ -141,6 +126,9 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 			b := t.openSpans.head
 			for b != nil {
 				e := b.Element.head
+				if e != nil && now()-e.Element.Start < interval.Nanoseconds() {
+					continue
+				}
 				for e != nil {
 					sp := e.Element
 					life := now() - sp.Start
@@ -183,6 +171,8 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 					break
 				}
 			}
+		case <-t.cPrint:
+			log.Warn("Remaining open spans: %s", t.openSpans.String())
 		case <-t.stop:
 			return
 		}

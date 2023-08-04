@@ -129,9 +129,8 @@ func TestReportOpenSpans(t *testing.T) {
 
 		s := tracer.StartSpan("operation")
 		sb.WriteString(fmt.Sprintf("[[%v]]", s))
-		time.Sleep(500 * time.Millisecond)
-
 		PrintOpenSpans()
+		time.Sleep(500 * time.Millisecond)
 
 		assert.Contains(tp.Logs(), sb.String())
 	})
