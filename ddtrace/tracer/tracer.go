@@ -698,3 +698,17 @@ func (t *tracer) hostname() string {
 	}
 	return hostname.Get()
 }
+
+func PrintOpenSpans() {
+	t, ok := internal.GetGlobalTracer().(*tracer)
+
+	if !ok {
+		log.Warn("Could not find active tracer")
+		return
+	}
+	if !t.config.debugOpenSpans {
+		log.Warn("Debugging open spans is not enabled")
+		return
+	}
+	log.Warn("Remaining open spans: %s", t.openSpans.String())
+}

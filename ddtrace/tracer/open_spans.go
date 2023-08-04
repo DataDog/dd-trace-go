@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +29,26 @@ type LList[T comparable] struct {
 type listNode[T comparable] struct {
 	Element T
 	Next    *listNode[T]
+}
+
+func (b *BLList[T]) String() string {
+	var sb strings.Builder
+	for e := b.head; e != nil; e = e.Next {
+		fmt.Fprintf(&sb, "%v", e.String())
+	}
+	return sb.String()
+}
+
+func (l *LList[T]) String() string {
+	var sb strings.Builder
+	for e := l.head; e != nil; e = e.Next {
+		fmt.Fprintf(&sb, "%v", e.String())
+	}
+	return sb.String()
+}
+
+func (n *listNode[T]) String() string {
+	return fmt.Sprintf("[%v]", n.Element)
 }
 
 func (l *BLList[T]) Extend() {
