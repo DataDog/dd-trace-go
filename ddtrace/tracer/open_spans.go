@@ -32,6 +32,8 @@ type listNode[T comparable] struct {
 }
 
 func (b *BLList[T]) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	var sb strings.Builder
 	for e := b.head; e != nil; e = e.Next {
 		fmt.Fprintf(&sb, "%v", e.String())
@@ -40,6 +42,8 @@ func (b *BLList[T]) String() string {
 }
 
 func (l *LList[T]) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	var sb strings.Builder
 	for e := l.head; e != nil; e = e.Next {
 		fmt.Fprintf(&sb, "%v", e.String())
