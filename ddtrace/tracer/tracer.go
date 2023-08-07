@@ -96,13 +96,13 @@ type tracer struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// openSpans holds a linked list of open spans for all traces.
-	openSpans BLList[*span]
+	// abandonedSpans holds a linked list of open spans for all traces.
+	abandonedSpans AbandonedList
 
-	// cIn receives spans when they are created to be added to openSpans
+	// cIn receives spans when they are created to be added to abandonedSpans
 	cIn chan *span
 
-	// cOut receives spans when they finish to be removed from openSpans
+	// cOut receives spans when they finish to be removed from abandonedSpans
 	cOut chan *span
 
 	// cPrint signals the tracer to print out all open spans
@@ -281,16 +281,16 @@ func newTracer(opts ...StartOption) *tracer {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.debugOpenSpans {
+	if c.debugAbandonedSpans {
 		log.Warn("Debug open spans enabled.")
-		t.openSpans = BLList[*span]{}
+		t.abandonedSpans = AbandonedList{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
 		t.cPrint = make(chan struct{})
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
-			t.reportOpenSpans(t.config.spanTimeout)
+			t.reportAbandonedSpans(t.config.spanTimeout)
 		}()
 	}
 	t.wg.Add(1)
@@ -563,7 +563,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
-	if t.config.debugOpenSpans {
+	if t.config.debugAbandonedSpans {
 		t.cIn <- span
 	}
 	return span
@@ -703,14 +703,14 @@ func (t *tracer) hostname() string {
 	return hostname.Get()
 }
 
-func PrintOpenSpans() {
+func PrintAbandonedSpans() {
 	t, ok := internal.GetGlobalTracer().(*tracer)
 
 	if !ok {
 		log.Warn("Could not find active tracer")
 		return
 	}
-	if !t.config.debugOpenSpans {
+	if !t.config.debugAbandonedSpans {
 		log.Warn("Debugging open spans is not enabled")
 		return
 	}

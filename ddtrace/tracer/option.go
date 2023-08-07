@@ -227,12 +227,13 @@ type config struct {
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
 
-	// debugOpenSpans controls if the tracer should log when old, open spans are found
-	debugOpenSpans bool
+	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
+	debugAbandonedSpans bool
 
 	// spanTimeout represents how old a span can be before it should be logged as a possible
 	// misconfiguration
 	spanTimeout time.Duration
+
 	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
 	// partial flush, or 0 if partial flushing is disabled.
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
@@ -317,7 +318,10 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
-	c.debugOpenSpans = internal.BoolEnv("DD_TRACE_DEBUG_OPEN_SPANS", false)
+	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	if c.debugAbandonedSpans {
+		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	}
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -453,10 +457,6 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
-	if c.debugOpenSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_OPEN_SPAN_TIMEOUT", time.Second)
-	}
-
 	return c
 }
 
@@ -1002,10 +1002,17 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 	}
 }
 
-// WithDebugSpansMode enables or disables the debug mode for logging open spans.
-func WithDebugSpansMode() StartOption {
+// WithDebugSpansMode enables debugging old spans that may have been
+// abandoned, which may prevent traces from being set to the Datadog
+// Agent, especially if partial flushing is off.
+// This setting can also be configured by setting DD_TRACE_DEBUG_ABANDONED_SPANS
+// to true. The timeout will default to 10 minutes, unless overwritten
+// by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
+// This feature is disabled by default.
+func WithDebugSpansMode(timeout time.Duration) StartOption {
 	return func(c *config) {
-		c.debugOpenSpans = true
+		c.debugAbandonedSpans = true
+		c.spanTimeout = timeout
 	}
 }
 

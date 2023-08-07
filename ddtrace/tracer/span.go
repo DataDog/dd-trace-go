@@ -516,7 +516,7 @@ func (s *span) finish(finishTime int64) {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
-		if t.config.debugOpenSpans {
+		if t.config.debugAbandonedSpans {
 			t.cOut <- s
 		}
 	}

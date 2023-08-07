@@ -7,7 +7,6 @@ package tracer
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,21 +18,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestReportOpenSpans(t *testing.T) {
+func TestReportAbandonedSpans(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 
-	os.Setenv("DD_TRACE_OPEN_SPAN_TIMEOUT", fmt.Sprint(100*time.Millisecond))
-	defer os.Unsetenv("DD_TRACE_OPEN_SPAN_TIMEOUT")
-	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode())
+	tickerInterval = 100 * time.Millisecond
+	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 	defer stop()
 
-	tp.Reset()
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 
 	t.Run("on", func(t *testing.T) {
-		assert.True(tracer.config.debugOpenSpans)
-		assert.Equal(tracer.config.spanTimeout, 100*time.Millisecond)
+		assert.True(tracer.config.debugAbandonedSpans)
+		assert.Equal(tracer.config.spanTimeout, 500*time.Millisecond)
 	})
 
 	t.Run("finished", func(t *testing.T) {
@@ -78,7 +75,7 @@ func TestReportOpenSpans(t *testing.T) {
 				expected = append(expected, e)
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 		for _, e := range expected {
 			assert.Contains(tp.Logs(), e)
 		}
@@ -90,14 +87,14 @@ func TestReportOpenSpans(t *testing.T) {
 
 		for i := 0; i < 5; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i))
-			time.Sleep(150 * time.Millisecond)
 			s.Finish()
 		}
 		for i := 0; i < 5; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i))
 			expected = append(expected, fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID()))
-			time.Sleep(150 * time.Millisecond)
 		}
+
+		time.Sleep(time.Second)
 
 		for _, e := range expected {
 			assert.Contains(tp.Logs(), e)
@@ -106,8 +103,7 @@ func TestReportOpenSpans(t *testing.T) {
 
 	t.Run("wait", func(t *testing.T) {
 		tp.Reset()
-		os.Setenv("DD_TRACE_OPEN_SPAN_TIMEOUT", fmt.Sprint(500*time.Millisecond))
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode())
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 
 		s := tracer.StartSpan("operation")
@@ -121,22 +117,21 @@ func TestReportOpenSpans(t *testing.T) {
 
 	t.Run("print", func(t *testing.T) {
 		tp.Reset()
-		os.Setenv("DD_TRACE_OPEN_SPAN_TIMEOUT", fmt.Sprint(500*time.Millisecond))
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode())
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Datadog Tracer %v WARN: Remaining open spans: ", version.Tag))
 
 		s := tracer.StartSpan("operation")
-		sb.WriteString(fmt.Sprintf("[[%v]]", s))
-		PrintOpenSpans()
-		time.Sleep(500 * time.Millisecond)
+		sb.WriteString(fmt.Sprintf("[[%v],],", s))
+		PrintAbandonedSpans()
+		time.Sleep(time.Second)
 
 		assert.Contains(tp.Logs(), sb.String())
 	})
 }
 
-func TestDebugOpenSpansOff(t *testing.T) {
+func TestDebugAbandonedSpansOff(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 	tracer, _, _, stop := startTestTracer(t, WithLogger(tp))
@@ -146,11 +141,11 @@ func TestDebugOpenSpansOff(t *testing.T) {
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 
 	t.Run("default", func(t *testing.T) {
-		assert.False(tracer.config.debugOpenSpans)
+		assert.False(tracer.config.debugAbandonedSpans)
 		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
 		s := tracer.StartSpan("operation")
-		PrintOpenSpans()
-		time.Sleep(2 * time.Second)
+		PrintAbandonedSpans()
+		time.Sleep(time.Second)
 		expected := fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
 		assert.NotContains(tp.Logs(), expected)
 		assert.Contains(tp.Logs(), fmt.Sprintf("Datadog Tracer %v WARN: Debugging open spans is not enabled", version.Tag))

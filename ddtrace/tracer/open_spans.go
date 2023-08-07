@@ -13,99 +13,97 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type BLList[T comparable] struct {
-	head *listNode[*LList[T]]
-	tail *listNode[*LList[T]]
+type AbandonedList struct {
+	head *spansList
+	tail *spansList
 }
 
-type LList[T comparable] struct {
-	head *listNode[T]
-	tail *listNode[T]
+type spansList struct {
+	head *spanNode
+	tail *spanNode
+	Next *spansList
 }
 
-type listNode[T comparable] struct {
-	Element T
-	Next    *listNode[T]
+type spanNode struct {
+	Element *span
+	Next    *spanNode
 }
 
-func (b *BLList[T]) String() string {
+func (a *AbandonedList) String() string {
 	var sb strings.Builder
-	for e := b.head; e != nil; e = e.Next {
+	for e := a.head; e != nil; e = e.Next {
 		fmt.Fprintf(&sb, "%v", e.String())
 	}
 	return sb.String()
 }
 
-func (l *LList[T]) String() string {
+func (s *spansList) String() string {
 	var sb strings.Builder
-	for e := l.head; e != nil; e = e.Next {
-		fmt.Fprintf(&sb, "%v", e.String())
+	for e := s.head; e != nil; e = e.Next {
+		fmt.Fprintf(&sb, "[%v],", e.String())
 	}
 	return sb.String()
 }
 
-func (n *listNode[T]) String() string {
-	return fmt.Sprintf("[%v]", n.Element)
+func (s *spanNode) String() string {
+	return fmt.Sprintf("[%v],", s.Element)
 }
 
-func (b *BLList[T]) Extend() {
-	n := &listNode[*LList[T]]{
-		Element: &LList[T]{},
-		Next:    nil,
-	}
-	if b.head == nil {
-		b.head = n
-		b.tail = n
+func (a *AbandonedList) Extend() {
+	n := &spansList{}
+	if a.head == nil {
+		a.head = n
+		a.tail = n
 		return
 	}
-	b.tail.Next = n
-	b.tail = n
+	a.tail.Next = n
+	a.tail = n
 }
 
-func (b *BLList[T]) RemoveTail() {
-	n := b.head
+func (a *AbandonedList) RemoveTail() {
+	n := a.head
 	if n == nil || n.Next == nil {
-		b.head = nil
+		a.head = nil
 		return
 	}
 	for n.Next.Next != nil {
 		n = n.Next
 	}
 	n.Next = nil
-	b.tail = n
+	a.tail = n
 }
 
-func (b *BLList[T]) RemoveBucket(l *listNode[*LList[T]]) {
-	if l.Next != nil {
-		n := l.Next
-		l.Element = n.Element
-		l.Next = n.Next
+func (a *AbandonedList) RemoveBucket(s *spansList) {
+	if s.Next != nil {
+		n := s.Next
+		s.head = n.head
+		s.Next = n.Next
 		return
 	}
-	b.RemoveTail()
+	a.RemoveTail()
 }
 
-func (l *LList[T]) Append(e T) {
-	n := &listNode[T]{Element: e}
-	if l.head == nil {
-		l.head = n
-		l.tail = n
+func (s *spansList) Append(e *span) {
+	n := &spanNode{Element: e}
+	if s.head == nil {
+		s.head = n
+		s.tail = n
 		return
 	}
-	l.tail.Next = n
-	l.tail = n
+	s.tail.Next = n
+	s.tail = n
 }
 
-func (l *LList[T]) Remove(e T) {
-	if l.head == nil {
+func (s *spansList) Remove(e *span) {
+	if s.head == nil {
 		return
 	}
-	if l.head.Element == e {
-		l.head = l.head.Next
+	if s.head.Element == e {
+		s.head = s.head.Next
 		return
 	}
 
-	n := l.head
+	n := s.head
 	for n.Next != nil {
 		if n.Next.Element == e {
 			n.Next = n.Next.Next
@@ -115,18 +113,22 @@ func (l *LList[T]) Remove(e T) {
 	}
 }
 
-// reportOpenSpans periodically finds and reports old, open spans at
+var tickerInterval = time.Minute
+
+// reportAbandonedSpans periodically finds and reports old, open spans at
 // the given interval.
-func (t *tracer) reportOpenSpans(interval time.Duration) {
-	tick := time.NewTicker(interval)
+func (t *tracer) reportAbandonedSpans(interval time.Duration) {
+	tick := time.NewTicker(tickerInterval)
 	defer tick.Stop()
 	for {
 		select {
 		case <-tick.C:
-			b := t.openSpans.head
-			for b != nil {
-				e := b.Element.head
-				if e != nil && now()-e.Element.Start < interval.Nanoseconds() {
+			for b := t.abandonedSpans.head; b != nil; b = b.Next {
+				e := b.head
+				if e == nil || e.Element == nil {
+					continue
+				}
+				if now()-e.Element.Start < interval.Nanoseconds() {
 					continue
 				}
 				for e != nil {
@@ -139,40 +141,39 @@ func (t *tracer) reportOpenSpans(interval time.Duration) {
 						break
 					}
 				}
-				b = b.Next
 			}
 		case s := <-t.cIn:
-			e := t.openSpans.head
+			e := t.abandonedSpans.head
 			for e != nil {
-				sp := e.Element.head
+				sp := e.head
 				if sp == nil || sp.Element == nil {
-					e.Element = &LList[*span]{}
-					e.Element.Append(s)
+					e = &spansList{}
+					e.Append(s)
 					break
 				}
 				if s.Start-sp.Element.Start <= interval.Nanoseconds() {
-					e.Element.Append(s)
+					e.Append(s)
 					break
 				}
 				e = e.Next
 			}
-			t.openSpans.Extend()
-			t.openSpans.tail.Element.Append(s)
+			t.abandonedSpans.Extend()
+			t.abandonedSpans.tail.Append(s)
 		case s := <-t.cOut:
-			for e := t.openSpans.head; e != nil; e = e.Next {
-				if e.Element.head == nil {
+			for e := t.abandonedSpans.head; e != nil; e = e.Next {
+				if e.head == nil || e.head.Element == nil {
 					continue
 				}
-				if s.Start-e.Element.head.Element.Start <= interval.Nanoseconds() {
-					e.Element.Remove(s)
-					if e.Element.head == nil {
-						t.openSpans.RemoveBucket(e)
+				if s.Start-e.head.Element.Start <= interval.Nanoseconds() {
+					e.Remove(s)
+					if e.head == nil {
+						t.abandonedSpans.RemoveBucket(e)
 					}
 					break
 				}
 			}
 		case <-t.cPrint:
-			log.Warn("Remaining open spans: %s", t.openSpans.String())
+			log.Warn("Remaining open spans: %s", t.abandonedSpans.String())
 		case <-t.stop:
 			return
 		}

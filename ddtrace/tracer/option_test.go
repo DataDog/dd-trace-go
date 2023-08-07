@@ -738,28 +738,29 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("debug-open-spans", func(t *testing.T) {
 		t.Run("defaults", func(t *testing.T) {
 			c := newConfig()
-			assert.Equal(t, false, c.debugOpenSpans)
+			assert.Equal(t, false, c.debugAbandonedSpans)
 			assert.Equal(t, time.Duration(0), c.spanTimeout)
 		})
 
 		t.Run("debug-on", func(t *testing.T) {
-			t.Setenv("DD_TRACE_DEBUG_OPEN_SPANS", "true")
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
 			c := newConfig()
-			assert.Equal(t, true, c.debugOpenSpans)
-			assert.Equal(t, time.Second, c.spanTimeout)
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, 10*time.Minute, c.spanTimeout)
 		})
 
 		t.Run("timeout-set", func(t *testing.T) {
-			t.Setenv("DD_TRACE_DEBUG_OPEN_SPANS", "true")
-			t.Setenv("DD_TRACE_OPEN_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			t.Setenv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
 			c := newConfig()
-			assert.Equal(t, true, c.debugOpenSpans)
+			assert.Equal(t, true, c.debugAbandonedSpans)
 			assert.Equal(t, time.Minute, c.spanTimeout)
 		})
 
 		t.Run("with-function", func(t *testing.T) {
-			c := newConfig(WithDebugSpansMode())
-			assert.Equal(t, true, c.debugOpenSpans)
+			c := newConfig()
+			WithDebugSpansMode(time.Second)(c)
+			assert.Equal(t, true, c.debugAbandonedSpans)
 			assert.Equal(t, time.Second, c.spanTimeout)
 		})
 	})
