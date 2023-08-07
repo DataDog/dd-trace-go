@@ -96,7 +96,7 @@ type tracer struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// abandonedSpans holds a linked list of open spans for all traces.
+	// abandonedSpans holds a linked list of potentially abandoned spans for all traces.
 	abandonedSpans AbandonedList
 
 	// cIn receives spans when they are created to be added to abandonedSpans

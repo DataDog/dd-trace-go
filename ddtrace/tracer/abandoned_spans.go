@@ -115,8 +115,8 @@ func (s *spansList) Remove(e *span) {
 
 var tickerInterval = time.Minute
 
-// reportAbandonedSpans periodically finds and reports old, open spans at
-// the given interval.
+// reportAbandonedSpans periodically finds and reports potentially
+// abandoned spans that are older than the given interval
 func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	tick := time.NewTicker(tickerInterval)
 	defer tick.Stop()
