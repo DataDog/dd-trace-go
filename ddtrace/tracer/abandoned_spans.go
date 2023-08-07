@@ -40,13 +40,17 @@ func (a *AbandonedList) String() string {
 func (s *spansList) String() string {
 	var sb strings.Builder
 	for e := s.head; e != nil; e = e.Next {
-		fmt.Fprintf(&sb, "[%v],", e.String())
+		fmt.Fprintf(&sb, "%v", e.String())
 	}
 	return sb.String()
 }
 
 func (s *spanNode) String() string {
-	return fmt.Sprintf("[%v],", s.Element)
+	sp := s.Element
+	if sp == nil {
+		return "[],"
+	}
+	return fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", sp.Name, sp.SpanID, sp.TraceID)
 }
 
 func (a *AbandonedList) Extend() {
@@ -107,6 +111,9 @@ func (s *spansList) Remove(e *span) {
 	for n.Next != nil {
 		if n.Next.Element == e {
 			n.Next = n.Next.Next
+			if n.Next == nil {
+				s.tail = n
+			}
 			return
 		}
 		n = n.Next
@@ -157,6 +164,9 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				}
 				e = e.Next
 			}
+			if e != nil {
+				break
+			}
 			t.abandonedSpans.Extend()
 			t.abandonedSpans.tail.Append(s)
 		case s := <-t.cOut:
@@ -172,9 +182,8 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 					break
 				}
 			}
-		case <-t.cPrint:
-			log.Warn("Remaining open spans: %s", t.abandonedSpans.String())
 		case <-t.stop:
+			log.Warn("Abandoned Spans: %s", t.abandonedSpans.String())
 			return
 		}
 	}

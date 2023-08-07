@@ -104,9 +104,6 @@ type tracer struct {
 
 	// cOut receives spans when they finish to be removed from abandonedSpans
 	cOut chan *span
-
-	// cPrint signals the tracer to print out all open spans
-	cPrint chan struct{}
 }
 
 const (
@@ -286,7 +283,6 @@ func newTracer(opts ...StartOption) *tracer {
 		t.abandonedSpans = AbandonedList{}
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
-		t.cPrint = make(chan struct{})
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
@@ -701,18 +697,4 @@ func (t *tracer) hostname() string {
 		return ""
 	}
 	return hostname.Get()
-}
-
-func PrintAbandonedSpans() {
-	t, ok := internal.GetGlobalTracer().(*tracer)
-
-	if !ok {
-		log.Warn("Could not find active tracer")
-		return
-	}
-	if !t.config.debugAbandonedSpans {
-		log.Warn("Debugging open spans is not enabled")
-		return
-	}
-	t.cPrint <- struct{}{}
 }

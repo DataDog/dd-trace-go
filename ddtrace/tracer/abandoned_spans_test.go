@@ -66,14 +66,14 @@ func TestReportAbandonedSpans(t *testing.T) {
 		tp.Reset()
 		expected := []string{}
 		for i := 0; i < 10; i++ {
-			s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
-			e := fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i))
 			if i%2 == 0 {
 				s.Finish()
-				time.Sleep(200 * time.Millisecond)
 			} else {
+				e := fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
 				expected = append(expected, e)
 			}
+			time.Sleep(200 * time.Millisecond)
 		}
 		time.Sleep(time.Second)
 		for _, e := range expected {
@@ -88,10 +88,12 @@ func TestReportAbandonedSpans(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i))
 			s.Finish()
+			time.Sleep(150 * time.Millisecond)
 		}
 		for i := 0; i < 5; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i))
 			expected = append(expected, fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID()))
+			time.Sleep(150 * time.Millisecond)
 		}
 
 		time.Sleep(time.Second)
@@ -99,6 +101,22 @@ func TestReportAbandonedSpans(t *testing.T) {
 		for _, e := range expected {
 			assert.Contains(tp.Logs(), e)
 		}
+	})
+
+	t.Run("stop", func(t *testing.T) {
+		tp.Reset()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond))
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Datadog Tracer %v WARN: ", version.Tag))
+		sb.WriteString("Abandoned Spans: ")
+
+		for i := 0; i < 5; i++ {
+			s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
+			sb.WriteString(fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", s.Name, s.SpanID, s.TraceID))
+		}
+		stop()
+		time.Sleep(time.Second)
+		assert.Contains(tp.Logs(), sb.String())
 	})
 
 	t.Run("wait", func(t *testing.T) {
@@ -113,21 +131,6 @@ func TestReportAbandonedSpans(t *testing.T) {
 		time.Sleep(time.Second)
 		assert.Contains(tp.Logs(), expected)
 		s.Finish()
-	})
-
-	t.Run("print", func(t *testing.T) {
-		tp.Reset()
-		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
-		defer stop()
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Datadog Tracer %v WARN: Remaining open spans: ", version.Tag))
-
-		s := tracer.StartSpan("operation")
-		sb.WriteString(fmt.Sprintf("[[%v],],", s))
-		PrintAbandonedSpans()
-		time.Sleep(time.Second)
-
-		assert.Contains(tp.Logs(), sb.String())
 	})
 }
 
@@ -144,11 +147,9 @@ func TestDebugAbandonedSpansOff(t *testing.T) {
 		assert.False(tracer.config.debugAbandonedSpans)
 		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
 		s := tracer.StartSpan("operation")
-		PrintAbandonedSpans()
 		time.Sleep(time.Second)
 		expected := fmt.Sprintf("Datadog Tracer %v WARN: Trace %v waiting on span %v", version.Tag, s.Context().TraceID(), s.Context().SpanID())
 		assert.NotContains(tp.Logs(), expected)
-		assert.Contains(tp.Logs(), fmt.Sprintf("Datadog Tracer %v WARN: Debugging open spans is not enabled", version.Tag))
 		s.Finish()
 	})
 }
