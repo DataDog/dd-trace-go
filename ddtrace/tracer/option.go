@@ -242,6 +242,9 @@ type config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
+	statsComputationEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -322,6 +325,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
+	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -643,7 +647,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
 }
 
 func (c *config) canDropP0s() bool {
@@ -1027,6 +1031,17 @@ func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
 		c.partialFlushEnabled = true
 		c.partialFlushMinSpans = numSpans
+	}
+}
+
+// WithStatsComputation enables client-side stats computation, allowing
+// the tracer to compute stats from traces. This can reduce network traffic
+// to the Datadog Agent, and produce more accurate stats data.
+// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
+// Client-side stats is off by default.
+func WithStatsComputation(enabled bool) StartOption {
+	return func(c *config) {
+		c.statsComputationEnabled = enabled
 	}
 }
 
