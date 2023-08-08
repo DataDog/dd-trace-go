@@ -236,8 +236,8 @@ type config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 
-	// enableDataStreamsMonitoring enables monitoring of data streams
-	enableDataStreamsMonitoring bool
+	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
+	dataStreamsMonitoringEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -314,7 +314,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
-	c.enableDataStreamsMonitoring = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {

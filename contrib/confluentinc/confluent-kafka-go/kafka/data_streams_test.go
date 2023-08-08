@@ -12,7 +12,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -21,8 +20,8 @@ import (
 
 func TestTraceKafkaConsume(t *testing.T) {
 	t.Run("Checkpoint should be created and pathway should be extracted from kafka headers into context", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		tracer.StartMockedDataStreams()
+		defer tracer.StopMockedDataStreams()
 		// First, set up pathway and context as it would have been from the producer view.
 		_, producerCtx := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "type:kafka")
 
@@ -51,8 +50,8 @@ func TestTraceKafkaConsume(t *testing.T) {
 
 func TestTraceKafkaProduce(t *testing.T) {
 	t.Run("Checkpoint should be created and pathway should be propagated to kafka headers", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		tracer.StartMockedDataStreams()
+		defer tracer.StopMockedDataStreams()
 		initialPathway, producerCtx := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:topic1")
 
 		msg := kafka.Message{

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -99,7 +98,7 @@ type tracer struct {
 	statsd globalinternal.StatsdClient
 
 	// dataStreams processes data streams monitoring information
-	dataStreams dsminterface.Processor
+	dataStreams *datastreams.Processor
 }
 
 const (
@@ -163,8 +162,10 @@ func Start(opts ...StartOption) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	if p := internal.GetGlobalTracer().DataStreamsProcessor(); p != nil {
-		p.Stop()
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if t.dataStreams != nil {
+			t.dataStreams.Stop()
+		}
 	}
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
@@ -239,13 +240,12 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
-	var dataStreamsProcessor dsminterface.Processor
-	if c.enableDataStreamsMonitoring {
+	var dataStreamsProcessor *datastreams.Processor
+	if c.dataStreamsMonitoringEnabled {
 		if c.agent.DataStreams {
-			log.Info("Enable Data Streams Monitoring")
 			dataStreamsProcessor = datastreams.NewProcessor(c.statsdClient, c.env, c.serviceName, c.agentURL, c.httpClient)
 		} else {
-			log.Info("Can't enable Data Streams Monitoring. Upgrade your agent to 7.34+")
+			log.Warn("Can't enable Data Streams Monitoring. Upgrade your agent to 7.34+")
 		}
 	}
 	t := &tracer{
@@ -416,10 +416,6 @@ func (t *tracer) sampleChunk(c *chunk) {
 	if !c.willSend {
 		c.spans = kept
 	}
-}
-
-func (t *tracer) DataStreamsProcessor() dsminterface.Processor {
-	return t.dataStreams
 }
 
 func (t *tracer) pushChunk(trace *chunk) {

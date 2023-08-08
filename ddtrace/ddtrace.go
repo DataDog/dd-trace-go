@@ -17,7 +17,6 @@ import (
 	"context"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -51,9 +50,6 @@ type Tracer interface {
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
-
-	// DataStreamsProcessor returns the data streams processor
-	DataStreamsProcessor() dsminterface.Processor
 }
 
 // Span represents a chunk of computation time. Spans have names, durations,
