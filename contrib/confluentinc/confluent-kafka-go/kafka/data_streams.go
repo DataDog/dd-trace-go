@@ -20,8 +20,8 @@ func TraceKafkaProduce(ctx context.Context, msg *kafka.Message) context.Context 
 		edges = append(edges, "topic:"+*msg.TopicPartition.Topic)
 	}
 	edges = append(edges, "type:kafka")
-	p, ctx := tracer.SetDataStreamsCheckpoint(ctx, edges...)
-	if p != nil {
+	p, ctx, ok := tracer.SetDataStreamsCheckpoint(ctx, edges...)
+	if ok {
 		msg.Headers = append(msg.Headers, kafka.Header{Key: datastreams.PropagationKey, Value: p.Encode()})
 	}
 	return ctx
@@ -40,6 +40,6 @@ func TraceKafkaConsume(ctx context.Context, msg *kafka.Message, group string) co
 	}
 	edges = append(edges, "type:kafka")
 	edges = append(edges)
-	_, ctx = tracer.SetDataStreamsCheckpoint(ctx, edges...)
+	_, ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edges...)
 	return ctx
 }

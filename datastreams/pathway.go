@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 )
 
 var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "topic": {}, "type": {}, "direction": {}}
@@ -39,7 +37,7 @@ type Pathway struct {
 // Merge merges multiple pathways into one.
 // The current implementation samples one resulting Pathway. A future implementation could be more clever
 // and actually merge the Pathways.
-func Merge(pathways []dsminterface.Pathway) dsminterface.Pathway {
+func Merge(pathways []Pathway) Pathway {
 	if len(pathways) == 0 {
 		return Pathway{}
 	}

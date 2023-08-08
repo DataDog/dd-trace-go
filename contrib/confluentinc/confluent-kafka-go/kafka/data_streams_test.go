@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -23,7 +22,7 @@ func TestTraceKafkaConsume(t *testing.T) {
 		tracer.StartMockedDataStreams()
 		defer tracer.StopMockedDataStreams()
 		// First, set up pathway and context as it would have been from the producer view.
-		_, producerCtx := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "type:kafka")
+		_, producerCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "type:kafka")
 
 		topic := "my-topic"
 		msg := kafka.Message{
@@ -40,10 +39,10 @@ func TestTraceKafkaConsume(t *testing.T) {
 		consumerCtx = TraceKafkaConsume(consumerCtx, &msg, group)
 
 		// Check that the resulting consumerCtx contains an expected pathway.
-		consumerCtxPathway := datastreams.PathwayFromContext(consumerCtx)
+		consumerCtxPathway, _ := datastreams.PathwayFromContext(consumerCtx)
 		fmt.Println("setting")
-		_, expectedCtx := tracer.SetDataStreamsCheckpoint(producerCtx, "direction:in", "group:my-consumer-group", "topic:my-topic", "type:kafka")
-		expectedCtxPathway := datastreams.PathwayFromContext(expectedCtx)
+		_, expectedCtx, _ := tracer.SetDataStreamsCheckpoint(producerCtx, "direction:in", "group:my-consumer-group", "topic:my-topic", "type:kafka")
+		expectedCtxPathway, _ := datastreams.PathwayFromContext(expectedCtx)
 		assertPathwayEqual(t, expectedCtxPathway, consumerCtxPathway)
 	})
 }
@@ -52,7 +51,7 @@ func TestTraceKafkaProduce(t *testing.T) {
 	t.Run("Checkpoint should be created and pathway should be propagated to kafka headers", func(t *testing.T) {
 		tracer.StartMockedDataStreams()
 		defer tracer.StopMockedDataStreams()
-		initialPathway, producerCtx := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:topic1")
+		initialPathway, producerCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:topic1")
 
 		msg := kafka.Message{
 			TopicPartition: kafka.TopicPartition{},
@@ -62,7 +61,7 @@ func TestTraceKafkaProduce(t *testing.T) {
 		ctx := TraceKafkaProduce(producerCtx, &msg)
 
 		// The old pathway shouldn't be equal to the new pathway found in the ctx because we created a new checkpoint.
-		ctxPathway := datastreams.PathwayFromContext(ctx)
+		ctxPathway, _ := datastreams.PathwayFromContext(ctx)
 		assertPathwayNotEqual(t, initialPathway, ctxPathway)
 
 		// The decoded pathway found in the kafka headers should be the same as the pathway found in the ctx.
@@ -77,7 +76,7 @@ func TestTraceKafkaProduce(t *testing.T) {
 	})
 }
 
-func assertPathwayNotEqual(t *testing.T, p1 dsminterface.Pathway, p2 dsminterface.Pathway) {
+func assertPathwayNotEqual(t *testing.T, p1 datastreams.Pathway, p2 datastreams.Pathway) {
 	decodedP1, _, err1 := datastreams.Decode(context.Background(), p1.Encode())
 	decodedP2, _, err2 := datastreams.Decode(context.Background(), p2.Encode())
 
@@ -86,7 +85,7 @@ func assertPathwayNotEqual(t *testing.T, p1 dsminterface.Pathway, p2 dsminterfac
 	assert.NotEqual(t, decodedP1, decodedP2)
 }
 
-func assertPathwayEqual(t *testing.T, p1 dsminterface.Pathway, p2 dsminterface.Pathway) {
+func assertPathwayEqual(t *testing.T, p1 datastreams.Pathway, p2 datastreams.Pathway) {
 	decodedP1, _, err1 := datastreams.Decode(context.Background(), p1.Encode())
 	decodedP2, _, err2 := datastreams.Decode(context.Background(), p2.Encode())
 

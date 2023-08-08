@@ -7,8 +7,6 @@ package datastreams
 
 import (
 	"context"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 )
 
 type contextKey struct{}
@@ -16,21 +14,21 @@ type contextKey struct{}
 var activePathwayKey = contextKey{}
 
 // ContextWithPathway returns a copy of the given context which includes the pathway p.
-func ContextWithPathway(ctx context.Context, p dsminterface.Pathway) context.Context {
+func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
 	return context.WithValue(ctx, activePathwayKey, p)
 }
 
 // PathwayFromContext returns the pathway contained in the given context, and whether a
 // pathway is found in ctx.
-func PathwayFromContext(ctx context.Context) dsminterface.Pathway {
+func PathwayFromContext(ctx context.Context) (p Pathway, ok bool) {
 	if ctx == nil {
-		return nil
+		return p, false
 	}
 	v := ctx.Value(activePathwayKey)
-	if s, ok := v.(Pathway); ok {
-		return s
+	if p, ok := v.(Pathway); ok {
+		return p, true
 	}
-	return nil
+	return p, false
 }
 
 // MergeContexts returns the first context which includes the pathway resulting from merging the pathways
@@ -41,9 +39,9 @@ func MergeContexts(ctxs ...context.Context) context.Context {
 	if len(ctxs) == 0 {
 		return context.Background()
 	}
-	pathways := make([]dsminterface.Pathway, 0, len(ctxs))
+	pathways := make([]Pathway, 0, len(ctxs))
 	for _, ctx := range ctxs {
-		if p := PathwayFromContext(ctx); p != nil {
+		if p, ok := PathwayFromContext(ctx); ok {
 			pathways = append(pathways, p)
 		}
 	}

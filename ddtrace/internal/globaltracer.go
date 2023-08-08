@@ -8,7 +8,6 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 import (
 	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
@@ -63,10 +62,6 @@ func (NoopTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return ni
 
 // Stop implements ddtrace.Tracer.
 func (NoopTracer) Stop() {}
-
-func (NoopTracer) DataStreamsProcessor() dsminterface.Processor {
-	return nil
-}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 

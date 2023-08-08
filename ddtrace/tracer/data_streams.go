@@ -8,20 +8,21 @@ package tracer
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
 // SetDataStreamsCheckpoint sets a consume or produce checkpoint in a Data Streams pathway.
 // This enables tracking data flow & end to end latency.
 // To learn more about the data streams product, see: https://docs.datadoghq.com/data_streams/go/
-func SetDataStreamsCheckpoint(ctx context.Context, edgeTags ...string) (dsminterface.Pathway, context.Context) {
+func SetDataStreamsCheckpoint(ctx context.Context, edgeTags ...string) (p datastreams.Pathway, outCtx context.Context, ok bool) {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		if t.dataStreams != nil {
-			return t.dataStreams.SetCheckpoint(ctx, edgeTags...)
+			p, outCtx = t.dataStreams.SetCheckpoint(ctx, edgeTags...)
+			return p, outCtx, true
 		}
 	}
-	return nil, ctx
+	return datastreams.Pathway{}, ctx, false
 }
 
 // TrackKafkaCommitOffset should be used in the consumer, to track when it acks offset.

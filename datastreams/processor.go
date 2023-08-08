@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -354,13 +353,13 @@ func (p *Processor) sendToAgent(payload StatsPayload) {
 	}
 }
 
-func (p *Processor) SetCheckpoint(ctx context.Context, edgeTags ...string) (dsminterface.Pathway, context.Context) {
-	parent := PathwayFromContext(ctx)
+func (p *Processor) SetCheckpoint(ctx context.Context, edgeTags ...string) (Pathway, context.Context) {
+	parent, hasParent := PathwayFromContext(ctx)
 	parentHash := uint64(0)
 	now := p.time()
 	pathwayStart := now
 	edgeStart := now
-	if parent != nil {
+	if hasParent {
 		pathwayStart = parent.PathwayStart()
 		edgeStart = parent.EdgeStart()
 		parentHash = parent.GetHash()

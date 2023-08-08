@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/dsminterface"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
@@ -27,10 +26,6 @@ func (*raceTestTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
 func (*raceTestTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
-}
-
-func (r *raceTestTracer) DataStreamsProcessor() dsminterface.Processor {
-	return nil
 }
 
 func TestGlobalTracer(t *testing.T) {

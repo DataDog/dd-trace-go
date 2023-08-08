@@ -16,8 +16,8 @@ import (
 
 func TraceKafkaProduce(ctx context.Context, msg *sarama.ProducerMessage) context.Context {
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
-	p, ctx := tracer.SetDataStreamsCheckpoint(ctx, edges...)
-	if p != nil {
+	p, ctx, ok := tracer.SetDataStreamsCheckpoint(ctx, edges...)
+	if ok {
 		msg.Headers = append(msg.Headers, sarama.RecordHeader{Key: []byte(datastreams.PropagationKey), Value: p.Encode()})
 	}
 	return ctx
@@ -31,6 +31,6 @@ func TraceKafkaConsume(ctx context.Context, msg *sarama.ConsumerMessage, group s
 		}
 	}
 	edges := []string{"direction:in", "group:" + group, "topic:" + msg.Topic, "type:kafka"}
-	_, ctx = tracer.SetDataStreamsCheckpoint(ctx, edges...)
+	_, ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, edges...)
 	return ctx
 }
