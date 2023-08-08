@@ -28,6 +28,7 @@ import (
 const (
 	bucketDuration     = time.Second * 10
 	defaultServiceName = "unnamed-go-service"
+	samplePeriod       = time.Second
 )
 
 var sketchMapping, _ = mapping.NewLogarithmicMapping(0.01)
@@ -142,6 +143,8 @@ type kafkaOffset struct {
 }
 
 type Processor struct {
+	livePayloads         chan LivePayload
+	lastSampledNanos     int64
 	in                   chan statsPoint
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[int64]bucket
@@ -172,6 +175,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service string, agentURL *u
 		service = defaultServiceName
 	}
 	return &Processor{
+		livePayloads:         make(chan LivePayload, 10),
 		tsTypeCurrentBuckets: make(map[int64]bucket),
 		tsTypeOriginBuckets:  make(map[int64]bucket),
 		in:                   make(chan statsPoint, 10000),
@@ -264,6 +268,20 @@ func (p *Processor) run(tick <-chan time.Time) {
 	}
 }
 
+func (p *Processor) flushLivePayloads() {
+	for payload := range p.livePayloads {
+		payloads := &LivePayloads{
+			Payloads:      []LivePayload{payload},
+			Service:       p.service,
+			TracerVersion: p.service,
+			TracerLang:    p.service,
+		}
+		if err := p.transport.sendPipelineStats(payloads, map[string]string{"data-streams-content": "live-payload"}); err != nil {
+			atomic.AddInt64(&p.stats.flushErrors, 1)
+		}
+	}
+}
+
 func (p *Processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
@@ -280,6 +298,7 @@ func (p *Processor) Start() {
 		defer tick.Stop()
 		p.run(tick.C)
 	}()
+	go p.flushLivePayloads()
 }
 
 // Flush triggers a flush and waits for it to complete.
@@ -348,7 +367,7 @@ func (p *Processor) flush(now time.Time) StatsPayload {
 func (p *Processor) sendToAgent(payload StatsPayload) {
 	atomic.AddInt64(&p.stats.flushedPayloads, 1)
 	atomic.AddInt64(&p.stats.flushedBuckets, int64(len(payload.Stats)))
-	if err := p.transport.sendPipelineStats(&payload); err != nil {
+	if err := p.transport.sendPipelineStats(&payload, nil); err != nil {
 		atomic.AddInt64(&p.stats.flushErrors, 1)
 	}
 }
@@ -406,6 +425,31 @@ func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offse
 		partition:  partition,
 		offsetType: produceOffset,
 		timestamp:  p.time().UnixNano(),
+	}:
+	default:
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
+}
+
+// TrackPayload tracks the actual payload. The data will be encrypted
+func (p *Processor) TrackPayload(topic string, partition int32, offset int64, payload []byte) {
+	nowNanos := p.time().UnixNano()
+	lastSample := atomic.LoadInt64(&p.lastSampledNanos)
+	if nowNanos-lastSample < int64(samplePeriod) {
+		return
+	}
+	if !atomic.CompareAndSwapInt64(&p.lastSampledNanos, lastSample, nowNanos) {
+		return
+	}
+	body := make([]byte, len(payload))
+	copy(body, payload)
+	select {
+	case p.livePayloads <- LivePayload{
+		Offset:    offset,
+		Topic:     topic,
+		Partition: partition,
+		TpNanos:   nowNanos,
+		Message:   body,
 	}:
 	default:
 		atomic.AddInt64(&p.stats.dropped, 1)

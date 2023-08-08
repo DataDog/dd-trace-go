@@ -75,7 +75,7 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 	}
 }
 
-func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
+func (t *httpTransport) sendPipelineStats(p msgp.Encodable, extraHeaders map[string]string) error {
 	var buf bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
@@ -94,6 +94,11 @@ func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
+	}
+	if extraHeaders != nil {
+		for header, value := range extraHeaders {
+			req.Header.Set(header, value)
+		}
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {

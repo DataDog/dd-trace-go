@@ -37,7 +37,7 @@ func TestHTTPTransport(t *testing.T) {
 	}}}
 	fakeTransport := fakeTransport{}
 	transport := newHTTPTransport(&url.URL{Scheme: "http", Host: "agent-address:8126"}, &http.Client{Transport: &fakeTransport})
-	assert.Nil(t, transport.sendPipelineStats(&p))
+	assert.Nil(t, transport.sendPipelineStats(&p, nil))
 	assert.Len(t, fakeTransport.requests, 1)
 	r := fakeTransport.requests[0]
 	assert.Equal(t, "http://agent-address:8126/v0.1/pipeline_stats", r.URL.String())

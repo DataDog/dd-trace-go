@@ -44,3 +44,10 @@ func TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
 		}
 	}
 }
+func TrackPayload(topic string, partition int32, offset int64, payload []byte) {
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if t.dataStreams != nil {
+			t.dataStreams.TrackPayload(topic, partition, offset, payload)
+		}
+	}
+}

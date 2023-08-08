@@ -243,7 +243,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		if c.agent.DataStreams {
-			dataStreamsProcessor = datastreams.NewProcessor(c.statsdClient, c.env, c.serviceName, c.agentURL, c.httpClient)
+			dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.agentURL, c.httpClient)
 		} else {
 			log.Warn("Can't enable Data Streams Monitoring. Upgrade your agent to 7.34+")
 		}
