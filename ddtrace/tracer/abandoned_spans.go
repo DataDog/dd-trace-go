@@ -53,8 +53,10 @@ func (s *spanNode) String() string {
 	return fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", sp.Name, sp.SpanID, sp.TraceID)
 }
 
-func (a *AbandonedList) Extend() {
+func (a *AbandonedList) Extend(s *span) {
 	n := &spansList{}
+	n.Append(s)
+
 	if a.head == nil {
 		a.head = n
 		a.tail = n
@@ -130,17 +132,18 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	for {
 		select {
 		case <-tick.C:
+			nowTime := now()
 			for b := t.abandonedSpans.head; b != nil; b = b.Next {
 				e := b.head
 				if e == nil || e.Element == nil {
 					continue
 				}
-				if now()-e.Element.Start < interval.Nanoseconds() {
+				if nowTime-e.Element.Start < interval.Nanoseconds() {
 					continue
 				}
 				for e != nil {
 					sp := e.Element
-					life := now() - sp.Start
+					life := nowTime - sp.Start
 					if life >= interval.Nanoseconds() {
 						log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
 						e = e.Next
@@ -167,8 +170,7 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 			if e != nil {
 				break
 			}
-			t.abandonedSpans.Extend()
-			t.abandonedSpans.tail.Append(s)
+			t.abandonedSpans.Extend(s)
 		case s := <-t.cOut:
 			for e := t.abandonedSpans.head; e != nil; e = e.Next {
 				if e.head == nil || e.head.Element == nil {

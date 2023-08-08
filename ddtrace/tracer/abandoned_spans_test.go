@@ -18,6 +18,164 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestAbandonedSpansLists(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	t.Run("spans list", func(t *testing.T) {
+		t.Run("append", func(t *testing.T) {
+			sl := spansList{}
+			s := tracer.StartSpan("operation").(*span)
+			sl.Append(s)
+			assert.Equal(fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", s.Name, s.SpanID, s.TraceID), sl.String())
+		})
+
+		t.Run("nil remove", func(t *testing.T) {
+			sl := spansList{}
+			s := tracer.StartSpan("operation").(*span)
+			sl.Remove(s)
+			assert.Equal("", sl.String())
+		})
+
+		sl := spansList{}
+		expected := []string{}
+		t.Run("append many", func(t *testing.T) {
+			for i := 0; i < 6; i++ {
+				s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
+				sl.Append(s)
+				expected = append(expected, fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", s.Name, s.SpanID, s.TraceID))
+			}
+
+			ls := sl.String()
+			for _, v := range expected {
+				assert.Contains(ls, v)
+			}
+		})
+
+		t.Run("remove head", func(t *testing.T) {
+			s := sl.head.Element
+			sl.Remove(s)
+
+			ls := sl.String()
+			for i, v := range expected {
+				if i == 0 {
+					assert.NotContains(ls, v)
+					continue
+				}
+				assert.Contains(ls, v)
+			}
+		})
+
+		t.Run("remove tail", func(t *testing.T) {
+			s := sl.tail.Element
+			sl.Remove(s)
+
+			ls := sl.String()
+			for i, v := range expected {
+				if i == 0 || i == 5 {
+					assert.NotContains(ls, v)
+					continue
+				}
+				assert.Contains(ls, v)
+			}
+		})
+
+		t.Run("remove middle", func(t *testing.T) {
+			s := sl.head.Next.Element
+			sl.Remove(s)
+
+			ls := sl.String()
+			for i, v := range expected {
+				if i == 0 || i == 5 || i == 2 {
+					assert.NotContains(ls, v)
+					continue
+				}
+				assert.Contains(ls, v)
+			}
+		})
+	})
+
+	t.Run("abandoned spans", func(t *testing.T) {
+		t.Run("extend", func(t *testing.T) {
+			a := AbandonedList{}
+			s := tracer.StartSpan("operation1").(*span)
+			a.Extend(s)
+			assert.Equal(fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", s.Name, s.SpanID, s.TraceID), a.String())
+		})
+
+		t.Run("nil remove", func(t *testing.T) {
+			a := AbandonedList{}
+			sl := &spansList{
+				head: &spanNode{
+					Element: tracer.StartSpan("operation").(*span),
+				},
+			}
+			a.RemoveBucket(sl)
+			assert.Equal("", a.String())
+		})
+
+		a := AbandonedList{}
+		expected := []string{}
+		t.Run("extend many", func(t *testing.T) {
+			for i := 0; i < 5; i++ {
+				s := tracer.StartSpan(fmt.Sprintf("operation%d", i)).(*span)
+				a.Extend(s)
+				expected = append(expected, fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", s.Name, s.SpanID, s.TraceID))
+			}
+
+			sa := a.String()
+			for _, v := range expected {
+				assert.Contains(sa, v)
+			}
+		})
+
+		t.Run("remove head", func(t *testing.T) {
+			h := a.head
+			a.RemoveBucket(h)
+
+			sa := a.String()
+			for i, v := range expected {
+				if i == 0 {
+					assert.NotContains(sa, v)
+					continue
+				}
+				assert.Contains(sa, v)
+			}
+		})
+
+		t.Run("remove tail", func(t *testing.T) {
+			h := a.tail
+			a.RemoveBucket(h)
+
+			sa := a.String()
+			for i, v := range expected {
+				if i == 0 || i == 4 {
+					assert.NotContains(sa, v)
+					continue
+				}
+				assert.Contains(sa, v)
+			}
+		})
+
+		t.Run("remove", func(t *testing.T) {
+			h := a.head.Next
+			a.RemoveBucket(h)
+
+			sa := a.String()
+			for i, v := range expected {
+				if i == 0 || i == 4 || i == 2 {
+					assert.NotContains(sa, v)
+					continue
+				}
+				assert.Contains(sa, v)
+			}
+		})
+
+	})
+}
+
 func TestReportAbandonedSpans(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
