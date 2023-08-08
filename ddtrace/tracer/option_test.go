@@ -1292,3 +1292,33 @@ func TestPartialFlushing(t *testing.T) {
 		assert.Equal(t, 20, c.partialFlushMinSpans)
 	})
 }
+
+func TestWithStatsComputation(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig()
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("disabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(false))
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
+		c := newConfig()
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+}
