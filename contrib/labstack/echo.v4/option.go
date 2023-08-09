@@ -24,6 +24,7 @@ type config struct {
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
+	customErrorFunc   CustomErrorFunc
 	headerTags        *internal.LockMap
 }
 
@@ -33,11 +34,15 @@ type Option func(*config)
 // IgnoreRequestFunc determines if tracing will be skipped for a request.
 type IgnoreRequestFunc func(c echo.Context) bool
 
+// CustomErrorFunc attempts to translate a non-standard echo error to the required format
+type CustomErrorFunc func(err error) *echo.HTTPError
+
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.customErrorFunc = func(err error) *echo.HTTPError { return nil }
 }
 
 // WithServiceName sets the given service name for the system.
@@ -84,6 +89,14 @@ func NoDebugStack() Option {
 func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequestFunc = ignoreRequestFunc
+	}
+}
+
+// WithCustomErrorFunction sets a function to translate custom errors into the
+// expected format
+func WithCustomErrorFunc(customErrorFunc CustomErrorFunc) Option {
+	return func(cfg *config) {
+		cfg.customErrorFunc = customErrorFunc
 	}
 }
 
