@@ -143,17 +143,17 @@ func Start(opts ...StartOption) {
 	if t.config.logStartup {
 		logStartup(t)
 	}
-	if t.dataStreams != nil {
-		t.dataStreams.Start()
-	}
-	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.version
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
-	appsec.Start(appsec.WithRCConfig(cfg))
+	if t.dataStreams != nil {
+		t.dataStreams.Start(cfg)
+	}
+	// Start AppSec with remote configuration
+	// appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)

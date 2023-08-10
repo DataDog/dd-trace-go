@@ -7,7 +7,13 @@ package datastreams
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"log"
 	"math"
 	"net/http"
@@ -144,7 +150,6 @@ type kafkaOffset struct {
 
 type Processor struct {
 	livePayloads         chan LivePayload
-	lastSampledNanos     int64
 	in                   chan statsPoint
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[int64]bucket
@@ -160,7 +165,48 @@ type Processor struct {
 	primaryTag           string
 	service              string
 	// used for tests
-	timeSource func() time.Time
+	timeSource         func() time.Time
+	rc                 *remoteconfig.Client
+	sampleConfigs      map[string]*sampleConfig
+	sampleConfigsMutex sync.RWMutex
+}
+
+type sampleConfig struct {
+	publicKey        *rsa.PublicKey
+	lastSampledNanos int64
+}
+
+func (p *Processor) addSampleConfig(configID string, publicKey string) {
+	p.sampleConfigsMutex.Lock()
+	defer p.sampleConfigsMutex.Unlock()
+	key, err := parsePublicKey(publicKey)
+	if err != nil {
+		fmt.Println("ERROR decoding pem key", err)
+		return
+	}
+	p.sampleConfigs[configID] = &sampleConfig{publicKey: key}
+}
+
+func (p *Processor) removeSampleConfig(configID string) {
+	p.sampleConfigsMutex.Lock()
+	defer p.sampleConfigsMutex.Unlock()
+	delete(p.sampleConfigs, configID)
+}
+
+func (p *Processor) shouldSample() (ok bool, publicKey *rsa.PublicKey) {
+	p.sampleConfigsMutex.RLock()
+	defer p.sampleConfigsMutex.RUnlock()
+	nowNanos := p.time().UnixNano()
+	for _, c := range p.sampleConfigs {
+		lastSample := atomic.LoadInt64(&c.lastSampledNanos)
+		if nowNanos-lastSample < int64(samplePeriod) {
+			continue
+		}
+		if atomic.CompareAndSwapInt64(&c.lastSampledNanos, lastSample, nowNanos) {
+			return true, c.publicKey
+		}
+	}
+	return false, nil
 }
 
 func (p *Processor) time() time.Time {
@@ -186,6 +232,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service string, agentURL *u
 		service:              service,
 		transport:            newHTTPTransport(agentURL, httpClient),
 		timeSource:           time.Now,
+		sampleConfigs:        make(map[string]*sampleConfig),
 	}
 }
 
@@ -276,13 +323,15 @@ func (p *Processor) flushLivePayloads() {
 			TracerVersion: p.service,
 			TracerLang:    p.service,
 		}
+		fmt.Println("sending payload")
 		if err := p.transport.sendPipelineStats(payloads, map[string]string{"data-streams-content": "live-payload"}); err != nil {
 			atomic.AddInt64(&p.stats.flushErrors, 1)
 		}
 	}
 }
 
-func (p *Processor) Start() {
+func (p *Processor) Start(cfg remoteconfig.ClientConfig) {
+	p.startRemoteConfig(cfg)
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
 		log.Print("WARN: (*Processor).Start called more than once. This is likely p programming error.")
@@ -318,6 +367,7 @@ func (p *Processor) Stop() {
 	if atomic.SwapUint64(&p.stopped, 1) > 0 {
 		return
 	}
+	p.stopRemoteConfig()
 	close(p.stop)
 	p.wg.Wait()
 }
@@ -431,25 +481,46 @@ func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offse
 	}
 }
 
+// function to parse the public key
+func parsePublicKey(pemKey string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemKey))
+	if block == nil || block.Type != "PUBLIC KEY" {
+		return nil, errors.New("failed to decode PEM block containing public key")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, errors.New("not an RSA public key")
+	}
+	return rsaPub, nil
+}
+
 // TrackPayload tracks the actual payload. The data will be encrypted
 func (p *Processor) TrackPayload(topic string, partition int32, offset int64, payload []byte) {
-	nowNanos := p.time().UnixNano()
-	lastSample := atomic.LoadInt64(&p.lastSampledNanos)
-	if nowNanos-lastSample < int64(samplePeriod) {
+	sample, key := p.shouldSample()
+	if !sample {
 		return
 	}
-	if !atomic.CompareAndSwapInt64(&p.lastSampledNanos, lastSample, nowNanos) {
-		return
-	}
+	p.sampleConfigsMutex.RLock()
+	fmt.Println("configs are", p.sampleConfigs)
+	p.sampleConfigsMutex.RUnlock()
 	body := make([]byte, len(payload))
 	copy(body, payload)
+	encryptedData, err := rsa.EncryptPKCS1v15(rand.Reader, key, payload)
+	if err != nil {
+		fmt.Println("Error encrypting the data", err)
+		return
+	}
 	select {
 	case p.livePayloads <- LivePayload{
 		Offset:    offset,
 		Topic:     topic,
 		Partition: partition,
-		TpNanos:   nowNanos,
-		Message:   body,
+		TpNanos:   p.timeSource().UnixNano(),
+		Message:   encryptedData,
 	}:
 	default:
 		atomic.AddInt64(&p.stats.dropped, 1)

@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.16.0
 	github.com/DataDog/appsec-internal-go v1.0.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.45.0-rc.1
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230810175625-533c63785b52
 	github.com/DataDog/datadog-go/v5 v5.1.1
 	github.com/DataDog/go-libddwaf v1.4.2
 	github.com/DataDog/gostackparse v0.5.0
@@ -28,6 +28,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822
 	github.com/confluentinc/confluent-kafka-go v1.4.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
+	github.com/davecgh/go-spew v1.1.1
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
@@ -134,7 +135,6 @@ require (
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/go-resiliency v1.1.0 // indirect

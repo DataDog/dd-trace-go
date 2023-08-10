@@ -126,6 +126,7 @@ func (c *Client) Stop() {
 }
 
 func (c *Client) updateState() {
+	fmt.Println("updating state")
 	data, err := c.newUpdateRequest()
 	if err != nil {
 		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
