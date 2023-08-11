@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -509,7 +510,7 @@ func (p *Processor) TrackPayload(topic string, partition int32, offset int64, pa
 	p.sampleConfigsMutex.RUnlock()
 	body := make([]byte, len(payload))
 	copy(body, payload)
-	encryptedData, err := rsa.EncryptPKCS1v15(rand.Reader, key, payload)
+	encryptedData, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, key, payload, nil)
 	if err != nil {
 		fmt.Println("Error encrypting the data", err)
 		return
