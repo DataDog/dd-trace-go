@@ -128,7 +128,9 @@ func logAbandonedSpans(l *list.List, filter bool, interval time.Duration) {
 			if filter && nowTime-sp.Start < interval.Nanoseconds() {
 				break
 			}
+			sp.Lock()
 			msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", sp.Name, sp.SpanID, sp.TraceID, sp.Duration)
+			sp.Unlock()
 			spanCount++
 			if logSize-len(sb.String()) < len(msg) {
 				truncated = true
