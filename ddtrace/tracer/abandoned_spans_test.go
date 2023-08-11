@@ -138,6 +138,18 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.Contains(tp.Logs(), expected)
 		s.Finish()
 	})
+
+	t.Run("truncate", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
+		logSize = 10
+
+		s := tracer.StartSpan("operation").(*span)
+		msg := fmt.Sprintf("%s[name: %s, span_id: %d, trace_id: %d, age: %d],", warnPrefix, s.Name, s.SpanID, s.TraceID, s.Duration)
+		stop()
+		time.Sleep(500 * time.Millisecond)
+		assert.NotContains(tp.Logs(), msg)
+		assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))
+	})
 }
 
 func TestDebugAbandonedSpansOff(t *testing.T) {

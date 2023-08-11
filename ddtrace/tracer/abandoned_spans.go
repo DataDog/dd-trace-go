@@ -15,6 +15,7 @@ import (
 )
 
 var tickerInterval = time.Minute
+var logSize = 9000
 
 // reportAbandonedSpans periodically finds and reports potentially abandoned
 // spans that are older than the given interval. These spans are stored in a
@@ -91,6 +92,7 @@ func Print(l *list.List, filter bool, interval time.Duration) {
 	var sb strings.Builder
 	nowTime := now()
 	spanCount := 0
+	truncated := false
 
 	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
 		bucket, ok := bucketNode.Value.(*list.List)
@@ -126,14 +128,25 @@ func Print(l *list.List, filter bool, interval time.Duration) {
 			if filter && nowTime-sp.Start < interval.Nanoseconds() {
 				break
 			}
-			sb.WriteString(fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", sp.Name, sp.SpanID, sp.TraceID, sp.Duration))
-			spanCount += 1
+			msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", sp.Name, sp.SpanID, sp.TraceID, sp.Duration)
+			spanCount++
+			if logSize-len(sb.String()) < len(msg) {
+				truncated = true
+				continue
+			}
+
+			sb.WriteString(msg)
 		}
 	}
 
 	if spanCount == 0 {
 		return
 	}
+
 	log.Warn("%d abandoned spans:", spanCount)
+	if truncated {
+		log.Warn("Too many abandoned spans. Truncating message.")
+		log.Warn(sb.String(), "...")
+	}
 	log.Warn(sb.String())
 }
