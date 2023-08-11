@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"container/list"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -97,7 +98,7 @@ type tracer struct {
 	statsd statsdClient
 
 	// abandonedSpans holds a linked list of potentially abandoned spans for all traces.
-	abandonedSpans AbandonedList
+	abandonedSpans *list.List
 
 	// cIn receives spans when they are created to be added to abandonedSpans
 	cIn chan *span
@@ -280,7 +281,7 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	if c.debugAbandonedSpans {
 		log.Warn("Debug open spans enabled.")
-		t.abandonedSpans = AbandonedList{}
+		t.abandonedSpans = list.New()
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
 		t.wg.Add(1)

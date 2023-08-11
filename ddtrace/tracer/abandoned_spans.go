@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"container/list"
 	"fmt"
 	"strings"
 	"time"
@@ -13,180 +14,126 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
-type AbandonedList struct {
-	head *spansList
-	tail *spansList
-}
-
-type spansList struct {
-	head *spanNode
-	tail *spanNode
-	Next *spansList
-}
-
-type spanNode struct {
-	Element *span
-	Next    *spanNode
-}
-
-func (a *AbandonedList) String() string {
-	var sb strings.Builder
-	for e := a.head; e != nil; e = e.Next {
-		fmt.Fprintf(&sb, "%v", e.String())
-	}
-	return sb.String()
-}
-
-func (s *spansList) String() string {
-	var sb strings.Builder
-	for e := s.head; e != nil; e = e.Next {
-		fmt.Fprintf(&sb, "%v", e.String())
-	}
-	return sb.String()
-}
-
-func (s *spanNode) String() string {
-	sp := s.Element
-	if sp == nil {
-		return "[],"
-	}
-	return fmt.Sprintf("[Span Name: %v, Span ID: %v, Trace ID: %v],", sp.Name, sp.SpanID, sp.TraceID)
-}
-
-func (a *AbandonedList) Extend(s *span) {
-	n := &spansList{}
-	n.Append(s)
-
-	if a.head == nil {
-		a.head = n
-		a.tail = n
-		return
-	}
-	a.tail.Next = n
-	a.tail = n
-}
-
-func (a *AbandonedList) RemoveTail() {
-	n := a.head
-	if n == nil || n.Next == nil {
-		a.head = nil
-		return
-	}
-	for n.Next.Next != nil {
-		n = n.Next
-	}
-	n.Next = nil
-	a.tail = n
-}
-
-func (a *AbandonedList) RemoveBucket(s *spansList) {
-	if s.Next != nil {
-		n := s.Next
-		s.head = n.head
-		s.Next = n.Next
-		return
-	}
-	a.RemoveTail()
-}
-
-func (s *spansList) Append(e *span) {
-	n := &spanNode{Element: e}
-	if s.head == nil {
-		s.head = n
-		s.tail = n
-		return
-	}
-	s.tail.Next = n
-	s.tail = n
-}
-
-func (s *spansList) Remove(e *span) {
-	if s.head == nil {
-		return
-	}
-	if s.head.Element == e {
-		s.head = s.head.Next
-		return
-	}
-
-	n := s.head
-	for n.Next != nil {
-		if n.Next.Element == e {
-			n.Next = n.Next.Next
-			if n.Next == nil {
-				s.tail = n
-			}
-			return
-		}
-		n = n.Next
-	}
-}
-
 var tickerInterval = time.Minute
 
-// reportAbandonedSpans periodically finds and reports potentially
-// abandoned spans that are older than the given interval
+// reportAbandonedSpans periodically finds and reports potentially abandoned
+// spans that are older than the given interval. These spans are stored in a
+// bucketed linked list, sorted by their `Start` time.
 func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	tick := time.NewTicker(tickerInterval)
 	defer tick.Stop()
 	for {
 		select {
 		case <-tick.C:
-			nowTime := now()
-			for b := t.abandonedSpans.head; b != nil; b = b.Next {
-				e := b.head
-				if e == nil || e.Element == nil {
-					continue
-				}
-				if nowTime-e.Element.Start < interval.Nanoseconds() {
-					continue
-				}
-				for e != nil {
-					sp := e.Element
-					life := nowTime - sp.Start
-					if life >= interval.Nanoseconds() {
-						log.Warn("Trace %v waiting on span %v", sp.Context().TraceID(), sp.Context().SpanID())
-						e = e.Next
-					} else {
-						break
-					}
-				}
-			}
+			Print(t.abandonedSpans, true, interval)
 		case s := <-t.cIn:
-			e := t.abandonedSpans.head
-			for e != nil {
-				sp := e.head
-				if sp == nil || sp.Element == nil {
-					e = &spansList{}
-					e.Append(s)
-					break
-				}
-				if s.Start-sp.Element.Start <= interval.Nanoseconds() {
-					e.Append(s)
-					break
-				}
-				e = e.Next
-			}
-			if e != nil {
+			bNode := t.abandonedSpans.Front()
+			if bNode == nil {
+				b := list.New()
+				b.PushBack(s)
+				t.abandonedSpans.PushBack(b)
 				break
 			}
-			t.abandonedSpans.Extend(s)
-		case s := <-t.cOut:
-			for e := t.abandonedSpans.head; e != nil; e = e.Next {
-				if e.head == nil || e.head.Element == nil {
+			for bNode != nil {
+				bucket, bOk := bNode.Value.(*list.List)
+				if !bOk {
+					bNode = bNode.Next()
 					continue
 				}
-				if s.Start-e.head.Element.Start <= interval.Nanoseconds() {
-					e.Remove(s)
-					if e.head == nil {
-						t.abandonedSpans.RemoveBucket(e)
+				sNode := bucket.Front()
+				if sNode == nil {
+					bNode = bNode.Next()
+					continue
+				}
+				sp, sOk := sNode.Value.(*span)
+				if sOk && sp != nil && s.Start-sp.Start <= interval.Nanoseconds() {
+					bucket.PushBack(s)
+					break
+				}
+				bNode = bNode.Next()
+			}
+			if bNode != nil {
+				break
+			}
+			b := list.New()
+			b.PushBack(s)
+			t.abandonedSpans.PushBack(b)
+		case s := <-t.cOut:
+			for node := t.abandonedSpans.Front(); node != nil; node = node.Next() {
+				bucket, ok := node.Value.(*list.List)
+				if !ok || bucket.Front() == nil {
+					continue
+				}
+				spNode := bucket.Front()
+				sp, ok := spNode.Value.(*span)
+				if !ok {
+					continue
+				}
+				if s.Start-sp.Start <= interval.Nanoseconds() {
+					bucket.Remove(spNode)
+					if bucket.Front() == nil {
+						t.abandonedSpans.Remove(node)
 					}
 					break
 				}
 			}
 		case <-t.stop:
-			log.Warn("Abandoned Spans: %s", t.abandonedSpans.String())
+			Print(t.abandonedSpans, false, interval)
 			return
 		}
 	}
+}
+
+// Print returns a string containing potentially abandoned spans. If `filter` is true,
+// it will only return spans that are older than the provided time `interval`. If false,
+// it will return all unfinished spans.
+func Print(l *list.List, filter bool, interval time.Duration) {
+	var sb strings.Builder
+	nowTime := now()
+	spanCount := 0
+
+	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
+		bucket, ok := bucketNode.Value.(*list.List)
+		if !ok || bucket == nil {
+			continue
+		}
+
+		// since spans are bucketed by time, finding a bucket that is newer
+		// than the allowed time interval means that all spans in this bucket
+		// and future buckets will be younger than `interval`, and thus aren't
+		// worth checking.
+		if filter {
+			spanNode := bucket.Front()
+			if spanNode == nil {
+				continue
+			}
+			sp, ok := spanNode.Value.(*span)
+			if !ok || sp == nil {
+				continue
+			}
+			if nowTime-sp.Start < interval.Nanoseconds() {
+				continue
+			}
+		}
+		for spanNode := bucket.Front(); spanNode != nil; spanNode = spanNode.Next() {
+			sp, ok := spanNode.Value.(*span)
+			if !ok || sp == nil {
+				continue
+			}
+
+			// despite quitting early, spans within the same bucket can still fall on either side
+			// of the timeout. We should still check if the span is too old or not.
+			if filter && nowTime-sp.Start < interval.Nanoseconds() {
+				break
+			}
+			sb.WriteString(fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", sp.Name, sp.SpanID, sp.TraceID, sp.Duration))
+			spanCount += 1
+		}
+	}
+
+	if spanCount == 0 {
+		return
+	}
+	log.Warn("%d abandoned spans:", spanCount)
+	log.Warn(sb.String())
 }
