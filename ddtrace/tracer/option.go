@@ -461,6 +461,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
+
 	return c
 }
 

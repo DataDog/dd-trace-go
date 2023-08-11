@@ -26,7 +26,7 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	for {
 		select {
 		case <-tick.C:
-			Print(t.abandonedSpans, true, interval)
+			logAbandonedSpans(t.abandonedSpans, true, interval)
 		case s := <-t.cIn:
 			bNode := t.abandonedSpans.Front()
 			if bNode == nil {
@@ -79,16 +79,16 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				}
 			}
 		case <-t.stop:
-			Print(t.abandonedSpans, false, interval)
+			logAbandonedSpans(t.abandonedSpans, false, interval)
 			return
 		}
 	}
 }
 
-// Print returns a string containing potentially abandoned spans. If `filter` is true,
+// logAbandonedSpans returns a string containing potentially abandoned spans. If `filter` is true,
 // it will only return spans that are older than the provided time `interval`. If false,
 // it will return all unfinished spans.
-func Print(l *list.List, filter bool, interval time.Duration) {
+func logAbandonedSpans(l *list.List, filter bool, interval time.Duration) {
 	var sb strings.Builder
 	nowTime := now()
 	spanCount := 0
@@ -146,7 +146,7 @@ func Print(l *list.List, filter bool, interval time.Duration) {
 	log.Warn("%d abandoned spans:", spanCount)
 	if truncated {
 		log.Warn("Too many abandoned spans. Truncating message.")
-		log.Warn(sb.String(), "...")
+		sb.WriteString("...")
 	}
 	log.Warn(sb.String())
 }

@@ -280,7 +280,7 @@ func newTracer(opts ...StartOption) *tracer {
 		}()
 	}
 	if c.debugAbandonedSpans {
-		log.Warn("Debug open spans enabled.")
+		log.Warn("Abandoned spans logs enabled.")
 		t.abandonedSpans = list.New()
 		t.cIn = make(chan *span)
 		t.cOut = make(chan *span)
