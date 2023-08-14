@@ -338,6 +338,9 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 
 	var properr string
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
+		if k == tracestateHeader || k == traceparentHeader {
+			return true // don't propagate W3C headers with the DD propagator
+		}
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
 			properr = "encoding_error"

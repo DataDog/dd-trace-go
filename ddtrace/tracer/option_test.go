@@ -1246,3 +1246,79 @@ func TestHostnameDisabled(t *testing.T) {
 		assert.False(t, c.enableHostnameDetection)
 	})
 }
+
+func TestPartialFlushing(t *testing.T) {
+	t.Run("None", func(t *testing.T) {
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Default-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("WithPartialFlushOption", func(t *testing.T) {
+		c := newConfig()
+		WithPartialFlushing(20)(c)
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 20, c.partialFlushMinSpans)
+	})
+}
+
+func TestWithStatsComputation(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig()
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("disabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(false))
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
+		c := newConfig()
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+}
