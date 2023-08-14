@@ -17,6 +17,8 @@ import (
 var tickerInterval = time.Minute
 var logSize = 9000
 
+// isBucketNode takes in a list.Element and checks if it is a nonempty
+// list Element
 func isBucketNode(e *list.Element) (*list.List, bool) {
 	ls, ok := e.Value.(*list.List)
 	if !ok || ls == nil || ls.Front() == nil {
@@ -25,6 +27,8 @@ func isBucketNode(e *list.Element) (*list.List, bool) {
 	return ls, true
 }
 
+// isSpanNode takes in a list.Element and checks if it is a non-nil
+// span object
 func isSpanNode(e *list.Element) (*span, bool) {
 	s, ok := e.Value.(*span)
 	if !ok || s == nil {
@@ -54,10 +58,9 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 			}
 			// All spans within the same bucket should have a start time that
 			// is within `interval` nanoseconds of each other.
-			// This loop should continue until the correct bucket is found. This
-			// includes empty or nil buckets (which have no spans in them) or
-			// an existing bucket with spans that have started within `interval`
-			// nanoseconds before the new span has started.
+			// This loop should continue until it finds the an existing bucket
+			// with spans that have started within `interval` nanoseconds before
+			// the new span has started.
 			for bNode != nil {
 				bucket, bOk := isBucketNode(bNode)
 				if !bOk {
@@ -113,18 +116,28 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	}
 }
 
-func abandonedSpanString(s *span, interval *time.Duration) string {
+// abandonedSpanString takes a span and returns a human readable string representing
+// that span. If `interval` is not nil, it will check if the span is older than the
+// user configured timeout, and return an empty string if it is not.
+func abandonedSpanString(s *span, interval *time.Duration, nowTime *int64) string {
 	s.Lock()
 	defer s.Unlock()
+	if interval != nil && *nowTime-s.Start < interval.Nanoseconds() {
+		return ""
+	}
 	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", s.Name, s.SpanID, s.TraceID, s.Duration)
 }
 
-func abandonedBucketString(bucket *list.List, interval *time.Duration) (int, string) {
+// abandonedBucketString takes a bucket and returns a human readable string representing
+// the contents of the bucket. If `interval` is not nil, it will check if the bucket might
+// contain spans older than the user configured timeout. If it does, it will filter for
+// older spans. If not, it will print all spans without checking their duration.
+func abandonedBucketString(bucket *list.List, interval *time.Duration, nowTime *int64) (int, string) {
 	var sb strings.Builder
 	spanCount := 0
 	node := bucket.Back()
-	span, ok := isSpanNode(node)
-	filter := ok && interval != nil && now()-span.Start <= interval.Nanoseconds()
+	back, ok := isSpanNode(node)
+	filter := ok && interval != nil && *nowTime-back.Start >= interval.Nanoseconds()
 	for node := bucket.Front(); node != nil; node = node.Next() {
 		span, ok := isSpanNode(node)
 		if !ok {
@@ -132,9 +145,9 @@ func abandonedBucketString(bucket *list.List, interval *time.Duration) (int, str
 		}
 		var msg string
 		if filter {
-			msg = abandonedSpanString(span, interval)
+			msg = abandonedSpanString(span, interval, nowTime)
 		} else {
-			msg = abandonedSpanString(span, nil)
+			msg = abandonedSpanString(span, nil, nil)
 		}
 		sb.WriteString(msg)
 		spanCount++
@@ -142,14 +155,15 @@ func abandonedBucketString(bucket *list.List, interval *time.Duration) (int, str
 	return spanCount, sb.String()
 }
 
-// logAbandonedSpans returns a string containing potentially abandoned spans. If `filter` is true,
-// it will only return spans that are older than the provided time `interval`. If false,
-// it will return all unfinished spans.
+// logAbandonedSpans returns a string containing potentially abandoned spans. If `interval` is
+// `nil`, it will print all unfinished spans. If `interval` holds a time.Duration, it will
+// only print spans that are older than `interval`. It will also truncate the log message to
+// `logSize` bytes to prevent overloading the logger.
 func logAbandonedSpans(l *list.List, interval *time.Duration) {
 	var sb strings.Builder
-	nowTime := now()
 	spanCount := 0
 	truncated := false
+	nowTime := now()
 
 	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
 		bucket, ok := isBucketNode(bucketNode)
@@ -174,8 +188,9 @@ func logAbandonedSpans(l *list.List, interval *time.Duration) {
 		if truncated {
 			continue
 		}
-		nSpans, msg := abandonedBucketString(bucket, interval)
+		nSpans, msg := abandonedBucketString(bucket, interval, &nowTime)
 		spanCount += nSpans
+
 		space := logSize - len(sb.String())
 		if len(msg) > space {
 			msg = msg[0:space]
