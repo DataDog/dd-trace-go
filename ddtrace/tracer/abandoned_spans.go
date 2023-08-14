@@ -17,16 +17,33 @@ import (
 var tickerInterval = time.Minute
 var logSize = 9000
 
+func isBucketNode(e *list.Element) (*list.List, bool) {
+	ls, ok := e.Value.(*list.List)
+	if !ok || ls == nil || ls.Front() == nil {
+		return nil, false
+	}
+	return ls, true
+}
+
+func isSpanNode(e *list.Element) (*span, bool) {
+	s, ok := e.Value.(*span)
+	if !ok || s == nil {
+		return nil, false
+	}
+	return s, true
+}
+
 // reportAbandonedSpans periodically finds and reports potentially abandoned
 // spans that are older than the given interval. These spans are stored in a
-// bucketed linked list, sorted by their `Start` time.
+// bucketed linked list, sorted by their `Start` time, where the front of the
+// list contains the oldest spans, and the end of the list contains the newest spans.
 func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	tick := time.NewTicker(tickerInterval)
 	defer tick.Stop()
 	for {
 		select {
 		case <-tick.C:
-			logAbandonedSpans(t.abandonedSpans, true, interval)
+			logAbandonedSpans(t.abandonedSpans, &interval)
 		case s := <-t.cIn:
 			bNode := t.abandonedSpans.Front()
 			if bNode == nil {
@@ -35,8 +52,14 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				t.abandonedSpans.PushBack(b)
 				break
 			}
+			// All spans within the same bucket should have a start time that
+			// is within `interval` nanoseconds of each other.
+			// This loop should continue until the correct bucket is found. This
+			// includes empty or nil buckets (which have no spans in them) or
+			// an existing bucket with spans that have started within `interval`
+			// nanoseconds before the new span has started.
 			for bNode != nil {
-				bucket, bOk := bNode.Value.(*list.List)
+				bucket, bOk := isBucketNode(bNode)
 				if !bOk {
 					bNode = bNode.Next()
 					continue
@@ -46,8 +69,8 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 					bNode = bNode.Next()
 					continue
 				}
-				sp, sOk := sNode.Value.(*span)
-				if sOk && sp != nil && s.Start-sp.Start <= interval.Nanoseconds() {
+				sp, sOk := isSpanNode(sNode)
+				if sOk && s.Start-sp.Start <= interval.Nanoseconds() {
 					bucket.PushBack(s)
 					break
 				}
@@ -56,17 +79,22 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 			if bNode != nil {
 				break
 			}
+			// If no matching bucket exists, create a new one and append the new
+			// span to the top of the bucket.
 			b := list.New()
 			b.PushBack(s)
 			t.abandonedSpans.PushBack(b)
 		case s := <-t.cOut:
+			// This loop should continue until it finds the bucket with spans
+			// starting within `interval` nanoseconds of the finished span,
+			// then remove that span from the bucket.
 			for node := t.abandonedSpans.Front(); node != nil; node = node.Next() {
-				bucket, ok := node.Value.(*list.List)
-				if !ok || bucket.Front() == nil {
+				bucket, ok := isBucketNode(node)
+				if !ok {
 					continue
 				}
 				spNode := bucket.Front()
-				sp, ok := spNode.Value.(*span)
+				sp, ok := isSpanNode(spNode)
 				if !ok {
 					continue
 				}
@@ -79,24 +107,53 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				}
 			}
 		case <-t.stop:
-			logAbandonedSpans(t.abandonedSpans, false, interval)
+			logAbandonedSpans(t.abandonedSpans, nil)
 			return
 		}
 	}
 }
 
+func abandonedSpanString(s *span, interval *time.Duration) string {
+	s.Lock()
+	defer s.Unlock()
+	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", s.Name, s.SpanID, s.TraceID, s.Duration)
+}
+
+func abandonedBucketString(bucket *list.List, interval *time.Duration) (int, string) {
+	var sb strings.Builder
+	spanCount := 0
+	node := bucket.Back()
+	span, ok := isSpanNode(node)
+	filter := ok && interval != nil && now()-span.Start <= interval.Nanoseconds()
+	for node := bucket.Front(); node != nil; node = node.Next() {
+		span, ok := isSpanNode(node)
+		if !ok {
+			continue
+		}
+		var msg string
+		if filter {
+			msg = abandonedSpanString(span, interval)
+		} else {
+			msg = abandonedSpanString(span, nil)
+		}
+		sb.WriteString(msg)
+		spanCount++
+	}
+	return spanCount, sb.String()
+}
+
 // logAbandonedSpans returns a string containing potentially abandoned spans. If `filter` is true,
 // it will only return spans that are older than the provided time `interval`. If false,
 // it will return all unfinished spans.
-func logAbandonedSpans(l *list.List, filter bool, interval time.Duration) {
+func logAbandonedSpans(l *list.List, interval *time.Duration) {
 	var sb strings.Builder
 	nowTime := now()
 	spanCount := 0
 	truncated := false
 
 	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
-		bucket, ok := bucketNode.Value.(*list.List)
-		if !ok || bucket == nil {
+		bucket, ok := isBucketNode(bucketNode)
+		if !ok {
 			continue
 		}
 
@@ -104,41 +161,27 @@ func logAbandonedSpans(l *list.List, filter bool, interval time.Duration) {
 		// than the allowed time interval means that all spans in this bucket
 		// and future buckets will be younger than `interval`, and thus aren't
 		// worth checking.
-		if filter {
+		if interval != nil {
 			spanNode := bucket.Front()
-			if spanNode == nil {
-				continue
-			}
-			sp, ok := spanNode.Value.(*span)
-			if !ok || sp == nil {
+			sp, ok := isSpanNode(spanNode)
+			if !ok {
 				continue
 			}
 			if nowTime-sp.Start < interval.Nanoseconds() {
 				continue
 			}
 		}
-		for spanNode := bucket.Front(); spanNode != nil; spanNode = spanNode.Next() {
-			sp, ok := spanNode.Value.(*span)
-			if !ok || sp == nil {
-				continue
-			}
-
-			// despite quitting early, spans within the same bucket can still fall on either side
-			// of the timeout. We should still check if the span is too old or not.
-			if filter && nowTime-sp.Start < interval.Nanoseconds() {
-				break
-			}
-			sp.Lock()
-			msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", sp.Name, sp.SpanID, sp.TraceID, sp.Duration)
-			sp.Unlock()
-			spanCount++
-			if logSize-len(sb.String()) < len(msg) {
-				truncated = true
-				continue
-			}
-
-			sb.WriteString(msg)
+		if truncated {
+			continue
 		}
+		nSpans, msg := abandonedBucketString(bucket, interval)
+		spanCount += nSpans
+		space := logSize - len(sb.String())
+		if len(msg) > space {
+			msg = msg[0:space]
+			truncated = true
+		}
+		sb.WriteString(msg)
 	}
 
 	if spanCount == 0 {
