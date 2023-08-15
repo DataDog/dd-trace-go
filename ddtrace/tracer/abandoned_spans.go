@@ -101,12 +101,23 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				if !ok {
 					continue
 				}
-				if s.Start-sp.Start <= interval.Nanoseconds() {
-					bucket.Remove(spNode)
-					if bucket.Front() == nil {
-						t.abandonedSpans.Remove(node)
+				if s.Start-sp.Start > interval.Nanoseconds() || sp.Start-s.Start > interval.Nanoseconds() {
+					continue
+				}
+
+				for spNode != nil {
+					sp, ok := isSpanNode(spNode)
+					if !ok {
+						continue
 					}
-					break
+					if s.SpanID == sp.SpanID {
+						bucket.Remove(spNode)
+						if bucket.Front() == nil {
+							t.abandonedSpans.Remove(node)
+						}
+						break
+					}
+					spNode = spNode.Next()
 				}
 			}
 		case <-t.stop:
@@ -119,36 +130,37 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 // abandonedSpanString takes a span and returns a human readable string representing
 // that span. If `interval` is not nil, it will check if the span is older than the
 // user configured timeout, and return an empty string if it is not.
-func abandonedSpanString(s *span, interval *time.Duration, nowTime *int64) string {
+func abandonedSpanString(s *span, interval *time.Duration, curTime int64) string {
 	s.Lock()
 	defer s.Unlock()
-	if interval != nil && *nowTime-s.Start < interval.Nanoseconds() {
+	age := curTime - s.Start
+	if interval != nil && age < interval.Nanoseconds() {
 		return ""
 	}
-	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %d],", s.Name, s.SpanID, s.TraceID, s.Duration)
+	a := fmt.Sprintf("%d sec", age/1e9)
+	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.SpanID, s.TraceID, a)
 }
 
 // abandonedBucketString takes a bucket and returns a human readable string representing
 // the contents of the bucket. If `interval` is not nil, it will check if the bucket might
 // contain spans older than the user configured timeout. If it does, it will filter for
 // older spans. If not, it will print all spans without checking their duration.
-func abandonedBucketString(bucket *list.List, interval *time.Duration, nowTime *int64) (int, string) {
+func abandonedBucketString(bucket *list.List, interval *time.Duration, curTime int64) (int, string) {
 	var sb strings.Builder
 	spanCount := 0
 	node := bucket.Back()
 	back, ok := isSpanNode(node)
-	filter := ok && interval != nil && *nowTime-back.Start >= interval.Nanoseconds()
+	filter := ok && interval != nil && curTime-back.Start >= interval.Nanoseconds()
 	for node := bucket.Front(); node != nil; node = node.Next() {
 		span, ok := isSpanNode(node)
 		if !ok {
 			continue
 		}
-		var msg string
-		if filter {
-			msg = abandonedSpanString(span, interval, nowTime)
-		} else {
-			msg = abandonedSpanString(span, nil, nil)
+		timeout := interval
+		if !filter {
+			timeout = nil
 		}
+		msg := abandonedSpanString(span, timeout, curTime)
 		sb.WriteString(msg)
 		spanCount++
 	}
@@ -163,7 +175,7 @@ func logAbandonedSpans(l *list.List, interval *time.Duration) {
 	var sb strings.Builder
 	spanCount := 0
 	truncated := false
-	nowTime := now()
+	curTime := now()
 
 	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
 		bucket, ok := isBucketNode(bucketNode)
@@ -181,14 +193,14 @@ func logAbandonedSpans(l *list.List, interval *time.Duration) {
 			if !ok {
 				continue
 			}
-			if nowTime-sp.Start < interval.Nanoseconds() {
+			if curTime-sp.Start < interval.Nanoseconds() {
 				continue
 			}
 		}
 		if truncated {
 			continue
 		}
-		nSpans, msg := abandonedBucketString(bucket, interval, &nowTime)
+		nSpans, msg := abandonedBucketString(bucket, interval, curTime)
 		spanCount += nSpans
 
 		space := logSize - len(sb.String())
