@@ -17,9 +17,13 @@ import (
 var tickerInterval = time.Minute
 var logSize = 9000
 
-// isBucketNode takes in a list.Element and checks if it is a nonempty
-// list Element
-func isBucketNode(e *list.Element) (*list.List, bool) {
+// castAsBucketNode takes in a list.Element and checks if it is a nonempty
+// list Element. If it can be cast as a list.List, that list will be returned
+// bool flag `true`. If not, it will return `nil` with bool flag `false`
+func castAsBucketNode(e *list.Element) (*list.List, bool) {
+	if e == nil {
+		return nil, false
+	}
 	ls, ok := e.Value.(*list.List)
 	if !ok || ls == nil || ls.Front() == nil {
 		return nil, false
@@ -27,14 +31,41 @@ func isBucketNode(e *list.Element) (*list.List, bool) {
 	return ls, true
 }
 
-// isSpanNode takes in a list.Element and checks if it is a non-nil
-// span object
-func isSpanNode(e *list.Element) (*span, bool) {
+// castAsSpanNode takes in a list.Element and checks if it is a non-nil
+// span object. If it can be cast as a span, that span will be returned
+// bool flag `true`. If not, it will return `nil` with bool flag `false`
+func castAsSpanNode(e *list.Element) (*span, bool) {
+	if e == nil {
+		return nil, false
+	}
 	s, ok := e.Value.(*span)
 	if !ok || s == nil {
 		return nil, false
 	}
 	return s, true
+}
+
+// findSpanBucket takes in a start time in Unix Nanoseconds and the user
+// configured interval, then finds the bucket that the given span should
+// belong in. All spans within the same bucket should have a start time that
+// is within `interval` nanoseconds of each other.
+func (t *tracer) findSpanBucket(start int64, interval time.Duration) (*list.Element, bool) {
+	for node := t.abandonedSpans.Front(); node != nil; node = node.Next() {
+		bucket, ok := castAsBucketNode(node)
+		if !ok {
+			continue
+		}
+		for spNode := bucket.Front(); spNode != nil; spNode = spNode.Next() {
+			sp, ok := castAsSpanNode(spNode)
+			if !ok {
+				continue
+			}
+			if start >= sp.Start && start-sp.Start < interval.Nanoseconds() {
+				return node, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // reportAbandonedSpans periodically finds and reports potentially abandoned
@@ -49,37 +80,10 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 		case <-tick.C:
 			logAbandonedSpans(t.abandonedSpans, &interval)
 		case s := <-t.cIn:
-			bNode := t.abandonedSpans.Front()
-			if bNode == nil {
-				b := list.New()
-				b.PushBack(s)
-				t.abandonedSpans.PushBack(b)
-				break
-			}
-			// All spans within the same bucket should have a start time that
-			// is within `interval` nanoseconds of each other.
-			// This loop should continue until it finds the an existing bucket
-			// with spans that have started within `interval` nanoseconds before
-			// the new span has started.
-			for bNode != nil {
-				bucket, bOk := isBucketNode(bNode)
-				if !bOk {
-					bNode = bNode.Next()
-					continue
-				}
-				sNode := bucket.Front()
-				if sNode == nil {
-					bNode = bNode.Next()
-					continue
-				}
-				sp, sOk := isSpanNode(sNode)
-				if sOk && s.Start-sp.Start <= interval.Nanoseconds() {
-					bucket.PushBack(s)
-					break
-				}
-				bNode = bNode.Next()
-			}
-			if bNode != nil {
+			bNode, bOk := t.findSpanBucket(s.Start, interval)
+			bucket, ok := castAsBucketNode(bNode)
+			if bOk && ok {
+				bucket.PushBack(s)
 				break
 			}
 			// If no matching bucket exists, create a new one and append the new
@@ -88,36 +92,26 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 			b.PushBack(s)
 			t.abandonedSpans.PushBack(b)
 		case s := <-t.cOut:
-			// This loop should continue until it finds the bucket with spans
-			// starting within `interval` nanoseconds of the finished span,
-			// then remove that span from the bucket.
-			for node := t.abandonedSpans.Front(); node != nil; node = node.Next() {
-				bucket, ok := isBucketNode(node)
-				if !ok {
+			bNode, bOk := t.findSpanBucket(s.Start, interval)
+			bucket, ok := castAsBucketNode(bNode)
+			if !bOk || !ok {
+				break
+			}
+			// If a matching bucket exists, attempt to find the element containing
+			// the finished span, then remove that element from the bucket.
+			// If a bucket becomes empty, also remove that bucket from the
+			// abandoned spans list.
+			for node := bucket.Front(); node != nil; node = node.Next() {
+				sp, sOk := castAsSpanNode(node)
+				if !sOk {
 					continue
 				}
-				spNode := bucket.Front()
-				sp, ok := isSpanNode(spNode)
-				if !ok {
+				if sp.SpanID != s.SpanID {
 					continue
 				}
-				if s.Start-sp.Start > interval.Nanoseconds() || sp.Start-s.Start > interval.Nanoseconds() {
-					continue
-				}
-
-				for spNode != nil {
-					sp, ok := isSpanNode(spNode)
-					if !ok {
-						continue
-					}
-					if s.SpanID == sp.SpanID {
-						bucket.Remove(spNode)
-						if bucket.Front() == nil {
-							t.abandonedSpans.Remove(node)
-						}
-						break
-					}
-					spNode = spNode.Next()
+				bucket.Remove(node)
+				if bucket.Front() == nil {
+					t.abandonedSpans.Remove(bNode)
 				}
 			}
 		case <-t.stop:
@@ -149,10 +143,10 @@ func abandonedBucketString(bucket *list.List, interval *time.Duration, curTime i
 	var sb strings.Builder
 	spanCount := 0
 	node := bucket.Back()
-	back, ok := isSpanNode(node)
+	back, ok := castAsSpanNode(node)
 	filter := ok && interval != nil && curTime-back.Start >= interval.Nanoseconds()
 	for node := bucket.Front(); node != nil; node = node.Next() {
-		span, ok := isSpanNode(node)
+		span, ok := castAsSpanNode(node)
 		if !ok {
 			continue
 		}
@@ -178,7 +172,7 @@ func logAbandonedSpans(l *list.List, interval *time.Duration) {
 	curTime := now()
 
 	for bucketNode := l.Front(); bucketNode != nil; bucketNode = bucketNode.Next() {
-		bucket, ok := isBucketNode(bucketNode)
+		bucket, ok := castAsBucketNode(bucketNode)
 		if !ok {
 			continue
 		}
@@ -189,7 +183,7 @@ func logAbandonedSpans(l *list.List, interval *time.Duration) {
 		// worth checking.
 		if interval != nil {
 			spanNode := bucket.Front()
-			sp, ok := isSpanNode(spanNode)
+			sp, ok := castAsSpanNode(spanNode)
 			if !ok {
 				continue
 			}

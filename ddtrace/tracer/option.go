@@ -1013,7 +1013,8 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // This setting can also be configured by setting DD_TRACE_DEBUG_ABANDONED_SPANS
 // to true. The timeout will default to 10 minutes, unless overwritten
 // by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
-// This feature is disabled by default.
+// This feature is disabled by default. Turning on this debug mode may
+// be expensive, so it should only be enabled for debugging purposes.
 func WithDebugSpansMode(timeout time.Duration) StartOption {
 	return func(c *config) {
 		c.debugAbandonedSpans = true

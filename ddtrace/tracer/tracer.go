@@ -100,10 +100,10 @@ type tracer struct {
 	// abandonedSpans holds a linked list of potentially abandoned spans for all traces.
 	abandonedSpans *list.List
 
-	// cIn receives spans when they are created to be added to abandonedSpans
+	// cIn takes newly created spans and adds them to abandonedSpans
 	cIn chan *span
 
-	// cOut receives spans when they finish to be removed from abandonedSpans
+	// cOut signals for a finished span to be removed from abandonedSpans
 	cOut chan *span
 }
 

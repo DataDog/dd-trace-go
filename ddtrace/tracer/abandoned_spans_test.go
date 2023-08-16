@@ -23,18 +23,19 @@ var spanStart = time.Date(2023, time.August, 18, 0, 0, 0, 0, time.UTC)
 
 // setTestTime() sets the current time, which will be used to calculate the
 // duration of abandoned spans.
-func setTestTime() {
+func setTestTime() func() {
 	current := spanStart.UnixNano() + 10*time.Minute.Nanoseconds() //use a fixed time instead of now
 	now = func() int64 { return current }
+
+	return func() {
+		now = func() int64 { return time.Now().UnixNano() }
+	}
 }
 
-// resetTestTime() resets the `now()` function to its default value.
-func resetTestTime() {
-	now = func() int64 { return time.Now().UnixNano() }
-}
-
+// spanAge takes in a span and returns the current test duration of the
+// span in seconds as a string
 func spanAge(s *span) string {
-	return fmt.Sprintf("%d sec", (now()-s.Start)/1e9)
+	return fmt.Sprintf("%d sec", (now()-s.Start)/int64(time.Second))
 }
 
 func formatSpanString(s *span) string {
@@ -61,8 +62,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("finished", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		s := tracer.StartSpan("operation", StartTime(spanStart)).(*span)
@@ -73,22 +73,18 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("open", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		s := tracer.StartSpan("operation", StartTime(spanStart)).(*span)
-		time.Sleep(time.Second)
 		time.Sleep(200 * time.Millisecond)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
 		assert.Contains(tp.Logs(), fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s)))
-		s.Finish()
 	})
 
 	t.Run("both", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		sf := tracer.StartSpan("op", StartTime(spanStart)).(*span)
@@ -105,8 +101,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("many", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		var sb strings.Builder
@@ -125,8 +120,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("many buckets", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 		var sb strings.Builder
@@ -148,8 +142,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("stop", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond))
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
@@ -166,8 +159,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("wait", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		defer stop()
 
@@ -182,8 +174,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 	t.Run("truncate", func(t *testing.T) {
 		tp.Reset()
-		setTestTime()
-		defer resetTestTime()
+		defer setTestTime()()
 		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
 		logSize = 10
 
@@ -195,7 +186,6 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))
 	})
 
-	resetTestTime()
 }
 
 func TestDebugAbandonedSpansOff(t *testing.T) {
