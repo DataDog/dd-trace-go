@@ -708,6 +708,46 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(1.0, span.Metrics[keyTopLevel])
 }
 
+func TestTracerStartSpanOptionsBaseService(t *testing.T) {
+	prevSvc := globalconfig.ServiceName()
+	t.Cleanup(func() {
+		globalconfig.SetServiceName(prevSvc)
+	})
+	t.Run("span-service-not-equal-global-service", func(t *testing.T) {
+		tracer := newTracer(WithService("global-service"))
+		defer tracer.Stop()
+		opts := []StartSpanOption{
+			ServiceName("test.service"),
+		}
+		span := tracer.StartSpan("web.request", opts...).(*span)
+		assert := assert.New(t)
+		assert.Equal("test.service", span.Service)
+		assert.Equal("global-service", span.Meta["_dd.base_service"])
+	})
+	t.Run("span-service-equal-global-service", func(t *testing.T) {
+		tracer := newTracer(WithService("global-service"))
+		defer tracer.Stop()
+		opts := []StartSpanOption{
+			ServiceName("global-service"),
+		}
+		span := tracer.StartSpan("web.request", opts...).(*span)
+		assert := assert.New(t)
+		assert.Equal("global-service", span.Service)
+		assert.NotContains(span.Meta, "_dd.base_service")
+	})
+	t.Run("global-service-not-set", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+		opts := []StartSpanOption{
+			ServiceName("span-service"),
+		}
+		span := tracer.StartSpan("web.request", opts...).(*span)
+		assert := assert.New(t)
+		assert.Equal("span-service", span.Service)
+		assert.NotContains(span.Meta, "_dd.base_service")
+	})
+}
+
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
 	internal.SetGlobalTracer(tracer)

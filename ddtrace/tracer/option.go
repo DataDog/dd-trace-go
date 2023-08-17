@@ -1023,7 +1023,17 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
-	return Tag(ext.ServiceName, name)
+	globalSvc := globalconfig.ServiceName()
+
+	return func(cfg *ddtrace.StartSpanConfig) {
+		if cfg.Tags == nil {
+			cfg.Tags = map[string]interface{}{}
+		}
+		cfg.Tags[ext.ServiceName] = name
+		if globalSvc != "" && name != globalSvc {
+			cfg.Tags[keyBaseService] = globalSvc
+		}
+	}
 }
 
 // ResourceName sets the given resource name on the started span. A resource could
