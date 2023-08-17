@@ -624,7 +624,7 @@ func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
 		span.context.trace.drop()
-		span.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
+		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
