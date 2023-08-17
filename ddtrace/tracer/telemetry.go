@@ -55,14 +55,12 @@ func startTelemetry(c *config) {
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 	}
-	if len(c.peerServiceMappings) != 0 {
-		var result []string
-		for key, value := range c.peerServiceMappings {
-			result = append(result, fmt.Sprintf("%s:%s", key, value))
-		}
-		telemetryConfigs = append(telemetryConfigs,
-			telemetry.Configuration{Name: "trace_peer_service_mapping", Value: strings.Join(result, ",")})
+	var peerServiceMapping []string
+	for key, value := range c.peerServiceMappings {
+		peerServiceMapping = append(peerServiceMapping, fmt.Sprintf("%s:%s", key, value))
 	}
+	telemetryConfigs = append(telemetryConfigs,
+		telemetry.Configuration{Name: "trace_peer_service_mapping", Value: strings.Join(peerServiceMapping, ",")})
 
 	if chained, ok := c.propagator.(*chainedPropagator); ok {
 		telemetryConfigs = append(telemetryConfigs,
