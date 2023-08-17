@@ -64,6 +64,27 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 	}
 }
 
+func TestSpanResourceNameDefault(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "OperationName")
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, `"name":"OperationName"`)
+	assert.Contains(p, `"resource":"OperationName"`)
+}
+
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

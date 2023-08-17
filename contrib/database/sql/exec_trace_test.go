@@ -71,9 +71,9 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	rows.Close()
 	stmt, err := conn.PrepareContext(ctx, "prepared")
 	require.NoError(t, err, "preparing mock statement")
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	require.NoError(t, err, "executing mock perpared statement")
-	rows, err = stmt.Query()
+	rows, err = stmt.QueryContext(ctx)
 	require.NoError(t, err, "executing mock perpared query")
 	rows.Close()
 	tx, err := conn.BeginTx(ctx, nil)
@@ -90,9 +90,7 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	tasks, err := tasksFromTrace(buf)
 	require.NoError(t, err, "getting tasks from trace")
 
-	expectedParentChildTasks := []string{"Connect", "Exec", "Query", "Prepare", "Begin", "Exec"}
-	expectedPreparedStatementTasks := []string{"Exec", "Query"}
-
+	expectedParentChildTasks := []string{"Connect", "Exec", "Query", "Prepare", "Exec", "Query", "Begin", "Exec"}
 	var foundParent, foundPrepared bool
 	for id, task := range tasks {
 		t.Logf("task %d: %+v", id, task)
@@ -106,11 +104,6 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 			assert.ElementsMatch(t, expectedParentChildTasks, gotParentChildTasks)
 		case "Prepare":
 			foundPrepared = true
-			var gotPerparedStatementTasks []string
-			for _, id := range tasks[id].children {
-				gotPerparedStatementTasks = append(gotPerparedStatementTasks, tasks[id].name)
-			}
-			assert.ElementsMatch(t, expectedPreparedStatementTasks, gotPerparedStatementTasks)
 			assert.GreaterOrEqual(t, task.duration, sleepDuration, "task %s", task.name)
 		case "Connect", "Exec", "Begin", "Commit", "Query":
 			assert.GreaterOrEqual(t, task.duration, sleepDuration, "task %s", task.name)

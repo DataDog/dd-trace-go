@@ -20,19 +20,12 @@
 * If this resolves a GitHub issue, include "Fixes #XXXX" to link the issue and auto-close it on merge.
 -->
 
-### Describe how to test/QA your changes
-
-<!--
-* Write here in detail or link to detailed instructions on how this change can
-  be tested/QAd/validated, including any environment setup.
-* Ideally your changes have automated unit and/or integration tests which are run in CI.
--->
-
 ### Reviewer's Checklist
 <!--
 * Authors can use this list as a reference to ensure that there are no problems
   during the review but the signing off is to be done by the reviewer(s).
 -->
 
-- [ ] Changed code has unit tests for its functionality.
+- [ ] Changed code has unit tests for its functionality at or near 100% coverage.
+- [ ] There is a benchmark for any new code, or changes to existing code.
 - [ ] If this interacts with the agent in a new way, a system test has been added.

@@ -43,7 +43,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 		for _, arg := range htArgs {
-			_, tag := normalizer.NormalizeHeaderTag(arg)
+			_, tag := normalizer.HeaderTag(arg)
 			assert.NotContains(s.Tags(), tag)
 		}
 	})
@@ -59,7 +59,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -69,7 +69,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.NormalizeHeaderTag("3header")
+		header, tag := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
 
 		r := setupReq()
@@ -86,7 +86,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalH, globalT := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(globalH, globalT)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
@@ -97,7 +97,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -415,4 +415,28 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 
 func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func BenchmarkHttpServeTrace(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	header, tag := normalizer.HeaderTag("3header")
+	globalconfig.SetHeaderTag(header, tag)
+
+	r := httptest.NewRequest("GET", "/200", nil)
+	r.Header.Set("h!e@a-d.e*r", "val")
+	r.Header.Add("h!e@a-d.e*r", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("3header", "some much bigger header value that you could possibly use")
+	r.Header.Set("x-datadog-header", "value")
+	r.Header.Set("Accept", "application/json")
+	r.Header.Set("User-Agent", "2val")
+	r.Header.Set("Accept-Charset", "utf-8")
+	r.Header.Set("Accept-Encoding", "gzip, deflate")
+	r.Header.Set("Cache-Control", "no-cache")
+
+	w := httptest.NewRecorder()
+	for i := 0; i < b.N; i++ {
+		router().ServeHTTP(w, r)
+	}
 }

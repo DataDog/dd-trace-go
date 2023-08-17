@@ -28,7 +28,7 @@ type routerConfig struct {
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
-	headerTags    func(string) (string, bool)
+	headerTags    *internal.LockMap
 }
 
 // RouterOption represents an option that can be passed to NewRouter.
@@ -52,7 +52,7 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.headerTags = globalconfig.HeaderTag
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
@@ -126,16 +126,9 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) RouterOption {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *routerConfig) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 
