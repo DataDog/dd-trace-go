@@ -35,7 +35,7 @@ func startTelemetry(c *config) {
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
-		{Name: "stats_computation_enabled", Value: c.agent.Stats},
+		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
