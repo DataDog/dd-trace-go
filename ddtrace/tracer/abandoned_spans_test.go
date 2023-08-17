@@ -99,6 +99,39 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s.Finish()
 	})
 
+	t.Run("timeout", func(t *testing.T) {
+		tp.Reset()
+		defer setTestTime()()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(3*time.Minute))
+		defer stop()
+		s1 := tracer.StartSpan("op", StartTime(spanStart)).(*span)
+		delayedStart := spanStart.Add(8 * time.Minute)
+		s2 := tracer.StartSpan("op2", StartTime(delayedStart)).(*span)
+		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
+		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s1))
+		time.Sleep(500 * time.Millisecond)
+		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
+		assert.NotContains(tp.Logs(), notExpected)
+		assert.Contains(tp.Logs(), expected)
+	})
+
+	// This test ensures that the debug mode works as expected and returns invalid information
+	// given invalid inputs.
+	t.Run("invalid", func(t *testing.T) {
+		tp.Reset()
+		defer setTestTime()()
+		tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(10*time.Minute))
+		defer stop()
+		delayedStart := spanStart.Add(8 * time.Minute)
+		s1 := tracer.StartSpan("op", StartTime(delayedStart)).(*span)
+		s2 := tracer.StartSpan("op2", StartTime(spanStart)).(*span)
+		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
+		notExpected2 := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
+		time.Sleep(500 * time.Millisecond)
+		assert.NotContains(tp.Logs(), notExpected)
+		assert.NotContains(tp.Logs(), notExpected2)
+	})
+
 	t.Run("many", func(t *testing.T) {
 		tp.Reset()
 		defer setTestTime()()
