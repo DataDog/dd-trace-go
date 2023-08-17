@@ -709,42 +709,42 @@ func TestTracerStartSpanOptions(t *testing.T) {
 }
 
 func TestTracerStartSpanOptionsBaseService(t *testing.T) {
-	prevSvc := globalconfig.ServiceName()
-	t.Cleanup(func() {
-		globalconfig.SetServiceName(prevSvc)
-	})
+	run := func(t *testing.T, tracerOpts []StartOption, spanOpts []StartSpanOption) *span {
+		prevSvc := globalconfig.ServiceName()
+		t.Cleanup(func() { globalconfig.SetServiceName(prevSvc) })
+		tr := newTracer(tracerOpts...)
+		t.Cleanup(func() { tr.Stop() })
+		return tr.StartSpan("web.request", spanOpts...).(*span)
+	}
 	t.Run("span-service-not-equal-global-service", func(t *testing.T) {
-		tracer := newTracer(WithService("global-service"))
-		defer tracer.Stop()
-		opts := []StartSpanOption{
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
 			ServiceName("test.service"),
 		}
-		span := tracer.StartSpan("web.request", opts...).(*span)
-		assert := assert.New(t)
-		assert.Equal("test.service", span.Service)
-		assert.Equal("global-service", span.Meta["_dd.base_service"])
+		s := run(t, tracerOpts, spanOpts)
+		assert.Equal(t, "test.service", s.Service)
+		assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
-		tracer := newTracer(WithService("global-service"))
-		defer tracer.Stop()
-		opts := []StartSpanOption{
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
 			ServiceName("global-service"),
 		}
-		span := tracer.StartSpan("web.request", opts...).(*span)
-		assert := assert.New(t)
-		assert.Equal("global-service", span.Service)
-		assert.NotContains(span.Meta, "_dd.base_service")
+		s := run(t, tracerOpts, spanOpts)
+		assert.Equal(t, "global-service", s.Service)
+		assert.NotContains(t, s.Meta, "_dd.base_service")
 	})
 	t.Run("global-service-not-set", func(t *testing.T) {
-		tracer := newTracer()
-		defer tracer.Stop()
-		opts := []StartSpanOption{
+		spanOpts := []StartSpanOption{
 			ServiceName("span-service"),
 		}
-		span := tracer.StartSpan("web.request", opts...).(*span)
-		assert := assert.New(t)
-		assert.Equal("span-service", span.Service)
-		assert.NotContains(span.Meta, "_dd.base_service")
+		s := run(t, nil, spanOpts)
+		assert.Equal(t, "span-service", s.Service)
+		assert.NotEmpty(t, s.Meta["_dd.base_service"])
 	})
 }
 

@@ -391,11 +391,12 @@ func newConfig(opts ...StartOption) *config {
 		if v, ok := c.globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
 				c.serviceName = s
-				globalconfig.SetServiceName(s)
 			}
-		} else {
+		}
+		if c.serviceName == "" {
 			c.serviceName = filepath.Base(os.Args[0])
 		}
+		globalconfig.SetServiceName(c.serviceName)
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
@@ -1038,13 +1039,12 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
-	globalSvc := globalconfig.ServiceName()
-
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
 		}
 		cfg.Tags[ext.ServiceName] = name
+		globalSvc := globalconfig.ServiceName()
 		if globalSvc != "" && name != globalSvc {
 			cfg.Tags[keyBaseService] = globalSvc
 		}
