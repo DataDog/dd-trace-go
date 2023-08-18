@@ -33,7 +33,7 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	log.Debug("contrib/gogearbox/gearbox: Configuring Middleware: Service: %#v", cfg)
+	log.Debug("contrib/gogearbox/gearbox.v1: Configuring Middleware: cfg: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 	}
