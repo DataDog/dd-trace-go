@@ -39,7 +39,7 @@ func TestTrace200(t *testing.T) {
 	Middleware(WithServiceName("gb"))(gb)
 
 	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
+	require.Len(t, spans, 1)
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
