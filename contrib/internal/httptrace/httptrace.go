@@ -38,23 +38,23 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 	}
 	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
-		func(cfg *ddtrace.StartSpanConfig) {
-			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{})
+		func(c *ddtrace.StartSpanConfig) {
+			if c.Tags == nil {
+				c.Tags = make(map[string]interface{})
 			}
-			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
-			cfg.Tags[ext.HTTPMethod] = r.Method
-			cfg.Tags[ext.HTTPURL] = urlFromRequest(r)
-			cfg.Tags[ext.HTTPUserAgent] = r.UserAgent()
-			cfg.Tags["_dd.measured"] = 1
+			c.Tags[ext.SpanType] = ext.SpanTypeWeb
+			c.Tags[ext.HTTPMethod] = r.Method
+			c.Tags[ext.HTTPURL] = urlFromRequest(r)
+			c.Tags[ext.HTTPUserAgent] = r.UserAgent()
+			c.Tags["_dd.measured"] = 1
 			if r.Host != "" {
-				cfg.Tags["http.host"] = r.Host
+				c.Tags["http.host"] = r.Host
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-				cfg.Parent = spanctx
+				c.Parent = spanctx
 			}
 			for k, v := range ipTags {
-				cfg.Tags[k] = v
+				c.Tags[k] = v
 			}
 		})
 	nopts = append(nopts, opts...)
