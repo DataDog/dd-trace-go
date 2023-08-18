@@ -390,7 +390,7 @@ func newConfig(opts ...StartOption) *config {
 		if v, ok := c.globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
 				c.serviceName = s
-				globalconfig.SetServiceName(c.serviceName)
+				globalconfig.SetServiceName(s)
 			}
 		} else {
 			c.serviceName = internal.DefaultServiceName()
