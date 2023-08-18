@@ -12,7 +12,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func TestFasthttpCarrierSet(t *testing.T) {
+func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 	assert := assert.New(t)
 	fcc := &FasthttpCarrier{
 		ReqHeader: new(fasthttp.RequestHeader),
