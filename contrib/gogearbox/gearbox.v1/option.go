@@ -84,6 +84,6 @@ func defaultResourceNamer(gctx gearbox.Context) string {
 	return string(fctx.Method()) + " " + string(fctx.Path())
 }
 
-func defaultResourcesIgnored(gearbox.Context) bool {
+func defaultIgnoreRequest(gearbox.Context) bool {
 	return false
 }
