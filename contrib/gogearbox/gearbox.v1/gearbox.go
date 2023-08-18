@@ -21,7 +21,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-const componentName = "gogearbox/gearbox"
+const componentName = "gogearbox/gearbox.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
