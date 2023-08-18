@@ -42,7 +42,6 @@ func TestTrace200(t *testing.T) {
 	assert.Len(spans, 1)
 
 	span := spans[0]
-	fmt.Printf("\n%v", span)
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(span.Tag(ext.ResourceName), "GET /any")
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
