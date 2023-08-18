@@ -71,9 +71,6 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 	}
 }
 
-// MTOFF: Does it matter when these span tags are added?
-// other integrations have some tags added after startSpan/before FinishSpan,
-// whereas I'm adding as many as possible before startSpan, since none of these depend on operations that happen further down the req chain AFAICT
 func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	opts = append([]ddtrace.StartSpanOption{
 		tracer.Tag(ext.Component, componentName),
