@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockClient implements Client and is used for testing purposes outside of the telemetry package,
+// MockClient implements Client and is used for testing purposes outside the telemetry package,
 // e.g. the tracer and profiler.
 type MockClient struct {
 	mock.Mock

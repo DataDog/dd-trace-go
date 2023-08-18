@@ -15,7 +15,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +34,65 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
+
+var contribIntegrations = map[string]struct {
+	name     string // user readable name for startup logs
+	imported bool   // true if the user has imported the integration
+}{
+	"github.com/99designs/gqlgen":                   {"gqlgen", false},
+	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
+	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
+	"github.com/bradfitz/gomemcache":                {"Memcache", false},
+	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
+	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
+	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
+	"database/sql":                                  {"SQL", false},
+	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", false},
+	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
+	"github.com/emicklei/go-restful":                {"go-restful", false},
+	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
+	"github.com/garyburd/redigo":                    {"Redigo (dep)", false},
+	"github.com/gin-gonic/gin":                      {"Gin", false},
+	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
+	"github.com/go-chi/chi":                         {"chi", false},
+	"github.com/go-chi/chi/v5":                      {"chi v5", false},
+	"github.com/go-pg/pg/v10":                       {"go-pg v10", false},
+	"github.com/go-redis/redis":                     {"Redis", false},
+	"github.com/go-redis/redis/v7":                  {"Redis v7", false},
+	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
+	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
+	"github.com/gocql/gocql":                        {"Cassandra", false},
+	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
+	"github.com/gomodule/redigo":                    {"Redigo", false},
+	"google.golang.org/api":                         {"Google API", false},
+	"google.golang.org/grpc":                        {"gRPC", false},
+	"google.golang.org/grpc/v12":                    {"gRPC v12", false},
+	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
+	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
+	"gorm.io/gorm.v1":                               {"Gorm v1", false},
+	"github.com/graph-gophers/graphql-go":           {"GraphQL", false},
+	"github.com/hashicorp/consul/api":               {"Consul", false},
+	"github.com/hashicorp/vault/api":                {"Vault", false},
+	"github.com/jinzhu/gorm":                        {"Gorm", false},
+	"github.com/jmoiron/sqlx":                       {"SQLx", false},
+	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
+	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
+	"github.com/labstack/echo":                      {"echo", false},
+	"github.com/labstack/echo/v4":                   {"echo v4", false},
+	"github.com/miekg/dns":                          {"miekg/dns", false},
+	"net/http":                                      {"HTTP", false},
+	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
+	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
+	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
+	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
+	"github.com/Shopify/sarama":                     {"Kafka (sarama)", false},
+	"github.com/sirupsen/logrus":                    {"Logrus", false},
+	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
+	"github.com/tidwall/buntdb":                     {"BuntDB", false},
+	"github.com/twitchtv/twirp":                     {"Twirp", false},
+	"github.com/urfave/negroni":                     {"Negroni", false},
+	"github.com/zenazn/goji":                        {"Goji", false},
+}
 
 var (
 	// defaultSocketAPM specifies the socket path to use for connecting to the trace-agent.
@@ -54,6 +115,10 @@ type config struct {
 	// agent holds the capabilities of the agent and determines some
 	// of the behaviour of the tracer.
 	agent agentFeatures
+
+	// integrations reports if the user has instrumented a Datadog integration and
+	// if they have a version of the library available to integrate.
+	integrations map[string]integrationConfig
 
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
@@ -161,6 +226,18 @@ type config struct {
 
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
+
+	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
+	// partial flush, or 0 if partial flushing is disabled.
+	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
+	partialFlushMinSpans int
+
+	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
+	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
+	partialFlushEnabled bool
+
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
+	statsComputationEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -174,6 +251,9 @@ type StartOption func(*config)
 
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
+
+// partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
+const partialFlushMinSpansDefault = 1000
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -235,6 +315,19 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
+	if c.partialFlushMinSpans <= 0 {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	} else if c.partialFlushMinSpans >= traceMaxSize {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
+		c.partialFlushMinSpans = partialFlushMinSpansDefault
+	}
+	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
+	// if it's explicitly set, and don't require both variables to be configured.
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -330,6 +423,12 @@ func newConfig(opts ...StartOption) *config {
 		log.SetLevel(log.LevelDebug)
 	}
 	c.loadAgentFeatures()
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		c.loadContribIntegrations([]*debug.Module{})
+	} else {
+		c.loadContribIntegrations(info.Deps)
+	}
 	if c.statsdClient == nil {
 		// configure statsd client
 		addr := c.dogstatsdAddr
@@ -413,6 +512,12 @@ func defaultDogstatsdAddr() string {
 	return net.JoinHostPort(host, port)
 }
 
+type integrationConfig struct {
+	Instrumented bool   `json:"instrumented"`      // indicates if the user has imported and used the integration
+	Available    bool   `json:"available"`         // indicates if the user is using a library that can be used with DataDog integrations
+	Version      string `json:"available_version"` // if available, indicates the version of the library the user has
+}
+
 // agentFeatures holds information about the trace-agent's capabilities.
 // When running WithLambdaMode, a zero-value of this struct will be used
 // as features.
@@ -482,8 +587,57 @@ func (c *config) loadAgentFeatures() {
 	}
 }
 
+// MarkIntegrationImported labels the given integration as imported
+func MarkIntegrationImported(integration string) bool {
+	s, ok := contribIntegrations[integration]
+	if !ok {
+		return false
+	}
+	s.imported = true
+	contribIntegrations[integration] = s
+	return true
+}
+
+func (c *config) loadContribIntegrations(deps []*debug.Module) {
+	integrations := map[string]integrationConfig{}
+	for _, s := range contribIntegrations {
+		integrations[s.name] = integrationConfig{
+			Instrumented: s.imported,
+		}
+	}
+	for _, d := range deps {
+		p := d.Path
+		// special use case, since gRPC does not update version number
+		if p == "google.golang.org/grpc" {
+			re := regexp.MustCompile(`v(\d.\d)\d*`)
+			match := re.FindStringSubmatch(d.Version)
+			if match == nil {
+				log.Warn("Unable to parse version of GRPC %v", d.Version)
+				continue
+			}
+			ver, err := strconv.ParseFloat(match[1], 32)
+			if err != nil {
+				log.Warn("Unable to parse version of GRPC %v as a float", d.Version)
+				continue
+			}
+			if ver <= 1.2 {
+				p = p + "/v12"
+			}
+		}
+		s, ok := contribIntegrations[p]
+		if !ok {
+			continue
+		}
+		conf := integrations[s.name]
+		conf.Available = true
+		conf.Version = d.Version
+		integrations[s.name] = conf
+	}
+	c.integrations = integrations
+}
+
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
 }
 
 func (c *config) canDropP0s() bool {
@@ -839,6 +993,31 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
 		c.profilerEndpoints = enabled
+	}
+}
+
+// WithPartialFlushing enables flushing of partially finished traces.
+// This is done after "numSpans" have finished in a single local trace at
+// which point all finished spans in that trace will be flushed, freeing up
+// any memory they were consuming. This can also be configured by setting
+// DD_TRACE_PARTIAL_FLUSH_ENABLED to true, which will default to 1000 spans
+// unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Partial flushing
+// is disabled by default.
+func WithPartialFlushing(numSpans int) StartOption {
+	return func(c *config) {
+		c.partialFlushEnabled = true
+		c.partialFlushMinSpans = numSpans
+	}
+}
+
+// WithStatsComputation enables client-side stats computation, allowing
+// the tracer to compute stats from traces. This can reduce network traffic
+// to the Datadog Agent, and produce more accurate stats data.
+// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
+// Client-side stats is off by default.
+func WithStatsComputation(enabled bool) StartOption {
+	return func(c *config) {
+		c.statsComputationEnabled = enabled
 	}
 }
 
