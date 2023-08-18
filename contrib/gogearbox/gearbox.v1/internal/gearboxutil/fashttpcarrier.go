@@ -5,8 +5,6 @@
 
 package gearboxutil
 
-// MTOFF: This will be useful if we add a fasthttp integration. Might also be useful for the fiber integration.
-// But should it be separated under a fashttputils....
 
 import (
 	"strings"
