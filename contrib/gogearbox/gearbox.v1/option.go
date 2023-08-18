@@ -75,7 +75,7 @@ func WithIgnoreRequest(f func(gctx gearbox.Context) bool) Option {
 	}
 }
 
-func isServerError(statusCode int) bool {
+func defaultIsServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
