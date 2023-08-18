@@ -13,6 +13,7 @@ import (
 
 	"github.com/gogearbox/gearbox"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -49,7 +50,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal("http://foobar.com/any", span.Tag(ext.HTTPURL))
-	assert.Equal("gogearbox/gearbox", span.Tag(ext.Component))
+	assert.Equal("gogearbox/gearbox.v1", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
@@ -169,7 +170,7 @@ func TestPropagation(t *testing.T) {
 
 		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &gearboxutil.FasthttpCarrier{ReqHeader: &gb.Context().Request.Header}
+		fcc := &gearboxutil.FastHTTPHeadersCarrier{ReqHeader: &gb.Context().Request.Header}
 
 		pspan := tracer.StartSpan("test")
 		err := tracer.Inject(pspan.Context(), fcc)
@@ -191,7 +192,7 @@ func TestPropagation(t *testing.T) {
 
 		reqctx := newReqCtx(200)
 		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &gearboxutil.FasthttpCarrier{ReqHeader: &gb.Context().Request.Header}
+		fcc := &gearboxutil.FastHTTPHeadersCarrier{ReqHeader: &gb.Context().Request.Header}
 
 		pspan := tracer.StartSpan("test")
 		err := tracer.Inject(pspan.Context(), fcc)

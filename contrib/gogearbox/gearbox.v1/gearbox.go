@@ -43,9 +43,9 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 			return
 		}
 		fctx := gctx.Context()
-		spanOpts = defaultSpanTags(spanOpts, fctx)
+		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
 		// Create an instance of FasthttpCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
-		fcc := &gearboxutil.FasthttpCarrier{
+		fcc := &gearboxutil.FastHTTPHeadersCarrier{
 			ReqHeader: &fctx.Request.Header,
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
@@ -76,13 +76,13 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
-		tracer.Tag(ext.HTTPMethod, string(ctx.Method())),
-		tracer.Tag(ext.HTTPURL, string(ctx.URI().FullURI())),
-		tracer.Tag(ext.HTTPUserAgent, string(ctx.UserAgent())),
+		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),
+		tracer.Tag(ext.HTTPURL, string(fctx.URI().FullURI())),
+		tracer.Tag(ext.HTTPUserAgent, string(fctx.UserAgent())),
 		tracer.Measured(),
 	}
-	if host := string(ctx.Host()); len(host) > 0 {
-		opts = append(opts, tracer.Tag("http.host", host)})
+	if host := string(fctx.Host()); len(host) > 0 {
+		opts = append(opts, tracer.Tag("http.host", host))
 	}
 	return opts
 }

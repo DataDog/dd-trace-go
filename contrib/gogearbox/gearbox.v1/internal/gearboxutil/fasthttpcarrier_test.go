@@ -14,7 +14,7 @@ import (
 
 func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 	assert := assert.New(t)
-	fcc := &FasthttpCarrier{
+	fcc := &FastHTTPHeadersCarrier{
 		ReqHeader: new(fasthttp.RequestHeader),
 	}
 
@@ -51,7 +51,7 @@ func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 			h.Add(k, v)
 		}
 	}
-	fcc := &FasthttpCarrier{
+	fcc := &FastHTTPHeadersCarrier{
 		ReqHeader: h,
 	}
 	err := fcc.ForeachKey(func(k, v string) error {

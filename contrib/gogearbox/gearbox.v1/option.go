@@ -30,9 +30,9 @@ func newConfig() *config {
 	return &config{
 		serviceName:   namingschema.NewDefaultServiceName(defaultServiceName).GetName(),
 		spanName:      namingschema.NewHTTPServerOp().GetName(),
-		isStatusError: isServerError,
+		isStatusError: defaultIsServerError,
 		resourceNamer: defaultResourceNamer,
-		ignoreRequest: defaultResourcesIgnored,
+		ignoreRequest: defaultIgnoreRequest,
 	}
 }
 

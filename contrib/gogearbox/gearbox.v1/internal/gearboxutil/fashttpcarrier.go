@@ -5,11 +5,11 @@
 
 package gearboxutil
 
-
 import (
 	"strings"
 
 	"github.com/valyala/fasthttp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // FasthttpCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
@@ -22,7 +22,7 @@ type FastHTTPHeadersCarrier struct {
 var _ tracer.TextMapWriter = (*FastHTTPHeadersCarrier)(nil)
 var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
 // ForeachKey iterates over fasthttp request header keys and values
-func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) error {
+func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	keys := f.ReqHeader.PeekKeys()
 	for _, key := range keys {
 		sKey := string(key)
@@ -48,7 +48,7 @@ func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) error 
 
 // Set adds the given value to request header for key. Key will be lowercased to match
 // the metadata implementation.
-func (f *FasthttpCarrier) Set(key, val string) {
+func (f *FastHTTPHeadersCarrier) Set(key, val string) {
 	k := strings.ToLower(key)
 	// f.ReqHeader.Set(k, val)
 	// MOTFF: "Set" overwrites any value at `k`. "Add" appends it. Just confirming we want to append, not overwrite
