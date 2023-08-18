@@ -100,6 +100,45 @@ func TestConfigHTTPURL(t *testing.T) {
 	}
 }
 
+func TestConfigHTTPHost(t *testing.T) {
+	defaultCfg := config{
+		httpHost: true,
+	}
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		cfg  config // cfg is the expected output config
+	}{
+		{
+			name: "empty-env",
+			cfg:  defaultCfg,
+		},
+		{
+			name: "bad-value",
+			env: map[string]string{
+				envTraceHTTPHostDisabled: "invalid",
+			},
+			cfg: defaultCfg,
+		},
+		{
+			name: "disable-http-url",
+			env:  map[string]string{envTraceHTTPHostDisabled: "true"},
+			cfg: config{
+				httpHost: false,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer cleanEnv()()
+			for k, v := range tc.env {
+				os.Setenv(k, v)
+			}
+			c := newConfig()
+			require.Equal(t, tc.cfg.httpHost, c.httpHost)
+		})
+	}
+}
+
 func cleanEnv() func() {
 	env := map[string]string{
 		envQueryStringDisabled: os.Getenv(envQueryStringDisabled),

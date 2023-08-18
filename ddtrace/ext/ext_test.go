@@ -28,6 +28,7 @@ func TestSpec(t *testing.T) {
 		SpanTypeElasticSearch, "elasticsearch",
 		SQLQuery, "sql.query",
 		HTTPURL, "http.url",
+		HTTPHost, "http.host",
 		Environment, "env",
 	}
 	if len(tests)%2 != 0 {

@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -312,6 +313,86 @@ func TestTraceHTTPURLFlag(t *testing.T) {
 			if _, err := strconv.ParseBool(tc.httpURLEnvVal); err != nil && tc.httpURLEnvVal != "" {
 				logs := tp.Logs()
 				assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_HTTP_URL_DISABLED")
+				tp.Reset()
+			}
+			mt.Reset()
+		})
+	}
+}
+
+// TestTraceHTTPHostFlag tests behavior of StartRequestSpan based on
+// the DD_TRACE_HTTP_HOST_DISABLED environment variable.
+func TestTraceHTTPHostFlag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	type ipTestCase struct {
+		name             string
+		absoluteURL      string
+		httpHostEnvVal   string
+		expectHTTPHost   bool
+		expectedHTTPHost string
+	}
+
+	exampleHost := "some.example.com:3000"
+	exampleURL := fmt.Sprintf("https://%s/some/path", exampleHost)
+
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
+
+	for _, tc := range []ipTestCase{
+		{
+			name:             "HTTP host is unset",
+			absoluteURL:      exampleURL,
+			httpHostEnvVal:   "",
+			expectHTTPHost:   true,
+			expectedHTTPHost: exampleHost,
+		},
+		{
+			name:             "HTTP host is set to non-boolean-value",
+			absoluteURL:      exampleURL,
+			httpHostEnvVal:   "invalid",
+			expectHTTPHost:   true,
+			expectedHTTPHost: exampleHost,
+		},
+		{
+			name:             "HTTP host is set to false",
+			absoluteURL:      exampleURL,
+			httpHostEnvVal:   "false",
+			expectHTTPHost:   true,
+			expectedHTTPHost: exampleHost,
+		},
+		{
+			name:             "HTTP host is set to true",
+			absoluteURL:      exampleURL,
+			httpHostEnvVal:   "true",
+			expectHTTPHost:   false,
+			expectedHTTPHost: "", // not used; included for consistency
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envTraceHTTPHostDisabled, tc.httpHostEnvVal)
+
+			// reset config based on new DD_TRACE_HTTP_HOST_DISABLED value
+			cfg = newConfig()
+
+			r := httptest.NewRequest(http.MethodGet, tc.absoluteURL, nil)
+			s, _ := StartRequestSpan(r)
+			s.Finish()
+			spans := mt.FinishedSpans()
+			targetSpan := spans[0]
+
+			if tc.expectHTTPHost {
+				assert.Equal(t, tc.expectedHTTPHost, targetSpan.Tag(ext.HTTPHost))
+			} else {
+				assert.NotContains(t, targetSpan.Tags(), ext.HTTPHost)
+			}
+			if _, err := strconv.ParseBool(tc.httpHostEnvVal); err != nil && tc.httpHostEnvVal != "" {
+				logs := tp.Logs()
+				assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_HTTP_HOST_DISABLED")
 				tp.Reset()
 			}
 			mt.Reset()

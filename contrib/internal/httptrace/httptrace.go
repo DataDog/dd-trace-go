@@ -49,8 +49,8 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 			c.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			c.Tags["_dd.measured"] = 1
-			if r.Host != "" {
-				c.Tags["http.host"] = r.Host
+			if cfg.httpHost && r.Host != "" {
+				c.Tags[ext.HTTPHost] = r.Host
 			}
 			if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
 				c.Parent = spanctx

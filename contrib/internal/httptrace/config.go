@@ -24,6 +24,8 @@ const (
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
 	// envTraceHTTPURLDisabled is the name of the env var used to disable HTTP URL collection.
 	envTraceHTTPURLDisabled = "DD_TRACE_HTTP_URL_DISABLED"
+	// envTraceHTTPHostDisabled is the name of the env var used to disable HTTP host collection.
+	envTraceHTTPHostDisabled = "DD_TRACE_HTTP_HOST_DISABLED"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if `envQueryStringRegexp` is empty.
@@ -34,6 +36,7 @@ type config struct {
 	queryString       bool           // queryString reports whether the query string should be included in the URL span tag.
 	traceClientIP     bool           // traceClientIP represents whether the client IP tags should be included in the trace span tags.
 	httpURL           bool           // httpURL represents whether the HTTP URL tag is included in the trace span tags.
+	httpHost          bool           // httpHost whether the HTTP host tag is included in the trace span information.
 }
 
 func newConfig() config {
@@ -42,6 +45,7 @@ func newConfig() config {
 		queryStringRegexp: defaultQueryStringRegexp,
 		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
 		httpURL:           !internal.BoolEnv(envTraceHTTPURLDisabled, false),
+		httpHost:          !internal.BoolEnv(envTraceHTTPHostDisabled, false),
 	}
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
 		return c
