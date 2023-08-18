@@ -240,6 +240,85 @@ func TestURLTag(t *testing.T) {
 	}
 }
 
+// TestTraceHTTPURLFlag tests behavior of StartRequestSpan based on
+// the DD_TRACE_HTTP_URL_DISABLED environment variable.
+func TestTraceHTTPURLFlag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	type ipTestCase struct {
+		name            string
+		absoluteURL     string
+		httpURLEnvVal   string
+		expectHTTPURL   bool
+		expectedHTTPURL string
+	}
+
+	exampleURL := "https://example.com/some/path"
+
+	oldConfig := cfg
+	defer func() { cfg = oldConfig }()
+
+	for _, tc := range []ipTestCase{
+		{
+			name:            "HTTP URL is unset",
+			absoluteURL:     exampleURL,
+			httpURLEnvVal:   "",
+			expectHTTPURL:   true,
+			expectedHTTPURL: exampleURL,
+		},
+		{
+			name:            "HTTP URL is set to non-boolean-value",
+			absoluteURL:     exampleURL,
+			httpURLEnvVal:   "invalid",
+			expectHTTPURL:   true,
+			expectedHTTPURL: exampleURL,
+		},
+		{
+			name:            "HTTP URL is set to false",
+			absoluteURL:     exampleURL,
+			httpURLEnvVal:   "false",
+			expectHTTPURL:   true,
+			expectedHTTPURL: exampleURL,
+		},
+		{
+			name:            "HTTP URL is set to true",
+			absoluteURL:     exampleURL,
+			httpURLEnvVal:   "true",
+			expectHTTPURL:   false,
+			expectedHTTPURL: "", // not used; included for consistency
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envTraceHTTPURLDisabled, tc.httpURLEnvVal)
+
+			// reset config based on new DD_TRACE_HTTP_URL_DISABLED value
+			cfg = newConfig()
+
+			r := httptest.NewRequest(http.MethodGet, tc.absoluteURL, nil)
+			s, _ := StartRequestSpan(r)
+			s.Finish()
+			spans := mt.FinishedSpans()
+			targetSpan := spans[0]
+
+			if tc.expectHTTPURL {
+				assert.Equal(t, tc.expectedHTTPURL, targetSpan.Tag(ext.HTTPURL))
+			} else {
+				assert.NotContains(t, targetSpan.Tags(), ext.HTTPURL)
+			}
+			if _, err := strconv.ParseBool(tc.httpURLEnvVal); err != nil && tc.httpURLEnvVal != "" {
+				logs := tp.Logs()
+				assert.Contains(t, logs[len(logs)-1], "Non-boolean value for env var DD_TRACE_HTTP_URL_DISABLED")
+				tp.Reset()
+			}
+			mt.Reset()
+		})
+	}
+}
+
 func BenchmarkStartRequestSpan(b *testing.B) {
 	b.ReportAllocs()
 	r, err := http.NewRequest("GET", "http://example.com", nil)

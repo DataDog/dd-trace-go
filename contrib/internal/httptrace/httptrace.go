@@ -44,7 +44,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 			}
 			c.Tags[ext.SpanType] = ext.SpanTypeWeb
 			c.Tags[ext.HTTPMethod] = r.Method
-			c.Tags[ext.HTTPURL] = urlFromRequest(r)
+			if cfg.httpURL {
+				c.Tags[ext.HTTPURL] = urlFromRequest(r)
+			}
 			c.Tags[ext.HTTPUserAgent] = r.UserAgent()
 			c.Tags["_dd.measured"] = 1
 			if r.Host != "" {
