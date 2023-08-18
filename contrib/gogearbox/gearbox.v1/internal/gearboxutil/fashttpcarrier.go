@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package gearboxutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox/internal/gearboxutil"
+package gearboxutil
 
 // MTOFF: This will be useful if we add a fasthttp integration. Might also be useful for the fiber integration.
 // But should it be separated under a fashttputils....
