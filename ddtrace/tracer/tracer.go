@@ -97,14 +97,9 @@ type tracer struct {
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
 
-	// abandonedSpans holds a linked list of potentially abandoned spans for all traces.
-	abandonedSpans *list.List
-
-	// cIn takes newly created spans and adds them to abandonedSpans
-	cIn chan *span
-
-	// cOut signals for a finished span to be removed from abandonedSpans
-	cOut chan *span
+	// spansDebugger specifies where and how potentially abandoned spans are stored
+	// when abandoned spans debugging is enabled.
+	spansDebugger abandonedSpansDebugger
 }
 
 const (
@@ -281,9 +276,9 @@ func newTracer(opts ...StartOption) *tracer {
 	}
 	if c.debugAbandonedSpans {
 		log.Warn("Abandoned spans logs enabled.")
-		t.abandonedSpans = list.New()
-		t.cIn = make(chan *span)
-		t.cOut = make(chan *span)
+		t.spansDebugger.abandonedSpans = list.New()
+		t.spansDebugger.cIn = make(chan *span)
+		t.spansDebugger.cOut = make(chan *span)
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
@@ -561,7 +556,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
 	if t.config.debugAbandonedSpans {
-		t.cIn <- span
+		t.spansDebugger.cIn <- span
 	}
 	return span
 }

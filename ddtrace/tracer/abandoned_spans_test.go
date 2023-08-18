@@ -240,3 +240,7 @@ func TestDebugAbandonedSpansOff(t *testing.T) {
 		s.Finish()
 	})
 }
+
+// func TestInvalidNodeTypes(t *testing.T) {
+
+// }

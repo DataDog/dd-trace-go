@@ -517,7 +517,7 @@ func (s *span) finish(finishTime int64) {
 			keep = shouldKeep(s)
 		}
 		if t.config.debugAbandonedSpans {
-			t.cOut <- s
+			t.spansDebugger.cOut <- s
 		}
 	}
 	if keep {

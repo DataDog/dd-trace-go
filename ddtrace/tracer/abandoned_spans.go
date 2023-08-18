@@ -14,6 +14,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+type abandonedSpansDebugger struct {
+	// abandonedSpans holds a linked list of potentially abandoned spans for all traces.
+	abandonedSpans *list.List
+
+	// cIn takes newly created spans and adds them to abandonedSpans
+	cIn chan *span
+
+	// cOut signals for a finished span to be removed from abandonedSpans
+	cOut chan *span
+}
+
 var tickerInterval = time.Minute
 var logSize = 9000
 
@@ -50,7 +61,7 @@ func castAsSpanNode(e *list.Element) (*span, bool) {
 // belong in. All spans within the same bucket should have a start time that
 // is within `interval` nanoseconds of each other.
 func (t *tracer) findSpanBucket(start int64, interval time.Duration) (*list.Element, bool) {
-	for node := t.abandonedSpans.Front(); node != nil; node = node.Next() {
+	for node := t.spansDebugger.abandonedSpans.Front(); node != nil; node = node.Next() {
 		bucket, ok := castAsBucketNode(node)
 		if !ok {
 			continue
@@ -78,8 +89,8 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 	for {
 		select {
 		case <-tick.C:
-			logAbandonedSpans(t.abandonedSpans, &interval)
-		case s := <-t.cIn:
+			logAbandonedSpans(t.spansDebugger.abandonedSpans, &interval)
+		case s := <-t.spansDebugger.cIn:
 			bNode, bOk := t.findSpanBucket(s.Start, interval)
 			bucket, ok := castAsBucketNode(bNode)
 			if bOk && ok {
@@ -90,8 +101,8 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 			// span to the top of the bucket.
 			b := list.New()
 			b.PushBack(s)
-			t.abandonedSpans.PushBack(b)
-		case s := <-t.cOut:
+			t.spansDebugger.abandonedSpans.PushBack(b)
+		case s := <-t.spansDebugger.cOut:
 			bNode, bOk := t.findSpanBucket(s.Start, interval)
 			bucket, ok := castAsBucketNode(bNode)
 			if !bOk || !ok {
@@ -111,11 +122,11 @@ func (t *tracer) reportAbandonedSpans(interval time.Duration) {
 				}
 				bucket.Remove(node)
 				if bucket.Front() == nil {
-					t.abandonedSpans.Remove(bNode)
+					t.spansDebugger.abandonedSpans.Remove(bNode)
 				}
 			}
 		case <-t.stop:
-			logAbandonedSpans(t.abandonedSpans, nil)
+			logAbandonedSpans(t.spansDebugger.abandonedSpans, nil)
 			return
 		}
 	}
