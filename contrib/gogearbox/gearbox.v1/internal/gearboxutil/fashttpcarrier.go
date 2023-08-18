@@ -19,6 +19,8 @@ type FastHTTPHeadersCarrier struct {
 	ReqHeader *fasthttp.RequestHeader
 }
 
+var _ tracer.TextMapWriter = (*FastHTTPHeadersCarrier)(nil)
+var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) error {
 	keys := f.ReqHeader.PeekKeys()
