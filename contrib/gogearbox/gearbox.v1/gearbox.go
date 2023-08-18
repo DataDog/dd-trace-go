@@ -71,8 +71,8 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 	}
 }
 
-func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
-	opts = append([]ddtrace.StartSpanOption{
+func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
+	opts := []ddtrace.StartSpanOption{
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
@@ -80,9 +80,9 @@ func defaultSpanTags(opts []tracer.StartSpanOption, ctx *fasthttp.RequestCtx) []
 		tracer.Tag(ext.HTTPURL, string(ctx.URI().FullURI())),
 		tracer.Tag(ext.HTTPUserAgent, string(ctx.UserAgent())),
 		tracer.Measured(),
-	}, opts...)
+	}
 	if host := string(ctx.Host()); len(host) > 0 {
-		opts = append([]ddtrace.StartSpanOption{tracer.Tag("http.host", host)}, opts...)
+		opts = append(opts, tracer.Tag("http.host", host)})
 	}
 	return opts
 }
