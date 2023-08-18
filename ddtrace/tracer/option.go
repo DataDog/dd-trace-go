@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -391,12 +390,11 @@ func newConfig(opts ...StartOption) *config {
 		if v, ok := c.globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
 				c.serviceName = s
+				globalconfig.SetServiceName(c.serviceName)
 			}
+		} else {
+			c.serviceName = internal.DefaultServiceName()
 		}
-		if c.serviceName == "" {
-			c.serviceName = filepath.Base(os.Args[0])
-		}
-		globalconfig.SetServiceName(c.serviceName)
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
@@ -1029,6 +1027,13 @@ type StartSpanOption = ddtrace.StartSpanOption
 
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
+	if k == ext.ServiceName {
+		name := ""
+		if s, ok := v.(string); ok {
+			name = s
+		}
+		return ServiceName(name)
+	}
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
@@ -1044,8 +1049,14 @@ func ServiceName(name string) StartSpanOption {
 			cfg.Tags = map[string]interface{}{}
 		}
 		cfg.Tags[ext.ServiceName] = name
+
 		globalSvc := globalconfig.ServiceName()
-		if globalSvc != "" && name != globalSvc {
+		if globalSvc == "" {
+			globalSvc = internal.DefaultServiceName()
+		}
+		// attach the _dd.base_service tag only when the globally configured service name is different from the
+		// span service name.
+		if name != globalSvc {
 			cfg.Tags[keyBaseService] = globalSvc
 		}
 	}

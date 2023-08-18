@@ -721,10 +721,10 @@ func TestTracerStartSpanOptionsBaseService(t *testing.T) {
 			WithService("global-service"),
 		}
 		spanOpts := []StartSpanOption{
-			ServiceName("test.service"),
+			ServiceName("span-service"),
 		}
 		s := run(t, tracerOpts, spanOpts)
-		assert.Equal(t, "test.service", s.Service)
+		assert.Equal(t, "span-service", s.Service)
 		assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
@@ -745,6 +745,17 @@ func TestTracerStartSpanOptionsBaseService(t *testing.T) {
 		s := run(t, nil, spanOpts)
 		assert.Equal(t, "span-service", s.Service)
 		assert.NotEmpty(t, s.Meta["_dd.base_service"])
+	})
+	t.Run("using-tag-option", func(t *testing.T) {
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
+			Tag("service.name", "span-service"),
+		}
+		s := run(t, tracerOpts, spanOpts)
+		assert.Equal(t, "span-service", s.Service)
+		assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
 	})
 }
 

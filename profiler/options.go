@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -205,7 +204,7 @@ func (c *config) addProfileType(t ProfileType) {
 func defaultConfig() (*config, error) {
 	c := config{
 		apiURL:               defaultAPIURL,
-		service:              filepath.Base(os.Args[0]),
+		service:              internal.DefaultServiceName(),
 		statsd:               &statsd.NoOpClient{},
 		httpClient:           defaultClient,
 		period:               DefaultPeriod,

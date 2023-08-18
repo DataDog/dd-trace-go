@@ -6,6 +6,8 @@
 package internal
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 )
@@ -61,4 +63,8 @@ func (l *LockMap) Get(k string) string {
 	l.RLock()
 	defer l.RUnlock()
 	return l.m[k]
+}
+
+func DefaultServiceName() string {
+	return filepath.Base(os.Args[0])
 }
