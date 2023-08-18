@@ -43,7 +43,7 @@ func TestTrace200(t *testing.T) {
 
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
-	assert.Equal(span.Tag(ext.ResourceName), "GET /any")
+	assert.Equal("GET /any", span.Tag(ext.ResourceName))
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 	assert.Equal("gb", span.Tag(ext.ServiceName))
 	assert.Equal("200", span.Tag(ext.HTTPCode))
