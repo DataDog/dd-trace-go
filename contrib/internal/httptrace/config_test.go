@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConfig(t *testing.T) {
+func TestConfigQueryString(t *testing.T) {
 	defaultCfg := config{
 		queryString:       true,
 		queryStringRegexp: defaultQueryStringRegexp,
