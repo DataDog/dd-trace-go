@@ -17,7 +17,7 @@ import (
 // FasthttpCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
 // of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
 // distributed tracing.
-type FasthttpCarrier struct {
+type FastHTTPHeadersCarrier struct {
 	ReqHeader *fasthttp.RequestHeader
 }
 
