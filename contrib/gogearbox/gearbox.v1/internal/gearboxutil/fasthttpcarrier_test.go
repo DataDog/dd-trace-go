@@ -50,7 +50,7 @@ func TestFasthttpCarrierGet(t *testing.T) {
 	assert.Equal("v2", fcc.Get("k2"))
 }
 
-func TestFasthttpCarrierForeachKey(t *testing.T) {
+func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 	assert := assert.New(t)
 	h := new(fasthttp.RequestHeader)
 	headers := map[string][]string{
