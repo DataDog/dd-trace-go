@@ -55,7 +55,3 @@ func (f *FasthttpCarrier) Set(key, val string) {
 	f.ReqHeader.Add(k, val)
 }
 
-// Get will return the first entry for the given req headers key.
-func (f *FasthttpCarrier) Get(key string) string {
-	return string(f.ReqHeader.Peek(key))
-}
