@@ -21,6 +21,7 @@ type FastHTTPHeadersCarrier struct {
 
 var _ tracer.TextMapWriter = (*FastHTTPHeadersCarrier)(nil)
 var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
+
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	keys := f.ReqHeader.PeekKeys()
@@ -54,4 +55,3 @@ func (f *FastHTTPHeadersCarrier) Set(key, val string) {
 	// MOTFF: "Set" overwrites any value at `k`. "Add" appends it. Just confirming we want to append, not overwrite
 	f.ReqHeader.Add(k, val)
 }
-

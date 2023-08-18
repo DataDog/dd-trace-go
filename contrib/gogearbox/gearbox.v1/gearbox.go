@@ -25,6 +25,7 @@ const componentName = "gogearbox/gearbox.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // Middleware returns middleware that will trace incoming requests.

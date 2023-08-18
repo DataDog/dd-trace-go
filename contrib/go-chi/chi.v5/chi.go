@@ -26,6 +26,7 @@ const componentName = "go-chi/chi.v5"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/go-chi/chi/v5")
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -49,6 +50,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
+			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -29,11 +28,18 @@ func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
-	assert.True(ok)
+	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
 	assert.Equal(ott.Tracer, dd)
+}
+
+func TestGetTracerMultiple(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	tr := tp.Tracer("ot")
+	tr2 := tp.Tracer("ot")
+	assert.True(tr == tr2) // they should have the same pointer
 }
 
 func TestSpanWithContext(t *testing.T) {
@@ -197,7 +203,7 @@ func TestSpanTelemetry(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
 	_, _ = tr.Start(context.Background(), "otel.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.spans_created", 1.0, *new([]string), true)
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 

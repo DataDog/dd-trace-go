@@ -23,7 +23,8 @@ import (
 
 func TestEnabled(t *testing.T) {
 	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-	canBeEnabled := enabledConfig && waf.Health() == nil
+	wafSupported, _ := waf.SupportsTarget()
+	canBeEnabled := enabledConfig && wafSupported
 
 	require.False(t, appsec.Enabled())
 	tracer.Start()

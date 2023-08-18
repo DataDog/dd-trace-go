@@ -64,6 +64,8 @@ const (
 type Namespace string
 
 const (
+	// NamespaceGeneral is for general use
+	NamespaceGeneral Namespace = "general"
 	// NamespaceTracers is for distributed tracing
 	NamespaceTracers Namespace = "tracers"
 	// NamespaceProfilers is for continuous profiling

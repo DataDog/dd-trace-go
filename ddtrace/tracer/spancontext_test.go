@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,6 +53,16 @@ func TestNewSpanContextPushError(t *testing.T) {
 }
 
 func TestAsyncSpanRace(t *testing.T) {
+	testAsyncSpanRace(t)
+}
+
+func TestAsyncSpanRacePartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
+	testAsyncSpanRace(t)
+}
+
+func testAsyncSpanRace(t *testing.T) {
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop := startTestTracer(t)
@@ -143,6 +155,74 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
+func TestPartialFlush(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+	t.Run("WithFlush", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		telemetryClient.ProductStart(telemetry.NamespaceTracers, nil)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		tracer, transport, flush, stop := startTestTracer(t)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.(*span).context.trace.setTag("someTraceTag", "someValue")
+		var children []*span
+		for i := 0; i < 3; i++ { // create 3 child spans
+			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
+			children = append(children, child.(*span))
+			child.Finish()
+		}
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 2)
+		assert.Equal(t, "someValue", ts[0][0].Meta["someTraceTag"])
+		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		comparePayloadSpans(t, children[0], ts[0][0])
+		comparePayloadSpans(t, children[1], ts[0][1])
+
+		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "trace_partial_flush.count", 1.0, []string{"reason:large_trace"}, true)
+		// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
+		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", 2.0, []string(nil), true) // Typed-nil here to not break usage of reflection in `mock` library.
+		//telemetryClient.AssertCalled(t, "Record", telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", 1.0, []string(nil), true)
+
+		root.Finish()
+		flush(1)
+		tsRoot := transport.Traces()
+		require.Len(t, tsRoot, 1)
+		require.Len(t, tsRoot[0], 2)
+		assert.Equal(t, "someValue", ts[0][0].Meta["someTraceTag"])
+		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		comparePayloadSpans(t, root.(*span), tsRoot[0][0])
+		comparePayloadSpans(t, children[2], tsRoot[0][1])
+		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+		// TODO: (Support MetricKindDist) Re-enable this when we actually support `MetricKindDist`
+		// telemetryClient.AssertNumberOfCalls(t, "Record", 2)
+	})
+
+	// This test covers an issue where partial flushing + a rate sampler would panic
+	t.Run("WithRateSamplerNoPanic", func(t *testing.T) {
+		tracer, _, _, stop := startTestTracer(t, WithSampler(NewRateSampler(0.000001)))
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.(*span).context.trace.setTag("someTraceTag", "someValue")
+		var children []*span
+		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
+			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
+			children = append(children, child.(*span))
+			child.Finish()
+		}
+	})
+
+}
+
 func TestSpanTracePushNoFinish(t *testing.T) {
 	defer setupteardown(2, 5)()
 
@@ -176,19 +256,19 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	_, transport, flush, stop := startTestTracer(t)
+	trc, transport, flush, stop := startTestTracer(t)
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
 	assert.Len(buffer.spans, 0)
 
 	traceID := random.Uint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	span2 := newSpan("name2", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
-	span3 := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, root.SpanID)
-	span3a := newSpan("name3", "a-service", "a-resource", random.Uint64(), traceID, span3.SpanID)
+	root := trc.StartSpan("name1", WithSpanID(traceID))
+	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
+	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
+	span3a := trc.StartSpan("name3", ChildOf(span3.Context()))
 
-	trace := []*span{root, span2, span3, span3a}
+	trace := []*span{root.(*span), span2.(*span), span3.(*span), span3a.(*span)}
 
 	for i, span := range trace {
 		span.context.trace = buffer
@@ -345,6 +425,20 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceMappings:         nil,
 			wantPeerService:             "h1,h2,h3",
 			wantPeerServiceSource:       "db.cassandra.contact.points",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "DBCassandraWithoutContactPoints",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "cassandra"),
+				Tag("db.instance", "db-instance"),
+				Tag("out.host", "out-host"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{

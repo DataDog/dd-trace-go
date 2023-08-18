@@ -28,6 +28,7 @@ const componentName = "labstack/echo.v4"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/labstack/echo/v4")
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
@@ -62,7 +63,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-
+			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}

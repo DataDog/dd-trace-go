@@ -9,7 +9,9 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 const defaultServiceName = "echo"
@@ -19,6 +21,7 @@ type config struct {
 	analyticsRate float64
 	noDebugStack  bool
 	isStatusError func(statusCode int) bool
+	headerTags    *internal.LockMap
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -31,6 +34,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.isStatusError = isServerError
 }
 
@@ -83,4 +87,15 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 
 func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	return func(cfg *config) {
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
 }

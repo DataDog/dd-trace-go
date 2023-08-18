@@ -14,6 +14,7 @@ import (
 type config struct {
 	serviceName   string
 	analyticsRate float64
+	errCheck      func(err error) bool
 }
 
 // Option represents an option that can be passed to Dial.
@@ -56,5 +57,14 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever an aws operation
+// finishes with an error.
+func WithErrorCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }

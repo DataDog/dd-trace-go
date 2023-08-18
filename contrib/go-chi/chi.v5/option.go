@@ -13,6 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 )
 
 const defaultServiceName = "chi.router"
@@ -24,6 +25,7 @@ type config struct {
 	isStatusError      func(statusCode int) bool
 	ignoreRequest      func(r *http.Request) bool
 	modifyResourceName func(resourceName string) string
+	headerTags         *internal.LockMap
 	resourceNamer      func(r *http.Request) string
 }
 
@@ -37,6 +39,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.isStatusError = isServerError
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 	cfg.modifyResourceName = func(s string) string { return s }
@@ -106,6 +109,17 @@ func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
 func WithModifyResourceName(fn func(resourceName string) string) Option {
 	return func(cfg *config) {
 		cfg.modifyResourceName = fn
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) Option {
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
+	return func(cfg *config) {
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }
 

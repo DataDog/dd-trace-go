@@ -37,7 +37,6 @@ func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 	assert.Equal("v21", string(fcc.ReqHeader.Peek("k2")))
 }
 
-
 func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 	assert := assert.New(t)
 	h := new(fasthttp.RequestHeader)

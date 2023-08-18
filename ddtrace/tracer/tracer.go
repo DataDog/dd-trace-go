@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"container/list"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -18,10 +19,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -49,8 +52,8 @@ type tracer struct {
 	// destination, such as the Trace Agent or Datadog Forwarder.
 	traceWriter traceWriter
 
-	// out receives finishedTrace with spans  to be added to the payload.
-	out chan *finishedTrace
+	// out receives chunk with spans to be added to the payload.
+	out chan *chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -93,6 +96,10 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// spansDebugger specifies where and how potentially abandoned spans are stored
+	// when abandoned spans debugging is enabled.
+	spansDebugger abandonedSpansDebugger
 }
 
 const (
@@ -124,7 +131,7 @@ func Start(opts ...StartOption) {
 	if internal.Testing {
 		return // mock tracer active
 	}
-	defer telemetry.Time(telemetry.NamespaceTracers, "tracer_init_time", nil, true)()
+	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
@@ -229,7 +236,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *finishedTrace, payloadQueueSize),
+		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
@@ -250,6 +257,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	return t
 }
 
+// newTracer creates a new no-op tracer for testing.
+// NOTE: This function does NOT set the global tracer, which is required for
+// most finish span/flushing operations to work as expected. If you are calling
+// span.Finish and/or expecting flushing to work, you must call
+// internal.SetGlobalTracer(...) with the tracer provided by this function.
 func newTracer(opts ...StartOption) *tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
@@ -260,6 +272,17 @@ func newTracer(opts ...StartOption) *tracer {
 		go func() {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		}()
+	}
+	if c.debugAbandonedSpans {
+		log.Warn("Abandoned spans logs enabled.")
+		t.spansDebugger.abandonedSpans = list.New()
+		t.spansDebugger.cIn = make(chan *span)
+		t.spansDebugger.cOut = make(chan *span)
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportAbandonedSpans(t.config.spanTimeout)
 		}()
 	}
 	t.wg.Add(1)
@@ -311,7 +334,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			t.sampleFinishedTrace(trace)
+			t.sampleChunk(trace)
 			if len(trace.spans) != 0 {
 				t.traceWriter.add(trace.spans)
 			}
@@ -336,7 +359,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					t.sampleFinishedTrace(trace)
+					t.sampleChunk(trace)
 					if len(trace.spans) != 0 {
 						t.traceWriter.add(trace.spans)
 					}
@@ -349,16 +372,18 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// finishedTrace holds information about a trace that has finished, including its spans.
-type finishedTrace struct {
+// chunk holds information about a trace chunk to be flushed, including its spans.
+// The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
+// partial flushing.
+type chunk struct {
 	spans    []*span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
-// sampleFinishedTrace applies single-span sampling to the provided trace, which is considered to be finished.
-func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
-	if len(info.spans) > 0 {
-		if p, ok := info.spans[0].context.samplingPriority(); ok && p > 0 {
+// sampleChunk applies single-span sampling to the provided trace.
+func (t *tracer) sampleChunk(c *chunk) {
+	if len(c.spans) > 0 {
+		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -366,12 +391,12 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 	var kept []*span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
-		for _, span := range info.spans {
+		for _, span := range c.spans {
 			if t.rulesSampling.SampleSpan(span) {
 				kept = append(kept, span)
 			}
 		}
-		if len(kept) > 0 && len(kept) < len(info.spans) {
+		if len(kept) > 0 && len(kept) < len(c.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
@@ -379,13 +404,13 @@ func (t *tracer) sampleFinishedTrace(info *finishedTrace) {
 	if len(kept) == 0 {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
-	atomic.AddUint32(&t.droppedP0Spans, uint32(len(info.spans)-len(kept)))
-	if !info.willSend {
-		info.spans = kept
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
+	if !c.willSend {
+		c.spans = kept
 	}
 }
 
-func (t *tracer) pushTrace(trace *finishedTrace) {
+func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case <-t.stop:
 		return
@@ -496,6 +521,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	isRootSpan := context == nil || context.span == nil
 	if isRootSpan {
+		traceprof.SetProfilerRootTags(span)
 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
 	if isRootSpan || context.span.Service != span.Service {
@@ -528,6 +554,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
+	}
+	if t.config.debugAbandonedSpans {
+		t.spansDebugger.cIn <- span
 	}
 	return span
 }
@@ -614,6 +643,7 @@ func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
 		span.context.trace.drop()
+		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
@@ -639,10 +669,24 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.Type
 	}
-	ctx, task := rt.NewTask(ctx, taskName)
+	end := noopTaskEnd
+	if !globalinternal.IsExecutionTraced(ctx) {
+		var task *rt.Task
+		ctx, task = rt.NewTask(ctx, taskName)
+		end = task.End
+	} else {
+		// We only want to skip task creation for this particular span,
+		// not necessarily for child spans which can come from different
+		// integrations. So update this context to be "not" execution
+		// traced so that derived contexts used by child spans don't get
+		// skipped.
+		ctx = globalinternal.WithExecutionNotTraced(ctx)
+	}
 	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
-	return ctx, task.End
+	return ctx, end
 }
+
+func noopTaskEnd() {}
 
 func (t *tracer) hostname() string {
 	if !t.config.enableHostnameDetection {

@@ -119,6 +119,6 @@ func TestSpanTelemetry(t *testing.T) {
 	defer telemetry.MockGlobalClient(telemetryClient)()
 	opentracing.SetGlobalTracer(New())
 	_ = opentracing.StartSpan("opentracing.span")
-	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "opentracing.spans_created", 1.0, *new([]string), true)
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }

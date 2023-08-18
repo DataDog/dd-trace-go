@@ -103,7 +103,7 @@ func LoadIntegration(name string) {
 // of some portion of code. It returns a function that should be called when
 // the desired code finishes executing.
 // For example, by adding:
-// defer Time(namespace, "tracer_init_time", nil, true)()
+// defer Time(namespace, "init_time", nil, true)()
 // at the beginning of the tracer Start function, the tracer start time is measured
 // and stored as a metric to be flushed by the global telemetry client.
 func Time(namespace Namespace, name string, tags []string, common bool) (finish func()) {

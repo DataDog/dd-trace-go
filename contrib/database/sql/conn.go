@@ -71,6 +71,8 @@ func (tc *TracedConn) WrappedConn() driver.Conn {
 func (tc *TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx driver.Tx, err error) {
 	start := time.Now()
 	if connBeginTx, ok := tc.Conn.(driver.ConnBeginTx); ok {
+		ctx, end := startTraceTask(ctx, QueryTypeBegin)
+		defer end()
 		tx, err = connBeginTx.BeginTx(ctx, opts)
 		tc.tryTrace(ctx, QueryTypeBegin, "", start, err)
 		if err != nil {
@@ -78,6 +80,8 @@ func (tc *TracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (tx dr
 		}
 		return &tracedTx{tx, tc.traceParams, ctx}, nil
 	}
+	ctx, end := startTraceTask(ctx, QueryTypeBegin)
+	defer end()
 	tx, err = tc.Conn.Begin()
 	tc.tryTrace(ctx, QueryTypeBegin, "", start, err)
 	if err != nil {
@@ -103,6 +107,8 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	}
 	cquery, spanID := tc.injectComments(ctx, query, mode)
 	if connPrepareCtx, ok := tc.Conn.(driver.ConnPrepareContext); ok {
+		ctx, end := startTraceTask(ctx, QueryTypePrepare)
+		defer end()
 		stmt, err := connPrepareCtx.PrepareContext(ctx, cquery)
 		tc.tryTrace(ctx, QueryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
 		if err != nil {
@@ -110,6 +116,8 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 		}
 		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
 	}
+	ctx, end := startTraceTask(ctx, QueryTypePrepare)
+	defer end()
 	stmt, err = tc.Prepare(cquery)
 	tc.tryTrace(ctx, QueryTypePrepare, query, start, err, append(withDBMTraceInjectedTag(mode), tracer.WithSpanID(spanID))...)
 	if err != nil {
@@ -124,6 +132,8 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 	start := time.Now()
 	if execContext, ok := tc.Conn.(driver.ExecerContext); ok {
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
+		ctx, end := startTraceTask(ctx, QueryTypeExec)
+		defer end()
 		r, err := execContext.ExecContext(ctx, cquery, args)
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
@@ -139,6 +149,8 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 		default:
 		}
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
+		ctx, end := startTraceTask(ctx, QueryTypeExec)
+		defer end()
 		r, err = execer.Exec(cquery, dargs)
 		tc.tryTrace(ctx, QueryTypeExec, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return r, err
@@ -150,6 +162,8 @@ func (tc *TracedConn) ExecContext(ctx context.Context, query string, args []driv
 func (tc *TracedConn) Ping(ctx context.Context) (err error) {
 	start := time.Now()
 	if pinger, ok := tc.Conn.(driver.Pinger); ok {
+		ctx, end := startTraceTask(ctx, QueryTypePing)
+		defer end()
 		err = pinger.Ping(ctx)
 	}
 	tc.tryTrace(ctx, QueryTypePing, "", start, err)
@@ -162,6 +176,8 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 	start := time.Now()
 	if queryerContext, ok := tc.Conn.(driver.QueryerContext); ok {
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
+		ctx, end := startTraceTask(ctx, QueryTypeQuery)
+		defer end()
 		rows, err := queryerContext.QueryContext(ctx, cquery, args)
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err
@@ -177,6 +193,8 @@ func (tc *TracedConn) QueryContext(ctx context.Context, query string, args []dri
 		default:
 		}
 		cquery, spanID := tc.injectComments(ctx, query, tc.cfg.dbmPropagationMode)
+		ctx, end := startTraceTask(ctx, QueryTypeQuery)
+		defer end()
 		rows, err = queryer.Query(cquery, dargs)
 		tc.tryTrace(ctx, QueryTypeQuery, query, start, err, append(withDBMTraceInjectedTag(tc.cfg.dbmPropagationMode), tracer.WithSpanID(spanID))...)
 		return rows, err

@@ -48,6 +48,7 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
+	traceprof.SetProfilerEnabled(true)
 	return nil
 }
 
@@ -58,6 +59,7 @@ func Stop() {
 	if activeProfiler != nil {
 		activeProfiler.stop()
 		activeProfiler = nil
+		traceprof.SetProfilerEnabled(false)
 	}
 	mu.Unlock()
 }
