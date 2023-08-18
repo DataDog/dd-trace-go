@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
+	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
+
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/require"
-	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
 )
 
 type Integration struct {

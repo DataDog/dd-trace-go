@@ -18,7 +18,6 @@ import (
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/database/sql"
-
 	//redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
 	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
 	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"

@@ -8,10 +8,10 @@ package mgo
 import (
 	"testing"
 
+	mgotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
+
 	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/require"
-
-	mgotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
 )
 
 type Integration struct {

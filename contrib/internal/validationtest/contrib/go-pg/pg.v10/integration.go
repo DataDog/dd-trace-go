@@ -8,11 +8,11 @@ package pg
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	pgtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-pg/pg.v10"
 
 	"github.com/go-pg/pg/v10"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type Integration struct {
