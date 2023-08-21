@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"container/list"
 	gocontext "context"
 	"os"
 	"runtime/pprof"
@@ -95,6 +96,10 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// spansDebugger specifies where and how potentially abandoned spans are stored
+	// when abandoned spans debugging is enabled.
+	spansDebugger abandonedSpansDebugger
 }
 
 const (
@@ -267,6 +272,17 @@ func newTracer(opts ...StartOption) *tracer {
 		go func() {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
+		}()
+	}
+	if c.debugAbandonedSpans {
+		log.Warn("Abandoned spans logs enabled.")
+		t.spansDebugger.abandonedSpans = list.New()
+		t.spansDebugger.cIn = make(chan *span)
+		t.spansDebugger.cOut = make(chan *span)
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportAbandonedSpans(t.config.spanTimeout)
 		}()
 	}
 	t.wg.Add(1)
@@ -539,6 +555,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
+	if t.config.debugAbandonedSpans {
+		t.spansDebugger.cIn <- span
+	}
 	return span
 }
 
@@ -624,7 +643,7 @@ func (t *tracer) sample(span *span) {
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
 		span.context.trace.drop()
-		span.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
+		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
