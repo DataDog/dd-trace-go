@@ -227,6 +227,13 @@ type config struct {
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
 
+	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
+	debugAbandonedSpans bool
+
+	// spanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration
+	spanTimeout time.Duration
+
 	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
 	// partial flush, or 0 if partial flushing is disabled.
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
@@ -235,6 +242,9 @@ type config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
+	statsComputationEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -311,6 +321,11 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	if c.debugAbandonedSpans {
+		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	}
+	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -633,7 +648,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.HasFeature("discovery")
+	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
 }
 
 func (c *config) canDropP0s() bool {
@@ -992,6 +1007,21 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 	}
 }
 
+// WithDebugSpansMode enables debugging old spans that may have been
+// abandoned, which may prevent traces from being set to the Datadog
+// Agent, especially if partial flushing is off.
+// This setting can also be configured by setting DD_TRACE_DEBUG_ABANDONED_SPANS
+// to true. The timeout will default to 10 minutes, unless overwritten
+// by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
+// This feature is disabled by default. Turning on this debug mode may
+// be expensive, so it should only be enabled for debugging purposes.
+func WithDebugSpansMode(timeout time.Duration) StartOption {
+	return func(c *config) {
+		c.debugAbandonedSpans = true
+		c.spanTimeout = timeout
+	}
+}
+
 // WithPartialFlushing enables flushing of partially finished traces.
 // This is done after "numSpans" have finished in a single local trace at
 // which point all finished spans in that trace will be flushed, freeing up
@@ -1003,6 +1033,17 @@ func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
 		c.partialFlushEnabled = true
 		c.partialFlushMinSpans = numSpans
+	}
+}
+
+// WithStatsComputation enables client-side stats computation, allowing
+// the tracer to compute stats from traces. This can reduce network traffic
+// to the Datadog Agent, and produce more accurate stats data.
+// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
+// Client-side stats is off by default.
+func WithStatsComputation(enabled bool) StartOption {
+	return func(c *config) {
+		c.statsComputationEnabled = enabled
 	}
 }
 
