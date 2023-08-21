@@ -21,7 +21,7 @@ import (
 const componentName = "IBM/sarama"
 
 func init() {
-	telemetry.LoadIntegration("IBM/sarama")
+	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("github.com/IBM/sarama")
 }
 
