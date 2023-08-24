@@ -55,10 +55,10 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		span, _ := tracer.StartSpanFromContext(fctx, "http.request", spanOpts...)
 		defer span.Finish()
 
-		// AFAICT, there is no automatic way to update the fashttp context with the context returned from tracer.StartSpanFromContext
-		// Instead I had to manually add the activeSpanKey onto the fashttp context
-		activeSpanKey := tracer.ContextKey{}
-		fctx.SetUserValue(activeSpanKey, span)
+		// Set the span on the request context
+		tracer.WithContextKey(func(key interface{}) {
+			fctx.SetUserValue(key, span)
+		})
 
 		gctx.Next()
 

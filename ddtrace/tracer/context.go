@@ -12,14 +12,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
-// MTOFF: I had to make this public b/c gearbox needs it
-type ContextKey struct{}
+type contextKey struct{}
 
-var activeSpanKey = ContextKey{}
+var activeSpanKey = contextKey{}
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, activeSpanKey, s)
+}
+
+// WithContextKey provides activeSpanKey to the closure of function f. This is
+// a helper function for logic outside of the tracer package that needs the
+// contextKey type, in favor of keeping contextKey private.
+func WithContextKey(f func(key interface{})) {
+	f(activeSpanKey)
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
