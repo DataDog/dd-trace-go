@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gearbox provides functions to trace the gogearbox/gearbox package (https://github.com/gogearbox/gearbox)
-package gearbox // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox"
+package gearbox // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1"
 
 import (
 	"fmt"

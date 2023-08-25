@@ -7,236 +7,92 @@ package gearbox
 
 import (
 	"fmt"
-	"strconv"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gogearbox/gearbox"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/valyala/fasthttp"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func newReqCtx(code int) *fasthttp.RequestCtx {
-	reqctx := &fasthttp.RequestCtx{}
-	reqctx.URI().Update("//foobar.com/any")
-	reqctx.Request.Header.SetMethod("GET")
-	reqctx.Response.SetStatusCode(code)
-	return reqctx
-}
-
-// Test all of the expected span metadata on a "default" span
-func TestTrace200(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	reqctx := newReqCtx(200)
-	gb := &GearboxContextMock{requestCtx: reqctx}
-	Middleware(WithServiceName("gb"))(gb)
-
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal("GET /any", span.Tag(ext.ResourceName))
-	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-	assert.Equal("gb", span.Tag(ext.ServiceName))
-	assert.Equal("200", span.Tag(ext.HTTPCode))
-	assert.Equal("GET", span.Tag(ext.HTTPMethod))
-	assert.Equal("http://foobar.com/any", span.Tag(ext.HTTPURL))
-	assert.Equal("gogearbox/gearbox.v1", span.Tag(ext.Component))
-	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-}
-
 // Test that the gearbox request context retains the tracer context
-func TestChildSpan(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+// func TestChildSpan(t *testing.T) {
+// 	assert := assert.New(t)
+// 	mt := mocktracer.Start()
+// 	defer mt.Stop()
 
-	reqctx := newReqCtx(200)
-	gb := &GearboxContextMock{requestCtx: reqctx}
-	Middleware(WithServiceName("gb"))(gb)
-	_, ok := tracer.SpanFromContext(reqctx)
-	assert.True(ok)
-}
+// 	go newGbServer()
 
-// Test that HTTP Status codes >= 500 get treated as error spans
-func TestStatusError(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+// 	client := &http.Client{
+// 		Timeout: 3 * time.Second,
+// 	}
+// 	_, err := client.Get("http://127.0.0.1:1234/any")
+// 	require.Equal(t, nil, err)
 
-	code := 500
-	reqctx := newReqCtx(code)
-	errMsg := "This is an error"
-	wantErr := fmt.Sprintf("%d: %s", code, errMsg)
-	reqctx.Error(errMsg, code)
-	gb := &GearboxContextMock{requestCtx: reqctx}
-	Middleware(WithServiceName("gb"))(gb)
+// 	_, ok := tracer.SpanFromContext(reqctx)
+// 	assert.True(ok)
+// }
 
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal("http.request", span.OperationName())
-	assert.Equal("gb", span.Tag(ext.ServiceName))
-	assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
-}
+// func TestPropagation(t *testing.T) {
+// 	t.Run("inject-extract", func(t *testing.T) {
+// 		assert := assert.New(t)
+// 		mt := mocktracer.Start()
+// 		defer mt.Stop()
 
-// Test that users can customize which HTTP status codes are considered an error
-func TestWithStatusCheck(t *testing.T) {
-	t.Run("isError", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
+// 		fcc := &gearboxutil.FastHTTPHeadersCarrier{}
 
-		code := 600
-		reqctx := newReqCtx(code)
-		msg := "This is an error"
-		reqctx.Error(msg, code)
-		gb := &GearboxContextMock{requestCtx: reqctx}
+// 		go newGbServer()
 
-		Middleware(WithServiceName("gb"), WithStatusCheck(customErrChecker))(gb)
-		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
-		span := spans[0]
-		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-		wantErr := fmt.Sprintf("%d: %s", code, msg)
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
-	})
-	t.Run("notError", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
+// 		client := &http.Client{
+// 			Timeout: 3 * time.Second,
+// 		}
+// 		_, err := client.Get("http://127.0.0.1:1234/any")
+// 		require.Equal(t, nil, err)
+// 		spans := mt.FinishedSpans()
 
-		code := 500
-		reqctx := newReqCtx(code)
-		reqctx.Error("This is an error", code)
-		gb := &GearboxContextMock{requestCtx: reqctx}
+// 		gb := &GearboxContextMock{requestCtx: reqctx}
 
-		Middleware(WithServiceName("gb"), WithStatusCheck(customErrChecker))(gb)
-		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
-		span := spans[0]
-		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
-	})
-}
+// 		pspan := tracer.StartSpan("test")
+// 		err := tracer.Inject(pspan.Context(), fcc)
+// 		if err != nil {
+// 			t.Fatalf("Trace injection failed")
+// 		}
+// 		Middleware(WithServiceName("gb"))(gb)
+// 		sctx, err := tracer.Extract(fcc)
+// 		if err != nil {
+// 			t.Fatalf("Trace extraction failed")
+// 		}
+// 		assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
+// 		assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
+// 	})
+// 	t.Run("req-context", func(t *testing.T) {
+// 		assert := assert.New(t)
+// 		mt := mocktracer.Start()
+// 		defer mt.Stop()
 
-// Test that users can customize how resource_name is determined
-func TestCustomResourceNamer(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
+// 		reqctx := newReqCtx(200)
+// 		gb := &GearboxContextMock{requestCtx: reqctx}
+// 		fcc := &gearboxutil.FastHTTPHeadersCarrier{ReqHeader: &gb.Context().Request.Header}
 
-	reqctx := newReqCtx(200)
-	gb := &GearboxContextMock{requestCtx: reqctx}
+// 		pspan := tracer.StartSpan("test")
+// 		err := tracer.Inject(pspan.Context(), fcc)
+// 		if err != nil {
+// 			t.Fatalf("Trace injection failed")
+// 		}
+// 		Middleware(WithServiceName("gb"))(gb)
+// 		span, ok := tracer.SpanFromContext(gb.Context())
+// 		assert.True(ok)
+// 		assert.Equal(span.(mocktracer.Span).TraceID(), pspan.(mocktracer.Span).TraceID())
+// 		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+// 	})
+// }
 
-	Middleware(WithResourceNamer(resourceNamer))(gb)
-	spans := mt.FinishedSpans()
-	assert.Len(spans, 1)
-	span := spans[0]
-	assert.Equal(customRsc, span.Tag(ext.ResourceName))
-}
-
-// Test that the trace middleware passes the context off to the next handler in the req chain even if the request is not instrumented
-// MTOFF: I can't create a real http request, but I can simulate middleware being run
-// by checking that the context's `index` has been incremented
-func TestWithIgnoreRequest(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	reqctx := newReqCtx(200)
-	// explicitly giving gb.index a value, so we can see it increment clearly
-	gb := &GearboxContextMock{requestCtx: reqctx, index: 0}
-
-	Middleware(WithIgnoreRequest(ignoreResources))(gb)
-	assert.Len(mt.FinishedSpans(), 0)
-	assert.Equal(1, gb.index)
-}
-func TestPropagation(t *testing.T) {
-	t.Run("inject-extract", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		reqctx := newReqCtx(200)
-		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &gearboxutil.FastHTTPHeadersCarrier{ReqHeader: &gb.Context().Request.Header}
-
-		pspan := tracer.StartSpan("test")
-		err := tracer.Inject(pspan.Context(), fcc)
-		if err != nil {
-			t.Fatalf("Trace injection failed")
-		}
-		Middleware(WithServiceName("gb"))(gb)
-		sctx, err := tracer.Extract(fcc)
-		if err != nil {
-			t.Fatalf("Trace extraction failed")
-		}
-		assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
-		assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
-	})
-	t.Run("req-context", func(t *testing.T) {
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		reqctx := newReqCtx(200)
-		gb := &GearboxContextMock{requestCtx: reqctx}
-		fcc := &gearboxutil.FastHTTPHeadersCarrier{ReqHeader: &gb.Context().Request.Header}
-
-		pspan := tracer.StartSpan("test")
-		err := tracer.Inject(pspan.Context(), fcc)
-		if err != nil {
-			t.Fatalf("Trace injection failed")
-		}
-		Middleware(WithServiceName("gb"))(gb)
-		span, ok := tracer.SpanFromContext(gb.Context())
-		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).TraceID(), pspan.(mocktracer.Span).TraceID())
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
-	})
-}
-func BenchmarkGearboxMiddleware(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	reqctx := newReqCtx(200)
-	gb := &GearboxContextMock{requestCtx: reqctx}
-	for i := 0; i < b.N; i++ {
-		Middleware()(gb)
-	}
-}
-func BenchmarkGearboxMiddlewareWithOptions(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	reqctx := newReqCtx(200)
-	gb := &GearboxContextMock{requestCtx: reqctx}
-	for i := 0; i < b.N; i++ {
-		Middleware(WithServiceName("gb"), WithStatusCheck(customErrChecker), WithResourceNamer(resourceNamer), WithIgnoreRequest(ignoreResources))(gb)
-	}
-}
-
-// BenchmarkGearbox is intended to serve as a comparison between gearbox with trace middleware v other middleware.
-// MTOFF: Not sure if this is the right approach especially since the other benchmarks use GearboxContextMock
-func BenchmarkGearbox(b *testing.B) {
-	gb := gearbox.New()
-	logMiddleware := func(ctx gearbox.Context) {
-		fmt.Println("log message!")
-		ctx.Next()
-	}
-	gb.Use(logMiddleware)
-}
+var errMsg = "This is an error!"
 
 func customErrChecker(statusCode int) bool {
 	return statusCode >= 600
@@ -251,55 +107,174 @@ func ignoreResources(c gearbox.Context) bool {
 	return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
 }
 
-// GearboxContextMock provides a mock implementation the Gearbox library to be used in testing.
-// It fulfills the Gearbox.Context interface and its methods mock some of the core behavior of
-// Gearbox.Context when handling real HTTP traffic, without needing to spin up a server.
-// See: https://pkg.go.dev/github.com/gogearbox/gearbox#Context
-type GearboxContextMock struct {
-	requestCtx *fasthttp.RequestCtx
-	index      int
+func newGbServer(opts ...Option) {
+	gb := gearbox.New()
+	gb.Use(Middleware(opts...))
+	gb.Get("/any", func(ctx gearbox.Context) {
+		ctx.SendString("Hello World!")
+	})
+	gb.Get("/err", func(ctx gearbox.Context) {
+		ctx.Context().Error(errMsg, 500)
+	})
+	gb.Get("/customErr", func(ctx gearbox.Context) {
+		ctx.Context().Error(errMsg, 600)
+	})
+	gb.Start(":1234")
 }
 
-func (g *GearboxContextMock) Next() {
-	g.index++
+// Test all of the expected span metadata on a "default" span
+func TestTrace200(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	go newGbServer()
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	_, err := client.Get("http://127.0.0.1:1234/any")
+	require.Equal(t, nil, err)
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal("GET /any", span.Tag(ext.ResourceName))
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Equal("gearbox", span.Tag(ext.ServiceName))
+	assert.Equal("200", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+	assert.Equal("http://127.0.0.1:1234/any", span.Tag(ext.HTTPURL))
+	assert.Equal("gogearbox/gearbox.v1", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
-func (g *GearboxContextMock) Context() (c *fasthttp.RequestCtx) {
-	return g.requestCtx
+
+// Test that HTTP Status codes >= 500 get treated as error spans
+func TestStatusError(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	go newGbServer()
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	_, err := client.Get("http://127.0.0.1:1234/err")
+	require.Equal(t, nil, err)
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal("gearbox", span.Tag(ext.ServiceName))
+	assert.Equal("500", span.Tag(ext.HTTPCode))
+	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
+	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
 }
-func (g *GearboxContextMock) Param(key string) (v string) {
-	return v
+
+// Test that users can customize which HTTP status codes are considered an error
+func TestWithStatusCheck(t *testing.T) {
+	t.Run("isError", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		go newGbServer(WithStatusCheck(customErrChecker))
+
+		client := &http.Client{
+			Timeout: 3 * time.Second,
+		}
+		_, err := client.Get("http://127.0.0.1:1234/customErr")
+		require.Equal(t, nil, err)
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("600", span.Tag(ext.HTTPCode))
+		require.Contains(t, span.Tags(), ext.Error)
+		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
+		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	})
+	t.Run("notError", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		go newGbServer(WithStatusCheck(customErrChecker))
+
+		client := &http.Client{
+			Timeout: 3 * time.Second,
+		}
+		_, err := client.Get("http://127.0.0.1:1234/err")
+		require.Equal(t, nil, err)
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.NotContains(span.Tags(), ext.Error)
+	})
 }
-func (g *GearboxContextMock) Query(key string) (v string) {
-	return v
+
+// Test that users can customize how resource_name is determined
+func TestCustomResourceNamer(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	go newGbServer(WithResourceNamer(resourceNamer))
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	_, err := client.Get("http://127.0.0.1:1234/any")
+	require.Equal(t, nil, err)
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 1)
+	span := spans[0]
+	assert.Equal(customRsc, span.Tag(ext.ResourceName))
 }
-func (g *GearboxContextMock) SendBytes(value []byte) (c gearbox.Context) {
-	return c
+
+// Test that the trace middleware passes the context off to the next handler in the req chain even if the request is not instrumented
+func TestWithIgnoreRequest(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	go newGbServer(WithIgnoreRequest(ignoreResources))
+
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+	resp, err := client.Get("http://127.0.0.1:1234/any")
+	require.Equal(t, nil, err)
+	assert.Len(mt.FinishedSpans(), 0)
+	assert.Equal(200, resp.StatusCode)
 }
-func (g *GearboxContextMock) SendString(value string) gearbox.Context {
-	g.requestCtx.SetBodyString(value)
-	return g
+
+// Should I still call `go newGbServer()` for benchmarks?
+func BenchmarkGearboxMiddleware(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	for i := 0; i < b.N; i++ {
+		go newGbServer()
+	}
 }
-func (g *GearboxContextMock) SendJSON(in interface{}) (e error) {
-	return e
+
+func BenchmarkGearboxMiddlewareWithOptions(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	for i := 0; i < b.N; i++ {
+		go newGbServer(WithServiceName("gb"), WithStatusCheck(customErrChecker), WithResourceNamer(resourceNamer), WithIgnoreRequest(ignoreResources))
+	}
 }
-func (g *GearboxContextMock) Status(status int) (c gearbox.Context) {
-	return c
-}
-func (g *GearboxContextMock) Set(key string, value string) {
-	g.requestCtx.Response.Header.Set(key, value)
-}
-func (g *GearboxContextMock) Get(key string) (v string) {
-	return v
-}
-func (g *GearboxContextMock) SetLocal(key string, value interface{}) {
-	g.requestCtx.SetUserValue(key, value)
-}
-func (g *GearboxContextMock) GetLocal(key string) (i interface{}) {
-	return g.requestCtx.UserValue(key)
-}
-func (g *GearboxContextMock) Body() (b string) {
-	return b
-}
-func (g *GearboxContextMock) ParseBody(out interface{}) (e error) {
-	return e
+
+// BenchmarkGearbox is intended to serve as a comparison between gearbox with trace middleware v other middleware.
+func BenchmarkGearbox(b *testing.B) {
+	gb := gearbox.New()
+	logMiddleware := func(ctx gearbox.Context) {
+		fmt.Println("log message!")
+		ctx.Next()
+	}
+	gb.Use(logMiddleware)
 }

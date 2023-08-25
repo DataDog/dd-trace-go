@@ -30,7 +30,7 @@ func TestContextWithSpan(t *testing.T) {
 func TestWithContextKey(t *testing.T) {
 	ctx := context.Background()
 	want := "value"
-	whateverFunc := func(key interface{}){
+	whateverFunc := func(key interface{}) {
 		ctx = context.WithValue(ctx, key, want)
 	}
 	WithContextKey(whateverFunc)
