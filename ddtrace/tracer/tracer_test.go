@@ -708,78 +708,6 @@ func TestTracerStartSpanOptions(t *testing.T) {
 	assert.Equal(1.0, span.Metrics[keyTopLevel])
 }
 
-func TestTracerStartSpanOptionsBaseService(t *testing.T) {
-	run := func(t *testing.T, tracerOpts func() []StartOption, spanOpts func() []StartSpanOption) *span {
-		prevSvc := globalconfig.ServiceName()
-		t.Cleanup(func() {
-			globalconfig.SetServiceName(prevSvc)
-		})
-		tr := newTracer(tracerOpts()...)
-		t.Cleanup(func() {
-			tr.Stop()
-		})
-		return tr.StartSpan("web.request", spanOpts()...).(*span)
-	}
-	t.Run("span-service-not-equal-global-service", func(t *testing.T) {
-		tracerOpts := func() []StartOption {
-			return []StartOption{
-				WithService("global-service"),
-			}
-		}
-		spanOpts := func() []StartSpanOption {
-			return []StartSpanOption{
-				ServiceName("span-service"),
-			}
-		}
-		s := run(t, tracerOpts, spanOpts)
-		assert.Equal(t, "span-service", s.Service)
-		assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
-	})
-	t.Run("span-service-equal-global-service", func(t *testing.T) {
-		tracerOpts := func() []StartOption {
-			return []StartOption{
-				WithService("global-service"),
-			}
-		}
-		spanOpts := func() []StartSpanOption {
-			return []StartSpanOption{
-				ServiceName("global-service"),
-			}
-		}
-		s := run(t, tracerOpts, spanOpts)
-		assert.Equal(t, "global-service", s.Service)
-		assert.NotContains(t, s.Meta, "_dd.base_service")
-	})
-	t.Run("global-service-not-set", func(t *testing.T) {
-		tracerOpts := func() []StartOption {
-			return nil
-		}
-		spanOpts := func() []StartSpanOption {
-			return []StartSpanOption{
-				ServiceName("span-service"),
-			}
-		}
-		s := run(t, tracerOpts, spanOpts)
-		assert.Equal(t, "span-service", s.Service)
-		assert.NotEmpty(t, s.Meta["_dd.base_service"])
-	})
-	t.Run("using-tag-option", func(t *testing.T) {
-		tracerOpts := func() []StartOption {
-			return []StartOption{
-				WithService("global-service"),
-			}
-		}
-		spanOpts := func() []StartSpanOption {
-			return []StartSpanOption{
-				Tag("service.name", "span-service"),
-			}
-		}
-		s := run(t, tracerOpts, spanOpts)
-		assert.Equal(t, "span-service", s.Service)
-		assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
-	})
-}
-
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
 	internal.SetGlobalTracer(tracer)
@@ -2052,10 +1980,7 @@ func BenchmarkStartSpan(b *testing.B) {
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
-func startTestTracer(t interface {
-	// support both *testing.T and *testing.B
-	Fatalf(format string, args ...interface{})
-}, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
+func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{

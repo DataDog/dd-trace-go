@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -540,6 +541,78 @@ func TestSpanPeerService(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestSpanDDBaseService(t *testing.T) {
+	run := func(t *testing.T, tracerOpts []StartOption, spanOpts []StartSpanOption) []*span {
+		prevSvc := globalconfig.ServiceName()
+		t.Cleanup(func() { globalconfig.SetServiceName(prevSvc) })
+
+		tracer, transport, flush, stop := startTestTracer(t, tracerOpts...)
+		t.Cleanup(stop)
+
+		p := tracer.StartSpan("parent-span", spanOpts...)
+		childSpanOpts := append([]StartSpanOption{ChildOf(p.Context())}, spanOpts...)
+		s := tracer.StartSpan("child-span", childSpanOpts...)
+		s.Finish()
+		p.Finish()
+
+		flush(1)
+		traces := transport.Traces()
+		require.Len(t, traces, 1)
+		require.Len(t, traces[0], 2)
+
+		return traces[0]
+	}
+	t.Run("span-service-not-equal-global-service", func(t *testing.T) {
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
+			ServiceName("span-service"),
+		}
+		spans := run(t, tracerOpts, spanOpts)
+		for _, s := range spans {
+			assert.Equal(t, "span-service", s.Service)
+			assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
+		}
+	})
+	t.Run("span-service-equal-global-service", func(t *testing.T) {
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
+			ServiceName("global-service"),
+		}
+		spans := run(t, tracerOpts, spanOpts)
+		for _, s := range spans {
+			assert.Equal(t, "global-service", s.Service)
+			assert.NotContains(t, s.Meta, "_dd.base_service")
+		}
+	})
+	t.Run("global-service-not-set", func(t *testing.T) {
+		spanOpts := []StartSpanOption{
+			ServiceName("span-service"),
+		}
+		spans := run(t, nil, spanOpts)
+		for _, s := range spans {
+			assert.Equal(t, "span-service", s.Service)
+			assert.NotEmpty(t, s.Meta["_dd.base_service"])
+		}
+	})
+	t.Run("using-tag-option", func(t *testing.T) {
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
+			Tag("service.name", "span-service"),
+		}
+		spans := run(t, tracerOpts, spanOpts)
+		for _, s := range spans {
+			assert.Equal(t, "span-service", s.Service)
+			assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
+		}
+	})
 }
 
 func TestNewSpanContext(t *testing.T) {

@@ -1027,13 +1027,6 @@ type StartSpanOption = ddtrace.StartSpanOption
 
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
-	if k == ext.ServiceName {
-		name := ""
-		if s, ok := v.(string); ok {
-			name = s
-		}
-		return ServiceName(name)
-	}
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
@@ -1044,22 +1037,7 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
-	globalSvc := globalconfig.ServiceName()
-	if globalSvc == "" {
-		globalSvc = internal.DefaultServiceName()
-	}
-	return func(cfg *ddtrace.StartSpanConfig) {
-		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
-		}
-		cfg.Tags[ext.ServiceName] = name
-
-		// attach the _dd.base_service tag only when the globally configured service name is different from the
-		// span service name.
-		if name != globalSvc {
-			cfg.Tags[keyBaseService] = globalSvc
-		}
-	}
+	return Tag(ext.ServiceName, name)
 }
 
 // ResourceName sets the given resource name on the started span. A resource could
