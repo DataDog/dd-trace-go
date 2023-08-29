@@ -711,9 +711,13 @@ func TestTracerStartSpanOptions(t *testing.T) {
 func TestTracerStartSpanOptionsBaseService(t *testing.T) {
 	run := func(t *testing.T, tracerOpts func() []StartOption, spanOpts func() []StartSpanOption) *span {
 		prevSvc := globalconfig.ServiceName()
-		t.Cleanup(func() { globalconfig.SetServiceName(prevSvc) })
+		t.Cleanup(func() {
+			globalconfig.SetServiceName(prevSvc)
+		})
 		tr := newTracer(tracerOpts()...)
-		t.Cleanup(func() { tr.Stop() })
+		t.Cleanup(func() {
+			tr.Stop()
+		})
 		return tr.StartSpan("web.request", spanOpts()...).(*span)
 	}
 	t.Run("span-service-not-equal-global-service", func(t *testing.T) {
