@@ -188,7 +188,7 @@ type config struct {
 
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
-	statsdClient statsdClient
+	statsdClient internal.StatsdClient
 
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to a single span without affecting the entire trace
@@ -238,6 +238,9 @@ type config struct {
 
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
+
+	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
+	dataStreamsMonitoringEnabled bool
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -315,6 +318,7 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -421,7 +425,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	c.loadAgentFeatures()
+	c.agent = loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -454,7 +458,7 @@ func newConfig(opts ...StartOption) *config {
 	return c
 }
 
-func newStatsdClient(c *config) (statsdClient, error) {
+func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
@@ -530,6 +534,10 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
+	// DataStreams reports whether the agent can receive data streams stats on
+	// the /v0.1/pipeline_stats endpoint.
+	DataStreams bool
+
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -546,13 +554,12 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
-func (c *config) loadAgentFeatures() {
-	c.agent = agentFeatures{}
-	if c.logToStdout {
+func loadAgentFeatures(logToStdout bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
+	if logToStdout {
 		// there is no agent; all features off
 		return
 	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
+	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
 	if err != nil {
 		log.Error("Loading features: %v", err)
 		return
@@ -573,18 +580,21 @@ func (c *config) loadAgentFeatures() {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.agent.DropP0s = info.ClientDropP0s
-	c.agent.StatsdPort = info.StatsdPort
+	features.DropP0s = info.ClientDropP0s
+	features.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			c.agent.Stats = true
+			features.Stats = true
+		case "/v0.1/pipeline_stats":
+			features.DataStreams = true
 		}
 	}
-	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
-		c.agent.featureFlags[flag] = struct{}{}
+		features.featureFlags[flag] = struct{}{}
 	}
+	return features
 }
 
 // MarkIntegrationImported labels the given integration as imported

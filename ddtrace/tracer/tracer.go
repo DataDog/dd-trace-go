@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -94,7 +95,10 @@ type tracer struct {
 	obfuscator *obfuscate.Obfuscator
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
-	statsd statsdClient
+	statsd globalinternal.StatsdClient
+
+	// dataStreams processes data streams monitoring information
+	dataStreams *datastreams.Processor
 }
 
 const (
@@ -138,6 +142,9 @@ func Start(opts ...StartOption) {
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
+	}
+	if t.dataStreams != nil {
+		t.dataStreams.Start()
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
@@ -228,6 +235,13 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	var dataStreamsProcessor *datastreams.Processor
+	if c.dataStreamsMonitoringEnabled {
+		dataStreamsProcessor = datastreams.NewProcessor(c.statsdClient, c.env, c.serviceName, c.agentURL, c.httpClient, func() bool {
+			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
+			return f.DataStreams
+		})
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -247,7 +261,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd: statsd,
+		statsd:      statsd,
+		dataStreams: dataStreamsProcessor,
 	}
 	return t
 }
@@ -302,6 +317,9 @@ func newTracer(opts ...StartOption) *tracer {
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		t.flushSync()
+		if t.dataStreams != nil {
+			t.dataStreams.Flush()
+		}
 	}
 }
 
@@ -599,6 +617,9 @@ func (t *tracer) Stop() {
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.statsd.Close()
+	if t.dataStreams != nil {
+		t.dataStreams.Stop()
+	}
 	appsec.Stop()
 }
 

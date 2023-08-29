@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -84,6 +85,10 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	t.Unlock()
 
 	return span
+}
+
+func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
+	return &datastreams.Processor{}
 }
 
 func (t *mocktracer) OpenSpans() []Span {

@@ -17,6 +17,9 @@
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 
+# datastreams
+/datastreams                    @Datadog/data-streams-monitoring
+
 # telemetry
 /internal/telemetry             @DataDog/apm-go
 
