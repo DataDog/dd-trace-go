@@ -75,7 +75,7 @@ func startServerSpanFromContext(ctx context.Context, method string, cfg *interce
 	optsLocal := make([]tracer.StartSpanOption, len(cfg.spanOpts), len(cfg.spanOpts)+len(extraOpts))
 	copy(optsLocal, cfg.spanOpts)
 	optsLocal = append(optsLocal, extraOpts...)
-	md, _ := metadata.FromContext(ctx) // nil is ok
+	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
 		optsLocal = append(optsLocal, tracer.ChildOf(sctx))
 	}
@@ -108,12 +108,12 @@ func UnaryClientInterceptor(opts ...InterceptorOption) grpc.UnaryClientIntercept
 			tracer.Tag(ext.GRPCFullMethod, method),
 		)
 		span, ctx = tracer.StartSpanFromContext(ctx, cfg.spanName, spanopts...)
-		md, ok := metadata.FromContext(ctx)
+		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
 			md = metadata.MD{}
 		}
 		_ = tracer.Inject(span.Context(), grpcutil.MDCarrier(md))
-		ctx = metadata.NewContext(ctx, md)
+		ctx = metadata.NewOutgoingContext(ctx, md)
 		opts = append(opts, grpc.Peer(&p))
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		if p.Addr != nil {
