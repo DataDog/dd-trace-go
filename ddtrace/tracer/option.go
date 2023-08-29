@@ -1044,16 +1044,16 @@ func Tag(k string, v interface{}) StartSpanOption {
 
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
+	globalSvc := globalconfig.ServiceName()
+	if globalSvc == "" {
+		globalSvc = internal.DefaultServiceName()
+	}
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
 		}
 		cfg.Tags[ext.ServiceName] = name
 
-		globalSvc := globalconfig.ServiceName()
-		if globalSvc == "" {
-			globalSvc = internal.DefaultServiceName()
-		}
 		// attach the _dd.base_service tag only when the globally configured service name is different from the
 		// span service name.
 		if name != globalSvc {
