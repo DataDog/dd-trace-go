@@ -234,8 +234,8 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 		s := tracer.StartSpan("operation", StartTime(spanStart)).(*span)
 		msg := formatSpanString(s)
-		stop()
 		assertProcessedSpans(assert, tracer, 1, 0)
+		stop()
 		assert.NotContains(tp.Logs(), msg)
 		assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))
 	})
