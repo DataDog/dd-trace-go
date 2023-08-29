@@ -114,14 +114,15 @@ type abandonedSpansDebugger struct {
 	stop chan struct{}
 
 	// stopped reports whether the debugger is stopped (when non-zero).
-	stopped atomic.Uint32
+	stopped uint32
 
 	// addedSpans and removedSpans are internal counters, mainly for testing
 	// purposes
-	addedSpans, removedSpans atomic.Uint32
+	addedSpans, removedSpans uint32
 
-	// logged reports if the debugger has logged abandoned spans at least once.
-	logged atomic.Bool
+	// logged reports if the debugger has logged abandoned spans at least once
+	// (when non-zero).
+	logged uint32
 }
 
 // newAbandonedSpansDebugger creates a new abandonedSpansDebugger debugger
@@ -130,7 +131,7 @@ func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 		buckets: make(map[int64]*bucket[uint64, *abandonedSpanCandidate]),
 		In:      make(chan *abandonedSpanCandidate, 10000),
 	}
-	d.stopped.Store(1)
+	atomic.SwapUint32(&d.stopped, 1)
 	return d
 }
 
@@ -139,7 +140,7 @@ func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 // sorted by their `Start` time, where the front of the list contains the oldest spans,
 // and the end of the list contains the newest spans.
 func (d *abandonedSpansDebugger) Start(interval time.Duration) {
-	if d.stopped.Swap(0) == 0 {
+	if atomic.SwapUint32(&d.stopped, 0) == 0 {
 		// already running
 		log.Warn("(*abandonedSpansDebugger).Start called more than once. This is likely a programming error.")
 		return
@@ -176,7 +177,7 @@ func (d *abandonedSpansDebugger) Stop() {
 	if d == nil {
 		return
 	}
-	if d.stopped.Swap(1) > 0 {
+	if atomic.SwapUint32(&d.stopped, 1) > 0 {
 		return
 	}
 	close(d.stop)
@@ -196,12 +197,12 @@ func (d *abandonedSpansDebugger) add(s *abandonedSpanCandidate, interval time.Du
 		d.buckets[btime] = b
 	}
 
-	d.addedSpans.Add(1)
+	atomic.AddUint32(&d.addedSpans, 1)
 	b.add(s.SpanID, s)
 }
 
 func (d *abandonedSpansDebugger) remove(s *abandonedSpanCandidate, interval time.Duration) {
-	d.removedSpans.Add(1)
+	atomic.AddUint32(&d.removedSpans, 1)
 	bucketSize := interval.Nanoseconds()
 	btime := alignTs(s.Start, bucketSize)
 	b, ok := d.buckets[btime]
@@ -272,7 +273,7 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		return
 	}
 
-	d.logged.Swap(true)
+	atomic.SwapUint32(&d.logged, 1)
 	log.Warn("%d abandoned spans:", spanCount)
 	if truncated {
 		log.Warn("Too many abandoned spans. Truncating message.")
@@ -297,7 +298,7 @@ func formatAbandonedSpans(b *bucket[uint64, *abandonedSpanCandidate], interval *
 		if interval != nil && curTime-s.Start < interval.Nanoseconds() {
 			continue
 		}
-		spanCount += 1
+		spanCount++
 		msg := s.String()
 		sb.WriteString(msg)
 	}

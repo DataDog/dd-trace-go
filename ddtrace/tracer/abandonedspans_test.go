@@ -7,11 +7,12 @@ package tracer
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
@@ -40,8 +41,8 @@ func spanAge(s *span) string {
 func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, finishedSpans int) {
 	d := t.abandonedSpansDebugger
 	cond := func() bool {
-		return d.addedSpans.Load() >= uint32(startedSpans) &&
-			d.removedSpans.Load() >= uint32(finishedSpans)
+		return atomic.LoadUint32(&d.addedSpans) >= uint32(startedSpans) &&
+			atomic.LoadUint32(&d.removedSpans) >= uint32(finishedSpans)
 	}
 	assert.Eventually(cond, 300*time.Millisecond, 50*time.Millisecond)
 	// We expect logs to be generated when startedSpans and finishedSpans are different.
@@ -49,7 +50,7 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 		return
 	}
 	cond = func() bool {
-		return d.logged.Load()
+		return atomic.LoadUint32(&d.logged) == 1
 	}
 	assert.Eventually(cond, 300*time.Millisecond, 50*time.Millisecond)
 }
