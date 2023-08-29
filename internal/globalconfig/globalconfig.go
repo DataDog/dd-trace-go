@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/google/uuid"
+	"go.uber.org/atomic"
 )
 
 var cfg = &config{
@@ -25,7 +26,7 @@ var cfg = &config{
 type config struct {
 	mu            sync.RWMutex
 	analyticsRate float64
-	serviceName   string
+	serviceName   atomic.String
 	runtimeID     string
 	headersAsTags *internal.LockMap
 }
@@ -48,16 +49,12 @@ func SetAnalyticsRate(rate float64) {
 
 // ServiceName returns the default service name used by non-client integrations such as servers and frameworks.
 func ServiceName() string {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return cfg.serviceName
+	return cfg.serviceName.String()
 }
 
 // SetServiceName sets the global service name set for this application.
 func SetServiceName(name string) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.serviceName = name
+	cfg.serviceName.Store(name)
 }
 
 // RuntimeID returns this process's unique runtime id.
