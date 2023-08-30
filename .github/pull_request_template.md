@@ -29,3 +29,10 @@
 - [ ] Changed code has unit tests for its functionality at or near 100% coverage.
 - [ ] There is a benchmark for any new code, or changes to existing code.
 - [ ] If this interacts with the agent in a new way, a system test has been added.
+
+For Datadog employees:
+
+- [ ] If this PR touches code that handles credentials of any kind, such as Datadog API keys, I've requested a review from `@DataDog/security-design-and-guidance`.
+- [ ] This PR doesn't touch any of that.
+
+Unsure? Have a question? Request a review!
