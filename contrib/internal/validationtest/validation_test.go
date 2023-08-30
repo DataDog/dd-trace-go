@@ -17,7 +17,24 @@ import (
 	"time"
 
 	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
+	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/database/sql"
+	//redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/garyburd/redigo"
+	mgotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/globalsign/mgo"
+	pgtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-pg/pg.v10"
+	redistest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis"
+	redisV7test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v7"
+	redisV8test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go-redis/redis.v8"
+	mongotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/go.mongodb.org/mongo-driver/mongo"
+	gocqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gocql/gocql"
+	gomodule_redigotest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gomodule/redigo"
+	gopkgJinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gopkg.in/jinzhu/gorm.v1"
+	gormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/gorm.io/gorm.v1"
+	jinzhuGormv1test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jinzhu/gorm"
+	sqlxtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/jmoiron/sqlx"
 	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+	redisV9test "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/redis/go-redis.v9"
+	leveldbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/syndtr/goleveldb/leveldb"
+	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -96,8 +113,25 @@ func TestIntegrations(t *testing.T) {
 	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	// }
 	integrations := []Integration{
+		sqltest.New(),
+		gopkgJinzhuGormv1test.New(),
+		jinzhuGormv1test.New(),
+		gormv1test.New(),
+		mgotest.New(),
+		sqlxtest.New(),
 		memcachetest.New(),
 		dnstest.New(),
+		//redigotest.New(),
+		pgtest.New(),
+		redistest.New(),
+		redisV7test.New(),
+		redisV8test.New(),
+		mongotest.New(),
+		gocqltrace.New(),
+		gomodule_redigotest.New(),
+		redisV9test.New(),
+		leveldbtest.New(),
+		buntdbtest.New(),
 	}
 
 	testCases := []struct {
