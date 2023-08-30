@@ -22,7 +22,7 @@ var (
 	logSize        = 9000
 )
 
-// bucket is a generic implementation of a dynamic collection of elements
+// bucket is a not thread-safe generic implementation of a dynamic collection of elements
 // stored under a value-bound key (like time). Inspired by concentrator.rawBucket.
 type bucket[K comparable, T any] struct {
 	start, duration uint64
