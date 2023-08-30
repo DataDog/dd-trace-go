@@ -590,6 +590,19 @@ func TestSpanDDBaseService(t *testing.T) {
 			assert.NotContains(t, s.Meta, "_dd.base_service")
 		}
 	})
+	t.Run("span-service-equal-different-case", func(t *testing.T) {
+		tracerOpts := []StartOption{
+			WithService("global-service"),
+		}
+		spanOpts := []StartSpanOption{
+			ServiceName("GLOBAL-service"),
+		}
+		spans := run(t, tracerOpts, spanOpts)
+		for _, s := range spans {
+			assert.Equal(t, "GLOBAL-service", s.Service)
+			assert.NotContains(t, s.Meta, "_dd.base_service")
+		}
+	})
 	t.Run("global-service-not-set", func(t *testing.T) {
 		spanOpts := []StartSpanOption{
 			ServiceName("span-service"),

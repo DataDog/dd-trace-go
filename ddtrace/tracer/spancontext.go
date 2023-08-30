@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -410,7 +411,7 @@ func (t *trace) finishedOne(s *span) {
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.Service != "" && s.Service != tr.config.serviceName {
+	if s.Service != "" && !strings.EqualFold(s.Service, tr.config.serviceName) {
 		s.Meta[keyBaseService] = tr.config.serviceName
 	}
 	if s == t.root && t.priority != nil {
