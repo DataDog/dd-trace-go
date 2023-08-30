@@ -517,7 +517,7 @@ func (s *span) finish(finishTime int64) {
 			keep = shouldKeep(s)
 		}
 		if t.config.debugAbandonedSpans {
-			// the agent supports debugging abandoned spans
+			// the tracer supports debugging abandoned spans
 			select {
 			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
 				// ok
