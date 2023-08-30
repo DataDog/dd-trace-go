@@ -12,6 +12,7 @@ require (
 	github.com/DataDog/go-libddwaf v1.5.0
 	github.com/DataDog/gostackparse v0.6.0
 	github.com/DataDog/sketches-go v1.4.2
+	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
 	github.com/aws/aws-sdk-go-v2 v1.20.3
