@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
@@ -235,5 +237,23 @@ func TestURLTag(t *testing.T) {
 			url := urlFromRequest(&r)
 			require.Equal(t, tc.expectedURL, url)
 		})
+	}
+}
+
+func BenchmarkStartRequestSpan(b *testing.B) {
+	b.ReportAllocs()
+	r, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		b.Errorf("Failed to create request: %v", err)
+		return
+	}
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName("SomeService"),
+		tracer.ResourceName("SomeResource"),
+		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		StartRequestSpan(r, opts...)
 	}
 }

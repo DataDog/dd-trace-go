@@ -25,6 +25,8 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithService("test-serv"),
 			WithEnv("test-env"),
 			WithRuntimeMetrics(),
+			WithPeerServiceMapping("key", "val"),
+			WithPeerServiceDefaults(true),
 		)
 		defer Stop()
 
@@ -34,6 +36,10 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
 		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "stats_computation_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)

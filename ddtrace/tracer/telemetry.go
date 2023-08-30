@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -35,7 +36,7 @@ func startTelemetry(c *config) {
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
-		{Name: "stats_computation_enabled", Value: c.agent.Stats},
+		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
@@ -51,6 +52,21 @@ func startTelemetry(c *config) {
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_enabled", Value: c.enabled},
+		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
+		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
+	}
+	var peerServiceMapping []string
+	for key, value := range c.peerServiceMappings {
+		peerServiceMapping = append(peerServiceMapping, fmt.Sprintf("%s:%s", key, value))
+	}
+	telemetryConfigs = append(telemetryConfigs,
+		telemetry.Configuration{Name: "trace_peer_service_mapping", Value: strings.Join(peerServiceMapping, ",")})
+
+	if chained, ok := c.propagator.(*chainedPropagator); ok {
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
 	}
 	for k, v := range c.featureFlags {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
