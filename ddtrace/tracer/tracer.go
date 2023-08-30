@@ -274,7 +274,7 @@ func newTracer(opts ...StartOption) *tracer {
 		}()
 	}
 	if c.debugAbandonedSpans {
-		log.Warn("Abandoned spans logs enabled.")
+		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
