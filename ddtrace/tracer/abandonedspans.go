@@ -146,7 +146,6 @@ func (d *abandonedSpansDebugger) Start(interval time.Duration) {
 		return
 	}
 	d.stop = make(chan struct{})
-	d.buckets = make(map[int64]*bucket[uint64, *abandonedSpanCandidate])
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
