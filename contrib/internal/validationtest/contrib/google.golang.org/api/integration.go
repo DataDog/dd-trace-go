@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
+	apitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/books/v1"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/option"
-
-	apitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
 )
 
 type Integration struct {

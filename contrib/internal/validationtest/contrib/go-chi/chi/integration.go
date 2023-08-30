@@ -10,12 +10,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi"
-	"github.com/stretchr/testify/assert"
-
+	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
+	"github.com/go-chi/chi"
+	"github.com/stretchr/testify/assert"
 )
 
 type Integration struct {

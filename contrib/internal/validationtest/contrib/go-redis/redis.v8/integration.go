@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis.v8"
+
+	"github.com/go-redis/redis/v8"
 )
 
 type Integration struct {

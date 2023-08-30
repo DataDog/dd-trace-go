@@ -11,8 +11,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo"
 	echotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo"
+
+	"github.com/labstack/echo"
 )
 
 type Integration struct {

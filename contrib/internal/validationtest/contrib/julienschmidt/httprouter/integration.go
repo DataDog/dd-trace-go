@@ -10,8 +10,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/julienschmidt/httprouter"
 	httproutertrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 type Integration struct {

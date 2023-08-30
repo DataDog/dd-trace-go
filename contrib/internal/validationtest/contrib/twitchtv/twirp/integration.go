@@ -10,8 +10,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	twirptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"
+
+	"github.com/stretchr/testify/require"
 )
 
 type Integration struct {

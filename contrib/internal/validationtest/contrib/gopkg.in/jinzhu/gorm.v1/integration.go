@@ -10,14 +10,14 @@ import (
 	"database/sql/driver"
 	"testing"
 
-	_ "github.com/lib/pq" // need pg package for sql tests
-	"github.com/stretchr/testify/require"
-	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
-	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
-	"gorm.io/gorm"
-
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gopkg.in/jinzhu/gorm.v1"
+	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
+	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
+
+	_ "github.com/lib/pq" // need pg package for sql tests
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 type Integration struct {

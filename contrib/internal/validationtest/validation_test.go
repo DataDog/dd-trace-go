@@ -54,7 +54,7 @@ import (
 	buntdbtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/tidwall/buntdb"
 	twirptest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/twitchtv/twirp"
 	negronitest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/urfave/negroni"
-	webtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/urfave/negroni"
+	webtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/zenazn/goji.v1/web"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -175,6 +175,7 @@ func TestIntegrations(t *testing.T) {
 		redisV9test.New(),
 		leveldbtest.New(),
 		buntdbtest.New(),
+		webtest.New(),
 	}
 
 	testCases := []struct {

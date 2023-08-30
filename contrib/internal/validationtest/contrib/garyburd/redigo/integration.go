@@ -9,9 +9,10 @@ import (
 	"context"
 	"testing"
 
+	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/garyburd/redigo"
+
 	"github.com/garyburd/redigo/redis"
 	"github.com/stretchr/testify/require"
-	redigotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/garyburd/redigo"
 )
 
 type Integration struct {

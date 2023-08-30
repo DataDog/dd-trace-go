@@ -8,10 +8,10 @@ package consul
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	consultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/consul"
 
 	consul "github.com/hashicorp/consul/api"
-	consultrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/consul"
+	"github.com/stretchr/testify/require"
 )
 
 type Integration struct {

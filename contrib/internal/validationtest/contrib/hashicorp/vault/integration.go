@@ -13,11 +13,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	vaulttrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
 
 	"github.com/hashicorp/vault/api"
 	vault "github.com/hashicorp/vault/api"
-	vaulttrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
+	"github.com/stretchr/testify/require"
 )
 
 type Integration struct {

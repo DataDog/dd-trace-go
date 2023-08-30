@@ -9,8 +9,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/olivere/elastic"
+
+	"github.com/stretchr/testify/require"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
 )

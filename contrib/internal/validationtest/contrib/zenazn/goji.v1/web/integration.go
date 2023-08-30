@@ -11,9 +11,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	webtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji.v1/web"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/zenazn/goji/web"
-	webtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji.v1/web"
 )
 
 type Integration struct {

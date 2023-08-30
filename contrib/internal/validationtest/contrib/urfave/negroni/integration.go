@@ -11,9 +11,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	negronitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/urfave/negroni"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/negroni"
-	negronitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/urfave/negroni"
 )
 
 type Integration struct {
