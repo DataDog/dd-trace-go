@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -394,7 +395,7 @@ func newConfig(opts ...StartOption) *config {
 				globalconfig.SetServiceName(s)
 			}
 		} else {
-			c.serviceName = internal.DefaultServiceName()
+			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
 	if c.transport == nil {
