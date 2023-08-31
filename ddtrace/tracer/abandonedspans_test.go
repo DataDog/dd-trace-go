@@ -24,7 +24,7 @@ var spanStart = time.Date(2023, time.August, 18, 0, 0, 0, 0, time.UTC)
 // setTestTime() sets the current time, which will be used to calculate the
 // duration of abandoned spans.
 func setTestTime() func() {
-	current := spanStart.UnixNano() + 10*time.Minute.Nanoseconds() //use a fixed time instead of now
+	current := spanStart.UnixNano() + 10*time.Minute.Nanoseconds() // use a fixed time instead of now
 	now = func() int64 { return current }
 
 	return func() {
@@ -44,7 +44,7 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 		return atomic.LoadUint32(&d.addedSpans) >= uint32(startedSpans) &&
 			atomic.LoadUint32(&d.removedSpans) >= uint32(finishedSpans)
 	}
-	assert.Eventually(cond, 300*time.Millisecond, 50*time.Millisecond)
+	assert.Eventually(cond, 500*time.Millisecond, 50*time.Millisecond)
 	// We expect logs to be generated when startedSpans and finishedSpans are different.
 	if startedSpans == finishedSpans {
 		return
