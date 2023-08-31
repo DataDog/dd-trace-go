@@ -39,7 +39,6 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	opts = append(opts, WithConfig(conf))
 	return WrapConsumer(c, opts...), nil
 }
@@ -106,7 +105,6 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 			c.prev = nil
 		}
 	}()
-
 	return out
 }
 
@@ -122,7 +120,6 @@ func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Measured(),
 	}
-
 	if c.cfg.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, c.cfg.bootstrapServers))
 	}
@@ -279,7 +276,6 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 			span.Finish()
 		}
 	}()
-
 	return in
 }
 
@@ -293,7 +289,6 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.TopicPartition.Partition),
 	}
-
 	if p.cfg.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, p.cfg.bootstrapServers))
 	}
@@ -305,7 +300,6 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
-
 	span, _ := tracer.StartSpanFromContext(p.cfg.ctx, p.cfg.producerSpanName, opts...)
 	// inject the span context so consumers can pick it up
 	tracer.Inject(span.Context(), carrier)
