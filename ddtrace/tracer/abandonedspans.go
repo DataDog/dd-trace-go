@@ -196,12 +196,11 @@ func (d *abandonedSpansDebugger) add(s *abandonedSpanCandidate, interval time.Du
 		d.buckets[btime] = b
 	}
 
-	atomic.AddUint32(&d.addedSpans, 1)
 	b.add(s.SpanID, s)
+	atomic.AddUint32(&d.addedSpans, 1)
 }
 
 func (d *abandonedSpansDebugger) remove(s *abandonedSpanCandidate, interval time.Duration) {
-	atomic.AddUint32(&d.removedSpans, 1)
 	bucketSize := interval.Nanoseconds()
 	btime := alignTs(s.Start, bucketSize)
 	b, ok := d.buckets[btime]
@@ -213,6 +212,7 @@ func (d *abandonedSpansDebugger) remove(s *abandonedSpanCandidate, interval time
 	// If a bucket becomes empty, also remove that bucket from the
 	// abandoned spans list.
 	b.remove(s.SpanID)
+	atomic.AddUint32(&d.removedSpans, 1)
 	if b.Len() > 0 {
 		return
 	}
@@ -272,13 +272,13 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		return
 	}
 
-	atomic.SwapUint32(&d.logged, 1)
 	log.Warn("%d abandoned spans:", spanCount)
 	if truncated {
 		log.Warn("Too many abandoned spans. Truncating message.")
 		sb.WriteString("...")
 	}
 	log.Warn(sb.String())
+	atomic.SwapUint32(&d.logged, 1)
 }
 
 // formatAbandonedSpans takes a bucket and returns a human-readable string representing
