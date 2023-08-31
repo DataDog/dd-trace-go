@@ -22,39 +22,42 @@ var (
 	logSize        = 9000
 )
 
-// abandonedSpansBucket is a not thread-safe implementation of a dynamic collection of elements
+// bucket is a not thread-safe generic implementation of a dynamic collection of elements
 // stored under a value-bound key (like time). Inspired by concentrator.rawBucket.
-type abandonedSpansBucket struct {
+type bucket[K comparable, T any] struct {
 	start, duration uint64
 	// index is a map of data's entries by aggregating value to avoid iterating data.
-	index map[uint64]*list.Element
+	index map[K]*list.Element
 	// data is a list because insertion order may be important to users.
 	data *list.List
 }
 
-func newAbandonedSpansBucket(btime uint64, bsize int64) *abandonedSpansBucket {
-	return &abandonedSpansBucket{
+func newBucket[K comparable, T any](btime uint64, bsize int64) *bucket[K, T] {
+	return &bucket[K, T]{
 		start:    btime,
 		duration: uint64(bsize),
-		index:    make(map[uint64]*list.Element),
+		index:    make(map[K]*list.Element),
 		data:     list.New(),
 	}
 }
 
-func (b *abandonedSpansBucket) add(k uint64, v *abandonedSpanCandidate) {
+func (b *bucket[K, T]) add(k K, v T) {
 	e := b.data.PushBack(v)
 	b.index[k] = e
 }
 
-func (b *abandonedSpansBucket) get(k uint64) (*abandonedSpanCandidate, bool) {
+func (b *bucket[K, T]) get(k K) (T, bool) {
 	e, ok := b.index[k]
 	if !ok {
-		return nil, ok
+		// Compiler trick to return any zero value in generic code.
+		// https://stackoverflow.com/a/70589302
+		var zero T
+		return zero, ok
 	}
-	return e.Value.(*abandonedSpanCandidate), ok
+	return e.Value.(T), ok
 }
 
-func (b *abandonedSpansBucket) remove(k uint64) {
+func (b *bucket[K, T]) remove(k K) {
 	e, ok := b.index[k]
 	if !ok {
 		return
@@ -63,7 +66,7 @@ func (b *abandonedSpansBucket) remove(k uint64) {
 	_ = b.data.Remove(e)
 }
 
-func (b *abandonedSpansBucket) Len() int {
+func (b *bucket[K, T]) Len() int {
 	return b.data.Len()
 }
 
@@ -99,7 +102,7 @@ func (s *abandonedSpanCandidate) String() string {
 
 type abandonedSpansDebugger struct {
 	// buckets holds all the potentially abandoned tracked spans sharded by the configured interval.
-	buckets map[int64]*abandonedSpansBucket
+	buckets map[int64]*bucket[uint64, *abandonedSpanCandidate]
 
 	// In takes candidate spans and adds them to the debugger.
 	In chan *abandonedSpanCandidate
@@ -125,7 +128,7 @@ type abandonedSpansDebugger struct {
 // newAbandonedSpansDebugger creates a new abandonedSpansDebugger debugger
 func newAbandonedSpansDebugger() *abandonedSpansDebugger {
 	d := &abandonedSpansDebugger{
-		buckets: make(map[int64]*abandonedSpansBucket),
+		buckets: make(map[int64]*bucket[uint64, *abandonedSpanCandidate]),
 		In:      make(chan *abandonedSpanCandidate, 10000),
 	}
 	atomic.SwapUint32(&d.stopped, 1)
@@ -189,7 +192,7 @@ func (d *abandonedSpansDebugger) add(s *abandonedSpanCandidate, interval time.Du
 	btime := alignTs(s.Start, bucketSize)
 	b, ok := d.buckets[btime]
 	if !ok {
-		b = newAbandonedSpansBucket(uint64(btime), bucketSize)
+		b = newBucket[uint64, *abandonedSpanCandidate](uint64(btime), bucketSize)
 		d.buckets[btime] = b
 	}
 
@@ -282,7 +285,7 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 // the contents of it. If `interval` is not nil, it will check if the bucket might
 // contain spans older than the user configured timeout. If it does, it will filter for
 // older spans. If not, it will print all spans without checking their duration.
-func formatAbandonedSpans(b *abandonedSpansBucket, interval *time.Duration, curTime int64) (string, int) {
+func formatAbandonedSpans(b *bucket[uint64, *abandonedSpanCandidate], interval *time.Duration, curTime int64) (string, int) {
 	var (
 		sb        strings.Builder
 		spanCount int
