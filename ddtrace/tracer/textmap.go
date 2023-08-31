@@ -433,7 +433,7 @@ func validateTID(tid string) error {
 	if len(tid) != 16 {
 		return fmt.Errorf("invalid length: %q", tid)
 	}
-	if !validIDRgx.MatchString(tid) {
+	if !isValidID(tid) {
 		return fmt.Errorf("malformed: %q", tid)
 	}
 	return nil
@@ -739,12 +739,34 @@ var (
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
 	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
-
-	// validIDRgx is used to verify that the input is a valid hex string.
-	// The input must match the pattern from start to end.
-	// validIDRgx is applicable for both trace and span IDs.
-	validIDRgx = regexp.MustCompile("^[a-f0-9]+$")
 )
+
+const (
+	asciiLowerA = 97
+	asciiLowerF = 102
+	asciiZero   = 48
+	asciiNine   = 57
+)
+
+// isValidID is used to verify that the input is a valid hex string.
+// This is an equivalent check to the regexp ^[a-f0-9]+$
+// In benchmarks, this function is roughly 10x faster than the equivalent
+// regexp, which is why we split it out.
+// isValidID is applicable for both trace and span IDs.
+func isValidID(id string) bool {
+	if len(id) == 0 {
+		return false
+	}
+
+	for _, c := range id {
+		ascii := int(c)
+		if ascii < asciiZero || ascii > asciiLowerF || (ascii > asciiNine && ascii < asciiLowerA) {
+			return false
+		}
+	}
+
+	return true
+}
 
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
@@ -884,7 +906,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if ok := validIDRgx.MatchString(fullTraceID); !ok {
+	if !isValidID(fullTraceID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
@@ -899,7 +921,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if ok := validIDRgx.MatchString(spanID); !ok {
+	if !isValidID(spanID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
