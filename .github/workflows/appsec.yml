@@ -25,6 +25,9 @@ jobs:
   native:
     env:
       GODEBUG: cgocheck=2
+      # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
+      # https://go.dev/doc/go1.21 (runtime section)
+      GOEXPERIMENT: cgocheck2
     strategy:
       matrix:
         runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04, windows-latest ]
