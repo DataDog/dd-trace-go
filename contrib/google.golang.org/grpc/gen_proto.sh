@@ -7,8 +7,8 @@ COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this reposi
 // Copyright ${YEAR} Datadog, Inc.
 "
 
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.31.0
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 
 protoc fixtures_test.proto \
   --go_out=. \
@@ -18,4 +18,5 @@ protoc fixtures_test.proto \
 
 for f in ./*.pb.go; do
   printf "%s\n%s" "$COPYRIGHT_HEADER" "$(cat "$f")" > "$f"
+  go fmt "$f"
 done
