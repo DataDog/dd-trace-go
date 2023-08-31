@@ -412,6 +412,7 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params Checkpoi
 	}
 	return child, ContextWithPathway(ctx, child)
 }
+
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
 	select {
 	case p.inKafka <- kafkaOffset{

@@ -60,7 +60,7 @@ func WithDataStreams() Option {
 	}
 }
 
-// WithGroupID tags the produced data streams metrics with the given groupID
+// WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
 func WithGroupID(groupID string) Option {
 	return func(cfg *config) {
 		cfg.groupID = groupID
