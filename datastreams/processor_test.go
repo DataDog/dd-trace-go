@@ -29,12 +29,10 @@ func buildSketch(values ...float64) []byte {
 	return bytes
 }
 
-func TestAggregator(t *testing.T) {
+func TestProcessor(t *testing.T) {
 	p := NewProcessor(nil, "env", "service", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
-	tp1 := time.Now()
-	// Set tp2 to be some 40 seconds after the tp1, but also account for bucket alignments,
-	// otherwise the possible StatsPayload would change depending on when the test is run.
-	tp2 := time.Unix(0, alignTs(tp1.Add(time.Second*40).UnixNano(), bucketDuration.Nanoseconds())).Add(6 * time.Second)
+	tp1 := time.Now().Truncate(bucketDuration)
+	tp2 := tp1.Add(time.Minute)
 
 	p.add(statsPoint{
 		edgeTags:       []string{"type:edge-1"},
@@ -72,27 +70,17 @@ func TestAggregator(t *testing.T) {
 		edgeLatency:    (2 * time.Second).Nanoseconds(),
 		payloadSize:    2,
 	})
-	// flush at tp2 doesn't flush points at tp2 (current bucket)
+	got := p.flush(tp1.Add(bucketDuration))
+	sort.Slice(got.Stats, func(i, j int) bool {
+		return got.Stats[i].Start < got.Stats[j].Start
+	})
+	assert.Len(t, got.Stats, 2)
 	assert.Equal(t, StatsPayload{
 		Env:     "env",
 		Service: "service",
 		Stats: []StatsBucket{
 			{
-				Start:    uint64(alignTs(tp1.UnixNano(), bucketDuration.Nanoseconds())),
-				Duration: uint64(bucketDuration.Nanoseconds()),
-				Stats: []StatsPoint{{
-					EdgeTags:       []string{"type:edge-1"},
-					Hash:           2,
-					ParentHash:     1,
-					PathwayLatency: buildSketch(5),
-					EdgeLatency:    buildSketch(2),
-					PayloadSize:    buildSketch(2),
-					TimestampType:  "current",
-				}},
-				Backlogs: []Backlog{},
-			},
-			{
-				Start:    uint64(alignTs(tp1.UnixNano()-(5*time.Second).Nanoseconds(), bucketDuration.Nanoseconds())),
+				Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
 				Duration: uint64(bucketDuration.Nanoseconds()),
 				Stats: []StatsPoint{{
 					EdgeTags:       []string{"type:edge-1"},
@@ -105,21 +93,40 @@ func TestAggregator(t *testing.T) {
 				}},
 				Backlogs: []Backlog{},
 			},
+			{
+				Start:    uint64(tp1.UnixNano()),
+				Duration: uint64(bucketDuration.Nanoseconds()),
+				Stats: []StatsPoint{{
+					EdgeTags:       []string{"type:edge-1"},
+					Hash:           2,
+					ParentHash:     1,
+					PathwayLatency: buildSketch(5),
+					EdgeLatency:    buildSketch(2),
+					PayloadSize:    buildSketch(2),
+					TimestampType:  "current",
+				}},
+				Backlogs: []Backlog{},
+			},
 		},
 		TracerVersion: version.Tag,
 		Lang:          "go",
-	}, p.flush(tp2))
+	}, got)
 
-	sp := p.flush(tp2.Add(bucketDuration).Add(time.Second))
-	sort.Slice(sp.Stats[0].Stats, func(i, j int) bool {
-		return sp.Stats[0].Stats[i].Hash < sp.Stats[0].Stats[j].Hash
+	sp := p.flush(tp2.Add(bucketDuration))
+	sort.Slice(sp.Stats, func(i, j int) bool {
+		return sp.Stats[i].Start < sp.Stats[j].Start
 	})
+	for k := range sp.Stats {
+		sort.Slice(sp.Stats[k].Stats, func(i, j int) bool {
+			return sp.Stats[k].Stats[i].Hash < sp.Stats[k].Stats[j].Hash
+		})
+	}
 	assert.Equal(t, StatsPayload{
 		Env:     "env",
 		Service: "service",
 		Stats: []StatsBucket{
 			{
-				Start:    uint64(alignTs(tp2.UnixNano(), bucketDuration.Nanoseconds())),
+				Start:    uint64(tp2.Add(-time.Second * 10).UnixNano()),
 				Duration: uint64(bucketDuration.Nanoseconds()),
 				Stats: []StatsPoint{
 					{
@@ -129,7 +136,7 @@ func TestAggregator(t *testing.T) {
 						PathwayLatency: buildSketch(1, 5),
 						EdgeLatency:    buildSketch(1, 2),
 						PayloadSize:    buildSketch(1, 2),
-						TimestampType:  "current",
+						TimestampType:  "origin",
 					},
 					{
 						EdgeTags:       []string{"type:edge-1"},
@@ -138,13 +145,13 @@ func TestAggregator(t *testing.T) {
 						PathwayLatency: buildSketch(5),
 						EdgeLatency:    buildSketch(2),
 						PayloadSize:    buildSketch(2),
-						TimestampType:  "current",
+						TimestampType:  "origin",
 					},
 				},
 				Backlogs: []Backlog{},
 			},
 			{
-				Start:    uint64(alignTs(tp2.UnixNano()-(5*time.Second).Nanoseconds(), bucketDuration.Nanoseconds())),
+				Start:    uint64(tp2.UnixNano()),
 				Duration: uint64(bucketDuration.Nanoseconds()),
 				Stats: []StatsPoint{
 					{
@@ -154,7 +161,7 @@ func TestAggregator(t *testing.T) {
 						PathwayLatency: buildSketch(1, 5),
 						EdgeLatency:    buildSketch(1, 2),
 						PayloadSize:    buildSketch(1, 2),
-						TimestampType:  "origin",
+						TimestampType:  "current",
 					},
 					{
 						EdgeTags:       []string{"type:edge-1"},
@@ -163,7 +170,7 @@ func TestAggregator(t *testing.T) {
 						PathwayLatency: buildSketch(5),
 						EdgeLatency:    buildSketch(2),
 						PayloadSize:    buildSketch(2),
-						TimestampType:  "origin",
+						TimestampType:  "current",
 					},
 				},
 				Backlogs: []Backlog{},
