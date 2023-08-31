@@ -6,6 +6,8 @@
 package gearboxutil
 
 import (
+	"fmt"
+
 	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -52,5 +54,7 @@ func (f *FastHTTPHeadersCarrier) Set(key, val string) {
 	// f.ReqHeader.Set(k, val)
 	// MOTFF: "Set" overwrites any value at `k`. "Add" appends it. Just confirming we want to append, not overwrite
 	// f.ReqHeader.Add(k, val)
+	fmt.Printf("%v\n", f)
+	fmt.Printf("Req header: %v\n", f.ReqHeader)
 	f.ReqHeader.Add(key, val)
 }
