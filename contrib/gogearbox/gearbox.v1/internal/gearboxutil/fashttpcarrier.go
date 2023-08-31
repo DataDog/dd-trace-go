@@ -6,8 +6,6 @@
 package gearboxutil
 
 import (
-	"fmt"
-
 	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -50,11 +48,7 @@ func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error)
 // Set adds the given value to request header for key. Key will be lowercased to match
 // the metadata implementation.
 func (f *FastHTTPHeadersCarrier) Set(key, val string) {
-	// k := strings.ToLower(key)
 	// f.ReqHeader.Set(k, val)
 	// MOTFF: "Set" overwrites any value at `k`. "Add" appends it. Just confirming we want to append, not overwrite
-	// f.ReqHeader.Add(k, val)
-	fmt.Printf("%v\n", f)
-	fmt.Printf("Req header: %v\n", f.ReqHeader)
 	f.ReqHeader.Add(key, val)
 }

@@ -66,7 +66,7 @@ func startServer(t *testing.T, opts ...Option) string {
 	gb.Get("/propagation", func(ctx gearbox.Context) {
 		_, ok := tracer.SpanFromContext(ctx.Context())
 		if !ok {
-			ctx.Context().Error("No span in the context", 500)
+			ctx.Context().Error("No span in the request context", 500)
 		} else {
 			ctx.Status(200)
 		}
@@ -77,12 +77,11 @@ func startServer(t *testing.T, opts ...Option) string {
 	go func() {
 		require.NoError(t, gb.Start(addr))
 	}()
-	// Make sure the server stops at the end of each test run
+	// Stop the server at the end of each test run
 	t.Cleanup(func() {
 		assert.NoError(t, gb.Stop())
 	})
 
-	// Everything below is to ensure the http clients in our tests are blocked until the server is ready
 	timeoutChan := time.After(5 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -123,11 +122,11 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("200", span.Tag(ext.HTTPCode))
 	assert.Equal("GET", span.Tag(ext.HTTPMethod))
 	assert.Equal(addr+"/any", span.Tag(ext.HTTPURL))
-	assert.Equal("gogearbox/gearbox.v1", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
 
-// Test that HTTP Status codes >= 500 get treated as error spans
+// Test that HTTP Status codes >= 500 are treated as error spans
 func TestStatusError(t *testing.T) {
 	addr := startServer(t)
 
@@ -213,7 +212,7 @@ func TestWithIgnoreRequest(t *testing.T) {
 	assert.Equal(200, resp.StatusCode)
 }
 
-// Test that the gearbox request context retains the tracer context
+// Test that tracer context is stored in gearbox request context
 func TestChildSpan(t *testing.T) {
 	addr := startServer(t)
 
@@ -226,96 +225,42 @@ func TestChildSpan(t *testing.T) {
 	assert.Equal(200, resp.StatusCode)
 }
 
-// TODO use c := httptrace.WrapClient(http.DefaultClient)
+func TestInjectExtract(t *testing.T) {
+	startServer(t)
+
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	pspan, _ := tracer.StartSpanFromContext(context.Background(), "test")
+	fcc := &gearboxutil.FastHTTPHeadersCarrier{
+		ReqHeader: &fasthttp.RequestHeader{},
+	}
+	err := tracer.Inject(pspan.Context(), fcc)
+	if err != nil {
+		t.Fatal("Creating new request with context failed")
+	}
+	if err != nil {
+		t.Fatal("Request failed")
+	}
+	sctx, err := tracer.Extract(fcc)
+	if err != nil {
+		t.Fatal("Trace extraction failed")
+	}
+	assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
+	assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
+}
+
 func TestPropagation(t *testing.T) {
-	t.Run("inject-extract", func(t *testing.T) {
-		startServer(t)
-
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		pspan, _ := tracer.StartSpanFromContext(context.Background(), "test")
-		fcc := &gearboxutil.FastHTTPHeadersCarrier{
-			ReqHeader: &fasthttp.RequestHeader{},
-		}
-		err := tracer.Inject(pspan.Context(), fcc)
-		if err != nil {
-			t.Fatal("Creating new request with context failed")
-		}
-		if err != nil {
-			t.Fatal("Request failed")
-		}
-		sctx, err := tracer.Extract(fcc)
-		if err != nil {
-			t.Fatal("Trace extraction failed")
-		}
-		assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
-		assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
-	})
-	t.Run("req-context", func(t *testing.T) {
-		addr := startServer(t)
-
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		_, ctx := tracer.StartSpanFromContext(context.Background(), "test")
-		c := httptrace.WrapClient(http.DefaultClient)
-		req, err := http.NewRequestWithContext(ctx, "GET", addr + "/propagation", nil)
-		if err != nil {
-			t.Fatalf("Creating request failed")
-		}
-		resp, err := c.Do(req)
-		require.Equal(t, nil, err)
-		assert.Equal(200, resp.StatusCode)
-
-		spans := mt.FinishedSpans()
-		require.Equal(t, 2, len(spans))
-		one := spans[0]
-		two := spans[1]
-		assert.Equal(one.TraceID(), two.TraceID())
-	})
-	t.Run("full-request", func(t *testing.T) {
-		addr := startServer(t)
-		assert := assert.New(t)
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		c := httptrace.WrapClient(http.DefaultClient)
-		_, err := c.Get(addr + "/any")
-		require.Equal(t, nil, err)
-		spans := mt.FinishedSpans()
-		require.Equal(t, 2, len(spans))
-		one := spans[0]
-		two := spans[1]
-		assert.Equal(one.TraceID(), two.TraceID())
-	})
-}
-
-// Should I still call `go newGbServer()` for benchmarks?
-func BenchmarkGearboxMiddleware(b *testing.B) {
+	addr := startServer(t)
+	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-
-	for i := 0; i < b.N; i++ {
-		// go newGbServer()
-	}
-}
-
-func BenchmarkGearboxMiddlewareWithOptions(b *testing.B) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	for i := 0; i < b.N; i++ {
-		// go newGbServer(WithServiceName("gb"), WithStatusCheck(customErrChecker), WithResourceNamer(resourceNamer), WithIgnoreRequest(ignoreResources))
-	}
-}
-
-// BenchmarkGearbox is intended to serve as a comparison between gearbox with trace middleware v other middleware.
-func BenchmarkGearbox(b *testing.B) {
-	gb := gearbox.New()
-	logMiddleware := func(ctx gearbox.Context) {
-		fmt.Println("log message!")
-		ctx.Next()
-	}
-	gb.Use(logMiddleware)
+	c := httptrace.WrapClient(http.DefaultClient)
+	_, err := c.Get(addr + "/any")
+	require.Equal(t, nil, err)
+	spans := mt.FinishedSpans()
+	require.Equal(t, 2, len(spans))
+	one := spans[0]
+	two := spans[1]
+	assert.Equal(one.TraceID(), two.TraceID())
 }
