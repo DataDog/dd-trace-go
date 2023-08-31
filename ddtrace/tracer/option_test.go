@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -246,7 +247,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.NotNil(t, cfg.integrations)
-		assert.Equal(t, len(cfg.integrations), 53)
+		assert.Equal(t, len(cfg.integrations), 54)
 	})
 
 	t.Run("uninstrumented", func(t *testing.T) {
@@ -731,6 +732,36 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithPeerServiceMapping("old2", "new2")(c)
 			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
 			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+	})
+
+	t.Run("debug-open-spans", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, false, c.debugAbandonedSpans)
+			assert.Equal(t, time.Duration(0), c.spanTimeout)
+		})
+
+		t.Run("debug-on", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, 10*time.Minute, c.spanTimeout)
+		})
+
+		t.Run("timeout-set", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			t.Setenv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Minute, c.spanTimeout)
+		})
+
+		t.Run("with-function", func(t *testing.T) {
+			c := newConfig()
+			WithDebugSpansMode(time.Second)(c)
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Second, c.spanTimeout)
 		})
 	})
 }
