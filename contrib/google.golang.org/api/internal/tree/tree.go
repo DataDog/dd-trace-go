@@ -8,6 +8,8 @@ package tree
 import (
 	"regexp"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 type (
@@ -66,11 +68,6 @@ func (t *Tree) addEndpoints(es ...Endpoint) error {
 		if path[len(path)-1] == "" {
 			path = path[:len(path)-1]
 		}
-		pathMatcher, err := regexp.Compile(e.PathRegex)
-		if err != nil {
-			return err
-		}
-		e.pathMatcher = pathMatcher
 
 		segments := append([]string{e.Hostname, e.HTTPMethod}, path...)
 		t.root.add(segments, e)
@@ -87,6 +84,14 @@ func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (Endpoin
 	segments := append([]string{hostname, httpMethod}, strings.SplitAfter(httpPath, "/")...)
 	endpoints := t.root.getLongestPrefixMatch(segments)
 	for _, e := range endpoints {
+		if e.pathMatcher == nil {
+			pathMatcher, err := regexp.Compile(e.PathRegex)
+			if err != nil {
+				log.Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
+				return Endpoint{}, false
+			}
+			e.pathMatcher = pathMatcher
+		}
 		if e.pathMatcher.MatchString(httpPath) {
 			return e, true
 		}
