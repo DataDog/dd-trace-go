@@ -610,6 +610,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, nil, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "span-service", s.Service)
+			// in this case we don't assert to a concrete value because the default tracer service name is calculated
+			// based on the process name and might change depending on how tests are run.
 			assert.NotEmpty(t, s.Meta["_dd.base_service"])
 		}
 	})
