@@ -119,10 +119,6 @@ type abandonedSpansDebugger struct {
 	// addedSpans and removedSpans are internal counters, mainly for testing
 	// purposes
 	addedSpans, removedSpans uint32
-
-	// logged reports if the debugger has logged abandoned spans at least once
-	// (when non-zero).
-	logged uint32
 }
 
 // newAbandonedSpansDebugger creates a new abandonedSpansDebugger debugger
@@ -278,7 +274,6 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		sb.WriteString("...")
 	}
 	log.Warn(sb.String())
-	atomic.SwapUint32(&d.logged, 1)
 }
 
 // formatAbandonedSpans takes a bucket and returns a human-readable string representing
