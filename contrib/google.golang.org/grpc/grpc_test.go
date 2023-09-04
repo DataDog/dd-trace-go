@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -535,6 +535,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
+	UnimplementedFixtureServer
 	lastRequestMetadata atomic.Value
 }
 

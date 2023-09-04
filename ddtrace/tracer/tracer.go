@@ -95,6 +95,10 @@ type tracer struct {
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd statsdClient
+
+	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
+	// when abandoned spans debugging is enabled.
+	abandonedSpansDebugger *abandonedSpansDebugger
 }
 
 const (
@@ -268,6 +272,11 @@ func newTracer(opts ...StartOption) *tracer {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
+	}
+	if c.debugAbandonedSpans {
+		log.Info("Abandoned spans logs enabled.")
+		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
+		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
 	t.wg.Add(1)
 	go func() {
@@ -539,6 +548,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
+	if t.config.debugAbandonedSpans {
+		select {
+		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
+			// ok
+		default:
+			log.Error("Abandoned spans channel full, disregarding span.")
+		}
+	}
 	return span
 }
 
@@ -595,6 +612,7 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
+	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
