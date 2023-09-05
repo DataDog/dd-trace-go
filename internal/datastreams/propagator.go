@@ -15,6 +15,10 @@ import (
 	"github.com/DataDog/sketches-go/ddsketch/encoding"
 )
 
+type contextKey struct{}
+
+var activePathwayKey = contextKey{}
+
 const (
 	// PropagationKey is the key to use to propagate the pathway between services.
 	PropagationKey       = "dd-pathway-ctx"
@@ -63,4 +67,22 @@ func DecodeStr(ctx context.Context, str string) (p Pathway, outCtx context.Conte
 		return p, ctx, err
 	}
 	return Decode(ctx, data)
+}
+
+// ContextWithPathway returns a copy of the given context which includes the pathway p.
+func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
+	return context.WithValue(ctx, activePathwayKey, p)
+}
+
+// PathwayFromContext returns the pathway contained in the given context, and whether a
+// pathway is found in ctx.
+func PathwayFromContext(ctx context.Context) (p Pathway, ok bool) {
+	if ctx == nil {
+		return p, false
+	}
+	v := ctx.Value(activePathwayKey)
+	if p, ok := v.(Pathway); ok {
+		return p, true
+	}
+	return p, false
 }

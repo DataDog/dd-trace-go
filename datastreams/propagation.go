@@ -7,42 +7,9 @@ package datastreams
 
 import (
 	"context"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 )
-
-type contextKey struct{}
-
-var activePathwayKey = contextKey{}
-
-type CheckpointParams struct {
-	PayloadSize int64
-}
-
-func NewCheckpointParams() CheckpointParams {
-	return CheckpointParams{}
-}
-
-func (p CheckpointParams) WithPayloadSize(size int64) CheckpointParams {
-	p.PayloadSize = size
-	return p
-}
-
-// ContextWithPathway returns a copy of the given context which includes the pathway p.
-func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
-	return context.WithValue(ctx, activePathwayKey, p)
-}
-
-// PathwayFromContext returns the pathway contained in the given context, and whether a
-// pathway is found in ctx.
-func PathwayFromContext(ctx context.Context) (p Pathway, ok bool) {
-	if ctx == nil {
-		return p, false
-	}
-	v := ctx.Value(activePathwayKey)
-	if p, ok := v.(Pathway); ok {
-		return p, true
-	}
-	return p, false
-}
 
 // MergeContexts returns the first context which includes the pathway resulting from merging the pathways
 // contained in all contexts.
@@ -52,16 +19,16 @@ func MergeContexts(ctxs ...context.Context) context.Context {
 	if len(ctxs) == 0 {
 		return context.Background()
 	}
-	pathways := make([]Pathway, 0, len(ctxs))
+	pathways := make([]datastreams.Pathway, 0, len(ctxs))
 	for _, ctx := range ctxs {
-		if p, ok := PathwayFromContext(ctx); ok {
+		if p, ok := datastreams.PathwayFromContext(ctx); ok {
 			pathways = append(pathways, p)
 		}
 	}
 	if len(pathways) == 0 {
 		return ctxs[0]
 	}
-	return ContextWithPathway(ctxs[0], Merge(pathways))
+	return datastreams.ContextWithPathway(ctxs[0], datastreams.Merge(pathways))
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying
@@ -82,23 +49,44 @@ type TextMapReader interface {
 	ForeachKey(handler func(key, val string) error) error
 }
 
-// ExtractFromCarrier extracts the pathway context from a carrier to a context object
-func ExtractFromCarrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
+// ExtractFromBytesCarrier extracts the pathway context from a carrier to a context object
+func ExtractFromBytesCarrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
 	outCtx = ctx
 	carrier.ForeachKey(func(key, val string) error {
-		if key == PropagationKey {
-			_, outCtx, _ = Decode(ctx, []byte(val))
+		if key == datastreams.PropagationKey {
+			_, outCtx, _ = datastreams.Decode(ctx, []byte(val))
 		}
 		return nil
 	})
 	return outCtx
 }
 
-// InjectToCarrier injects a pathway context from a context object inta a carrier
-func InjectToCarrier(ctx context.Context, carrier TextMapWriter) {
-	p, ok := PathwayFromContext(ctx)
+// InjectToBytesCarrier injects a pathway context from a context object inta a carrier
+func InjectToBytesCarrier(ctx context.Context, carrier TextMapWriter) {
+	p, ok := datastreams.PathwayFromContext(ctx)
 	if !ok {
 		return
 	}
-	carrier.Set(PropagationKey, string(p.Encode()))
+	carrier.Set(datastreams.PropagationKey, string(p.Encode()))
+}
+
+// ExtractFromBase64Carrier extracts the pathway context from a carrier to a context object
+func ExtractFromBase64Carrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
+	outCtx = ctx
+	carrier.ForeachKey(func(key, val string) error {
+		if key == datastreams.PropagationKeyBase64 {
+			_, outCtx, _ = datastreams.Decode(ctx, []byte(val))
+		}
+		return nil
+	})
+	return outCtx
+}
+
+// InjectToBase64Carrier injects a pathway context from a context object inta a carrier
+func InjectToBase64Carrier(ctx context.Context, carrier TextMapWriter) {
+	p, ok := datastreams.PathwayFromContext(ctx)
+	if !ok {
+		return
+	}
+	carrier.Set(datastreams.PropagationKeyBase64, string(p.Encode()))
 }

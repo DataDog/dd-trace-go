@@ -151,9 +151,10 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 	for _, msg := range []*kafka.Message{msg1, msg2} {
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromCarrier(context.Background(), NewMessageCarrier(msg)))
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBytesCarrier(context.Background(), NewMessageCarrier(msg)))
 		assert.True(t, ok)
-		expected, _, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+		expected, _ := datastreams.PathwayFromContext(expectedCtx)
 		assert.NotEqual(t, expected.GetHash(), 0)
 		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
@@ -233,11 +234,12 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
 
-			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromCarrier(context.Background(), NewMessageCarrier(msg)))
+			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBytesCarrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
 			mt := mocktracer.Start()
-			_, ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expected, _, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
 			assert.Equal(t, expected.GetHash(), p.GetHash())

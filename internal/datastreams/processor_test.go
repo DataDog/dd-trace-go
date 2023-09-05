@@ -6,6 +6,7 @@
 package datastreams
 
 import (
+	"context"
 	"net/url"
 	"sort"
 	"strings"
@@ -179,6 +180,34 @@ func TestProcessor(t *testing.T) {
 		TracerVersion: version.Tag,
 		Lang:          "go",
 	}, sp)
+}
+
+func TestSetCheckpoint(t *testing.T) {
+	processor := Processor{
+		stopped:    1,
+		in:         make(chan statsPoint, 10),
+		service:    "service-1",
+		env:        "env",
+		timeSource: time.Now,
+	}
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}), hash1)
+
+	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
+	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
+
+	statsPt1 := <-processor.in
+	statsPt2 := <-processor.in
+
+	assert.Equal(t, []string{"direction:in", "type:kafka"}, statsPt1.edgeTags)
+	assert.Equal(t, hash1, statsPt1.hash)
+	assert.Equal(t, uint64(0), statsPt1.parentHash)
+
+	assert.Equal(t, []string{"direction:out", "type:kafka"}, statsPt2.edgeTags)
+	assert.Equal(t, hash2, statsPt2.hash)
+	assert.Equal(t, hash1, statsPt2.parentHash)
+
+	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
 func TestKafkaLag(t *testing.T) {

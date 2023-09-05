@@ -8,6 +8,7 @@ package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
@@ -329,11 +330,11 @@ func setProduceCheckpoint(enabled bool, msg *sarama.ProducerMessage, version sar
 	}
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
 	carrier := NewProducerMessageCarrier(msg)
-	_, ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromCarrier(context.Background(), carrier), datastreams.NewCheckpointParams().WithPayloadSize(getProducerMsgSize(msg)), edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)
 	if !ok || !version.IsAtLeast(sarama.V0_11_0_0) {
 		return
 	}
-	datastreams.InjectToCarrier(ctx, carrier)
+	datastreams.InjectToBytesCarrier(ctx, carrier)
 }
 
 func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMessage) {
@@ -345,11 +346,11 @@ func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMess
 		edges = append(edges, "group:"+groupID)
 	}
 	carrier := NewConsumerMessageCarrier(msg)
-	_, ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromCarrier(context.Background(), carrier), datastreams.NewCheckpointParams().WithPayloadSize(getConsumerMsgSize(msg)), edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)}, edges...)
 	if !ok {
 		return
 	}
-	datastreams.InjectToCarrier(ctx, carrier)
+	datastreams.InjectToBytesCarrier(ctx, carrier)
 	if groupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.

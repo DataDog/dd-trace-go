@@ -8,6 +8,7 @@ package kafka // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/co
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"math"
 	"time"
 
@@ -377,11 +378,11 @@ func setConsumeCheckpoint(dataStreamsEnabled bool, groupID string, msg *kafka.Me
 		edges = append(edges, "group:"+groupID)
 	}
 	carrier := NewMessageCarrier(msg)
-	_, ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromCarrier(context.Background(), carrier), datastreams.NewCheckpointParams().WithPayloadSize(getMsgSize(msg)), edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getMsgSize(msg)}, edges...)
 	if !ok {
 		return
 	}
-	datastreams.InjectToCarrier(ctx, carrier)
+	datastreams.InjectToBytesCarrier(ctx, carrier)
 }
 
 func setProduceCheckpoint(dataStreamsEnabled bool, version int, msg *kafka.Message) {
@@ -390,12 +391,12 @@ func setProduceCheckpoint(dataStreamsEnabled bool, version int, msg *kafka.Messa
 	}
 	edges := []string{"direction:out", "topic:" + *msg.TopicPartition.Topic, "type:kafka"}
 	carrier := NewMessageCarrier(msg)
-	_, ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromCarrier(context.Background(), carrier), datastreams.NewCheckpointParams().WithPayloadSize(getMsgSize(msg)), edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getMsgSize(msg)}, edges...)
 	if !ok || version < 0x000b0400 {
 		// headers not supported before librdkafka >=0.11.4
 		return
 	}
-	datastreams.InjectToCarrier(ctx, carrier)
+	datastreams.InjectToBytesCarrier(ctx, carrier)
 }
 
 func getMsgSize(msg *kafka.Message) (size int64) {

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
@@ -329,11 +330,11 @@ func (p *Processor) Stop() {
 
 func (p *Processor) reportStats() {
 	for range time.NewTicker(time.Second * 10).C {
-		p.statsd.Count("datadog.datastreams.Processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.Processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.Processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.Processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
 	}
 }
 
@@ -377,11 +378,11 @@ func (p *Processor) sendToAgent(payload StatsPayload) {
 	}
 }
 
-func (p *Processor) SetCheckpoint(ctx context.Context, edgeTags ...string) (Pathway, context.Context) {
-	return p.SetCheckpointWithParams(ctx, CheckpointParams{}, edgeTags...)
+func (p *Processor) SetCheckpoint(ctx context.Context, edgeTags ...string) context.Context {
+	return p.SetCheckpointWithParams(ctx, options.CheckpointParams{}, edgeTags...)
 }
 
-func (p *Processor) SetCheckpointWithParams(ctx context.Context, params CheckpointParams, edgeTags ...string) (Pathway, context.Context) {
+func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.CheckpointParams, edgeTags ...string) context.Context {
 	parent, hasParent := PathwayFromContext(ctx)
 	parentHash := uint64(0)
 	now := p.time()
@@ -410,7 +411,7 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params Checkpoi
 	default:
 		atomic.AddInt64(&p.stats.dropped, 1)
 	}
-	return child, ContextWithPathway(ctx, child)
+	return ContextWithPathway(ctx, child)
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
@@ -465,9 +466,4 @@ func (p *Processor) updateAgentSupportsDataStreams(agentSupportsDataStreams bool
 			log.Warn("Turning off Data Streams Monitoring. Upgrade your agent to 7.34+")
 		}
 	}
-}
-
-// ProcessorContainer is an object that contains a data streams processor.
-type ProcessorContainer interface {
-	GetDataStreamsProcessor() *Processor
 }

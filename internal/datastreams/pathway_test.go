@@ -24,16 +24,17 @@ func TestPathway(t *testing.T) {
 			env:        "env",
 			timeSource: func() time.Time { return start },
 		}
-		_, ctx := processor.SetCheckpoint(context.Background())
+		ctx := processor.SetCheckpoint(context.Background())
 		middle := start.Add(time.Hour)
 		processor.timeSource = func() time.Time { return middle }
-		_, ctx = processor.SetCheckpoint(ctx, "edge-1")
+		ctx = processor.SetCheckpoint(ctx, "edge-1")
 		end := middle.Add(time.Hour)
 		processor.timeSource = func() time.Time { return end }
-		p, ctx := processor.SetCheckpoint(ctx, "edge-2")
+		ctx = processor.SetCheckpoint(ctx, "edge-2")
 		hash1 := pathwayHash(nodeHash("service-1", "env", nil), 0)
 		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"edge-1"}), hash1)
 		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"edge-2"}), hash2)
+		p, _ := PathwayFromContext(ctx)
 		assert.Equal(t, hash3, p.GetHash())
 		assert.Equal(t, start, p.PathwayStart())
 		assert.Equal(t, end, p.EdgeStart())
@@ -72,9 +73,9 @@ func TestPathway(t *testing.T) {
 			timeSource: time.Now,
 		}
 
-		pathwayWithNoEdgeTags, _ := processor.SetCheckpoint(context.Background())
-		pathwayWith1EdgeTag, _ := processor.SetCheckpoint(context.Background(), "type:internal")
-		pathwayWith2EdgeTags, _ := processor.SetCheckpoint(context.Background(), "type:internal", "some_other_key:some_other_val")
+		pathwayWithNoEdgeTags, _ := PathwayFromContext(processor.SetCheckpoint(context.Background()))
+		pathwayWith1EdgeTag, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "type:internal"))
+		pathwayWith2EdgeTags, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "type:internal", "some_other_key:some_other_val"))
 
 		hash1 := pathwayHash(nodeHash("service-1", "env", nil), 0)
 		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}), 0)
