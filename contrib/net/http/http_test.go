@@ -254,7 +254,7 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
-func TestWrapHandlerWithResourceNameNoRace(t *testing.T) {
+func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	r := httptest.NewRequest("GET", "/", nil)
@@ -277,7 +277,7 @@ func TestWrapHandlerWithResourceNameNoRace(t *testing.T) {
 	wg.Wait()
 }
 
-func TestServeMuxNoRace(t *testing.T) {
+func TestServeMuxNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	r := httptest.NewRequest("GET", "/", nil)
@@ -479,7 +479,9 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 	r.Header.Set("Cache-Control", "no-cache")
 
 	w := httptest.NewRecorder()
+	rtr := router()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		router().ServeHTTP(w, r)
+		rtr.ServeHTTP(w, r)
 	}
 }
