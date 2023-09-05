@@ -151,7 +151,7 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
 	}
 	for _, msg := range []*kafka.Message{msg1, msg2} {
-		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBytesCarrier(context.Background(), NewMessageCarrier(msg)))
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 		assert.True(t, ok)
 		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
 		expected, _ := datastreams.PathwayFromContext(expectedCtx)
@@ -234,7 +234,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
 
-			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBytesCarrier(context.Background(), NewMessageCarrier(msg)))
+			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
 			mt := mocktracer.Start()
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")

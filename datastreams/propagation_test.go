@@ -31,19 +31,6 @@ func (c carrier) ForeachKey(handler func(key, val string) error) error {
 	return nil
 }
 
-func TestBytesPropagation(t *testing.T) {
-	c := make(carrier)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	ctx := context.Background()
-	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, "direction:out", "type:kafka", "topic:topic1")
-	InjectToBytesCarrier(ctx, c)
-	got, _ := datastreams.PathwayFromContext(ExtractFromBytesCarrier(context.Background(), c))
-	expected, _ := datastreams.PathwayFromContext(ctx)
-	assert.Equal(t, expected.GetHash(), got.GetHash())
-	assert.NotEqual(t, 0, expected.GetHash())
-}
-
 func TestBase64Propagation(t *testing.T) {
 	c := make(carrier)
 	mt := mocktracer.Start()

@@ -20,8 +20,7 @@ type contextKey struct{}
 var activePathwayKey = contextKey{}
 
 const (
-	// PropagationKey is the key to use to propagate the pathway between services.
-	PropagationKey       = "dd-pathway-ctx"
+	// PropagationKeyBase64 is the key to use to propagate the pathway between services.
 	PropagationKeyBase64 = "dd-pathway-ctx-base64"
 )
 
@@ -54,14 +53,14 @@ func Decode(ctx context.Context, data []byte) (p Pathway, outCtx context.Context
 	return p, ContextWithPathway(ctx, p), nil
 }
 
-// EncodeStr encodes a pathway context into a string using base64 encoding.
-func (p Pathway) EncodeStr() string {
+// EncodeBase64 encodes a pathway context into a string using base64 encoding.
+func (p Pathway) EncodeBase64() string {
 	b := p.Encode()
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// DecodeStr decodes a pathway context from a string using base64 encoding.
-func DecodeStr(ctx context.Context, str string) (p Pathway, outCtx context.Context, err error) {
+// DecodeBase64 decodes a pathway context from a string using base64 encoding.
+func DecodeBase64(ctx context.Context, str string) (p Pathway, outCtx context.Context, err error) {
 	data, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
 		return p, ctx, err

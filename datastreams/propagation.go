@@ -49,33 +49,12 @@ type TextMapReader interface {
 	ForeachKey(handler func(key, val string) error) error
 }
 
-// ExtractFromBytesCarrier extracts the pathway context from a carrier to a context object
-func ExtractFromBytesCarrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
-	outCtx = ctx
-	carrier.ForeachKey(func(key, val string) error {
-		if key == datastreams.PropagationKey {
-			_, outCtx, _ = datastreams.Decode(ctx, []byte(val))
-		}
-		return nil
-	})
-	return outCtx
-}
-
-// InjectToBytesCarrier injects a pathway context from a context object inta a carrier
-func InjectToBytesCarrier(ctx context.Context, carrier TextMapWriter) {
-	p, ok := datastreams.PathwayFromContext(ctx)
-	if !ok {
-		return
-	}
-	carrier.Set(datastreams.PropagationKey, string(p.Encode()))
-}
-
 // ExtractFromBase64Carrier extracts the pathway context from a carrier to a context object
 func ExtractFromBase64Carrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
 	outCtx = ctx
 	carrier.ForeachKey(func(key, val string) error {
 		if key == datastreams.PropagationKeyBase64 {
-			_, outCtx, _ = datastreams.Decode(ctx, []byte(val))
+			_, outCtx, _ = datastreams.DecodeBase64(ctx, val)
 		}
 		return nil
 	})
@@ -88,5 +67,5 @@ func InjectToBase64Carrier(ctx context.Context, carrier TextMapWriter) {
 	if !ok {
 		return
 	}
-	carrier.Set(datastreams.PropagationKeyBase64, string(p.Encode()))
+	carrier.Set(datastreams.PropagationKeyBase64, p.EncodeBase64())
 }

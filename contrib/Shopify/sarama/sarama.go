@@ -330,11 +330,11 @@ func setProduceCheckpoint(enabled bool, msg *sarama.ProducerMessage, version sar
 	}
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
 	carrier := NewProducerMessageCarrier(msg)
-	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)
 	if !ok || !version.IsAtLeast(sarama.V0_11_0_0) {
 		return
 	}
-	datastreams.InjectToBytesCarrier(ctx, carrier)
+	datastreams.InjectToBase64Carrier(ctx, carrier)
 }
 
 func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMessage) {
@@ -346,11 +346,11 @@ func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMess
 		edges = append(edges, "group:"+groupID)
 	}
 	carrier := NewConsumerMessageCarrier(msg)
-	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBytesCarrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)}, edges...)
+	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getConsumerMsgSize(msg)}, edges...)
 	if !ok {
 		return
 	}
-	datastreams.InjectToBytesCarrier(ctx, carrier)
+	datastreams.InjectToBase64Carrier(ctx, carrier)
 	if groupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.

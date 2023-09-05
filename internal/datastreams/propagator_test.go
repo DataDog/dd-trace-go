@@ -30,10 +30,10 @@ func TestEncode(t *testing.T) {
 	assert.Equal(t, p, decoded)
 }
 
-func TestEncodeStr(t *testing.T) {
+func TestEncodeBase64(t *testing.T) {
 	p := testPathway()
-	encoded := p.EncodeStr()
-	decoded, _, err := DecodeStr(context.Background(), encoded)
+	encoded := p.EncodeBase64()
+	decoded, _, err := DecodeBase64(context.Background(), encoded)
 	assert.Nil(t, err)
 	assert.Equal(t, p, decoded)
 }
