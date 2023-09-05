@@ -433,21 +433,21 @@ func (e *testCustomError) Error() string {
 	return "test"
 }
 
-func TestCustomErrorFunc(t *testing.T) {
+func TestWithErrorTranslator(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	var called, traced bool
 
 	// setup
-	customErrorFunc := func(e error) *echo.HTTPError {
+	translateError := func(e error) (*echo.HTTPError, bool) {
 		return &echo.HTTPError{
 			Message: e.(*testCustomError).Error(),
 			Code:    e.(*testCustomError).TestCode,
-		}
+		}, true
 	}
 	router := echo.New()
-	router.Use(Middleware(WithCustomErrorFunc(customErrorFunc)))
+	router.Use(Middleware(WithErrorTranslator(translateError)))
 
 	// a handler with an error and make the requests
 	router.GET("/err", func(c echo.Context) error {

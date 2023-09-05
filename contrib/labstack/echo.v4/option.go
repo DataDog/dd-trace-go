@@ -6,6 +6,7 @@
 package echo
 
 import (
+	"errors"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -24,7 +25,7 @@ type config struct {
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
-	customErrorFunc   CustomErrorFunc
+	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        *internal.LockMap
 }
 
@@ -42,7 +43,13 @@ func defaults(cfg *config) {
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.customErrorFunc = func(err error) *echo.HTTPError { return nil }
+	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
+		var echoErr *echo.HTTPError
+		if errors.As(err, &echoErr) {
+			return echoErr, true
+		}
+		return nil, false
+	}
 }
 
 // WithServiceName sets the given service name for the system.
@@ -92,11 +99,11 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	}
 }
 
-// WithCustomErrorFunction sets a function to translate custom errors into the
-// expected format
-func WithCustomErrorFunc(customErrorFunc CustomErrorFunc) Option {
+// WithErrorTranslator sets a function to translate Go errors into echo Errors.
+// This is used for extracting the HTTP response status code.
+func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) Option {
 	return func(cfg *config) {
-		cfg.customErrorFunc = customErrorFunc
+		cfg.translateError = fn
 	}
 }
 
