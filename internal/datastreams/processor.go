@@ -286,7 +286,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 func (p *Processor) Start() {
 	if atomic.SwapUint64(&p.stopped, 0) == 0 {
 		// already running
-		log.Warn("(*Processor).Start called more than once. This is likely p programming error.")
+		log.Warn("(*Processor).Start called more than once. This is likely a programming error.")
 		return
 	}
 	p.stop = make(chan struct{})
