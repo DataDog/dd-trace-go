@@ -27,8 +27,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/aws/smithy-go v1.14.2
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
-	github.com/confluentinc/confluent-kafka-go v1.9.2
-	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
+	github.com/confluentinc/confluent-kafka-go v1.4.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.1.1
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
