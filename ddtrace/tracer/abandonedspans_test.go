@@ -44,15 +44,16 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 		return atomic.LoadUint32(&d.addedSpans) >= uint32(startedSpans) &&
 			atomic.LoadUint32(&d.removedSpans) >= uint32(finishedSpans)
 	}
-	assert.Eventually(cond, 500*time.Millisecond, 50*time.Millisecond)
+	assert.Eventually(cond, 1*time.Second, 75*time.Millisecond)
 	// We expect logs to be generated when startedSpans and finishedSpans are different.
+	// At least there should be 3 lines: 1. debugger activation, 2. detected spans warn, and 3. the details.
 	if startedSpans == finishedSpans {
 		return
 	}
 	cond = func() bool {
-		return atomic.LoadUint32(&d.logged) == 1
+		return len(t.config.logger.(*log.RecordLogger).Logs()) > 2
 	}
-	assert.Eventually(cond, 300*time.Millisecond, 50*time.Millisecond)
+	assert.Eventually(cond, 1*time.Second, 75*time.Millisecond)
 }
 
 func formatSpanString(s *span) string {

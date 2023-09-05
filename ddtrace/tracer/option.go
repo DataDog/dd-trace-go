@@ -246,6 +246,19 @@ type config struct {
 
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
+
+	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
+	// Only used for telemetry currently.
+	orchestrionCfg orchestrionConfig
+}
+
+// orchestrionConfig contains Orchestrion configuration.
+type orchestrionConfig struct {
+	// enabled indicates whether this tracer was instanciated via Orchestrion.
+	enabled bool
+
+	// metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
+	metadata map[string]string
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -1045,6 +1058,15 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.statsComputationEnabled = enabled
+	}
+}
+
+// WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
+// This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
+func WithOrchestrion(metadata map[string]string) StartOption {
+	return func(c *config) {
+		c.orchestrionCfg.enabled = true
+		c.orchestrionCfg.metadata = metadata
 	}
 }
 
