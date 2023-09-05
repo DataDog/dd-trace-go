@@ -15,5 +15,5 @@ jobs:
     name: PR Unit and Integration Tests
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.18"
+      go-version: "1.19"
     secrets: inherit
