@@ -8,10 +8,10 @@ package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
