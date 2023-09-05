@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	idatastreams "gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
