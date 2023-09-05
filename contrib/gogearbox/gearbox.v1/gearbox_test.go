@@ -6,7 +6,6 @@
 package gearbox
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,8 +14,6 @@ import (
 	"time"
 
 	"github.com/gogearbox/gearbox"
-	"github.com/valyala/fasthttp"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -225,39 +222,18 @@ func TestChildSpan(t *testing.T) {
 	assert.Equal(200, resp.StatusCode)
 }
 
-func TestInjectExtract(t *testing.T) {
-	startServer(t)
-
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	pspan, _ := tracer.StartSpanFromContext(context.Background(), "test")
-	fcc := &gearboxutil.FastHTTPHeadersCarrier{
-		ReqHeader: &fasthttp.RequestHeader{},
-	}
-	err := tracer.Inject(pspan.Context(), fcc)
-	if err != nil {
-		t.Fatal("Creating new request with context failed")
-	}
-	if err != nil {
-		t.Fatal("Request failed")
-	}
-	sctx, err := tracer.Extract(fcc)
-	if err != nil {
-		t.Fatal("Trace extraction failed")
-	}
-	assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
-	assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
-}
-
+// Test that distributed tracing works from client to gearbox server
 func TestPropagation(t *testing.T) {
 	addr := startServer(t)
+
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
+
 	c := httptrace.WrapClient(http.DefaultClient)
 	_, err := c.Get(addr + "/any")
 	require.Equal(t, nil, err)
+
 	spans := mt.FinishedSpans()
 	require.Equal(t, 2, len(spans))
 	one := spans[0]

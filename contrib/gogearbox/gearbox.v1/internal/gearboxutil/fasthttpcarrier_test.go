@@ -6,10 +6,13 @@
 package gearboxutil
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestFastHTTPHeadersCarrierSet(t *testing.T) {
@@ -75,4 +78,27 @@ func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 
 	assert.Nil(err)
 	assert.Len(headers, 0)
+}
+
+func TestInjectExtract(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	pspan, _ := tracer.StartSpanFromContext(context.Background(), "test")
+	fcc := &FastHTTPHeadersCarrier{
+		ReqHeader: &fasthttp.RequestHeader{},
+	}
+	err := tracer.Inject(pspan.Context(), fcc)
+	if err != nil {
+		t.Fatal("Creating new request with context failed")
+	}
+	if err != nil {
+		t.Fatal("Request failed")
+	}
+	sctx, err := tracer.Extract(fcc)
+	if err != nil {
+		t.Fatal("Trace extraction failed")
+	}
+	assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
+	assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
 }
