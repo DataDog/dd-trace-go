@@ -35,9 +35,6 @@ type Option func(*config)
 // IgnoreRequestFunc determines if tracing will be skipped for a request.
 type IgnoreRequestFunc func(c echo.Context) bool
 
-// CustomErrorFunc attempts to translate a non-standard echo error to the required format
-type CustomErrorFunc func(err error) *echo.HTTPError
-
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.analyticsRate = math.NaN()
