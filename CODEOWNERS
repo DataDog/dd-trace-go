@@ -19,6 +19,7 @@
 
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring
+/internal/datastreams           @Datadog/data-streams-monitoring
 
 # telemetry
 /internal/telemetry             @DataDog/apm-go
