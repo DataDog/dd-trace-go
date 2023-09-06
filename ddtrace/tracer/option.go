@@ -255,10 +255,10 @@ type config struct {
 // orchestrionConfig contains Orchestrion configuration.
 type orchestrionConfig struct {
 	// Enabled indicates whether this tracer was instanciated via Orchestrion.
-	Enabled bool
+	Enabled bool `json:"enabled"`
 
 	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-	Metadata map[string]string
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // HasFeature reports whether feature f is enabled.
