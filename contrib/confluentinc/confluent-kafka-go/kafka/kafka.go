@@ -89,7 +89,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 			if msg, ok := evt.(*kafka.Message); ok {
 				next = c.startSpan(msg)
 				setConsumeCheckpoint(c.cfg.dataStreamsEnabled, c.cfg.groupID, msg)
-			} else if offset, ok := evt.(*kafka.OffsetsCommitted); ok {
+			} else if offset, ok := evt.(kafka.OffsetsCommitted); ok {
 				commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, offset.Offsets, offset.Error)
 			}
 
@@ -174,7 +174,7 @@ func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 	if msg, ok := evt.(*kafka.Message); ok {
 		setConsumeCheckpoint(c.cfg.dataStreamsEnabled, c.cfg.groupID, msg)
 		c.prev = c.startSpan(msg)
-	} else if offset, ok := evt.(*kafka.OffsetsCommitted); ok {
+	} else if offset, ok := evt.(kafka.OffsetsCommitted); ok {
 		commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, offset.Offsets, offset.Error)
 	}
 	return evt
