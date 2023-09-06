@@ -254,11 +254,11 @@ type config struct {
 
 // orchestrionConfig contains Orchestrion configuration.
 type orchestrionConfig struct {
-	// enabled indicates whether this tracer was instanciated via Orchestrion.
-	enabled bool
+	// Enabled indicates whether this tracer was instanciated via Orchestrion.
+	Enabled bool `json:"enabled"`
 
-	// metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-	metadata map[string]string
+	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -1065,8 +1065,8 @@ func WithStatsComputation(enabled bool) StartOption {
 // This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
 func WithOrchestrion(metadata map[string]string) StartOption {
 	return func(c *config) {
-		c.orchestrionCfg.enabled = true
-		c.orchestrionCfg.metadata = metadata
+		c.orchestrionCfg.Enabled = true
+		c.orchestrionCfg.Metadata = metadata
 	}
 }
 
