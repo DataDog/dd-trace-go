@@ -25,8 +25,5 @@ there may be contrib libraries that are deprecated/vulnerable but still appear i
 At the next major version we will drop support for these packages. (e.g. as of dd-trace-go@v1 labstack/echo v3 is considered deprecated and users should migrate to labstack/echo.v4)
 
 Note that since library go.mod files only specify minimum version requirements you are welcome to specify a newer version of any dependencies to satisfy your tooling.
-For example, if you would like to require a library like `github.com/labstack/echo/v4` use version v4.10.0 you can do so by adding the following to your application's go.mod file:
-```
-replace github.com/labstack/echo/v4 => github.com/labstack/echo/v4 v4.10.0
-```
-Additional documentation and details can be found [here](https://go.dev/ref/mod#go-mod-file-replace).
+For example, if you would like to require a library like `github.com/labstack/echo/v4` use version v4.10.0 you can do so by running `go get github.com/labstack/echo/v4@v4.10.0`.
+Additional documentation and details can be found [here](https://go.dev/ref/mod#go-get).
