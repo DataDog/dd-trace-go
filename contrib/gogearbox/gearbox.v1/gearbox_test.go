@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogearbox/gearbox"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
+	"github.com/gogearbox/gearbox"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,9 +31,10 @@ func customErrChecker(statusCode int) bool {
 
 var customRsc = "custom resource"
 
-func resourceNamer(gctx gearbox.Context) string {
+func resourceNamer(_ gearbox.Context) string {
 	return customRsc
 }
+
 func ignoreResources(c gearbox.Context) bool {
 	return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
 }
@@ -49,7 +50,9 @@ func getFreePort(t *testing.T) int {
 
 func startServer(t *testing.T, opts ...Option) string {
 	// Setup gearbox
-	gb := gearbox.New()
+	gb := gearbox.New(&gearbox.Settings{
+		DisableStartupMessage: true,
+	})
 	gb.Use(Middleware(opts...))
 	gb.Get("/any", func(ctx gearbox.Context) {
 		ctx.SendString("Hello World!")
@@ -82,10 +85,13 @@ func startServer(t *testing.T, opts ...Option) string {
 	timeoutChan := time.After(5 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+
 	// Keep checking if server is up. If not, wait 100ms or timeout.
 	for {
 		httpAddr := "http://" + addr
 		resp, err := http.DefaultClient.Get(httpAddr + "/any")
+		assert.NoError(t, resp.Body.Close())
+
 		// If the server is up, return the address
 		if err == nil && resp.StatusCode == 200 {
 			return httpAddr
@@ -107,8 +113,10 @@ func TestTrace200(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	_, err := http.DefaultClient.Get(addr + "/any")
-	require.Equal(t, nil, err)
+	resp, err := http.DefaultClient.Get(addr + "/any")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
@@ -131,8 +139,10 @@ func TestStatusError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	_, err := http.DefaultClient.Get(addr + "/err")
-	require.Equal(t, nil, err)
+	resp, err := http.DefaultClient.Get(addr + "/err")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
@@ -152,8 +162,10 @@ func TestWithStatusCheck(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		_, err := http.DefaultClient.Get(addr + "/customErr")
-		require.Equal(t, nil, err)
+		resp, err := http.DefaultClient.Get(addr + "/customErr")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		span := spans[0]
@@ -169,8 +181,10 @@ func TestWithStatusCheck(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		_, err := http.DefaultClient.Get(addr + "/err")
-		require.Equal(t, nil, err)
+		resp, err := http.DefaultClient.Get(addr + "/err")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1)
 		span := spans[0]
@@ -187,8 +201,10 @@ func TestCustomResourceNamer(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	_, err := http.DefaultClient.Get(addr + "/any")
-	require.Equal(t, nil, err)
+	resp, err := http.DefaultClient.Get(addr + "/any")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
@@ -204,7 +220,9 @@ func TestWithIgnoreRequest(t *testing.T) {
 	defer mt.Stop()
 
 	resp, err := http.DefaultClient.Get(addr + "/any")
-	require.Equal(t, nil, err)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
 	assert.Len(mt.FinishedSpans(), 0)
 	assert.Equal(200, resp.StatusCode)
 }
@@ -218,7 +236,9 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	resp, err := http.DefaultClient.Get(addr + "/propagation")
-	require.Equal(t, nil, err)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
 	assert.Equal(200, resp.StatusCode)
 }
 
@@ -231,8 +251,9 @@ func TestPropagation(t *testing.T) {
 	defer mt.Stop()
 
 	c := httptrace.WrapClient(http.DefaultClient)
-	_, err := c.Get(addr + "/any")
-	require.Equal(t, nil, err)
+	resp, err := c.Get(addr + "/any")
+	require.NoError(t, err)
+	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
 	require.Equal(t, 2, len(spans))

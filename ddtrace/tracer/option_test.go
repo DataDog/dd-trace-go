@@ -247,7 +247,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer srv.Close()
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.NotNil(t, cfg.integrations)
-		assert.Equal(t, len(cfg.integrations), 54)
+		assert.Equal(t, 55, len(cfg.integrations))
 	})
 
 	t.Run("uninstrumented", func(t *testing.T) {

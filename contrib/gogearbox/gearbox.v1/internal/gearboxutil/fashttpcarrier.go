@@ -6,8 +6,9 @@
 package gearboxutil
 
 import (
-	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/valyala/fasthttp"
 )
 
 // FasthttpCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
