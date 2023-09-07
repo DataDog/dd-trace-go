@@ -24,3 +24,9 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck
         run: govulncheck -tags appsec ./ddtrace/... ./appsec/... ./profiler/... ./internal/... 
+      - name: Run govulncheck-contribs
+        run: |
+          # Excluding legacy contrib grpc.v12
+          go list -f '{{.Dir}}' ./contrib/... | grep -v -e grpc.v12 | while read dir ; do
+            govulncheck -C $dir .
+          done
