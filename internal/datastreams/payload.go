@@ -19,6 +19,8 @@ type StatsPayload struct {
 	TracerVersion string
 	// Lang is the language of the tracer
 	Lang string
+	// Version is the version of the service
+	Version string
 }
 
 type ProduceOffset struct {
