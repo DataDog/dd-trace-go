@@ -284,7 +284,6 @@ func newConfig(opts ...StartOption) *config {
 		})...)(c)
 	}
 	if v := os.Getenv("DD_SERVICE"); v != "" {
-		fmt.Println("DD_SERVICE ", v)
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
@@ -452,6 +451,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
+
 	return c
 }
 
