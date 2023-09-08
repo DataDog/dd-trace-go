@@ -21,7 +21,7 @@ func Example() {
 	defer db.Close(ctx)
 
 	// Any calls made to the database will be traced as expected.
-	rows, err := db.Query(ctx, "SELECT name FROM users WHERE age=?", 27)
+	rows, err := db.Query(ctx, "SELECT name FROM users WHERE age=$1", 27)
 	if err != nil {
 		log.Fatal(err)
 	}

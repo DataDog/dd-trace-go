@@ -13,7 +13,6 @@ func New(ctx context.Context, connString string, opts ...pgxtracer.Option) (*pgx
 	if err != nil {
 		return nil, err
 	}
-
 	return NewWithConfig(ctx, config, opts...)
 }
 

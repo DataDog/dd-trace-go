@@ -6,6 +6,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type Batch = pgx.Batch
+
 func Connect(ctx context.Context, connString string, opts ...Option) (*pgx.Conn, error) {
 	connConfig, err := pgx.ParseConfig(connString)
 	if err != nil {

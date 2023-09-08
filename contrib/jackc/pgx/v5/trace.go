@@ -166,11 +166,7 @@ func (t *tracer) TraceConnectStart(ctx context.Context, _ pgx.TraceConnectStartD
 		return ctx
 	}
 
-	opts := t.spanOptions(
-		ddtracer.StartTime(time.Now()),
-	)
-
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.connect")
 
 	return ctx
 }
