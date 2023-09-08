@@ -2,7 +2,6 @@ package pgx
 
 import (
 	"context"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -66,7 +65,6 @@ func finish(ctx context.Context, err error) {
 
 func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	opts := t.spanOptions(
-		ddtracer.StartTime(time.Now()),
 		ddtracer.ResourceName(data.SQL),
 	)
 
@@ -84,9 +82,7 @@ func (t *tracer) TraceBatchStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceBa
 		return ctx
 	}
 
-	opts := t.spanOptions(ddtracer.StartTime(time.Now()))
-
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.batch", t.spanOptions()...)
 
 	return ctx
 }
@@ -97,7 +93,6 @@ func (t *tracer) TraceBatchQuery(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 	}
 
 	opts := t.spanOptions(
-		ddtracer.StartTime(time.Now()),
 		ddtracer.ResourceName(data.SQL),
 	)
 
@@ -120,7 +115,6 @@ func (t *tracer) TraceCopyFromStart(ctx context.Context, _ *pgx.Conn, data pgx.T
 	}
 
 	opts := t.spanOptions(
-		ddtracer.StartTime(time.Now()),
 		ddtracer.Tag("tables", data.TableName),
 		ddtracer.Tag("columns", data.ColumnNames),
 	)
@@ -144,7 +138,6 @@ func (t *tracer) TracePrepareStart(ctx context.Context, _ *pgx.Conn, data pgx.Tr
 	}
 
 	opts := t.spanOptions(
-		ddtracer.StartTime(time.Now()),
 		ddtracer.ResourceName(data.SQL),
 	)
 
@@ -166,7 +159,7 @@ func (t *tracer) TraceConnectStart(ctx context.Context, _ pgx.TraceConnectStartD
 		return ctx
 	}
 
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.connect")
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.connect", t.spanOptions()...)
 
 	return ctx
 }
