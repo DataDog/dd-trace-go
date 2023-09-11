@@ -11,7 +11,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// FasthttpCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
+// FastHTTPHeadersCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
 // of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
 // distributed tracing.
 type FastHTTPHeadersCarrier struct {
