@@ -31,7 +31,7 @@ func buildSketch(values ...float64) []byte {
 }
 
 func TestProcessor(t *testing.T) {
-	p := NewProcessor(nil, "env", "service", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
 	tp1 := time.Now().Truncate(bucketDuration)
 	tp2 := tp1.Add(time.Minute)
 
@@ -79,6 +79,7 @@ func TestProcessor(t *testing.T) {
 	assert.Equal(t, StatsPayload{
 		Env:     "env",
 		Service: "service",
+		Version: "v1",
 		Stats: []StatsBucket{
 			{
 				Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
@@ -125,6 +126,7 @@ func TestProcessor(t *testing.T) {
 	assert.Equal(t, StatsPayload{
 		Env:     "env",
 		Service: "service",
+		Version: "v1",
 		Stats: []StatsBucket{
 			{
 				Start:    uint64(tp2.Add(-time.Second * 10).UnixNano()),
@@ -211,7 +213,7 @@ func TestSetCheckpoint(t *testing.T) {
 }
 
 func TestKafkaLag(t *testing.T) {
-	p := NewProcessor(nil, "env", "service", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil, func() bool { return true })
 	tp1 := time.Now()
 	p.addKafkaOffset(kafkaOffset{offset: 1, topic: "topic1", partition: 1, group: "group1", offsetType: commitOffset})
 	p.addKafkaOffset(kafkaOffset{offset: 10, topic: "topic2", partition: 1, group: "group1", offsetType: commitOffset})
