@@ -86,14 +86,19 @@ func startServer(t *testing.T, opts ...Option) string {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	httpAddr := "http://" + addr
+	checkServerReady := func() bool {
+		resp, err := http.DefaultClient.Get(httpAddr + "/any")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == 200
+	}
 	// Keep checking if server is up. If not, wait 100ms or timeout.
 	for {
-		httpAddr := "http://" + addr
-		resp, err := http.DefaultClient.Get(httpAddr + "/any")
-		assert.NoError(t, resp.Body.Close())
-
 		// If the server is up, return the address
-		if err == nil && resp.StatusCode == 200 {
+		if checkServerReady() {
 			return httpAddr
 		}
 		select {
