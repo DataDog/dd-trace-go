@@ -23,17 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var errMsg = "This is an error!"
-
-func customErrChecker(statusCode int) bool {
-	return statusCode >= 600
-}
-
-var customRsc = "custom resource"
-
-func resourceNamer(_ gearbox.Context) string {
-	return customRsc
-}
+const errMsg = "This is an error!"
 
 func ignoreResources(c gearbox.Context) bool {
 	return strings.HasPrefix(string(c.Context().URI().Path()), "/any")
@@ -160,6 +150,9 @@ func TestStatusError(t *testing.T) {
 
 // Test that users can customize which HTTP status codes are considered an error
 func TestWithStatusCheck(t *testing.T) {
+	customErrChecker := func(statusCode int) bool {
+		return statusCode >= 600
+	}
 	t.Run("isError", func(t *testing.T) {
 		addr := startServer(t, WithStatusCheck(customErrChecker))
 
@@ -200,7 +193,10 @@ func TestWithStatusCheck(t *testing.T) {
 
 // Test that users can customize how resource_name is determined
 func TestCustomResourceNamer(t *testing.T) {
-	addr := startServer(t, WithResourceNamer(resourceNamer))
+	customResourceNamer := func(_ gearbox.Context) string {
+		return "custom resource"
+	}
+	addr := startServer(t, WithResourceNamer(customResourceNamer))
 
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -213,7 +209,7 @@ func TestCustomResourceNamer(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 1)
 	span := spans[0]
-	assert.Equal(customRsc, span.Tag(ext.ResourceName))
+	assert.Equal("custom resource", span.Tag(ext.ResourceName))
 }
 
 // Test that the trace middleware passes the context off to the next handler in the req chain even if the request is not instrumented
