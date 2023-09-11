@@ -47,9 +47,17 @@ func init() {
 	initAPIEndpointsTree()
 }
 
-func initAPIEndpointsTree() {
-	var apiEndpoints []tree.Endpoint
+func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
+	var apiEndpoints []*tree.Endpoint
 	if err := json.Unmarshal(endpointBytes, &apiEndpoints); err != nil {
+		return nil, err
+	}
+	return apiEndpoints, nil
+}
+
+func initAPIEndpointsTree() {
+	apiEndpoints, err := loadEndpointsFromJSON()
+	if err != nil {
 		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
 		return
 	}
