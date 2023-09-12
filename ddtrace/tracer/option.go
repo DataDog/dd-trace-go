@@ -189,7 +189,7 @@ type config struct {
 
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
-	statsdClient statsdClient
+	statsdClient internal.StatsdClient
 
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to a single span without affecting the entire trace
@@ -228,6 +228,13 @@ type config struct {
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
 
+	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
+	debugAbandonedSpans bool
+
+	// spanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration
+	spanTimeout time.Duration
+
 	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
 	// partial flush, or 0 if partial flushing is disabled.
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
@@ -239,6 +246,22 @@ type config struct {
 
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
+
+	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
+	dataStreamsMonitoringEnabled bool
+
+	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
+	// Only used for telemetry currently.
+	orchestrionCfg orchestrionConfig
+}
+
+// orchestrionConfig contains Orchestrion configuration.
+type orchestrionConfig struct {
+	// Enabled indicates whether this tracer was instanciated via Orchestrion.
+	Enabled bool `json:"enabled"`
+
+	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -315,7 +338,12 @@ func newConfig(opts ...StartOption) *config {
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
+	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	if c.debugAbandonedSpans {
+		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -422,7 +450,7 @@ func newConfig(opts ...StartOption) *config {
 	if c.debug {
 		log.SetLevel(log.LevelDebug)
 	}
-	c.loadAgentFeatures()
+	c.agent = loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -455,7 +483,7 @@ func newConfig(opts ...StartOption) *config {
 	return c
 }
 
-func newStatsdClient(c *config) (statsdClient, error) {
+func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
@@ -531,6 +559,10 @@ type agentFeatures struct {
 	// the /v0.6/stats endpoint.
 	Stats bool
 
+	// DataStreams reports whether the agent can receive data streams stats on
+	// the /v0.1/pipeline_stats endpoint.
+	DataStreams bool
+
 	// StatsdPort specifies the Dogstatsd port as provided by the agent.
 	// If it's the default, it will be 0, which means 8125.
 	StatsdPort int
@@ -547,13 +579,12 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
-func (c *config) loadAgentFeatures() {
-	c.agent = agentFeatures{}
-	if c.logToStdout {
+func loadAgentFeatures(logToStdout bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
+	if logToStdout {
 		// there is no agent; all features off
 		return
 	}
-	resp, err := c.httpClient.Get(fmt.Sprintf("%s/info", c.agentURL))
+	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
 	if err != nil {
 		log.Error("Loading features: %v", err)
 		return
@@ -574,18 +605,21 @@ func (c *config) loadAgentFeatures() {
 		log.Error("Decoding features: %v", err)
 		return
 	}
-	c.agent.DropP0s = info.ClientDropP0s
-	c.agent.StatsdPort = info.StatsdPort
+	features.DropP0s = info.ClientDropP0s
+	features.StatsdPort = info.StatsdPort
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
-			c.agent.Stats = true
+			features.Stats = true
+		case "/v0.1/pipeline_stats":
+			features.DataStreams = true
 		}
 	}
-	c.agent.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
+	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
 	for _, flag := range info.FeatureFlags {
-		c.agent.featureFlags[flag] = struct{}{}
+		features.featureFlags[flag] = struct{}{}
 	}
+	return features
 }
 
 // MarkIntegrationImported labels the given integration as imported
@@ -997,6 +1031,21 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 	}
 }
 
+// WithDebugSpansMode enables debugging old spans that may have been
+// abandoned, which may prevent traces from being set to the Datadog
+// Agent, especially if partial flushing is off.
+// This setting can also be configured by setting DD_TRACE_DEBUG_ABANDONED_SPANS
+// to true. The timeout will default to 10 minutes, unless overwritten
+// by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
+// This feature is disabled by default. Turning on this debug mode may
+// be expensive, so it should only be enabled for debugging purposes.
+func WithDebugSpansMode(timeout time.Duration) StartOption {
+	return func(c *config) {
+		c.debugAbandonedSpans = true
+		c.spanTimeout = timeout
+	}
+}
+
 // WithPartialFlushing enables flushing of partially finished traces.
 // This is done after "numSpans" have finished in a single local trace at
 // which point all finished spans in that trace will be flushed, freeing up
@@ -1019,6 +1068,15 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.statsComputationEnabled = enabled
+	}
+}
+
+// WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
+// This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
+func WithOrchestrion(metadata map[string]string) StartOption {
+	return func(c *config) {
+		c.orchestrionCfg.Enabled = true
+		c.orchestrionCfg.Metadata = metadata
 	}
 }
 

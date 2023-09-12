@@ -516,6 +516,15 @@ func (s *span) finish(finishTime int64) {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
+		if t.config.debugAbandonedSpans {
+			// the tracer supports debugging abandoned spans
+			select {
+			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
+				// ok
+			default:
+				log.Error("Abandoned spans channel full, disregarding span.")
+			}
+		}
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -711,6 +720,8 @@ const (
 	keyPeerServiceSource = "_dd.peer.service.source"
 	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
+	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
+	keyBaseService = "_dd.base_service"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

@@ -20,6 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -94,7 +95,14 @@ type tracer struct {
 	obfuscator *obfuscate.Obfuscator
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
-	statsd statsdClient
+	statsd globalinternal.StatsdClient
+
+	// dataStreams processes data streams monitoring information
+	dataStreams *datastreams.Processor
+
+	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
+	// when abandoned spans debugging is enabled.
+	abandonedSpansDebugger *abandonedSpansDebugger
 }
 
 const (
@@ -138,6 +146,9 @@ func Start(opts ...StartOption) {
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
+	}
+	if t.dataStreams != nil {
+		t.dataStreams.Start()
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
@@ -228,6 +239,13 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	var dataStreamsProcessor *datastreams.Processor
+	if c.dataStreamsMonitoringEnabled {
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
+			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
+			return f.DataStreams
+		})
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -247,7 +265,8 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd: statsd,
+		statsd:      statsd,
+		dataStreams: dataStreamsProcessor,
 	}
 	return t
 }
@@ -268,6 +287,11 @@ func newTracer(opts ...StartOption) *tracer {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
+	}
+	if c.debugAbandonedSpans {
+		log.Info("Abandoned spans logs enabled.")
+		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
+		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
 	t.wg.Add(1)
 	go func() {
@@ -302,6 +326,9 @@ func newTracer(opts ...StartOption) *tracer {
 func Flush() {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		t.flushSync()
+		if t.dataStreams != nil {
+			t.dataStreams.Flush()
+		}
 	}
 }
 
@@ -539,6 +566,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
+	if t.config.debugAbandonedSpans {
+		select {
+		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
+			// ok
+		default:
+			log.Error("Abandoned spans channel full, disregarding span.")
+		}
+	}
 	return span
 }
 
@@ -595,10 +630,14 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
+	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
 	t.statsd.Close()
+	if t.dataStreams != nil {
+		t.dataStreams.Stop()
+	}
 	appsec.Stop()
 }
 

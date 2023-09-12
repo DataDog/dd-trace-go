@@ -1933,7 +1933,7 @@ func genBigTraces(b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		for i := 0; i < 10; i++ {
-			parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
 			for i := 0; i < 10_000; i++ {
 				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
 				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
@@ -1980,10 +1980,7 @@ func BenchmarkStartSpan(b *testing.B) {
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
-func startTestTracer(t interface {
-	// support both *testing.T and *testing.B
-	Fatalf(format string, args ...interface{})
-}, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
+func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
