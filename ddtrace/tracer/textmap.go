@@ -176,10 +176,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	injectors, injectorNames := getPropagators(cfg, injectorsPs)
 	extractors, extractorsNames := getPropagators(cfg, extractorsPs)
 	return &chainedPropagator{
-		injectors,
-		extractors,
 		injectorNames,
 		extractorsNames,
+		injectors,
+		extractors,
 	}
 }
 
@@ -187,10 +187,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors       []Propagator
-	extractors      []Propagator
 	injectorNames   string
 	extractorsNames string
+	injectors       []Propagator
+	extractors      []Propagator
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated

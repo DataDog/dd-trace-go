@@ -62,30 +62,26 @@ type errorConfig struct {
 // span represents a computation. Callers must call Finish when a span is
 // complete to ensure it's submitted.
 type span struct {
-	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
-
-	Name     string             `msg:"name"`              // operation name
-	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type     string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
-
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *spanContext `msg:"-"` // span propagation context
-
-	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
-	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
-
-	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+	pprofCtxRestore context.Context `msg:"-"`
+	pprofCtxActive  context.Context `msg:"-"`
+	context         *spanContext    `msg:"-"`
+	taskEnd         func()
+	Meta            map[string]string  `msg:"meta,omitempty"`
+	Metrics         map[string]float64 `msg:"metrics,omitempty"`
+	Name            string             `msg:"name"`
+	Service         string             `msg:"service"`
+	Resource        string             `msg:"resource"`
+	Type            string             `msg:"type"`
+	TraceID         uint64             `msg:"trace_id"`
+	ParentID        uint64             `msg:"parent_id"`
+	SpanID          uint64             `msg:"span_id"`
+	Duration        int64              `msg:"duration"`
+	Start           int64              `msg:"start"`
+	sync.RWMutex    `msg:"-"`
+	Error           int32 `msg:"error"`
+	goExecTraced    bool  `msg:"-"`
+	noDebugStack    bool  `msg:"-"`
+	finished        bool  `msg:"-"`
 }
 
 // Context yields the SpanContext for this Span. Note that the return

@@ -25,32 +25,24 @@ type statsPayload struct {
 
 // statsBucket specifies a set of stats computed over a duration.
 type statsBucket struct {
-	// Start specifies the beginning of this bucket.
-	Start uint64
-
-	// Duration specifies the duration of this bucket.
+	Stats    []groupedStats
+	Start    uint64
 	Duration uint64
-
-	// Stats contains a set of statistics computed for the duration of this bucket.
-	Stats []groupedStats
 }
 
 // groupedStats contains a set of statistics grouped under various aggregation keys.
 type groupedStats struct {
-	// These fields indicate the properties under which the stats were aggregated.
-	Service        string `json:"service,omitempty"`
 	Name           string `json:"name,omitempty"`
 	Resource       string `json:"resource,omitempty"`
-	HTTPStatusCode uint32 `json:"HTTP_status_code,omitempty"`
 	Type           string `json:"type,omitempty"`
 	DBType         string `json:"DB_type,omitempty"`
-
-	// These fields specify the stats for the above aggregation.
-	Hits         uint64 `json:"hits,omitempty"`
-	Errors       uint64 `json:"errors,omitempty"`
-	Duration     uint64 `json:"duration,omitempty"`
-	OkSummary    []byte `json:"okSummary,omitempty"`
-	ErrorSummary []byte `json:"errorSummary,omitempty"`
-	Synthetics   bool   `json:"synthetics,omitempty"`
-	TopLevelHits uint64 `json:"topLevelHits,omitempty"`
+	Service        string `json:"service,omitempty"`
+	OkSummary      []byte `json:"okSummary,omitempty"`
+	ErrorSummary   []byte `json:"errorSummary,omitempty"`
+	Hits           uint64 `json:"hits,omitempty"`
+	Duration       uint64 `json:"duration,omitempty"`
+	Errors         uint64 `json:"errors,omitempty"`
+	TopLevelHits   uint64 `json:"topLevelHits,omitempty"`
+	HTTPStatusCode uint32 `json:"HTTP_status_code,omitempty"`
+	Synthetics     bool   `json:"synthetics,omitempty"`
 }

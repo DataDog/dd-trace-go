@@ -110,158 +110,53 @@ var (
 
 // config holds the tracer configuration.
 type config struct {
-	// debug, when true, writes details to logs.
-	debug bool
-
-	// agent holds the capabilities of the agent and determines some
-	// of the behaviour of the tracer.
-	agent agentFeatures
-
-	// integrations reports if the user has instrumented a Datadog integration and
-	// if they have a version of the library available to integrate.
-	integrations map[string]integrationConfig
-
-	// featureFlags specifies any enabled feature flags.
-	featureFlags map[string]struct{}
-
-	// logToStdout reports whether we should log all traces to the standard
-	// output instead of using the agent. This is used in Lambda environments.
-	logToStdout bool
-
-	// sendRetries is the number of times a trace payload send is retried upon
-	// failure.
-	sendRetries int
-
-	// logStartup, when true, causes various startup info to be written
-	// when the tracer starts.
-	logStartup bool
-
-	// serviceName specifies the name of this application.
-	serviceName string
-
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
-	// version specifies the version of this application
-	version string
-
-	// env contains the environment that this application will run under.
-	env string
-
-	// sampler specifies the sampler that will be used for sampling traces.
-	sampler Sampler
-
-	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL *url.URL
-
-	// serviceMappings holds a set of service mappings to dynamically rename services
-	serviceMappings map[string]string
-
-	// globalTags holds a set of tags that will be automatically applied to
-	// all spans.
-	globalTags map[string]interface{}
-
-	// transport specifies the Transport interface which will be used to send data to the agent.
-	transport transport
-
-	// propagator propagates span context cross-process
-	propagator Propagator
-
-	// httpClient specifies the HTTP client to be used by the agent's transport.
-	httpClient *http.Client
-
-	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
-	// and is added as a special tag to the root span of traces.
-	hostname string
-
-	// logger specifies the logger to use when printing errors. If not specified, the "log" package
-	// will be used.
-	logger ddtrace.Logger
-
-	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
-	runtimeMetrics bool
-
-	// dogstatsdAddr specifies the address to connect for sending metrics to the
-	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	dogstatsdAddr string
-
-	// statsdClient is set when a user provides a custom statsd client for tracking metrics
-	// associated with the runtime and the tracer.
-	statsdClient internal.StatsdClient
-
-	// spanRules contains user-defined rules to determine the sampling rate to apply
-	// to a single span without affecting the entire trace
-	spanRules []SamplingRule
-
-	// traceRules contains user-defined rules to determine the sampling rate to apply
-	// to the entire trace if any spans satisfy the criteria
-	traceRules []SamplingRule
-
-	// tickChan specifies a channel which will receive the time every time the tracer must flush.
-	// It defaults to time.Ticker; replaced in tests.
-	tickChan <-chan time.Time
-
-	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
-	// errors will record a stack trace when this option is set.
-	noDebugStack bool
-
-	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
-	profilerHotspots bool
-
-	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
-	profilerEndpoints bool
-
-	// enabled reports whether tracing is enabled.
-	enabled bool
-
-	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
-	enableHostnameDetection bool
-
-	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
-	spanAttributeSchemaVersion int
-
-	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
-	peerServiceDefaultsEnabled bool
-
-	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
-	peerServiceMappings map[string]string
-
-	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
-	debugAbandonedSpans bool
-
-	// spanTimeout represents how old a span can be before it should be logged as a possible
-	// misconfiguration
-	spanTimeout time.Duration
-
-	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
-	// partial flush, or 0 if partial flushing is disabled.
-	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
-	partialFlushMinSpans int
-
-	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
-	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled bool
-
-	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled bool
-
-	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
+	agent                        agentFeatures
+	logger                       ddtrace.Logger
+	sampler                      Sampler
+	transport                    transport
+	orchestrionCfg               orchestrionConfig
+	propagator                   Propagator
+	statsdClient                 internal.StatsdClient
+	featureFlags                 map[string]struct{}
+	peerServiceMappings          map[string]string
+	httpClient                   *http.Client
+	tickChan                     <-chan time.Time
+	integrations                 map[string]integrationConfig
+	agentURL                     *url.URL
+	serviceMappings              map[string]string
+	globalTags                   map[string]interface{}
+	hostname                     string
+	env                          string
+	version                      string
+	serviceName                  string
+	dogstatsdAddr                string
+	spanRules                    []SamplingRule
+	traceRules                   []SamplingRule
+	spanAttributeSchemaVersion   int
+	spanTimeout                  time.Duration
+	partialFlushMinSpans         int
+	sendRetries                  int
+	runtimeMetrics               bool
+	profilerHotspots             bool
+	profilerEndpoints            bool
+	enabled                      bool
+	enableHostnameDetection      bool
+	noDebugStack                 bool
+	peerServiceDefaultsEnabled   bool
+	debug                        bool
+	debugAbandonedSpans          bool
+	universalVersion             bool
+	logStartup                   bool
+	partialFlushEnabled          bool
+	statsComputationEnabled      bool
 	dataStreamsMonitoringEnabled bool
-
-	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
-	// Only used for telemetry currently.
-	orchestrionCfg orchestrionConfig
+	logToStdout                  bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
 type orchestrionConfig struct {
-	// Enabled indicates whether this tracer was instanciated via Orchestrion.
-	Enabled bool `json:"enabled"`
-
-	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
 	Metadata map[string]string `json:"metadata,omitempty"`
+	Enabled  bool              `json:"enabled"`
 }
 
 // HasFeature reports whether feature f is enabled.
@@ -542,33 +437,20 @@ func defaultDogstatsdAddr() string {
 }
 
 type integrationConfig struct {
-	Instrumented bool   `json:"instrumented"`      // indicates if the user has imported and used the integration
-	Available    bool   `json:"available"`         // indicates if the user is using a library that can be used with DataDog integrations
-	Version      string `json:"available_version"` // if available, indicates the version of the library the user has
+	Version      string `json:"available_version"`
+	Instrumented bool   `json:"instrumented"`
+	Available    bool   `json:"available"`
 }
 
 // agentFeatures holds information about the trace-agent's capabilities.
 // When running WithLambdaMode, a zero-value of this struct will be used
 // as features.
 type agentFeatures struct {
-	// DropP0s reports whether it's ok for the tracer to not send any
-	// P0 traces to the agent.
-	DropP0s bool
-
-	// Stats reports whether the agent can receive client-computed stats on
-	// the /v0.6/stats endpoint.
-	Stats bool
-
-	// DataStreams reports whether the agent can receive data streams stats on
-	// the /v0.1/pipeline_stats endpoint.
-	DataStreams bool
-
-	// StatsdPort specifies the Dogstatsd port as provided by the agent.
-	// If it's the default, it will be 0, which means 8125.
-	StatsdPort int
-
-	// featureFlags specifies all the feature flags reported by the trace-agent.
 	featureFlags map[string]struct{}
+	StatsdPort   int
+	DropP0s      bool
+	Stats        bool
+	DataStreams  bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -596,9 +478,9 @@ func loadAgentFeatures(logToStdout bool, agentURL *url.URL, httpClient *http.Cli
 	defer resp.Body.Close()
 	type infoResponse struct {
 		Endpoints     []string `json:"endpoints"`
-		ClientDropP0s bool     `json:"client_drop_p0s"`
-		StatsdPort    int      `json:"statsd_port"`
 		FeatureFlags  []string `json:"feature_flags"`
+		StatsdPort    int      `json:"statsd_port"`
+		ClientDropP0s bool     `json:"client_drop_p0s"`
 	}
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -1224,13 +1106,13 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
 type UserMonitoringConfig struct {
-	PropagateID bool
+	Metadata    map[string]string
 	Email       string
 	Name        string
 	Role        string
 	SessionID   string
 	Scope       string
-	Metadata    map[string]string
+	PropagateID bool
 }
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.

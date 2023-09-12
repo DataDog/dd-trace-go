@@ -74,10 +74,10 @@ type transport interface {
 }
 
 type httpTransport struct {
-	traceURL string            // the delivery URL for traces
-	statsURL string            // the delivery URL for stats
-	client   *http.Client      // the HTTP client used in the POST
-	headers  map[string]string // the Transport headers
+	client   *http.Client
+	headers  map[string]string
+	traceURL string
+	statsURL string
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
