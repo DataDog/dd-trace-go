@@ -166,6 +166,7 @@ type Processor struct {
 	env                  string
 	primaryTag           string
 	service              string
+	version              string
 	// used for tests
 	timeSource                  func() time.Time
 	disableStatsFlushing        uint32
@@ -179,7 +180,7 @@ func (p *Processor) time() time.Time {
 	return time.Now()
 }
 
-func NewProcessor(statsd internal.StatsdClient, env, service string, agentURL *url.URL, httpClient *http.Client, getAgentSupportsDataStreams func() bool) *Processor {
+func NewProcessor(statsd internal.StatsdClient, env, service, version string, agentURL *url.URL, httpClient *http.Client, getAgentSupportsDataStreams func() bool) *Processor {
 	if service == "" {
 		service = defaultServiceName
 	}
@@ -192,6 +193,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service string, agentURL *u
 		statsd:                      statsd,
 		env:                         env,
 		service:                     service,
+		version:                     version,
 		transport:                   newHTTPTransport(agentURL, httpClient),
 		timeSource:                  time.Now,
 		getAgentSupportsDataStreams: getAgentSupportsDataStreams,
@@ -348,6 +350,7 @@ func (p *Processor) flush(now time.Time) StatsPayload {
 	nowNano := now.UnixNano()
 	sp := StatsPayload{
 		Service:       p.service,
+		Version:       p.version,
 		Env:           p.env,
 		Lang:          "go",
 		TracerVersion: version.Tag,

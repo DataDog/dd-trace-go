@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -200,4 +201,36 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
+}
+
+func BenchmarkWrapRoundTripper(b *testing.B) {
+	b.ReportAllocs()
+
+	svc, err := books.NewService(context.Background(), option.WithHTTPClient(&http.Client{
+		Transport: WrapRoundTripper(badRequestTransport),
+	}))
+	require.NoError(b, err)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		svc.Bookshelves.List("montana.banana").Do()
+	}
+}
+
+func BenchmarkInitApiEndpointsTree(b *testing.B) {
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		initAPIEndpointsTree()
+	}
+}
+
+func TestTreeRegex(t *testing.T) {
+	apiEndpoints, err := loadEndpointsFromJSON()
+	require.NoError(t, err)
+
+	for _, e := range apiEndpoints {
+		_, err := regexp.Compile(e.PathRegex)
+		assert.NoErrorf(t, err, "pathRegexp: %s", e.PathRegex)
+	}
 }
