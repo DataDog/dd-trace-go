@@ -15,6 +15,6 @@ func TestHeaderTag(t *testing.T) {
 	SetHeaderTag("header1", "tag1")
 	SetHeaderTag("header2", "tag2")
 
-	assert.Equal(t, "tag1", cfg.headersAsTags["header1"])
-	assert.Equal(t, "tag2", cfg.headersAsTags["header2"])
+	assert.Equal(t, "tag1", cfg.headersAsTags.Get("header1"))
+	assert.Equal(t, "tag2", cfg.headersAsTags.Get("header2"))
 }

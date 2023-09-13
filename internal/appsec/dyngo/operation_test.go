@@ -609,6 +609,51 @@ func runOperation(parent dyngo.Operation, args, res interface{}, child func(dyng
 	}
 }
 
+func TestOperationData(t *testing.T) {
+	t.Run("data-transit", func(t *testing.T) {
+		data := 0
+		op := startOperation(MyOperationArgs{}, nil)
+		op.OnData(dyngo.NewDataListener(func(data *int) {
+			*data++
+		}))
+		for i := 0; i < 10; i++ {
+			op.EmitData(&data)
+		}
+		op.Finish(MyOperationRes{})
+		require.Equal(t, 10, data)
+	})
+
+	t.Run("bubble-up", func(t *testing.T) {
+		listener := dyngo.NewDataListener(func(data *int) { *data++ })
+		t.Run("single-listener", func(t *testing.T) {
+			data := 0
+			op1 := startOperation(MyOperationArgs{}, nil)
+			op1.OnData(listener)
+			op2 := startOperation(MyOperation2Args{}, op1)
+			for i := 0; i < 10; i++ {
+				op2.EmitData(&data)
+			}
+			op2.Finish(MyOperation2Res{})
+			op1.Finish(MyOperationRes{})
+			require.Equal(t, 10, data)
+		})
+
+		t.Run("double-listener", func(t *testing.T) {
+			data := 0
+			op1 := startOperation(MyOperationArgs{}, nil)
+			op1.OnData(listener)
+			op2 := startOperation(MyOperation2Args{}, op1)
+			op2.OnData(listener)
+			for i := 0; i < 10; i++ {
+				op2.EmitData(&data)
+			}
+			op2.Finish(MyOperation2Res{})
+			op1.Finish(MyOperationRes{})
+			require.Equal(t, 20, data)
+		})
+	})
+}
+
 func TestOperationEvents(t *testing.T) {
 	t.Run("start-event", func(t *testing.T) {
 		op1 := startOperation(MyOperationArgs{}, nil)

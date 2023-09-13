@@ -424,6 +424,57 @@ func TestIgnoreRequestFunc(t *testing.T) {
 	assert.Len(spans, 0)
 }
 
+type testCustomError struct {
+	TestCode int
+}
+
+// Error satisfies the apierror interface
+func (e *testCustomError) Error() string {
+	return "test"
+}
+
+func TestWithErrorTranslator(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	translateError := func(e error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{
+			Message: e.(*testCustomError).Error(),
+			Code:    e.(*testCustomError).TestCode,
+		}, true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithErrorTranslator(translateError)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return &testCustomError{
+			TestCode: 401,
+		}
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Contains(span.Tag(ext.ResourceName), "/err")
+	assert.Equal("401", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+}
+
 func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
@@ -475,7 +526,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 		for _, arg := range htArgs {
-			_, tag := normalizer.NormalizeHeaderTag(arg)
+			_, tag := normalizer.HeaderTag(arg)
 			assert.NotContains(s.Tags(), tag)
 		}
 	})
@@ -491,7 +542,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -501,7 +552,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.NormalizeHeaderTag("3header")
+		header, tag := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
 
 		r := setupReq()
@@ -518,7 +569,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalH, globalT := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(globalH, globalT)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
@@ -529,7 +580,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")

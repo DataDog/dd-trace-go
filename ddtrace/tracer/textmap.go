@@ -173,9 +173,13 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
 		}
 	}
+	injectors, injectorNames := getPropagators(cfg, injectorsPs)
+	extractors, extractorsNames := getPropagators(cfg, extractorsPs)
 	return &chainedPropagator{
-		injectors:  getPropagators(cfg, injectorsPs),
-		extractors: getPropagators(cfg, extractorsPs),
+		injectors,
+		extractors,
+		injectorNames,
+		extractorsNames,
 	}
 }
 
@@ -183,48 +187,58 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors  []Propagator
-	extractors []Propagator
+	injectors       []Propagator
+	extractors      []Propagator
+	injectorNames   string
+	extractorsNames string
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated
 // list of propagators. If the list doesn't contain any valid values, the
 // default propagator will be returned. Any invalid values in the list will log
 // a warning and be ignored.
-func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
+func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
 	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPsName := "tracecontext,datadog"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
+		defaultPsName += ",b3"
 	}
 	if ps == "" {
 		if prop := os.Getenv(headerPropagationStyle); prop != "" {
 			ps = prop // use the generic DD_TRACE_PROPAGATION_STYLE if set
 		} else {
-			return defaultPs // no env set, so use default from configuration
+			return defaultPs, defaultPsName // no env set, so use default from configuration
 		}
 	}
 	ps = strings.ToLower(ps)
 	if ps == "none" {
-		return nil
+		return nil, ""
 	}
 	var list []Propagator
+	var listNames []string
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
+		listNames = append(listNames, "b3")
 	}
 	for _, v := range strings.Split(ps, ",") {
-		switch strings.ToLower(v) {
+		switch v := strings.ToLower(v); v {
 		case "datadog":
 			list = append(list, dd)
+			listNames = append(listNames, v)
 		case "tracecontext":
 			list = append([]Propagator{&propagatorW3c{}}, list...)
+			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
+				listNames = append(listNames, v)
 			}
 		case "b3 single header":
 			list = append(list, &propagatorB3SingleHeader{})
+			listNames = append(listNames, v)
 		case "none":
 			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
 				"To disable the propagator, set to `none`")
@@ -233,9 +247,9 @@ func getPropagators(cfg *PropagatorConfig, ps string) []Propagator {
 		}
 	}
 	if len(list) == 0 {
-		return defaultPs // no valid propagators, so return default
+		return defaultPs, defaultPsName // no valid propagators, so return default
 	}
-	return list
+	return list, strings.Join(listNames, ",")
 }
 
 // Inject defines the Propagator to propagate SpanContext data
@@ -324,6 +338,9 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 
 	var properr string
 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
+		if k == tracestateHeader || k == traceparentHeader {
+			return true // don't propagate W3C headers with the DD propagator
+		}
 		if err := isValidPropagatableTag(k, v); err != nil {
 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
 			properr = "encoding_error"
@@ -416,7 +433,7 @@ func validateTID(tid string) error {
 	if len(tid) != 16 {
 		return fmt.Errorf("invalid length: %q", tid)
 	}
-	if !validIDRgx.MatchString(tid) {
+	if !isValidID(tid) {
 		return fmt.Errorf("malformed: %q", tid)
 	}
 	return nil
@@ -722,12 +739,34 @@ var (
 	// Equals character must be encoded with a tilde.
 	// Other disallowed characters must be replaced with the underscore.
 	originRgx = regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
-
-	// validIDRgx is used to verify that the input is a valid hex string.
-	// The input must match the pattern from start to end.
-	// validIDRgx is applicable for both trace and span IDs.
-	validIDRgx = regexp.MustCompile("^[a-f0-9]+$")
 )
+
+const (
+	asciiLowerA = 97
+	asciiLowerF = 102
+	asciiZero   = 48
+	asciiNine   = 57
+)
+
+// isValidID is used to verify that the input is a valid hex string.
+// This is an equivalent check to the regexp ^[a-f0-9]+$
+// In benchmarks, this function is roughly 10x faster than the equivalent
+// regexp, which is why we split it out.
+// isValidID is applicable for both trace and span IDs.
+func isValidID(id string) bool {
+	if len(id) == 0 {
+		return false
+	}
+
+	for _, c := range id {
+		ascii := int(c)
+		if ascii < asciiZero || ascii > asciiLowerF || (ascii > asciiNine && ascii < asciiLowerA) {
+			return false
+		}
+	}
+
+	return true
+}
 
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
@@ -867,7 +906,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if ok := validIDRgx.MatchString(fullTraceID); !ok {
+	if !isValidID(fullTraceID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
@@ -882,7 +921,7 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if ok := validIDRgx.MatchString(spanID); !ok {
+	if !isValidID(spanID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
