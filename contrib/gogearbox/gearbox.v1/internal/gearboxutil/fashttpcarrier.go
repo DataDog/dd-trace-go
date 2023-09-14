@@ -36,16 +36,6 @@ func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error)
 	return nil
 }
 
-// func (f *FasthttpCarrier) ForeachKey(handler func(key, val string) error) (err error) {
-// 	f.ReqHeader.VisitAll(func(k, v []byte) {
-// 		if e := handler(string(k), string(v)); e != nil {
-// 			err = e
-// 			// Break here to quick return
-// 		}
-// 	})
-// 	return err
-// }
-
 // Set adds the given value to request header for key. Key will be lowercased to match
 // the metadata implementation.
 func (f *FastHTTPHeadersCarrier) Set(key, val string) {
