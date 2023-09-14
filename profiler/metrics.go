@@ -44,6 +44,7 @@ type metrics struct {
 
 type metricsSnapshot struct {
 	runtime.MemStats
+	NumGoroutine int
 }
 
 func newMetrics() *metrics {
@@ -55,6 +56,7 @@ func newMetrics() *metrics {
 func (m *metrics) reset(now time.Time) {
 	m.collectedAt = now
 	runtime.ReadMemStats(&m.snapshot.MemStats)
+	m.snapshot.NumGoroutine = runtime.NumGoroutine()
 }
 
 func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
@@ -94,6 +96,7 @@ func computeMetrics(prev *metricsSnapshot, curr *metricsSnapshot, period time.Du
 		{metric: "go_gcs_per_sec", value: rate(uint64(curr.NumGC), uint64(prev.NumGC), period/time.Second)},
 		{metric: "go_gc_pause_time", value: rate(curr.PauseTotalNs, prev.PauseTotalNs, period)}, // % of time spent paused
 		{metric: "go_max_gc_pause_time", value: float64(maxPauseNs(&curr.MemStats, now.Add(-period)))},
+		{metric: "go_num_goroutine", value: float64(curr.NumGoroutine)},
 	}
 }
 

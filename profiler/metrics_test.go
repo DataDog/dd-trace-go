@@ -40,6 +40,7 @@ func timeRing(vals ...time.Time) [256]uint64 {
 func TestMetricsCompute(t *testing.T) {
 	now := now()
 	prev := metricsSnapshot{
+		NumGoroutine: 23,
 		MemStats: runtime.MemStats{
 			TotalAlloc:   100,
 			Mallocs:      10,
@@ -52,6 +53,7 @@ func TestMetricsCompute(t *testing.T) {
 		},
 	}
 	curr := metricsSnapshot{
+		NumGoroutine: 42,
 		MemStats: runtime.MemStats{
 			TotalAlloc:   150,
 			Mallocs:      14,
@@ -73,6 +75,7 @@ func TestMetricsCompute(t *testing.T) {
 			{metric: "go_gcs_per_sec", value: 0.2},
 			{metric: "go_gc_pause_time", value: 0.1}, // % of time spent paused
 			{metric: "go_max_gc_pause_time", value: float64(time.Second / 2)},
+			{metric: "go_num_goroutine", value: 42},
 		},
 		computeMetrics(&prev, &curr, 10*time.Second, now))
 
@@ -85,6 +88,7 @@ func TestMetricsCompute(t *testing.T) {
 			{metric: "go_gcs_per_sec", value: 0},
 			{metric: "go_gc_pause_time", value: 0},
 			{metric: "go_max_gc_pause_time", value: 0},
+			{metric: "go_num_goroutine", value: 23},
 		},
 		computeMetrics(&prev, &prev, 10*time.Second, now),
 		"identical memstats")
