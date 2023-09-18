@@ -1,0 +1,75 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
+package validationtest
+
+import (
+	"database/sql"
+	"testing"
+
+	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1"
+	gormtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/gorm"
+	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
+
+	_ "github.com/lib/pq" // need pg package for sql tests
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+type GormIOGorm struct {
+	numSpans int
+	opts     []gormtrace.Option
+}
+
+func NewGormIOGorm() *GormIOGorm {
+	return &GormIOGorm{
+		opts: make([]gormtrace.Option, 0),
+	}
+}
+
+func (i *GormIOGorm) Name() string {
+	return "gopkg.in/jinzhu/gorm.v1"
+}
+
+func (i *GormIOGorm) Init(t *testing.T) {
+	t.Helper()
+	closeFunc := sqltest.Prepare(t, gormtest.TableName)
+	t.Cleanup(func() {
+		closeFunc()
+		i.numSpans = 0
+	})
+}
+
+func (i *GormIOGorm) GenSpans(t *testing.T) {
+	operationToNumSpans := map[string]int{
+		"Connect":       5,
+		"Ping":          2,
+		"Query":         2,
+		"Statement":     7,
+		"BeginRollback": 3,
+		"Exec":          5,
+	}
+	i.numSpans += gormtest.RunAll(t, operationToNumSpans, gormtest.RegisterFunc, getDBGormIOGormV1)
+}
+
+func (i *GormIOGorm) NumSpans() int {
+	return i.numSpans
+}
+
+func getDBGormIOGormV1(t *testing.T, driverName string, connString string, dialectorFunc func(*sql.DB) gorm.Dialector) *sql.DB {
+	sqlDb, err := sqltrace.Open(driverName, connString)
+	require.NoError(t, err)
+	db, err := gormtrace.Open(dialectorFunc(sqlDb), &gorm.Config{})
+	require.NoError(t, err)
+
+	internalDB, err := db.DB()
+	require.NoError(t, err)
+	return internalDB
+}
+
+func (i *GormIOGorm) WithServiceName(name string) {
+	i.opts = append(i.opts, gormtrace.WithServiceName(name))
+}

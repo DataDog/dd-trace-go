@@ -1,0 +1,107 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
+package validationtest
+
+import (
+	"testing"
+
+	buntdbtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/tidwall/buntdb"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/buntdb"
+)
+
+type BuntDB struct {
+	db       *buntdbtrace.DB
+	numSpans int
+	opts     []buntdbtrace.Option
+}
+
+func NewBuntDB() *BuntDB {
+	return &BuntDB{
+		opts: make([]buntdbtrace.Option, 0),
+	}
+}
+
+func (i *BuntDB) WithServiceName(name string) {
+	i.opts = append(i.opts, buntdbtrace.WithServiceName(name))
+}
+
+func (i *BuntDB) Name() string {
+	return "tidwall/buntdb"
+}
+
+func (i *BuntDB) Init(t *testing.T) {
+	t.Helper()
+	i.db = getDatabase(t, i)
+
+	t.Cleanup(func() {
+		i.db.Close()
+		i.numSpans = 0
+	})
+}
+
+func (i *BuntDB) GenSpans(t *testing.T) {
+	t.Helper()
+
+	i.db.View(func(tx *buntdbtrace.Tx) error {
+		val, err := tx.Get("regular:a")
+		assert.NoError(t, err)
+		assert.Equal(t, "1", val)
+		return nil
+	})
+	i.numSpans++
+
+	i.db.View(func(tx *buntdbtrace.Tx) error {
+		var arr []string
+		err := tx.Descend("test-index", func(key, value string) bool {
+			arr = append(arr, key, value)
+			return true
+		})
+		assert.NoError(t, err)
+		return nil
+	})
+	i.numSpans++
+
+	i.db.View(func(tx *buntdbtrace.Tx) error {
+		indexes, err := tx.Indexes()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"test-index", "test-spatial-index"}, indexes)
+		return nil
+	})
+	i.numSpans++
+}
+
+func (i *BuntDB) NumSpans() int {
+	return i.numSpans
+}
+
+func getDatabase(t *testing.T, i *BuntDB) *buntdbtrace.DB {
+	bdb, err := buntdb.Open(":memory:")
+	require.NoError(t, err)
+
+	err = bdb.CreateIndex("test-index", "regular:*", buntdb.IndexBinary)
+	require.NoError(t, err)
+
+	err = bdb.CreateSpatialIndex("test-spatial-index", "spatial:*", buntdb.IndexRect)
+	require.NoError(t, err)
+
+	err = bdb.Update(func(tx *buntdb.Tx) error {
+		tx.Set("regular:a", "1", nil)
+		tx.Set("regular:b", "2", nil)
+		tx.Set("regular:c", "3", nil)
+
+		tx.Set("spatial:a", "[1 1]", nil)
+		tx.Set("spatial:b", "[2 2]", nil)
+		tx.Set("spatial:c", "[3 3]", nil)
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	return buntdbtrace.WrapDB(bdb, i.opts...)
+}

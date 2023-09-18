@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package sqltest // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
+package sqltest
 
 import (
 	"context"

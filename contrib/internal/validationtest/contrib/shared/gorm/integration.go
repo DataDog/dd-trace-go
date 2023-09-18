@@ -10,6 +10,7 @@ import (
 	"database/sql/driver"
 	"testing"
 
+	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	sqltest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/shared/sql"
 
 	"github.com/jackc/pgx/v5/stdlib"
@@ -24,6 +25,10 @@ const (
 	sqlServerConnString = "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master"
 	mysqlConnString     = "test:test@tcp(127.0.0.1:3306)/test"
 )
+
+func RegisterFunc(driverName string, driver driver.Driver) {
+	sqltrace.Register(driverName, driver)
+}
 
 func RunAll(t *testing.T, operationToNumSpans map[string]int, registerFunc func(string, driver.Driver), getDB func(*testing.T, string, string, func(*sql.DB) gorm.Dialector) *sql.DB) int {
 	t.Helper()

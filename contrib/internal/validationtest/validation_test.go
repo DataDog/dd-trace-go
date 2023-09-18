@@ -94,8 +94,22 @@ func TestIntegrations(t *testing.T) {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	integrations := []Integration{
-		validationtest.NewMemcache(),
+		validationtest.NewBuntDB(),
+		validationtest.NewCQL(),
+		validationtest.NewDatabaseSQL(),
 		validationtest.NewDNS(),
+		validationtest.NewGaryBurdRedigo(),
+		validationtest.NewGoModuleRedigo(),
+		validationtest.NewGoMongo(),
+		validationtest.NewGoRedis(),
+		validationtest.NewGoRedisV7(),
+		validationtest.NewGoRedisV8(),
+		validationtest.NewGoRedisV9(),
+		validationtest.NewLevelDB(),
+		validationtest.NewMemcache(),
+		validationtest.NewMgo(),
+		validationtest.NewPG(),
+		validationtest.NewSQLX(),
 	}
 
 	testCases := []struct {
@@ -157,13 +171,18 @@ func TestIntegrations(t *testing.T) {
 
 				if tc.integrationServiceName != "" {
 					componentName := ig.Name()
+					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
+					ig.WithServiceName(tc.integrationServiceName)
 				}
+
 				ig.Init(t)
 				ig.GenSpans(t)
+				tracer.Flush()
 
 				assertNumSpans(t, sessionToken, ig.NumSpans())
 				checkFailures(t, sessionToken)
 			})
+
 		}
 	}
 }
