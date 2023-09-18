@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package memcache
+package validationtest
 
 import (
 	"testing"
@@ -14,27 +14,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type Integration struct {
+type Memcache struct {
 	client   *memcachetrace.Client
 	opts     []memcachetrace.ClientOption
 	numSpans int
 }
 
-func New() *Integration {
-	return &Integration{
+func NewMemcache() *Memcache {
+	return &Memcache{
 		opts: make([]memcachetrace.ClientOption, 0),
 	}
 }
 
-func (i *Integration) Name() string {
+func (i *Memcache) Name() string {
 	return "bradfitz/gomemcache/memcache"
 }
 
-func (i *Integration) Init(_ *testing.T) {
+func (i *Memcache) Init(_ *testing.T) {
 	i.client = memcachetrace.WrapClient(memcache.New("127.0.0.1:11211"), i.opts...)
 }
 
-func (i *Integration) GenSpans(t *testing.T) {
+func (i *Memcache) GenSpans(t *testing.T) {
 	t.Helper()
 	err := i.client.Set(&memcache.Item{Key: "myKey", Value: []byte("myValue")})
 	require.NoError(t, err)
@@ -44,10 +44,10 @@ func (i *Integration) GenSpans(t *testing.T) {
 	})
 }
 
-func (i *Integration) NumSpans() int {
+func (i *Memcache) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *Integration) WithServiceName(name string) {
+func (i *Memcache) WithServiceName(name string) {
 	i.opts = append(i.opts, memcachetrace.WithServiceName(name))
 }

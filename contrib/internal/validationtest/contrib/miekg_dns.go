@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package dns
+package validationtest
 
 import (
 	"context"
@@ -18,22 +18,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type Integration struct {
+type DNS struct {
 	msg      *dns.Msg
 	mux      *dns.ServeMux
 	addr     string
 	numSpans int
 }
 
-func New() *Integration {
-	return &Integration{}
+func NewDNS() *DNS {
+	return &DNS{}
 }
 
-func (i *Integration) Name() string {
+func (i *DNS) Name() string {
 	return "miekg/dns"
 }
 
-func (i *Integration) Init(t *testing.T) {
+func (i *DNS) Init(t *testing.T) {
 	// TODO: enable when the integration implements naming schema
 	t.Skip("not implemented yet")
 
@@ -57,7 +57,7 @@ func (i *Integration) Init(t *testing.T) {
 	})
 }
 
-func (i *Integration) GenSpans(t *testing.T) {
+func (i *DNS) GenSpans(t *testing.T) {
 	t.Helper()
 	msg := newMessage()
 	_, err := dnstrace.Exchange(msg, i.addr)
@@ -68,11 +68,11 @@ func (i *Integration) GenSpans(t *testing.T) {
 	})
 }
 
-func (i *Integration) NumSpans() int {
+func (i *DNS) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *Integration) WithServiceName(_ string) {
+func (i *DNS) WithServiceName(_ string) {
 	return
 }
 
@@ -84,7 +84,7 @@ func newMessage() *dns.Msg {
 
 type handler struct {
 	t  *testing.T
-	ig *Integration
+	ig *DNS
 }
 
 func (h *handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {

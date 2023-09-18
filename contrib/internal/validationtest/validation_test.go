@@ -16,8 +16,7 @@ import (
 	"testing"
 	"time"
 
-	memcachetest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/bradfitz/gomemcache/memcache"
-	dnstest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib/miekg/dns"
+	validationtest "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/validationtest/contrib"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -73,7 +72,7 @@ func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	return rt.base.RoundTrip(req)
 }
 
-func testAgentDetails() string {
+func buildAgentAddr() string {
 	testAgentHost, exists := os.LookupEnv("DD_TEST_AGENT_HOST")
 	if !exists {
 		testAgentHost = "localhost"
@@ -87,17 +86,16 @@ func testAgentDetails() string {
 }
 
 var (
-	testAgentConnection = testAgentDetails()
-	sessionToken        = "default"
+	agentAddr = buildAgentAddr()
 )
 
 func TestIntegrations(t *testing.T) {
-	// if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-	// 	t.Skip("to enable integration test, set the INTEGRATION environment variable")
-	// }
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
 	integrations := []Integration{
-		memcachetest.New(),
-		dnstest.New(),
+		validationtest.NewMemcache(),
+		validationtest.NewDNS(),
 	}
 
 	testCases := []struct {
@@ -143,9 +141,8 @@ func TestIntegrations(t *testing.T) {
 			testName := fmt.Sprintf("contrib/%s/%s", ig.Name(), tc.name)
 
 			t.Run(testName, func(t *testing.T) {
-				sessionToken = fmt.Sprintf("%s-%d", testName, time.Now().Unix())
+				sessionToken := fmt.Sprintf("%s-%d", testName, time.Now().Unix())
 				t.Setenv("CI_TEST_AGENT_SESSION_TOKEN", sessionToken)
-				// t.Setenv("DD_SERVICE", "Datadog-Test-Agent-Trace-Checks")
 				// loop through all our environment for the testCase and set each variable
 				for k, v := range tc.env {
 					t.Setenv(k, v)
@@ -153,7 +150,7 @@ func TestIntegrations(t *testing.T) {
 
 				// also include the testCase start options within the tracer config
 				tracer.Start(
-					tracer.WithAgentAddr(testAgentConnection),
+					tracer.WithAgentAddr(agentAddr),
 					tracer.WithHTTPClient(tracerHTTPClient()),
 				)
 				defer tracer.Stop()
@@ -183,7 +180,7 @@ func TestIntegrations(t *testing.T) {
 // sessionToken and asserts that the correct number of spans was returned
 func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 	t.Helper()
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", testAgentConnection), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/session/traces", agentAddr), nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
 	var lastReceived int
@@ -236,7 +233,7 @@ func assertNumSpans(t *testing.T, sessionToken string, wantSpans int) {
 // depending on if failures exist.
 func checkFailures(t *testing.T, sessionToken string) {
 	t.Helper()
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/trace_check/failures", testAgentConnection), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/test/trace_check/failures", agentAddr), nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Datadog-Test-Session-Token", sessionToken)
 
