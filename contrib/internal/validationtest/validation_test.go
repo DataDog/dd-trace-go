@@ -157,9 +157,6 @@ func TestIntegrations(t *testing.T) {
 
 				if tc.integrationServiceName != "" {
 					componentName := ig.Name()
-					if componentName == "jmoiron/sqlx" {
-						componentName = "database/sql"
-					}
 					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
 					ig.WithServiceName(tc.integrationServiceName)
 				}
