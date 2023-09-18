@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
@@ -253,6 +254,48 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("net/http", s.Tag(ext.Component))
 }
 
+func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest("GET", "/", nil)
+	resourceNamer := func(_ *http.Request) string {
+		return "custom-resource-name"
+	}
+	h := WrapHandler(http.NotFoundHandler(), "svc", "resc", WithResourceNamer(resourceNamer))
+	mux := http.NewServeMux()
+	mux.Handle("/", h)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			w := httptest.NewRecorder()
+			defer wg.Done()
+			mux.ServeHTTP(w, r)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestServeMuxNoRace(_ *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest("GET", "/", nil)
+	mux := NewServeMux()
+	mux.Handle("/", http.NotFoundHandler())
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			w := httptest.NewRecorder()
+			defer wg.Done()
+			mux.ServeHTTP(w, r)
+		}()
+	}
+	wg.Wait()
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	tests := map[string]func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option){
 		"ServeMux": func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
@@ -436,7 +479,9 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 	r.Header.Set("Cache-Control", "no-cache")
 
 	w := httptest.NewRecorder()
+	rtr := router()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		router().ServeHTTP(w, r)
+		rtr.ServeHTTP(w, r)
 	}
 }

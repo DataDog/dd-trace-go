@@ -126,6 +126,13 @@ func TestStart(t *testing.T) {
 		mu.Lock()
 		mu.Unlock()
 	})
+
+	t.Run("aws-lambda", func(t *testing.T) {
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
+		err := Start()
+		defer Stop()
+		assert.NotNil(t, err)
+	})
 }
 
 // TestStartWithoutStopReconfigures verifies that calling Start while the
