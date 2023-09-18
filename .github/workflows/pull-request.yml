@@ -5,6 +5,9 @@ on:
     branches:
       - "**"
   merge_group:
+  push:
+    branches:
+      - 'mq-working-branch-**'
 
 concurrency: 
   group: ${{ github.ref }}
