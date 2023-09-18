@@ -1,10 +1,14 @@
-package pgx_test
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2022 Datadog, Inc.
+
+package pgx_v5_test
 
 import (
 	"context"
+	pgxtracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5"
 	"log"
-
-	pgxtracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx/v5"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -12,7 +16,7 @@ import (
 func Example() {
 	ctx := context.TODO()
 
-	// The package exposes the same connect functions as the regular pgx library
+	// The package exposes the same connect functions as the regular pgx.v5 library
 	// which sets up a tracer and connects as usual.
 	db, err := pgxtracer.Connect(ctx, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
@@ -27,7 +31,7 @@ func Example() {
 	}
 	defer rows.Close()
 
-	// This enables you to use PostgresSQL specific functions implemented by pgx.
+	// This enables you to use PostgresSQL specific functions implemented by pgx.v5.
 	numbers := []int{1, 2, 3}
 
 	copyFromSource := pgx.CopyFromSlice(len(numbers), func(i int) ([]any, error) {
