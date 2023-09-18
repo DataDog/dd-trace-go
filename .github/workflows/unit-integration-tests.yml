@@ -51,6 +51,8 @@ jobs:
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
           DD_API_KEY: "invalid_key_but_this_is_fine"
+          DD_TEST_AGENT_HOST: "localhost"
+          DD_TEST_AGENT_PORT: 9126
         # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
         # we don't fully configure it with a valid API key (and possibly other reasons)
         # This command just checks for our ability to connect to port 8126
@@ -59,6 +61,18 @@ jobs:
         ports:
           - 8125:8125/udp
           - 8126:8126
+      testagent:
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+        ports:
+          - 9126:9126
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
       cassandra:
         image: cassandra:3.7
         env:
@@ -187,6 +201,34 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash)
+
+      - name: Get Datadog APM Test Agent Logs
+        if: always()
+        shell: bash
+        run: docker logs ${{ job.services.testagent.id }}
+
+      - name: Get Datadog APM Test Agent Trace Check Summary Results
+        if: always()
+        shell: bash
+        run: |
+              RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+              RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
+              SUMMARY_RESPONSE=$(curl -s -w "\n%{http_code}" -o summary_response.txt "http://127.0.0.1:9126/test/trace_check/summary?return_all=true")
+              SUMMARY_RESPONSE_CODE=$(echo "$SUMMARY_RESPONSE" | awk 'END {print $NF}')
+              if [[ $RESPONSE_CODE -eq 200 ]]; then
+                  echo " "
+                  cat response.txt
+                  echo " - All APM Test Agent Check Traces returned successful!"
+                  echo "APM Test Agent Check Traces Summary Results:"
+                  cat summary_response.txt | jq "."
+              else
+                  echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
+                  echo "Failures:"
+                  cat response.txt
+                  echo "APM Test Agent Check Traces Summary Results:"
+                  cat summary_response.txt | jq "."
+                  exit 1
+              fi
 
       - name: Testing outlier google.golang.org/api
         run: |
