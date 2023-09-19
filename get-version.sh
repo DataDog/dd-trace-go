@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Define output file
-output_file="output.txt"
+output_file="supported-integration-versions.txt"
+> $output_file
 
 # Function to get the inputted integration's name
 function process_integration {
@@ -17,7 +18,8 @@ function process_integration {
         # Try to remove the version from the dependency name since no version was previously found
         dependency=${integration%/v*}
         dependency=${dependency%.v*}
-        
+
+
         version=$(go list -mod=mod -m -f '{{ .Version }}' "$dependency")
 
 
