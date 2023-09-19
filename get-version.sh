@@ -14,12 +14,10 @@ function process_integration {
     if [[ -n "$version" ]]; then
         echo "$integration $version" >> "$output_file"
     else
-        echo "Trying to parse version for $integration"
-
         # Try to remove the version from the dependency name since no version was previously found
         dependency=${integration%/v*}
         dependency=${dependency%.v*}
-        echo "dependency: $dependency"
+        
         version=$(go list -mod=mod -m -f '{{ .Version }}' "$dependency")
 
 
@@ -33,45 +31,43 @@ function process_integration {
     fi
 }
 
+IFS=$'\n'
+
 # Loop through subdirectories of "contrib"
 for subdir in contrib/*; do
   # Check if subdir is a directory
   if [ -d "$subdir" ]; then
     # Parse file to get the integration name from tracer.MarkIntegrationImported function
-    result=$(grep -r -Eo 'tracer\.MarkIntegrationImported\("[^"]+"\)' "$subdir" | cut -d'"' -f2)
+    result=$(grep -r -Eo 'tracer\.MarkIntegrationImported\([^)]+\)' "$subdir")
+    
+    # loop through results as there may be multiple results for a subdir, ie: kafka has two modules in the same parent dir
+    while IFS= read -r line; do      
+        # Extract the variable name from the result
+        variable=$(echo "$line" | sed -n -E 's/.*tracer\.MarkIntegrationImported\(([^)]+)\).*/\1/p')
 
-    # Check if result is none
-    if [ -z "$result" ]; then
+        # Check if the variable has quotes on both sides
+        if [[ $variable == "\""*"\"" ]]; then
+            variable=$(echo $variable | sed 's/"//g')
 
-        # Run the alternative grep command since we are probably using a variable and not a string
-        result=$(grep -r -Eo 'tracer\.MarkIntegrationImported\([^)]+\)' "$subdir")
-        
-        # Iterate over each result since we may have multiple for contribs with multiple children
-        while IFS= read -r line; do
+            # parse the version
+            process_integration $variable
+        else
+            # parse the variable and get the value from the file
             # Extract the file path from the result
             file=$(echo "$line" | cut -d ':' -f 1)
-            
-            # Extract the variable name from the result
-            variable=$(echo "$line" | sed -n -E 's/.*tracer\.MarkIntegrationImported\(([^)]+)\).*/\1/p')
-            
+
             # Find the value of the variable in the file
             value=$(grep -E "$variable\s*=" "$file" | awk -F'"' '{print $2}')
 
             # try to get the version if we found a value
             if [[ -n "$value" ]]; then
+                # parse the version
                 process_integration $value
             else
                 echo "No match found for $file"
             fi
-        done <<< "$result"
-
-        unset result
-    fi
-
-    IFS=$'\n'
-    # loop through results as there may be multiple results for a subdir, ie: kafka has two modules in the same parent dir
-    for integration in $result; do
-        process_integration $integration
-    done
+        fi
+    done <<< "$result"
+    unset result
   fi
 done
