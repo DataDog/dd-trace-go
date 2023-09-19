@@ -529,6 +529,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c := tracer.config
 			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
 		})
+
+		t.Run("code-override-full-URL", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer(WithAgentURL("http://testhost:3333"))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+		})
 	})
 
 	t.Run("override", func(t *testing.T) {
