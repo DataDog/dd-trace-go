@@ -36,18 +36,18 @@ func Prepare(t *testing.T, tableName string) func() {
 	postgres.Exec(queryDrop)
 	postgres.Exec(queryCreate)
 
-	// mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
-	// require.NoError(t, err)
-	// mssql.Exec(queryDrop)
-	// mssql.Exec(queryCreate)
+	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
+	require.NoError(t, err)
+	mssql.Exec(queryDrop)
+	mssql.Exec(queryCreate)
 
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
-		//mssql.Exec(queryDrop)
+		mssql.Exec(queryDrop)
 		mysql.Close()
 		postgres.Close()
-		// mssql.Close()
+		mssql.Close()
 	}
 }
 

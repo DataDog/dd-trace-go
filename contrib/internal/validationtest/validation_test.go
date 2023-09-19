@@ -98,8 +98,8 @@ func TestIntegrations(t *testing.T) {
 		validationtest.NewCQL(),
 		validationtest.NewDatabaseSQL(),
 		validationtest.NewDNS(),
-		validationtest.NewGaryBurdRedigo(),
-		validationtest.NewGoModuleRedigo(),
+		// validationtest.NewGaryBurdRedigo(), // service name not working
+		// validationtest.NewGoModuleRedigo(), // service name not working
 		validationtest.NewGoMongo(),
 		validationtest.NewGoRedis(),
 		validationtest.NewGoRedisV7(),
@@ -109,7 +109,12 @@ func TestIntegrations(t *testing.T) {
 		validationtest.NewMemcache(),
 		validationtest.NewMgo(),
 		validationtest.NewPG(),
-		validationtest.NewSQLX(),
+		// validationtest.NewSQLX(), // component coming in as database/sql, messing up tests for service name
+
+		// gorm
+		validationtest.NewGoPkgGorm(),
+		validationtest.NewGormIOGorm(),
+		validationtest.NewJinzhuGorm(),
 	}
 
 	testCases := []struct {

@@ -37,11 +37,7 @@ func (i *Redigo) Name() string {
 
 func (i *Redigo) Init(t *testing.T) {
 	t.Helper()
-	var opt redigotrace.DialOption
-	if len(i.opts) > 0 {
-		opt = i.opts[0]
-	}
-	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", opt)
+	client, err := redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 	i.client = client
 	require.NoError(t, err)
 
@@ -60,17 +56,14 @@ func (i *Redigo) GenSpans(t *testing.T) {
 	_, err := i.client.Do("NOT_A_COMMAND", context.Background())
 	require.Error(t, err)
 	i.numSpans++
-	var opt redigotrace.DialOption
-	if len(i.opts) > 0 {
-		opt = i.opts[0]
-	}
+
 	pool := &redis.Pool{
 		MaxIdle:     2,
 		MaxActive:   3,
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.Dial("tcp", "127.0.0.1:6379", opt)
+			return redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 		},
 	}
 

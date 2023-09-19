@@ -32,7 +32,7 @@ func (i *GoModuleRedigo) WithServiceName(name string) {
 }
 
 func (i *GoModuleRedigo) Name() string {
-	return "garyburd/redigo"
+	return "gomodule/redigo"
 }
 
 func (i *GoModuleRedigo) Init(t *testing.T) {
@@ -63,7 +63,7 @@ func (i *GoModuleRedigo) GenSpans(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return redigotrace.Dial("tcp", "127.0.0.1:6379")
+			return redigotrace.Dial("tcp", "127.0.0.1:6379", i.opts)
 		},
 	}
 
