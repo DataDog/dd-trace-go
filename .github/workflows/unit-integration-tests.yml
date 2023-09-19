@@ -170,7 +170,7 @@ jobs:
       - name: Test Contrib
         run: |
             mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
+            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload the results to Datadog CI App
@@ -193,24 +193,6 @@ jobs:
               go get google.golang.org/api@v0.121.0 # version used to generate code
               go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
               go test -v ./contrib/google.golang.org/api/...
-
-      - name: Testing outlier gRPC v1.2
-        run: |
-              # This hacky approach is necessary because running the tests regularly
-              # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
-              go mod vendor
-
-              # Checkout grpc-go@v1.2.0
-              cd vendor/google.golang.org && rm -rf grpc
-              git clone https://github.com/grpc/grpc-go grpc && cd grpc
-              git fetch origin && git checkout v1.2.0 && cd ../..
-
-              # Checkout sketches-go@v1.0.0
-              cd vendor/github.com/DataDog && rm -rf sketches-go
-              git clone https://github.com/DataDog/sketches-go && cd sketches-go
-              git fetch origin && git checkout v1.0.0 && cd ../..
-
-              go test -mod=vendor -v ./contrib/google.golang.org/grpc.v12/...
 
   test-core:
     runs-on:
