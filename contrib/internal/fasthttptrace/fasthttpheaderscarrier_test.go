@@ -90,12 +90,7 @@ func TestInjectExtract(t *testing.T) {
 		ReqHeader: &fasthttp.RequestHeader{},
 	}
 	err := tracer.Inject(pspan.Context(), fcc)
-	if err != nil {
-		t.Fatal("Creating new request with context failed")
-	}
-	if err != nil {
-		t.Fatal("Request failed")
-	}
+	require.NoError(t, err)
 	sctx, err := tracer.Extract(fcc)
 	if err != nil {
 		t.Fatal("Trace extraction failed")
