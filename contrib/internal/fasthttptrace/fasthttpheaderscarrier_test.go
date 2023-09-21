@@ -92,9 +92,7 @@ func TestInjectExtract(t *testing.T) {
 	err := tracer.Inject(pspan.Context(), fcc)
 	require.NoError(t, err)
 	sctx, err := tracer.Extract(fcc)
-	if err != nil {
-		t.Fatal("Trace extraction failed")
-	}
+	require.NoError(t, err)
 	assert.Equal(sctx.TraceID(), pspan.Context().TraceID())
 	assert.Equal(sctx.SpanID(), pspan.Context().SpanID())
 }
