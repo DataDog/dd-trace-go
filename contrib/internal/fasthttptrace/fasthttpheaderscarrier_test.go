@@ -42,7 +42,6 @@ func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 		assert.Len(fcc.ReqHeader.PeekAll("k2"), 1)
 		assert.Equal("v21", string(fcc.ReqHeader.Peek("k2")))
 	})
-	// FastHTTP
 	t.Run("casing", func(t *testing.T) {
 		// new key
 		fcc.Set("K3", "v31")
