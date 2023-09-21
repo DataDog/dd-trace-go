@@ -23,13 +23,13 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 // span is returned.
 func SpanFromContext(ctx context.Context) (Span, bool) {
 	if ctx == nil {
-		return &tracerInternal.NoopSpan{}, false
+		return &traceinternal.NoopSpan{}, false
 	}
 	v := ctx.Value(internal.ActiveSpanKey)
 	if s, ok := v.(ddtrace.Span); ok {
 		return s, true
 	}
-	return &tracerInternal.NoopSpan{}, false
+	return &traceinternal.NoopSpan{}, false
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span

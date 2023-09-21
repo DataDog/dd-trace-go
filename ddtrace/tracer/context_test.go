@@ -40,11 +40,11 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		_, ok = span.(*tracerInternal.NoopSpan)
+		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		_, ok = span.(*tracerInternal.NoopSpan)
+		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
 	})
 }
@@ -70,7 +70,7 @@ func TestStartSpanFromContext(t *testing.T) {
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*tracerInternal.NoopSpan)
+	_, ok = gotctx.(*traceinternal.NoopSpan)
 	assert.False(ok)
 
 	assert.Equal(uint64(456), got.TraceID)

@@ -8,10 +8,11 @@ package fasthttptrace
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/valyala/fasthttp"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/valyala/fasthttp"
 )
 
 func TestStartSpanFromFastHTTPContext(t *testing.T) {
