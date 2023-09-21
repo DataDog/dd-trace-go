@@ -22,5 +22,4 @@ func TestStartSpanFromFastHTTPContext(t *testing.T) {
 	activeSpan := StartSpanFromFastHTTPContext(fctx, "myOp")
 	keySpan := fctx.UserValue(internal.ActiveSpanKey)
 	assert.Equal(activeSpan, keySpan)
-
 }
