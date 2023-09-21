@@ -249,7 +249,7 @@ func defaultConfig() (*config, error) {
 		c.apiKey = v
 	}
 	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
-		WithAgentlessUpload()(&c)
+		c.agentless = true
 	}
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
@@ -316,16 +316,6 @@ type Option func(*config)
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
 		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
-	}
-}
-
-// WithAgentlessUpload is currently for internal usage only and not officially
-// supported. You should not enable it unless somebody at Datadog instructed
-// you to do so. It allows to skip the agent and talk to the Datadog API
-// directly using the provided API key.
-func WithAgentlessUpload() Option {
-	return func(cfg *config) {
-		cfg.agentless = true
 	}
 }
 

@@ -139,14 +139,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
-	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use the DD_API_KEY env variable to set it")
+			return nil, errors.New("Agentless upload requires a valid API key. Use the DD_API_KEY env variable to set it")
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
+		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.

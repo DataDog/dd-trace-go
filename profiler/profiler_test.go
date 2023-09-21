@@ -86,7 +86,7 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
-	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+	t.Run("Agent/GoodAPIKey", func(t *testing.T) {
 		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
@@ -101,38 +101,41 @@ func TestStart(t *testing.T) {
 		assert.Contains(t, strings.Join(rl.Logs(), " "), "DD_API_KEY")
 	})
 
-	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+	t.Run("Agentless/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
 		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(WithAgentlessUpload())
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that agentless upload is not
 		// officially supported, so prefer not to use it
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "Agentless")
 	})
 
-	t.Run("options/NoAPIKey/Agentless", func(t *testing.T) {
-		err := Start(WithAgentlessUpload())
+	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		err := Start()
 		defer Stop()
 		assert.NotNil(t, err)
-		assert.Contains(t, err.Error(), "profiler.WithAgentlessUpload requires a valid API key")
+		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
 		mu.Lock()
 		mu.Unlock()
 	})
 
-	t.Run("options/BadAPIKey/Agentless", func(t *testing.T) {
+	t.Run("Agentless/BadAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
 		t.Setenv("DD_API_KEY", "aaaa")
-		err := Start(WithAgentlessUpload())
+		err := Start()
 		defer Stop()
 		assert.NotNil(t, err)
-		assert.Contains(t, err.Error(), "profiler.WithAgentlessUpload requires a valid API key")
+		assert.Contains(t, err.Error(), "Agentless upload requires a valid API key")
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
 		mu.Lock()
