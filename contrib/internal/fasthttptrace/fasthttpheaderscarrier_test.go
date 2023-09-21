@@ -75,7 +75,6 @@ func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 		delete(headers, k)
 		return nil
 	})
-
 	assert.NoError(err)
 	assert.Len(headers, 0)
 }
