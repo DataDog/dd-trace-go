@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	tracerInternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
