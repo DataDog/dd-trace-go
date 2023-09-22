@@ -248,9 +248,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_API_KEY"); v != "" {
 		c.apiKey = v
 	}
-	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
-		c.agentless = true
-	}
+	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
