@@ -20,7 +20,7 @@ func TestStartSpanFromFastHTTPContext(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	fctx := &fasthttp.RequestCtx{}
-	activeSpan := StartSpanFromFastHTTPContext(fctx, "myOp")
+	activeSpan := StartSpanFromContext(fctx, "myOp")
 	keySpan := fctx.UserValue(internal.ActiveSpanKey)
 	assert.Equal(activeSpan, keySpan)
 }
