@@ -830,7 +830,7 @@ func WithAgentURL(agentURL string) StartOption {
 	return func(c *config) {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Error("Fail to parse Agent URL: %v", err)
+			log.Warn("Fail to parse Agent URL: %v", err)
 			return
 		}
 		switch u.Scheme {
@@ -840,7 +840,7 @@ func WithAgentURL(agentURL string) StartOption {
 				Host:   u.Host,
 			}
 		default:
-			log.Error("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
 	}
 }
