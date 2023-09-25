@@ -130,18 +130,21 @@ var statsInterval = 10 * time.Second
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
-func Start(opts ...StartOption) {
+func Start(opts ...StartOption) error {
 	if internal.Testing {
-		return // mock tracer active
+		return nil // mock tracer active
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
-	t := newTracer(opts...)
+	t, err := newTracer(opts...)
+	if err != nil {
+		return err
+	}
 	if !t.config.enabled {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
 		// share control of the global telemetry client.
-		return
+		return nil
 	}
 	internal.SetGlobalTracer(t)
 	if t.config.logStartup {
@@ -162,6 +165,7 @@ func Start(opts ...StartOption) {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
 	_ = t.hostname() // Prime the hostname cache
+	return nil
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
@@ -216,12 +220,16 @@ func SetUser(s Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) *tracer {
-	c := newConfig(opts...)
+func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
+	c, err := newConfig(opts...)
+	if err != nil {
+		return nil, err
+	}
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
 	if err != nil {
-		log.Warn("Runtime and health metrics disabled: %v", err)
+		log.Error("Runtime and health metrics disabled: %v", err)
+		return nil, err
 	}
 	var writer traceWriter
 	if c.logToStdout {
@@ -268,7 +276,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
 	}
-	return t
+	return t, nil
 }
 
 // newTracer creates a new no-op tracer for testing.
@@ -276,8 +284,11 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
 // internal.SetGlobalTracer(...) with the tracer provided by this function.
-func newTracer(opts ...StartOption) *tracer {
-	t := newUnstartedTracer(opts...)
+func newTracer(opts ...StartOption) (*tracer, error) {
+	t, err := newUnstartedTracer(opts...)
+	if err != nil {
+		return nil, err
+	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.runtimeMetrics {
@@ -310,7 +321,7 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
-	return t
+	return t, nil
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer

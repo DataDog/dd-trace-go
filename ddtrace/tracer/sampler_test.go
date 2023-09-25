@@ -592,7 +592,8 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				c := newConfig(WithSamplingRules(tt.rules))
+				c, err := newConfig(WithSamplingRules(tt.rules))
+				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules)
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
@@ -636,14 +637,15 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
-func TestRulesSamplerConcurrency(_ *testing.T) {
+func TestRulesSamplerConcurrency(t *testing.T) {
 	rules := []SamplingRule{
 		ServiceRule("test-service", 1.0),
 		NameServiceRule("db.query", "postgres.db", 1.0),
 		NameRule("notweb.request", 1.0),
 	}
-	tracer := newTracer(WithSamplingRules(rules))
+	tracer, err := newTracer(WithSamplingRules(rules))
 	defer tracer.Stop()
+	assert.NoError(t, err)
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()
@@ -814,7 +816,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 	}
 
 	b.Run("no-rules", func(b *testing.B) {
-		tracer := newUnstartedTracer()
+		tracer, err := newUnstartedTracer()
+		assert.NoError(b, err)
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -824,7 +827,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("notweb.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, err := newUnstartedTracer(WithSamplingRules(rules))
+		assert.NoError(b, err)
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -834,7 +838,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameServiceRule("db.query", "postgres.db", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, err := newUnstartedTracer(WithSamplingRules(rules))
+		assert.NoError(b, err)
 		benchmarkStartSpan(b, tracer)
 	})
 
@@ -864,7 +869,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 			NameRule("notweb.request", 1.0),
 			NameRule("web.request", 1.0),
 		}
-		tracer := newUnstartedTracer(WithSamplingRules(rules))
+		tracer, err := newUnstartedTracer(WithSamplingRules(rules))
+		assert.NoError(b, err)
 		benchmarkStartSpan(b, tracer)
 	})
 }

@@ -79,8 +79,9 @@ func TestSpanFinish(t *testing.T) {
 
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set finished and the duration
@@ -368,16 +369,18 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		{ext.ManualDrop, false, 1},
 	} {
 		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
+			tracer, err := newTracer()
 			defer tracer.Stop()
+			assert.NoError(t, err)
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
+			tracer, err := newTracer()
 			defer tracer.Stop()
+			assert.NoError(t, err)
 			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
@@ -402,8 +405,9 @@ func TestSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
@@ -412,7 +416,8 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -472,8 +477,9 @@ func TestSpanSetMetric(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			tracer := newTracer(withTransport(newDefaultTransport()))
+			tracer, err := newTracer(withTransport(newDefaultTransport()))
 			defer tracer.Stop()
+			assert.NoError(err)
 			span := tracer.newRootSpan("http.request", "mux.router", "/")
 			tt(assert, span)
 		})
@@ -481,8 +487,9 @@ func TestSpanSetMetric(t *testing.T) {
 }
 
 func TestSpanProfilingTags(t *testing.T) {
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(t, err)
 
 	for _, profilerEnabled := range []bool{false, true} {
 		name := fmt.Sprintf("profilerEnabled=%t", profilerEnabled)
@@ -506,13 +513,14 @@ func TestSpanProfilingTags(t *testing.T) {
 func TestSpanError(t *testing.T) {
 	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
-	err := errors.New("Something wrong")
+	err = errors.New("Something wrong")
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta[ext.ErrorMsg])
@@ -537,12 +545,13 @@ func TestSpanError(t *testing.T) {
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
-	err := &boomError{}
+	err = &boomError{}
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("boom", span.Meta[ext.ErrorMsg])
@@ -552,7 +561,8 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -616,8 +626,9 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	_, ok := span.Metrics[keySamplingPriority]
