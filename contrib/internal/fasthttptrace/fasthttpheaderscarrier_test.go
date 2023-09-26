@@ -29,29 +29,29 @@ func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 		assert.Equal("v1", string(fcc.ReqHeader.Peek("k1")))
 	})
 	t.Run("key-multival", func(t *testing.T) {
-		// // add a second value
+		// add a second value, ensure the second value overwrites the first
+		fcc.Set("k1", "v1")
 		fcc.Set("k1", "v2")
 		vals := fcc.ReqHeader.PeekAll("k1")
-		assert.Len(vals, 2)
-		assert.Equal("v1", string(vals[0]))
-		assert.Equal("v2", string(vals[1]))
+		assert.Len(vals, 1)
+		assert.Equal("v2", string(vals[0]))
 	})
 	t.Run("multi-key", func(t *testing.T) {
-		// // add a second item
+		// // add a second key
+		fcc.Set("k1", "v1")
 		fcc.Set("k2", "v21")
 		assert.Len(fcc.ReqHeader.PeekAll("k2"), 1)
 		assert.Equal("v21", string(fcc.ReqHeader.Peek("k2")))
 	})
-	t.Run("casing", func(t *testing.T) {
+	t.Run("case insensitive", func(t *testing.T) {
 		// new key
 		fcc.Set("K3", "v31")
 		assert.Equal("v31", string(fcc.ReqHeader.Peek("k3")))
 		assert.Equal("v31", string(fcc.ReqHeader.Peek("K3")))
-		// existing key
+		// access existing, lowercase key with uppercase input
 		fcc.Set("K3", "v32")
 		vals := fcc.ReqHeader.PeekAll("k3")
-		assert.Len(vals, 2)
-		assert.Equal("v32", string(vals[1]))
+		assert.Equal("v32", string(vals[0]))
 	})
 }
 

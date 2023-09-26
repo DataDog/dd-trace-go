@@ -6,6 +6,8 @@
 package fasthttptrace
 
 import (
+	"fmt"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/valyala/fasthttp"
@@ -23,14 +25,13 @@ var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
 
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
+	fmt.Println("IN FOR EACH KEY")
 	keys := f.ReqHeader.PeekKeys()
 	for _, key := range keys {
 		sKey := string(key)
-		vs := f.ReqHeader.PeekAll(sKey)
-		for _, v := range vs {
-			if err := handler(sKey, string(v)); err != nil {
-				return err
-			}
+		v := f.ReqHeader.Peek(sKey)
+		if err := handler(sKey, string(v)); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -39,7 +40,6 @@ func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error)
 // Set adds the given value to request header for key. Key will be lowercased to match
 // the metadata implementation.
 func (f *FastHTTPHeadersCarrier) Set(key, val string) {
-	// f.ReqHeader.Set(k, val)
-	// MOTFF: "Set" overwrites any value at `k`. "Add" appends it. Just confirming we want to append, not overwrite
-	f.ReqHeader.Add(key, val)
+	f.ReqHeader.Set(key, val)
+	fmt.Printf("req header: %v, value %v\n", key, string(f.ReqHeader.Peek(key)))
 }
