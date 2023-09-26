@@ -221,10 +221,6 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 	return val, ok
 }
 
-func (c *spanContext) getMeta(key string) (string, bool) {
-	return c.meta(key)
-}
-
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
