@@ -54,6 +54,7 @@ func startTelemetry(c *config) {
 		{Name: "trace_enabled", Value: c.enabled},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
+		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
 	}
 	var peerServiceMapping []string
 	for key, value := range c.peerServiceMappings {
@@ -90,6 +91,11 @@ func startTelemetry(c *config) {
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
+	}
+	if c.orchestrionCfg.Enabled {
+		for k, v := range c.orchestrionCfg.Metadata {
+			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
+		}
 	}
 	telemetry.GlobalClient.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
 }
