@@ -71,30 +71,43 @@ type SQLCommentCarrier struct {
 	Mode          DBMPropagationMode
 	DBServiceName string
 	SpanID        uint64
+	Tags          map[string]interface{}
+}
+
+func (c *SQLCommentCarrier) getMeta(k string) (string, bool) {
+	v, ok := c.Tags[k]
+	if !ok {
+		return "", false
+	}
+	if s, ok := v.(string); ok {
+		return s, true
+	}
+	return "", false
+}
+
+func (c *SQLCommentCarrier) getDBService() string {
+	dbService := c.DBServiceName
+
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return dbService
+	}
+	peerService, _ := c.getMeta(ext.PeerService)
+	if peerService != "" {
+		return peerService
+	}
+	if !tr.config.peerServiceDefaultsEnabled {
+		return dbService
+	}
+	if peerService, _ := getPeerServiceFromSource(c); peerService != "" {
+		return peerService
+	}
+	return dbService
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
-	var (
-		peerServiceEnabled = false
-		peerServiceSet     = false
-		dbService          = c.DBServiceName
-	)
-	if sCtx, ok := spanCtx.(*spanContext); ok {
-		if v, _ := sCtx.meta(ext.PeerService); v != "" {
-			peerServiceSet = true
-		}
-	}
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-		peerServiceEnabled = tr.config.peerServiceDefaultsEnabled || peerServiceSet
-	}
-	if peerServiceEnabled {
-		if sCtx, ok := spanCtx.(*spanContext); ok {
-			if peerService, _ := getPeerServiceFromSource(sCtx); peerService != "" {
-				dbService = peerService
-			}
-		}
-	}
+
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
@@ -130,7 +143,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
 		}
-		tags[sqlCommentDBService] = dbService
+		tags[sqlCommentDBService] = c.getDBService()
 	}
 	c.Query = commentQuery(c.Query, tags)
 	return nil

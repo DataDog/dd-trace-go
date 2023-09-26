@@ -252,7 +252,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanCtx = span.Context()
 	}
-	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName}
+	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, Tags: tc.spanTags(ctx, "", query)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
 		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
@@ -284,42 +284,51 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	if _, exists := tracer.SpanFromContext(ctx); tp.cfg.childSpansOnly && !exists {
 		return
 	}
-	dbSystem, _ := normalizeDBSystem(tp.driverName)
 	opts := append(spanOpts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, dbSystem),
 	)
-	if tp.cfg.tags != nil {
-		for key, tag := range tp.cfg.tags {
-			opts = append(opts, tracer.Tag(key, tag))
-		}
+	for k, v := range tp.spanTags(ctx, qtype, query) {
+		opts = append(opts, tracer.Tag(k, v))
 	}
 	if !math.IsNaN(tp.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tp.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, tp.cfg.spanName, opts...)
-	resource := string(qtype)
-	if query != "" {
-		resource = query
-	}
-	span.SetTag("sql.query_type", string(qtype))
-	span.SetTag(ext.ResourceName, resource)
-	for k, v := range tp.meta {
-		span.SetTag(k, v)
-	}
-	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
-		for k, v := range meta {
-			span.SetTag(k, v)
-		}
-	}
 	if err != nil && (tp.cfg.errCheck == nil || tp.cfg.errCheck(err)) {
 		span.SetTag(ext.Error, err)
 	}
 	span.Finish()
+}
+
+func (tp *traceParams) spanTags(ctx context.Context, qType QueryType, query string) map[string]interface{} {
+	resource := string(qType)
+	if query != "" {
+		resource = query
+	}
+	dbSystem, _ := normalizeDBSystem(tp.driverName)
+	tags := map[string]interface{}{
+		ext.Component:    componentName,
+		ext.SpanKind:     ext.SpanKindClient,
+		ext.DBSystem:     dbSystem,
+		ext.ResourceName: resource,
+		"sql.query_type": string(qType),
+	}
+	// tags extracted from parsing the connection DSN
+	for k, v := range tp.meta {
+		tags[k] = v
+	}
+	if meta, ok := ctx.Value(spanTagsKey).(map[string]string); ok {
+		for k, v := range meta {
+			tags[k] = v
+		}
+	}
+	// user configured custom tags
+	for k, v := range tp.cfg.tags {
+		tags[k] = v
+	}
+	return tags
 }
 
 func normalizeDBSystem(driverName string) (string, bool) {

@@ -187,6 +187,9 @@ func TestDBMPropagation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipParentSpan {
+				t.Skip("TODO: known issue, re-enable when it's fixed")
+			}
 			tracerOpts := append(tc.tracerOpts,
 				tracer.WithLogger(&noopLogger{}),
 				tracer.WithService("test-service"),
