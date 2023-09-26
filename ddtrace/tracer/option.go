@@ -825,6 +825,26 @@ func WithAgentAddr(addr string) StartOption {
 	}
 }
 
+// WithAgentURL sets the full trace agent URL
+func WithAgentURL(agentURL string) StartOption {
+	return func(c *config) {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Fail to parse Agent URL: %v", err)
+			return
+		}
+		switch u.Scheme {
+		case "unix", "http", "https":
+			c.agentURL = &url.URL{
+				Scheme: u.Scheme,
+				Host:   u.Host,
+			}
+		default:
+			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+		}
+	}
+}
+
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
