@@ -127,6 +127,19 @@ func TestLog(t *testing.T) {
 	})
 }
 
+func TestRecordLoggerIgnore(t *testing.T) {
+	tp := new(RecordLogger)
+	tp.Ignore("appsec")
+	tp.Log("this is an appsec log")
+	tp.Log("this is a tracer log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.NotContains(t, tp.Logs()[0], "appsec")
+	tp.Reset()
+	tp.Log("this is an appsec log")
+	assert.Len(t, tp.Logs(), 1)
+	assert.Contains(t, tp.Logs()[0], "appsec")
+}
+
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
 	for i := 0; i < b.N; i++ {

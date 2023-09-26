@@ -19,10 +19,10 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
-	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
-	"github.com/jackc/pgx/v4/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/lib/pq"
+	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/stretchr/testify/assert"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -199,6 +199,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.create", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("query", func(t *testing.T) {
@@ -224,6 +225,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.query", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("update", func(t *testing.T) {
@@ -250,6 +252,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal("gorm.update", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -274,6 +277,33 @@ func TestCallbacks(t *testing.T) {
 
 		span := spans[len(spans)-2]
 		a.Equal("gorm.delete", span.OperationName())
+		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
+		a.Equal(queryText, span.Tag(ext.ResourceName))
+		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+	})
+
+	t.Run("raw", func(t *testing.T) {
+		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+			tracer.ServiceName("fake-http-server"),
+			tracer.SpanType(ext.SpanTypeWeb),
+		)
+
+		db = db.WithContext(ctx)
+		var queryText string
+		db.Callback().Raw().After("testing").Register("query text", func(d *gorm.DB) {
+			queryText = d.Statement.SQL.String()
+		})
+
+		err := db.Exec("select 1").Error
+		assert.Nil(t, err)
+
+		parentSpan.Finish()
+
+		spans := mt.FinishedSpans()
+		a.True(len(spans) >= 2)
+
+		span := spans[len(spans)-2]
+		a.Equal("gorm.raw_query", span.OperationName())
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 	})

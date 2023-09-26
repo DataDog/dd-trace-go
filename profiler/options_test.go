@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 // testAPIKey is an example API key for validation purposes
@@ -59,6 +59,33 @@ func TestOptions(t *testing.T) {
 		var cfg config
 		WithAgentAddr("test:123")(&cfg)
 		expectedURL := "http://test:123/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		expectedURL := "https://custom:1234/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL/override-env", func(t *testing.T) {
+		t.Setenv("DD_AGENT_HOST", "testhost")
+		t.Setenv("DD_TRACE_AGENT_PORT", "3333")
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		expectedURL := "https://custom:1234/profiling/v1/input"
+		assert.Equal(t, expectedURL, cfg.agentURL)
+	})
+
+	t.Run("AgentURL/code-override", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		WithAgentAddr("test:1234")(cfg)
+		expectedURL := "http://test:1234/profiling/v1/input"
 		assert.Equal(t, expectedURL, cfg.agentURL)
 	})
 
@@ -297,6 +324,16 @@ func TestEnvVars(t *testing.T) {
 		assert.Contains(t, tags, "c:3")
 	})
 
+	t.Run("DD_TAGS_SPACES", func(t *testing.T) {
+		t.Setenv("DD_TAGS", "a:1 b:2 c")
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		tags := cfg.tags.Slice()
+		assert.Contains(t, tags, "a:1")
+		assert.Contains(t, tags, "b:2")
+		assert.Contains(t, tags, "c")
+	})
+
 	t.Run("DD_PROFILING_DELTA", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DELTA", "false")
 		cfg, err := defaultConfig()
@@ -313,7 +350,7 @@ func TestDefaultConfig(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(defaultAPIURL, cfg.apiURL)
 		assert.Equal(defaultAgentURL, cfg.agentURL)
-		assert.Equal(defaultEnv, cfg.env)
+		assert.Equal("", cfg.env)
 		assert.Equal(filepath.Base(os.Args[0]), cfg.service)
 		assert.Equal(len(defaultProfileTypes), len(cfg.types))
 		for _, pt := range defaultProfileTypes {

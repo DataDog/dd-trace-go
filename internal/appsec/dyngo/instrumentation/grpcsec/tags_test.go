@@ -11,20 +11,25 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
-func TestSetSecurityEventTags(t *testing.T) {
+func TestTags(t *testing.T) {
 	for _, eventCase := range []struct {
 		name          string
 		events        []json.RawMessage
 		expectedTag   string
 		expectedError bool
 	}{
+		{
+			name:   "no-event",
+			events: nil,
+		},
 		{
 			name:        "one-event",
 			events:      []json.RawMessage{json.RawMessage(`["one","two"]`)},
@@ -52,139 +57,114 @@ func TestSetSecurityEventTags(t *testing.T) {
 		},
 	} {
 		eventCase := eventCase
-		for _, addrCase := range []struct {
-			name        string
-			addr        net.Addr
-			expectedTag string
+		for _, metadataCase := range []struct {
+			name         string
+			md           map[string][]string
+			expectedTags map[string]interface{}
 		}{
 			{
-				name:        "tcp-ipv4-address",
-				addr:        &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
-				expectedTag: "1.2.3.4",
+				name: "zero-metadata",
 			},
 			{
-				name:        "tcp-ipv6-address",
-				addr:        &net.TCPAddr{IP: net.ParseIP("::1"), Port: 6789},
-				expectedTag: "::1",
+				name: "xff-metadata",
+				md: map[string][]string{
+					"x-forwarded-for": {"1.2.3.4", "4.5.6.7"},
+					":authority":      {"something"},
+				},
+				expectedTags: map[string]interface{}{
+					"grpc.metadata.x-forwarded-for": "1.2.3.4,4.5.6.7",
+				},
 			},
 			{
-				name:        "udp-ipv4-address",
-				addr:        &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
-				expectedTag: "1.2.3.4",
+				name: "xff-metadata",
+				md: map[string][]string{
+					"x-forwarded-for": {"1.2.3.4"},
+					":authority":      {"something"},
+				},
+				expectedTags: map[string]interface{}{
+					"grpc.metadata.x-forwarded-for": "1.2.3.4",
+				},
 			},
 			{
-				name:        "udp-ipv6-address",
-				addr:        &net.UDPAddr{IP: net.ParseIP("::1"), Port: 6789},
-				expectedTag: "::1",
-			},
-			{
-				name: "unix-socket-address",
-				addr: &net.UnixAddr{Name: "/var/my.sock"},
+				name: "no-monitored-metadata",
+				md: map[string][]string{
+					":authority": {"something"},
+				},
 			},
 		} {
-			addrCase := addrCase
-			for _, metadataCase := range []struct {
-				name         string
-				md           map[string][]string
-				expectedTags map[string]string
-			}{
-				{
-					name: "zero-metadata",
-				},
-				{
-					name: "xff-metadata",
-					md: map[string][]string{
-						"x-forwarded-for": {"1.2.3.4", "4.5.6.7"},
-						":authority":      {"something"},
-					},
-					expectedTags: map[string]string{
-						"grpc.metadata.x-forwarded-for": "1.2.3.4,4.5.6.7",
-					},
-				},
-				{
-					name: "xff-metadata",
-					md: map[string][]string{
-						"x-forwarded-for": {"1.2.3.4"},
-						":authority":      {"something"},
-					},
-					expectedTags: map[string]string{
-						"grpc.metadata.x-forwarded-for": "1.2.3.4",
-					},
-				},
-				{
-					name: "no-monitored-metadata",
-					md: map[string][]string{
-						":authority": {"something"},
-					},
-				},
-			} {
-				metadataCase := metadataCase
-				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, addrCase.name, metadataCase.name), func(t *testing.T) {
-					var span MockSpan
-					err := setSecurityEventTags(&span, eventCase.events, addrCase.addr, metadataCase.md)
-					if eventCase.expectedError {
-						require.Error(t, err)
-						return
-					}
-					require.NoError(t, err)
+			metadataCase := metadataCase
+			t.Run(fmt.Sprintf("%s-%s", eventCase.name, metadataCase.name), func(t *testing.T) {
+				var span testlib.MockSpan
+				err := setSecurityEventsTags(&span, eventCase.events)
+				if eventCase.expectedError {
+					require.Error(t, err)
+					return
+				}
+				require.NoError(t, err)
+				SetRequestMetadataTags(&span, metadataCase.md)
 
-					expectedTags := map[string]interface{}{
+				if eventCase.events != nil {
+					testlib.RequireContainsMapSubset(t, span.Tags, map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
 						"manual.keep":     true,
 						"appsec.event":    true,
 						"_dd.origin":      "appsec",
-					}
+					})
+				}
 
-					if addr := addrCase.expectedTag; addr != "" {
-						expectedTags["network.client.ip"] = addr
-					}
+				if l := len(metadataCase.expectedTags); l > 0 {
+					testlib.RequireContainsMapSubset(t, span.Tags, metadataCase.expectedTags)
+				}
 
-					for k, v := range metadataCase.expectedTags {
-						expectedTags[k] = v
-					}
-
-					require.Equal(t, expectedTags, span.tags)
-					require.False(t, span.finished)
-				})
-			}
+				require.False(t, span.Finished)
+			})
 		}
 	}
 }
 
-type MockSpan struct {
-	tags     map[string]interface{}
-	finished bool
-}
-
-func (m *MockSpan) SetTag(key string, value interface{}) {
-	if m.tags == nil {
-		m.tags = make(map[string]interface{})
+func TestClientIP(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		addr             net.Addr
+		md               metadata.MD
+		expectedClientIP string
+	}{
+		{
+			name:             "tcp-ipv4-address",
+			addr:             &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
+			expectedClientIP: "1.2.3.4",
+		},
+		{
+			name:             "tcp-ipv4-address",
+			addr:             &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
+			md:               map[string][]string{"x-client-ip": {"127.0.0.1, 2.3.4.5"}},
+			expectedClientIP: "2.3.4.5",
+		},
+		{
+			name:             "tcp-ipv6-address",
+			addr:             &net.TCPAddr{IP: net.ParseIP("::1"), Port: 6789},
+			expectedClientIP: "::1",
+		},
+		{
+			name:             "udp-ipv4-address",
+			addr:             &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
+			expectedClientIP: "1.2.3.4",
+		},
+		{
+			name:             "udp-ipv6-address",
+			addr:             &net.UDPAddr{IP: net.ParseIP("::1"), Port: 6789},
+			expectedClientIP: "::1",
+		},
+		{
+			name: "unix-socket-address",
+			addr: &net.UnixAddr{Name: "/var/my.sock"},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
+			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
+			require.Equal(t, expectedClientIP.String(), clientIP.String())
+		})
 	}
-	if key == ext.ManualKeep {
-		if value == samplernames.AppSec {
-			m.tags[ext.ManualKeep] = true
-		}
-	} else {
-		m.tags[key] = value
-	}
-}
-
-func (m *MockSpan) SetOperationName(operationName string) {
-	panic("unused")
-}
-
-func (m *MockSpan) BaggageItem(key string) string {
-	panic("unused")
-}
-
-func (m *MockSpan) SetBaggageItem(key, val string) {
-	panic("unused")
-}
-
-func (m *MockSpan) Finish(opts ...ddtrace.FinishOption) {
-	m.finished = true
-}
-
-func (m *MockSpan) Context() ddtrace.SpanContext {
-	panic("unused")
 }

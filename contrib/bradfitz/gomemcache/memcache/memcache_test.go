@@ -13,14 +13,17 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/stretchr/testify/assert"
-
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMemcache(t *testing.T) {
@@ -39,7 +42,7 @@ func TestMemcacheIntegration(t *testing.T) {
 }
 
 func testMemcache(t *testing.T, addr string) {
-	client := WrapClient(memcache.New(addr), WithServiceName("test-memcache"))
+	client := getClient(addr, WithServiceName("test-memcache"))
 	defer client.DeleteAll()
 
 	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
@@ -49,6 +52,12 @@ func testMemcache(t *testing.T, addr string) {
 			"operation name should be set to memcached.query")
 		assert.Equal(t, resourceName, span.Tag(ext.ResourceName),
 			"resource name should be set to the memcache command")
+		assert.Equal(t, "bradfitz/gomemcache/memcache", span.Tag(ext.Component),
+			"component should be set to gomemcache")
+		assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
+			"span.kind should be set to client")
+		assert.Equal(t, "memcached", span.Tag(ext.DBSystem),
+			"db.system should be set to memcached")
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -114,7 +123,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
-		client := WrapClient(memcache.New(addr), opts...)
+		client := getClient(addr, opts...)
 		defer client.DeleteAll()
 		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
 		assert.NoError(t, err)
@@ -169,6 +178,45 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 }
 
+func TestNamingSchema(t *testing.T) {
+	li := makeFakeServer(t)
+	defer li.Close()
+	addr := li.Addr().String()
+
+	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []ClientOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := getClient(addr, opts...)
+		defer client.DeleteAll()
+		err := client.Add(&memcache.Item{Key: "key1", Value: []byte("value1")})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		return spans
+	}
+	assertV0 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "memcached.query", spans[0].OperationName())
+	}
+	assertV1 := func(t *testing.T, spans []mocktracer.Span) {
+		require.Len(t, spans, 1)
+		assert.Equal(t, "memcached.command", spans[0].OperationName())
+	}
+	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
+		WithDefaults:             []string{"memcached"},
+		WithDDService:            []string{"memcached"},
+		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
+	}
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertV0, assertV1))
+}
+
 func makeFakeServer(t *testing.T) net.Listener {
 	li, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -210,4 +258,10 @@ func makeFakeServer(t *testing.T) net.Listener {
 	}()
 
 	return li
+}
+
+func getClient(addr string, opts ...ClientOption) *Client {
+	client := WrapClient(memcache.New(addr), opts...)
+	client.Timeout = 2 * time.Second // Default timeout is 100ms, it can be short for the CI runner.
+	return client
 }

@@ -7,6 +7,7 @@ package sql
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"log"
 	"strings"
@@ -29,8 +30,9 @@ func TestWithSpanTags(t *testing.T) {
 		opts   []RegisterOption
 	}
 	type want struct {
-		opName  string
-		ctxTags map[string]string
+		opName   string
+		ctxTags  map[string]string
+		dbSystem string
 	}
 	testcases := []struct {
 		name        string
@@ -52,6 +54,7 @@ func TestWithSpanTags(t *testing.T) {
 					"mysql_tag2": "mysql_value2",
 					"mysql_tag3": "mysql_value3",
 				},
+				dbSystem: "mysql",
 			},
 		},
 		{
@@ -71,6 +74,7 @@ func TestWithSpanTags(t *testing.T) {
 					"pg_tag1": "pg_value1",
 					"pg_tag2": "pg_value2",
 				},
+				dbSystem: "postgresql",
 			},
 		},
 	}
@@ -102,12 +106,87 @@ func TestWithSpanTags(t *testing.T) {
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.ctxTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", span.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
+		})
+	}
+}
+
+func TestWithIgnoreQueryTypes(t *testing.T) {
+	type sqlRegister struct {
+		name   string
+		dsn    string
+		driver driver.Driver
+		opts   []RegisterOption
+	}
+	testcases := []struct {
+		name         string
+		sqlRegister  sqlRegister
+		dbOp         func(t *testing.T, db *sql.DB)
+		wantNumSpans int
+	}{
+		{
+			name: "mysql/select/ignore-connect",
+			sqlRegister: sqlRegister{
+				name:   "mysql",
+				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
+				driver: &mysql.MySQLDriver{},
+				opts: []RegisterOption{
+					WithIgnoreQueryTypes(QueryTypeConnect),
+				},
+			},
+			dbOp: func(t *testing.T, db *sql.DB) {
+				ctx := context.Background()
+				rows, err := db.QueryContext(ctx, "SELECT 1")
+				require.NoError(t, err)
+				rows.Close()
+			},
+			wantNumSpans: 1,
+		},
+		{
+			name: "postgres/select/ignore-connect",
+			sqlRegister: sqlRegister{
+				name:   "postgres",
+				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+				driver: &pq.Driver{},
+				opts: []RegisterOption{
+					WithIgnoreQueryTypes(QueryTypeConnect),
+				},
+			},
+			dbOp: func(t *testing.T, db *sql.DB) {
+				ctx := context.Background()
+				rows, err := db.QueryContext(ctx, "SELECT 1")
+				require.NoError(t, err)
+				rows.Close()
+			},
+			wantNumSpans: 1,
+		},
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			Register(tt.sqlRegister.name, tt.sqlRegister.driver, tt.sqlRegister.opts...)
+			defer unregister(tt.sqlRegister.name)
+			db, err := Open(tt.sqlRegister.name, tt.sqlRegister.dsn)
+			require.NoError(t, err)
+			defer db.Close()
+			mt.Reset()
+
+			tt.dbOp(t, db)
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, tt.wantNumSpans)
 		})
 	}
 }
@@ -212,6 +291,7 @@ func TestWithCustomTag(t *testing.T) {
 	type want struct {
 		opName     string
 		customTags map[string]interface{}
+		dbSystem   string
 	}
 	testcases := []struct {
 		name        string
@@ -232,6 +312,7 @@ func TestWithCustomTag(t *testing.T) {
 					"foo": "bar",
 					"baz": 123,
 				},
+				dbSystem: ext.DBSystemMySQL,
 			},
 			options: []Option{
 				WithCustomTag("foo", "bar"),
@@ -251,6 +332,7 @@ func TestWithCustomTag(t *testing.T) {
 					"foo": "bar",
 					"baz": 123,
 				},
+				dbSystem: "postgresql",
 			},
 			options: []Option{
 				WithCustomTag("foo", "bar"),
@@ -284,12 +366,18 @@ func TestWithCustomTag(t *testing.T) {
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, connectSpan.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
 			assert.Equal(t, tt.want.opName, span.OperationName())
 			for k, v := range tt.want.customTags {
 				assert.Equal(t, v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
+			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
 }

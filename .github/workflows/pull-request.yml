@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - "**"
+  merge_group:
+  push:
+    branches:
+      - 'mq-working-branch-**'
 
 concurrency: 
   group: ${{ github.ref }}
@@ -14,5 +18,5 @@ jobs:
     name: PR Unit and Integration Tests
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.17"
+      go-version: "1.19"
     secrets: inherit

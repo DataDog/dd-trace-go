@@ -33,8 +33,26 @@ func ExampleTraceAndServe() {
 	http.ListenAndServe(":8080", mux)
 }
 
-func Index(w http.ResponseWriter, r *http.Request) {
+func Index(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("Hello World!\n"))
+}
+
+// ExampleWrapClient provides an example of how to connect an incoming request span to an outgoing http call.
+func ExampleWrapClient() {
+	mux := httptrace.NewServeMux()
+	// Note that `WrapClient` modifies the passed in Client, so all other users of DefaultClient in this example will have a traced http Client
+	c := httptrace.WrapClient(http.DefaultClient)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, "http://test.test", nil)
+		resp, err := c.Do(req)
+		if err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		defer resp.Body.Close()
+		w.Write([]byte(resp.Status))
+	})
+	http.ListenAndServe(":8080", mux)
 }
 
 func traceMiddleware(mux *http.ServeMux, next http.Handler) http.Handler {

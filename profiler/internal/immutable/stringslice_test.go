@@ -8,9 +8,9 @@ package immutable_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestStringSlice(t *testing.T) {

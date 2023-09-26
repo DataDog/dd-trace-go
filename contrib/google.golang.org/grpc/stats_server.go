@@ -6,16 +6,18 @@
 package grpc
 
 import (
+	"context"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc/stats"
 )
 
 // NewServerStatsHandler returns a gRPC server stats.Handler to trace RPC calls.
 func NewServerStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
-	defaults(cfg)
+	serverDefaults(cfg)
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -30,13 +32,17 @@ type serverStatsHandler struct {
 
 // TagRPC starts a new span for the initiated RPC request.
 func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) context.Context {
+	spanOpts := append([]tracer.StartSpanOption{
+		tracer.Measured(),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer)},
+		h.cfg.spanOpts...,
+	)
 	_, ctx = startSpanFromContext(
 		ctx,
 		rti.FullMethodName,
-		"grpc.server",
-		h.cfg.serverServiceName(),
-		tracer.AnalyticsRate(h.cfg.analyticsRate),
-		tracer.Measured(),
+		h.cfg.spanName,
+		h.cfg.serviceName,
+		spanOpts...,
 	)
 	return ctx
 }

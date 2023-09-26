@@ -35,4 +35,4 @@ func Start(...StartOption) {
 func Stop() {}
 
 // Static rule stubs when disabled.
-const staticRecommendedRule = ""
+const staticRecommendedRules = ""

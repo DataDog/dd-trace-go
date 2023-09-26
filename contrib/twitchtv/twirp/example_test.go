@@ -33,7 +33,7 @@ func ExampleWrapClient() {
 
 type hatmaker struct{}
 
-func (hatmaker) MakeHat(ctx context.Context, size *example.Size) (*example.Hat, error) {
+func (hatmaker) MakeHat(_ context.Context, _ *example.Size) (*example.Hat, error) {
 	return &example.Hat{
 		Size:  42,
 		Color: "cornflower blue",

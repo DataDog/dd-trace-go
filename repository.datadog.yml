@@ -1,0 +1,10 @@
+---
+schema-version: v1
+kind: mergequeue
+github_teams_restrictions:
+  - apm-ecosystems
+  - apm-go
+  - asm-go
+  - profiling-go
+github_users_restrictions:
+  - dbenamydd

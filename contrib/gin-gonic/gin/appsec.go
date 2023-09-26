@@ -6,10 +6,9 @@
 package gin
 
 import (
-	"net"
+	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +16,7 @@ import (
 
 // useAppSec executes the AppSec logic related to the operation start and
 // returns the  function to be executed upon finishing the operation
-func useAppSec(c *gin.Context, span tracer.Span) func() {
-	req := c.Request
-	httpsec.SetAppSecTags(span)
+func useAppSec(c *gin.Context, span tracer.Span) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)
@@ -27,18 +24,11 @@ func useAppSec(c *gin.Context, span tracer.Span) func() {
 			params[p.Key] = p.Value
 		}
 	}
-	args := httpsec.MakeHandlerOperationArgs(req, params)
-	ctx, op := httpsec.StartOperation(req.Context(), args)
-	c.Request = req.WithContext(ctx)
-	return func() {
-		events := op.Finish(httpsec.HandlerOperationRes{Status: c.Writer.Status()})
-		if len(events) > 0 {
-			remoteIP, _, err := net.SplitHostPort(req.RemoteAddr)
-			if err != nil {
-				remoteIP = req.RemoteAddr
-			}
-			httpsec.SetSecurityEventTags(span, events, remoteIP, args.Headers, c.Writer.Header())
-		}
-		instrumentation.SetTags(span, op.Tags())
-	}
+	httpWrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.Request = r
+		c.Next()
+	})
+	httpsec.WrapHandler(httpWrapper, span, params, func() {
+		c.Abort()
+	}).ServeHTTP(c.Writer, c.Request)
 }

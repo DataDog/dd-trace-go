@@ -20,6 +20,7 @@ func Example() {
 	spans := mt.FinishedSpans()
 	if len(spans) != 1 {
 		// should only have 1 span
+		panic("expected 1 span")
 	}
 
 	// Run assertions...

@@ -7,11 +7,13 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/go-redis/redis/v7"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const debug = false
@@ -59,10 +62,15 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
+	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestClient(t *testing.T) {
-	opts := &redis.Options{Addr: "127.0.0.1:6379"}
+	opts := &redis.Options{Addr: "127.0.0.1:6379", DB: 15}
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -81,6 +89,11 @@ func TestClient(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
+	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("15", span.Tag("out.db"))
+	assert.Equal(15, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestWrapClient(t *testing.T) {
@@ -138,6 +151,9 @@ func TestWrapClient(t *testing.T) {
 			assert.Equal("my-redis", span.Tag(ext.ServiceName))
 			assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 			assert.Equal("3", span.Tag("redis.args_length"))
+			assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+			assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+			assert.Equal("redis", span.Tag(ext.DBSystem))
 		})
 	}
 }
@@ -148,9 +164,10 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
 		config := &ddtrace.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"out.db":   "0",
-			"out.host": "127.0.0.1",
-			"out.port": "6379",
+			"out.db":                  "0",
+			"out.host":                "127.0.0.1",
+			"out.port":                "6379",
+			"db.redis.database_index": 0,
 		}
 
 		additionalTagOptions := additionalTagOptions(simpleClient)
@@ -170,7 +187,8 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 		failoverClient := redis.NewUniversalClient(failoverClientOpts)
 		config := &ddtrace.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
-			"out.db": "0",
+			"out.db":                  "0",
+			"db.redis.database_index": 0,
 		}
 
 		additionalTagOptions := additionalTagOptions(failoverClient)
@@ -225,6 +243,11 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
+	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -242,6 +265,11 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("my-redis", span.Tag(ext.ServiceName))
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
+	assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal("redis", span.Tag(ext.DBSystem))
+	assert.Equal("0", span.Tag("out.db"))
+	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -323,6 +351,11 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
+		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
+		assert.Equal("0", span.Tag("out.db"))
+		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -344,6 +377,45 @@ func TestError(t *testing.T) {
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
+		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
+		assert.Equal("0", span.Tag("out.db"))
+		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	})
+
+	t.Run("errcheck", func(t *testing.T) {
+		opts := &redis.Options{Addr: "127.0.0.1:6379"}
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		errCheckFn := func(err error) bool {
+			return err != nil && !errors.Is(err, context.Canceled)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		client := NewClient(opts, WithServiceName("my-redis"), WithErrorCheck(errCheckFn))
+		client = client.WithContext(ctx)
+
+		_, err := client.Get("test_key").Result()
+
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		span := spans[0]
+
+		assert.Equal(context.Canceled, err)
+		assert.Empty(span.Tag(ext.Error))
+		assert.Equal("redis.command", span.OperationName())
+		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
+		assert.Equal("6379", span.Tag(ext.TargetPort))
+		assert.Equal("get test_key: ", span.Tag("redis.raw_command"))
+		assert.Equal("go-redis/redis.v7", span.Tag(ext.Component))
+		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal("redis", span.Tag(ext.DBSystem))
+		assert.Equal("0", span.Tag("out.db"))
+		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {
@@ -451,4 +523,22 @@ func TestWithContext(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []ClientOption
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
+		st := client.Set("test_key", "test_value", 0)
+		require.NoError(t, st.Err())
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }

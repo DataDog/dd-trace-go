@@ -14,21 +14,20 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"os"
+	"reflect"
 	"strings"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // Callback represents a function that can process a remote config update.
 // A Callback function can be registered to a remote config client to automatically
 // react upon receiving updates. This function returns the configuration processing status
 // for each config file received through the update.
-type Callback func(u ProductUpdate) map[string]rc.ApplyStatus
+type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
@@ -42,50 +41,23 @@ const (
 	ASMIPBlocking
 	// ASMDDRules represents the capability to update the rules used by the ASM WAF for threat detection
 	ASMDDRules
+	// ASMExclusions represents the capability for ASM to exclude traffic from its protections
+	ASMExclusions
+	// ASMRequestBlocking represents the capability for ASM to block requests based on the HTTP request related WAF addresses
+	ASMRequestBlocking
+	// ASMResponseBlocking represents the capability for ASM to block requests based on the HTTP response related WAF addresses
+	ASMResponseBlocking
+	// ASMUserBlocking represents the capability for ASM to block requests based on user ID
+	ASMUserBlocking
+	// ASMCustomRules represents the capability for ASM to receive and use user-defined security rules
+	ASMCustomRules
+	// ASMCustomRules represents the capability for ASM to receive and use user-defined blocking responses
+	ASMCustomBlockingResponse
 )
-
-// DefaultClientConfig returns the default remote config client configuration
-func DefaultClientConfig() ClientConfig {
-	return ClientConfig{
-		Env:           os.Getenv("DD_ENV"),
-		HTTP:          &http.Client{Timeout: 10 * time.Second},
-		PollInterval:  time.Second * 1,
-		RuntimeID:     globalconfig.RuntimeID(),
-		ServiceName:   globalconfig.ServiceName(),
-		TracerVersion: version.Tag,
-		TUFRoot:       os.Getenv("DD_RC_TUF_ROOT"),
-	}
-}
 
 // ProductUpdate represents an update for a specific product.
 // It is a map of file path to raw file content
 type ProductUpdate map[string][]byte
-
-// ClientConfig contains the required values to configure a remoteconfig client
-type ClientConfig struct {
-	// The address at which the agent is listening for remoteconfig update requests on
-	AgentAddr string
-	// The semantic version of the user's application
-	AppVersion string
-	// The env this tracer is running in
-	Env string
-	// The time interval between two client polls to the agent for updates
-	PollInterval time.Duration
-	// A list of remote config products this client is interested in
-	Products []string
-	// The tracer's runtime id
-	RuntimeID string
-	// The name of the user's application
-	ServiceName string
-	// The semantic version of the tracer
-	TracerVersion string
-	// The base TUF root metadata file
-	TUFRoot string
-	// The capabilities of the client
-	Capabilities []Capability
-	// HTTP is the HTTP client used to receive config updates
-	HTTP *http.Client
-}
 
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
@@ -97,7 +69,7 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks map[string][]Callback
+	callbacks []Callback
 
 	lastError error
 }
@@ -115,11 +87,11 @@ func NewClient(config ClientConfig) (*Client, error) {
 	return &Client{
 		ClientConfig: config,
 		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("http://%s/v0.7/config", config.AgentAddr),
+		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
 		repository:   repo,
 		stop:         make(chan struct{}),
 		lastError:    nil,
-		callbacks:    map[string][]Callback{},
+		callbacks:    []Callback{},
 	}, nil
 }
 
@@ -132,6 +104,7 @@ func (c *Client) Start() {
 		for {
 			select {
 			case <-c.stop:
+				close(c.stop)
 				return
 			case <-ticker.C:
 				c.updateState()
@@ -142,25 +115,32 @@ func (c *Client) Start() {
 
 // Stop stops the client's update poll loop
 func (c *Client) Stop() {
-	close(c.stop)
+	log.Debug("remoteconfig: gracefully stopping the client")
+	c.stop <- struct{}{}
+	select {
+	case <-c.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
 }
 
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		c.lastError = err
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		c.lastError = err
+		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
 		return
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		c.lastError = err
+		log.Debug("remoteconfig: http request error: %v", err)
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -169,41 +149,84 @@ func (c *Client) updateState() {
 		resp.Body.Close()
 	}()
 
-	var update clientGetConfigsResponse
-	err = json.NewDecoder(resp.Body).Decode(&update)
-	if err != nil {
-		c.lastError = err
+	if sc := resp.StatusCode; sc != http.StatusOK {
+		log.Debug("remoteconfig: http request error: response status code is not 200 (OK) but %s", http.StatusText(sc))
 		return
 	}
 
-	err = c.applyUpdate(&update)
-	c.lastError = err
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		return
+	}
+
+	if body := string(respBody); body == `{}` || body == `null` {
+		return
+	}
+
+	var update clientGetConfigsResponse
+	if err := json.Unmarshal(respBody, &update); err != nil {
+		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
+		return
+	}
+
+	c.lastError = c.applyUpdate(&update)
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
-// receives a configuration update for the specified product.
-func (c *Client) RegisterCallback(f Callback, product string) {
-	c.callbacks[product] = append(c.callbacks[product], f)
+// receives configuration updates. It is up to that callback to then decide what to do
+// depending on the product related to the configuration update.
+func (c *Client) RegisterCallback(f Callback) {
+	c.callbacks = append(c.callbacks, f)
+}
+
+// UnregisterCallback removes a previously registered callback from the active callbacks list
+// This remove operation preserves ordering
+func (c *Client) UnregisterCallback(f Callback) {
+	fValue := reflect.ValueOf(f)
+	for i, callback := range c.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+		}
+	}
+}
+
+// RegisterProduct adds a product to the list of products listened by the client
+func (c *Client) RegisterProduct(p string) {
+	c.Products[p] = struct{}{}
+}
+
+// UnregisterProduct removes a product from the list of products listened by the client
+func (c *Client) UnregisterProduct(p string) {
+	delete(c.Products, p)
+}
+
+// RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) RegisterCapability(cap Capability) {
+	c.Capabilities[cap] = struct{}{}
+}
+
+// UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
+// configuration updates
+func (c *Client) UnregisterCapability(cap Capability) {
+	delete(c.Capabilities, cap)
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	productUpdates := make(map[string]ProductUpdate, len(c.Products))
+	for p := range c.Products {
+		productUpdates[p] = make(ProductUpdate)
+	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for _, p := range c.Products {
-			productUpdates[p] = make(ProductUpdate)
-			if strings.Contains(f.Path, p) {
+		for p := range c.Products {
+			// Check the config file path to make sure it belongs to the right product
+			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
 			}
 		}
-	}
-
-	update := rc.Update{
-		TUFRoots:      pbUpdate.Roots,
-		TUFTargets:    pbUpdate.Targets,
-		TargetFiles:   fileMap,
-		ClientConfigs: pbUpdate.ClientConfigs,
 	}
 
 	mapify := func(s *rc.RepositoryState) map[string]string {
@@ -219,43 +242,68 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// Check the repository state before and after the update to detect which configs are not being sent anymore.
 	// This is needed because some products can stop sending configurations, and we want to make sure that the subscribers
 	// are provided with this information in this case
-	stateBefore, _ := c.repository.CurrentState()
-	products, err := c.repository.Update(update)
-	stateAfter, _ := c.repository.CurrentState()
+	stateBefore, err := c.repository.CurrentState()
+	if err != nil {
+		return fmt.Errorf("repository current state error: %v", err)
+	}
+	products, err := c.repository.Update(rc.Update{
+		TUFRoots:      pbUpdate.Roots,
+		TUFTargets:    pbUpdate.Targets,
+		TargetFiles:   fileMap,
+		ClientConfigs: pbUpdate.ClientConfigs,
+	})
+	if err != nil {
+		return fmt.Errorf("repository update error: %v", err)
+	}
+	stateAfter, err := c.repository.CurrentState()
+	if err != nil {
+		return fmt.Errorf("repository current state error after update: %v", err)
+	}
 
 	// Create a config files diff between before/after the update to see which config files are missing
 	mBefore := mapify(&stateBefore)
-	mAfter := mapify(&stateAfter)
-	for k := range mAfter {
+	for k := range mapify(&stateAfter) {
 		delete(mBefore, k)
 	}
 
 	// Set the payload data to nil for missing config files. The callbacks then can handle the nil config case to detect
 	// that this config will not be updated anymore.
-	updatedProducts := make(map[string]bool)
+	updatedProducts := make(map[string]struct{})
 	for path, product := range mBefore {
 		if productUpdates[product] == nil {
 			productUpdates[product] = make(ProductUpdate)
 		}
 		productUpdates[product][path] = nil
-		updatedProducts[product] = true
+		updatedProducts[product] = struct{}{}
 	}
 	// Aggregate updated products and missing products so that callbacks get called for both
 	for _, p := range products {
-		updatedProducts[p] = true
+		updatedProducts[p] = struct{}{}
 	}
 
-	// Performs the callbacks registered for all updated products and update the application status in the repository
-	// (RCTE2)
-	for p := range updatedProducts {
-		for _, fn := range c.callbacks[p] {
-			for path, status := range fn(productUpdates[p]) {
-				c.repository.UpdateApplyStatus(path, status)
+	if len(updatedProducts) == 0 {
+		return nil
+	}
+	// Performs the callbacks registered and update the application status in the repository (RCTE2)
+	// In case of several callbacks handling the same config, statuses take precedence in this order:
+	// 1 - ApplyStateError
+	// 2 - ApplyStateUnacknowledged
+	// 3 - ApplyStateAcknowledged
+	// This makes sure that any product that would need to re-receive the config in a subsequent update will be allowed to
+	statuses := make(map[string]rc.ApplyStatus)
+	for _, fn := range c.callbacks {
+		for path, status := range fn(productUpdates) {
+			if s, ok := statuses[path]; !ok || status.State == rc.ApplyStateError ||
+				s.State == rc.ApplyStateAcknowledged && status.State == rc.ApplyStateUnacknowledged {
+				statuses[path] = status
 			}
 		}
 	}
+	for p, s := range statuses {
+		c.repository.UpdateApplyStatus(p, s)
+	}
 
-	return err
+	return nil
 }
 
 func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
@@ -290,20 +338,27 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		errMsg = c.lastError.Error()
 	}
 
-	pbConfigState := make([]*configState, 0, len(state.Configs))
-	for _, f := range state.Configs {
-		pbConfigState = append(pbConfigState, &configState{
-			ID:         f.ID,
-			Version:    f.Version,
-			Product:    f.Product,
-			ApplyState: f.ApplyStatus.State,
-			ApplyError: f.ApplyStatus.Error,
-		})
+	var pbConfigState []*configState
+	if !hasError {
+		pbConfigState = make([]*configState, 0, len(state.Configs))
+		for _, f := range state.Configs {
+			pbConfigState = append(pbConfigState, &configState{
+				ID:         f.ID,
+				Version:    f.Version,
+				Product:    f.Product,
+				ApplyState: f.ApplyStatus.State,
+				ApplyError: f.ApplyStatus.Error,
+			})
+		}
 	}
 
-	cap := big.NewInt(0)
-	for _, i := range c.Capabilities {
-		cap.SetBit(cap, int(i), 1)
+	capa := big.NewInt(0)
+	for i := range c.Capabilities {
+		capa.SetBit(capa, int(i), 1)
+	}
+	products := make([]string, 0, len(c.Products))
+	for p := range c.Products {
+		products = append(products, p)
 	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
@@ -315,7 +370,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: c.Products,
+			Products: products,
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
@@ -325,7 +380,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 			},
-			Capabilities: cap.Bytes(),
+			Capabilities: capa.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

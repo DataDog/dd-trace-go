@@ -57,8 +57,8 @@ func TestPrioritySampler(t *testing.T) {
 			{
 				in: `{}`,
 				out: map[key]float64{
-					key{"some-service", ""}:       1,
-					key{"obfuscate.http", "none"}: 1,
+					{"some-service", ""}:       1,
+					{"obfuscate.http", "none"}: 1,
 				},
 			},
 			{
@@ -70,10 +70,10 @@ func TestPrioritySampler(t *testing.T) {
 					}
 				}`,
 				out: map[key]float64{
-					key{"obfuscate.http", ""}:      0.9,
-					key{"obfuscate.http", "none"}:  0.9,
-					key{"obfuscate.http", "other"}: 0.8,
-					key{"some-service", ""}:        0.8,
+					{"obfuscate.http", ""}:      0.9,
+					{"obfuscate.http", "none"}:  0.9,
+					{"obfuscate.http", "other"}: 0.8,
+					{"some-service", ""}:        0.8,
 				},
 			},
 			{
@@ -84,12 +84,12 @@ func TestPrioritySampler(t *testing.T) {
 					}
 				}`,
 				out: map[key]float64{
-					key{"my-service", ""}:          0.2,
-					key{"my-service", "none"}:      0.2,
-					key{"obfuscate.http", ""}:      0.8,
-					key{"obfuscate.http", "none"}:  0.8,
-					key{"obfuscate.http", "other"}: 0.8,
-					key{"some-service", ""}:        0.8,
+					{"my-service", ""}:          0.2,
+					{"my-service", "none"}:      0.2,
+					{"obfuscate.http", ""}:      0.8,
+					{"obfuscate.http", "none"}:  0.8,
+					{"obfuscate.http", "other"}: 0.8,
+					{"some-service", ""}:        0.8,
 				},
 			},
 		} {
@@ -390,7 +390,6 @@ func TestRulesSampler(t *testing.T) {
 		s.finished = true
 		return s
 	}
-
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
 		rs := newRulesSampler(nil, nil)
@@ -444,6 +443,46 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules-from-env", func(t *testing.T) {
+		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		for _, tt := range []struct {
+			rules    string
+			spanSrv  string
+			spanName string
+		}{
+			{
+				rules:    `[{"name": "abcd?", "sample_rate": 1.0, "max_per_second":100}]`,
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    `[{"service": "*abcd","max_per_second":100, "sample_rate": 1.0}]`,
+				spanSrv:  "xyzabcd",
+				spanName: "abcde",
+			},
+			{
+				rules:    `[{"service": "?*", "sample_rate": 1.0, "max_per_second":100}]`,
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+		} {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
+				_, rules, _ := samplingRulesFromEnv()
+
+				assert := assert.New(t)
+				rs := newRulesSampler(nil, rules)
+
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
+				result := rs.SampleSpan(span)
+				assert.True(result)
+				assert.Contains(span.Metrics, keySpanSamplingMechanism)
+				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
+				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+			})
+		}
+	})
+
+	t.Run("matching-span-rules", func(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
 			rules    string
@@ -597,13 +636,14 @@ func TestRulesSampler(t *testing.T) {
 	})
 }
 
-func TestRulesSamplerConcurrency(t *testing.T) {
+func TestRulesSamplerConcurrency(_ *testing.T) {
 	rules := []SamplingRule{
 		ServiceRule("test-service", 1.0),
 		NameServiceRule("db.query", "postgres.db", 1.0),
 		NameRule("notweb.request", 1.0),
 	}
 	tracer := newTracer(WithSamplingRules(rules))
+	defer tracer.Stop()
 	span := func(wg *sync.WaitGroup) {
 		defer wg.Done()
 		tracer.StartSpan("db.query", ServiceName("postgres.db")).Finish()

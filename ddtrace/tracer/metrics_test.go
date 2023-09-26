@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,6 +37,7 @@ type testStatsdClient struct {
 	waitCh      chan struct{}
 	n           int
 	closed      bool
+	flushed     int
 }
 
 type testStatsdCall struct {
@@ -46,9 +49,9 @@ type testStatsdCall struct {
 	rate     float64
 }
 
-func withStatsdClient(s statsdClient) StartOption {
+func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 	return func(c *config) {
-		c.statsd = s
+		c.statsdClient = s
 	}
 }
 
@@ -119,6 +122,13 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 			close(tg.waitCh)
 		}
 	}
+	return nil
+}
+
+func (tg *testStatsdClient) Flush() error {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.flushed++
 	return nil
 }
 
@@ -246,6 +256,7 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
 	trc := newUnstartedTracer(withStatsdClient(&tg))
+	defer trc.statsd.Close()
 
 	trc.wg.Add(1)
 	go func() {

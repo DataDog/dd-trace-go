@@ -11,10 +11,10 @@ package appsec
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/waf"
+
+	waf "github.com/DataDog/go-libddwaf"
+	"github.com/stretchr/testify/require"
 )
 
 // Test that internal functions used to set span tags use the correct types
@@ -24,7 +24,7 @@ func TestTagsTypes(t *testing.T) {
 		Version: "1.3.0",
 		Loaded:  10,
 		Failed:  1,
-		Errors:  map[string]interface{}{"test": []string{"1", "2"}},
+		Errors:  map[string][]string{"test": {"1", "2"}},
 	}
 
 	addRulesMonitoringTags(&th, rInfo)

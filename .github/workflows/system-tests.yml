@@ -4,53 +4,113 @@ on:
   push:
     branches:
       - main
+      - release-v*
     tags:
       - "**"
   pull_request:
     branches:
       - "**"
-  workflow_dispatch: {}
+  merge_group:
+  workflow_dispatch:
+      inputs:
+          ref:
+              description: 'System Tests ref/tag/branch'
+              required: true
+              default: main
+              type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
 jobs:
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    # Note: Not using large runners because the jobs spawned by this pipeline
+    # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        weblog-variant:
+          - net-http
+          - echo
+          - chi
+          - gin
+        scenario:
+          - DEFAULT
+          - APPSEC_DISABLED
+          - APPSEC_BLOCKING
+          - APPSEC_BLOCKING_FULL_DENYLIST
+          - APPSEC_REQUEST_BLOCKING
+          - APM_TRACING_E2E
+          - APM_TRACING_E2E_SINGLE_SPAN
+          - APM_TRACING_E2E_OTEL
         include:
-          - library: golang
-            weblog-variant: net-http
-          - library: golang
-            weblog-variant: gorilla
-          - library: golang
-            weblog-variant: echo
-          - library: golang
-            weblog-variant: chi
-          - library: golang
-            weblog-variant: gin
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_FEATURES
+          - weblog-variant: net-http
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
+          # AppSec scenarios that don't depend on the integrations, so we just run on the net/http variant
+          - weblog-variant: net-http
+            scenario: APPSEC_RATE_LIMITER
+          - weblog-variant: net-http
+            scenario: APPSEC_CUSTOM_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_MISSING_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_CORRUPTED_RULES
+          - weblog-variant: net-http
+            scenario: APPSEC_LOW_WAF_TIMEOUT
+          - weblog-variant: net-http
+            scenario: APPSEC_CUSTOM_OBFUSCATION
+          # APM scenarios requiring specific environment settings
+          - scenario: APM_TRACING_E2E
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+          - scenario: APM_TRACING_E2E_SINGLE_SPAN
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+          - scenario: APM_TRACING_E2E_OTEL
+            env:
+              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
+              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_SITE="datadoghq.com"
+
       fail-fast: false
     env:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
+      SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+    name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: 'binaries/dd-trace-go'
 
-      - name: Build
-        run: ./build.sh
+      - name: Build weblog
+        run: ./build.sh -i weblog
+
+      - name: Build runner
+        uses: ./.github/actions/install_runner
+
+      - name: Build agent
+        run: ./build.sh -i agent
 
       - name: Run
-        run: ./run.sh
+        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -60,5 +120,5 @@ jobs:
         uses: actions/upload-artifact@v2
         if: ${{ always() }}
         with:
-          name: logs_${{ matrix.weblog-variant }}
+          name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz

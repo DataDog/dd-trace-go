@@ -22,7 +22,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
+
+const componentName = "olivere/elastic"
+
+func init() {
+	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v5")
+	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v3")
+}
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
 func NewHTTPClient(opts ...ClientOption) *http.Client {
@@ -55,11 +64,15 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag("elasticsearch.method", method),
 		tracer.Tag("elasticsearch.url", url),
 		tracer.Tag("elasticsearch.params", req.URL.Query().Encode()),
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
+		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(req.Context(), "elasticsearch.query", opts...)
+	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.spanName, opts...)
 	defer span.Finish()
 
 	contentEncoding := req.Header.Get("Content-Encoding")

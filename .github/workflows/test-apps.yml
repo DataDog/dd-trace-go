@@ -1,0 +1,56 @@
+name: Test Apps
+
+on:
+  workflow_dispatch: {} # manually
+  schedule:
+    - cron: "0 0 * * *" # nightly
+  pull_request: {} # on pull request
+
+env:
+  DD_ENV: github
+  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}"
+
+jobs:
+  unit-of-work:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    strategy:
+      matrix:
+        include:
+          - job_name: prod
+            api_key: "DD_TEST_APP_API_KEY"
+            datadog_site: datadoghq.com
+          - job_name: staging
+            api_key: "DD_TEST_AND_DEMO_API_KEY"
+            datadog_site: datad0g.com
+    name: "unit-of-work (${{ matrix.job_name }})"
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: 'DataDog/dd-trace-go'
+
+      - uses: datadog/agent-github-action@v1.3
+        with:
+            api_key: ${{ secrets[matrix.api_key] }}
+            datadog_site: ${{ matrix.datadog_site }}
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: true
+
+      - name: "Configure nightly run to last 10 minutes and add nightly:true tag"
+        if: (github.event_name == 'schedule')
+        run: |
+          # 660s is enough time to capture 10 profiles without missing the last one
+          # (TODO: Implement profiler.StopFlush())
+          echo "DD_TEST_APPS_TOTAL_DURATION=660s" >> $GITHUB_ENV
+          echo "DD_TEST_APPS_PROFILE_PERIOD=60s" >> $GITHUB_ENV
+          echo "DD_TAGS=${DD_TAGS} nightly:true" >> $GITHUB_ENV
+
+      - name: Run unit of work app
+        run: |
+          cd ./internal/apps/unit-of-work && ./run.bash

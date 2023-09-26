@@ -1,0 +1,22 @@
+run:
+  deadline: 10m
+  skip-dirs:
+    # This package is an exception and has its own test job (Testing outlier gRPC v1.2).
+    - contrib/google.golang.org/grpc.v12
+  build-tags:
+    - appsec
+linters:
+  disable-all: true
+  enable:
+  - gofmt
+  - gci
+  - revive
+  - bodyclose
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - prefix(gopkg.in/DataDog/dd-trace-go.v1)
+      - default
+    skip-generated: true
+    custom-order: true

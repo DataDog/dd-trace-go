@@ -6,14 +6,15 @@
 package grpcsec_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestUsage(t *testing.T) {
@@ -57,7 +58,7 @@ func TestUsage(t *testing.T) {
 				}))
 			}))
 
-			rpcOp := grpcsec.StartHandlerOperation(grpcsec.HandlerOperationArgs{}, localRootOp)
+			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), grpcsec.HandlerOperationArgs{}, localRootOp)
 
 			for i := 1; i <= expectedRecvOperation; i++ {
 				recvOp := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, rpcOp)

@@ -6,20 +6,27 @@
 package tracer
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/stretchr/testify/assert"
@@ -41,9 +48,11 @@ func withTickChan(ch <-chan time.Time) StartOption {
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
-	client := cfg.statsd
+	client, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer client.Close()
 	require.Equal(t, addr, cfg.dogstatsdAddr)
-	_, err := net.ResolveUDPAddr("udp", addr)
+	_, err = net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 
 	client.Count("name", 1, []string{"tag"}, 1)
@@ -57,7 +66,9 @@ func TestStatsdUDPConnect(t *testing.T) {
 	cfg := newConfig()
 	addr := net.JoinHostPort(defaultHostname, "8111")
 
-	client := cfg.statsd
+	client, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	defer client.Close()
 	require.Equal(t, addr, cfg.dogstatsdAddr)
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
@@ -118,8 +129,11 @@ func TestAutoDetectStatsd(t *testing.T) {
 		conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 		cfg := newConfig()
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
 		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
-		cfg.statsd.Count("name", 1, []string{"tag"}, 1)
+		statsd.Count("name", 1, []string{"tag"}, 1)
 
 		buf := make([]byte, 17)
 		n, err := conn.Read(buf)
@@ -199,8 +213,8 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.DropP0s)
 		assert.Equal(t, cfg.agent.StatsdPort, 8999)
 		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
-			"a": struct{}{},
-			"b": struct{}{},
+			"a": {},
+			"b": {},
 		})
 		assert.True(t, cfg.agent.Stats)
 		assert.True(t, cfg.agent.HasFlag("a"))
@@ -217,8 +231,160 @@ func TestLoadAgentFeatures(t *testing.T) {
 		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
 		assert.True(t, cfg.agent.DropP0s)
 		assert.True(t, cfg.agent.Stats)
-		assert.Equal(t, cfg.agent.StatsdPort, 8999)
+		assert.Equal(t, 8999, cfg.agent.StatsdPort)
 	})
+}
+
+func TestAgentIntegration(t *testing.T) {
+	t.Run("err", func(t *testing.T) {
+		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
+	})
+
+	t.Run("default", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		assert.NotNil(t, cfg.integrations)
+		assert.Equal(t, len(cfg.integrations), 54)
+	})
+
+	t.Run("uninstrumented", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		cfg.loadContribIntegrations([]*debug.Module{})
+		for _, v := range cfg.integrations {
+			assert.False(t, v.Instrumented)
+		}
+	})
+
+	t.Run("OK import", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		ok := MarkIntegrationImported("github.com/go-chi/chi")
+		assert.True(t, ok)
+		cfg.loadContribIntegrations([]*debug.Module{})
+		assert.True(t, cfg.integrations["chi"].Instrumented)
+	})
+
+	t.Run("available", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "github.com/go-redis/redis",
+			Version: "v1.538",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["Redis"].Available)
+		assert.Equal(t, cfg.integrations["Redis"].Version, "v1.538")
+	})
+
+	t.Run("grpc", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.520",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC"].Available)
+		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+	})
+
+	t.Run("grpc v12", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+
+	t.Run("grpc bad", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
+		}))
+		defer srv.Close()
+		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v10.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+}
+
+type contribPkg struct {
+	Dir        string
+	Root       string
+	ImportPath string
+	Name       string
+}
+
+func TestIntegrationEnabled(t *testing.T) {
+	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	var packages []contribPkg
+	stream := json.NewDecoder(strings.NewReader(string(body)))
+	for stream.More() {
+		var out contribPkg
+		err := stream.Decode(&out)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		packages = append(packages, out)
+	}
+	for _, pkg := range packages {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+			continue
+		}
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+	}
 }
 
 func TestTracerOptionsDefaults(t *testing.T) {
@@ -227,7 +393,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := newConfig()
 		assert.Equal(float64(1), c.sampler.(RateSampler).Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
-		assert.Equal("localhost:8126", c.agentAddr)
+		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.agentURL)
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
 		assert.Equal(defaultClient, c.httpClient)
@@ -246,11 +412,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer globalconfig.SetAnalyticsRate(math.NaN())
 			assert := assert.New(t)
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalyticsRate(0.5))
+			tracer := newTracer(WithAnalyticsRate(0.5))
+			defer tracer.Stop()
 			assert.Equal(0.5, globalconfig.AnalyticsRate())
-			newTracer(WithAnalytics(false))
+			tracer = newTracer(WithAnalytics(false))
+			defer tracer.Stop()
 			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			newTracer(WithAnalytics(true))
+			tracer = newTracer(WithAnalytics(true))
+			defer tracer.Stop()
 			assert.Equal(1., globalconfig.AnalyticsRate())
 		})
 
@@ -274,6 +443,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("dogstatsd", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:8125")
 		})
@@ -282,6 +452,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_AGENT_HOST", "my-host")
 			defer os.Unsetenv("DD_AGENT_HOST")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:8125")
 		})
@@ -290,6 +461,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_DOGSTATSD_PORT", "123")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "localhost:123")
 		})
@@ -300,6 +472,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_AGENT_HOST")
 			defer os.Unsetenv("DD_DOGSTATSD_PORT")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "my-host:123")
 		})
@@ -308,12 +481,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_ENV", "testEnv")
 			defer os.Unsetenv("DD_ENV")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, "testEnv", c.env)
 		})
 
 		t.Run("option", func(t *testing.T) {
 			tracer := newTracer(WithDogstatsdAddress("10.1.0.12:4002"))
+			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, c.dogstatsdAddr, "10.1.0.12:4002")
 		})
@@ -323,8 +498,37 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		os.Setenv("DD_AGENT_HOST", "trace-agent")
 		defer os.Unsetenv("DD_AGENT_HOST")
 		tracer := newTracer()
+		defer tracer.Stop()
 		c := tracer.config
-		assert.Equal(t, "trace-agent:8126", c.agentAddr)
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "trace-agent:8126"}, c.agentURL)
+	})
+
+	t.Run("env-agentURL", func(t *testing.T) {
+		t.Run("env", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer()
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
+		})
+
+		t.Run("override-env", func(t *testing.T) {
+			t.Setenv("DD_AGENT_HOST", "testhost")
+			t.Setenv("DD_TRACE_AGENT_PORT", "3333")
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer()
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "custom:1234"}, c.agentURL)
+		})
+
+		t.Run("code-override", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer(WithAgentAddr("testhost:3333"))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+		})
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -333,6 +537,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		env := "production"
 		tracer := newTracer(WithEnv(env))
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(env, c.env)
 	})
@@ -340,6 +545,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace_enabled", func(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.True(t, c.enabled)
 		})
@@ -348,6 +554,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			os.Setenv("DD_TRACE_ENABLED", "false")
 			defer os.Unsetenv("DD_TRACE_ENABLED")
 			tracer := newTracer()
+			defer tracer.Stop()
 			c := tracer.config
 			assert.False(t, c.enabled)
 		})
@@ -362,9 +569,10 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithDebugMode(true),
 			WithEnv("testEnv"),
 		)
+		defer tracer.Stop()
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
-		assert.Equal("ddagent.consul.local:58126", c.agentAddr)
+		assert.Equal(&url.URL{Scheme: "http", Host: "ddagent.consul.local:58126"}, c.agentURL)
 		assert.NotNil(c.globalTags)
 		assert.Equal("v", c.globalTags["k"])
 		assert.Equal("testEnv", c.env)
@@ -435,14 +643,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -451,7 +659,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -460,8 +668,100 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
+		})
+	})
+
+	t.Run("attribute-schema", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, 0, c.spanAttributeSchemaVersion)
+			assert.Equal(t, false, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			assert.Equal(t, 1, c.spanAttributeSchemaVersion)
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
+		})
+
+		t.Run("options", func(t *testing.T) {
+			prev := namingschema.UseGlobalServiceName()
+			defer namingschema.SetUseGlobalServiceName(prev)
+
+			c := newConfig()
+			WithGlobalServiceName(true)(c)
+
+			assert.Equal(t, true, namingschema.UseGlobalServiceName())
+		})
+	})
+
+	t.Run("peer-service", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, false)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("defaults-with-schema-v1", func(t *testing.T) {
+			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Empty(t, c.peerServiceMappings)
+		})
+
+		t.Run("env-vars", func(t *testing.T) {
+			t.Setenv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", "true")
+			t.Setenv("DD_TRACE_PEER_SERVICE_MAPPING", "old:new,old2:new2")
+			c := newConfig()
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+
+		t.Run("options", func(t *testing.T) {
+			c := newConfig()
+			WithPeerServiceDefaults(true)(c)
+			WithPeerServiceMapping("old", "new")(c)
+			WithPeerServiceMapping("old2", "new2")(c)
+			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
+			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+	})
+
+	t.Run("debug-open-spans", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, false, c.debugAbandonedSpans)
+			assert.Equal(t, time.Duration(0), c.spanTimeout)
+		})
+
+		t.Run("debug-on", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, 10*time.Minute, c.spanTimeout)
+		})
+
+		t.Run("timeout-set", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			t.Setenv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Minute, c.spanTimeout)
+		})
+
+		t.Run("with-function", func(t *testing.T) {
+			c := newConfig()
+			WithDebugSpansMode(time.Second)(c)
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Second, c.spanTimeout)
 		})
 	})
 }
@@ -902,4 +1202,154 @@ func TestWithLogStartup(t *testing.T) {
 	assert.False(t, c.logStartup)
 	WithLogStartup(true)(c)
 	assert.True(t, c.logStartup)
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	t.Run("default-off", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig()
+		assert.Equal(0, globalconfig.HeaderTagsLen())
+	})
+	t.Run("single-header", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "Header"
+		newConfig(WithHeaderTags([]string{header}))
+		assert.Equal("http.request.headers.header", globalconfig.HeaderTag(header))
+	})
+
+	t.Run("header-and-tag", func(t *testing.T) {
+		assert := assert.New(t)
+		header := "Header"
+		tag := "tag"
+		newConfig(WithHeaderTags([]string{header + ":" + tag}))
+		assert.Equal("tag", globalconfig.HeaderTag(header))
+	})
+
+	t.Run("multi-header", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal("http.request.headers.2header", globalconfig.HeaderTag("2header"))
+		assert.Equal("3tag", globalconfig.HeaderTag("3header"))
+	})
+
+	t.Run("normalization", func(t *testing.T) {
+		assert := assert.New(t)
+		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
+		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
+		assert.Equal("t!a@g.", globalconfig.HeaderTag("2header"))
+	})
+
+	t.Run("envvar-only", func(t *testing.T) {
+		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+
+		assert := assert.New(t)
+		newConfig()
+
+		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
+		assert.Equal(ext.HTTPRequestHeaders+".2_h_e_a_d_e_r", globalconfig.HeaderTag("2.h.e.a.d.e.r"))
+	})
+
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
+		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
+		newConfig(WithHeaderTags([]string{"expected"}))
+		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
+		assert.Equal(1, globalconfig.HeaderTagsLen())
+	})
+}
+
+func TestHostnameDisabled(t *testing.T) {
+	t.Run("DisabledWithUDS", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "unix://somefakesocket")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+	t.Run("Default", func(t *testing.T) {
+		c := newConfig()
+		assert.True(t, c.enableHostnameDetection)
+	})
+	t.Run("DisableViaEnv", func(t *testing.T) {
+		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.enableHostnameDetection)
+	})
+}
+
+func TestPartialFlushing(t *testing.T) {
+	t.Run("None", func(t *testing.T) {
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Default-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("WithPartialFlushOption", func(t *testing.T) {
+		c := newConfig()
+		WithPartialFlushing(20)(c)
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 20, c.partialFlushMinSpans)
+	})
+}
+
+func TestWithStatsComputation(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig()
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("disabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(false))
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
+		c := newConfig()
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
 }

@@ -1,0 +1,75 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+package tracer
+
+import (
+	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestTelemetryEnabled(t *testing.T) {
+	t.Run("tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		Start(
+			WithDebugStack(false),
+			WithService("test-serv"),
+			WithEnv("test-env"),
+			WithRuntimeMetrics(),
+			WithPeerServiceMapping("key", "val"),
+			WithPeerServiceDefaults(true),
+		)
+		defer Stop()
+
+		assert.True(t, telemetryClient.Started)
+		assert.True(t, telemetryClient.AsmEnabled)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
+		telemetry.Check(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "stats_computation_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
+		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
+		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
+			if initTime, ok := metrics["init_time"]; ok {
+				assert.True(t, initTime > 0)
+				return
+			}
+			t.Fatalf("could not find general init time in telemetry client metrics")
+		}
+		t.Fatalf("could not find tracer namespace in telemetry client metrics")
+	})
+	t.Run("profiler start, tracer start", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+		profiler.Start()
+		defer profiler.Stop()
+		Start(
+			WithService("test-serv"),
+		)
+		defer Stop()
+		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+	})
+	t.Run("orchestrion telemetry", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		Start(WithOrchestrion(map[string]string{"k1": "v1", "k2": "v2"}))
+		defer Stop()
+
+		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", true)
+		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k1", "v1")
+		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_k2", "v2")
+	})
+}

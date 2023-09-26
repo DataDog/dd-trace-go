@@ -33,10 +33,10 @@ func newSpanList(n int) spanList {
 // allows us to read the same content as would have been encoded by
 // the codec.
 func TestPayloadIntegrity(t *testing.T) {
-	assert := assert.New(t)
 	want := new(bytes.Buffer)
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newPayload()
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {

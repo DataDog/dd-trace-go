@@ -194,7 +194,7 @@ func (a *App) CPUProfile(t testing.TB) *CPUProfile {
 	return a.prof
 }
 
-func (a *App) workHandler(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func (a *App) workHandler(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	req := &pb.WorkReq{}
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		http.Error(w, "bad body", http.StatusBadRequest)

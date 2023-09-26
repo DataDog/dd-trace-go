@@ -9,14 +9,13 @@ import (
 	"context"
 	"log"
 
-	sqlite "github.com/mattn/go-sqlite3" // Setup application to use Sqlite
-
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
+	sqlite "github.com/mattn/go-sqlite3" // Setup application to use Sqlite
 )
 
 func Example() {
@@ -87,4 +86,23 @@ func Example_sqlite() {
 	}
 	rows.Close()
 	span.Finish(tracer.WithError(err))
+}
+
+func Example_dbmPropagation() {
+	// The first step is to set the dbm propagation mode when registering the driver. Note that this can also
+	// be done on sqltrace.Open for more granular control over the feature.
+	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBMPropagation(tracer.DBMPropagationModeFull))
+
+	// Followed by a call to Open.
+	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Then, we continue using the database/sql package as we normally would, with tracing.
+	rows, err := db.Query("SELECT name FROM users WHERE age=?", 27)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
 }

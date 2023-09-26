@@ -9,10 +9,14 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "redis.client"
 
 type clientConfig struct {
 	serviceName   string
+	spanName      string
 	analyticsRate float64
 }
 
@@ -20,7 +24,11 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = "redis.client"
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewRedisOutboundOp().GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_REDIS_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

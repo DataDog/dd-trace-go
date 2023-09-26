@@ -36,6 +36,20 @@ func TestReadContainerID(t *testing.T) {
 		`1:name=systemd:/nope
 2:pids:/docker/34dc0b5e626f2c5c4c5170e34b10e7654ce36f0fcd532739f4445baabea03376
 3:cpu:/invalid`: "34dc0b5e626f2c5c4c5170e34b10e7654ce36f0fcd532739f4445baabea03376",
+		`other_line
+12:memory:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+11:rdma:/
+10:freezer:/garden/6f265890-5165-7fab-6b52-18d1
+9:hugetlb:/garden/6f265890-5165-7fab-6b52-18d1
+8:pids:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+7:perf_event:/garden/6f265890-5165-7fab-6b52-18d1
+6:cpu,cpuacct:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+5:net_cls,net_prio:/garden/6f265890-5165-7fab-6b52-18d1
+4:cpuset:/garden/6f265890-5165-7fab-6b52-18d1
+3:blkio:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+2:devices:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1
+1:name=systemd:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1`: "6f265890-5165-7fab-6b52-18d1",
+		"1:name=systemd:/system.slice/garden.service/garden/6f265890-5165-7fab-6b52-18d1": "6f265890-5165-7fab-6b52-18d1",
 	} {
 		id := parseContainerID(strings.NewReader(in))
 		if id != out {
