@@ -350,6 +350,11 @@ func takeStacktrace(n, skip uint) string {
 	return builder.String()
 }
 
+func (s *span) getMeta(key string) (string, bool) {
+	v, ok := s.Meta[key]
+	return v, ok
+}
+
 // setMeta sets a string tag. This method is not safe for concurrent use.
 func (s *span) setMeta(key, v string) {
 	if s.Meta == nil {

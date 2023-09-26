@@ -221,6 +221,10 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 	return val, ok
 }
 
+func (c *spanContext) getMeta(key string) (string, bool) {
+	return c.meta(key)
+}
+
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
@@ -487,11 +491,12 @@ func setPeerService(s *span, cfg *config) {
 		if !shouldSetDefaultPeerService {
 			return
 		}
-		source := setPeerServiceFromSource(s)
+		val, source := getPeerServiceFromSource(s)
 		if source == "" {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
 			return
 		}
+		s.setMeta(ext.PeerService, val)
 		s.setMeta(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
@@ -502,13 +507,21 @@ func setPeerService(s *span, cfg *config) {
 	}
 }
 
-// setPeerServiceFromSource sets peer.service from the sources determined
-// by the tags on the span. It returns the source tag name that it used for
+type spanMetaGetter interface {
+	getMeta(tag string) (string, bool)
+}
+
+// getPeerServiceFromSource returns the value of peer.service from the sources determined
+// by the tags on the span. It returns both the peer.service value and source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
-func setPeerServiceFromSource(s *span) string {
+func getPeerServiceFromSource(s spanMetaGetter) (string, string) {
 	has := func(tag string) bool {
-		_, ok := s.Meta[tag]
+		_, ok := s.getMeta(tag)
 		return ok
+	}
+	get := func(tag string) string {
+		v, _ := s.getMeta(tag)
+		return v
 	}
 	var sources []string
 	useTargetHost := true
@@ -522,7 +535,7 @@ func setPeerServiceFromSource(s *span) string {
 			"tablename",
 			"bucketname",
 		}
-	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
+	case get(ext.DBSystem) == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
 		}
@@ -550,10 +563,9 @@ func setPeerServiceFromSource(s *span) string {
 		}...)
 	}
 	for _, source := range sources {
-		if val, ok := s.Meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
-			return source
+		if val, ok := s.getMeta(source); ok {
+			return val, source
 		}
 	}
-	return ""
+	return "", ""
 }

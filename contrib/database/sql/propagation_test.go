@@ -6,12 +6,16 @@
 package sql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"io"
+	"net/http"
 	"regexp"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
@@ -20,6 +24,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type dummyTransport struct{}
+
+func (d *dummyTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
+	return &http.Response{
+		Body: io.NopCloser(bytes.NewBufferString("{}")),
+	}, nil
+}
+
+type noopLogger struct{}
+
+func (n *noopLogger) Log(_ string) {
+	return
+}
+
 func TestDBMPropagation(t *testing.T) {
 	// Ensure the global service name is set to the previous value after we finish the test, since the
 	// tracer.WithService option overrides it.
@@ -27,15 +45,18 @@ func TestDBMPropagation(t *testing.T) {
 	defer globalconfig.SetServiceName(prevServiceName)
 
 	testCases := []struct {
-		name     string
-		opts     []RegisterOption
-		callDB   func(ctx context.Context, db *sql.DB) error
-		prepared []string
-		executed []*regexp.Regexp
+		name           string
+		tracerOpts     []tracer.StartOption
+		registerOpts   []RegisterOption
+		opts           []Option
+		skipParentSpan bool
+		callDB         func(ctx context.Context, db *sql.DB) error
+		prepared       []string
+		executed       []*regexp.Regexp
 	}{
 		{
-			name: "prepare",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "prepare",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -43,8 +64,8 @@ func TestDBMPropagation(t *testing.T) {
 			prepared: []string{"SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepare-disabled",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "prepare-disabled",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -52,8 +73,8 @@ func TestDBMPropagation(t *testing.T) {
 			prepared: []string{"SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepare-service",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
+			name:         "prepare-service",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -61,8 +82,8 @@ func TestDBMPropagation(t *testing.T) {
 			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
-			name: "prepare-full",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			name:         "prepare-full",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.PrepareContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -70,8 +91,8 @@ func TestDBMPropagation(t *testing.T) {
 			prepared: []string{"/*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'*/ SELECT 1 from DUAL"},
 		},
 		{
-			name: "query",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "query",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -79,8 +100,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "query-disabled",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "query-disabled",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -88,8 +109,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "query-service",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
+			name:         "query-service",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -97,8 +118,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "query-full",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			name:         "query-full",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.QueryContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -106,8 +127,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0',traceparent='00-00000000000000000000000000000001-[\\da-f]{16}-01'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "exec",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -115,8 +136,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec-disabled",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
+			name:         "exec-disabled",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeDisabled)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -124,8 +145,8 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec-service",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
+			name:         "exec-service",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -133,8 +154,29 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
 		},
 		{
-			name: "exec-full",
-			opts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
+			name:           "exec-service-no-parent-span",
+			skipParentSpan: true,
+			registerOpts:   []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='test.db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
+		},
+		{
+			name:         "exec-service-peer-service",
+			tracerOpts:   []tracer.StartOption{tracer.WithPeerServiceDefaults(true)},
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeService)},
+			opts:         []Option{WithCustomTag(ext.DBName, "peer-service-db")},
+			callDB: func(ctx context.Context, db *sql.DB) error {
+				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
+				return err
+			},
+			executed: []*regexp.Regexp{regexp.MustCompile("/\\*dddbs='peer-service-db',dde='test-env',ddps='test-service',ddpv='1.0.0'\\*/ SELECT 1 from DUAL")},
+		},
+		{
+			name:         "exec-full",
+			registerOpts: []RegisterOption{WithDBMPropagation(tracer.DBMPropagationModeFull)},
 			callDB: func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, "SELECT 1 from DUAL")
 				return err
@@ -145,19 +187,34 @@ func TestDBMPropagation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tracer.Start(tracer.WithService("test-service"), tracer.WithEnv("test-env"), tracer.WithServiceVersion("1.0.0"))
+			tracerOpts := append(tc.tracerOpts,
+				tracer.WithLogger(&noopLogger{}),
+				tracer.WithService("test-service"),
+				tracer.WithEnv("test-env"),
+				tracer.WithServiceVersion("1.0.0"),
+				tracer.WithHTTPClient(&http.Client{Transport: &dummyTransport{}}),
+			)
+			tracer.Start(tracerOpts...)
 			defer tracer.Stop()
 
 			d := &internal.MockDriver{}
-			Register("test", d, tc.opts...)
+			Register("test", d, tc.registerOpts...)
 			defer unregister("test")
 
-			db, err := Open("test", "dn")
+			db, err := Open("test", "dn", tc.opts...)
 			require.NoError(t, err)
 
-			s, ctx := tracer.StartSpanFromContext(context.Background(), "test.call", tracer.WithSpanID(1))
+			var (
+				ctx = context.Background()
+				s   tracer.Span
+			)
+			if !tc.skipParentSpan {
+				s, ctx = tracer.StartSpanFromContext(context.Background(), "test.call", tracer.WithSpanID(1))
+			}
 			err = tc.callDB(ctx, db)
-			s.Finish()
+			if s != nil {
+				s.Finish()
+			}
 
 			require.NoError(t, err)
 			require.Len(t, d.Prepared, len(tc.prepared))

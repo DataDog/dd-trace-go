@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
@@ -74,6 +75,26 @@ type SQLCommentCarrier struct {
 
 // Inject injects a span context in the carrier's Query field as a comment.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
+	var (
+		peerServiceEnabled = false
+		peerServiceSet     = false
+		dbService          = c.DBServiceName
+	)
+	if sCtx, ok := spanCtx.(*spanContext); ok {
+		if v, _ := sCtx.meta(ext.PeerService); v != "" {
+			peerServiceSet = true
+		}
+	}
+	if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+		peerServiceEnabled = tr.config.peerServiceDefaultsEnabled || peerServiceSet
+	}
+	if peerServiceEnabled {
+		if sCtx, ok := spanCtx.(*spanContext); ok {
+			if peerService, _ := getPeerServiceFromSource(sCtx); peerService != "" {
+				dbService = peerService
+			}
+		}
+	}
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
@@ -109,7 +130,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
 		}
-		tags[sqlCommentDBService] = c.DBServiceName
+		tags[sqlCommentDBService] = dbService
 	}
 	c.Query = commentQuery(c.Query, tags)
 	return nil
