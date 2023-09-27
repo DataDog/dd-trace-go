@@ -100,7 +100,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			log.Debug("Error: %v", err)
 		} else {
 			for k, v := range kvPairs {
-				// We may have multiple tags to add 
+				// We may have multiple tags to add
 				opts = append(opts, tracer.Tag(k, v))
 			}
 		}
@@ -162,7 +162,6 @@ func queueName(requestInput middleware.InitializeInput) string {
 	return parts[len(parts)-1]
 }
 
-
 func bucketName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
@@ -181,7 +180,7 @@ func bucketName(requestInput middleware.InitializeInput) string {
 	return ""
 }
 
-func destinationTagValue(requestInput middleware.InitializeInput) (map[string]string) {
+func destinationTagValue(requestInput middleware.InitializeInput) map[string]string {
 	kv := make(map[string]string)
 	k := tags.SNSTopicName
 	var arn string
@@ -287,7 +286,7 @@ func stateMachineName(requestInput middleware.InitializeInput) map[string]string
 	var stateMachineName string
 	var executionArn string
 	var awsAccount string
-	var parts [] string
+	var parts []string
 	kv := make(map[string]string)
 
 	switch params := requestInput.Parameters.(type) {
@@ -338,7 +337,7 @@ func stateMachineName(requestInput middleware.InitializeInput) map[string]string
 	if stateMachineName != "" {
 		kv[tags.SFNStateMachineName] = stateMachineName
 	}
-	if awsAccount {
+	if awsAccount != "" {
 		kv[tags.AWSAccount] = awsAccount
 	}
 	return kv
