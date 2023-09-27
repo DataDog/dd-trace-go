@@ -321,7 +321,7 @@ func stateMachineName(requestInput middleware.InitializeInput) map[string]string
 		kv[tags.SFNStateMachineArn] = stateMachineArn
 		parts = strings.Split(stateMachineArn, ":")
 		stateMachineName = parts[6]
-		awsAccount = parts[5]
+		awsAccount = parts[4]
 	}
 
 	if executionArn != "" {
@@ -332,7 +332,7 @@ func stateMachineName(requestInput middleware.InitializeInput) map[string]string
 		//standard execution arn
 		//arn:aws:states:sa-east-1:123456789012:execution:targetStateMachineName:1234
 		stateMachineName = parts[6]
-		awsAccount = parts[5]
+		awsAccount = parts[4]
 	}
 	if stateMachineName != "" {
 		kv[tags.SFNStateMachineName] = stateMachineName
