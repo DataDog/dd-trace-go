@@ -3,16 +3,20 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package pgx_v5
+package pgx
 
 import (
 	"context"
 	"fmt"
+
+	"log"
 	"os"
 	"testing"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -20,9 +24,35 @@ import (
 )
 
 const (
-	tableName    = "testpgxv5"
-	pgConnString = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+	tableName   = "testpgxv5"
+	postgresDSN = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 )
+
+func prepareDB() (func(), error) {
+	queryDrop := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+	queryCreate := fmt.Sprintf("CREATE TABLE %s (id integer NOT NULL DEFAULT '0', name text)", tableName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, postgresDSN)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	if _, err := conn.Exec(ctx, queryDrop); err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(ctx, queryCreate); err != nil {
+		return nil, err
+	}
+	return func() {
+		if _, err := conn.Exec(context.Background(), queryDrop); err != nil {
+			log.Println(err)
+		}
+	}, nil
+}
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -30,8 +60,56 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	defer sqltest.Prepare(tableName)()
+	cleanup, err := prepareDB()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cleanup()
 	os.Exit(m.Run())
+}
+
+func assertCommonTags(t *testing.T, s mocktracer.Span, qType string) {
+
+}
+
+func TestTraceQuery(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := []Option{
+		WithTraceQuery(true),
+		WithTraceConnect(true),
+		WithTracePrepare(true),
+		WithTraceBatch(true),
+		WithTraceCopyFrom(true),
+	}
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	conn, err := Connect(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+
+	query := fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", tableName)
+	_, err = conn.Query(ctx, query)
+	require.NoError(t, err)
+
+	span.Finish()
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3)
+
+	s0 := spans[0]
+	assert.Equal(t, "pgx.connect", s0.OperationName())
+	assert.Equal(t, "Connect", s0.Tag(ext.ResourceName))
+
+	s1 := spans[1]
+	assert.Equal(t, "pgx.query", s1.OperationName())
+	assert.Equal(t, query, s1.Tag(ext.ResourceName))
+
+	s2 := spans[2]
+	assert.Equal(t, "parent", s2.OperationName())
+	assert.Equal(t, "parent", s2.Tag(ext.ResourceName))
+}
+
+func TestTraceBatch(t *testing.T) {
+
 }
 
 func Test_Tracer(t *testing.T) {
@@ -41,7 +119,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, os.Getenv(pgConnString))
+		conn, err := Connect(ctx, os.Getenv(postgresDSN))
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -89,7 +167,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, pgConnString, WithTraceBatch())
+		conn, err := Connect(ctx, postgresDSN)
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -131,7 +209,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, pgConnString, WithTraceCopyFrom())
+		conn, err := Connect(ctx, postgresDSN)
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -156,7 +234,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, pgConnString, WithTracePrepare())
+		conn, err := Connect(ctx, postgresDSN)
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -172,7 +250,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, pgConnString, WithTraceConnect())
+		conn, err := Connect(ctx, postgresDSN)
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 

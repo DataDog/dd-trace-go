@@ -3,12 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package pgxpool
+package pgx
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -17,26 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	pgConnString = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-)
-
-func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
-	if !ok {
-		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
-		os.Exit(0)
-	}
-	os.Exit(m.Run())
-}
-
-func Test_QueryTracer(t *testing.T) {
+func TestPool(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	ctx := context.Background()
 
-	conn, err := New(ctx, pgConnString)
+	conn, err := NewPool(ctx, postgresDSN)
 	require.NoError(t, err)
 	defer conn.Close()
 
@@ -44,12 +29,10 @@ func Test_QueryTracer(t *testing.T) {
 
 	err = conn.QueryRow(ctx, `select 1`).Scan(&x)
 	require.NoError(t, err)
-
 	assert.Equal(t, 1, x)
 
 	err = conn.QueryRow(ctx, `select 2`).Scan(&x)
 	require.NoError(t, err)
-
 	assert.Equal(t, 2, x)
 
 	assert.Len(t, mt.OpenSpans(), 0)

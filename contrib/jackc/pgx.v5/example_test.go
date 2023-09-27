@@ -3,22 +3,23 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-package pgx_v5_test
+package pgx_test
 
 import (
 	"context"
-	pgxtracer "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5"
 	"log"
+
+	pgxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5"
 
 	"github.com/jackc/pgx/v5"
 )
 
-func Example() {
+func ExampleConnect() {
 	ctx := context.TODO()
 
 	// The package exposes the same connect functions as the regular pgx.v5 library
 	// which sets up a tracer and connects as usual.
-	db, err := pgxtracer.Connect(ctx, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	db, err := pgxtrace.Connect(ctx, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -39,6 +40,24 @@ func Example() {
 	})
 
 	_, err = db.CopyFrom(ctx, []string{"numbers"}, []string{"number"}, copyFromSource)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExamplePool() {
+	ctx := context.TODO()
+
+	// The pgxpool uses the same tracer and is exposed the same way.
+	pool, err := pgxtrace.NewPool(ctx, "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pool.Close()
+
+	var x int
+
+	err = pool.QueryRow(ctx, "SELECT 1").Scan(&x)
 	if err != nil {
 		log.Fatal(err)
 	}
