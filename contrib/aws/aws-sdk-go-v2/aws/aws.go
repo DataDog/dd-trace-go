@@ -95,11 +95,14 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		k, v, err := resourceNameFromParams(in, serviceID)
+		kvPairs, err := resourceNameFromParams(in, serviceID)
 		if err != nil {
 			log.Debug("Error: %v", err)
 		} else {
-			opts = append(opts, tracer.Tag(k, v))
+			for k, v := range kvPairs {
+				// We may have multiple tags to add 
+				opts = append(opts, tracer.Tag(k, v))
+			}
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -117,29 +120,28 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
-	var k, v string
-
+func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (map[string]string, error) {
+	kv := make(map[string]string)
 	switch awsService {
 	case "SQS":
-		k, v = tags.SQSQueueName, queueName(requestInput)
+		kv[tags.SQSQueueName] = queueName(requestInput)
 	case "S3":
-		k, v = tags.S3BucketName, bucketName(requestInput)
+		kv[tags.S3BucketName] = bucketName(requestInput)
 	case "SNS":
-		k, v = destinationTagValue(requestInput)
+		kv = destinationTagValue(requestInput)
 	case "DynamoDB":
-		k, v = tags.DynamoDBTableName, tableName(requestInput)
+		kv[tags.DynamoDBTableName] = tableName(requestInput)
 	case "Kinesis":
-		k, v = tags.KinesisStreamName, streamName(requestInput)
+		kv[tags.KinesisStreamName] = streamName(requestInput)
 	case "EventBridge":
-		k, v = tags.EventBridgeRuleName, ruleName(requestInput)
+		kv[tags.EventBridgeRuleName] = ruleName(requestInput)
 	case "SFN":
-		k, v = tags.SFNStateMachineName, stateMachineName(requestInput)
+		kv = stateMachineName(requestInput)
 	default:
-		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
+		return kv, fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
 	}
 
-	return k, v, nil
+	return kv, nil
 }
 
 func queueName(requestInput middleware.InitializeInput) string {
@@ -160,6 +162,7 @@ func queueName(requestInput middleware.InitializeInput) string {
 	return parts[len(parts)-1]
 }
 
+
 func bucketName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *s3.ListObjectsInput:
@@ -178,37 +181,41 @@ func bucketName(requestInput middleware.InitializeInput) string {
 	return ""
 }
 
-func destinationTagValue(requestInput middleware.InitializeInput) (tag string, value string) {
-	tag = tags.SNSTopicName
-	var s string
+func destinationTagValue(requestInput middleware.InitializeInput) (map[string]string) {
+	kv := make(map[string]string)
+	k := tags.SNSTopicName
+	var arn string
 	switch params := requestInput.Parameters.(type) {
 	case *sns.PublishInput:
 		switch {
 		case params.TopicArn != nil:
-			s = *params.TopicArn
+			arn = *params.TopicArn
 		case params.TargetArn != nil:
-			tag = tags.SNSTargetName
-			s = *params.TargetArn
+			k = tags.SNSTargetName
+			arn = *params.TargetArn
 		default:
-			return "destination", "empty"
+			kv["destination"] = "empty"
+			return kv
 		}
 	case *sns.PublishBatchInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.GetTopicAttributesInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.ListSubscriptionsByTopicInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.RemovePermissionInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.SetTopicAttributesInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.SubscribeInput:
-		s = *params.TopicArn
+		arn = *params.TopicArn
 	case *sns.CreateTopicInput:
-		return tag, *params.Name
+		kv[k] = *params.Name
+		return kv
 	}
-	parts := strings.Split(s, ":")
-	return tag, parts[len(parts)-1]
+	parts := strings.Split(arn, ":")
+	kv[k] = parts[len(parts)-1]
+	return kv
 }
 
 func tableName(requestInput middleware.InitializeInput) string {
@@ -275,27 +282,29 @@ func ruleName(requestInput middleware.InitializeInput) string {
 	return ""
 }
 
-func stateMachineName(requestInput middleware.InitializeInput) string {
+func stateMachineName(requestInput middleware.InitializeInput) map[string]string {
 	var stateMachineArn string
+	var stateMachineName string
+	var executionArn string
+	var awsAccount string
+	var parts [] string
+	kv := make(map[string]string)
 
 	switch params := requestInput.Parameters.(type) {
 	case *sfn.CreateStateMachineInput:
-		return *params.Name
+		kv[tags.SFNStateMachineName] = *params.Name
+		return kv
 	case *sfn.DescribeStateMachineInput:
 		stateMachineArn = *params.StateMachineArn
 	case *sfn.StartExecutionInput:
 		stateMachineArn = *params.StateMachineArn
 	case *sfn.StopExecutionInput:
 		if params.ExecutionArn != nil {
-			executionArnValue := *params.ExecutionArn
-			parts := strings.Split(executionArnValue, ":")
-			return parts[len(parts)-2]
+			executionArn = *params.ExecutionArn
 		}
 	case *sfn.DescribeExecutionInput:
 		if params.ExecutionArn != nil {
-			executionArnValue := *params.ExecutionArn
-			parts := strings.Split(executionArnValue, ":")
-			return parts[len(parts)-2]
+			executionArn = *params.ExecutionArn
 		}
 	case *sfn.ListExecutionsInput:
 		stateMachineArn = *params.StateMachineArn
@@ -304,8 +313,35 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 	case *sfn.DeleteStateMachineInput:
 		stateMachineArn = *params.StateMachineArn
 	}
-	parts := strings.Split(stateMachineArn, ":")
-	return parts[len(parts)-1]
+	if stateMachineArn != "" {
+		// https://docs.aws.amazon.com/step-functions/latest/apireference/API_StartExecution.html#API_StartExecution_RequestSyntax:~:text=Required%3A%20No-,stateMachineArn,-The%20Amazon%20Resource
+		// arn:<partition>:states:<region>:<account-id>:stateMachine:<myStateMachineName>
+		// arn:<partition>:states:<region>:<account-id>:stateMachine:<myStateMachineName>:10
+		// arn:<partition>:states:<region>:<account-id>:stateMachine:<myStateMachineName:PROD>
+		// There are 3 patterns to cover and attempt to capture the `myStateMachineName`, it should always be in index 6
+		kv[tags.SFNStateMachineArn] = stateMachineArn
+		parts = strings.Split(stateMachineArn, ":")
+		stateMachineName = parts[6]
+		awsAccount = parts[5]
+	}
+
+	if executionArn != "" {
+		kv[tags.SFNStateExecutionArn] = executionArn
+		parts := strings.Split(executionArn, ":")
+		//express execution arn
+		//arn:aws:states:sa-east-1:123456789012:express:targetStateMachineName:1234:5678
+		//standard execution arn
+		//arn:aws:states:sa-east-1:123456789012:execution:targetStateMachineName:1234
+		stateMachineName = parts[6]
+		awsAccount = parts[5]
+	}
+	if stateMachineName != "" {
+		kv[tags.SFNStateMachineName] = stateMachineName
+	}
+	if awsAccount {
+		kv[tags.AWSAccount] = awsAccount
+	}
+	return kv
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {

@@ -13,6 +13,8 @@ const (
 
 	AWSAgent      = "aws.agent"
 	AWSService    = "aws_service"
+	AWSAccount    = "aws_account"
+
 	AWSOperation  = "aws.operation"
 	AWSRegion     = "region"
 	AWSRequestID  = "aws.request_id"
@@ -30,6 +32,8 @@ const (
 	EventBridgeRuleName = "rulename"
 
 	SFNStateMachineName = "statemachinename"
+	SFNStateMachineArn = "statemachinearn"
+	SFNStateExecutionArn = "execution_arn"
 
 	S3BucketName = "bucketname"
 )

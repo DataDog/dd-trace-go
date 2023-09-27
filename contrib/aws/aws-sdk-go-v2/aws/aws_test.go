@@ -712,10 +712,153 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "SFN", s.Tag("aws.service"))
 			assert.Equal(t, "SFN", s.Tag("aws_service"))
 			assert.Equal(t, "HelloWorld-StateMachine", s.Tag("statemachinename"))
+			assert.Equal(t, "arn:aws:states:us-west-2:123456789012:stateMachine:HelloWorld-StateMachine", s.Tag("statemachinearn"))
+			assert.Equal(t, "123456789012", s.Tag("aws_account"))
+			assert.Equal(t, "HelloWorld-StateMachine", s.Tag("statemachinename"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
+			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
+			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
+			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		})
+	}
+}
+func TestAppendMiddlewareSfnDescribeExecutionInputStandard(t *testing.T) {
+	tests := []struct {
+		name               string
+		responseStatus     int
+		responseBody       []byte
+		expectedStatusCode int
+	}{
+		{
+			name:               "test mocked sfn failure request",
+			responseStatus:     400,
+			expectedStatusCode: 400,
+		},
+		{
+			name:               "test mocked sfn success request",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(tt.expectedStatusCode)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg)
+
+			sfnClient := sfn.NewFromConfig(awsCfg)
+			sfnClient.DescribeExecution(context.Background(), &sfn.DescribeExecutionInput{
+				ExecutionArn: aws.String("arn:aws:states:sa-east-1:123456789012:execution:targetStateMachineName:1234"),
+			})
+
+			spans := mt.FinishedSpans()
+
+			s := spans[0]
+			assert.Equal(t, "SFN.request", s.OperationName())
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "DescribeExecution", s.Tag("aws.operation"))
+			assert.Equal(t, "SFN", s.Tag("aws.service"))
+			assert.Equal(t, "SFN", s.Tag("aws_service"))
+			assert.Equal(t, "targetStateMachineName", s.Tag("statemachinename"))
+			assert.Equal(t, "123456789012", s.Tag("aws_account"))
+			assert.Equal(t, "arn:aws:states:sa-east-1:123456789012:execution:targetStateMachineName:1234", s.Tag("execution_arn"))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "SFN.DescribeExecution", s.Tag(ext.ResourceName))
+			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
+			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
+			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		})
+	}
+}
+func TestAppendMiddlewareSfnDescribeExecutionInputExpress(t *testing.T) {
+	tests := []struct {
+		name               string
+		responseStatus     int
+		responseBody       []byte
+		expectedStatusCode int
+	}{
+		{
+			name:               "test mocked sfn failure request",
+			responseStatus:     400,
+			expectedStatusCode: 400,
+		},
+		{
+			name:               "test mocked sfn success request",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(tt.expectedStatusCode)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg)
+
+			sfnClient := sfn.NewFromConfig(awsCfg)
+			sfnClient.DescribeExecution(context.Background(), &sfn.DescribeExecutionInput{
+				ExecutionArn: aws.String("arn:aws:states:sa-east-1:123456789012:express:targetStateMachineName:1234:5678"),
+			})
+
+			spans := mt.FinishedSpans()
+
+			s := spans[0]
+			assert.Equal(t, "SFN.request", s.OperationName())
+			assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go-v2")
+			assert.Equal(t, "DescribeExecution", s.Tag("aws.operation"))
+			assert.Equal(t, "SFN", s.Tag("aws.service"))
+			assert.Equal(t, "SFN", s.Tag("aws_service"))
+			assert.Equal(t, "targetStateMachineName", s.Tag("statemachinename"))
+			assert.Equal(t, "123456789012", s.Tag("aws_account"))
+			assert.Equal(t, "arn:aws:states:sa-east-1:123456789012:express:targetStateMachineName:1234:5678", s.Tag("execution_arn"))
+			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
+			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "SFN.DescribeExecution", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
