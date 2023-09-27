@@ -6,8 +6,6 @@
 package fasthttptrace
 
 import (
-	"fmt"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/valyala/fasthttp"
