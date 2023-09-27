@@ -25,7 +25,6 @@ var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
 
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
-	fmt.Println("IN FOR EACH KEY")
 	keys := f.ReqHeader.PeekKeys()
 	for _, key := range keys {
 		sKey := string(key)
