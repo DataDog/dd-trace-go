@@ -52,7 +52,9 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resource := r.Method
 			p := web.GetMatch(*c).RawPattern()
+			route := ""
 			if p != nil {
+				route = p.(string)
 				resource += fmt.Sprintf(" %s", p)
 			} else {
 				warnonce.Do(func() {
@@ -64,6 +66,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 				Resource:   resource,
 				FinishOpts: cfg.finishOpts,
 				SpanOpts:   cfg.spanOpts,
+				Route:      route,
 			})
 		})
 	}

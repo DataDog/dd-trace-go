@@ -91,6 +91,7 @@ func TestTraceWithRouter(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal("zenazn/goji.v1/web", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal("/user/:id", span.Tag(ext.HTTPRoute))
 }
 
 func TestError(t *testing.T) {
