@@ -40,5 +40,4 @@ func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error)
 // the metadata implementation.
 func (f *FastHTTPHeadersCarrier) Set(key, val string) {
 	f.ReqHeader.Set(key, val)
-	fmt.Printf("req header: %v, value %v\n", key, string(f.ReqHeader.Peek(key)))
 }
