@@ -107,7 +107,6 @@ func (c *SQLCommentCarrier) getDBService() string {
 
 // Inject injects a span context in the carrier's Query field as a comment.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
-
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
