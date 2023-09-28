@@ -12,7 +12,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// StartSpanFromFastHTTPContext returns a new span with the given operation name and options.
+// StartSpanFromContext returns a new span with the given operation name and options.
 // If a span is found in the `fctx`, it will be used as the parent of the resulting span.
 // The resulting span is then set on the `fctx`.
 // If the ChildOf option is passed, it will only be used as the parent if there is no span found in `fctx`.
