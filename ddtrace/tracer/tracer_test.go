@@ -414,7 +414,7 @@ func TestSamplingDecision(t *testing.T) {
 		span := tracer.StartSpan("name_1").(*span)
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
-		p, ok := span.context.samplingPriority()
+		p, ok := span.context.SamplingPriority()
 		require.True(t, ok)
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
@@ -1143,7 +1143,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
-	p, ok := s.context.samplingPriority()
+	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
 	s.Finish()
@@ -1185,7 +1185,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
-		p, ok := s.context.samplingPriority()
+		p, ok := s.context.SamplingPriority()
 		assert.True(ok)
 		assert.EqualValues(p, prio)
 
