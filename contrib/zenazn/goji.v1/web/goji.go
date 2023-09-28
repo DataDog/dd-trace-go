@@ -54,8 +54,8 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 			p := web.GetMatch(*c).RawPattern()
 			route := ""
 			if p != nil {
-				route = p.(string)
-				resource += fmt.Sprintf(" %s", p)
+				route = fmt.Sprintf("%s", p)
+				resource = resource + " " + route
 			} else {
 				warnonce.Do(func() {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
