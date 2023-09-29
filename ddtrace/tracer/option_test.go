@@ -902,7 +902,7 @@ func TestServiceName(t *testing.T) {
 		globalconfig.SetServiceName("")
 		c := newConfig()
 		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))
-		assert.Equal("", globalconfig.ServiceName())
+		assert.Equal(c.serviceName, globalconfig.ServiceName())
 
 		os.Setenv("DD_TAGS", "service:testService")
 		defer os.Unsetenv("DD_TAGS")
