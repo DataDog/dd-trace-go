@@ -24,10 +24,18 @@ function process_integration {
 
 
         if [[ -n "$version" ]]; then
-            # Save version to file along with integration name
-            echo "$integration $version" >> "$output_file"
+            # Save version to file along with dependency name
+            echo "$dependency $version" >> "$output_file"
         else
-            echo "FAILURE: No match found for $integration"
+            # Check for version of the directory name, ie: k8s.io/client-go/kubernetes" -> k8s.io/client-go as a final effort
+            dependency=$(dirname "$integration")
+            version=$(go list -mod=mod -m -f '{{ .Version }}' "$dependency")
+            if [[ -n "$version" ]]; then
+                # Save version to file along with dependency name
+                echo "$dependency $version" >> "$output_file"
+            else
+                echo "FAILURE: No match found for $integration"
+            fi
         fi
         echo
     fi
