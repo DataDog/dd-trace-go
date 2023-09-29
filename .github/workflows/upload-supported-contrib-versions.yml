@@ -1,0 +1,23 @@
+name: Upload Supported Contribs to APM Anayltics
+
+on:
+  pull_request: {} # on pull request
+
+jobs:
+  upload-supported-contribs:
+    runs-on: ubuntu-latest
+    # env:
+    #   add github secret for auth
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: 'DataDog/dd-trace-go'
+      - name: Setup go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 'stable'
+      - name: Collect Supported Contrib Versions
+        run: bash .github/scripts/get-contrib-versions.sh
+      - name: Upload Supported Contrib Versions
+        run: go run .github/scripts/upload-contrib-versions.go

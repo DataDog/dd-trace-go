@@ -1,8 +1,13 @@
 #!/bin/bash
 
-# Define output file
+# Define output file and truncate existing contents
 output_file="supported-integration-versions.txt"
-> $output_file
+
+if [ ! -f "$output_file" ]; then
+    touch "$output_file"
+else
+    > $output_file
+fi
 
 # Function to get the inputted integration's name
 function process_integration {
