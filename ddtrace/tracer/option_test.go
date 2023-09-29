@@ -888,6 +888,15 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
+	t.Run("default to binary name", func(t *testing.T) {
+		defer globalconfig.SetServiceName("")
+		assert := assert.New(t)
+		c := newConfig()
+
+		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
+		assert.Regexp(`tracer\.test(\.exe)?`, globalconfig.ServiceName())
+	})
+
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		globalconfig.SetServiceName("")

@@ -420,11 +420,11 @@ func newConfig(opts ...StartOption) *config {
 		if v, ok := c.globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
 				c.serviceName = s
-				globalconfig.SetServiceName(s)
 			}
 		} else {
 			c.serviceName = filepath.Base(os.Args[0])
 		}
+		globalconfig.SetServiceName(c.serviceName)
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
