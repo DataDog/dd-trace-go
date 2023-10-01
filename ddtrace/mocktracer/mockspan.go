@@ -217,6 +217,8 @@ func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
 
 // String implements fmt.Stringer.
 func (s *mockspan) String() string {
+	s.RLock()
+	defer s.RUnlock()
 	sc := s.context
 	return fmt.Sprintf(`
 name: %s

@@ -75,7 +75,7 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 		for _, arg := range htArgs {
-			_, tag := normalizer.NormalizeHeaderTag(arg)
+			_, tag := normalizer.HeaderTag(arg)
 			assert.NotContains(s.Tags(), tag)
 		}
 	})
@@ -91,7 +91,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
@@ -101,7 +101,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.NormalizeHeaderTag("3header")
+		header, tag := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(header, tag)
 
 		r := setupReq()
@@ -118,7 +118,7 @@ func TestWithHeaderTags(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.NormalizeHeaderTag("3header")
+		globalH, globalT := normalizer.HeaderTag("3header")
 		globalconfig.SetHeaderTag(globalH, globalT)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
@@ -129,7 +129,7 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 
 		for _, arg := range htArgs {
-			header, tag := normalizer.NormalizeHeaderTag(arg)
+			header, tag := normalizer.HeaderTag(arg)
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")

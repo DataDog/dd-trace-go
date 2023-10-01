@@ -21,7 +21,7 @@ type config struct {
 	analyticsRate float64
 	noDebugStack  bool
 	isStatusError func(statusCode int) bool
-	headerTags    func(string) (string, bool)
+	headerTags    *internal.LockMap
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -34,7 +34,7 @@ func defaults(cfg *config) {
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
-	cfg.headerTags = globalconfig.HeaderTag
+	cfg.headerTags = globalconfig.HeaderTagMap()
 	cfg.isStatusError = isServerError
 }
 
@@ -94,15 +94,8 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }

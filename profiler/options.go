@@ -552,12 +552,18 @@ type executionTraceConfig struct {
 	warned bool
 }
 
+// executionTraceEnabledDefault depends on the Go version and CPU architecture,
+// see go_lt_1_21.go and this [article][] for more details.
+//
+// [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
+var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
+
 // Refresh updates the execution trace configuration to reflect any run-time
 // changes to the configuration environment variables, applying defaults as
 // needed.
 func (e *executionTraceConfig) Refresh() {
-	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
-	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
+	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault)
+	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
 	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
 
 	if e.Enabled && (e.Period == 0 || e.Limit == 0) {

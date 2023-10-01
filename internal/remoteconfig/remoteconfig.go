@@ -51,6 +51,8 @@ const (
 	ASMUserBlocking
 	// ASMCustomRules represents the capability for ASM to receive and use user-defined security rules
 	ASMCustomRules
+	// ASMCustomRules represents the capability for ASM to receive and use user-defined blocking responses
+	ASMCustomBlockingResponse
 )
 
 // ProductUpdate represents an update for a specific product.
