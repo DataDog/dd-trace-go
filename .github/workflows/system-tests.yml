@@ -43,6 +43,8 @@ jobs:
           - uds-echo
         scenario:
           - DEFAULT
+          - INTEGRATIONS
+          - CROSSED_TRACING_LIBRARIES
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
