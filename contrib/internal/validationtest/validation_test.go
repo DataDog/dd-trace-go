@@ -99,9 +99,9 @@ func TestIntegrations(t *testing.T) {
 		validationtest.NewGoRedisV7(),
 		validationtest.NewGoRedisV8(),
 		validationtest.NewGoRedisV9(),
-		validationtest.NewMemcache(),
 		validationtest.NewGaryBurdRedigo(),
 		validationtest.NewGoModuleRedigo(),
+		validationtest.NewMemcache(),
 	}
 
 	testCases := []struct {
