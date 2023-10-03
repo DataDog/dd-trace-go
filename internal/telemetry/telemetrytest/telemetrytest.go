@@ -89,6 +89,8 @@ func (c *MockClient) Count(ns telemetry.Namespace, name string, val float64, tag
 func (c *MockClient) Stop() {
 }
 
-// ApplyOps is NOOP for the mock client.
-func (c *MockClient) ApplyOps(_ ...telemetry.Option) {
+// ApplyOps is used to record the number of ApplyOps method calls.
+func (c *MockClient) ApplyOps(args ...telemetry.Option) {
+	c.On("ApplyOps", args).Return()
+	_ = c.Called(args)
 }
