@@ -17,7 +17,5 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 'stable'
-      - name: Collect Supported Contrib Versions
-        run: bash .github/scripts/get-contrib-versions.sh
-      - name: Upload Supported Contrib Versions
-        run: go run .github/scripts/upload-contrib-versions.go
+      - name: Get Supported Contrib Versions and Upload to APM Telemetry
+        run: go run .github/scripts/get-contrib-version-and-upload.go --dry-run
