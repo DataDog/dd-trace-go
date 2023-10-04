@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,10 +30,6 @@ type Integration struct {
 	Version        string `json:"integration_version"`
 	DependencyName string `json:"dependency_name"`
 }
-
-const (
-	apiEndpoint = "https://example.com/api"
-)
 
 func main() {
 
@@ -157,26 +151,27 @@ func main() {
 			log.Fatalf("Error print the payload: %s", err)
 		}
 		fmt.Print(string(b))
-	} else {
-		// Convert payload to JSON
-		jsonPayload, err := json.Marshal(payload)
-		if err != nil {
-			log.Fatalf("Error encoding the payload: %s", err)
-		}
-
-		// Post JSON payload to API endpoint
-		resp, err := http.Post(apiEndpoint, "application/json", strings.NewReader(string(jsonPayload)))
-		if err != nil {
-			log.Fatalf("Error posting the payload: %s", err)
-		}
-		defer resp.Body.Close()
-
-		// Read the response
-		responseBody, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Fatalf("Error reading the response body: %s", err)
-		}
-
-		fmt.Println("Response:", string(responseBody))
 	}
+	// else {
+	// 	// Convert payload to JSON
+	// 	jsonPayload, err := json.Marshal(payload)
+	// 	if err != nil {
+	// 		log.Fatalf("Error encoding the payload: %s", err)
+	// 	}
+
+	// 	// Post JSON payload to API endpoint
+	// 	resp, err := http.Post(apiEndpoint, "application/json", strings.NewReader(string(jsonPayload)))
+	// 	if err != nil {
+	// 		log.Fatalf("Error posting the payload: %s", err)
+	// 	}
+	// 	defer resp.Body.Close()
+
+	// 	// Read the response
+	// 	responseBody, err := ioutil.ReadAll(resp.Body)
+	// 	if err != nil {
+	// 		log.Fatalf("Error reading the response body: %s", err)
+	// 	}
+
+	// 	fmt.Println("Response:", string(responseBody))
+	// }
 }
