@@ -18,7 +18,7 @@ type Payload struct {
 		Type       string `json:"type"`
 		ID         string `json:"id"`
 		Attributes struct {
-			TracerLanguage string        `json:"tracer_language"`
+			TracerLanguage string        `json:"language_name"`
 			TracerVersion  string        `json:"tracer_version"`
 			Integrations   []Integration `json:"integrations"`
 		} `json:"attributes"`
