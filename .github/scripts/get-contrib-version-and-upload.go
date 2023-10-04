@@ -146,7 +146,7 @@ func main() {
 
 	if *dryRun {
 		// Print payload
-		b, err := json.MarshalIndent(payload, "", "  ")
+		b, err := json.Marshal(payload)
 		if err != nil {
 			log.Fatalf("Error print the payload: %s", err)
 		}
