@@ -33,6 +33,25 @@ const (
 	gormSpanStartTimeKey = key("dd-trace-go:span")
 )
 
+type GormTracePlugin struct {
+	options []Option
+}
+
+func New(opts ...Option) GormTracePlugin {
+	return GormTracePlugin{
+		options: opts,
+	}
+}
+
+func (GormTracePlugin) Name() string {
+	return "GormTracePlugin"
+}
+
+func (g GormTracePlugin) Initialize(db *gorm.DB) error {
+	_, err := withCallbacks(db, g.options...)
+	return err
+}
+
 // Open opens a new (traced) database connection. The used driver must be formerly registered
 // using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
 func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB, error) {
