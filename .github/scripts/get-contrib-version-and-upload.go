@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 type Payload struct {
@@ -37,7 +39,7 @@ func main() {
 	payload.Data.Type = "supported_integrations"
 	payload.Data.ID = "1" // add UTC id here
 	payload.Data.Attributes.TracerLanguage = "golang"
-	payload.Data.Attributes.TracerVersion = "add-version-here"
+	payload.Data.Attributes.TracerVersion = version.Tag
 
 	// Function to get the inputted integration's name
 	processIntegration := func(integration string) {
