@@ -59,7 +59,7 @@ func main() {
 				cmd = exec.Command("go", "list", "-mod=mod", "-m", "-f", "{{ .Version }}", dependency)
 				output, err = cmd.Output()
 				if err != nil {
-					fmt.Println("FAILURE: No match found for", integration)
+					// fmt.Println("FAILURE: No match found for", integration)
 					return
 				}
 			}
@@ -123,7 +123,7 @@ func main() {
 				cmd := exec.Command("grep", "-E", variable+"\\s*=", file)
 				output, err := cmd.Output()
 				if err != nil {
-					fmt.Println("No match found for", file)
+					// fmt.Println("No match found for", file)
 					continue
 				}
 
@@ -134,7 +134,7 @@ func main() {
 					// parse the version
 					processIntegration(value)
 				} else {
-					fmt.Println("No match found for", file)
+					// fmt.Println("No match found for", file)
 				}
 			}
 		}
