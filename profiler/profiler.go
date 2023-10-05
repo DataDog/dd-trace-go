@@ -125,6 +125,9 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		return nil, errors.New("profiling not supported in AWS Lambda runtimes")
+	}
 	cfg, err := defaultConfig()
 	if err != nil {
 		return nil, err

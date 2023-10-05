@@ -424,6 +424,8 @@ func newConfig(opts ...StartOption) *config {
 				globalconfig.SetServiceName(s)
 			}
 		} else {
+			// There is not an explicit service set, default to binary name.
+			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
