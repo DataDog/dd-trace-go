@@ -30,15 +30,21 @@ func TestAppSec(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	rig, err := newRig(false)
-	require.NoError(t, err)
-	defer rig.Close()
+	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newRig(false)
+		require.NoError(t, err)
 
-	client := rig.client
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
 
 	t.Run("unary", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, mt, cleanup := setup()
+		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
@@ -58,8 +64,8 @@ func TestAppSec(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, mt, cleanup := setup()
+		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log"))
@@ -110,15 +116,21 @@ func TestBlocking(t *testing.T) {
 		t.Skip("appsec disabled")
 	}
 
-	rig, err := newRig(false)
-	require.NoError(t, err)
-	defer rig.Close()
+	setup := func() (FixtureClient, mocktracer.Tracer, func()) {
+		rig, err := newRig(false)
+		require.NoError(t, err)
 
-	client := rig.client
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
 
 	t.Run("unary-block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, mt, cleanup := setup()
+		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
@@ -136,8 +148,8 @@ func TestBlocking(t *testing.T) {
 	})
 
 	t.Run("unary-no-block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, _, cleanup := setup()
+		defer cleanup()
 
 		// Send a XSS attack in the payload along with the canary value in the RPC metadata
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
@@ -148,8 +160,8 @@ func TestBlocking(t *testing.T) {
 	})
 
 	t.Run("stream-block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, mt, cleanup := setup()
+		defer cleanup()
 
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.4"))
 		stream, err := client.StreamPing(ctx)
@@ -168,8 +180,8 @@ func TestBlocking(t *testing.T) {
 	})
 
 	t.Run("stream-no-block", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		client, _, cleanup := setup()
+		defer cleanup()
 
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("dd-canary", "dd-test-scanner-log", "x-client-ip", "1.2.3.5"))
 		stream, err := client.StreamPing(ctx)
@@ -280,7 +292,7 @@ func TestUserBlocking(t *testing.T) {
 	})
 
 	t.Run("stream-no-block", func(t *testing.T) {
-		client, mt, cleanup := setup()
+		client, _, cleanup := setup()
 		defer cleanup()
 
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("user-id", "legit user"))
