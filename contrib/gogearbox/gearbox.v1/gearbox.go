@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/gogearbox/gearbox.v1/internal/gearboxutil"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/fasthttptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -46,19 +46,14 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		fctx := gctx.Context()
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
 		// Create an instance of FasthttpCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
-		fcc := &gearboxutil.FastHTTPHeadersCarrier{
+		fcc := &fasthttptrace.FastHTTPHeadersCarrier{
 			ReqHeader: &fctx.Request.Header,
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
 			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
 		}
-		span, _ := tracer.StartSpanFromContext(fctx, "http.request", spanOpts...)
+		span := fasthttptrace.StartSpanFromContext(fctx, "http.request", spanOpts...)
 		defer span.Finish()
-
-		// Set the span on the request context
-		tracer.WithContextKey(func(key interface{}) {
-			fctx.SetUserValue(key, span)
-		})
 
 		gctx.Next()
 

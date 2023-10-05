@@ -27,19 +27,6 @@ func TestContextWithSpan(t *testing.T) {
 	assert.Equal(got, want)
 }
 
-// Test that WithContextKey does something with activeSpanKey
-func TestWithContextKey(t *testing.T) {
-	ctx := context.Background()
-	want := "value"
-	whateverFunc := func(key interface{}) {
-		ctx = context.WithValue(ctx, key, want)
-	}
-	WithContextKey(whateverFunc)
-	got := ctx.Value(activeSpanKey)
-	assert := assert.New(t)
-	assert.Equal(want, got)
-}
-
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)

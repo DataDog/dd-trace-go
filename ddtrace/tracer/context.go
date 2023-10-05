@@ -18,13 +18,6 @@ func ContextWithSpan(ctx context.Context, s Span) context.Context {
 	return context.WithValue(ctx, internal.ActiveSpanKey, s)
 }
 
-// WithContextKey provides activeSpanKey to the closure of function f. This is
-// a helper function for logic outside of the tracer package that needs the
-// contextKey type, in favor of keeping contextKey private.
-func WithContextKey(f func(key interface{})) {
-	f(activeSpanKey)
-}
-
 // SpanFromContext returns the span contained in the given context. A second return
 // value indicates if a span was found in the context. If no span is found, a no-op
 // span is returned.
