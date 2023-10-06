@@ -141,6 +141,22 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v)
 		return
 	}
+	if value != nil {
+		switch reflect.TypeOf(value).Kind() {
+		case reflect.Slice:
+			slice := reflect.ValueOf(value)
+			for i := 0; i < slice.Len(); i++ {
+				key := fmt.Sprintf("%s.%d", key, i)
+				v := slice.Index(i)
+				if num, ok := toFloat64(v.Interface()); ok {
+					s.setMetric(key, num)
+				} else {
+					s.setMeta(key, fmt.Sprintf("%s", v))
+				}
+			}
+			return
+		}
+	}
 	if v, ok := toFloat64(value); ok {
 		s.setMetric(key, v)
 		return
