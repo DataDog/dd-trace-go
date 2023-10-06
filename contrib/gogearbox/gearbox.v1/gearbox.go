@@ -45,7 +45,6 @@ func Middleware(opts ...Option) func(gctx gearbox.Context) {
 		}
 		fctx := gctx.Context()
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
-		// Create an instance of FasthttpCarrier, which embeds *fasthttp.RequestCtx and implements TextMapReader
 		fcc := &fasthttptrace.FastHTTPHeadersCarrier{
 			ReqHeader: &fctx.Request.Header,
 		}
