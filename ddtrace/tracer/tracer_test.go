@@ -222,7 +222,8 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("deadlock/direct", func(t *testing.T) {
-		tr, _, _, stop := startTestTracer(t)
+		tr, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tr.pushChunk(&chunk{spans: []*span{}}) // blocks until worker is started
 		select {
@@ -344,7 +345,8 @@ func TestTracerStartSpan(t *testing.T) {
 func TestSamplingDecision(t *testing.T) {
 
 	t.Run("sampled", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -360,7 +362,8 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_sent", func(t *testing.T) {
 		// Even if DropP0s is enabled, spans should always be kept unless
 		// client-side stats are also enabled.
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -375,7 +378,8 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("dropped_stats", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
@@ -393,7 +397,8 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("events_sampled", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
@@ -409,7 +414,8 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_dropped", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
@@ -439,7 +445,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		// Stats are enabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
@@ -469,7 +476,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		// Stats are disabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
@@ -497,7 +505,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		// Rules are available, but match nothing. Trace sample rate equals 0.
 		// The trace should be dropped. No single spans extracted.
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
@@ -525,7 +534,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		// Rules are available. Trace sample rate equals 1. Span sample rate equals 1.
 		// The trace should be kept. No single spans extracted.
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -551,7 +561,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		// Don't allow the rate limiter to reset while the test is running.
 		current := time.Now()
 		nowTime = func() time.Time { return current }
@@ -594,7 +605,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
@@ -630,7 +642,8 @@ func TestSamplingDecision(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
@@ -908,7 +921,8 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert := assert.New(t)
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &spanContext{
@@ -1166,9 +1180,10 @@ func TestTracerPrioritySampler(t *testing.T) {
 	}))
 	url := "http://" + srv.Listener.Addr().String()
 
-	tr, _, flush, stop := startTestTracer(t,
+	tr, _, flush, stop, err := startTestTracer(t,
 		withTransport(newHTTPTransport(url, defaultClient)),
 	)
+	assert.Nil(err)
 	defer stop()
 
 	// default rates (1.0)
@@ -1233,16 +1248,18 @@ func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
 
 	// a sample rate of 0 should sample nothing
-	tracer0, _, _, stop := startTestTracer(t,
+	tracer0, _, _, stop, err := startTestTracer(t,
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(0)),
 	)
+	assert.Nil(err)
 	defer stop()
 	// a sample rate of 1 should sample everything
-	tracer1, _, _, stop := startTestTracer(t,
+	tracer1, _, _, stop, err := startTestTracer(t,
 		withTransport(newDefaultTransport()),
 		WithSampler(NewRateSampler(1)),
 	)
+	assert.Nil(err)
 	defer stop()
 
 	count := payloadQueueSize / 3
@@ -1260,7 +1277,8 @@ func TestTracerEdgeSampler(t *testing.T) {
 
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	// Wait for three different goroutines that should create
@@ -1291,7 +1309,8 @@ func TestTracerConcurrent(t *testing.T) {
 
 func TestTracerParentFinishBeforeChild(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	// Testing an edge case: a child refers to a parent that is already closed.
@@ -1319,7 +1338,8 @@ func TestTracerParentFinishBeforeChild(t *testing.T) {
 
 func TestTracerConcurrentMultipleSpans(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	// Wait for two different goroutines that should create
@@ -1351,7 +1371,8 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 
 func TestTracerAtomicFlush(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	// Make sure we don't flush partial bits of traces
@@ -1386,7 +1407,8 @@ func TestTracerAtomicFlush(t *testing.T) {
 // Changing these spans at the moment of flush would (and did) cause a race
 // condition.
 func TestTracerTraceMaxSize(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	otss, otms := traceStartSize, traceMaxSize
@@ -1426,7 +1448,8 @@ func TestTracerTraceMaxSize(t *testing.T) {
 func TestTracerRace(t *testing.T) {
 	assert := assert.New(t)
 
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	total := payloadQueueSize / 3
@@ -1530,7 +1553,8 @@ func TestTracerRace(t *testing.T) {
 // be using forceFlush() to make sure things are really sent to transport.
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
@@ -1558,7 +1582,8 @@ loop:
 }
 
 func TestPushPayload(t *testing.T) {
-	tracer, _, flush, stop := startTestTracer(t)
+	tracer, _, flush, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	s := newBasicSpan("3MB")
@@ -1611,7 +1636,8 @@ func TestPushTrace(t *testing.T) {
 
 func TestTracerFlush(t *testing.T) {
 	// https://github.com/DataDog/dd-trace-go/issues/377
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	t.Run("direct", func(t *testing.T) {
@@ -1656,7 +1682,8 @@ func TestTracerReportsHostname(t *testing.T) {
 		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
 		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root").(*span)
@@ -1676,7 +1703,8 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root").(*span)
@@ -1693,7 +1721,8 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 
 	t.Run("WithHostname", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithHostname(hostname))
+		tracer, _, _, stop, err := startTestTracer(t, WithHostname(hostname))
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root").(*span)
@@ -1716,7 +1745,8 @@ func TestTracerReportsHostname(t *testing.T) {
 		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
 		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root").(*span)
@@ -1736,7 +1766,8 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_SOURCE_HOSTNAME/unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root").(*span)
@@ -1755,7 +1786,8 @@ func TestTracerReportsHostname(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	t.Run("normal", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"))
+		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1764,8 +1796,9 @@ func TestVersion(t *testing.T) {
 		assert.Equal("4.5.6", v)
 	})
 	t.Run("service", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
 			WithService("servenv"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1774,7 +1807,8 @@ func TestVersion(t *testing.T) {
 		assert.False(ok)
 	})
 	t.Run("universal", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithService("servenv"), WithUniversalVersion("4.5.6"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("servenv"), WithUniversalVersion("4.5.6"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1784,8 +1818,9 @@ func TestVersion(t *testing.T) {
 		assert.Equal("4.5.6", v)
 	})
 	t.Run("service/universal", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithServiceVersion("4.5.6"),
+		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
 			WithService("servenv"), WithUniversalVersion("1.2.3"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1795,8 +1830,9 @@ func TestVersion(t *testing.T) {
 		assert.Equal("1.2.3", v)
 	})
 	t.Run("universal/service", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithUniversalVersion("1.2.3"),
+		tracer, _, _, stop, err := startTestTracer(t, WithUniversalVersion("1.2.3"),
 			WithServiceVersion("4.5.6"), WithService("servenv"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1808,7 +1844,8 @@ func TestVersion(t *testing.T) {
 
 func TestEnvironment(t *testing.T) {
 	t.Run("normal", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithEnv("test"))
+		tracer, _, _, stop, err := startTestTracer(t, WithEnv("test"))
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1818,7 +1855,8 @@ func TestEnvironment(t *testing.T) {
 	})
 
 	t.Run("unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		assert := assert.New(t)
@@ -1834,7 +1872,8 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 
@@ -1854,7 +1893,8 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 
@@ -1870,7 +1910,8 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 
@@ -1889,7 +1930,8 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 
@@ -1905,7 +1947,8 @@ func TestGitMetadata(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	assert.Nil(b, err)
 	defer stop()
 
 	b.ResetTimer()
@@ -1941,7 +1984,8 @@ func BenchmarkPartialFlushing(b *testing.B) {
 }
 
 func genBigTraces(b *testing.B) {
-	tracer, transport, flush, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	tracer, transport, flush, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	assert.Nil(b, err)
 	defer stop()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1989,7 +2033,8 @@ func genBigTraces(b *testing.B) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	assert.Nil(b, err)
 	defer stop()
 
 	for n := 0; n < b.N; n++ {
@@ -1999,7 +2044,8 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 }
 
 func BenchmarkStartSpan(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	assert.Nil(b, err)
 	defer stop()
 
 	root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
@@ -2016,7 +2062,7 @@ func BenchmarkStartSpan(b *testing.B) {
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
-func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
+func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func(), err error) {
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
@@ -2024,7 +2070,9 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		withTickChan(tick),
 	}, opts...)
 	tracer, err := newTracer(o...)
-	assert.NoError(t, err)
+	if err != nil {
+		return tracer, transport, nil, nil, err
+	}
 	internal.SetGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		if n < 0 {
@@ -2050,7 +2098,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	return tracer, transport, flushFunc, func() {
 		internal.SetGlobalTracer(&internal.NoopTracer{})
 		tracer.Stop()
-	}
+	}, nil
 }
 
 // Mock Transport with a real Encoder
@@ -2211,7 +2259,8 @@ func (w *testTraceWriter) Flushed() []*span {
 }
 
 func TestFlush(t *testing.T) {
-	tr, _, _, stop := startTestTracer(t)
+	tr, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	tw := newTestTraceWriter()
@@ -2375,7 +2424,8 @@ func TestUserMonitoring(t *testing.T) {
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
 func BenchmarkTracerStackFrames(b *testing.B) {
-	tracer, _, _, stop := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	assert.Nil(b, err)
 	defer stop()
 
 	for n := 0; n < b.N; n++ {
@@ -2386,7 +2436,8 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
 	b.Run("no-rules", func(b *testing.B) {
-		tracer, _, _, stop := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b)
+		assert.Nil(b, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -2408,7 +2459,8 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 	b.Run("with-rules/match-half", func(b *testing.B) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		tracer, _, _, stop := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b)
+		assert.Nil(b, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -2434,7 +2486,8 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 	b.Run("with-rules/match-all", func(b *testing.B) {
 		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		tracer, _, _, stop := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b)
+		assert.Nil(b, err)
 		defer stop()
 		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -2466,7 +2519,8 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	// multiple times.
 	defer rt.Stop()
 
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	tracedSpan := tracer.StartSpan("traced").(*span)

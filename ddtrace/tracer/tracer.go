@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"fmt"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -229,7 +230,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("could not initialize statsd client: %v", err)
 	}
 	var writer traceWriter
 	if c.logToStdout {
@@ -240,6 +241,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
 		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
+		return nil, fmt.Errorf("found errors when parsing sampling rules: %v", err)
 	}
 	if traces != nil {
 		c.traceRules = traces

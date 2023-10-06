@@ -282,7 +282,8 @@ func TestReportHealthMetrics(t *testing.T) {
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
 	statsInterval = time.Nanosecond
 
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 	defer stop()
 
 	tracer.StartSpan("operation").Finish()
@@ -298,7 +299,8 @@ func TestReportHealthMetrics(t *testing.T) {
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg testStatsdClient
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)

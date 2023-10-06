@@ -49,7 +49,9 @@ func TestSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
+
 	defer stop()
 
 	parent := &span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
@@ -80,7 +82,8 @@ func TestStartSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
@@ -111,7 +114,8 @@ func TestStartSpanFromContextRace(t *testing.T) {
 }
 
 func Test128(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
@@ -145,7 +149,8 @@ func Test128(t *testing.T) {
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	child, ctx := StartSpanFromContext(nil, "http.request")

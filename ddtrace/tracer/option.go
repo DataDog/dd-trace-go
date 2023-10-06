@@ -293,7 +293,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.hostname, err = os.Hostname()
 		if err != nil {
 			log.Warn("unable to look up hostname: %v", err)
-			return c, err
+			return c, fmt.Errorf("unable to look up hostnamet: %v", err)
 		}
 	}
 	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
