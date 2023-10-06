@@ -1648,7 +1648,7 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
-	t.Run("datadog extract precidence", func(t *testing.T) {
+	t.Run("datadog extract precedence", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "datadog,tracecontext"},
 			{headerPropagationStyleExtract: "datadog,b3"},
