@@ -12,7 +12,7 @@ on:
       - edited
 jobs:
   label_issues:
-    if: contains(github.event.*.labels.*.name, 'contrib')
+    if: contains(github.event.pull_request.title, 'contrib')
     runs-on: ubuntu-latest
     steps:
       # https://github.com/marketplace/actions/actions-ecosystem-add-labels
