@@ -712,8 +712,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
-	assert := assert.New(t)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -728,6 +729,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		// Enable 128 bit trace ids
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		opts128 := []StartSpanOption{
