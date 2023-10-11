@@ -39,25 +39,31 @@ func timeRing(vals ...time.Time) [256]uint64 {
 
 func TestMetricsCompute(t *testing.T) {
 	now := now()
-	prev := runtime.MemStats{
-		TotalAlloc:   100,
-		Mallocs:      10,
-		Frees:        2,
-		HeapAlloc:    75,
-		NumGC:        1,
-		PauseTotalNs: uint64(2 * time.Second),
-		PauseEnd:     timeRing(now.Add(-11 * time.Second)),
-		PauseNs:      valsRing(2 * time.Second),
+	prev := metricsSnapshot{
+		NumGoroutine: 23,
+		MemStats: runtime.MemStats{
+			TotalAlloc:   100,
+			Mallocs:      10,
+			Frees:        2,
+			HeapAlloc:    75,
+			NumGC:        1,
+			PauseTotalNs: uint64(2 * time.Second),
+			PauseEnd:     timeRing(now.Add(-11 * time.Second)),
+			PauseNs:      valsRing(2 * time.Second),
+		},
 	}
-	curr := runtime.MemStats{
-		TotalAlloc:   150,
-		Mallocs:      14,
-		Frees:        30,
-		HeapAlloc:    50,
-		NumGC:        3,
-		PauseTotalNs: uint64(3 * time.Second),
-		PauseEnd:     timeRing(now.Add(-11*time.Second), now.Add(-9*time.Second), now.Add(-time.Second)),
-		PauseNs:      valsRing(time.Second, time.Second/2, time.Second/2),
+	curr := metricsSnapshot{
+		NumGoroutine: 42,
+		MemStats: runtime.MemStats{
+			TotalAlloc:   150,
+			Mallocs:      14,
+			Frees:        30,
+			HeapAlloc:    50,
+			NumGC:        3,
+			PauseTotalNs: uint64(3 * time.Second),
+			PauseEnd:     timeRing(now.Add(-11*time.Second), now.Add(-9*time.Second), now.Add(-time.Second)),
+			PauseNs:      valsRing(time.Second, time.Second/2, time.Second/2),
+		},
 	}
 
 	assert.Equal(t,
@@ -69,6 +75,7 @@ func TestMetricsCompute(t *testing.T) {
 			{metric: "go_gcs_per_sec", value: 0.2},
 			{metric: "go_gc_pause_time", value: 0.1}, // % of time spent paused
 			{metric: "go_max_gc_pause_time", value: float64(time.Second / 2)},
+			{metric: "go_num_goroutine", value: 42},
 		},
 		computeMetrics(&prev, &curr, 10*time.Second, now))
 
@@ -81,6 +88,7 @@ func TestMetricsCompute(t *testing.T) {
 			{metric: "go_gcs_per_sec", value: 0},
 			{metric: "go_gc_pause_time", value: 0},
 			{metric: "go_max_gc_pause_time", value: 0},
+			{metric: "go_num_goroutine", value: 23},
 		},
 		computeMetrics(&prev, &prev, 10*time.Second, now),
 		"identical memstats")
@@ -122,7 +130,7 @@ func TestMetricsReport(t *testing.T) {
 	var buf bytes.Buffer
 	m := newTestMetrics(now)
 
-	m.compute = func(_ *runtime.MemStats, _ *runtime.MemStats, _ time.Duration, _ time.Time) []point {
+	m.compute = func(_ *metricsSnapshot, _ *metricsSnapshot, _ time.Duration, _ time.Time) []point {
 		return []point{
 			{metric: "metric_name", value: 1.1},
 			{metric: "does_not_include_NaN", value: math.NaN()},

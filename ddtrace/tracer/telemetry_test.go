@@ -32,6 +32,7 @@ func TestTelemetryEnabled(t *testing.T) {
 
 		assert.True(t, telemetryClient.Started)
 		assert.True(t, telemetryClient.AsmEnabled)
+		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
@@ -60,6 +61,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		)
 		defer Stop()
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 2)
 	})
 	t.Run("orchestrion telemetry", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
