@@ -2271,6 +2271,7 @@ func TestUserMonitoring(t *testing.T) {
 	tr := newTracer()
 	defer tr.Stop()
 	internal.SetGlobalTracer(tr)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
@@ -2318,21 +2319,26 @@ func TestUserMonitoring(t *testing.T) {
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
 	t.Run("data-race", func(t *testing.T) {
 		root := tr.newRootSpan("root", "test", "test")
 
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				SetUser(root, "test")
 			}
 		}()
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
 		root.Finish()
 	})
+	wg.Wait()
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
