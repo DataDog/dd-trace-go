@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.46.0
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df
 	github.com/DataDog/datadog-go/v5 v5.3.0
 	github.com/DataDog/go-libddwaf v1.5.0
