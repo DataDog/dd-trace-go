@@ -1268,12 +1268,8 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
 
-	// ensures we cleaned up global state
-	t.Run("default-off-at-end", func(t *testing.T) {
-		defer globalconfig.ClearHeaderTags()
-		newConfig()
-		assert.Equal(t, 0, globalconfig.HeaderTagsLen())
-	})
+	// ensures we cleaned up global state correctly
+	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
 func TestHostnameDisabled(t *testing.T) {
