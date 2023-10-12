@@ -99,12 +99,12 @@ func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
 	if err != nil {
 		return err
 	}
+	msg := make([]byte, 1000)
+	n, _ := resp.Body.Read(msg)
+	resp.Body.Close()
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
-		msg := make([]byte, 1000)
-		n, _ := resp.Body.Read(msg)
-		resp.Body.Close()
 		txt := http.StatusText(code)
 		if n > 0 {
 			return fmt.Errorf("%s (Status: %s)", msg[:n], txt)
