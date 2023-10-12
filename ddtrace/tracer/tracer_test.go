@@ -2319,9 +2319,10 @@ func TestUserMonitoring(t *testing.T) {
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
 	t.Run("data-race", func(t *testing.T) {
+		wg := &sync.WaitGroup{}
+		wg.Add(2)
+
 		root := tr.newRootSpan("root", "test", "test")
 
 		go func() {
@@ -2336,9 +2337,10 @@ func TestUserMonitoring(t *testing.T) {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
+
 		root.Finish()
+		wg.Wait()
 	})
-	wg.Wait()
 }
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
