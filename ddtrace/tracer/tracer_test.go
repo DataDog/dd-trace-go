@@ -2015,6 +2015,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	return tracer, transport, flushFunc, func() {
 		internal.SetGlobalTracer(&internal.NoopTracer{})
 		tracer.Stop()
+		// clear any service name that was set: we want the state to be the same as startup
+		globalconfig.SetServiceName("")
 	}
 }
 
