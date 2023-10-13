@@ -1647,6 +1647,69 @@ func TestEnvVars(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("datadog extract precedence", func(t *testing.T) {
+		testEnvs = []map[string]string{
+			{headerPropagationStyleExtract: "datadog,tracecontext"},
+			{headerPropagationStyleExtract: "datadog,b3"},
+			{headerPropagationStyleExtract: "datadog,b3multi"},
+		}
+		for _, testEnv := range testEnvs {
+			for k, v := range testEnv {
+				t.Setenv(k, v)
+			}
+			var tests = []struct {
+				in  TextMapCarrier
+				out []uint64 // contains [<span_id>, <sampling_decision>]
+				tid traceID
+			}{
+				{
+					in: TextMapCarrier{
+						DefaultTraceIDHeader:  "1",
+						DefaultParentIDHeader: "1",
+						DefaultPriorityHeader: "1",
+						traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-00",
+						b3SingleHeader:        "3-3",
+						b3TraceIDHeader:       "0000000000000004",
+						b3SpanIDHeader:        "0000000000000004",
+						b3SampledHeader:       "4",
+					},
+					out: []uint64{1, 1},
+					tid: traceIDFrom64Bits(1),
+				},
+				{
+					in: TextMapCarrier{
+						traceparentHeader: "00-00000000000000000000000000000001-0000000000000001-01",
+						b3SingleHeader:    "1-1",
+						b3TraceIDHeader:   "0000000000000001",
+						b3SpanIDHeader:    "0000000000000001",
+						b3SampledHeader:   "1",
+					},
+					out: []uint64{1, 1},
+					tid: traceIDFrom64Bits(1),
+				},
+			}
+			for i, tc := range tests {
+				t.Run(fmt.Sprintf("#%v extract with env=%q", i, testEnv), func(t *testing.T) {
+					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+					defer tracer.Stop()
+					assert := assert.New(t)
+					ctx, err := tracer.Extract(tc.in)
+					if err != nil {
+						t.Fatal(err)
+					}
+					sctx, ok := ctx.(*spanContext)
+					assert.True(ok)
+
+					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.out[0], sctx.spanID)
+					p, ok := sctx.samplingPriority()
+					assert.True(ok)
+					assert.Equal(int(tc.out[1]), p)
+				})
+			}
+		}
+	})
 }
 
 func checkSameElements(assert *assert.Assertions, want, got string) {
