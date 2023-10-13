@@ -2093,52 +2093,47 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 }
 
 func TestMalformedTID(t *testing.T) {
-	assert := assert.New(t)
+	tracer := newTracer()
+	internal.SetGlobalTracer(tracer)
+	defer tracer.Stop()
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
+
 	t.Run("datadog, short tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
 
 	t.Run("datadog, malformed tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
 
 	t.Run("datadog, valid tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
 	})
 }
