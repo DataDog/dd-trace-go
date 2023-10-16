@@ -235,40 +235,35 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+// clearIntegreationsForTests clears the state of all integrations
+func clearIntegrationsForTests() {
+	for name, state := range contribIntegrations {
+		state.imported = false
+		contribIntegrations[name] = state
+	}
+}
+
 func TestAgentIntegration(t *testing.T) {
 	t.Run("err", func(t *testing.T) {
 		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
 	})
 
-	t.Run("default", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.NotNil(t, cfg.integrations)
+	// this test is run before configuring integrations and after: ensures we clean up global state
+	defaultUninstrumentedTest := func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		cfg.loadContribIntegrations(nil)
 		assert.Equal(t, len(cfg.integrations), 54)
-	})
-
-	t.Run("uninstrumented", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-
-		cfg.loadContribIntegrations([]*debug.Module{})
-		for _, v := range cfg.integrations {
-			assert.False(t, v.Instrumented)
+		for integrationName, v := range cfg.integrations {
+			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
-	})
+	}
+	t.Run("default_before", defaultUninstrumentedTest)
 
 	t.Run("OK import", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		ok := MarkIntegrationImported("github.com/go-chi/chi")
 		assert.True(t, ok)
@@ -277,11 +272,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("available", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "github.com/go-redis/redis",
@@ -295,11 +287,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -314,11 +303,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc v12", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -333,11 +319,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc bad", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -350,6 +333,9 @@ func TestAgentIntegration(t *testing.T) {
 		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
 		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
+
+	// ensure we clean up global state
+	t.Run("default_after", defaultUninstrumentedTest)
 }
 
 type contribPkg struct {
