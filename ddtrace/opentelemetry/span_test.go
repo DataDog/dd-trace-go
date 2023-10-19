@@ -148,6 +148,7 @@ func TestSpanEnd(t *testing.T) {
 	assert.NotContains(payload, ignoredName)
 	assert.Contains(payload, msg)
 	assert.NotContains(payload, ignoredMsg)
+	assert.Contains(payload, `"error":1`) // this should be an error span
 
 	for k, v := range attributes {
 		assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
@@ -374,6 +375,7 @@ func TestSpanEndOptions(t *testing.T) {
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, `"duration":5000000000,`)
 	assert.Contains(p, `persisted_option`)
+	assert.Contains(p, `"error":1`)
 }
 
 func TestSpanSetAttributes(t *testing.T) {
