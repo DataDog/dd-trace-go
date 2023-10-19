@@ -96,6 +96,7 @@ type config struct {
 	statsd               StatsdClient
 	httpClient           *http.Client
 	tags                 immutable.StringSlice
+	customProfilerLabels []string
 	types                map[ProfileType]struct{}
 	period               time.Duration
 	cpuDuration          time.Duration
@@ -139,6 +140,7 @@ func logStartup(c *config) {
 		TracePeriod          string   `json:"execution_trace_period"`
 		TraceSizeLimit       int      `json:"execution_trace_size_limit"`
 		EndpointCountEnabled bool     `json:"endpoint_count_enabled"`
+		CustomProfilerLabels []string `json:"custom_profiler_labels"`
 	}{
 		Date:                 time.Now().Format(time.RFC3339),
 		OSName:               osinfo.OSName(),
@@ -164,6 +166,7 @@ func logStartup(c *config) {
 		TracePeriod:          c.traceConfig.Period.String(),
 		TraceSizeLimit:       c.traceConfig.Limit,
 		EndpointCountEnabled: c.endpointCountEnabled,
+		CustomProfilerLabels: c.customProfilerLabels,
 	}
 	for t := range c.types {
 		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
@@ -577,4 +580,19 @@ func (e *executionTraceConfig) Refresh() {
 	// If the config is valid, reset e.warned so we'll print another warning
 	// if it's udpated to be invalid
 	e.warned = false
+}
+
+// WithCustomProfilerLabels specifies [profiler label] keys which should be
+// available as attributes for filtering frames for CPU and goroutine profile
+// flame graphs in the Datadog profiler UI.
+//
+// The profiler is limited to 20 label keys to show in the UI. Any label keys
+// after the first 20 will be ignored (but labels with ignored keys will still
+// be available in the raw profile data)
+//
+// [profiler label]: https://rakyll.org/profiler-labels/
+func WithCustomProfilerLabels(keys ...string) Option {
+	return func(cfg *config) {
+		cfg.customProfilerLabels = append(cfg.customProfilerLabels, keys...)
+	}
 }

@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/trace"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -358,6 +359,11 @@ func TestAllUploaded(t *testing.T) {
 	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
 	defer server.Close()
 
+	var customLabelKeys []string
+	for i := 0; i < 50; i++ {
+		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
+	}
+
 	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
@@ -370,6 +376,7 @@ func TestAllUploaded(t *testing.T) {
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(1*time.Millisecond),
+		WithCustomProfilerLabels(customLabelKeys...),
 	)
 	defer Stop()
 
@@ -386,6 +393,7 @@ func TestAllUploaded(t *testing.T) {
 			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
+		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}

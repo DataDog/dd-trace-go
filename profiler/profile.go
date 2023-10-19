@@ -318,6 +318,9 @@ type batch struct {
 	// extraTags are tags which might vary depending on which profile types
 	// actually run in a given profiling cycle
 	extraTags []string
+	// customAttributes are pprof label keys which should be available as
+	// attributes for filtering profiles in our UI
+	customAttributes []string
 }
 
 func (b *batch) addProfile(p *profile) {
