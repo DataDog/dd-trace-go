@@ -36,6 +36,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
@@ -45,6 +46,7 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 // trace computational workflows.
 // WithInstrumentationVersion and WithSchemaURL TracerOptions are not supported.
 type TracerProvider struct {
+	noop.TracerProvider
 	tracer  *oteltracer
 	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
@@ -58,7 +60,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	tracer.Start(opts...)
 	p := &TracerProvider{}
 	t := &oteltracer{
-		Tracer:   internal.GetGlobalTracer(),
+		DD:       internal.GetGlobalTracer(),
 		provider: p,
 	}
 	p.tracer = t
@@ -70,7 +72,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
-		return &noopOteltracer{}
+		return noop.NewTracerProvider().Tracer("")
 	}
 	return p.tracer
 }
