@@ -76,7 +76,7 @@ func TestExecutionTraceSpans(t *testing.T) {
 				continue
 			}
 			key := execTrace.Strings[ev.Args[1]]
-			if key == "datadog.packed_span_id" {
+			if key == "datadog.uint64_span_id" {
 				span.spanID = binary.LittleEndian.Uint64([]byte(execTrace.Strings[ev.Args[3]]))
 			}
 		}

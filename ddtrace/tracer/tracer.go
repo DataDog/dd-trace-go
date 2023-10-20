@@ -708,7 +708,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 	// TODO: can we make string(b[:]) not allocate? e.g. with unsafe
 	// shenanigans? rt.Log won't retain the message string, though perhaps
 	// we can't assume that will always be the case.
-	rt.Log(ctx, "datadog.packed_span_id", string(b[:]))
+	rt.Log(ctx, "datadog.uint64_span_id", string(b[:]))
 	return ctx, end
 }
 
