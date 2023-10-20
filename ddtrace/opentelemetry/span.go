@@ -7,6 +7,7 @@ package opentelemetry
 
 import (
 	"encoding/binary"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -45,6 +46,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
 		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
 		opts = append(opts, tracer.FinishTime(t))
