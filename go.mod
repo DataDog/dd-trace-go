@@ -84,7 +84,7 @@ require (
 	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
-	go.opentelemetry.io/otel v1.19.0
+	go.opentelemetry.io/otel v1.19.1-0.20231019171624-1e1cc901a561
 	go.opentelemetry.io/otel/trace v1.19.1-0.20231019171624-1e1cc901a561
 	go.uber.org/atomic v1.11.0
 	golang.org/x/net v0.17.0
