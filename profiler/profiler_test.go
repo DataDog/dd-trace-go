@@ -128,6 +128,13 @@ func TestStart(t *testing.T) {
 		mu.Lock()
 		mu.Unlock()
 	})
+
+	t.Run("aws-lambda", func(t *testing.T) {
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
+		err := Start()
+		defer Stop()
+		assert.NotNil(t, err)
+	})
 }
 
 // TestStartWithoutStopReconfigures verifies that calling Start while the
@@ -231,6 +238,10 @@ func TestProfilerPassthrough(t *testing.T) {
 	if testing.Short() {
 		return
 	}
+	beforeExecutionTraceEnabledDefault := executionTraceEnabledDefault
+	executionTraceEnabledDefault = false
+	defer func() { executionTraceEnabledDefault = beforeExecutionTraceEnabledDefault }()
+
 	out := make(chan batch)
 	p, err := newProfiler()
 	require.NoError(t, err)
@@ -372,6 +383,9 @@ func TestAllUploaded(t *testing.T) {
 			"delta-mutex.pprof",
 			"goroutines.pprof",
 			"goroutineswait.pprof",
+		}
+		if executionTraceEnabledDefault && seq == 0 {
+			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
 

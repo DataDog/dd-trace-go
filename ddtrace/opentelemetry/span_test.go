@@ -64,6 +64,27 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 	}
 }
 
+func TestSpanResourceNameDefault(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "OperationName")
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, `"name":"OperationName"`)
+	assert.Contains(p, `"resource":"OperationName"`)
+}
+
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -127,6 +148,7 @@ func TestSpanEnd(t *testing.T) {
 	assert.NotContains(payload, ignoredName)
 	assert.Contains(payload, msg)
 	assert.NotContains(payload, ignoredMsg)
+	assert.Contains(payload, `"error":1`) // this should be an error span
 
 	for k, v := range attributes {
 		assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
@@ -353,6 +375,7 @@ func TestSpanEndOptions(t *testing.T) {
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, `"duration":5000000000,`)
 	assert.Contains(p, `persisted_option`)
+	assert.Contains(p, `"error":1`)
 }
 
 func TestSpanSetAttributes(t *testing.T) {

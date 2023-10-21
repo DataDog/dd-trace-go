@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -27,8 +28,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/endpoints"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/eventbridge"
+	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/stretchr/testify/assert"
@@ -74,9 +80,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "s3.command", s.OperationName())
-		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
-		assert.Equal(t, "CreateBucket", s.Tag(tagAWSOperation))
-		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
+		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
+		assert.Equal(t, "CreateBucket", s.Tag("aws.operation"))
+		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -84,7 +90,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "http://s3.us-west-2.amazonaws.com/BUCKET", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-		assert.NotNil(t, s.Tag(tagAWSRequestID))
+		assert.NotNil(t, s.Tag("aws.request_id"))
 	})
 
 	t.Run("ec2", func(t *testing.T) {
@@ -102,9 +108,9 @@ func TestAWS(t *testing.T) {
 
 		s := spans[0]
 		assert.Equal(t, "ec2.command", s.OperationName())
-		assert.Contains(t, s.Tag(tagAWSAgent), "aws-sdk-go")
-		assert.Equal(t, "DescribeInstances", s.Tag(tagAWSOperation))
-		assert.Equal(t, "us-west-2", s.Tag(tagAWSRegion))
+		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
+		assert.Equal(t, "DescribeInstances", s.Tag("aws.operation"))
+		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
@@ -205,7 +211,7 @@ func TestRetries(t *testing.T) {
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Equal(t, mt.FinishedSpans()[0].Tag(tagAWSRetryCount), 3)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3)
 }
 
 func TestHTTPCredentials(t *testing.T) {
@@ -295,6 +301,210 @@ func TestWithErrorCheck(t *testing.T) {
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
 		return false
 	})))
+}
+
+func TestExtraTagsForService(t *testing.T) {
+	const (
+		sqsQueueName        = "test-queue-name"
+		s3BucketName        = "test-bucket-name"
+		kinesisStreamName   = "test-stream-name"
+		dynamoDBTableName   = "test-table-name"
+		snsTopicName        = "test-topic-name"
+		eventBridgeRuleName = "test-rule-name"
+		sfnStateMachineName = "test-state-machine-name"
+	)
+	sess := newIntegrationTestSession(t)
+
+	sqsQueueURL := prepareSQS(t, sess, sqsQueueName)
+	prepareS3(t, sess, s3BucketName)
+	snsTopicARN := prepareSNS(t, sess, snsTopicName)
+	prepareDynamoDB(t, sess, dynamoDBTableName)
+	prepareKinesis(t, sess, kinesisStreamName)
+	roleARN := prepareTestRole(t, sess)
+
+	t.Run("SQS", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := sqs.New(sess)
+		input := &sqs.SendMessageInput{QueueUrl: aws.String(sqsQueueURL), MessageBody: aws.String("body")}
+		_, err := c.SendMessage(input)
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "sqs", s0.Tag("aws_service"))
+		assert.Equal(t, "SendMessage", s0.Tag("aws.operation"))
+		assert.Equal(t, sqsQueueName, s0.Tag("queuename"))
+	})
+	t.Run("S3", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := s3.New(sess)
+		_, err := c.ListObjects(&s3.ListObjectsInput{Bucket: aws.String(s3BucketName)})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "s3", s0.Tag("aws_service"))
+		assert.Equal(t, "ListObjects", s0.Tag("aws.operation"))
+		assert.Equal(t, s3BucketName, s0.Tag("bucketname"))
+	})
+	t.Run("SNS", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := sns.New(sess)
+		_, err := c.Publish(&sns.PublishInput{TopicArn: aws.String(snsTopicARN), Message: aws.String("message")})
+		require.NoError(t, err)
+		_, err = c.Publish(&sns.PublishInput{TargetArn: aws.String(snsTopicARN), Message: aws.String("message")})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		s0 := spans[0]
+		assert.Equal(t, "sns", s0.Tag("aws_service"))
+		assert.Equal(t, "Publish", s0.Tag("aws.operation"))
+		assert.Equal(t, snsTopicName, s0.Tag("topicname"))
+
+		s1 := spans[1]
+		assert.Equal(t, "sns", s1.Tag("aws_service"))
+		assert.Equal(t, "Publish", s1.Tag("aws.operation"))
+		assert.Equal(t, snsTopicName, s1.Tag("targetname"))
+	})
+	t.Run("DynamoDB", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := dynamodb.New(sess)
+		_, err := c.GetItem(&dynamodb.GetItemInput{
+			TableName: aws.String(dynamoDBTableName),
+			Key: map[string]*dynamodb.AttributeValue{
+				"Key": {S: aws.String("something")},
+			}})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "dynamodb", s0.Tag("aws_service"))
+		assert.Equal(t, "GetItem", s0.Tag("aws.operation"))
+		assert.Equal(t, dynamoDBTableName, s0.Tag("tablename"))
+	})
+	t.Run("Kinesis", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := kinesis.New(sess)
+		_, err := c.PutRecord(&kinesis.PutRecordInput{
+			StreamName:   aws.String(kinesisStreamName),
+			Data:         []byte("data"),
+			PartitionKey: aws.String("1"),
+		})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "kinesis", s0.Tag("aws_service"))
+		assert.Equal(t, "PutRecord", s0.Tag("aws.operation"))
+		assert.Equal(t, kinesisStreamName, s0.Tag("streamname"))
+	})
+	t.Run("EventBridge", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := eventbridge.New(sess)
+		_, err := c.PutRule(&eventbridge.PutRuleInput{
+			Name:         aws.String(eventBridgeRuleName),
+			EventPattern: aws.String("{ \"source\": [\"aws.ec2\"] }"),
+		})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "EventBridge", s0.Tag("aws_service"))
+		assert.Equal(t, "PutRule", s0.Tag("aws.operation"))
+		assert.Equal(t, eventBridgeRuleName, s0.Tag("rulename"))
+	})
+	t.Run("SFN", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := sfn.New(sess)
+		definition := `{
+  "Comment": "A Hello World example of the Amazon States Language using a Pass state",
+  "StartAt": "HelloWorld",
+  "States": {
+    "HelloWorld": {
+      "Type": "Pass",
+      "Result": "Hello World!",
+      "End": true
+    }
+  }
+}`
+		resp, err := c.CreateStateMachine(&sfn.CreateStateMachineInput{
+			Name:       aws.String(sfnStateMachineName),
+			Definition: aws.String(definition),
+			RoleArn:    aws.String(roleARN),
+		})
+		require.NoError(t, err)
+		_, err = c.DescribeStateMachine(&sfn.DescribeStateMachineInput{StateMachineArn: resp.StateMachineArn})
+		require.NoError(t, err)
+		execResp, err := c.StartExecution(&sfn.StartExecutionInput{StateMachineArn: resp.StateMachineArn})
+		require.NoError(t, err)
+		_, err = c.DescribeExecution(&sfn.DescribeExecutionInput{ExecutionArn: execResp.ExecutionArn})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 4)
+
+		s0 := spans[0]
+		assert.Equal(t, "states", s0.Tag("aws_service"))
+		assert.Equal(t, "CreateStateMachine", s0.Tag("aws.operation"))
+		assert.Equal(t, sfnStateMachineName, s0.Tag("statemachinename"))
+
+		s1 := spans[1]
+		assert.Equal(t, "states", s1.Tag("aws_service"))
+		assert.Equal(t, "DescribeStateMachine", s1.Tag("aws.operation"))
+		assert.Equal(t, sfnStateMachineName, s1.Tag("statemachinename"))
+
+		s2 := spans[2]
+		assert.Equal(t, "states", s2.Tag("aws_service"))
+		assert.Equal(t, "StartExecution", s2.Tag("aws.operation"))
+		assert.Equal(t, sfnStateMachineName, s2.Tag("statemachinename"))
+
+		span3 := spans[3]
+		assert.Equal(t, "states", span3.Tag("aws_service"))
+		assert.Equal(t, "DescribeExecution", span3.Tag("aws.operation"))
+		assert.Equal(t, sfnStateMachineName, span3.Tag("statemachinename"))
+	})
+	t.Run("EC2", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		c := ec2.New(sess)
+		_, err := c.DescribeInstances(&ec2.DescribeInstancesInput{})
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "ec2", s0.Tag("aws_service"))
+		assert.Equal(t, "DescribeInstances", s0.Tag("aws.operation"))
+		// no extra tags set at this point for EC2
+	})
 }
 
 func TestNamingSchema(t *testing.T) {
@@ -416,4 +626,133 @@ func repeat(s string, n int) []string {
 		r[i] = s
 	}
 	return r
+}
+
+func prepareSQS(t *testing.T, sess *session.Session, queueName string) string {
+	t.Helper()
+	c := sqs.New(sess)
+
+	resp, err := c.CreateQueue(&sqs.CreateQueueInput{QueueName: aws.String(queueName)})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: resp.QueueUrl})
+		assert.NoError(t, err)
+	})
+	return *resp.QueueUrl
+}
+
+func prepareS3(t *testing.T, sess *session.Session, bucketName string) {
+	t.Helper()
+	c := s3.New(sess)
+
+	_, err := c.CreateBucket(&s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteBucket(&s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+		assert.NoError(t, err)
+	})
+}
+
+func prepareSNS(t *testing.T, sess *session.Session, topicName string) string {
+	t.Helper()
+	c := sns.New(sess)
+
+	resp, err := c.CreateTopic(&sns.CreateTopicInput{Name: aws.String(topicName)})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteTopic(&sns.DeleteTopicInput{TopicArn: resp.TopicArn})
+		assert.NoError(t, err)
+	})
+	return *resp.TopicArn
+}
+
+func prepareDynamoDB(t *testing.T, sess *session.Session, tableName string) {
+	t.Helper()
+	c := dynamodb.New(sess)
+
+	_, err := c.CreateTable(&dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		AttributeDefinitions: []*dynamodb.AttributeDefinition{
+			{AttributeName: aws.String("Key"), AttributeType: aws.String("S")},
+		},
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{AttributeName: aws.String("Key"), KeyType: aws.String("HASH")},
+		},
+		BillingMode: aws.String("PAY_PER_REQUEST"),
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteTable(&dynamodb.DeleteTableInput{TableName: aws.String(tableName)})
+		assert.NoError(t, err)
+	})
+}
+
+func prepareKinesis(t *testing.T, sess *session.Session, streamName string) {
+	t.Helper()
+	c := kinesis.New(sess)
+
+	_, err := c.CreateStream(&kinesis.CreateStreamInput{
+		StreamName: aws.String(streamName),
+		ShardCount: aws.Int64(1),
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteStream(&kinesis.DeleteStreamInput{StreamName: aws.String(streamName)})
+		assert.NoError(t, err)
+	})
+	timeoutChan := time.After(5 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		resp, err := c.DescribeStream(&kinesis.DescribeStreamInput{StreamName: aws.String(streamName)})
+		require.NoError(t, err)
+		if *resp.StreamDescription.StreamStatus == "ACTIVE" {
+			return
+		}
+		select {
+		case <-ticker.C:
+			continue
+		case <-timeoutChan:
+			assert.FailNow(t, "timeout waiting for kinesis stream to be ready")
+		}
+	}
+}
+
+func prepareTestRole(t *testing.T, sess *session.Session) string {
+	t.Helper()
+	c := iam.New(sess)
+	roleName := "test-role"
+	rolePolicyDoc := `{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Principal": {
+				"Service": [
+					"ec2.amazonaws.com"
+				]
+			},
+			"Action": [
+				"sts:AssumeRole"
+			]
+		}
+	]
+}`
+	resp, err := c.CreateRole(&iam.CreateRoleInput{
+		RoleName:                 aws.String("test-role"),
+		AssumeRolePolicyDocument: aws.String(rolePolicyDoc),
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := c.DeleteRole(&iam.DeleteRoleInput{RoleName: aws.String(roleName)})
+		assert.NoError(t, err)
+	})
+	return *resp.Role.Arn
 }

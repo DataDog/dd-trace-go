@@ -38,8 +38,13 @@ func (e collectionTooFrequent) Error() string {
 
 type metrics struct {
 	collectedAt time.Time
-	stats       runtime.MemStats
-	compute     func(*runtime.MemStats, *runtime.MemStats, time.Duration, time.Time) []point
+	snapshot    metricsSnapshot
+	compute     func(*metricsSnapshot, *metricsSnapshot, time.Duration, time.Time) []point
+}
+
+type metricsSnapshot struct {
+	runtime.MemStats
+	NumGoroutine int
 }
 
 func newMetrics() *metrics {
@@ -50,7 +55,8 @@ func newMetrics() *metrics {
 
 func (m *metrics) reset(now time.Time) {
 	m.collectedAt = now
-	runtime.ReadMemStats(&m.stats)
+	runtime.ReadMemStats(&m.snapshot.MemStats)
+	m.snapshot.NumGoroutine = runtime.NumGoroutine()
 }
 
 func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
@@ -63,10 +69,10 @@ func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 		return collectionTooFrequent{min: time.Second, observed: period}
 	}
 
-	previousStats := m.stats
+	previousStats := m.snapshot
 	m.reset(now)
 
-	points := m.compute(&previousStats, &m.stats, period, now)
+	points := m.compute(&previousStats, &m.snapshot, period, now)
 	data, err := json.Marshal(removeInvalid(points))
 
 	if err != nil {
@@ -81,7 +87,7 @@ func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 	return nil
 }
 
-func computeMetrics(prev *runtime.MemStats, curr *runtime.MemStats, period time.Duration, now time.Time) []point {
+func computeMetrics(prev *metricsSnapshot, curr *metricsSnapshot, period time.Duration, now time.Time) []point {
 	return []point{
 		{metric: "go_alloc_bytes_per_sec", value: rate(curr.TotalAlloc, prev.TotalAlloc, period/time.Second)},
 		{metric: "go_allocs_per_sec", value: rate(curr.Mallocs, prev.Mallocs, period/time.Second)},
@@ -89,7 +95,8 @@ func computeMetrics(prev *runtime.MemStats, curr *runtime.MemStats, period time.
 		{metric: "go_heap_growth_bytes_per_sec", value: rate(curr.HeapAlloc, prev.HeapAlloc, period/time.Second)},
 		{metric: "go_gcs_per_sec", value: rate(uint64(curr.NumGC), uint64(prev.NumGC), period/time.Second)},
 		{metric: "go_gc_pause_time", value: rate(curr.PauseTotalNs, prev.PauseTotalNs, period)}, // % of time spent paused
-		{metric: "go_max_gc_pause_time", value: float64(maxPauseNs(curr, now.Add(-period)))},
+		{metric: "go_max_gc_pause_time", value: float64(maxPauseNs(&curr.MemStats, now.Add(-period)))},
+		{metric: "go_num_goroutine", value: float64(curr.NumGoroutine)},
 	}
 }
 

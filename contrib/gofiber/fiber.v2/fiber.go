@@ -25,6 +25,7 @@ const componentName = "gofiber/fiber.v2"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gofiber/fiber/v2")
 }
 
 // Middleware returns middleware that will trace incoming requests.
@@ -48,8 +49,13 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
 		h := http.Header{}
-		for k, v := range c.GetReqHeaders() {
-			h.Add(k, v)
+		for k, headers := range c.GetReqHeaders() {
+			for _, v := range headers {
+				// GetReqHeaders returns a list of headers associated with the given key.
+				// http.Header.Add supports appending multiple values, so the previous
+				// value will not be overwritten.
+				h.Add(k, v)
+			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))

@@ -6,8 +6,10 @@
 package echo
 
 import (
+	"errors"
 	"math"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
@@ -23,7 +25,8 @@ type config struct {
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
-	headerTags        func(string) (string, bool)
+	translateError    func(err error) (*echo.HTTPError, bool)
+	headerTags        *internal.LockMap
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -36,7 +39,14 @@ func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
-	cfg.headerTags = globalconfig.HeaderTag
+	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
+		var echoErr *echo.HTTPError
+		if errors.As(err, &echoErr) {
+			return echoErr, true
+		}
+		return nil, false
+	}
 }
 
 // WithServiceName sets the given service name for the system.
@@ -86,6 +96,14 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 	}
 }
 
+// WithErrorTranslator sets a function to translate Go errors into echo Errors.
+// This is used for extracting the HTTP response status code.
+func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) Option {
+	return func(cfg *config) {
+		cfg.translateError = fn
+	}
+}
+
 // WithStatusCheck specifies a function fn which reports whether the passed
 // statusCode should be considered an error.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
@@ -103,15 +121,8 @@ func isServerError(statusCode int) bool {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := make(map[string]string)
-	for _, h := range headers {
-		header, tag := normalizer.NormalizeHeaderTag(h)
-		headerTagsMap[header] = tag
-	}
+	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
-		cfg.headerTags = func(k string) (string, bool) {
-			tag, ok := headerTagsMap[k]
-			return tag, ok
-		}
+		cfg.headerTags = internal.NewLockMap(headerTagsMap)
 	}
 }

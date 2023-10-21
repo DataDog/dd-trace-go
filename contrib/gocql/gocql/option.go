@@ -20,6 +20,7 @@ type queryConfig struct {
 	noDebugStack                 bool
 	analyticsRate                float64
 	errCheck                     func(err error) bool
+	customTags                   map[string]interface{}
 }
 
 // WrapOption represents an option that can be passed to WrapQuery.
@@ -115,5 +116,15 @@ func WithErrorCheck(fn func(err error) bool) WrapOption {
 		// This only affects whether the span/trace is marked as success/error,
 		// the calls to the gocql API still return the upstream error code.
 		cfg.errCheck = fn
+	}
+}
+
+// WithCustomTag will attach the value to the span tagged by the key.
+func WithCustomTag(key string, value interface{}) WrapOption {
+	return func(cfg *queryConfig) {
+		if cfg.customTags == nil {
+			cfg.customTags = make(map[string]interface{})
+		}
+		cfg.customTags[key] = value
 	}
 }
