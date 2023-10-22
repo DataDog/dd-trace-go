@@ -20,14 +20,14 @@ import (
 
 func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
+		expectedExtractErr error
 		name               string
 		query              string
 		mode               DBMPropagationMode
-		injectSpan         bool
-		samplingPriority   int
 		expectedQuery      string
+		samplingPriority   int
+		injectSpan         bool
 		expectedSpanIDGen  bool
-		expectedExtractErr error
 	}{
 		{
 			name:               "default",

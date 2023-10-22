@@ -329,13 +329,13 @@ func TestSpanFinishPriority(t *testing.T) {
 
 func TestSpanPeerService(t *testing.T) {
 	testCases := []struct {
-		name                        string
-		spanOpts                    []StartSpanOption
-		peerServiceDefaultsEnabled  bool
 		peerServiceMappings         map[string]string
+		name                        string
 		wantPeerService             string
 		wantPeerServiceSource       string
 		wantPeerServiceRemappedFrom string
+		spanOpts                    []StartSpanOption
+		peerServiceDefaultsEnabled  bool
 	}{
 		{
 			name: "PeerServiceSet",

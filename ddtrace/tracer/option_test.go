@@ -911,8 +911,8 @@ func TestTagSeparators(t *testing.T) {
 	assert := assert.New(t)
 
 	for _, tag := range []struct {
-		in  string
 		out map[string]string
+		in  string
 	}{{
 		in: "env:test aKey:aVal bKey:bVal cKey:",
 		out: map[string]string{

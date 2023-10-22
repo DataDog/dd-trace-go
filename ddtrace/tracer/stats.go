@@ -40,26 +40,22 @@ var defaultStatsBucketSize = (10 * time.Second).Nanoseconds()
 // flushing them occasionally to the underlying transport located in the given
 // tracer config.
 type concentrator struct {
+	statsdClient internal.StatsdClient // statsd client for sending metrics.
 	// In specifies the channel to be used for feeding data to the concentrator.
 	// In order for In to have a consumer, the concentrator must be started using
 	// a call to Start.
 	In chan *aggregableSpan
-
-	// mu guards below fields
-	mu sync.Mutex
-
 	// buckets maintains a set of buckets, where the map key represents
 	// the starting point in time of that bucket, in nanoseconds.
-	buckets map[int64]*rawBucket
-
+	buckets    map[int64]*rawBucket
+	stop       chan struct{}  // closing this channel triggers shutdown
+	cfg        *config        // tracer startup configuration
+	wg         sync.WaitGroup // waits for any active goroutines
+	bucketSize int64          // the size of a bucket in nanoseconds
+	// mu guards below fields
+	mu sync.Mutex
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint32
-
-	wg           sync.WaitGroup        // waits for any active goroutines
-	bucketSize   int64                 // the size of a bucket in nanoseconds
-	stop         chan struct{}         // closing this channel triggers shutdown
-	cfg          *config               // tracer startup configuration
-	statsdClient internal.StatsdClient // statsd client for sending metrics.
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -223,8 +219,9 @@ type aggregation struct {
 }
 
 type rawBucket struct {
-	start, duration uint64
-	data            map[aggregation]*rawGroupedStats
+	data     map[aggregation]*rawGroupedStats
+	start    uint64
+	duration uint64
 }
 
 func newRawBucket(btime uint64, bsize int64) *rawBucket {
@@ -279,12 +276,12 @@ func (sb *rawBucket) Export() statsBucket {
 }
 
 type rawGroupedStats struct {
+	okDistribution  *ddsketch.DDSketch
+	errDistribution *ddsketch.DDSketch
 	hits            uint64
 	topLevelHits    uint64
 	errors          uint64
 	duration        uint64
-	okDistribution  *ddsketch.DDSketch
-	errDistribution *ddsketch.DDSketch
 }
 
 func newRawGroupedStats() *rawGroupedStats {

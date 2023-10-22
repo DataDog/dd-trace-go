@@ -25,14 +25,14 @@ type statsPayload struct {
 
 // statsBucket specifies a set of stats computed over a duration.
 type statsBucket struct {
+	// Stats contains a set of statistics computed for the duration of this bucket.
+	Stats []groupedStats
+
 	// Start specifies the beginning of this bucket.
 	Start uint64
 
 	// Duration specifies the duration of this bucket.
 	Duration uint64
-
-	// Stats contains a set of statistics computed for the duration of this bucket.
-	Stats []groupedStats
 }
 
 // groupedStats contains a set of statistics grouped under various aggregation keys.

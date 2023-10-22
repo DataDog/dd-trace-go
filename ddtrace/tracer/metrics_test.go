@@ -27,25 +27,25 @@ const (
 )
 
 type testStatsdClient struct {
-	mu          sync.RWMutex
+	counts      map[string]int64
+	waitCh      chan struct{}
 	gaugeCalls  []testStatsdCall
 	incrCalls   []testStatsdCall
 	countCalls  []testStatsdCall
 	timingCalls []testStatsdCall
-	counts      map[string]int64
 	tags        []string
-	waitCh      chan struct{}
 	n           int
-	closed      bool
 	flushed     int
+	mu          sync.RWMutex
+	closed      bool
 }
 
 type testStatsdCall struct {
 	name     string
+	tags     []string
 	floatVal float64
 	intVal   int64
 	timeVal  time.Duration
-	tags     []string
 	rate     float64
 }
 

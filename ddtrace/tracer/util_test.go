@@ -73,17 +73,17 @@ func TestParseUint64(t *testing.T) {
 
 func TestIsValidPropagatableTraceTag(t *testing.T) {
 	for i, tt := range [...]struct {
+		err   error
 		key   string
 		value string
-		err   error
 	}{
-		{"hello", "world", nil},
-		{"hello", "world=", nil},
-		{"hello=", "world", fmt.Errorf("key contains an invalid character 61")},
-		{"", "world", fmt.Errorf("key length must be greater than zero")},
-		{"hello", "", fmt.Errorf("value length must be greater than zero")},
-		{"こんにちは", "world", fmt.Errorf("key contains an invalid character 12371")},
-		{"hello", "世界", fmt.Errorf("value contains an invalid character 19990")},
+		{nil, "hello", "world"},
+		{nil, "hello", "world="},
+		{fmt.Errorf("key contains an invalid character 61"), "hello=", "world"},
+		{fmt.Errorf("key length must be greater than zero"), "", "world"},
+		{fmt.Errorf("value length must be greater than zero"), "hello", ""},
+		{fmt.Errorf("key contains an invalid character 12371"), "こんにちは", "world"},
+		{fmt.Errorf("value contains an invalid character 19990"), "hello", "世界"},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			assert.Equal(t, tt.err, isValidPropagatableTag(tt.key, tt.value))
@@ -93,20 +93,20 @@ func TestIsValidPropagatableTraceTag(t *testing.T) {
 
 func TestParsePropagatableTraceTags(t *testing.T) {
 	for i, tt := range [...]struct {
-		input  string
-		output map[string]string
 		err    error
+		output map[string]string
+		input  string
 	}{
-		{"hello=world", map[string]string{"hello": "world"}, nil},
-		{" hello = world ", map[string]string{" hello ": " world "}, nil},
-		{"hello=world,service=account", map[string]string{"hello": "world", "service": "account"}, nil},
-		{"hello=wor=ld====,service=account,tag1=val=ue1", map[string]string{"hello": "wor=ld====", "service": "account", "tag1": "val=ue1"}, nil},
-		{"hello", nil, fmt.Errorf("invalid format")},
-		{"hello=world,service=", nil, fmt.Errorf("invalid format")},
-		{"hello=world,", nil, fmt.Errorf("invalid format")},
-		{"=world", nil, fmt.Errorf("invalid format")},
-		{"hello=,tag1=value1", nil, fmt.Errorf("invalid format")},
-		{",hello=world", nil, fmt.Errorf("invalid format")},
+		{nil, map[string]string{"hello": "world"}, "hello=world"},
+		{nil, map[string]string{" hello ": " world "}, " hello = world "},
+		{nil, map[string]string{"hello": "world", "service": "account"}, "hello=world,service=account"},
+		{nil, map[string]string{"hello": "wor=ld====", "service": "account", "tag1": "val=ue1"}, "hello=wor=ld====,service=account,tag1=val=ue1"},
+		{fmt.Errorf("invalid format"), nil, "hello"},
+		{fmt.Errorf("invalid format"), nil, "hello=world,service="},
+		{fmt.Errorf("invalid format"), nil, "hello=world,"},
+		{fmt.Errorf("invalid format"), nil, "=world"},
+		{fmt.Errorf("invalid format"), nil, "hello=,tag1=value1"},
+		{fmt.Errorf("invalid format"), nil, ",hello=world"},
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			output, err := parsePropagatableTraceTags(tt.input)

@@ -2022,9 +2022,9 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	sync.RWMutex
 	traces spanLists
 	stats  []*statsPayload
+	sync.RWMutex
 }
 
 func newDummyTransport() *dummyTransport {
@@ -2129,9 +2129,9 @@ func cpspan(s *span) *span {
 }
 
 type testTraceWriter struct {
-	mu      sync.RWMutex
 	buf     []*span
 	flushed []*span
+	mu      sync.RWMutex
 }
 
 func newTestTraceWriter() *testTraceWriter {

@@ -39,52 +39,52 @@ func makeSpan(n int) *span {
 
 func TestEncodeFloat(t *testing.T) {
 	for _, tt := range []struct {
-		f      float64
 		expect string
+		f      float64
 	}{
 		{
-			9.9999999999999990e20,
 			"999999999999999900000",
+			9.9999999999999990e20,
 		},
 		{
-			9.9999999999999999e20,
 			"1e+21",
+			9.9999999999999999e20,
 		},
 		{
-			-9.9999999999999990e20,
 			"-999999999999999900000",
+			-9.9999999999999990e20,
 		},
 		{
-			-9.9999999999999999e20,
 			"-1e+21",
+			-9.9999999999999999e20,
 		},
 		{
-			0.000001,
 			"0.000001",
+			0.000001,
 		},
 		{
-			0.0000009,
 			"9e-7",
+			0.0000009,
 		},
 		{
-			-0.000001,
 			"-0.000001",
+			-0.000001,
 		},
 		{
-			-0.0000009,
 			"-9e-7",
+			-0.0000009,
 		},
 		{
+			"null",
 			math.NaN(),
-			"null",
 		},
 		{
+			"null",
 			math.Inf(-1),
-			"null",
 		},
 		{
-			math.Inf(1),
 			"null",
+			math.Inf(1),
 		},
 	} {
 		t.Run(tt.expect, func(t *testing.T) {
@@ -152,17 +152,17 @@ func TestLogWriter(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		type jsonSpan struct {
+			Meta     map[string]string  `json:"meta"`
+			Metrics  map[string]float64 `json:"metrics"`
 			TraceID  string             `json:"trace_id"`
 			SpanID   string             `json:"span_id"`
 			ParentID string             `json:"parent_id"`
 			Name     string             `json:"name"`
 			Resource string             `json:"resource"`
-			Error    int32              `json:"error"`
-			Meta     map[string]string  `json:"meta"`
-			Metrics  map[string]float64 `json:"metrics"`
+			Service  string             `json:"service"`
 			Start    int64              `json:"start"`
 			Duration int64              `json:"duration"`
-			Service  string             `json:"service"`
+			Error    int32              `json:"error"`
 		}
 		type jsonPayload struct {
 			Traces [][]jsonSpan `json:"traces"`
@@ -321,12 +321,12 @@ func TestLogWriterOverflow(t *testing.T) {
 }
 
 type failingTransport struct {
+	assert *assert.Assertions
+	traces spanLists
 	dummyTransport
 	failCount    int
 	sendAttempts int
 	tracesSent   bool
-	traces       spanLists
-	assert       *assert.Assertions
 }
 
 func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {

@@ -58,22 +58,18 @@ func (r *rulesSampler) TraceRateLimit() (float64, bool) { return r.traces.limit(
 type SamplingRule struct {
 	// Service specifies the regex pattern that a span service name must match.
 	Service *regexp.Regexp
-
 	// Name specifies the regex pattern that a span operation name must match.
-	Name *regexp.Regexp
-
+	Name         *regexp.Regexp
+	limiter      *rateLimiter
+	exactService string
+	exactName    string
 	// Rate specifies the sampling rate that should be applied to spans that match
 	// service and/or name of the rule.
 	Rate float64
-
 	// MaxPerSecond specifies max number of spans per second that can be sampled per the rule.
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
-
 	ruleType     SamplingRuleType
-	exactService string
-	exactName    string
-	limiter      *rateLimiter
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -199,9 +195,9 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type traceRulesSampler struct {
+	limiter    *rateLimiter   // used to limit the volume of spans sampled
 	rules      []SamplingRule // the rules to match spans with
 	globalRate float64        // a rate to apply when no rules match a span
-	limiter    *rateLimiter   // used to limit the volume of spans sampled
 }
 
 // newTraceRulesSampler configures a *traceRulesSampler instance using the given set of rules.
@@ -378,14 +374,13 @@ func (rs *singleSpanRulesSampler) apply(span *span) bool {
 // rateLimiter is a wrapper on top of golang.org/x/time/rate which implements a rate limiter but also
 // returns the effective rate of allowance.
 type rateLimiter struct {
-	limiter *rate.Limiter
-
-	mu          sync.Mutex // guards below fields
-	prevTime    time.Time  // time at which prevAllowed and prevSeen were set
+	prevTime    time.Time // time at which prevAllowed and prevSeen were set
+	limiter     *rate.Limiter
 	allowed     float64    // number of spans allowed in the current period
 	seen        float64    // number of spans seen in the current period
 	prevAllowed float64    // number of spans allowed in the previous period
 	prevSeen    float64    // number of spans seen in the previous period
+	mu          sync.Mutex // guards below fields
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the
@@ -568,11 +563,11 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
+		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
 		Service      string   `json:"service"`
 		Name         string   `json:"name"`
-		Rate         float64  `json:"sample_rate"`
 		Type         string   `json:"type"`
-		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
+		Rate         float64  `json:"sample_rate"`
 	}{}
 	if sr.exactService != "" {
 		s.Service = sr.exactService

@@ -453,9 +453,9 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				tid    traceID
-				spanID uint64
 				out    map[string]string
+				spanID uint64
+				tid    traceID
 			}{
 				{
 					tid:    traceIDFrom128Bits(9863134987902842, 1412508178991881),
@@ -680,16 +680,16 @@ func TestEnvVars(t *testing.T) {
 	t.Run("b3 single header inject", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "b3 single header")
 		var tests = []struct {
-			in  []uint64 // contains [<trace_id_lower_bits>, <span_id>, <sampling_decision>]
 			out string
+			in  []uint64 // contains [<trace_id_lower_bits>, <span_id>, <sampling_decision>]
 		}{
 			{
-				[]uint64{18368781661998368512, 17939463908140879269, 1},
 				"feeb0599801f4700-f8f5c76089ad8da5-1",
+				[]uint64{18368781661998368512, 17939463908140879269, 1},
 			},
 			{
-				[]uint64{11681107445354718197, 11667520360719770894, 0},
 				"a21ba1551789e3f5-a1eb5bf36e56e50e-0",
+				[]uint64{11681107445354718197, 11667520360719770894, 0},
 			},
 		}
 		for i, tc := range tests {
@@ -724,29 +724,29 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 				out map[string]string
+				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 			}{
 				{
-					[]uint64{1412508178991881, 1842642739201064},
 					map[string]string{
 						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
+					[]uint64{1412508178991881, 1842642739201064},
 				},
 				{
-					[]uint64{9530669991610245, 9455715668862222},
 					map[string]string{
 						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
+					[]uint64{9530669991610245, 9455715668862222},
 				},
 				{
-					[]uint64{1, 1},
 					map[string]string{
 						b3TraceIDHeader: "0000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
 					},
+					[]uint64{1, 1},
 				},
 			}
 			for _, tc := range tests {
@@ -857,29 +857,29 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 				out map[string]string
+				in  []uint64 // contains [<trace_id_lower_bits>, <span_id>]
 			}{
 				{
-					[]uint64{1412508178991881, 1842642739201064},
 					map[string]string{
 						b3TraceIDHeader: "000504ab30404b09",
 						b3SpanIDHeader:  "00068bdfb1eb0428",
 					},
+					[]uint64{1412508178991881, 1842642739201064},
 				},
 				{
-					[]uint64{9530669991610245, 9455715668862222},
 					map[string]string{
 						b3TraceIDHeader: "0021dc1807524785",
 						b3SpanIDHeader:  "002197ec5d8a250e",
 					},
+					[]uint64{9530669991610245, 9455715668862222},
 				},
 				{
-					[]uint64{1, 1},
 					map[string]string{
 						b3TraceIDHeader: "0000000000000001",
 						b3SpanIDHeader:  "0000000000000001",
 					},
+					[]uint64{1, 1},
 				},
 			}
 			for _, tc := range tests {
@@ -927,10 +927,10 @@ func TestEnvVars(t *testing.T) {
 			}
 			var tests = []struct {
 				in              TextMapCarrier
+				propagatingTags map[string]string
+				origin          string
 				out             []uint64 // contains [<span_id>, <sampling_decision>]
 				tid             traceID
-				origin          string
-				propagatingTags map[string]string
 			}{
 				{
 					in: TextMapCarrier{
@@ -1175,11 +1175,11 @@ func TestEnvVars(t *testing.T) {
 			var tests = []struct {
 				inHeaders  TextMapCarrier
 				outHeaders TextMapCarrier
-				sid        uint64
-				tid        traceID
-				priority   int
 				traceID128 string
 				origin     string
+				sid        uint64
+				priority   int
+				tid        traceID
 			}{
 				{
 					inHeaders: TextMapCarrier{
@@ -1248,12 +1248,12 @@ func TestEnvVars(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			var tests = []struct {
-				tid             traceID
-				sid             uint64
 				out             TextMapCarrier
-				priority        int
-				origin          string
 				propagatingTags map[string]string
+				origin          string
+				sid             uint64
+				priority        int
+				tid             traceID
 			}{
 				{
 					out: TextMapCarrier{
@@ -1523,9 +1523,9 @@ func TestEnvVars(t *testing.T) {
 			var tests = []struct {
 				in       TextMapCarrier
 				outMap   TextMapCarrier
-				out      []uint64 // contains [<trace_id>, <span_id>]
-				priority float64
 				origin   string
+				out      []uint64
+				priority float64
 			}{
 				{
 					in: TextMapCarrier{
@@ -1596,10 +1596,10 @@ func TestEnvVars(t *testing.T) {
 			var tests = []struct {
 				in       TextMapCarrier
 				outMap   TextMapCarrier
-				out      []uint64 // contains [<parent_id>, <span_id>]
-				tid      traceID
-				priority float64
 				origin   string
+				out      []uint64 // contains [<parent_id>, <span_id>]
+				priority float64
+				tid      traceID
 			}{
 				{
 					in: TextMapCarrier{
@@ -1956,8 +1956,14 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 
 func FuzzComposeTracestate(f *testing.F) {
 	testCases := []struct {
-		priority                         int
-		k1, v1, k2, v2, k3, v3, oldState string
+		k1       string
+		v1       string
+		k2       string
+		v2       string
+		k3       string
+		v3       string
+		oldState string
+		priority int
 	}{
 		{priority: 1,
 			k1: "keyOne", v1: "json",

@@ -25,11 +25,12 @@ var (
 // bucket is a not thread-safe generic implementation of a dynamic collection of elements
 // stored under a value-bound key (like time). Inspired by concentrator.rawBucket.
 type bucket[K comparable, T any] struct {
-	start, duration uint64
 	// index is a map of data's entries by aggregating value to avoid iterating data.
 	index map[K]*list.Element
 	// data is a list because insertion order may be important to users.
-	data *list.List
+	data     *list.List
+	start    uint64
+	duration uint64
 }
 
 func newBucket[K comparable, T any](btime uint64, bsize int64) *bucket[K, T] {
@@ -107,18 +108,19 @@ type abandonedSpansDebugger struct {
 	// In takes candidate spans and adds them to the debugger.
 	In chan *abandonedSpanCandidate
 
-	// waits for any active goroutines
-	wg sync.WaitGroup
-
 	// stop causes the debugger to shut down when closed.
 	stop chan struct{}
+
+	// waits for any active goroutines
+	wg sync.WaitGroup
 
 	// stopped reports whether the debugger is stopped (when non-zero).
 	stopped uint32
 
 	// addedSpans and removedSpans are internal counters, mainly for testing
 	// purposes
-	addedSpans, removedSpans uint32
+	addedSpans   uint32
+	removedSpans uint32
 }
 
 // newAbandonedSpansDebugger creates a new abandonedSpansDebugger debugger

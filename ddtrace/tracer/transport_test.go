@@ -81,18 +81,19 @@ func TestTracesAgentIntegration(t *testing.T) {
 func TestResolveAgentAddr(t *testing.T) {
 	c := new(config)
 	for _, tt := range []struct {
-		inOpt            StartOption
-		envHost, envPort string
-		out              *url.URL
+		inOpt   StartOption
+		out     *url.URL
+		envHost string
+		envPort string
 	}{
-		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
-		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
-		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
-		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
-		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
-		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
-		{WithAgentAddr("ip.other:1234"), "", "9876", &url.URL{Scheme: "http", Host: "ip.other:1234"}},
-		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.other:8888"}},
+		{nil, &url.URL{Scheme: "http", Host: defaultAddress}, "", ""},
+		{nil, &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}, "ip.local", ""},
+		{nil, &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}, "", "1234"},
+		{nil, &url.URL{Scheme: "http", Host: "ip.local:1234"}, "ip.local", "1234"},
+		{WithAgentAddr("host:1243"), &url.URL{Scheme: "http", Host: "host:1243"}, "", ""},
+		{WithAgentAddr("ip.other:9876"), &url.URL{Scheme: "http", Host: "ip.other:9876"}, "ip.local", ""},
+		{WithAgentAddr("ip.other:1234"), &url.URL{Scheme: "http", Host: "ip.other:1234"}, "", "9876"},
+		{WithAgentAddr("ip.other:8888"), &url.URL{Scheme: "http", Host: "ip.other:8888"}, "ip.local", "1234"},
 	} {
 		t.Run("", func(t *testing.T) {
 			if tt.envHost != "" {
@@ -124,9 +125,9 @@ func TestResolveAgentAddr(t *testing.T) {
 
 func TestTransportResponse(t *testing.T) {
 	for name, tt := range map[string]struct {
-		status int
 		body   string
 		err    string
+		status int
 	}{
 		"ok": {
 			status: http.StatusOK,
@@ -198,8 +199,8 @@ func TestTraceCountHeader(t *testing.T) {
 }
 
 type recordingRoundTripper struct {
-	reqs []*http.Request
 	rt   http.RoundTripper
+	reqs []*http.Request
 }
 
 // wrapRecordingRoundTripper wraps the client Transport with one that records all

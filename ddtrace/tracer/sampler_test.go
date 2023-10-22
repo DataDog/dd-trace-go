@@ -51,8 +51,8 @@ func TestPrioritySampler(t *testing.T) {
 
 		type key struct{ service, env string }
 		for _, tt := range []struct {
-			in  string
 			out map[key]float64
+			in  string
 		}{
 			{
 				in: `{}`,
@@ -214,8 +214,8 @@ func TestRuleEnvVars(t *testing.T) {
 		assert := assert.New(t)
 		defer os.Unsetenv("DD_TRACE_RATE_LIMIT")
 		for _, tt := range []struct {
-			in  string
 			out *rate.Limiter
+			in  string
 		}{
 			{in: "", out: rate.NewLimiter(100.0, 100)},
 			{in: "0.0", out: rate.NewLimiter(0.0, 0)},
@@ -237,8 +237,8 @@ func TestRuleEnvVars(t *testing.T) {
 
 		for _, tt := range []struct {
 			value  string
-			ruleN  int
 			errStr string
+			ruleN  int
 		}{
 			{
 				value: "[]",
@@ -278,8 +278,8 @@ func TestRuleEnvVars(t *testing.T) {
 
 		for i, tt := range []struct {
 			value  string
-			ruleN  int
 			errStr string
+			ruleN  int
 		}{
 			{
 				value: "[]",
@@ -931,21 +931,21 @@ func TestGlobMatch(t *testing.T) {
 
 func TestSamplingRuleMarshall(t *testing.T) {
 	for _, tt := range []struct {
-		in  SamplingRule
 		out string
+		in  SamplingRule
 	}{
-		{SamplingRule{nil, nil, 0, 0, 0, "srv", "ops", nil},
-			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), nil, 0, 0, 0, "srv", "ops", nil},
-			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+]"), 0, 0, 0, "", "", nil},
-			`{"service":"srv.*","name":"ops.[0-9]+]","sample_rate":0,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 0, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"trace(0)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 0, 1, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)"}`},
-		{SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), 0.55, 1000, 1, "", "", nil},
-			`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","sample_rate":0.55,"type":"span(1)","max_per_second":1000}`},
+		{`{"service":"srv","name":"ops","type":"trace(0)","sample_rate":0}`,
+			SamplingRule{nil, nil, nil, "srv", "ops", 0, 0, 0}},
+		{`{"service":"srv","name":"ops","type":"trace(0)","sample_rate":0}`,
+			SamplingRule{regexp.MustCompile("srv.[0-9]+]"), nil, nil, "srv", "ops", 0, 0, 0}},
+		{`{"service":"srv.*","name":"ops.[0-9]+]","type":"trace(0)","sample_rate":0}`,
+			SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+]"), nil, "", "", 0, 0, 0}},
+		{`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","type":"trace(0)","sample_rate":0.55}`,
+			SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, "", "", 0.55, 0, 0}},
+		{`{"service":"srv.[0-9]+]","name":"ops.[0-9]+]","type":"span(1)","sample_rate":0.55}`,
+			SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, "", "", 0.55, 0, 1}},
+		{`{"max_per_second":1000,"service":"srv.[0-9]+]","name":"ops.[0-9]+]","type":"span(1)","sample_rate":0.55}`,
+			SamplingRule{regexp.MustCompile("srv.[0-9]+]"), regexp.MustCompile("ops.[0-9]+]"), nil, "", "", 0.55, 1000, 1}},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)

@@ -115,16 +115,16 @@ func TestSpanFinishTwice(t *testing.T) {
 func TestShouldDrop(t *testing.T) {
 	for _, tt := range []struct {
 		prio   int
-		errors int32
 		rate   float64
+		errors int32
 		want   bool
 	}{
 		{1, 0, 0, true},
 		{2, 1, 0, true},
 		{0, 1, 0, true},
 		{0, 0, 1, true},
-		{0, 0, 0.5, true},
-		{0, 0, 0.00001, false},
+		{0, 0.5, 0, true},
+		{0, 0.00001, 0, false},
 		{0, 0, 0, false},
 	} {
 		t.Run("", func(t *testing.T) {

@@ -93,9 +93,9 @@ func sampledByRate(n uint64, rate float64) bool {
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          sync.RWMutex
 	rates       map[string]float64
 	defaultRate float64
+	mu          sync.RWMutex
 }
 
 func newPrioritySampler() *prioritySampler {
