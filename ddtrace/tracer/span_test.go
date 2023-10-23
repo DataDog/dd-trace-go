@@ -405,7 +405,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 				defer wg.Done()
 				childSpan := tracer.newChildSpan("child", rootSpan)
 				childSpan.SetTag(ext.ManualKeep, true)
-				defer childSpan.Finish()
+				childSpan.Finish()
 			}()
 		}
 		wg.Wait()
@@ -428,7 +428,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 					ChildOf(rootSpan.Context()),
 					Tag(ext.ManualKeep, true),
 				)
-				defer childSpan.Finish()
+				childSpan.Finish()
 			}()
 		}
 		wg.Wait()
