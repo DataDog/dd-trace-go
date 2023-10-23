@@ -3,6 +3,7 @@ variables:
 
 .benchmarks:
   stage: macrobenchmarks
+  needs: []
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
