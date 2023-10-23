@@ -35,10 +35,13 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 	log.Debug("contrib/emicklei/go-restful/v3: Creating tracing filter: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{tracer.ServiceName(cfg.serviceName)}
 	return func(req *restful.Request, resp *restful.Response, chain *restful.FilterChain) {
-		spanOpts := append(spanOpts, tracer.ResourceName(req.SelectedRoutePath()))
-		spanOpts = append(spanOpts, tracer.Tag(ext.Component, componentName))
-		spanOpts = append(spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-
+		spanOpts := append(
+			spanOpts,
+			tracer.ResourceName(req.SelectedRoutePath()),
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+			tracer.Tag(ext.HTTPRoute, req.SelectedRoutePath()),
+		)
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}

@@ -92,6 +92,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal("/user/:id", span.Tag(ext.HTTPRoute))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
