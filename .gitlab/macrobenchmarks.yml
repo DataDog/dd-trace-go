@@ -3,7 +3,6 @@ variables:
 
 .benchmarks:
   stage: macrobenchmarks
-  needs: []
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
@@ -19,7 +18,7 @@ variables:
     name: "artifacts"
     when: always
     paths:
-      - artifacts/
+      - platform/artifacts/
     expire_in: 3 months
   variables:
     FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
