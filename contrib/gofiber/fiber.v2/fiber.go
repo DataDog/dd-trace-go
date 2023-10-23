@@ -49,15 +49,22 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		}
 		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
 		h := http.Header{}
-		for k, v := range c.GetReqHeaders() {
-			h.Add(k, v)
+		for k, headers := range c.GetReqHeaders() {
+			for _, v := range headers {
+				// GetReqHeaders returns a list of headers associated with the given key.
+				// http.Header.Add supports appending multiple values, so the previous
+				// value will not be overwritten.
+				h.Add(k, v)
+			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
-		opts = append(opts, tracer.Tag(ext.Component, componentName))
-		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+		opts = append(opts,
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+		)
 		span, ctx := tracer.StartSpanFromContext(c.Context(), cfg.spanName, opts...)
 
 		defer span.Finish()
@@ -69,6 +76,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		err := c.Next()
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(c))
+		span.SetTag(ext.HTTPRoute, c.Route().Path)
 
 		status := c.Response().StatusCode()
 		// on the off chance we don't yet have a status after the rest of the things have run

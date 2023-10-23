@@ -235,40 +235,35 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+// clearIntegreationsForTests clears the state of all integrations
+func clearIntegrationsForTests() {
+	for name, state := range contribIntegrations {
+		state.imported = false
+		contribIntegrations[name] = state
+	}
+}
+
 func TestAgentIntegration(t *testing.T) {
 	t.Run("err", func(t *testing.T) {
 		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
 	})
 
-	t.Run("default", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-		assert.NotNil(t, cfg.integrations)
+	// this test is run before configuring integrations and after: ensures we clean up global state
+	defaultUninstrumentedTest := func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		cfg.loadContribIntegrations(nil)
 		assert.Equal(t, len(cfg.integrations), 54)
-	})
-
-	t.Run("uninstrumented", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
-
-		cfg.loadContribIntegrations([]*debug.Module{})
-		for _, v := range cfg.integrations {
-			assert.False(t, v.Instrumented)
+		for integrationName, v := range cfg.integrations {
+			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
-	})
+	}
+	t.Run("default_before", defaultUninstrumentedTest)
 
 	t.Run("OK import", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		ok := MarkIntegrationImported("github.com/go-chi/chi")
 		assert.True(t, ok)
@@ -277,11 +272,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("available", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "github.com/go-redis/redis",
@@ -295,11 +287,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -314,11 +303,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc v12", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -333,11 +319,8 @@ func TestAgentIntegration(t *testing.T) {
 	})
 
 	t.Run("grpc bad", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"statsd_port":8999}`))
-		}))
-		defer srv.Close()
-		cfg := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")))
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
 
 		d := debug.Module{
 			Path:    "google.golang.org/grpc",
@@ -350,6 +333,9 @@ func TestAgentIntegration(t *testing.T) {
 		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
 		assert.False(t, cfg.integrations["gRPC"].Available)
 	})
+
+	// ensure we clean up global state
+	t.Run("default_after", defaultUninstrumentedTest)
 }
 
 type contribPkg struct {
@@ -918,6 +904,7 @@ func TestServiceName(t *testing.T) {
 		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
+		defer globalconfig.SetServiceName("")
 	})
 }
 
@@ -1132,6 +1119,7 @@ func TestEnvConfig(t *testing.T) {
 func TestStatsTags(t *testing.T) {
 	assert := assert.New(t)
 	c := newConfig(WithService("serviceName"), WithEnv("envName"))
+	defer globalconfig.SetServiceName("")
 	c.hostname = "hostName"
 	tags := statsTags(c)
 
@@ -1206,11 +1194,14 @@ func TestWithLogStartup(t *testing.T) {
 
 func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig()
 		assert.Equal(0, globalconfig.HeaderTagsLen())
 	})
+
 	t.Run("single-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		newConfig(WithHeaderTags([]string{header}))
@@ -1218,6 +1209,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("header-and-tag", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		tag := "tag"
@@ -1226,6 +1218,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("multi-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
@@ -1234,6 +1227,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("normalization", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
 		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
@@ -1241,6 +1235,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("envvar-only", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 
@@ -1252,6 +1247,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("env-override", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
@@ -1259,6 +1255,9 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
+
+	// ensures we cleaned up global state correctly
+	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
 func TestHostnameDisabled(t *testing.T) {
