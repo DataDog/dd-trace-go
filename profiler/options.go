@@ -144,7 +144,7 @@ func logStartup(c *config) {
 		"execution_trace_period":     c.traceConfig.Period.String(),
 		"execution_trace_size_limit": c.traceConfig.Limit,
 		"endpoint_count_enabled":     c.endpointCountEnabled,
-    "custom_profiler_labels":     c.customProfilerLabels,
+		"custom_profiler_labels":     c.customProfilerLabels,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
