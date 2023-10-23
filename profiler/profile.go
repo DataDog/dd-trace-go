@@ -8,6 +8,7 @@ package profiler
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -194,6 +195,7 @@ var profileTypes = map[ProfileType]profileType{
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
+			traceLogCPUProfileRate(p.cfg.cpuProfileRate)
 			select {
 			case <-p.exit: // Profiling was stopped
 			case <-time.After(p.cfg.period): // The profiling cycle has ended
@@ -203,6 +205,19 @@ var profileTypes = map[ProfileType]profileType{
 			return buf.Bytes(), nil
 		},
 	},
+}
+
+// traceLogCPUProfileRate logs the cpuProfileRate to the execution tracer if
+// its not 0. This gives us a better chance to correctly guess the CPU duration
+// of traceEvCPUSample events. It will not work correctly if the user is
+// calling runtime.SetCPUProfileRate() themselves, and there is no way to
+// handle this scenario given the current APIs. See
+// https://github.com/golang/go/issues/60701 for a proposal to improve the
+// situation.
+func traceLogCPUProfileRate(cpuProfileRate int) {
+	if cpuProfileRate != 0 {
+		trace.Log(context.Background(), "cpuProfileRate", fmt.Sprintf("%d", cpuProfileRate))
+	}
 }
 
 // defaultExecutionTraceSizeLimit is the default upper bound, in bytes,
