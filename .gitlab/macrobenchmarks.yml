@@ -28,7 +28,6 @@ variables:
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
   allow_failure: true
-
 go118-baseline:
   extends: .benchmarks
   variables:
@@ -36,15 +35,10 @@ go118-baseline:
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go118-only-trace:
   extends: .benchmarks
   variables:
@@ -52,15 +46,10 @@ go118-only-trace:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go118-only-profile:
   extends: .benchmarks
   variables:
@@ -68,15 +57,10 @@ go118-only-profile:
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go118-profile-trace:
   extends: .benchmarks
   variables:
@@ -84,15 +68,10 @@ go118-profile-trace:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go118-trace-asm:
   extends: .benchmarks
   variables:
@@ -100,15 +79,10 @@ go118-trace-asm:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go118-profile-trace-asm:
   extends: .benchmarks
   variables:
@@ -116,15 +90,10 @@ go118-profile-trace-asm:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.18"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-baseline:
   extends: .benchmarks
   variables:
@@ -132,15 +101,10 @@ go119-baseline:
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-only-trace:
   extends: .benchmarks
   variables:
@@ -148,15 +112,10 @@ go119-only-trace:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-only-profile:
   extends: .benchmarks
   variables:
@@ -164,15 +123,10 @@ go119-only-profile:
     ENABLE_TRACING: "false"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-profile-trace:
   extends: .benchmarks
   variables:
@@ -180,15 +134,10 @@ go119-profile-trace:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "false"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-trace-asm:
   extends: .benchmarks
   variables:
@@ -196,15 +145,10 @@ go119-trace-asm:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "false"
     ENABLE_APPSEC: "true"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
-
+    PARALLELIZE: "false"
 go119-profile-trace-asm:
   extends: .benchmarks
   variables:
@@ -212,11 +156,7 @@ go119-profile-trace-asm:
     ENABLE_TRACING: "true"
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
-    DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
-    DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     GO_VERSION: "1.19"
-    GO_PROF_APP_BUILD_VARIANT: candidate
-    DD_TRACE_GO_VERSION: latest
     LOAD_TESTS: normal_operation_io-bound,high_load_io-bound|normal_operation_cpu-bound,high_load_cpu-bound|normal_operation_cgo-cpu-bound,high_load_cgo-cpu-bound|normal_operation_cpu-bound-x-client-ip-enabled,high_load_cpu-bound-x-client-ip-enabled
-    PARALLELIZE: "true"
+    PARALLELIZE: "false"
