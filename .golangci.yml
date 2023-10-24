@@ -12,6 +12,7 @@ linters:
   - gci
   - revive
   - bodyclose
+  - govet
 linters-settings:
   gci:
     sections:
@@ -20,3 +21,7 @@ linters-settings:
       - default
     skip-generated: true
     custom-order: true
+  govet:
+    disable-all: true
+    enable:
+      - fieldalignment
