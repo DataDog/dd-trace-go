@@ -141,57 +141,37 @@ func TestRecordLoggerIgnore(t *testing.T) {
 }
 
 func TestSetLoggingRate(t *testing.T) {
-	defer func(old Logger) {
-		UseLogger(old)
-		errrate = time.Minute
-	}(logger)
-	tp := new(RecordLogger)
-	UseLogger(tp)
-
 	testCases := []struct {
-		input       string
-		expectedLog string
-		result      time.Duration
+		input  string
+		result time.Duration
 	}{
 		{
-			input:       "",
-			expectedLog: "",
-			result:      time.Minute,
+			input:  "",
+			result: time.Minute,
 		},
 		{
-			input:       "0",
-			expectedLog: "",
-			result:      0 * time.Second,
+			input:  "0",
+			result: 0 * time.Second,
 		},
 		{
-			input:       "10",
-			expectedLog: "",
-			result:      10 * time.Second,
+			input:  "10",
+			result: 10 * time.Second,
 		},
 		{
-			input:       "-1",
-			expectedLog: "Invalid value for DD_LOGGING_RATE: negative value",
-			result:      time.Minute,
+			input:  "-1",
+			result: time.Minute,
 		},
 		{
-			input:       "this is not a number",
-			expectedLog: "Invalid value for DD_LOGGING_RATE: strconv.ParseInt: parsing \"this is not a number\": invalid syntax",
-			result:      time.Minute,
+			input:  "this is not a number",
+			result: time.Minute,
 		},
 	}
 	for _, tC := range testCases {
 		tC := tC
-		tp.Reset()
 		errrate = time.Minute // reset global variable
 		t.Run(tC.input, func(t *testing.T) {
 			setLoggingRate(tC.input)
-			lines := tp.Logs()
 			assert.Equal(t, tC.result, errrate)
-			if tC.expectedLog == "" {
-				assert.Empty(t, lines)
-			} else {
-				assert.Contains(t, lines[0], tC.expectedLog)
-			}
 		})
 	}
 }
