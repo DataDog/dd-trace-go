@@ -140,6 +140,51 @@ func TestRecordLoggerIgnore(t *testing.T) {
 	assert.Contains(t, tp.Logs()[0], "appsec")
 }
 
+func TestSetLoggingRate(t *testing.T) {
+	defer func(old Logger) { UseLogger(old) }(logger)
+	tp := new(RecordLogger)
+	UseLogger(tp)
+
+	testCases := []struct {
+		value       string
+		expectedLog string
+	}{
+		{
+			value:       "",
+			expectedLog: "",
+		},
+		{
+			value:       "0",
+			expectedLog: "",
+		},
+		{
+			value:       "10",
+			expectedLog: "",
+		},
+		{
+			value:       "-1",
+			expectedLog: "Invalid value for DD_LOGGING_RATE: negative value",
+		},
+		{
+			value:       "this is not a number",
+			expectedLog: "Invalid value for DD_LOGGING_RATE: strconv.ParseInt: parsing \"this is not a number\": invalid syntax",
+		},
+	}
+	for _, tC := range testCases {
+		tC := tC
+		tp.Reset()
+		t.Run(tC.value, func(t *testing.T) {
+			setLoggingRate(tC.value)
+			lines := tp.Logs()
+			if tC.expectedLog == "" {
+				assert.Empty(t, lines)
+			} else {
+				assert.Contains(t, lines[0], tC.expectedLog)
+			}
+		})
+	}
+}
+
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
 	for i := 0; i < b.N; i++ {
