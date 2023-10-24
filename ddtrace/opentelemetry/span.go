@@ -25,7 +25,7 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	noop.Span
+	noop.Span  // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	DD         tracer.Span
 	finished   bool
 	finishOpts []tracer.FinishOption

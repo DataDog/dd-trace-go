@@ -19,7 +19,9 @@
 //	yourCode(ctx)
 //	sp.End()
 //
-// Not every feature provided by OpenTelemetry is supported with this wrapper today.
+// Not every feature provided by OpenTelemetry is supported with this wrapper today, and any new API methods
+// added to the OpenTelemetry API will default to being a no-op until implemented by this library. See the
+// OpenTelemetry package docs for more details: https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
 // This package seeks to implement a minimal set of functions within
 // the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
 // to allow users to send traces to Datadog using existing OpenTelemetry code with minimal changes to the application.
@@ -46,9 +48,9 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 // trace computational workflows.
 // WithInstrumentationVersion and WithSchemaURL TracerOptions are not supported.
 type TracerProvider struct {
-	noop.TracerProvider
-	tracer  *oteltracer
-	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
+	noop.TracerProvider // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	tracer              *oteltracer
+	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
 }
 
