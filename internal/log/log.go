@@ -99,14 +99,12 @@ var (
 )
 
 func init() {
-	v := os.Getenv("DD_LOGGING_RATE")
-	setLoggingRate(v)
+	if v := os.Getenv("DD_LOGGING_RATE"); v != "" {
+		setLoggingRate(v)
+	}
 }
 
 func setLoggingRate(v string) {
-	if v == "" {
-		return
-	}
 	if sec, err := strconv.ParseInt(v, 10, 64); err != nil {
 		Warn("Invalid value for DD_LOGGING_RATE: %v", err)
 	} else {
