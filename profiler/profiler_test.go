@@ -638,3 +638,41 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionResolution(t *testing.T) {
+	doOneProfileUpload := func(opts ...Option) profileMeta {
+		received := make(chan profileMeta)
+		server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: received})
+		defer server.Close()
+
+		opts = append(opts,
+			WithHTTPClient(client), WithProfileTypes(), WithPeriod(10*time.Millisecond),
+		)
+		err := Start(opts...)
+		require.NoError(t, err)
+		defer Stop()
+		return <-received
+	}
+
+	t.Run("tags only", func(t *testing.T) {
+		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		assert.Contains(t, data.tags, "version:4.5.6")
+	})
+
+	t.Run("env", func(t *testing.T) {
+		// Environment variable gets priority over tags
+		t.Setenv("DD_VERSION", "1.2.3")
+		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		assert.NotContains(t, data.tags, "version:4.5.6")
+		assert.Contains(t, data.tags, "version:1.2.3")
+	})
+
+	t.Run("WithVersion", func(t *testing.T) {
+		// WithVersion gets the highest priority
+		t.Setenv("DD_VERSION", "1.2.3")
+		data := doOneProfileUpload(WithTags("version:4.5.6"), WithVersion("7.8.9"))
+		assert.NotContains(t, data.tags, "version:1.2.3")
+		assert.NotContains(t, data.tags, "version:4.5.6")
+		assert.Contains(t, data.tags, "version:7.8.9")
+	})
+}
