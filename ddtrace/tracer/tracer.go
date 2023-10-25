@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"encoding/binary"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -702,7 +703,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 		// skipped.
 		ctx = globalinternal.WithExecutionNotTraced(ctx)
 	}
-	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], span.SpanID)
+	// TODO: can we make string(b[:]) not allocate? e.g. with unsafe
+	// shenanigans? rt.Log won't retain the message string, though perhaps
+	// we can't assume that will always be the case.
+	rt.Log(ctx, "datadog.uint64_span_id", string(b[:]))
 	return ctx, end
 }
 
