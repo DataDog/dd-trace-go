@@ -26,6 +26,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
@@ -514,6 +515,29 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+		})
+
+		t.Run("code-override-full-URL", func(t *testing.T) {
+			t.Setenv("DD_TRACE_AGENT_URL", "https://custom:1234")
+			tracer := newTracer(WithAgentURL("http://testhost:3333"))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "testhost:3333"}, c.agentURL)
+		})
+
+		t.Run("code-override-full-URL-error", func(t *testing.T) {
+			tp := new(log.RecordLogger)
+			// Have to use UseLogger directly before tracer logger is set
+			defer log.UseLogger(tp)()
+			t.Setenv("DD_TRACE_AGENT_URL", "https://localhost:1234")
+			tracer := newTracer(WithAgentURL("go://testhost:3333"))
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:1234"}, c.agentURL)
+			cond := func() bool {
+				return strings.Contains(strings.Join(tp.Logs(), ""), "Unsupported protocol")
+			}
+			assert.Eventually(t, cond, 1*time.Second, 75*time.Millisecond)
 		})
 	})
 
