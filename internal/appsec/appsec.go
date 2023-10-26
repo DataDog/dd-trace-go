@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
-	"github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -61,10 +61,7 @@ func Start(opts ...StartOption) {
 	for _, opt := range opts {
 		opt(cfg)
 	}
-
-	appsec := &appsec{
-		cfg: cfg,
-	}
+	appsec := newAppSec(cfg)
 
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
@@ -120,6 +117,12 @@ type appsec struct {
 	limiter   *TokenTicker
 	wafHandle *wafHandle
 	started   bool
+}
+
+func newAppSec(cfg *Config) *appsec {
+	return &appsec{
+		cfg: cfg,
+	}
 }
 
 // Start AppSec by registering its security protections according to the configured the security rules.

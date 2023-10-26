@@ -32,7 +32,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
 	cfg, err := newConfig()
 	require.NoError(t, err)
-	a := &appsec{cfg: cfg}
+	a := newAppSec(cfg)
 	err = a.startRC()
 	require.NoError(t, err)
 
