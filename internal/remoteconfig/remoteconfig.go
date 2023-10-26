@@ -71,7 +71,9 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks []Callback
+	callbacks    []Callback
+	products     map[string]struct{}
+	capabilities map[Capability]struct{}
 
 	lastError error
 	startOnce sync.Once
@@ -100,6 +102,8 @@ func newClient(config ClientConfig) (*Client, error) {
 		stop:         make(chan struct{}),
 		lastError:    nil,
 		callbacks:    []Callback{},
+		capabilities: map[Capability]struct{}{},
+		products:     map[string]struct{}{},
 	}, nil
 }
 
@@ -233,21 +237,21 @@ func UnregisterCallback(f Callback) {
 func RegisterProduct(p string) {
 	client.Lock()
 	defer client.Unlock()
-	client.Products[p] = struct{}{}
+	client.products[p] = struct{}{}
 }
 
 // UnregisterProduct removes a product from the list of products listened by the client
 func UnregisterProduct(p string) {
 	client.Lock()
 	defer client.Unlock()
-	delete(client.Products, p)
+	delete(client.products, p)
 }
 
 // HasProduct returns whether a given product was registered
 func HasProduct(p string) bool {
 	client.RLock()
 	defer client.RUnlock()
-	_, found := client.Products[p]
+	_, found := client.products[p]
 	return found
 }
 
@@ -256,7 +260,7 @@ func HasProduct(p string) bool {
 func RegisterCapability(cap Capability) {
 	client.Lock()
 	defer client.Unlock()
-	client.Capabilities[cap] = struct{}{}
+	client.capabilities[cap] = struct{}{}
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
@@ -264,26 +268,26 @@ func RegisterCapability(cap Capability) {
 func UnregisterCapability(cap Capability) {
 	client.Lock()
 	defer client.Unlock()
-	delete(client.Capabilities, cap)
+	delete(client.capabilities, cap)
 }
 
 // HasCapability returns whether a given capability was registered
 func HasCapability(cap Capability) bool {
 	client.RLock()
 	defer client.RUnlock()
-	_, found := client.Capabilities[cap]
+	_, found := client.capabilities[cap]
 	return found
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
-	productUpdates := make(map[string]ProductUpdate, len(c.Products))
-	for p := range c.Products {
+	productUpdates := make(map[string]ProductUpdate, len(c.products))
+	for p := range c.products {
 		productUpdates[p] = make(ProductUpdate)
 	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for p := range c.Products {
+		for p := range c.products {
 			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
@@ -415,11 +419,11 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := big.NewInt(0)
-	for i := range c.Capabilities {
+	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, 0, len(c.Products))
-	for p := range c.Products {
+	products := make([]string, 0, len(c.products))
+	for p := range c.products {
 		products = append(products, p)
 	}
 	req := clientGetConfigsRequest{

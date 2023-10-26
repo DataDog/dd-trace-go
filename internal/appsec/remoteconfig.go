@@ -304,7 +304,6 @@ func (a *appsec) registerRCProduct(p string) error {
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.cfg.rc.Products[p] = struct{}{}
 	remoteconfig.RegisterProduct(p)
 	return nil
 }
@@ -313,13 +312,11 @@ func (a *appsec) unregisterRCProduct(p string) error {
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	delete(a.cfg.rc.Products, p)
 	remoteconfig.UnregisterProduct(p)
 	return nil
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
-	a.cfg.rc.Capabilities[c] = struct{}{}
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
@@ -332,7 +329,6 @@ func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return
 	}
-	delete(a.cfg.rc.Capabilities, c)
 	remoteconfig.UnregisterCapability(c)
 }
 
