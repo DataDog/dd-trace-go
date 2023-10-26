@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -62,6 +63,7 @@ type ProductUpdate map[string][]byte
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
 type Client struct {
+	sync.RWMutex
 	ClientConfig
 
 	clientID   string
@@ -72,10 +74,16 @@ type Client struct {
 	callbacks []Callback
 
 	lastError error
+	startOnce sync.Once
+	stopOnce  sync.Once
 }
 
-// NewClient creates a new remoteconfig Client
-func NewClient(config ClientConfig) (*Client, error) {
+// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
+// Using a single RC client instance in the tracer is a requirement for remote configuration.
+var client *Client
+
+// newClient creates a new remoteconfig Client
+func newClient(config ClientConfig) (*Client, error) {
 	repo, err := rc.NewUnverifiedRepository()
 	if err != nil {
 		return nil, err
@@ -95,34 +103,60 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}, nil
 }
 
-// Start starts the client's update poll loop in a fresh goroutine
-func (c *Client) Start() {
-	go func() {
-		ticker := time.NewTicker(c.PollInterval)
-		defer ticker.Stop()
+// Start starts the client's update poll loop in a fresh goroutine.
+// Noop if the client has already started.
+func Start(config ClientConfig) error {
+	if client != nil {
+		return nil
+	}
+	var err error
+	client, err = newClient(config)
+	if err != nil {
+		return err
+	}
+	client.startOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(client.PollInterval)
+			defer ticker.Stop()
 
-		for {
-			select {
-			case <-c.stop:
-				close(c.stop)
-				return
-			case <-ticker.C:
-				c.updateState()
+			for {
+				select {
+				case <-client.stop:
+					close(client.stop)
+					return
+				case <-ticker.C:
+					client.Lock()
+					client.updateState()
+					client.Unlock()
+				}
 			}
-		}
-	}()
+		}()
+	})
+	return err
 }
 
-// Stop stops the client's update poll loop
-func (c *Client) Stop() {
-	log.Debug("remoteconfig: gracefully stopping the client")
-	c.stop <- struct{}{}
-	select {
-	case <-c.stop:
-		log.Debug("remoteconfig: client stopped successfully")
-	case <-time.After(time.Second):
-		log.Debug("remoteconfig: client stopping timeout")
+// Stop stops the client's update poll loop.
+// Noop if the client has already been stopped.
+func Stop() {
+	if client == nil {
+		return
 	}
+	client.stopOnce.Do(func() {
+		log.Debug("remoteconfig: gracefully stopping the client")
+		client.stop <- struct{}{}
+		select {
+		case <-client.stop:
+			log.Debug("remoteconfig: client stopped successfully")
+		case <-time.After(time.Second):
+			log.Debug("remoteconfig: client stopping timeout")
+		}
+	})
+}
+
+// Reset destroys the client instance.
+// To be used only in tests to reset the state of the client.
+func Reset() {
+	client = nil
 }
 
 func (c *Client) updateState() {
@@ -176,41 +210,69 @@ func (c *Client) updateState() {
 // RegisterCallback allows registering a callback that will be invoked when the client
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
-func (c *Client) RegisterCallback(f Callback) {
-	c.callbacks = append(c.callbacks, f)
+func RegisterCallback(f Callback) {
+	client.Lock()
+	defer client.Unlock()
+	client.callbacks = append(client.callbacks, f)
 }
 
 // UnregisterCallback removes a previously registered callback from the active callbacks list
 // This remove operation preserves ordering
-func (c *Client) UnregisterCallback(f Callback) {
+func UnregisterCallback(f Callback) {
+	client.Lock()
+	defer client.Unlock()
 	fValue := reflect.ValueOf(f)
-	for i, callback := range c.callbacks {
+	for i, callback := range client.callbacks {
 		if reflect.ValueOf(callback) == fValue {
-			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
 		}
 	}
 }
 
 // RegisterProduct adds a product to the list of products listened by the client
-func (c *Client) RegisterProduct(p string) {
-	c.Products[p] = struct{}{}
+func RegisterProduct(p string) {
+	client.Lock()
+	defer client.Unlock()
+	client.Products[p] = struct{}{}
 }
 
 // UnregisterProduct removes a product from the list of products listened by the client
-func (c *Client) UnregisterProduct(p string) {
-	delete(c.Products, p)
+func UnregisterProduct(p string) {
+	client.Lock()
+	defer client.Unlock()
+	delete(client.Products, p)
+}
+
+// HasProduct returns whether a given product was registered
+func HasProduct(p string) bool {
+	client.RLock()
+	defer client.RUnlock()
+	_, found := client.Products[p]
+	return found
 }
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func (c *Client) RegisterCapability(cap Capability) {
-	c.Capabilities[cap] = struct{}{}
+func RegisterCapability(cap Capability) {
+	client.Lock()
+	defer client.Unlock()
+	client.Capabilities[cap] = struct{}{}
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func (c *Client) UnregisterCapability(cap Capability) {
-	delete(c.Capabilities, cap)
+func UnregisterCapability(cap Capability) {
+	client.Lock()
+	defer client.Unlock()
+	delete(client.Capabilities, cap)
+}
+
+// HasCapability returns whether a given capability was registered
+func HasCapability(cap Capability) bool {
+	client.RLock()
+	defer client.RUnlock()
+	_, found := client.Capabilities[cap]
+	return found
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {

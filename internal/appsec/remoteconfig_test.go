@@ -32,7 +32,9 @@ func TestASMFeaturesCallback(t *testing.T) {
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
 	cfg, err := newConfig()
 	require.NoError(t, err)
-	a := newAppSec(cfg)
+	a := &appsec{cfg: cfg}
+	err = a.startRC()
+	require.NoError(t, err)
 
 	t.Setenv(enabledEnvVar, "")
 	os.Unsetenv(enabledEnvVar)
@@ -333,22 +335,19 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 		require.NotNil(t, activeAppSec)
 		require.False(t, Enabled())
-		client := activeAppSec.rc
-		require.NotNil(t, client)
-		require.Contains(t, client.Capabilities, remoteconfig.ASMActivation)
-		require.Contains(t, client.Products, rc.ProductASMFeatures)
+		require.True(t, remoteconfig.HasCapability(remoteconfig.ASMActivation))
+		require.True(t, remoteconfig.HasProduct(rc.ProductASMFeatures))
 	})
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
 		t.Setenv(enabledEnvVar, "true")
+		remoteconfig.Reset()
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
 		require.True(t, Enabled())
-		client := activeAppSec.rc
-		require.NotNil(t, client)
-		require.NotContains(t, client.Capabilities, remoteconfig.ASMActivation)
-		require.NotContains(t, client.Products, rc.ProductASMFeatures)
+		require.False(t, remoteconfig.HasCapability(remoteconfig.ASMActivation))
+		require.False(t, remoteconfig.HasProduct(rc.ProductASMFeatures))
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
@@ -397,11 +396,8 @@ func TestCapabilities(t *testing.T) {
 			if !Enabled() && activeAppSec == nil {
 				t.Skip()
 			}
-			require.NotNil(t, activeAppSec.rc)
-			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
 			for _, cap := range tc.expected {
-				_, contained := activeAppSec.rc.Capabilities[cap]
-				require.True(t, contained)
+				require.True(t, remoteconfig.HasCapability(cap))
 			}
 		})
 	}
