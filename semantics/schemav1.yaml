@@ -1,3 +1,4 @@
+version: v0.1.0
 semantics:
 - id: 1
   name: HTTP_URL

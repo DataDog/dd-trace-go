@@ -31,6 +31,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"gopkg.in/DataDog/dd-trace-go.v1/semantics"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -1094,6 +1095,19 @@ func Tag(k string, v interface{}) StartSpanOption {
 			cfg.Tags = map[string]interface{}{}
 		}
 		cfg.Tags[k] = v
+	}
+}
+
+// TagSemantic sets the given key/value pair as a tag on the started Span.
+func TagSemantic(k string, v interface{}, s semantics.SemanticID) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		if cfg.SemanticTags == nil {
+			cfg.SemanticTags = map[string]ddtrace.ValueAndSemantic{}
+		}
+		cfg.SemanticTags[k] = ddtrace.ValueAndSemantic{
+			Value:    v,
+			Semantic: s,
+		}
 	}
 }
 

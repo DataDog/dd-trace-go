@@ -150,6 +150,16 @@ type StartSpanConfig struct {
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
+
+	// SemanticTags holds a set of key/(value+semantic) pairs that should be set as metadata on the
+	// new span.
+	SemanticTags map[string]ValueAndSemantic
+}
+
+// ValueAndSemantic is a tuple of a tag value and its semantic meaning
+type ValueAndSemantic struct {
+	Value    interface{}
+	Semantic semantics.SemanticID
 }
 
 // Logger implementations are able to log given messages that the tracer or profiler might output.

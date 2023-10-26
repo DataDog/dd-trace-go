@@ -65,19 +65,19 @@ type errorConfig struct {
 type span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name               string             `msg:"name"`              // operation name
-	Service            string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource           string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type               string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start              int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration           int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta               map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics            map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID             uint64             `msg:"span_id"`           // identifier of this span
-	TraceID            uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID           uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error              int32              `msg:"error"`             // error status of the span; 0 means no errors
-	SemanticsSchemaURL string             `msg:"semantics_schema_url"`
+	Name               string             `msg:"name"`                 // operation name
+	Service            string             `msg:"service"`              // service name (i.e. "grpc.server", "http.request")
+	Resource           string             `msg:"resource"`             // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type               string             `msg:"type"`                 // protocol associated with the span (i.e. "web", "db", "cache")
+	Start              int64              `msg:"start"`                // span start time expressed in nanoseconds since epoch
+	Duration           int64              `msg:"duration"`             // duration of the span expressed in nanoseconds
+	Meta               map[string]string  `msg:"meta,omitempty"`       // arbitrary map of metadata
+	Metrics            map[string]float64 `msg:"metrics,omitempty"`    // arbitrary map of numeric metrics
+	SpanID             uint64             `msg:"span_id"`              // identifier of this span
+	TraceID            uint64             `msg:"trace_id"`             // lower 64-bits of the root span identifier
+	ParentID           uint64             `msg:"parent_id"`            // identifier of the span's direct parent
+	Error              int32              `msg:"error"`                // error status of the span; 0 means no errors
+	SemanticsSchemaURL string             `msg:"semantics_schema_url"` //TODO: put this at a higher level maybe? no need to dupe this much
 	SemanticTags       map[string]uint64  `msg:"semantic_tags,omitempty"`
 
 	goExecTraced bool         `msg:"-"`
@@ -168,8 +168,9 @@ func (s *span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
-func (s *span) SetTagSemantically(key string, value interface{}, semantic semantics.Semantic) {
-	s.SemanticTags[key] = semantic.ID
+func (s *span) SetTagSemantically(key string, value interface{}, semanticID semantics.SemanticID) {
+	s.SemanticTags[key] = uint64(semanticID)
+	s.SemanticsSchemaURL = semantics.Version
 	s.SetTag(key, value)
 }
 

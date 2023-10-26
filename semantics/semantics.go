@@ -10,17 +10,28 @@ import (
 var rawSchema []byte
 
 type rules struct {
+	Version   string     `yaml:"version"`
 	Semantics []Semantic `yaml:"semantics"`
 }
 
 type Semantic struct {
-	ID          uint64 `yaml:"id"`
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	IsSensitive bool   `yaml:"is_sensitive"` //todo: should this allow a "maybe"?
+	ID          SemanticID `yaml:"id"`
+	Name        string     `yaml:"name"`
+	Description string     `yaml:"description"`
+	IsSensitive bool       `yaml:"is_sensitive"` //todo: should this allow a "maybe"?
 }
 
-var semantics map[string]Semantic
+var semantics map[SemanticID]Semantic
+
+type SemanticID int
+
+var Version string
+
+// TODO: use code gen to build this from the schema
+const (
+	HTTP_URL      SemanticID = 1
+	SQL_STATEMENT            = 2
+)
 
 func init() {
 	var err error
@@ -31,23 +42,24 @@ func init() {
 	rawSchema = nil //don't keep this memory around
 }
 
-func load(in []byte) (map[string]Semantic, error) {
+func load(in []byte) (map[SemanticID]Semantic, error) {
 	rs := rules{}
-	byName := map[string]Semantic{}
+	byID := map[SemanticID]Semantic{}
 	err := yaml.Unmarshal(in, &rs)
 	if err != nil {
-		return byName, err
+		return byID, err
 	}
 	for _, r := range rs.Semantics {
-		byName[r.Name] = r
+		byID[r.ID] = r
 	}
-	return byName, nil
+	Version = rs.Version
+	return byID, nil
 }
 
 // Get returns the Semantic definition for a given name, nil if none is found
 // Do not modify the returned semantic value
-func Get(name string) *Semantic {
-	if s, ok := semantics[name]; ok {
+func Get(id SemanticID) *Semantic {
+	if s, ok := semantics[id]; ok {
 		return &s
 	}
 	return nil

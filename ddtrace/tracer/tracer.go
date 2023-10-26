@@ -522,6 +522,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
 	}
+	// add semantic tags from options
+	for k, v := range opts.SemanticTags {
+		span.SetTagSemantically(k, v.Value, v.Semantic)
+	}
 	// add global tags
 	for k, v := range t.config.globalTags {
 		span.SetTag(k, v)
