@@ -93,7 +93,7 @@ require (
 	golang.org/x/time v0.3.0
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	google.golang.org/api v0.128.0
-	google.golang.org/grpc v1.57.0
+	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v3 v3.0.75
