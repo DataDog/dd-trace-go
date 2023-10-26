@@ -8,9 +8,9 @@ package tracer
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	idatastreams "gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	idatastreams "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 )
 
 // dataStreamsContainer is an object that contains a data streams processor.

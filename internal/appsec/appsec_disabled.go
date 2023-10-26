@@ -8,7 +8,7 @@
 
 package appsec
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+import "github.com/DataDog/dd-trace-go/v2/internal/log"
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.

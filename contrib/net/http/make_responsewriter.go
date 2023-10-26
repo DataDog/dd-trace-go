@@ -17,7 +17,7 @@ import (
 	"os"
 	"text/template"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/lists"
 )
 
 func main() {

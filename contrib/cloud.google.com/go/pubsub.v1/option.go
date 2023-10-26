@@ -6,7 +6,7 @@
 package pubsub
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
 
 type config struct {

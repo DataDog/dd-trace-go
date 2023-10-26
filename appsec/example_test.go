@@ -10,9 +10,9 @@ import (
 	"io"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	echotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/labstack/echo.v4"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	echotrace "github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 
 	"github.com/labstack/echo/v4"
 )

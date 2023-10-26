@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package elastic provides functions to trace the github.com/elastic/go-elasticsearch packages.
-package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch
+package elastic // import "github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch
 
 import (
 	"bufio"
@@ -18,10 +18,10 @@ import (
 	"regexp"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 const componentName = "elastic/go-elasticsearch.v6"
