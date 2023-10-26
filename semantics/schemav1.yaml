@@ -1,0 +1,9 @@
+semantics:
+- id: 1
+  name: HTTP_URL
+  description: An HTTP URL
+  is_sensitive: true
+- id: 2
+  name: SQL_STATEMENT
+  description: A SQL Statement for a relational database like MySQL, Postgres, MSSQL, etc.
+  is_sensitive: true

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/semantics"
 )
 
 // SpanContextW3C represents a SpanContext with an additional method to allow
@@ -75,6 +76,11 @@ type Span interface {
 
 	// Context returns the SpanContext of this Span.
 	Context() SpanContext
+}
+
+// SemanticSpan is an optional interface that may be implemented by a Span.
+type SemanticSpan interface {
+	SetTagSemantically(key string, value interface{}, semantic semantics.Semantic)
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
