@@ -41,19 +41,19 @@ func startServer(t *testing.T, opts ...Option) string {
 	router := func(fctx *fasthttp.RequestCtx) {
 		switch string(fctx.Path()) {
 		case "/any":
-			WrapHandler(func(c *fasthttp.RequestCtx){
+			WrapHandler(func(c *fasthttp.RequestCtx) {
 				fmt.Fprintf(c, "Hi there! RequestURI is %q", c.RequestURI())
 			}, opts...)(fctx)
 		case "/err":
-			WrapHandler(func(c *fasthttp.RequestCtx){
+			WrapHandler(func(c *fasthttp.RequestCtx) {
 				c.Error(errMsg, 500)
 			}, opts...)(fctx)
 		case "/customErr":
-			WrapHandler(func(c *fasthttp.RequestCtx){
+			WrapHandler(func(c *fasthttp.RequestCtx) {
 				c.Error(errMsg, 600)
 			}, opts...)(fctx)
 		case "/propagation":
-			WrapHandler(func(c *fasthttp.RequestCtx){
+			WrapHandler(func(c *fasthttp.RequestCtx) {
 				_, ok := tracer.SpanFromContext(c)
 				if !ok {
 					c.Error("No span in the request context", 500)
@@ -70,7 +70,7 @@ func startServer(t *testing.T, opts ...Option) string {
 	server := &fasthttp.Server{
 		Handler: router,
 	}
-	go func(){
+	go func() {
 		require.NoError(t, server.ListenAndServe(addr))
 	}()
 	// Stop the server at the end of each test run
@@ -108,7 +108,6 @@ func startServer(t *testing.T, opts ...Option) string {
 
 // Test all of the expected span metadata on a "default" span
 func TestTrace200(t *testing.T) {
-	fmt.Println("IN TestTrace200")
 	addr := startServer(t)
 
 	assert := assert.New(t)
@@ -120,6 +119,7 @@ func TestTrace200(t *testing.T) {
 	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
+
 	assert.Len(spans, 1)
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
@@ -131,13 +131,10 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(addr+"/any", span.Tag(ext.HTTPURL))
 	assert.Equal(componentName, span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-	fmt.Println("FINISHED TestTrace200")
 }
-
 
 // Test that HTTP Status codes >= 500 are treated as error spans
 func TestStatusError(t *testing.T) {
-	fmt.Println("IN TestStatusError")
 	addr := startServer(t)
 
 	assert := assert.New(t)
@@ -149,22 +146,20 @@ func TestStatusError(t *testing.T) {
 	defer resp.Body.Close()
 
 	spans := mt.FinishedSpans()
+
 	require.Len(t, spans, 1)
 	span := spans[0]
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
 	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
-	fmt.Println("FINISHED TestStatusError")
 }
 
 // Test that users can customize which HTTP status codes are considered an error
 func TestWithStatusCheck(t *testing.T) {
 	customErrChecker := func(statusCode int) bool {
-		print("custom err checker")
 		return statusCode >= 600
 	}
 	t.Run("isError", func(t *testing.T) {
-		fmt.Println("IN TESTSTATUSCHECK - ISERROR")
 		addr := startServer(t, WithStatusCheck(customErrChecker))
 
 		assert := assert.New(t)
@@ -182,10 +177,8 @@ func TestWithStatusCheck(t *testing.T) {
 		require.Contains(t, span.Tags(), ext.Error)
 		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
 		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
-		fmt.Println("FINISHED TESTSTATUSCHECK - ISERROR")
 	})
 	t.Run("notError", func(t *testing.T) {
-		fmt.Println("IN TESTSTATUSCHECK - NOTERROR")
 		addr := startServer(t, WithStatusCheck(customErrChecker))
 
 		assert := assert.New(t)
@@ -201,13 +194,11 @@ func TestWithStatusCheck(t *testing.T) {
 		span := spans[0]
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.NotContains(span.Tags(), ext.Error)
-		fmt.Println("FINISHED TESTSTATUSCHECK - NOTERROR")
 	})
 }
 
 // Test that users can customize how resource_name is determined
 func TestCustomResourceNamer(t *testing.T) {
-	fmt.Println("IN TestCustomResourceNamer")
 	customResourceNamer := func(_ *fasthttp.RequestCtx) string {
 		return "custom resource"
 	}
@@ -225,12 +216,10 @@ func TestCustomResourceNamer(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 	assert.Equal("custom resource", span.Tag(ext.ResourceName))
-	fmt.Println("FINISHED TestCustomResourceNamer")
 }
 
 // Test that the trace middleware passes the context off to the next handler in the req chain even if the request is not instrumented
 func TestWithIgnoreRequest(t *testing.T) {
-	fmt.Println("IN TestWithIgnoreRequest")
 	addr := startServer(t, WithIgnoreRequest(ignoreResources))
 
 	assert := assert.New(t)
@@ -243,12 +232,10 @@ func TestWithIgnoreRequest(t *testing.T) {
 
 	assert.Len(mt.FinishedSpans(), 0)
 	assert.Equal(200, resp.StatusCode)
-	fmt.Println("FINISHED TestWithIgnoreRequest")
 }
 
-// Test that tracer context is stored in gearbox request context
+// Test that tracer context is stored in fasthttp request context
 func TestChildSpan(t *testing.T) {
-	fmt.Println("IN TestChildSpan")
 	addr := startServer(t)
 
 	assert := assert.New(t)
@@ -260,11 +247,9 @@ func TestChildSpan(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(200, resp.StatusCode)
-	fmt.Println("FINISHED TestChildSpan")
 }
 
 func TestPropagation(t *testing.T) {
-	fmt.Println("IN TestPropagation")
 	addr := startServer(t)
 
 	assert := assert.New(t)
@@ -281,5 +266,4 @@ func TestPropagation(t *testing.T) {
 	one := spans[0]
 	two := spans[1]
 	assert.Equal(one.TraceID(), two.TraceID())
-	fmt.Println("FINISHED TestPropagation")
 }

@@ -27,7 +27,7 @@ func init() {
 }
 
 // WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
-func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler{
+func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	cfg := newConfig()
 	for _, fn := range opts {
 		fn(cfg)
@@ -56,7 +56,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		if cfg.isStatusError(status) {
 			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
 		}
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))	
+		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	}
 }
 
