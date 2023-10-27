@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,6 +102,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
 			// as per the sqlcommenter spec
 			tracer, err := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+			defer globalconfig.SetServiceName("")
 			defer tracer.Stop()
 			assert.NoError(t, err)
 

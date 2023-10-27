@@ -661,6 +661,18 @@ func TestSpanSamplingPriority(t *testing.T) {
 }
 
 func TestSpanLog(t *testing.T) {
+	// this test is executed multiple times to ensure we clean up global state correctly
+	noServiceTest := func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
+		defer stop()
+		span := tracer.StartSpan("test.request").(*span)
+		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		assert.Equal(expect, fmt.Sprintf("%v", span))
+	}
+	t.Run("noservice_first", noServiceTest)
+
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"))
@@ -700,6 +712,9 @@ func TestSpanLog(t *testing.T) {
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
+
+	// run no_service again: it should have forgotten the global state
+	t.Run("no_service_after_full", noServiceTest)
 
 	t.Run("subservice", func(t *testing.T) {
 		assert := assert.New(t)
@@ -743,7 +758,8 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		span := tracer.StartSpan("test.request").(*span)
 		stop()
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		// no service, env, or version after the tracer is stopped
+		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -759,7 +775,9 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		span := tracer.StartSpan("test.request").(*span)
 		stop()
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
+		// service is not included: it is cleared when we stop the tracer
+		// env, version are included: it reads the environment variable when there is no tracer
+		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 

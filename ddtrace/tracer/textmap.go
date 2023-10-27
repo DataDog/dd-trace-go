@@ -228,7 +228,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			list = append(list, dd)
 			listNames = append(listNames, v)
 		case "tracecontext":
-			list = append([]Propagator{&propagatorW3c{}}, list...)
+			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {

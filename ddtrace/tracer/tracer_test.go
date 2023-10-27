@@ -738,8 +738,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	assert.NoError(t, err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
-	assert := assert.New(t)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -754,6 +755,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		// Enable 128 bit trace ids
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		opts128 := []StartSpanOption{
@@ -2098,6 +2100,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	return tracer, transport, flushFunc, func() {
 		internal.SetGlobalTracer(&internal.NoopTracer{})
 		tracer.Stop()
+		// clear any service name that was set: we want the state to be the same as startup
+		globalconfig.SetServiceName("")
 	}, nil
 }
 
@@ -2358,6 +2362,7 @@ func TestUserMonitoring(t *testing.T) {
 	defer tr.Stop()
 	assert.NoError(t, err)
 	internal.SetGlobalTracer(tr)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
@@ -2406,19 +2411,26 @@ func TestUserMonitoring(t *testing.T) {
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
 	t.Run("data-race", func(t *testing.T) {
+		wg := &sync.WaitGroup{}
+		wg.Add(2)
+
 		root := tr.newRootSpan("root", "test", "test")
 
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				SetUser(root, "test")
 			}
 		}()
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
+
 		root.Finish()
+		wg.Wait()
 	})
 }
 
