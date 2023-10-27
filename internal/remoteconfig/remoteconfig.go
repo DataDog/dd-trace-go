@@ -80,13 +80,16 @@ type Client struct {
 	capabilities map[Capability]struct{}
 
 	lastError error
-	startOnce sync.Once
-	stopOnce  sync.Once
 }
 
 // client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
 // Using a single RC client instance in the tracer is a requirement for remote configuration.
 var client *Client
+
+var (
+	startOnce sync.Once
+	stopOnce  sync.Once
+)
 
 // newClient creates a new remoteconfig Client
 func newClient(config ClientConfig) (*Client, error) {
@@ -114,15 +117,12 @@ func newClient(config ClientConfig) (*Client, error) {
 // Start starts the client's update poll loop in a fresh goroutine.
 // Noop if the client has already started.
 func Start(config ClientConfig) error {
-	if client != nil {
-		return nil
-	}
 	var err error
-	client, err = newClient(config)
-	if err != nil {
-		return err
-	}
-	client.startOnce.Do(func() {
+	startOnce.Do(func() {
+		client, err = newClient(config)
+		if err != nil {
+			return
+		}
 		go func() {
 			ticker := time.NewTicker(client.PollInterval)
 			defer ticker.Stop()
@@ -145,11 +145,10 @@ func Start(config ClientConfig) error {
 
 // Stop stops the client's update poll loop.
 // Noop if the client has already been stopped.
+// The remote config client is supposed to have the same lifecycle as the tracer.
+// It can't be restarted after a call to Stop() unless explicitly calling Reset().
 func Stop() {
-	if client == nil {
-		return
-	}
-	client.stopOnce.Do(func() {
+	stopOnce.Do(func() {
 		log.Debug("remoteconfig: gracefully stopping the client")
 		client.stop <- struct{}{}
 		select {
@@ -165,6 +164,8 @@ func Stop() {
 // To be used only in tests to reset the state of the client.
 func Reset() {
 	client = nil
+	startOnce = sync.Once{}
+	stopOnce = sync.Once{}
 }
 
 func (c *Client) updateState() {
