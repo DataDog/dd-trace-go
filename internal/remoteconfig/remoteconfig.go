@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -55,6 +56,9 @@ const (
 	// ASMCustomRules represents the capability for ASM to receive and use user-defined blocking responses
 	ASMCustomBlockingResponse
 )
+
+// ErrClientNotStarted is returned when the remote config client is not started.
+var ErrClientNotStarted = errors.New("remote config client not started")
 
 // ProductUpdate represents an update for a specific product.
 // It is a map of file path to raw file content
@@ -214,15 +218,22 @@ func (c *Client) updateState() {
 // RegisterCallback allows registering a callback that will be invoked when the client
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
-func RegisterCallback(f Callback) {
+func RegisterCallback(f Callback) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	client.callbacks = append(client.callbacks, f)
+	return nil
 }
 
 // UnregisterCallback removes a previously registered callback from the active callbacks list
 // This remove operation preserves ordering
-func UnregisterCallback(f Callback) {
+func UnregisterCallback(f Callback) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	fValue := reflect.ValueOf(f)
@@ -231,52 +242,75 @@ func UnregisterCallback(f Callback) {
 			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
 		}
 	}
+	return nil
 }
 
 // RegisterProduct adds a product to the list of products listened by the client
-func RegisterProduct(p string) {
+func RegisterProduct(p string) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	client.products[p] = struct{}{}
+	return nil
 }
 
 // UnregisterProduct removes a product from the list of products listened by the client
-func UnregisterProduct(p string) {
+func UnregisterProduct(p string) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	delete(client.products, p)
+	return nil
 }
 
 // HasProduct returns whether a given product was registered
-func HasProduct(p string) bool {
+func HasProduct(p string) (bool, error) {
+	if client == nil {
+		return false, ErrClientNotStarted
+	}
 	client.RLock()
 	defer client.RUnlock()
 	_, found := client.products[p]
-	return found
+	return found, nil
 }
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func RegisterCapability(cap Capability) {
+func RegisterCapability(cap Capability) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	client.capabilities[cap] = struct{}{}
+	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func UnregisterCapability(cap Capability) {
+func UnregisterCapability(cap Capability) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
 	client.Lock()
 	defer client.Unlock()
 	delete(client.capabilities, cap)
+	return nil
 }
 
 // HasCapability returns whether a given capability was registered
-func HasCapability(cap Capability) bool {
+func HasCapability(cap Capability) (bool, error) {
+	if client == nil {
+		return false, ErrClientNotStarted
+	}
 	client.RLock()
 	defer client.RUnlock()
 	_, found := client.capabilities[cap]
-	return found
+	return found, nil
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {

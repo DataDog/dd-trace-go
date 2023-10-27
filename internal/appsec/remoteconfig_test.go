@@ -335,8 +335,12 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 		require.NotNil(t, activeAppSec)
 		require.False(t, Enabled())
-		require.True(t, remoteconfig.HasCapability(remoteconfig.ASMActivation))
-		require.True(t, remoteconfig.HasProduct(rc.ProductASMFeatures))
+		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+		require.NoError(t, err)
+		require.True(t, found)
+		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		require.NoError(t, err)
+		require.True(t, found)
 	})
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
@@ -346,8 +350,12 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		defer Stop()
 
 		require.True(t, Enabled())
-		require.False(t, remoteconfig.HasCapability(remoteconfig.ASMActivation))
-		require.False(t, remoteconfig.HasProduct(rc.ProductASMFeatures))
+		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+		require.NoError(t, err)
+		require.False(t, found)
+		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		require.NoError(t, err)
+		require.False(t, found)
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
@@ -397,7 +405,9 @@ func TestCapabilities(t *testing.T) {
 				t.Skip()
 			}
 			for _, cap := range tc.expected {
-				require.True(t, remoteconfig.HasCapability(cap))
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
 			}
 		})
 	}

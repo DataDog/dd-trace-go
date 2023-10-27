@@ -37,18 +37,21 @@ func TestRCClient(t *testing.T) {
 		nilCallback := func(map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
 		defer func() { client.callbacks = []Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
-		RegisterCallback(nilCallback)
+		err = RegisterCallback(nilCallback)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(client.callbacks))
 		require.Equal(t, 1, len(client.callbacks))
-		RegisterCallback(nilCallback)
+		err = RegisterCallback(nilCallback)
+		require.NoError(t, err)
 		require.Equal(t, 2, len(client.callbacks))
 	})
 
 	t.Run("apply-update", func(t *testing.T) {
 		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
-		RegisterProduct(rc.ProductASMFeatures)
-		RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
+		err = RegisterProduct(rc.ProductASMFeatures)
+		require.NoError(t, err)
+		err = RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
 			statuses := map[string]rc.ApplyStatus{}
 			for p, u := range updates {
 				if p == rc.ProductASMFeatures {
@@ -60,6 +63,7 @@ func TestRCClient(t *testing.T) {
 			}
 			return statuses
 		})
+		require.NoError(t, err)
 
 		resp := genUpdateResponse([]byte("test"), cfgPath)
 		err := client.applyUpdate(resp)
@@ -253,24 +257,32 @@ func TestRegistration(t *testing.T) {
 		client, err = newClient(DefaultClientConfig())
 		require.NoError(t, err)
 
-		RegisterCallback(dummyCallback1)
+		err = RegisterCallback(dummyCallback1)
+		require.NoError(t, err)
 		require.Len(t, client.callbacks, 1)
-		UnregisterCallback(dummyCallback1)
+		err = UnregisterCallback(dummyCallback1)
+		require.NoError(t, err)
 		require.Empty(t, client.callbacks)
 
-		RegisterCallback(dummyCallback2)
-		RegisterCallback(dummyCallback3)
-		RegisterCallback(dummyCallback1)
-		RegisterCallback(dummyCallback4)
+		err = RegisterCallback(dummyCallback2)
+		require.NoError(t, err)
+		err = RegisterCallback(dummyCallback3)
+		require.NoError(t, err)
+		err = RegisterCallback(dummyCallback1)
+		require.NoError(t, err)
+		err = RegisterCallback(dummyCallback4)
+		require.NoError(t, err)
 		require.Len(t, client.callbacks, 4)
 
-		UnregisterCallback(dummyCallback1)
+		err = UnregisterCallback(dummyCallback1)
+		require.NoError(t, err)
 		require.Len(t, client.callbacks, 3)
 		for _, c := range client.callbacks {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback1), reflect.ValueOf(c))
 		}
 
-		UnregisterCallback(dummyCallback3)
+		err = UnregisterCallback(dummyCallback3)
+		require.NoError(t, err)
 		require.Len(t, client.callbacks, 2)
 		for _, c := range client.callbacks {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))

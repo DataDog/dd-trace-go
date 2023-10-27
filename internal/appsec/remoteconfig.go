@@ -304,42 +304,37 @@ func (a *appsec) registerRCProduct(p string) error {
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	remoteconfig.RegisterProduct(p)
-	return nil
-}
-
-func (a *appsec) unregisterRCProduct(p string) error {
-	if a.cfg.rc == nil {
-		return fmt.Errorf("no valid remote configuration client")
-	}
-	remoteconfig.UnregisterProduct(p)
-	return nil
+	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	remoteconfig.RegisterCapability(c)
-	return nil
+	return remoteconfig.RegisterCapability(c)
 }
 
-func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) {
+func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.rc == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
-		return
+		return nil
 	}
-	remoteconfig.UnregisterCapability(c)
+	return remoteconfig.UnregisterCapability(c)
 }
 
 func (a *appsec) enableRemoteActivation() error {
 	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.registerRCProduct(rc.ProductASMFeatures)
-	a.registerRCCapability(remoteconfig.ASMActivation)
-	remoteconfig.RegisterCallback(a.onRemoteActivation)
-	return nil
+	err := a.registerRCProduct(rc.ProductASMFeatures)
+	if err != nil {
+		return err
+	}
+	err = a.registerRCCapability(remoteconfig.ASMActivation)
+	if err != nil {
+		return err
+	}
+	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
 func (a *appsec) enableRCBlocking() {
@@ -348,19 +343,32 @@ func (a *appsec) enableRCBlocking() {
 		return
 	}
 
-	a.registerRCProduct(rc.ProductASM)
-	a.registerRCProduct(rc.ProductASMDD)
-	a.registerRCProduct(rc.ProductASMData)
-	remoteconfig.RegisterCallback(a.onRCRulesUpdate)
+	products := []string{rc.ProductASM, rc.ProductASMDD, rc.ProductASMData}
+	for _, p := range products {
+		if err := a.registerRCProduct(p); err != nil {
+			log.Debug("appsec: Remote config: couldn't register product %s: %v", p, err)
+		}
+	}
+
+	if err := remoteconfig.RegisterCallback(a.onRCRulesUpdate); err != nil {
+		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
+	}
 
 	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
-		a.registerRCCapability(remoteconfig.ASMUserBlocking)
-		a.registerRCCapability(remoteconfig.ASMRequestBlocking)
-		a.registerRCCapability(remoteconfig.ASMIPBlocking)
-		a.registerRCCapability(remoteconfig.ASMDDRules)
-		a.registerRCCapability(remoteconfig.ASMExclusions)
-		a.registerRCCapability(remoteconfig.ASMCustomRules)
-		a.registerRCCapability(remoteconfig.ASMCustomBlockingResponse)
+		caps := []remoteconfig.Capability{
+			remoteconfig.ASMUserBlocking,
+			remoteconfig.ASMRequestBlocking,
+			remoteconfig.ASMIPBlocking,
+			remoteconfig.ASMDDRules,
+			remoteconfig.ASMExclusions,
+			remoteconfig.ASMCustomRules,
+			remoteconfig.ASMCustomBlockingResponse,
+		}
+		for _, c := range caps {
+			if err := a.registerRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+			}
+		}
 	}
 }
 
@@ -368,11 +376,20 @@ func (a *appsec) disableRCBlocking() {
 	if a.cfg.rc == nil {
 		return
 	}
-	a.unregisterRCCapability(remoteconfig.ASMDDRules)
-	a.unregisterRCCapability(remoteconfig.ASMExclusions)
-	a.unregisterRCCapability(remoteconfig.ASMIPBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMRequestBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMUserBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMCustomRules)
-	remoteconfig.UnregisterCallback(a.onRCRulesUpdate)
+	caps := []remoteconfig.Capability{
+		remoteconfig.ASMDDRules,
+		remoteconfig.ASMExclusions,
+		remoteconfig.ASMIPBlocking,
+		remoteconfig.ASMRequestBlocking,
+		remoteconfig.ASMUserBlocking,
+		remoteconfig.ASMCustomRules,
+	}
+	for _, c := range caps {
+		if err := a.unregisterRCCapability(c); err != nil {
+			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+		}
+	}
+	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {
+		log.Debug("appsec: Remote config: couldn't unregister callback: %v", err)
+	}
 }
