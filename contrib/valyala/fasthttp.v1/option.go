@@ -57,8 +57,7 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 }
 
 // WithResourceNamer specifies a function which will be used to
-// obtain the resource name for a given request taking the gearbox.Context context
-// as input
+// obtain the resource name for a given request
 func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn

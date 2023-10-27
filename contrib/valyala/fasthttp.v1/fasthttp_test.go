@@ -99,7 +99,7 @@ func startServer(t *testing.T, opts ...Option) string {
 		}
 		select {
 		case <-timeoutChan:
-			assert.FailNow(t, "Timed out waiting for Gearbox server to start up")
+			assert.FailNow(t, "Timed out waiting for FastHTTP server to start up")
 		case <-ticker.C:
 			continue
 		}
@@ -249,6 +249,7 @@ func TestChildSpan(t *testing.T) {
 	assert.Equal(200, resp.StatusCode)
 }
 
+// Test that distributed tracing works from client to fasthttp server
 func TestPropagation(t *testing.T) {
 	addr := startServer(t)
 
