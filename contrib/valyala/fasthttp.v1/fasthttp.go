@@ -42,7 +42,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			return
 		}
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
-		fcc := &fasthttptrace.FastHTTPHeadersCarrier{
+		fcc := &fasthttptrace.HTTPHeadersCarrier{
 			ReqHeader: &fctx.Request.Header,
 		}
 		if sctx, err := tracer.Extract(fcc); err == nil {
