@@ -87,6 +87,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 		}
 		so := make([]ddtrace.StartSpanOption, len(cfg.spanOpts))
 		copy(so, cfg.spanOpts)
+		so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 		TraceAndServe(h, w, req, &ServeConfig{
 			Service:    service,
 			Resource:   resc,

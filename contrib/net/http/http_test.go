@@ -485,3 +485,37 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 		rtr.ServeHTTP(w, r)
 	}
 }
+
+func TestWrapHandlerWithHeaderTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	assert := assert.New(t)
+
+	htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+	handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
+		WithHeaderTags(htArgs),
+	)
+
+	url := "/"
+	r := httptest.NewRequest("GET", url, nil)
+	r.Header.Set("h!e@a-d.e*r", "val")
+	r.Header.Add("h!e@a-d.e*r", "val2")
+	r.Header.Set("2header", "2val")
+	r.Header.Set("x-datadog-header", "value")
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	assert.Equal(200, w.Code)
+	assert.Equal("OK\n", w.Body.String())
+
+	spans := mt.FinishedSpans()
+	assert.Equal(1, len(spans))
+
+	s := spans[0]
+
+	for _, arg := range htArgs {
+		header, tag := normalizer.HeaderTag(arg)
+		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+	}
+	assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+}
