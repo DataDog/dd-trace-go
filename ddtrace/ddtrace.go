@@ -39,8 +39,8 @@ type SpanContextW3C interface {
 // within the "tracer" package.
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
-	StartSpan(operationName string, opts ...StartSpanOption) Span
-	StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context)
+	StartSpan(operationName string, opts ...StartSpanOption) *Span
+	StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context)
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
@@ -52,32 +52,36 @@ type Tracer interface {
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
+
+	// Temporary hacks for v2 conversion
+	CanComputeStats() bool
+	PushChunk(*Chunk) // We will keep this, or some version of it to allow submitting traces to a tracer.
 }
 
-// Span represents a chunk of computation time. Spans have names, durations,
-// timestamps and other metadata. A Tracer is used to create hierarchies of
-// spans in a request, buffer and submit them to the server.
-type Span interface {
-	// SetTag sets a key/value pair as metadata on the span.
-	SetTag(key string, value interface{})
-
-	// SetOperationName sets the operation name for this span. An operation name should be
-	// a representative name for a group of spans (e.g. "grpc.server" or "http.request").
-	SetOperationName(operationName string)
-
-	// BaggageItem returns the baggage item held by the given key.
-	BaggageItem(key string) string
-
-	// SetBaggageItem sets a new baggage item at the given key. The baggage
-	// item should propagate to all descendant spans, both in- and cross-process.
-	SetBaggageItem(key, val string)
-
-	// Finish finishes the current span with the given options. Finish calls should be idempotent.
-	Finish(opts ...FinishOption)
-
-	// Context returns the SpanContext of this Span.
-	Context() SpanContext
-}
+// // Span represents a chunk of computation time. Spans have names, durations,
+// // timestamps and other metadata. A Tracer is used to create hierarchies of
+// // spans in a request, buffer and submit them to the server.
+// type Span interface {
+// 	// SetTag sets a key/value pair as metadata on the span.
+// 	SetTag(key string, value interface{})
+//
+// 	// SetOperationName sets the operation name for this span. An operation name should be
+// 	// a representative name for a group of spans (e.g. "grpc.server" or "http.request").
+// 	SetOperationName(operationName string)
+//
+// 	// BaggageItem returns the baggage item held by the given key.
+// 	BaggageItem(key string) string
+//
+// 	// SetBaggageItem sets a new baggage item at the given key. The baggage
+// 	// item should propagate to all descendant spans, both in- and cross-process.
+// 	SetBaggageItem(key, val string)
+//
+// 	// Finish finishes the current span with the given options. Finish calls should be idempotent.
+// 	Finish(opts ...FinishOption)
+//
+// 	// Context returns the SpanContext of this Span.
+// 	Context() SpanContext
+// }
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -160,25 +164,25 @@ func UseLogger(l Logger) {
 }
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
-func ContextWithSpan(ctx context.Context, s Span) context.Context {
+func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	return context.WithValue(ctx, internal.ActiveSpanKey, s)
 }
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
-func StartSpan(operationName string, opts ...StartSpanOption) Span {
+func StartSpan(operationName string, opts ...StartSpanOption) *Span {
 	return GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
 // value indicates if a span was found in the context. If no span is found, a no-op
 // span is returned.
-func SpanFromContext(ctx context.Context) (Span, bool) {
+func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
 	v := ctx.Value(internal.ActiveSpanKey)
-	if s, ok := v.(Span); ok {
+	if s, ok := v.(*Span); ok {
 		return s, true
 	}
 	return nil, false
@@ -187,7 +191,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, it will only be used as the parent if there is no span found in `ctx`.
-func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
+func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
 	return GetGlobalTracer().StartSpanFromContext(ctx, operationName, opts...)
 }
 

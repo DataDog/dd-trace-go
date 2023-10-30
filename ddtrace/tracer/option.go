@@ -356,8 +356,8 @@ func newConfig(opts ...StartOption) *config {
 	if c.partialFlushMinSpans <= 0 {
 		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
 		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	} else if c.partialFlushMinSpans >= traceMaxSize {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
+	} else if c.partialFlushMinSpans >= ddtrace.TraceMaxSize {
+		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, ddtrace.TraceMaxSize, partialFlushMinSpansDefault)
 		c.partialFlushMinSpans = partialFlushMinSpansDefault
 	}
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
@@ -1109,115 +1109,6 @@ func WithOrchestrion(metadata map[string]string) StartOption {
 	}
 }
 
-// StartSpanOption is a configuration option for StartSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
-type StartSpanOption = ddtrace.StartSpanOption
-
-// Tag sets the given key/value pair as a tag on the started Span.
-func Tag(k string, v interface{}) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
-		}
-		cfg.Tags[k] = v
-	}
-}
-
-// ServiceName sets the given service name on the started span. For example "http.server".
-func ServiceName(name string) StartSpanOption {
-	return Tag(ext.ServiceName, name)
-}
-
-// ResourceName sets the given resource name on the started span. A resource could
-// be an SQL query, a URL, an RPC method or something else.
-func ResourceName(name string) StartSpanOption {
-	return Tag(ext.ResourceName, name)
-}
-
-// SpanType sets the given span type on the started span. Some examples in the case of
-// the Datadog APM product could be "web", "db" or "cache".
-func SpanType(name string) StartSpanOption {
-	return Tag(ext.SpanType, name)
-}
-
-var measuredTag = Tag(keyMeasured, 1)
-
-// Measured marks this span to be measured for metrics and stats calculations.
-func Measured() StartSpanOption {
-	// cache a global instance of this tag: saves one alloc/call
-	return measuredTag
-}
-
-// WithSpanID sets the SpanID on the started span, instead of using a random number.
-// If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
-// value given here.
-func WithSpanID(id uint64) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.SpanID = id
-	}
-}
-
-// StartTime sets a custom time as the start time for the created span. By
-// default a span is started using the creation time.
-func StartTime(t time.Time) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.StartTime = t
-	}
-}
-
-// AnalyticsRate sets a custom analytics rate for a span. It decides the percentage
-// of events that will be picked up by the App Analytics product. It's represents a
-// float64 between 0 and 1 where 0.5 would represent 50% of events.
-func AnalyticsRate(rate float64) StartSpanOption {
-	if math.IsNaN(rate) {
-		return func(cfg *ddtrace.StartSpanConfig) {}
-	}
-	return Tag(ext.EventSampleRate, rate)
-}
-
-// FinishOption is a configuration option for FinishSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.FinishOption.
-type FinishOption = ddtrace.FinishOption
-
-// FinishTime sets the given time as the finishing time for the span. By default,
-// the current time is used.
-func FinishTime(t time.Time) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.FinishTime = t
-	}
-}
-
-// WithError marks the span as having had an error. It uses the information from
-// err to set tags such as the error message, error type and stack trace. It has
-// no effect if the error is nil.
-func WithError(err error) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.Error = err
-	}
-}
-
-// NoDebugStack prevents any error presented using the WithError finishing option
-// from generating a stack trace. This is useful in situations where errors are frequent
-// and performance is critical.
-func NoDebugStack() FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.NoDebugStack = true
-	}
-}
-
-// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
-func StackFrames(n, skip uint) FinishOption {
-	if n == 0 {
-		return NoDebugStack()
-	}
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.StackFrames = n
-		cfg.SkipStackFrames = skip
-	}
-}
-
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
@@ -1237,73 +1128,5 @@ func setHeaderTags(headerAsTags []string) {
 		}
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
-	}
-}
-
-// UserMonitoringConfig is used to configure what is used to identify a user.
-// This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
-type UserMonitoringConfig struct {
-	PropagateID bool
-	Email       string
-	Name        string
-	Role        string
-	SessionID   string
-	Scope       string
-	Metadata    map[string]string
-}
-
-// UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
-type UserMonitoringOption func(*UserMonitoringConfig)
-
-// WithUserMetadata returns the option setting additional metadata of the authenticated user.
-// This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
-func WithUserMetadata(key, value string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Metadata[key] = value
-	}
-}
-
-// WithUserEmail returns the option setting the email of the authenticated user.
-func WithUserEmail(email string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Email = email
-	}
-}
-
-// WithUserName returns the option setting the name of the authenticated user.
-func WithUserName(name string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Name = name
-	}
-}
-
-// WithUserSessionID returns the option setting the session ID of the authenticated user.
-func WithUserSessionID(sessionID string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.SessionID = sessionID
-	}
-}
-
-// WithUserRole returns the option setting the role of the authenticated user.
-func WithUserRole(role string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Role = role
-	}
-}
-
-// WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
-func WithUserScope(scope string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Scope = scope
-	}
-}
-
-// WithPropagation returns the option allowing the user id to be propagated through distributed traces.
-// The user id is base64 encoded and added to the datadog propagated tags header.
-// This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
-// personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
-func WithPropagation() UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.PropagateID = true
 	}
 }

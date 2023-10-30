@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -44,9 +45,9 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *Span) bool { return r.traces.apply(s) }
+func (r *rulesSampler) SampleTrace(s *ddtrace.Span) bool { return r.traces.apply(s) }
 
-func (r *rulesSampler) SampleSpan(s *Span) bool { return r.spans.apply(s) }
+func (r *rulesSampler) SampleSpan(s *ddtrace.Span) bool { return r.spans.apply(s) }
 
 func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 
@@ -77,7 +78,7 @@ type SamplingRule struct {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
-func (sr *SamplingRule) match(s *Span) bool {
+func (sr *SamplingRule) match(s *ddtrace.Span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
 	} else if sr.exactService != "" && sr.exactService != s.Service {
@@ -251,7 +252,7 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) {
 // provided span. If the rules don't match, and a default rate hasn't been
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *Span) bool {
+func (rs *traceRulesSampler) apply(span *ddtrace.Span) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -278,18 +279,18 @@ func (rs *traceRulesSampler) apply(span *Span) bool {
 	return true
 }
 
-func (rs *traceRulesSampler) applyRule(span *Span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRule(span *ddtrace.Span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.SetSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate)
+		span.SetSamplingPriority(ext.PriorityUserKeep, samplernames.RuleRate)
 	} else {
-		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
+		span.SetSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
 	}
 	span.SetTag(keyRulesSamplerLimiterRate, rate)
 }
@@ -360,25 +361,33 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
-func (rs *singleSpanRulesSampler) apply(span *Span) bool {
+func (rs *singleSpanRulesSampler) apply(span *ddtrace.Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
+			// TODO(kjn v2): Is this change OK? Why was this calling directly into span internals?
+			// span.setMetric(keyRulesSamplerAppliedRate, rate)
+			span.SetTag(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.SpanID, rate) {
 				return false
 			}
 			var sampled bool
 			if rule.limiter != nil {
-				sampled, rate = rule.limiter.allowOne(nowTime())
+				sampled, rate = rule.limiter.allowOne(ddtrace.NowTime())
 				if !sampled {
 					return false
 				}
 			}
-			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
-			span.setMetric(keySingleSpanSamplingRuleRate, rate)
+			// TODO(kjn v2): Is this change OK? Why was this calling directly into span internals?
+			// span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
+			// span.setMetric(keySingleSpanSamplingRuleRate, rate)
+			// if rule.MaxPerSecond != 0 {
+			// 	span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
+			// }
+			span.SetTag(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
+			span.SetTag(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
-				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
+				span.SetTag(keySingleSpanSamplingMPS, rule.MaxPerSecond)
 			}
 			return true
 		}

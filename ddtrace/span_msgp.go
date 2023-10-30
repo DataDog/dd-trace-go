@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package ddtrace
 
 // NOTE: THIS FILE WAS PRODUCED BY THE
 // MSGP CODE GENERATION TOOL (github.com/tinylib/msgp)
@@ -298,7 +298,7 @@ func (z *Span) Msgsize() (s int) {
 }
 
 // DecodeMsg implements msgp.Decodable
-func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
+func (z *SpanList) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
@@ -307,7 +307,7 @@ func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
 	if cap((*z)) >= int(zb0002) {
 		(*z) = (*z)[:zb0002]
 	} else {
-		(*z) = make(spanList, zb0002)
+		(*z) = make(SpanList, zb0002)
 	}
 	for zb0001 := range *z {
 		if dc.IsNil() {
@@ -330,7 +330,7 @@ func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z spanList) EncodeMsg(en *msgp.Writer) (err error) {
+func (z SpanList) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
 		return
@@ -352,7 +352,7 @@ func (z spanList) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z spanList) Msgsize() (s int) {
+func (z SpanList) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
 	for zb0003 := range z {
 		if z[zb0003] == nil {
@@ -385,7 +385,7 @@ func (z *spanLists) DecodeMsg(dc *msgp.Reader) (err error) {
 		if cap((*z)[zb0001]) >= int(zb0004) {
 			(*z)[zb0001] = ((*z)[zb0001])[:zb0004]
 		} else {
-			(*z)[zb0001] = make(spanList, zb0004)
+			(*z)[zb0001] = make(SpanList, zb0004)
 		}
 		for zb0002 := range (*z)[zb0001] {
 			if dc.IsNil() {

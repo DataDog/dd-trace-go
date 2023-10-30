@@ -5,11 +5,10 @@
 
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
-package tracer
+package ddtrace
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"math"
 	"os"
@@ -20,34 +19,30 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/tinylib/msgp/msgp"
 	"golang.org/x/xerrors"
 )
 
 type (
-	// spanList implements msgp.Encodable on top of a slice of spans.
-	spanList []*Span
+	// SpanList implements msgp.Encodable on top of a slice of spans.
+	SpanList []*Span
 
 	// spanLists implements msgp.Decodable on top of a slice of spanList.
 	// This type is only used in tests.
-	spanLists []spanList
+	spanLists []SpanList
 )
 
 var (
-	_ ddtrace.Span   = (*Span)(nil)
-	_ msgp.Encodable = (*spanList)(nil)
+	//	_ Span   = (*Span)(nil)
+	_ msgp.Encodable = (*SpanList)(nil)
 	_ msgp.Decodable = (*spanLists)(nil)
 )
 
@@ -76,34 +71,48 @@ type Span struct {
 	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
 	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *spanContext `msg:"-"` // span propagation context
+	goExecTraced bool `msg:"-"`
+	noDebugStack bool `msg:"-"` // disables debug stack traces
+	finished     bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	//context      *spanContext `msg:"-"` // span propagation context
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
-	tracer  *Tracer
+	tracer  Tracer
+}
+
+// SpanResourcePIISafe returns true if s.Resource can be considered to not
+// include PII with reasonable confidence. E.g. SQL queries may contain PII,
+// but http, rpc or custom (s.Type == "") span resource names generally do not.
+func (s *Span) SpanResourcePIISafe() bool {
+	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
-func (s *Span) Context() ddtrace.SpanContext { return s.context }
+func (s *Span) Context() SpanContext {
+	// TODO(kjn v2): Fix span context
+	return nil
+	//return s.context
+}
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
 // are propagated down to descendant spans and injected cross-process. Use with
 // care as it adds extra load onto your tracing layer.
 func (s *Span) SetBaggageItem(key, val string) {
-	s.context.setBaggageItem(key, val)
+	// TODO(kjn v2): Fix span context
+	//s.context.setBaggageItem(key, val)
 }
 
 // BaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
 func (s *Span) BaggageItem(key string) string {
-	return s.context.baggageItem(key)
+	// TODO(kjn v2): Fix span context
+	//return s.context.baggageItem(key)
+	return ""
 }
 
 // SetTag adds a set of key/value metadata to the span.
@@ -128,7 +137,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && s.SpanResourcePIISafe() {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
 			//
@@ -165,9 +174,54 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
-// setSamplingPriority locks then span, then updates the sampling priority.
+// toFloat64 attempts to convert value into a float64. If the value is an integer
+// greater or equal to 2^53 or less than or equal to -2^53, it will not be converted
+// into a float64 to avoid losing precision. If it succeeds in converting, toFloat64
+// returns the value and true, otherwise 0 and false.
+func toFloat64(value interface{}) (f float64, ok bool) {
+	const max = (int64(1) << 53) - 1
+	const min = -max
+	switch i := value.(type) {
+	case byte:
+		return float64(i), true
+	case float32:
+		return float64(i), true
+	case float64:
+		return i, true
+	case int:
+		return float64(i), true
+	case int8:
+		return float64(i), true
+	case int16:
+		return float64(i), true
+	case int32:
+		return float64(i), true
+	case int64:
+		if i > max || i < min {
+			return 0, false
+		}
+		return float64(i), true
+	case uint:
+		return float64(i), true
+	case uint16:
+		return float64(i), true
+	case uint32:
+		return float64(i), true
+	case uint64:
+		if i > uint64(max) {
+			return 0, false
+		}
+		return float64(i), true
+	case samplernames.SamplerName:
+		return float64(i), true
+	default:
+		return 0, false
+	}
+}
+
+// SetSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
+func (s *Span) SetSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
@@ -175,7 +229,7 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 
 // Root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
-func (s *Span) Root() ddtrace.Span {
+func (s *Span) Root() *Span {
 	return s.root()
 }
 
@@ -185,13 +239,15 @@ func (s *Span) Root() ddtrace.Span {
 // when internal usage requires it (to avoid type assertions from Root's return
 // value).
 func (s *Span) root() *Span {
-	if s == nil || s.context == nil {
-		return nil
-	}
-	if s.context.trace == nil {
-		return nil
-	}
-	return s.context.trace.root
+	// TODO(kjn v2): Fix span context
+	return nil
+	// 	if s == nil || s.context == nil {
+	// 		return nil
+	// 	}
+	// 	if s.context.trace == nil {
+	// 		return nil
+	// 	}
+	// 	return s.context.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -207,7 +263,9 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 		fn(&cfg)
 	}
 	root := s.root()
-	trace := root.context.trace
+
+	// TODO(kjn v2): Fix span context
+	//trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -216,20 +274,21 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	if root.finished {
 		return
 	}
-	if cfg.PropagateID {
-		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(root.Meta, keyUserID)
-		idenc := base64.StdEncoding.EncodeToString([]byte(id))
-		trace.setPropagatingTag(keyPropagatedUserID, idenc)
-		s.context.updated = true
-	} else {
-		if trace.hasPropagatingTag(keyPropagatedUserID) {
-			// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
-			trace.unsetPropagatingTag(keyPropagatedUserID)
-			s.context.updated = true
-		}
-		delete(root.Meta, keyPropagatedUserID)
-	}
+	// TODO(kjn v2): Fix span context
+	// 	if cfg.PropagateID {
+	// 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
+	// 		delete(root.Meta, keyUserID)
+	// 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
+	// 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
+	// 		s.context.updated = true
+	// 	} else {
+	// 		if trace.hasPropagatingTag(keyPropagatedUserID) {
+	// 			// Unset the propagated user ID so that a propagated user ID coming from upstream won't be propagated anymore.
+	// 			trace.unsetPropagatingTag(keyPropagatedUserID)
+	// 			s.context.updated = true
+	// 		}
+	// 		delete(root.Meta, keyPropagatedUserID)
+	// 	}
 
 	usrData := map[string]string{
 		keyUserID:        id,
@@ -260,7 +319,8 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
-	s.context.setSamplingPriority(priority, sampler)
+	// TODO(kjn v2): Fix span context
+	// s.context.setSamplingPriority(priority, sampler)
 }
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
@@ -270,13 +330,15 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.Error == 0 {
 				// new error
-				atomic.AddInt32(&s.context.errors, 1)
+				// TODO(kjn v2): Fix span context
+				// atomic.AddInt32(&s.context.errors, 1)
 			}
 			s.Error = 1
 		} else {
 			if s.Error > 0 {
 				// flip from active to inactive
-				atomic.AddInt32(&s.context.errors, -1)
+				// TODO(kjn v2): Fix span context
+				// atomic.AddInt32(&s.context.errors, -1)
 			}
 			s.Error = 0
 		}
@@ -419,10 +481,10 @@ func (s *Span) setMetric(key string, v float64) {
 
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
-func (s *Span) Finish(opts ...ddtrace.FinishOption) {
-	t := now()
+func (s *Span) Finish(opts ...FinishOption) {
+	t := Now()
 	if len(opts) > 0 {
-		cfg := ddtrace.FinishConfig{
+		cfg := FinishConfig{
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
@@ -469,6 +531,18 @@ func (s *Span) Finish(opts ...ddtrace.FinishOption) {
 	}
 }
 
+// SetUser associates user information to the current trace which the
+// provided span belongs to. The options can be used to tune which user
+// bit of information gets monitored. In case of distributed traces,
+// the user id can be propagated across traces using the WithPropagation() option.
+// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
+func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
+	s.SetUser(id, opts...)
+}
+
 // SetOperationName sets or changes the operation name.
 func (s *Span) SetOperationName(operationName string) {
 	s.Lock()
@@ -500,110 +574,79 @@ func (s *Span) finish(finishTime int64) {
 		s.Duration = 0
 	}
 
-	keep := true
-	if t := s.tracer; t != nil {
-		// we have an active tracer
-		if t.config.canComputeStats() && shouldComputeStats(s) {
-			// the agent supports computed stats
-			select {
-			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-				// ok
-			default:
-				log.Error("Stats channel full, disregarding span.")
-			}
-		}
-		if t.config.canDropP0s() {
-			// the agent supports dropping p0's in the client
-			keep = shouldKeep(s)
-		}
-		if t.config.debugAbandonedSpans {
-			// the tracer supports debugging abandoned spans
-			select {
-			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
-				// ok
-			default:
-				log.Error("Abandoned spans channel full, disregarding span.")
-			}
-		}
-	}
-	if keep {
-		// a single kept span keeps the whole trace.
-		s.context.trace.keep()
-	}
+	//keep := true
+
+	// TODO(kjn v2): This logic belongs in the tracer, not the span.
+	// 	if t := s.tracer; t != nil {
+	// 		// we have an active tracer
+	// 		if t.CanComputeStats() && shouldComputeStats(s) {
+	// 			// the agent supports computed stats
+	// 			select {
+	// 			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
+	// 				// ok
+	// 			default:
+	// 				log.Error("Stats channel full, disregarding span.")
+	// 			}
+	// 		}
+	// 		if t.config.canDropP0s() {
+	// 			// the agent supports dropping p0's in the client
+	// 			keep = shouldKeep(s)
+	// 		}
+	// 		if t.config.debugAbandonedSpans {
+	// 			// the tracer supports debugging abandoned spans
+	// 			select {
+	// 			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
+	// 				// ok
+	// 			default:
+	// 				log.Error("Abandoned spans channel full, disregarding span.")
+	// 			}
+	// 		}
+	// 	}
+
+	// TODO(kjn v2): Fix span context
+	// 	if keep {
+	// 		// a single kept span keeps the whole trace.
+	// 		s.context.trace.keep()
+	// 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
-	s.context.finish()
-}
-
-// newAggregableSpan creates a new summary for the span s, within an application
-// version version.
-func newAggregableSpan(s *Span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
-	var statusCode uint32
-	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
-		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
-			statusCode = uint32(c)
-		}
-	}
-	key := aggregation{
-		Name:       s.Name,
-		Resource:   obfuscatedResource(obfuscator, s.Type, s.Resource),
-		Service:    s.Service,
-		Type:       s.Type,
-		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
-		StatusCode: statusCode,
-	}
-	return &aggregableSpan{
-		key:      key,
-		Start:    s.Start,
-		Duration: s.Duration,
-		TopLevel: s.Metrics[keyTopLevel] == 1,
-		Error:    s.Error,
-	}
-}
-
-// textNonParsable specifies the text that will be assigned to resources for which the resource
-// can not be parsed due to an obfuscation error.
-const textNonParsable = "Non-parsable SQL query"
-
-// obfuscatedResource returns the obfuscated version of the given resource. It is
-// obfuscated using the given obfuscator for the given span type typ.
-func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
-	if o == nil {
-		return resource
-	}
-	switch typ {
-	case "sql", "cassandra":
-		oq, err := o.ObfuscateSQLString(resource)
-		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err)
-			return textNonParsable
-		}
-		return oq.Query
-	case "redis":
-		return o.QuantizeRedisString(resource)
-	default:
-		return resource
-	}
+	// TODO(kjn v2): Fix span context
+	//s.context.finish()
 }
 
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
 func shouldKeep(s *Span) bool {
-	if p, ok := s.context.samplingPriority(); ok && p > 0 {
-		// positive sampling priorities stay
-		return true
-	}
-	if atomic.LoadInt32(&s.context.errors) > 0 {
-		// traces with any span containing an error get kept
-		return true
-	}
+	// TODO(kjn v2): Fix span context
+	// 	if p, ok := s.context.samplingPriority(); ok && p > 0 {
+	// 		// positive sampling priorities stay
+	// 		return true
+	// 	}
+	// 	if atomic.LoadInt32(&s.context.errors) > 0 {
+	// 		// traces with any span containing an error get kept
+	// 		return true
+	// 	}
 	if v, ok := s.Metrics[ext.EventSampleRate]; ok {
 		return sampledByRate(s.TraceID, v)
 	}
 	return false
+}
+
+const knuthFactor = uint64(1111111111111111111)
+
+// TODO(kjn v2): This has been duplicated because it is used in multiple places.
+// This needs to be refactored.
+//
+// sampledByRate verifies if the number n should be sampled at the specified
+// rate.
+func sampledByRate(n uint64, rate float64) bool {
+	if rate < 1 {
+		return n*knuthFactor < uint64(rate*math.MaxUint64)
+	}
+	return true
 }
 
 // shouldComputeStats mentions whether this span needs to have stats computed for.
@@ -623,12 +666,13 @@ func shouldComputeStats(s *Span) bool {
 func (s *Span) String() string {
 	s.RLock()
 	defer s.RUnlock()
+	// TODO(kjn v2): Fix span context
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.Name),
 		fmt.Sprintf("Service: %s", s.Service),
 		fmt.Sprintf("Resource: %s", s.Resource),
 		fmt.Sprintf("TraceID: %d", s.TraceID),
-		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
+		//fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
 		fmt.Sprintf("SpanID: %d", s.SpanID),
 		fmt.Sprintf("ParentID: %d", s.ParentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
@@ -655,35 +699,40 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := s.tracer; tr != nil {
-			if tr.config.env != "" {
-				fmt.Fprintf(f, "dd.env=%s ", tr.config.env)
-			}
-			if tr.config.version != "" {
-				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
-			}
-		} else {
-			if env := os.Getenv("DD_ENV"); env != "" {
-				fmt.Fprintf(f, "dd.env=%s ", env)
-			}
-			if v := os.Getenv("DD_VERSION"); v != "" {
-				fmt.Fprintf(f, "dd.version=%s ", v)
-			}
+		// TODO(kjn v2): Fix span tracer reference
+		// if tr := s.tracer; tr != nil {
+		// 			if tr.config.env != "" {
+		// 				fmt.Fprintf(f, "dd.env=%s ", tr.config.env)
+		// 			}
+		// 			if tr.config.version != "" {
+		// 				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
+		// 			}
+		// 		} else {
+		if env := os.Getenv("DD_ENV"); env != "" {
+			fmt.Fprintf(f, "dd.env=%s ", env)
 		}
+		if v := os.Getenv("DD_VERSION"); v != "" {
+			fmt.Fprintf(f, "dd.version=%s ", v)
+		}
+		//}
+		// TODO(kjn v2): Fix span context
+		// 		var traceID string
+		// 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
+		// 			traceID = s.context.TraceID128()
+		// 		} else {
+		// 			traceID = fmt.Sprintf("%d", s.TraceID)
+		// 		}
 		var traceID string
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
-			traceID = s.context.TraceID128()
-		} else {
-			traceID = fmt.Sprintf("%d", s.TraceID)
-		}
+		traceID = fmt.Sprintf("%d", s.TraceID)
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
 		fmt.Fprintf(f, `dd.span_id="%d" `, s.SpanID)
 		fmt.Fprintf(f, `dd.parent_id="%d"`, s.ParentID)
 	default:
-		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
+		fmt.Fprintf(f, "%%!%c(Span=%v)", c, s)
 	}
 }
 
+// TODO(kjn v2): Move into internal package and deduplicate.
 const (
 	keySamplingPriority     = "_sampling_priority_v1"
 	keySamplingPriorityRate = "_dd.agent_psr"

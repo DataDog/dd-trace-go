@@ -11,6 +11,7 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -71,7 +72,7 @@ func newPayload() *payload {
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(t spanList) error {
+func (p *payload) push(t ddtrace.SpanList) error {
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return err
 	}

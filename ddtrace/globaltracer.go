@@ -44,13 +44,13 @@ var _ Tracer = (*NoopTracer)(nil)
 type NoopTracer struct{}
 
 // StartSpan implements Tracer.
-func (NoopTracer) StartSpan(_ string, _ ...StartSpanOption) Span {
-	return NoopSpan{}
+func (NoopTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
+	return nil
 }
 
 // StartSpanFromContext implements Tracer.
-func (NoopTracer) StartSpanFromContext(ctx context.Context, _ string, _ ...StartSpanOption) (Span, context.Context) {
-	return NoopSpan{}, ctx
+func (NoopTracer) StartSpanFromContext(ctx context.Context, _ string, _ ...StartSpanOption) (*Span, context.Context) {
+	return nil, ctx
 }
 
 // SetServiceInfo implements Tracer.
@@ -67,31 +67,9 @@ func (NoopTracer) Inject(_ SpanContext, _ interface{}) error { return nil }
 // Stop implements Tracer.
 func (NoopTracer) Stop() {}
 
-var _ Span = (*NoopSpan)(nil)
+func (NoopTracer) CanComputeStats() bool { return false }
 
-// NoopSpan is an implementation of Span that is a no-op.
-type NoopSpan struct{}
-
-// SetTag implements Span.
-func (NoopSpan) SetTag(_ string, _ interface{}) {}
-
-// SetOperationName implements Span.
-func (NoopSpan) SetOperationName(_ string) {}
-
-// BaggageItem implements Span.
-func (NoopSpan) BaggageItem(_ string) string { return "" }
-
-// SetBaggageItem implements Span.
-func (NoopSpan) SetBaggageItem(_, _ string) {}
-
-// Finish implements Span.
-func (NoopSpan) Finish(_ ...FinishOption) {}
-
-// Tracer implements Span.
-func (NoopSpan) Tracer() Tracer { return NoopTracer{} }
-
-// Context implements Span.
-func (NoopSpan) Context() SpanContext { return NoopSpanContext{} }
+func (NoopTracer) PushChunk(_ *Chunk) {}
 
 var _ SpanContext = (*NoopSpanContext)(nil)
 

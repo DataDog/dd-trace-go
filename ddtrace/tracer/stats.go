@@ -8,10 +8,15 @@
 package tracer
 
 import (
+	"math"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -30,6 +35,57 @@ type aggregableSpan struct {
 	Start, Duration int64
 	Error           int32
 	TopLevel        bool
+}
+
+// textNonParsable specifies the text that will be assigned to resources for which the resource
+// can not be parsed due to an obfuscation error.
+const textNonParsable = "Non-parsable SQL query"
+
+// obfuscatedResource returns the obfuscated version of the given resource. It is
+// obfuscated using the given obfuscator for the given span type typ.
+func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
+	if o == nil {
+		return resource
+	}
+	switch typ {
+	case "sql", "cassandra":
+		oq, err := o.ObfuscateSQLString(resource)
+		if err != nil {
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err)
+			return textNonParsable
+		}
+		return oq.Query
+	case "redis":
+		return o.QuantizeRedisString(resource)
+	default:
+		return resource
+	}
+}
+
+// newAggregableSpan creates a new summary for the span s, within an application
+// version version.
+func newAggregableSpan(s *ddtrace.Span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
+	var statusCode uint32
+	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
+		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
+			statusCode = uint32(c)
+		}
+	}
+	key := aggregation{
+		Name:       s.Name,
+		Resource:   obfuscatedResource(obfuscator, s.Type, s.Resource),
+		Service:    s.Service,
+		Type:       s.Type,
+		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
+		StatusCode: statusCode,
+	}
+	return &aggregableSpan{
+		key:      key,
+		Start:    s.Start,
+		Duration: s.Duration,
+		TopLevel: s.Metrics[keyTopLevel] == 1,
+		Error:    s.Error,
+	}
 }
 
 // defaultStatsBucketSize specifies the default span of time that will be

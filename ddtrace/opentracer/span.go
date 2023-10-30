@@ -10,7 +10,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
@@ -20,7 +19,7 @@ var _ opentracing.Span = (*span)(nil)
 
 // span implements opentracing.Span on top of ddtrace.Span.
 type span struct {
-	ddtrace.Span
+	*ddtrace.Span
 	*opentracer
 }
 
@@ -37,7 +36,7 @@ func (s *span) FinishWithOptions(opts opentracing.FinishOptions) {
 			s.LogFields(lr.Fields...)
 		}
 	}
-	s.Span.Finish(tracer.FinishTime(opts.FinishTime))
+	s.Span.Finish(ddtrace.FinishTime(opts.FinishTime))
 }
 
 func (s *span) LogFields(fields ...log.Field) {

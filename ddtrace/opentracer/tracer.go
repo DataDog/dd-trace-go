@@ -28,7 +28,6 @@ import (
 	"context"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
@@ -39,7 +38,7 @@ import (
 // Datadog tracer using the provided set of options.
 func New(opts ...tracer.StartOption) opentracing.Tracer {
 	tracer.Start(opts...)
-	return &opentracer{internal.GetGlobalTracer()}
+	return &opentracer{ddtrace.GetGlobalTracer()}
 }
 
 var _ opentracing.Tracer = (*opentracer)(nil)
@@ -55,17 +54,17 @@ func (t *opentracer) StartSpan(operationName string, options ...opentracing.Star
 	for _, o := range options {
 		o.Apply(&sso)
 	}
-	opts := []ddtrace.StartSpanOption{tracer.StartTime(sso.StartTime)}
+	opts := []ddtrace.StartSpanOption{ddtrace.StartTime(sso.StartTime)}
 	for _, ref := range sso.References {
 		if v, ok := ref.ReferencedContext.(ddtrace.SpanContext); ok {
 			// opentracing.ChildOfRef and opentracing.FollowsFromRef will both be represented as
 			// children because Datadog APM does not have a concept of FollowsFrom references.
-			opts = append(opts, tracer.ChildOf(v))
+			opts = append(opts, ddtrace.ChildOf(v))
 			break // can only have one parent
 		}
 	}
 	for k, v := range sso.Tags {
-		opts = append(opts, tracer.Tag(k, v))
+		opts = append(opts, ddtrace.Tag(k, v))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	return &span{
@@ -107,7 +106,7 @@ func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentraci
 	if !ok {
 		return ctx
 	}
-	return tracer.ContextWithSpan(ctx, ddSpan.Span)
+	return ddtrace.ContextWithSpan(ctx, ddSpan.Span)
 }
 
 func translateError(err error) error {

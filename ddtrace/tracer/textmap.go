@@ -10,13 +10,10 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 // HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
@@ -298,73 +295,76 @@ func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) er
 }
 
 func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-	// propagate the TraceID and the current active SpanID
-	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-	} else if ctx.trace != nil {
-		ctx.trace.unsetPropagatingTag(keyTraceID128)
-	}
-	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
-	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
-	if sp, ok := ctx.samplingPriority(); ok {
-		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
-	}
-	if ctx.origin != "" {
-		writer.Set(originHeader, ctx.origin)
-	}
-	// propagate OpenTracing baggage
-	for k, v := range ctx.baggage {
-		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
-	if p.cfg.MaxTagsHeaderLen <= 0 {
-		return nil
-	}
-	if s := p.marshalPropagatingTags(ctx); len(s) > 0 {
-		writer.Set(traceTagsHeader, s)
-	}
-	return nil
+	// TODO(kjn v2): Fix span context
+	// 	ctx, ok := spanCtx.(*spanContext)
+	// 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return ErrInvalidSpanContext
+	// 	}
+	// 	// propagate the TraceID and the current active SpanID
+	// 	if ctx.traceID.HasUpper() {
+	// 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
+	// 	} else if ctx.trace != nil {
+	// 		ctx.trace.unsetPropagatingTag(keyTraceID128)
+	// 	}
+	// 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
+	// 	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
+	// 	if sp, ok := ctx.samplingPriority(); ok {
+	// 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
+	// 	}
+	// 	if ctx.origin != "" {
+	// 		writer.Set(originHeader, ctx.origin)
+	// 	}
+	// 	// propagate OpenTracing baggage
+	// 	for k, v := range ctx.baggage {
+	// 		writer.Set(p.cfg.BaggagePrefix+k, v)
+	// 	}
+	// 	if p.cfg.MaxTagsHeaderLen <= 0 {
+	// 		return nil
+	// 	}
+	// 	if s := p.marshalPropagatingTags(ctx); len(s) > 0 {
+	// 		writer.Set(traceTagsHeader, s)
+	// 	}
+	// 	return nil
+	return ErrInvalidSpanContext
 }
 
-// marshalPropagatingTags marshals all propagating tags included in ctx to a comma separated string
-func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
-	var sb strings.Builder
-	if ctx.trace == nil {
-		return ""
-	}
-
-	var properr string
-	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
-		if k == tracestateHeader || k == traceparentHeader {
-			return true // don't propagate W3C headers with the DD propagator
-		}
-		if err := isValidPropagatableTag(k, v); err != nil {
-			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
-			properr = "encoding_error"
-			return true
-		}
-		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
-			sb.Reset()
-			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
-			properr = "inject_max_size"
-			return false
-		}
-		if sb.Len() > 0 {
-			sb.WriteByte(',')
-		}
-		sb.WriteString(k)
-		sb.WriteByte('=')
-		sb.WriteString(v)
-		return true
-	})
-	if properr != "" {
-		ctx.trace.setTag(keyPropagationError, properr)
-	}
-	return sb.String()
-}
+// TODO(kjn v2): Fix span context
+// // marshalPropagatingTags marshals all propagating tags included in ctx to a comma separated string
+// func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
+// 	var sb strings.Builder
+// 	if ctx.trace == nil {
+// 		return ""
+// 	}
+//
+// 	var properr string
+// 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
+// 		if k == tracestateHeader || k == traceparentHeader {
+// 			return true // don't propagate W3C headers with the DD propagator
+// 		}
+// 		if err := isValidPropagatableTag(k, v); err != nil {
+// 			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
+// 			properr = "encoding_error"
+// 			return true
+// 		}
+// 		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+// 			sb.Reset()
+// 			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
+// 			properr = "inject_max_size"
+// 			return false
+// 		}
+// 		if sb.Len() > 0 {
+// 			sb.WriteByte(',')
+// 		}
+// 		sb.WriteString(k)
+// 		sb.WriteByte('=')
+// 		sb.WriteString(v)
+// 		return true
+// 	})
+// 	if properr != "" {
+// 		ctx.trace.setTag(keyPropagationError, properr)
+// 	}
+// 	return sb.String()
+// }
 
 func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
@@ -376,57 +376,59 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
-	err := reader.ForeachKey(func(k, v string) error {
-		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case p.cfg.TraceHeader:
-			var lowerTid uint64
-			lowerTid, err = parseUint64(v)
-			if err != nil {
-				return ErrSpanContextCorrupted
-			}
-			ctx.traceID.SetLower(lowerTid)
-		case p.cfg.ParentHeader:
-			ctx.spanID, err = parseUint64(v)
-			if err != nil {
-				return ErrSpanContextCorrupted
-			}
-		case p.cfg.PriorityHeader:
-			priority, err := strconv.Atoi(v)
-			if err != nil {
-				return ErrSpanContextCorrupted
-			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown)
-		case originHeader:
-			ctx.origin = v
-		case traceTagsHeader:
-			unmarshalPropagatingTags(&ctx, v)
-		default:
-			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if ctx.trace != nil {
-		tid := ctx.trace.propagatingTag(keyTraceID128)
-		if err := validateTID(tid); err != nil {
-			log.Debug("Invalid hex traceID: %s", err)
-			ctx.trace.unsetPropagatingTag(keyTraceID128)
-		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
-			log.Debug("Attempted to set an invalid hex traceID: %s", err)
-			ctx.trace.unsetPropagatingTag(keyTraceID128)
-		}
-	}
-	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
-		return nil, ErrSpanContextNotFound
-	}
-	return &ctx, nil
+	// TODO(kjn v2): Fix span context
+	// 	var ctx spanContext
+	// 	err := reader.ForeachKey(func(k, v string) error {
+	// 		var err error
+	// 		key := strings.ToLower(k)
+	// 		switch key {
+	// 		case p.cfg.TraceHeader:
+	// 			var lowerTid uint64
+	// 			lowerTid, err = parseUint64(v)
+	// 			if err != nil {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 			ctx.traceID.SetLower(lowerTid)
+	// 		case p.cfg.ParentHeader:
+	// 			ctx.spanID, err = parseUint64(v)
+	// 			if err != nil {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 		case p.cfg.PriorityHeader:
+	// 			priority, err := strconv.Atoi(v)
+	// 			if err != nil {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 			ctx.setSamplingPriority(priority, samplernames.Unknown)
+	// 		case originHeader:
+	// 			ctx.origin = v
+	// 		case traceTagsHeader:
+	// 			unmarshalPropagatingTags(&ctx, v)
+	// 		default:
+	// 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
+	// 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
+	// 			}
+	// 		}
+	// 		return nil
+	// 	})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if ctx.trace != nil {
+	// 		tid := ctx.trace.propagatingTag(keyTraceID128)
+	// 		if err := validateTID(tid); err != nil {
+	// 			log.Debug("Invalid hex traceID: %s", err)
+	// 			ctx.trace.unsetPropagatingTag(keyTraceID128)
+	// 		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
+	// 			log.Debug("Attempted to set an invalid hex traceID: %s", err)
+	// 			ctx.trace.unsetPropagatingTag(keyTraceID128)
+	// 		}
+	// 	}
+	// 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
+	// 		return nil, ErrSpanContextNotFound
+	// 	}
+	// 	return &ctx, nil
+	return nil, ErrSpanContextNotFound
 }
 
 func validateTID(tid string) error {
@@ -439,33 +441,35 @@ func validateTID(tid string) error {
 	return nil
 }
 
-// unmarshalPropagatingTags unmarshals tags from v into ctx
-func unmarshalPropagatingTags(ctx *spanContext, v string) {
-	if ctx.trace == nil {
-		ctx.trace = newTrace()
-	}
-	if len(v) > propagationExtractMaxSize {
-		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
-		ctx.trace.setTag(keyPropagationError, "extract_max_size")
-		return
-	}
-	tags, err := parsePropagatableTraceTags(v)
-	if err != nil {
-		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
-		ctx.trace.setTag(keyPropagationError, "decoding_error")
-	}
-	ctx.trace.replacePropagatingTags(tags)
-}
+// TODO(kjn v2): Fix span context
+// // unmarshalPropagatingTags unmarshals tags from v into ctx
+// func unmarshalPropagatingTags(ctx *spanContext, v string) {
+// 	if ctx.trace == nil {
+// 		ctx.trace = newTrace()
+// 	}
+// 	if len(v) > propagationExtractMaxSize {
+// 		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
+// 		ctx.trace.setTag(keyPropagationError, "extract_max_size")
+// 		return
+// 	}
+// 	tags, err := parsePropagatableTraceTags(v)
+// 	if err != nil {
+// 		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
+// 		ctx.trace.setTag(keyPropagationError, "decoding_error")
+// 	}
+// 	ctx.trace.replacePropagatingTags(tags)
+// }
 
-// setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
-// creating the map if one is not initialized.
-func setPropagatingTag(ctx *spanContext, k, v string) {
-	if ctx.trace == nil {
-		// extractors initialize a new spanContext, so the trace might be nil
-		ctx.trace = newTrace()
-	}
-	ctx.trace.setPropagatingTag(k, v)
-}
+// TODO(kjn v2): Fix span context
+// // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
+// // creating the map if one is not initialized.
+// func setPropagatingTag(ctx *spanContext, k, v string) {
+// 	if ctx.trace == nil {
+// 		// extractors initialize a new spanContext, so the trace might be nil
+// 		ctx.trace = newTrace()
+// 	}
+// 	ctx.trace.setPropagatingTag(k, v)
+// }
 
 const (
 	b3TraceIDHeader = "x-b3-traceid"
@@ -488,28 +492,30 @@ func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) 
 }
 
 func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-	if !ctx.traceID.HasUpper() { // 64-bit trace id
-		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
-	} else { // 128-bit trace id
-		var w3Cctx ddtrace.SpanContextW3C
-		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
-		}
-		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
-	}
-	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
-		if p >= ext.PriorityAutoKeep {
-			writer.Set(b3SampledHeader, "1")
-		} else {
-			writer.Set(b3SampledHeader, "0")
-		}
-	}
-	return nil
+	// TODO(kjn v2): Fix span context
+	// 	ctx, ok := spanCtx.(*spanContext)
+	// 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return ErrInvalidSpanContext
+	// 	}
+	// 	if !ctx.traceID.HasUpper() { // 64-bit trace id
+	// 		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
+	// 	} else { // 128-bit trace id
+	// 		var w3Cctx ddtrace.SpanContextW3C
+	// 		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
+	// 			return ErrInvalidSpanContext
+	// 		}
+	// 		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
+	// 	}
+	// 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
+	// 	if p, ok := ctx.samplingPriority(); ok {
+	// 		if p >= ext.PriorityAutoKeep {
+	// 			writer.Set(b3SampledHeader, "1")
+	// 		} else {
+	// 			writer.Set(b3SampledHeader, "0")
+	// 		}
+	// 	}
+	// 	return nil
+	return ErrInvalidSpanContext
 }
 
 func (p *propagatorB3) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
@@ -522,37 +528,39 @@ func (p *propagatorB3) Extract(carrier interface{}) (ddtrace.SpanContext, error)
 }
 
 func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
-	err := reader.ForeachKey(func(k, v string) error {
-		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3TraceIDHeader:
-			if err := extractTraceID128(&ctx, v); err != nil {
-				return nil
-			}
-		case b3SpanIDHeader:
-			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
-			if err != nil {
-				return ErrSpanContextCorrupted
-			}
-		case b3SampledHeader:
-			priority, err := strconv.Atoi(v)
-			if err != nil {
-				return ErrSpanContextCorrupted
-			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown)
-		default:
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
-	}
-	return &ctx, nil
+	// TODO(kjn v2): Fix span context
+	// 	var ctx spanContext
+	// 	err := reader.ForeachKey(func(k, v string) error {
+	// 		var err error
+	// 		key := strings.ToLower(k)
+	// 		switch key {
+	// 		case b3TraceIDHeader:
+	// 			if err := extractTraceID128(&ctx, v); err != nil {
+	// 				return nil
+	// 			}
+	// 		case b3SpanIDHeader:
+	// 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
+	// 			if err != nil {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 		case b3SampledHeader:
+	// 			priority, err := strconv.Atoi(v)
+	// 			if err != nil {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 			ctx.setSamplingPriority(priority, samplernames.Unknown)
+	// 		default:
+	// 		}
+	// 		return nil
+	// 	})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return nil, ErrSpanContextNotFound
+	// 	}
+	// 	return &ctx, nil
+	return nil, ErrSpanContextNotFound
 }
 
 // propagatorB3 implements Propagator and injects/extracts span contexts
@@ -569,31 +577,33 @@ func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier i
 }
 
 func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-	sb := strings.Builder{}
-	var traceID string
-	if !ctx.traceID.HasUpper() { // 64-bit trace id
-		traceID = fmt.Sprintf("%016x", ctx.traceID.Lower())
-	} else { // 128-bit trace id
-		var w3Cctx ddtrace.SpanContextW3C
-		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
-		}
-		traceID = w3Cctx.TraceID128()
-	}
-	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
-		if p >= ext.PriorityAutoKeep {
-			sb.WriteString("-1")
-		} else {
-			sb.WriteString("-0")
-		}
-	}
-	writer.Set(b3SingleHeader, sb.String())
-	return nil
+	// TODO(kjn v2): Fix span context
+	// 	ctx, ok := spanCtx.(*spanContext)
+	// 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return ErrInvalidSpanContext
+	// 	}
+	// 	sb := strings.Builder{}
+	// 	var traceID string
+	// 	if !ctx.traceID.HasUpper() { // 64-bit trace id
+	// 		traceID = fmt.Sprintf("%016x", ctx.traceID.Lower())
+	// 	} else { // 128-bit trace id
+	// 		var w3Cctx ddtrace.SpanContextW3C
+	// 		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
+	// 			return ErrInvalidSpanContext
+	// 		}
+	// 		traceID = w3Cctx.TraceID128()
+	// 	}
+	// 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
+	// 	if p, ok := ctx.samplingPriority(); ok {
+	// 		if p >= ext.PriorityAutoKeep {
+	// 			sb.WriteString("-1")
+	// 		} else {
+	// 			sb.WriteString("-0")
+	// 		}
+	// 	}
+	// 	writer.Set(b3SingleHeader, sb.String())
+	// 	return nil
+	return ErrInvalidSpanContext
 }
 
 func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
@@ -606,47 +616,49 @@ func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanCon
 }
 
 func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var ctx spanContext
-	err := reader.ForeachKey(func(k, v string) error {
-		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3SingleHeader:
-			b3Parts := strings.Split(v, "-")
-			if len(b3Parts) >= 2 {
-				if err = extractTraceID128(&ctx, b3Parts[0]); err != nil {
-					return err
-				}
-				ctx.spanID, err = strconv.ParseUint(b3Parts[1], 16, 64)
-				if err != nil {
-					return ErrSpanContextCorrupted
-				}
-				if len(b3Parts) >= 3 {
-					switch b3Parts[2] {
-					case "":
-						break
-					case "1", "d": // Treat 'debug' traces as priority 1
-						ctx.setSamplingPriority(1, samplernames.Unknown)
-					case "0":
-						ctx.setSamplingPriority(0, samplernames.Unknown)
-					default:
-						return ErrSpanContextCorrupted
-					}
-				}
-			} else {
-				return ErrSpanContextCorrupted
-			}
-		default:
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
-	}
-	return &ctx, nil
+	// TODO(kjn v2): Fix span context
+	// 	var ctx spanContext
+	// 	err := reader.ForeachKey(func(k, v string) error {
+	// 		var err error
+	// 		key := strings.ToLower(k)
+	// 		switch key {
+	// 		case b3SingleHeader:
+	// 			b3Parts := strings.Split(v, "-")
+	// 			if len(b3Parts) >= 2 {
+	// 				if err = extractTraceID128(&ctx, b3Parts[0]); err != nil {
+	// 					return err
+	// 				}
+	// 				ctx.spanID, err = strconv.ParseUint(b3Parts[1], 16, 64)
+	// 				if err != nil {
+	// 					return ErrSpanContextCorrupted
+	// 				}
+	// 				if len(b3Parts) >= 3 {
+	// 					switch b3Parts[2] {
+	// 					case "":
+	// 						break
+	// 					case "1", "d": // Treat 'debug' traces as priority 1
+	// 						ctx.setSamplingPriority(1, samplernames.Unknown)
+	// 					case "0":
+	// 						ctx.setSamplingPriority(0, samplernames.Unknown)
+	// 					default:
+	// 						return ErrSpanContextCorrupted
+	// 					}
+	// 				}
+	// 			} else {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 		default:
+	// 		}
+	// 		return nil
+	// 	})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return nil, ErrSpanContextNotFound
+	// 	}
+	// 	return &ctx, nil
+	return nil, ErrSpanContextNotFound
 }
 
 const (
@@ -676,42 +688,44 @@ func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{})
 // tracestateHeader is a comma-separated list of list-members with a <key>=<value> format,
 // where each list-member is managed by a vendor or instrumentation library.
 func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
-	ctx, ok := spanCtx.(*spanContext)
-	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
-	}
-	flags := ""
-	p, ok := ctx.samplingPriority()
-	if ok && p >= ext.PriorityAutoKeep {
-		flags = "01"
-	} else {
-		flags = "00"
-	}
-
-	var traceID string
-	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-		if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); ok {
-			traceID = w3Cctx.TraceID128()
-		}
-	} else {
-		traceID = fmt.Sprintf("%032x", ctx.traceID)
-		if ctx.trace != nil {
-			ctx.trace.unsetPropagatingTag(keyTraceID128)
-		}
-	}
-	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
-	// if context priority / origin / tags were updated after extraction,
-	// or the tracestateHeader doesn't start with `dd=`
-	// we need to recreate tracestate
-	if ctx.updated ||
-		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
-		ctx.trace.propagatingTagsLen() == 0 {
-		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
-	} else {
-		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
-	}
-	return nil
+	// TODO(kjn v2): Fix span context
+	// 	ctx, ok := spanCtx.(*spanContext)
+	// 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return ErrInvalidSpanContext
+	// 	}
+	// 	flags := ""
+	// 	p, ok := ctx.samplingPriority()
+	// 	if ok && p >= ext.PriorityAutoKeep {
+	// 		flags = "01"
+	// 	} else {
+	// 		flags = "00"
+	// 	}
+	//
+	// 	var traceID string
+	// 	if ctx.traceID.HasUpper() {
+	// 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
+	// 		if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); ok {
+	// 			traceID = w3Cctx.TraceID128()
+	// 		}
+	// 	} else {
+	// 		traceID = fmt.Sprintf("%032x", ctx.traceID)
+	// 		if ctx.trace != nil {
+	// 			ctx.trace.unsetPropagatingTag(keyTraceID128)
+	// 		}
+	// 	}
+	// 	writer.Set(traceparentHeader, fmt.Sprintf("00-%s-%016x-%v", traceID, ctx.spanID, flags))
+	// 	// if context priority / origin / tags were updated after extraction,
+	// 	// or the tracestateHeader doesn't start with `dd=`
+	// 	// we need to recreate tracestate
+	// 	if ctx.updated ||
+	// 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
+	// 		ctx.trace.propagatingTagsLen() == 0 {
+	// 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
+	// 	} else {
+	// 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
+	// 	}
+	// 	return nil
+	return ErrInvalidSpanContext
 }
 
 var (
@@ -768,56 +782,57 @@ func isValidID(id string) bool {
 	return true
 }
 
-// composeTracestate creates a tracestateHeader from the spancontext.
-// The Datadog tracing library is only responsible for managing the list member with key dd,
-// which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
-// and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
-func composeTracestate(ctx *spanContext, priority int, oldState string) string {
-	var b strings.Builder
-	b.Grow(128)
-	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
-	listLength := 1
-
-	if ctx.origin != "" {
-		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
-		b.WriteString(fmt.Sprintf(";o:%s",
-			strings.ReplaceAll(oWithSub, "=", "~")))
-	}
-
-	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
-		if !strings.HasPrefix(k, "_dd.p.") {
-			return true
-		}
-		// Datadog propagating tags must be appended to the tracestateHeader
-		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		tag := fmt.Sprintf("t.%s:%s",
-			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
-			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
-		if b.Len()+len(tag) > 256 {
-			return false
-		}
-		b.WriteString(";")
-		b.WriteString(tag)
-		return true
-	})
-	// the old state is split by vendors, must be concatenated with a `,`
-	if len(oldState) == 0 {
-		return b.String()
-	}
-	for _, s := range strings.Split(strings.Trim(oldState, " \t"), ",") {
-		if strings.HasPrefix(s, "dd=") {
-			continue
-		}
-		listLength++
-		// if the resulting tracestateHeader exceeds 32 list-members,
-		// remove the rightmost list-member(s)
-		if listLength > 32 {
-			break
-		}
-		b.WriteString("," + strings.Trim(s, " \t"))
-	}
-	return b.String()
-}
+// TODO(kjn v2): Fix span context
+// // composeTracestate creates a tracestateHeader from the spancontext.
+// // The Datadog tracing library is only responsible for managing the list member with key dd,
+// // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
+// // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
+// func composeTracestate(ctx *spanContext, priority int, oldState string) string {
+// 	var b strings.Builder
+// 	b.Grow(128)
+// 	b.WriteString(fmt.Sprintf("dd=s:%d", priority))
+// 	listLength := 1
+//
+// 	if ctx.origin != "" {
+// 		oWithSub := originRgx.ReplaceAllString(ctx.origin, "_")
+// 		b.WriteString(fmt.Sprintf(";o:%s",
+// 			strings.ReplaceAll(oWithSub, "=", "~")))
+// 	}
+//
+// 	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
+// 		if !strings.HasPrefix(k, "_dd.p.") {
+// 			return true
+// 		}
+// 		// Datadog propagating tags must be appended to the tracestateHeader
+// 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
+// 		tag := fmt.Sprintf("t.%s:%s",
+// 			keyRgx.ReplaceAllString(k[len("_dd.p."):], "_"),
+// 			strings.ReplaceAll(valueRgx.ReplaceAllString(v, "_"), "=", "~"))
+// 		if b.Len()+len(tag) > 256 {
+// 			return false
+// 		}
+// 		b.WriteString(";")
+// 		b.WriteString(tag)
+// 		return true
+// 	})
+// 	// the old state is split by vendors, must be concatenated with a `,`
+// 	if len(oldState) == 0 {
+// 		return b.String()
+// 	}
+// 	for _, s := range strings.Split(strings.Trim(oldState, " \t"), ",") {
+// 		if strings.HasPrefix(s, "dd=") {
+// 			continue
+// 		}
+// 		listLength++
+// 		// if the resulting tracestateHeader exceeds 32 list-members,
+// 		// remove the rightmost list-member(s)
+// 		if listLength > 32 {
+// 			break
+// 		}
+// 		b.WriteString("," + strings.Trim(s, " \t"))
+// 	}
+// 	return b.String()
+// }
 
 func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
@@ -829,209 +844,214 @@ func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error
 }
 
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
-	var parentHeader string
-	var stateHeader string
-	var ctx spanContext
-	// to avoid parsing tracestate header(s) if traceparent is invalid
-	if err := reader.ForeachKey(func(k, v string) error {
-		key := strings.ToLower(k)
-		switch key {
-		case traceparentHeader:
-			if parentHeader != "" {
-				return ErrSpanContextCorrupted
-			}
-			parentHeader = v
-		case tracestateHeader:
-			stateHeader = v
-		default:
-			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
-			}
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err := parseTraceparent(&ctx, parentHeader); err != nil {
-		return nil, err
-	}
-	parseTracestate(&ctx, stateHeader)
-	return &ctx, nil
+	// TODO(kjn v2): Fix span context
+	// 	var parentHeader string
+	// 	var stateHeader string
+	// 	var ctx spanContext
+	// 	// to avoid parsing tracestate header(s) if traceparent is invalid
+	// 	if err := reader.ForeachKey(func(k, v string) error {
+	// 		key := strings.ToLower(k)
+	// 		switch key {
+	// 		case traceparentHeader:
+	// 			if parentHeader != "" {
+	// 				return ErrSpanContextCorrupted
+	// 			}
+	// 			parentHeader = v
+	// 		case tracestateHeader:
+	// 			stateHeader = v
+	// 		default:
+	// 			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
+	// 				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
+	// 			}
+	// 		}
+	// 		return nil
+	// 	}); err != nil {
+	// 		return nil, err
+	// 	}
+	// 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
+	// 		return nil, err
+	// 	}
+	// 	parseTracestate(&ctx, stateHeader)
+	// 	return &ctx, nil
+	return nil, ErrSpanContextCorrupted
 }
 
-// parseTraceparent attempts to parse traceparentHeader which describes the position
-// of the incoming request in its trace graph in a portable, fixed-length format.
-// The format of the traceparentHeader is `-` separated string with in the
-// following format: `version-traceId-spanID-flags`, with an optional `-<prefix>` if version > 0.
-// where:
-// - version - represents the version of the W3C Tracecontext Propagation format in hex format.
-// - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
-// - spanID - represents the propagated spanID (parentID) in the format of 16 hex-encoded digits.
-// - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
-// Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
-// Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
-// stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
-// hex-encoded digits into a 64-bit number.
-func parseTraceparent(ctx *spanContext, header string) error {
-	nonWordCutset := "_-\t \n"
-	header = strings.ToLower(strings.Trim(header, "\t -"))
-	headerLen := len(header)
-	if headerLen == 0 {
-		return ErrSpanContextNotFound
-	}
-	if headerLen < 55 {
-		return ErrSpanContextCorrupted
-	}
-	parts := strings.SplitN(header, "-", 5) // 5 because we expect 4 required + 1 optional substrings
-	if len(parts) < 4 {
-		return ErrSpanContextCorrupted
-	}
-	version := strings.Trim(parts[0], nonWordCutset)
-	if len(version) != 2 {
-		return ErrSpanContextCorrupted
-	}
-	v, err := strconv.ParseUint(version, 16, 64)
-	if err != nil || v == 255 {
-		// version 255 (0xff) is invalid
-		return ErrSpanContextCorrupted
-	}
-	if v == 0 && headerLen != 55 {
-		// The header length in v0 has to be 55.
-		// It's allowed to be longer in other versions.
-		return ErrSpanContextCorrupted
-	}
-	// parsing traceID
-	fullTraceID := strings.Trim(parts[1], nonWordCutset)
-	if len(fullTraceID) != 32 {
-		return ErrSpanContextCorrupted
-	}
-	// checking that the entire TraceID is a valid hex string
-	if !isValidID(fullTraceID) {
-		return ErrSpanContextCorrupted
-	}
-	if ctx.trace != nil {
-		// Ensure that the 128-bit trace id tag doesn't propagate
-		ctx.trace.unsetPropagatingTag(keyTraceID128)
-	}
-	if err := extractTraceID128(ctx, fullTraceID); err != nil {
-		return err
-	}
-	// parsing spanID
-	spanID := strings.Trim(parts[2], nonWordCutset)
-	if len(spanID) != 16 {
-		return ErrSpanContextCorrupted
-	}
-	if !isValidID(spanID) {
-		return ErrSpanContextCorrupted
-	}
-	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
-		return ErrSpanContextCorrupted
-	}
-	if ctx.spanID == 0 {
-		return ErrSpanContextNotFound
-	}
-	// parsing flags
-	flags := parts[3]
-	f, err := strconv.ParseInt(flags, 16, 8)
-	if err != nil {
-		return ErrSpanContextCorrupted
-	}
-	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
-	return nil
-}
+// TODO(kjn v2): Fix span context
+// // parseTraceparent attempts to parse traceparentHeader which describes the position
+// // of the incoming request in its trace graph in a portable, fixed-length format.
+// // The format of the traceparentHeader is `-` separated string with in the
+// // following format: `version-traceId-spanID-flags`, with an optional `-<prefix>` if version > 0.
+// // where:
+// // - version - represents the version of the W3C Tracecontext Propagation format in hex format.
+// // - traceId - represents the propagated traceID in the format of 32 hex-encoded digits.
+// // - spanID - represents the propagated spanID (parentID) in the format of 16 hex-encoded digits.
+// // - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
+// // Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
+// // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
+// // stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
+// // hex-encoded digits into a 64-bit number.
+// func parseTraceparent(ctx *spanContext, header string) error {
+// 	nonWordCutset := "_-\t \n"
+// 	header = strings.ToLower(strings.Trim(header, "\t -"))
+// 	headerLen := len(header)
+// 	if headerLen == 0 {
+// 		return ErrSpanContextNotFound
+// 	}
+// 	if headerLen < 55 {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	parts := strings.SplitN(header, "-", 5) // 5 because we expect 4 required + 1 optional substrings
+// 	if len(parts) < 4 {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	version := strings.Trim(parts[0], nonWordCutset)
+// 	if len(version) != 2 {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	v, err := strconv.ParseUint(version, 16, 64)
+// 	if err != nil || v == 255 {
+// 		// version 255 (0xff) is invalid
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	if v == 0 && headerLen != 55 {
+// 		// The header length in v0 has to be 55.
+// 		// It's allowed to be longer in other versions.
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	// parsing traceID
+// 	fullTraceID := strings.Trim(parts[1], nonWordCutset)
+// 	if len(fullTraceID) != 32 {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	// checking that the entire TraceID is a valid hex string
+// 	if !isValidID(fullTraceID) {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	if ctx.trace != nil {
+// 		// Ensure that the 128-bit trace id tag doesn't propagate
+// 		ctx.trace.unsetPropagatingTag(keyTraceID128)
+// 	}
+// 	if err := extractTraceID128(ctx, fullTraceID); err != nil {
+// 		return err
+// 	}
+// 	// parsing spanID
+// 	spanID := strings.Trim(parts[2], nonWordCutset)
+// 	if len(spanID) != 16 {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	if !isValidID(spanID) {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	if ctx.spanID == 0 {
+// 		return ErrSpanContextNotFound
+// 	}
+// 	// parsing flags
+// 	flags := parts[3]
+// 	f, err := strconv.ParseInt(flags, 16, 8)
+// 	if err != nil {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
+// 	return nil
+// }
 
-// parseTracestate attempts to parse tracestateHeader which is a list
-// with up to 32 comma-separated (,) list-members.
-// An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
-// Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
-// The keys to the “dd“ values have been shortened as follows to save space:
-// `sampling_priority` = `s`
-// `origin` = `o`
-// `_dd.p.` prefix = `t.`
-func parseTracestate(ctx *spanContext, header string) {
-	if header == "" {
-		// The W3C spec says tracestate can be empty but should avoid sending it.
-		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
-		return
-	}
-	// if multiple headers are present, they must be combined and stored
-	setPropagatingTag(ctx, tracestateHeader, header)
-	combined := strings.Split(strings.Trim(header, "\t "), ",")
-	for _, group := range combined {
-		if !strings.HasPrefix(group, "dd=") {
-			continue
-		}
-		ddMembers := strings.Split(group[len("dd="):], ";")
-		dropDM := false
-		for _, member := range ddMembers {
-			keyVal := strings.SplitN(member, ":", 2)
-			if len(keyVal) != 2 {
-				continue
-			}
-			key, val := keyVal[0], keyVal[1]
-			if key == "o" {
-				ctx.origin = strings.ReplaceAll(val, "~", "=")
-			} else if key == "s" {
-				stateP, err := strconv.Atoi(val)
-				if err != nil {
-					// If the tracestate priority is absent,
-					// we rely on the traceparent sampled flag
-					// set in the parseTraceparent function.
-					continue
-				}
-				// The sampling priority and decision maker values are set based on
-				// the specification in the internal W3C context propagation RFC.
-				// See the document for more details.
-				parentP, _ := ctx.samplingPriority()
-				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
-					// As extracted from tracestate
-					ctx.setSamplingPriority(stateP, samplernames.Unknown)
-				}
-				if parentP == 1 && stateP <= 0 {
-					// Auto keep (1) and set the decision maker to default
-					ctx.setSamplingPriority(1, samplernames.Default)
-				}
-				if parentP == 0 && stateP > 0 {
-					// Auto drop (0) and drop the decision maker
-					ctx.setSamplingPriority(0, samplernames.Unknown)
-					dropDM = true
-				}
-			} else if strings.HasPrefix(key, "t.dm") {
-				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
-					continue
-				}
-				setPropagatingTag(ctx, keyDecisionMaker, val)
-			} else if strings.HasPrefix(key, "t.") {
-				keySuffix := key[len("t."):]
-				val = strings.ReplaceAll(val, "~", "=")
-				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
-			}
-		}
-	}
-}
+// TODO(kjn v2): Fix span context
+// // parseTracestate attempts to parse tracestateHeader which is a list
+// // with up to 32 comma-separated (,) list-members.
+// // An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
+// // Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
+// // The keys to the “dd“ values have been shortened as follows to save space:
+// // `sampling_priority` = `s`
+// // `origin` = `o`
+// // `_dd.p.` prefix = `t.`
+// func parseTracestate(ctx *spanContext, header string) {
+// 	if header == "" {
+// 		// The W3C spec says tracestate can be empty but should avoid sending it.
+// 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
+// 		return
+// 	}
+// 	// if multiple headers are present, they must be combined and stored
+// 	setPropagatingTag(ctx, tracestateHeader, header)
+// 	combined := strings.Split(strings.Trim(header, "\t "), ",")
+// 	for _, group := range combined {
+// 		if !strings.HasPrefix(group, "dd=") {
+// 			continue
+// 		}
+// 		ddMembers := strings.Split(group[len("dd="):], ";")
+// 		dropDM := false
+// 		for _, member := range ddMembers {
+// 			keyVal := strings.SplitN(member, ":", 2)
+// 			if len(keyVal) != 2 {
+// 				continue
+// 			}
+// 			key, val := keyVal[0], keyVal[1]
+// 			if key == "o" {
+// 				ctx.origin = strings.ReplaceAll(val, "~", "=")
+// 			} else if key == "s" {
+// 				stateP, err := strconv.Atoi(val)
+// 				if err != nil {
+// 					// If the tracestate priority is absent,
+// 					// we rely on the traceparent sampled flag
+// 					// set in the parseTraceparent function.
+// 					continue
+// 				}
+// 				// The sampling priority and decision maker values are set based on
+// 				// the specification in the internal W3C context propagation RFC.
+// 				// See the document for more details.
+// 				parentP, _ := ctx.samplingPriority()
+// 				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
+// 					// As extracted from tracestate
+// 					ctx.setSamplingPriority(stateP, samplernames.Unknown)
+// 				}
+// 				if parentP == 1 && stateP <= 0 {
+// 					// Auto keep (1) and set the decision maker to default
+// 					ctx.setSamplingPriority(1, samplernames.Default)
+// 				}
+// 				if parentP == 0 && stateP > 0 {
+// 					// Auto drop (0) and drop the decision maker
+// 					ctx.setSamplingPriority(0, samplernames.Unknown)
+// 					dropDM = true
+// 				}
+// 			} else if strings.HasPrefix(key, "t.dm") {
+// 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
+// 					continue
+// 				}
+// 				setPropagatingTag(ctx, keyDecisionMaker, val)
+// 			} else if strings.HasPrefix(key, "t.") {
+// 				keySuffix := key[len("t."):]
+// 				val = strings.ReplaceAll(val, "~", "=")
+// 				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
+// 			}
+// 		}
+// 	}
+// }
 
-// extractTraceID128 extracts the trace id from v and populates the traceID
-// field, and the traceID128 field (if applicable) of the provided ctx,
-// returning an error if v is invalid.
-func extractTraceID128(ctx *spanContext, v string) error {
-	if len(v) > 32 {
-		v = v[len(v)-32:]
-	}
-	v = strings.TrimLeft(v, "0")
-	var err error
-	if len(v) <= 16 { // 64-bit trace id
-		var tid uint64
-		tid, err = strconv.ParseUint(v, 16, 64)
-		ctx.traceID.SetLower(tid)
-	} else { // 128-bit trace id
-		idUpper := v[:len(v)-16]
-		ctx.traceID.SetUpperFromHex(idUpper)
-		var l uint64
-		l, err = strconv.ParseUint(v[len(idUpper):], 16, 64)
-		ctx.traceID.SetLower(l)
-	}
-	if err != nil {
-		return ErrSpanContextCorrupted
-	}
-	return nil
-}
+// TODO(kjn v2): Fix span context
+// // extractTraceID128 extracts the trace id from v and populates the traceID
+// // field, and the traceID128 field (if applicable) of the provided ctx,
+// // returning an error if v is invalid.
+// func extractTraceID128(ctx *spanContext, v string) error {
+// 	if len(v) > 32 {
+// 		v = v[len(v)-32:]
+// 	}
+// 	v = strings.TrimLeft(v, "0")
+// 	var err error
+// 	if len(v) <= 16 { // 64-bit trace id
+// 		var tid uint64
+// 		tid, err = strconv.ParseUint(v, 16, 64)
+// 		ctx.traceID.SetLower(tid)
+// 	} else { // 128-bit trace id
+// 		idUpper := v[:len(v)-16]
+// 		ctx.traceID.SetUpperFromHex(idUpper)
+// 		var l uint64
+// 		l, err = strconv.ParseUint(v[len(idUpper):], 16, 64)
+// 		ctx.traceID.SetLower(l)
+// 	}
+// 	if err != nil {
+// 		return ErrSpanContextCorrupted
+// 	}
+// 	return nil
+// }

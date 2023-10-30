@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package ddtrace
 
 import (
 	"time"
@@ -26,10 +26,11 @@ func lowPrecisionNow() int64 {
 	return time.Now().UnixNano()
 }
 
+// TODO(kjn v2): Get rid of exported Now()
 // We use this method of initializing now over an init function due to dependency issues. The init
 // function may run after other declarations, such as that in payload_test:19, which results in a
 // nil dereference panic.
-var now func() int64 = func() func() int64 {
+var Now func() int64 = func() func() int64 {
 	if err := windows.LoadGetSystemTimePreciseAsFileTime(); err != nil {
 		log.Warn("Unable to load high precison timer, defaulting to time.Now()")
 		return lowPrecisionNow

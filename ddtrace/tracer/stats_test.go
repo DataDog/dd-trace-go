@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,6 +34,39 @@ func TestAlignTs(t *testing.T) {
 	got := alignTs(now, defaultStatsBucketSize)
 	want := now - now%((10 * time.Second).Nanoseconds())
 	assert.Equal(t, got, want)
+}
+
+func TestNewAggregableSpan(t *testing.T) {
+	t.Run("obfuscating", func(t *testing.T) {
+		o := obfuscate.NewObfuscator(obfuscate.Config{})
+		aggspan := newAggregableSpan(&Span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, o)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password = ?",
+			Service:  "service",
+		}, aggspan.key)
+	})
+
+	t.Run("nil-obfuscator", func(t *testing.T) {
+		aggspan := newAggregableSpan(&Span{
+			Name:     "name",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+			Type:     "sql",
+		}, nil)
+		assert.Equal(t, aggregation{
+			Name:     "name",
+			Type:     "sql",
+			Resource: "SELECT * FROM table WHERE password='secret'",
+			Service:  "service",
+		}, aggspan.key)
+	})
 }
 
 func TestConcentrator(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -79,7 +80,7 @@ type abandonedSpanCandidate struct {
 	Finished        bool
 }
 
-func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
+func newAbandonedSpanCandidate(s *ddtrace.Span, finished bool) *abandonedSpanCandidate {
 	// finished is explicit instead of implicit as s.finished may be not set
 	// at the moment of calling this method.
 	// Also, locking is not required as it's called while the span is already locked or it's
@@ -95,7 +96,7 @@ func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
 
 // String takes a span and returns a human-readable string representing that span.
 func (s *abandonedSpanCandidate) String() string {
-	age := now() - s.Start
+	age := ddtrace.Now() - s.Start
 	a := fmt.Sprintf("%d sec", age/1e9)
 	return fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.SpanID, s.TraceID, a)
 }
@@ -224,7 +225,7 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 		sb        strings.Builder
 		spanCount = 0
 		truncated = false
-		curTime   = now()
+		curTime   = ddtrace.Now()
 	)
 
 	if len(d.buckets) == 0 {

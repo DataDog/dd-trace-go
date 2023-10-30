@@ -19,7 +19,7 @@ import (
 // Sampler is the generic interface of any sampler. It must be safe for concurrent use.
 type Sampler interface {
 	// Sample returns true if the given span should be sampled.
-	Sample(span ddtrace.Span) bool
+	Sample(span *ddtrace.Span) bool
 }
 
 // RateSampler is a sampler implementation which randomly selects spans using a
@@ -67,18 +67,15 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn ddtrace.Span) bool {
+func (r *rateSampler) Sample(spn *ddtrace.Span) bool {
 	if r.rate == 1 {
 		// fast path
 		return true
 	}
-	s, ok := spn.(*Span)
-	if !ok {
-		return false
-	}
+
 	r.RLock()
 	defer r.RUnlock()
-	return sampledByRate(s.TraceID, r.rate)
+	return sampledByRate(spn.TraceID, r.rate)
 }
 
 // sampledByRate verifies if the number n should be sampled at the specified
@@ -127,7 +124,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
-func (ps *prioritySampler) getRate(spn *Span) float64 {
+func (ps *prioritySampler) getRate(spn *ddtrace.Span) float64 {
 	key := "service:" + spn.Service + ",env:" + spn.Meta[ext.Environment]
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -139,12 +136,12 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
-func (ps *prioritySampler) apply(spn *Span) {
+func (ps *prioritySampler) apply(spn *ddtrace.Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.TraceID, rate) {
-		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+		spn.SetSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
-		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
+		spn.SetSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
 }

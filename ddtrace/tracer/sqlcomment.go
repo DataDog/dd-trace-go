@@ -10,10 +10,8 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 // SQLCommentInjectionMode represents the mode of SQL comment injection.
@@ -74,7 +72,7 @@ type SQLCommentCarrier struct {
 
 // Inject injects a span context in the carrier's Query field as a comment.
 func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
-	c.SpanID = generateSpanID(now())
+	c.SpanID = generateSpanID(ddtrace.Now())
 	tags := make(map[string]string)
 	switch c.Mode {
 	case DBMPropagationModeUndefined:
@@ -86,26 +84,28 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			sampled int64
 			traceID uint64
 		)
-		if ctx, ok := spanCtx.(*spanContext); ok {
-			if sp, ok := ctx.samplingPriority(); ok && sp > 0 {
-				sampled = 1
-			}
-			traceID = ctx.TraceID()
-		}
+		// TODO(kjn v2): Fix span context
+		// 		if ctx, ok := spanCtx.(*spanContext); ok {
+		// 			if sp, ok := ctx.samplingPriority(); ok && sp > 0 {
+		// 				sampled = 1
+		// 			}
+		// 			traceID = ctx.TraceID()
+		// 		}
 		if traceID == 0 { // check if this is a root span
 			traceID = c.SpanID
 		}
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case DBMPropagationModeService:
-		if ctx, ok := spanCtx.(*spanContext); ok {
-			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
-				tags[sqlCommentEnv] = e
-			}
-			if v, ok := ctx.meta(ext.Version); ok && v != "" {
-				tags[sqlCommentParentVersion] = v
-			}
-		}
+		// TODO(kjn v2): Fix span context
+		// 		if ctx, ok := spanCtx.(*spanContext); ok {
+		// 			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
+		// 				tags[sqlCommentEnv] = e
+		// 			}
+		// 			if v, ok := ctx.meta(ext.Version); ok && v != "" {
+		// 				tags[sqlCommentParentVersion] = v
+		// 			}
+		// 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
 		}
@@ -191,50 +191,53 @@ func commentQuery(query string, tags map[string]string) string {
 
 // Extract parses for key value attributes in a sql query injected with trace information in order to build a span context
 func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	var ctx *spanContext
-	// There may be multiple comments within the sql query, so we must identify which one contains trace information.
-	// We look at each comment until we find one that contains a traceparent
-	if traceComment, found := findTraceComment(c.Query); found {
-		var err error
-		if ctx, err = spanContextFromTraceComment(traceComment); err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, ErrSpanContextNotFound
-	}
-	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
-	}
-	return ctx, nil
+	// TODO(kjn v2): Fix span context
+	// 	var ctx *spanContext
+	// 	// There may be multiple comments within the sql query, so we must identify which one contains trace information.
+	// 	// We look at each comment until we find one that contains a traceparent
+	// 	if traceComment, found := findTraceComment(c.Query); found {
+	// 		var err error
+	// 		if ctx, err = spanContextFromTraceComment(traceComment); err != nil {
+	// 			return nil, err
+	// 		}
+	// 	} else {
+	// 		return nil, ErrSpanContextNotFound
+	// 	}
+	// 	if ctx.traceID.Empty() || ctx.spanID == 0 {
+	// 		return nil, ErrSpanContextNotFound
+	// 	}
+	// 	return ctx, nil
+	return nil, ErrSpanContextNotFound
 }
 
-// spanContextFromTraceComment looks for specific kv pairs in a comment containing trace information.
-// It returns a span context with the appropriate attributes
-func spanContextFromTraceComment(c string) (*spanContext, error) {
-	var ctx spanContext
-	kvs := strings.Split(c, ",")
-	for _, unparsedKV := range kvs {
-		splitKV := strings.Split(unparsedKV, "=")
-		if len(splitKV) != 2 {
-			return nil, ErrSpanContextCorrupted
-		}
-		key := splitKV[0]
-		value := strings.Trim(splitKV[1], "'")
-		switch key {
-		case sqlCommentTraceParent:
-			traceIDLower, traceIDUpper, spanID, sampled, err := decodeTraceParent(value)
-			if err != nil {
-				return nil, err
-			}
-			ctx.traceID.SetLower(traceIDLower)
-			ctx.traceID.SetUpper(traceIDUpper)
-			ctx.spanID = spanID
-			ctx.setSamplingPriority(sampled, samplernames.Unknown)
-		default:
-		}
-	}
-	return &ctx, nil
-}
+// TODO(kjn v2): Fix span context
+// // spanContextFromTraceComment looks for specific kv pairs in a comment containing trace information.
+// // It returns a span context with the appropriate attributes
+// func spanContextFromTraceComment(c string) (*spanContext, error) {
+// 	var ctx spanContext
+// 	kvs := strings.Split(c, ",")
+// 	for _, unparsedKV := range kvs {
+// 		splitKV := strings.Split(unparsedKV, "=")
+// 		if len(splitKV) != 2 {
+// 			return nil, ErrSpanContextCorrupted
+// 		}
+// 		key := splitKV[0]
+// 		value := strings.Trim(splitKV[1], "'")
+// 		switch key {
+// 		case sqlCommentTraceParent:
+// 			traceIDLower, traceIDUpper, spanID, sampled, err := decodeTraceParent(value)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			ctx.traceID.SetLower(traceIDLower)
+// 			ctx.traceID.SetUpper(traceIDUpper)
+// 			ctx.spanID = spanID
+// 			ctx.setSamplingPriority(sampled, samplernames.Unknown)
+// 		default:
+// 		}
+// 	}
+// 	return &ctx, nil
+// }
 
 // decodeTraceParent decodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
 // this also supports decoding traceparents from open telemetry sql comments which are 128 bit

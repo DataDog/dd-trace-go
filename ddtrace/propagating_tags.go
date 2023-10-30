@@ -3,23 +3,23 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package ddtrace
 
-func (t *trace) hasPropagatingTag(k string) bool {
+func (t *Trace) hasPropagatingTag(k string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	_, ok := t.propagatingTags[k]
 	return ok
 }
 
-func (t *trace) propagatingTag(k string) string {
+func (t *Trace) propagatingTag(k string) string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.propagatingTags[k]
 }
 
 // setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
+func (t *Trace) setPropagatingTag(key, value string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.setPropagatingTagLocked(key, value)
@@ -27,7 +27,7 @@ func (t *trace) setPropagatingTag(key, value string) {
 
 // setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
 // Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
+func (t *Trace) setPropagatingTagLocked(key, value string) {
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
 	}
@@ -35,7 +35,7 @@ func (t *trace) setPropagatingTagLocked(key, value string) {
 }
 
 // unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
+func (t *Trace) unsetPropagatingTag(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.propagatingTags, key)
@@ -45,7 +45,7 @@ func (t *trace) unsetPropagatingTag(key string) {
 // the trace must not be modified during this call, as it is locked for reading.
 //
 // f should return whether or not the iteration should continue.
-func (t *trace) iteratePropagatingTags(f func(k, v string) bool) {
+func (t *Trace) iteratePropagatingTags(f func(k, v string) bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	for k, v := range t.propagatingTags {
@@ -55,13 +55,13 @@ func (t *trace) iteratePropagatingTags(f func(k, v string) bool) {
 	}
 }
 
-func (t *trace) replacePropagatingTags(tags map[string]string) {
+func (t *Trace) replacePropagatingTags(tags map[string]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.propagatingTags = tags
 }
 
-func (t *trace) propagatingTagsLen() int {
+func (t *Trace) propagatingTagsLen() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.propagatingTags)

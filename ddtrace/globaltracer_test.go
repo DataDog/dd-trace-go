@@ -6,6 +6,7 @@
 package ddtrace
 
 import (
+	"context"
 	"sync"
 	"testing"
 )
@@ -14,8 +15,11 @@ type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(_ string, _ ...StartSpanOption) Span {
-	return NoopSpan{}
+func (*raceTestTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
+	return &Span{}
+}
+func (*raceTestTracer) StartSpanFromContext(ctx context.Context, _ string, _ ...StartSpanOption) (*Span, context.Context) {
+	return &Span{}, ctx
 }
 func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
 func (*raceTestTracer) Extract(_ interface{}) (SpanContext, error) {
@@ -25,6 +29,10 @@ func (*raceTestTracer) Inject(_ SpanContext, _ interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }
+
+func (*raceTestTracer) CanComputeStats() bool { return false }
+
+func (*raceTestTracer) PushChunk(_ *Chunk) {}
 
 func TestGlobalTracer(t *testing.T) {
 	// at module initialization, the tracer must be seet

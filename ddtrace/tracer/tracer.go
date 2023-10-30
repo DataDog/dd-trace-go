@@ -10,9 +10,7 @@ import (
 	gocontext "context"
 	"encoding/binary"
 	"os"
-	"runtime/pprof"
 	rt "runtime/trace"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,9 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
@@ -54,7 +50,7 @@ type Tracer struct {
 	traceWriter traceWriter
 
 	// out receives chunk with spans to be added to the payload.
-	out chan *chunk
+	out chan *ddtrace.Chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -185,24 +181,6 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return ddtrace.GetGlobalTracer().Inject(ctx, carrier)
 }
 
-// SetUser associates user information to the current trace which the
-// provided span belongs to. The options can be used to tune which user
-// bit of information gets monitored. In case of distributed traces,
-// the user id can be propagated across traces using the WithPropagation() option.
-// See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
-func SetUser(s ddtrace.Span, id string, opts ...UserMonitoringOption) {
-	if s == nil {
-		return
-	}
-	sp, ok := s.(interface {
-		SetUser(string, ...UserMonitoringOption)
-	})
-	if !ok {
-		return
-	}
-	sp.SetUser(id, opts...)
-}
-
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
@@ -242,7 +220,7 @@ func newUnstartedTracer(opts ...StartOption) *Tracer {
 	t := &Tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
+		out:              make(chan *ddtrace.Chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
@@ -339,8 +317,8 @@ func (t *Tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleChunk(trace)
-			if len(trace.spans) != 0 {
-				t.traceWriter.add(trace.spans)
+			if len(trace.Spans) != 0 {
+				t.traceWriter.add(trace.Spans)
 			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
@@ -364,8 +342,8 @@ func (t *Tracer) worker(tick <-chan time.Time) {
 				select {
 				case trace := <-t.out:
 					t.sampleChunk(trace)
-					if len(trace.spans) != 0 {
-						t.traceWriter.add(trace.spans)
+					if len(trace.Spans) != 0 {
+						t.traceWriter.add(trace.Spans)
 					}
 				default:
 					break loop
@@ -376,31 +354,28 @@ func (t *Tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// chunk holds information about a trace chunk to be flushed, including its spans.
-// The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
+// Chunk holds information about a trace Chunk to be flushed, including its spans.
+// The Chunk may be a fully finished local trace Chunk, or only a portion of the local trace Chunk in the case of
 // partial flushing.
-type chunk struct {
-	spans    []*Span
-	willSend bool // willSend indicates whether the trace will be sent to the agent.
-}
 
 // sampleChunk applies single-span sampling to the provided trace.
-func (t *Tracer) sampleChunk(c *chunk) {
-	if len(c.spans) > 0 {
-		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
-			// The trace is kept, no need to run single span sampling rules.
-			return
-		}
+func (t *Tracer) sampleChunk(c *ddtrace.Chunk) {
+	if len(c.Spans) > 0 {
+		// TODO(kjn v2): Fix span context
+		// 		if p, ok := c.Spans[0].context.samplingPriority(); ok && p > 0 {
+		// 			// The trace is kept, no need to run single span sampling rules.
+		// 			return
+		// 		}
 	}
-	var kept []*Span
+	var kept []*ddtrace.Span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
-		for _, span := range c.spans {
+		for _, span := range c.Spans {
 			if t.rulesSampling.SampleSpan(span) {
 				kept = append(kept, span)
 			}
 		}
-		if len(kept) > 0 && len(kept) < len(c.spans) {
+		if len(kept) > 0 && len(kept) < len(c.Spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			atomic.AddUint32(&t.partialTraces, 1)
 		}
@@ -408,13 +383,13 @@ func (t *Tracer) sampleChunk(c *chunk) {
 	if len(kept) == 0 {
 		atomic.AddUint32(&t.droppedP0Traces, 1)
 	}
-	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
-	if !c.willSend {
-		c.spans = kept
+	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.Spans)-len(kept)))
+	if !c.WillSend {
+		c.Spans = kept
 	}
 }
 
-func (t *Tracer) pushChunk(trace *chunk) {
+func (t *Tracer) PushChunk(trace *ddtrace.Chunk) {
 	select {
 	case <-t.stop:
 		return
@@ -423,12 +398,12 @@ func (t *Tracer) pushChunk(trace *chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.spans))
+		log.Error("payload queue full, dropping %d traces", len(trace.Spans))
 	}
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *Tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *Tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *ddtrace.Span {
 	s, _ := t.StartSpanFromContext(context.Background(), operationName, options...)
 	return s
 }
@@ -440,10 +415,12 @@ func withContext(ctx context.Context) ddtrace.StartSpanOption {
 	}
 }
 
-func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, context.Context) {
+// TODO(kjn v2): This probably doesn't belong in the tracer.
+// We should be able to start a span without the tracer itself.
+func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string, options ...ddtrace.StartSpanOption) (*ddtrace.Span, context.Context) {
 	// copy opts in case the caller reuses the slice in parallel
 	// we will add at least 1, at most 2 items
-	optsLocal := make([]StartSpanOption, len(options), len(options)+2)
+	optsLocal := make([]ddtrace.StartSpanOption, len(options), len(options)+2)
 	copy(optsLocal, options)
 
 	if ctx == nil {
@@ -460,29 +437,31 @@ func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string,
 	}
 	var startTime int64
 	if opts.StartTime.IsZero() {
-		startTime = now()
+		startTime = ddtrace.Now()
 	} else {
 		startTime = opts.StartTime.UnixNano()
 	}
-	var context *spanContext
+	// TODO(kjn v2): Fix span context
+	//var context *spanContext
 	// The default pprof context is taken from the start options and is
 	// not nil when using StartSpanFromContext()
 	pprofContext := opts.Context
 	if opts.Parent != nil {
-		if ctx, ok := opts.Parent.(*spanContext); ok {
-			context = ctx
-			if pprofContext == nil && ctx.span != nil {
-				// Inherit the context.Context from parent span if it was propagated
-				// using ChildOf() rather than StartSpanFromContext(), see
-				// applyPPROFLabels() below.
-				pprofContext = ctx.span.pprofCtxActive
-			}
-		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
-			context = &spanContext{
-				traceID: p.TraceID128Bytes(),
-				spanID:  p.SpanID(),
-			}
-		}
+		// TODO(kjn v2): Fix span context
+		// 		if ctx, ok := opts.Parent.(*spanContext); ok {
+		// 			context = ctx
+		// 			if pprofContext == nil && ctx.span != nil {
+		// 				// Inherit the context.Context from parent span if it was propagated
+		// 				// using ChildOf() rather than StartSpanFromContext(), see
+		// 				// applyPPROFLabels() below.
+		// 				pprofContext = ctx.span.pprofCtxActive
+		// 			}
+		// 		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
+		// 			context = &spanContext{
+		// 				traceID: p.TraceID128Bytes(),
+		// 				spanID:  p.SpanID(),
+		// 			}
+		// 		}
 	}
 	if pprofContext == nil {
 		// For root span's without context, there is no pprofContext, but we need
@@ -499,42 +478,49 @@ func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string,
 		id = generateSpanID(startTime)
 	}
 	// span defaults
-	span := &Span{
-		Name:         operationName,
-		Service:      t.config.serviceName,
-		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
-		Start:        startTime,
-		noDebugStack: t.config.noDebugStack,
-		tracer:       t,
+	span := &ddtrace.Span{
+		Name:     operationName,
+		Service:  t.config.serviceName,
+		Resource: operationName,
+		SpanID:   id,
+		TraceID:  id,
+		Start:    startTime,
+		// TODO(kjn v2): Fix span start
+		// noDebugStack: t.config.noDebugStack,
+		// tracer: t,
 	}
 	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+		// TODO(kjn v2): More setMeta
+		//span.setMeta(keyHostname, t.config.hostname)
+		span.SetTag(keyHostname, t.config.hostname)
 	}
-	if context != nil {
-		// this is a child span
-		span.TraceID = context.traceID.Lower()
-		span.ParentID = context.spanID
-		if p, ok := context.samplingPriority(); ok {
-			span.setMetric(keySamplingPriority, float64(p))
-		}
-		if context.span != nil {
-			// local parent, inherit service
-			context.span.RLock()
-			span.Service = context.span.Service
-			context.span.RUnlock()
-		} else {
-			// remote parent
-			if context.origin != "" {
-				// mark origin
-				span.setMeta(keyOrigin, context.origin)
-			}
-		}
-	}
-	span.context = newSpanContext(span, context)
-	span.setMetric(ext.Pid, float64(t.pid))
-	span.setMeta("language", "go")
+	// TODO(kjn v2): Fix span context
+	// 	if context != nil {
+	// 		// this is a child span
+	// 		span.TraceID = context.traceID.Lower()
+	// 		span.ParentID = context.spanID
+	// 		if p, ok := context.samplingPriority(); ok {
+	// 			span.setMetric(keySamplingPriority, float64(p))
+	// 		}
+	// 		if context.span != nil {
+	// 			// local parent, inherit service
+	// 			context.span.RLock()
+	// 			span.Service = context.span.Service
+	// 			context.span.RUnlock()
+	// 		} else {
+	// 			// remote parent
+	// 			if context.origin != "" {
+	// 				// mark origin
+	// 				span.setMeta(keyOrigin, context.origin)
+	// 			}
+	// 		}
+	// 	}
+	// 	span.context = newSpanContext(span, context)
+	// TODO(kjn v2): More setMeta / setMetric
+	// span.setMetric(ext.Pid, float64(t.pid))
+	// span.setMeta("language", "go")
+	span.SetTag(ext.Pid, float64(t.pid))
+	span.SetTag("language", "go")
 
 	// add tags from options
 	for k, v := range opts.Tags {
@@ -549,32 +535,40 @@ func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string,
 			span.Service = newSvc
 		}
 	}
-	isRootSpan := context == nil || context.span == nil
-	if isRootSpan {
-		traceprof.SetProfilerRootTags(span)
-		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
-	}
-	if isRootSpan || context.span.Service != span.Service {
-		span.setMetric(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.Metrics, keyMeasured)
-	}
+	// TODO(kjn v2): Fix span context
+	// 	isRootSpan := context == nil || context.span == nil
+	// 	if isRootSpan {
+	// 		traceprof.SetProfilerRootTags(span)
+	// 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	// 	}
+	// 	if isRootSpan || context.span.Service != span.Service {
+	// 		span.setMetric(keyTopLevel, 1)
+	// 		// all top level spans are measured. So the measured tag is redundant.
+	// 		delete(span.Metrics, keyMeasured)
+	// 	}
 	if t.config.version != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.version)
+			// TODO(kjn v2): More setMeta
+			// span.setMeta(ext.Version, t.config.version)
+			span.SetTag(ext.Version, t.config.version)
 		}
 	}
 	if t.config.env != "" {
-		span.setMeta(ext.Environment, t.config.env)
+		// TODO(kjn v2): More setMeta
+		// span.setMeta(ext.Environment, t.config.env)
+		span.SetTag(ext.Environment, t.config.env)
 	}
-	if _, ok := span.context.samplingPriority(); !ok {
-		// if not already sampled or a brand new trace, sample it
-		t.sample(span)
-	}
-	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofContext, span)
-	}
+	// TODO(kjn v2): Fix span context
+	// 	if _, ok := span.context.samplingPriority(); !ok {
+	// 		// if not already sampled or a brand new trace, sample it
+	// 		t.sample(span)
+	// 	}
+
+	// TODO(kjn v2): This stuff needs to be in the span maybe? Dunno why we're setting span attributes here.
+	// 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
+	// 	if t.config.profilerHotspots || t.config.profilerEndpoints {
+	// 		t.applyPPROFLabels(pprofContext, span)
+	// 	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
@@ -593,13 +587,13 @@ func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string,
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	// TODO(kjn v2): Need to make this work for V2
-	if span.pprofCtxActive != nil {
-		// If pprof labels were applied for this span, use the derived ctx that
-		// includes them. Otherwise a child of this span wouldn't be able to
-		// correctly restore the labels of its parent when it finishes.
-		ctx = span.pprofCtxActive
-	}
+	// TODO(kjn v2): Should be somewhere else. These look like span internals.
+	// 	if span.pprofCtxActive != nil {
+	// 		// If pprof labels were applied for this span, use the derived ctx that
+	// 		// includes them. Otherwise a child of this span wouldn't be able to
+	// 		// correctly restore the labels of its parent when it finishes.
+	// 		ctx = span.pprofCtxActive
+	// 	}
 
 	return span, ddtrace.ContextWithSpan(ctx, span)
 }
@@ -615,40 +609,36 @@ func generateSpanID(startTime int64) uint64 {
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
-func (t *Tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
-	var labels []string
-	if t.config.profilerHotspots {
-		// allocate the max-length slice to avoid growing it later
-		labels = make([]string, 0, 6)
-		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
-	}
-	// nil checks might not be needed, but better be safe than sorry
-	if localRootSpan := span.root(); localRootSpan != nil {
-		if t.config.profilerHotspots {
-			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
-		}
-		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
-			if span == localRootSpan {
-				// Inform the profiler of endpoint hits. This is used for the unit of
-				// work feature. We can't use APM stats for this since the stats don't
-				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
-			}
-		}
-	}
-	if len(labels) > 0 {
-		span.pprofCtxRestore = ctx
-		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
-		pprof.SetGoroutineLabels(span.pprofCtxActive)
-	}
-}
-
-// spanResourcePIISafe returns true if s.Resource can be considered to not
-// include PII with reasonable confidence. E.g. SQL queries may contain PII,
-// but http, rpc or custom (s.Type == "") span resource names generally do not.
-func spanResourcePIISafe(s *Span) bool {
-	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
+func (t *Tracer) applyPPROFLabels(ctx gocontext.Context, span *ddtrace.Span) {
+	// TODO(kjn v2): Tracer shouldn't really be modifying span internals. Needs to either move into
+	// span, or work *with* span.
+	//
+	// 	var labels []string
+	// 	if t.config.profilerHotspots {
+	// 		// allocate the max-length slice to avoid growing it later
+	// 		labels = make([]string, 0, 6)
+	// 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
+	// 	}
+	// 	// nil checks might not be needed, but better be safe than sorry
+	// 	if localRootSpan := span.root(); localRootSpan != nil {
+	// 		if t.config.profilerHotspots {
+	// 			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+	// 		}
+	// 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
+	// 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+	// 			if span == localRootSpan {
+	// 				// Inform the profiler of endpoint hits. This is used for the unit of
+	// 				// work feature. We can't use APM stats for this since the stats don't
+	// 				// have enough cardinality (e.g. runtime-id tags are missing).
+	// 				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+	// 			}
+	// 		}
+	// 	}
+	// 	if len(labels) > 0 {
+	// 		span.pprofCtxRestore = ctx
+	// 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
+	// 		pprof.SetGoroutineLabels(span.pprofCtxActive)
+	// 	}
 }
 
 // Stop stops the tracer.
@@ -678,23 +668,31 @@ func (t *Tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 
+func (t *Tracer) CanComputeStats() bool {
+	return t.config.canComputeStats()
+}
+
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
 const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
-func (t *Tracer) sample(span *Span) {
-	if _, ok := span.context.samplingPriority(); ok {
-		// sampling decision was already made
-		return
-	}
+func (t *Tracer) sample(span *ddtrace.Span) {
+	// TODO(kjn v2): Fix span context
+	// 	if _, ok := span.context.samplingPriority(); ok {
+	// 		// sampling decision was already made
+	// 		return
+	// 	}
 	sampler := t.config.sampler
 	if !sampler.Sample(span) {
-		span.context.trace.drop()
-		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
+		// TODO(kjn v2): Fix span context
+		// 		span.context.trace.drop()
+		// 		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-		span.setMetric(sampleRateMetricKey, rs.Rate())
+		// TODO(kjn v2): setMetric
+		// span.setMetric(sampleRateMetricKey, rs.Rate())
+		span.SetTag(sampleRateMetricKey, rs.Rate())
 	}
 	if t.rulesSampling.SampleTrace(span) {
 		return
@@ -702,18 +700,20 @@ func (t *Tracer) sample(span *Span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Context, func()) {
+func startExecutionTracerTask(ctx gocontext.Context, span *ddtrace.Span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
-	span.goExecTraced = true
+	// TODO(kjn v2): Stop Mutating span state everywhere!
+	//span.goExecTraced = true
+
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
 	taskName := span.Resource
 	// If the resource could contain PII (e.g. SQL query that's not using bind
 	// arguments), play it safe and just use the span type as the taskName,
 	// e.g. "sql".
-	if !spanResourcePIISafe(span) {
+	if !span.SpanResourcePIISafe() {
 		taskName = span.Type
 	}
 	end := noopTaskEnd
@@ -746,3 +746,54 @@ func (t *Tracer) hostname() string {
 	}
 	return hostname.Get()
 }
+
+// TODO(kjn v2): Move into internal package and deduplicate.
+const (
+	keySamplingPriority     = "_sampling_priority_v1"
+	keySamplingPriorityRate = "_dd.agent_psr"
+	keyDecisionMaker        = "_dd.p.dm"
+	keyServiceHash          = "_dd.dm.service_hash"
+	keyOrigin               = "_dd.origin"
+	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`. Not to be confused with keyTracerHostname
+	// which is set via auto-detection.
+	keyHostname                = "_dd.hostname"
+	keyRulesSamplerAppliedRate = "_dd.rule_psr"
+	keyRulesSamplerLimiterRate = "_dd.limit_psr"
+	keyMeasured                = "_dd.measured"
+	// keyTopLevel is the key of top level metric indicating if a span is top level.
+	// A top level span is a local root (parent span of the local trace) or the first span of each service.
+	keyTopLevel = "_dd.top_level"
+	// keyPropagationError holds any error from propagated trace tags (if any)
+	keyPropagationError = "_dd.propagation_error"
+	// keySpanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled
+	keySpanSamplingMechanism = "_dd.span_sampling.mechanism"
+	// keySingleSpanSamplingRuleRate specifies the configured sampling probability for the single span sampling rule.
+	keySingleSpanSamplingRuleRate = "_dd.span_sampling.rule_rate"
+	// keySingleSpanSamplingMPS specifies the configured limit for the single span sampling rule
+	// that the span matched. If there is no configured limit, then this tag is omitted.
+	keySingleSpanSamplingMPS = "_dd.span_sampling.max_per_second"
+	// keyPropagatedUserID holds the propagated user identifier, if user id propagation is enabled.
+	keyPropagatedUserID = "_dd.p.usr.id"
+	//keyTracerHostname holds the tracer detected hostname, only present when not connected over UDS to agent.
+	keyTracerHostname = "_dd.tracer_hostname"
+	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
+	keyTraceID128 = "_dd.p.tid"
+	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
+	// keyPeerServiceSource indicates the precursor tag that was used as the value of peer.service.
+	keyPeerServiceSource = "_dd.peer.service.source"
+	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
+	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
+	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
+	keyBaseService = "_dd.base_service"
+)
+
+// The following set of tags is used for user monitoring and set through calls to span.SetUser().
+const (
+	keyUserID        = "usr.id"
+	keyUserEmail     = "usr.email"
+	keyUserName      = "usr.name"
+	keyUserRole      = "usr.role"
+	keyUserScope     = "usr.scope"
+	keyUserSessionID = "usr.session_id"
+)
