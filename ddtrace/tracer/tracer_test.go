@@ -1891,7 +1891,8 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 
@@ -1928,7 +1929,8 @@ func TestGitMetadata(t *testing.T) {
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 		defer maininternal.ResetGitMetadataTags()
 

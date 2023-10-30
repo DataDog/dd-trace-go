@@ -17,7 +17,8 @@ import (
 
 func TestOnRemoteConfigUpdate(t *testing.T) {
 	t.Run("RC sampling rate = 0.5 is applied and can be reverted", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
@@ -41,7 +42,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 	t.Run("DD_TRACE_SAMPLE_RATE=0.1 and RC sampling rate = 0.2", func(t *testing.T) {
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.1")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
@@ -64,7 +66,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("RC header tags = X-Test-Header:my-tag-name is applied and can be reverted", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
@@ -85,7 +88,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 	t.Run("DD_TRACE_HEADER_TAGS=X-Test-Header:my-tag-name-from-env and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
 		t.Setenv("DD_TRACE_HEADER_TAGS", "X-Test-Header:my-tag-name-from-env")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
@@ -106,7 +110,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("In code header tags = X-Test-Header:my-tag-name-in-code and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithHeaderTags([]string{"X-Test-Header:my-tag-name-in-code"}))
+		tracer, _, _, stop, err := startTestTracer(t, WithHeaderTags([]string{"X-Test-Header:my-tag-name-in-code"}))
+		require.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
@@ -127,7 +132,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("Invalid payload", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		require.Nil(t, err)
 		defer stop()
 
 		input := map[string]remoteconfig.ProductUpdate{

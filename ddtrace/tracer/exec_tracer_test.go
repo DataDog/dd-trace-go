@@ -34,7 +34,8 @@ func TestExecutionTraceSpans(t *testing.T) {
 	// multiple times.
 	defer rt.Stop()
 
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	root, ctx := StartSpanFromContext(context.Background(), "root")
