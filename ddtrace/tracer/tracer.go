@@ -521,6 +521,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
 
+	// add span links from options
+	for _, link := range opts.Links {
+		// validate link, record how many invalid
+		span.Links = append(span.Links, link)
+	}
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)

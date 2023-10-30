@@ -427,3 +427,31 @@ func TestTracerStartOptions(t *testing.T) {
 	assert.Contains(payload, "\"service\":\"test_serv\"")
 	assert.Contains(payload, "\"env\":\"test_env\"")
 }
+
+func TestSpanLinks(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "link")
+	sp.End()
+
+	fmt.Printf("%v", sp.SpanContext())
+	_, decoratedSpan := tr.Start(context.Background(), "test",
+		oteltrace.WithLinks(oteltrace.Link{
+			SpanContext: sp.SpanContext(),
+			Attributes:  []attribute.KeyValue{attribute.String("yes", "no")},
+		}))
+
+	decoratedSpan.End()
+	tracer.Flush()
+	payload, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(payload, "\"span_links\"")
+}

@@ -52,6 +52,25 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
+	if links := ssConfig.Links(); links != nil {
+		ddLinks := []ddtrace.SpanLink{}
+		for _, link := range links {
+			ctx := otelCtxToDDCtx{link.SpanContext}
+			attrs := map[string]interface{}{}
+			for _, attribute := range link.Attributes {
+				attrs[string(attribute.Key)] = attribute.Value.AsInterface()
+			}
+			ddlink := ddtrace.SpanLink{
+				TraceID:    ctx.TraceID128(),
+				SpanID:     ctx.SpanID(),
+				Attributes: attrs,
+				Tracestate: link.SpanContext.TraceState().String(),
+				Flags:      uint32(link.SpanContext.TraceFlags()),
+			}
+			ddLinks = append(ddLinks, ddlink)
+		}
+		ddopts = append(ddopts, tracer.WithSpanLinks(ddLinks))
+	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
