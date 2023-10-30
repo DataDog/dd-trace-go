@@ -30,8 +30,6 @@ type ClientConfig struct {
 	Env string
 	// The time interval between two client polls to the agent for updates
 	PollInterval time.Duration
-	// The products this client is interested in
-	Products map[string]struct{}
 	// The tracer's runtime id
 	RuntimeID string
 	// The name of the user's application
@@ -40,8 +38,6 @@ type ClientConfig struct {
 	TracerVersion string
 	// The base TUF root metadata file
 	TUFRoot string
-	// The capabilities of the client
-	Capabilities map[Capability]struct{}
 	// HTTP is the HTTP client used to receive config updates
 	HTTP *http.Client
 }
@@ -49,8 +45,6 @@ type ClientConfig struct {
 // DefaultClientConfig returns the default remote config client configuration
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		Capabilities:  map[Capability]struct{}{},
-		Products:      map[string]struct{}{},
 		Env:           os.Getenv("DD_ENV"),
 		HTTP:          &http.Client{Timeout: 10 * time.Second},
 		PollInterval:  pollIntervalFromEnv(),
