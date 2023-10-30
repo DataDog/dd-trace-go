@@ -18,6 +18,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
@@ -132,7 +133,7 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 	}
 
 	// Check there are supported addresses in the rule
-	httpAddresses, grpcAddresses, notSupported := supportedAddresses(ruleAddresses)
+	httpAddresses, grpcAddresses, graphQLAddresses, notSupported := supportedAddresses(ruleAddresses)
 	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 {
 		return nil, fmt.Errorf("the addresses present in the rules are not supported: %v", notSupported)
 	}
@@ -150,6 +151,11 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
 		listeners = append(listeners, newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
+	}
+
+	if len(graphQLAddresses) > 0 {
+		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
+		listeners = append(listeners, newGraphQLWAFEventListener(waf, graphQLAddresses, cfg.wafTimeout, l))
 	}
 
 	return listeners, nil
@@ -400,6 +406,86 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 	})
 }
 
+func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
+	return graphqlsec.OnQueryStart(func(query *graphqlsec.Query, args graphqlsec.QueryArguments) {
+		wafCtx := waf.NewContext(handle.Handle)
+		if wafCtx == nil {
+			return
+		}
+
+		fmt.Println("GraphQL - Query Start!")
+
+		var (
+			events       []json.RawMessage
+			mu           sync.Mutex
+			allResolvers map[string][]map[string]any
+		)
+
+		event, _ := runWAF(wafCtx, map[string]any{graphQLServerAllResolversAddr: nil}, timeout)
+		if len(event) > 0 {
+			log.Debug("appsec: GraphQL query-level attack detected by the GraphQL")
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, event)
+		}
+
+		query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
+			event, _ := runWAF(
+				wafCtx,
+				map[string]any{
+					graphQLServerResolverAddr: map[string]any{
+						args.FieldName: args.Arguments,
+					},
+				},
+				timeout,
+			)
+			if len(event) > 0 {
+				log.Debug("appsec: GraphQL resolver-level attack detected by the WAF")
+				mu.Lock()
+				defer mu.Unlock()
+				events = append(events, event)
+			}
+
+			if args.FieldName != "" {
+				// Register in all resolvers
+				mu.Lock()
+				defer mu.Unlock()
+				if allResolvers == nil {
+					allResolvers = make(map[string][]map[string]any)
+				}
+				allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
+			}
+
+			// field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {}))
+		}))
+
+		query.On(graphqlsec.OnQueryFinish(func(query *graphqlsec.Query, res graphqlsec.QueryResult) {
+			defer wafCtx.Close()
+
+			if len(allResolvers) > 0 {
+				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late.
+				event, _ := runWAF(wafCtx, map[string]any{graphQLServerAllResolversAddr: allResolvers}, timeout)
+				if len(event) > 0 {
+					log.Debug("appsec: GraphQL query-level attack detected by the WAF")
+					mu.Lock()
+					defer mu.Unlock()
+					events = append(events, event)
+				}
+			}
+
+			rInfo := handle.RulesetInfo()
+			overall, internal := wafCtx.TotalRuntime()
+			nbTimeouts := wafCtx.TotalTimeouts()
+			addWAFMonitoringTags(query, rInfo.Version, overall, internal, nbTimeouts)
+
+			addRulesMonitoringTags(query, rInfo)
+			query.AddTag(ext.ManualKeep, samplernames.AppSec)
+
+			addSecurityEvents(query, limiter, events...)
+		}))
+	})
+}
+
 func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) ([]byte, []string) {
 	matches, actions, err := wafCtx.Run(values, timeout)
 	if err != nil {
@@ -455,26 +541,45 @@ var grpcAddresses = []string{
 	userIDAddr,
 }
 
+// GraphQL rule addresses currently supported by the WAF
+const (
+	graphQLServerAllResolversAddr = "graphql.server.all_resolvers"
+	graphQLServerResolverAddr     = "graphql.server.resolver"
+)
+
+// List of GraphQL rule addresses currently supported by the WAF
+var graphQLAddresses = []string{
+	graphQLServerAllResolversAddr,
+	graphQLServerResolverAddr,
+}
+
 func init() {
 	// sort the address lists to avoid mistakes and use sort.SearchStrings()
 	sort.Strings(httpAddresses)
 	sort.Strings(grpcAddresses)
+	sort.Strings(graphQLAddresses)
 }
 
 // supportedAddresses returns the list of addresses we actually support from the
 // given rule addresses.
-func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC map[string]struct{}, notSupported []string) {
+func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, supportedGraphQL map[string]struct{}, notSupported []string) {
+	mark := struct{}{}
 	// Filter the supported addresses only
 	supportedHTTP = map[string]struct{}{}
 	supportedGRPC = map[string]struct{}{}
+	supportedGraphQL = map[string]struct{}{}
 	for _, addr := range ruleAddresses {
 		supported := false
 		if i := sort.SearchStrings(httpAddresses, addr); i < len(httpAddresses) && httpAddresses[i] == addr {
-			supportedHTTP[addr] = struct{}{}
+			supportedHTTP[addr] = mark
 			supported = true
 		}
 		if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
-			supportedGRPC[addr] = struct{}{}
+			supportedGRPC[addr] = mark
+			supported = true
+		}
+		if i := sort.SearchStrings(graphQLAddresses, addr); i < len(graphQLAddresses) && graphQLAddresses[i] == addr {
+			supportedGraphQL[addr] = mark
 			supported = true
 		}
 
@@ -483,7 +588,7 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC ma
 		}
 	}
 
-	return supportedHTTP, supportedGRPC, notSupported
+	return
 }
 
 type tagsHolder interface {
