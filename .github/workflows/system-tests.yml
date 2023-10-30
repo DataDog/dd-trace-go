@@ -93,7 +93,8 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          # TODO(darccio): remove ref on v2 release
+          ref: 5af583da64c7458daf3fdf5e5538b90cdc4d9154
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3

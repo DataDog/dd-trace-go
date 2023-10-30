@@ -8,9 +8,9 @@ package tracer
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.

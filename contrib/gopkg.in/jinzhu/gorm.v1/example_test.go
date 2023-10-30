@@ -8,8 +8,8 @@ package gorm_test
 import (
 	"log"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gopkg.in/jinzhu/gorm.v1"
+	sqltrace "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
+	gormtrace "github.com/DataDog/dd-trace-go/v2/contrib/gopkg.in/jinzhu/gorm.v1"
 
 	"github.com/lib/pq"
 	"gopkg.in/jinzhu/gorm.v1"

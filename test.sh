@@ -75,7 +75,7 @@ fi
 
 if [[ ! -z "$lint" ]]; then
     echo "Running Linter"
-    goimports -e -l -local gopkg.in/DataDog/dd-trace-go.v1 .
+    goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
 fi
 
 if [[ "$INTEGRATION" != "" ]]; then

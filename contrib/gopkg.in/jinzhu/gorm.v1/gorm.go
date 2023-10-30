@@ -4,6 +4,10 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gorm provides helper functions for tracing the jinzhu/gorm package (https://github.com/jinzhu/gorm).
+//
+// Deprecated: The underlying gopkg.in/jinzhu/gorm packages has known security vulnerabilities and is no longer under
+// active development. As such consider this package DEPRECATED.
+// It is highly recommended that you update to the latest version available here as a contrib package "gorm.io/gorm.v1".
 package gorm
 
 import (
@@ -11,12 +15,12 @@ import (
 	"math"
 	"time"
 
-	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	sqltraced "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
@@ -35,7 +39,7 @@ const (
 )
 
 // Open opens a new (traced) database connection. The used dialect must be formerly registered
-// using (gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql).Register.
+// using (github.com/DataDog/dd-trace-go/v2/contrib/database/sql).Register.
 func Open(dialect, source string, opts ...Option) (*gorm.DB, error) {
 	sqldb, err := sqltraced.Open(dialect, source)
 	if err != nil {

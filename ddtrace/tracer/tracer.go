@@ -7,6 +7,7 @@ package tracer
 
 import (
 	gocontext "context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"runtime/pprof"
@@ -16,18 +17,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
@@ -249,6 +250,9 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	globalRate := globalSampleRate()
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
+	c.traceSampleRate = newDynamicConfig(globalRate, rulesSampler.traces.setGlobalSampleRate)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -262,7 +266,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
-		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
+		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
@@ -715,7 +719,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Cont
 		// skipped.
 		ctx = globalinternal.WithExecutionNotTraced(ctx)
 	}
-	rt.Log(ctx, "span id", strconv.FormatUint(span.SpanID, 10))
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], span.SpanID)
+	// TODO: can we make string(b[:]) not allocate? e.g. with unsafe
+	// shenanigans? rt.Log won't retain the message string, though perhaps
+	// we can't assume that will always be the case.
+	rt.Log(ctx, "datadog.uint64_span_id", string(b[:]))
 	return ctx, end
 }
 

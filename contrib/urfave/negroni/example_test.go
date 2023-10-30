@@ -7,8 +7,8 @@ package negroni_test
 import (
 	"net/http"
 
-	negronitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/urfave/negroni"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	negronitrace "github.com/DataDog/dd-trace-go/v2/contrib/urfave/negroni"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/urfave/negroni"
 )

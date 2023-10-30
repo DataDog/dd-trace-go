@@ -8,8 +8,8 @@ package chi_test
 import (
 	"net/http"
 
-	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	chitrace "github.com/DataDog/dd-trace-go/v2/contrib/go-chi/chi"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/go-chi/chi"
 )

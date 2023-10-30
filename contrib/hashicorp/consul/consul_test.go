@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/namingschematest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 	consul "github.com/hashicorp/consul/api"
 	"github.com/stretchr/testify/assert"

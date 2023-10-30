@@ -1,4 +1,4 @@
-module gopkg.in/DataDog/dd-trace-go.v1
+module github.com/DataDog/dd-trace-go/v2
 
 go 1.19
 
@@ -6,8 +6,8 @@ require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.0.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.46.0
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
 	github.com/DataDog/go-libddwaf v1.5.0
 	github.com/DataDog/gostackparse v0.7.0
@@ -91,7 +91,7 @@ require (
 	golang.org/x/time v0.3.0
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	google.golang.org/api v0.128.0
-	google.golang.org/grpc v1.57.0
+	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v3 v3.0.75

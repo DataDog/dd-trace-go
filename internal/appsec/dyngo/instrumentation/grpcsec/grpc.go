@@ -14,8 +14,8 @@ import (
 	"encoding/json"
 	"reflect"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )

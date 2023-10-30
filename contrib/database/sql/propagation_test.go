@@ -11,10 +11,10 @@ import (
 	"regexp"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/contrib/database/sql/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

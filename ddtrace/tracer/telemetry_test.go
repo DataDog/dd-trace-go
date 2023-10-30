@@ -8,10 +8,10 @@ package tracer
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	"github.com/stretchr/testify/assert"
 )

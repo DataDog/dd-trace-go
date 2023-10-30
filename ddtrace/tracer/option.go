@@ -22,15 +22,15 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -253,6 +253,12 @@ type config struct {
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
+
+	// traceSampleRate holds the trace sample rate.
+	traceSampleRate dynamicConfig[float64]
+
+	// headerAsTags holds the header as tags configuration.
+	headerAsTags dynamicConfig[[]string]
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -317,6 +323,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
+	c.headerAsTags = newDynamicConfig(nil, setHeaderTags)
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		WithHeaderTags(strings.Split(v, ","))(c)
 	}
@@ -825,6 +832,26 @@ func WithAgentAddr(addr string) StartOption {
 	}
 }
 
+// WithAgentURL sets the full trace agent URL
+func WithAgentURL(agentURL string) StartOption {
+	return func(c *config) {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Fail to parse Agent URL: %v", err)
+			return
+		}
+		switch u.Scheme {
+		case "unix", "http", "https":
+			c.agentURL = &url.URL{
+				Scheme: u.Scheme,
+				Host:   u.Host,
+			}
+		default:
+			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+		}
+	}
+}
+
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
@@ -1210,14 +1237,19 @@ func StackFrames(n, skip uint) FinishOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		globalconfig.ClearHeaderTags()
-		for _, h := range headerAsTags {
-			if strings.HasPrefix(h, "x-datadog-") {
-				continue
-			}
-			header, tag := normalizer.HeaderTag(h)
-			globalconfig.SetHeaderTag(header, tag)
+		c.headerAsTags = newDynamicConfig(headerAsTags, setHeaderTags)
+		setHeaderTags(headerAsTags)
+	}
+}
+
+func setHeaderTags(headerAsTags []string) {
+	globalconfig.ClearHeaderTags()
+	for _, h := range headerAsTags {
+		if strings.HasPrefix(h, "x-datadog-") {
+			continue
 		}
+		header, tag := normalizer.HeaderTag(h)
+		globalconfig.SetHeaderTag(header, tag)
 	}
 }
 

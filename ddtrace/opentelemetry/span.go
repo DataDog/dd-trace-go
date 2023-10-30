@@ -7,13 +7,14 @@ package opentelemetry
 
 import (
 	"encoding/binary"
+	"errors"
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -45,6 +46,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
 		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
 		opts = append(opts, tracer.FinishTime(t))

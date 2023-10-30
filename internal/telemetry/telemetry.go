@@ -10,7 +10,7 @@ package telemetry
 import (
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 // ProductStart signals that the product has started with some configuration

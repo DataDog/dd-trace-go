@@ -24,13 +24,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1888,10 +1888,26 @@ func TestGitMetadata(t *testing.T) {
 		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
 	})
 
+	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
+	})
+
 	t.Run("git-metadata-from-env", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
-		// git metadata env has priority under DD_TAGS
+		// git metadata env has priority over DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
@@ -1906,6 +1922,22 @@ func TestGitMetadata(t *testing.T) {
 
 		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {

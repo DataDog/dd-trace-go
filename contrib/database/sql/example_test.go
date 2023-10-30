@@ -9,9 +9,9 @@ import (
 	"context"
 	"log"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	sqltrace "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"

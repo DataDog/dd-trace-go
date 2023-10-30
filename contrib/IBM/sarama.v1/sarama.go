@@ -4,16 +4,16 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package sarama provides functions to trace the IBM/sarama package (https://github.com/IBM/sarama).
-package sarama // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/IBM/sarama"
+package sarama // import "github.com/DataDog/dd-trace-go/v2/contrib/IBM/sarama"
 
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/IBM/sarama"
 )

@@ -8,8 +8,8 @@ package sarama_test
 import (
 	"log"
 
-	saramatrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	saramatrace "github.com/DataDog/dd-trace-go/v2/contrib/Shopify/sarama"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/Shopify/sarama"
 )
