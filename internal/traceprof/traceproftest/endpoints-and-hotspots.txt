@@ -1,6 +1,6 @@
 goos: linux
 goarch: amd64
-pkg: gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest
+pkg: github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 cpu: Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz
 BenchmarkEndpointsAndHotspots/direct/hello-world-4               3739210             20677 ns/op             20019 cpu-ns/op             0.03021 pprof-B/op              0.001218 pprof-samples/op
 BenchmarkEndpointsAndHotspots/direct/hello-world-4               3623416             20979 ns/op             20130 cpu-ns/op             0.02966 pprof-B/op              0.001207 pprof-samples/op
@@ -48,4 +48,4 @@ BenchmarkEndpointsAndHotspots/grpc/io-bound-4                        662        
 BenchmarkEndpointsAndHotspots/grpc/io-bound-4                        662         109110671 ns/op          18681041 cpu-ns/op            41.90 pprof-B/op                 1.435 pprof-samples/op
 BenchmarkEndpointsAndHotspots/grpc/io-bound-4                        658         108596149 ns/op          18191310 cpu-ns/op            41.77 pprof-B/op                 1.416 pprof-samples/op
 PASS
-ok      gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/traceproftest        3712.759s
+ok      github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest        3712.759s

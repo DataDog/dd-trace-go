@@ -8,10 +8,10 @@ package grpcsec
 import (
 	"encoding/json"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // SetSecurityEventsTags sets the AppSec events span tags.

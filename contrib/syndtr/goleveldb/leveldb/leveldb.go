@@ -4,17 +4,17 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package leveldb provides functions to trace the syndtr/goleveldb package (https://github.com/syndtr/goleveldb).
-package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb"
+package leveldb // import "github.com/DataDog/dd-trace-go/v2/contrib/syndtr/goleveldb/leveldb"
 
 import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"

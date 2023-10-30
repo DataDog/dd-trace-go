@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // defaultMetricsReportInterval specifies the interval at which runtime metrics will

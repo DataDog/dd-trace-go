@@ -8,13 +8,13 @@ package grpc
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"google.golang.org/grpc"

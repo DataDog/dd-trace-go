@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	waf "github.com/DataDog/go-libddwaf"

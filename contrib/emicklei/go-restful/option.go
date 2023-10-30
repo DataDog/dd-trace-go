@@ -8,10 +8,10 @@ package restful
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 )
 
 const defaultServiceName = "go-restful"

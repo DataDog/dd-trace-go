@@ -8,8 +8,8 @@ package kafka
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
 
 const defaultServiceName = "kafka"

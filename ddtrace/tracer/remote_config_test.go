@@ -8,8 +8,8 @@ package tracer
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"

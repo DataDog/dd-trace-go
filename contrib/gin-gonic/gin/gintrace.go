@@ -4,18 +4,18 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gin provides functions to trace the gin-gonic/gin package (https://github.com/gin-gonic/gin).
-package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
+package gin // import "github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin"
 
 import (
 	"fmt"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 )

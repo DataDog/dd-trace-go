@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/unit-of-work
 go 1.19
 
 require (
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231026141357-d9d8b0ef3849
 	golang.org/x/sync v0.3.0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.49.0
 )
 
 require (
@@ -51,4 +51,4 @@ require (
 )
 
 // use local version of dd-trace-go
-replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

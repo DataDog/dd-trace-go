@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 // headerTagRegexp is used to replace all invalid characters in the config. Only alphanumerics, whitespaces and dashes allowed.

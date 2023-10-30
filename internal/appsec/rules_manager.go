@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )

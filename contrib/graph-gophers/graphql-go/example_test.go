@@ -9,7 +9,7 @@ import (
 	"log"
 	"net/http"
 
-	graphqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go"
+	graphqltrace "github.com/DataDog/dd-trace-go/v2/contrib/graph-gophers/graphql-go"
 
 	graphql "github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"

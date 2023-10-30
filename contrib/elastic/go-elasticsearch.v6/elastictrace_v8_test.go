@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/namingschematest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
