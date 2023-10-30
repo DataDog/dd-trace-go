@@ -26,7 +26,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
 
@@ -34,7 +34,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.NotContains(t, keyRulesSamplerAppliedRate, s.Metrics)
 	})
@@ -50,7 +50,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
 
@@ -58,7 +58,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
 	})

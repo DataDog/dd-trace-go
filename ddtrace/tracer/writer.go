@@ -22,7 +22,7 @@ import (
 
 type traceWriter interface {
 	// add adds traces to be sent by the writer.
-	add([]*span)
+	add([]*Span)
 
 	// flush causes the writer to send any buffered traces.
 	flush()
@@ -62,7 +62,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 	}
 }
 
-func (h *agentTraceWriter) add(trace []*span) {
+func (h *agentTraceWriter) add(trace []*Span) {
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %v", err)
@@ -192,7 +192,7 @@ func encodeFloat(p []byte, f float64) []byte {
 	return p
 }
 
-func (h *logTraceWriter) encodeSpan(s *span) {
+func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.TraceID), 16))
@@ -266,7 +266,7 @@ type encodingError struct {
 // from the trace can be retried.
 // An error, if one is returned, indicates that a span in the trace is too large
 // to fit in one buffer, and the trace cannot be written.
-func (h *logTraceWriter) writeTrace(trace []*span) (n int, err *encodingError) {
+func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 	startn := h.buf.Len()
 	if !h.hasTraces {
 		h.buf.WriteByte('[')
@@ -306,7 +306,7 @@ func (h *logTraceWriter) writeTrace(trace []*span) (n int, err *encodingError) {
 }
 
 // add adds a trace to the writer's buffer.
-func (h *logTraceWriter) add(trace []*span) {
+func (h *logTraceWriter) add(trace []*Span) {
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)

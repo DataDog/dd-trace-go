@@ -21,7 +21,7 @@ var fixedTime = now()
 
 func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
-	list := make([]*span, n)
+	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].Start = fixedTime

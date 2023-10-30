@@ -39,7 +39,7 @@ import (
 
 type (
 	// spanList implements msgp.Encodable on top of a slice of spans.
-	spanList []*span
+	spanList []*Span
 
 	// spanLists implements msgp.Decodable on top of a slice of spanList.
 	// This type is only used in tests.
@@ -47,7 +47,7 @@ type (
 )
 
 var (
-	_ ddtrace.Span   = (*span)(nil)
+	_ ddtrace.Span   = (*Span)(nil)
 	_ msgp.Encodable = (*spanList)(nil)
 	_ msgp.Decodable = (*spanLists)(nil)
 )
@@ -59,9 +59,9 @@ type errorConfig struct {
 	stackSkip    uint
 }
 
-// span represents a computation. Callers must call Finish when a span is
+// Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
-type span struct {
+type Span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	Name     string             `msg:"name"`              // operation name
@@ -91,23 +91,23 @@ type span struct {
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
-func (s *span) Context() ddtrace.SpanContext { return s.context }
+func (s *Span) Context() ddtrace.SpanContext { return s.context }
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
 // are propagated down to descendant spans and injected cross-process. Use with
 // care as it adds extra load onto your tracing layer.
-func (s *span) SetBaggageItem(key, val string) {
+func (s *Span) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 }
 
 // BaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
-func (s *span) BaggageItem(key string) string {
+func (s *Span) BaggageItem(key string) string {
 	return s.context.baggageItem(key)
 }
 
 // SetTag adds a set of key/value metadata to the span.
-func (s *span) SetTag(key string, value interface{}) {
+func (s *Span) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -167,7 +167,7 @@ func (s *span) SetTag(key string, value interface{}) {
 
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
+func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
@@ -175,7 +175,7 @@ func (s *span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 
 // Root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
-func (s *span) Root() Span {
+func (s *Span) Root() ddtrace.Span {
 	return s.root()
 }
 
@@ -184,7 +184,7 @@ func (s *span) Root() Span {
 // As opposed to the public Root method, this one returns the actual span type
 // when internal usage requires it (to avoid type assertions from Root's return
 // value).
-func (s *span) root() *span {
+func (s *Span) root() *Span {
 	if s == nil || s.context == nil {
 		return nil
 	}
@@ -199,7 +199,7 @@ func (s *span) root() *span {
 // bit of information gets monitored. In case of distributed traces,
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
-func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
+func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	cfg := UserMonitoringConfig{
 		Metadata: make(map[string]string),
 	}
@@ -252,7 +252,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
+func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -265,7 +265,7 @@ func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *span) setTagError(value interface{}, cfg errorConfig) {
+func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 	setError := func(yes bool) {
 		if yes {
 			if s.Error == 0 {
@@ -351,7 +351,7 @@ func takeStacktrace(n, skip uint) string {
 }
 
 // setMeta sets a string tag. This method is not safe for concurrent use.
-func (s *span) setMeta(key, v string) {
+func (s *Span) setMeta(key, v string) {
 	if s.Meta == nil {
 		s.Meta = make(map[string]string, 1)
 	}
@@ -371,7 +371,7 @@ func (s *span) setMeta(key, v string) {
 }
 
 // setTagBool sets a boolean tag on the span.
-func (s *span) setTagBool(key string, v bool) {
+func (s *Span) setTagBool(key string, v bool) {
 	switch key {
 	case ext.AnalyticsEvent:
 		if v {
@@ -398,7 +398,7 @@ func (s *span) setTagBool(key string, v bool) {
 
 // setMetric sets a numeric tag, in our case called a metric. This method
 // is not safe for concurrent use.
-func (s *span) setMetric(key string, v float64) {
+func (s *Span) setMetric(key string, v float64) {
 	if s.Metrics == nil {
 		s.Metrics = make(map[string]float64, 1)
 	}
@@ -419,7 +419,7 @@ func (s *span) setMetric(key string, v float64) {
 
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
-func (s *span) Finish(opts ...ddtrace.FinishOption) {
+func (s *Span) Finish(opts ...ddtrace.FinishOption) {
 	t := now()
 	if len(opts) > 0 {
 		cfg := ddtrace.FinishConfig{
@@ -470,7 +470,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 }
 
 // SetOperationName sets or changes the operation name.
-func (s *span) SetOperationName(operationName string) {
+func (s *Span) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -483,7 +483,7 @@ func (s *span) SetOperationName(operationName string) {
 	s.Name = operationName
 }
 
-func (s *span) finish(finishTime int64) {
+func (s *Span) finish(finishTime int64) {
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -540,7 +540,7 @@ func (s *span) finish(finishTime int64) {
 
 // newAggregableSpan creates a new summary for the span s, within an application
 // version version.
-func newAggregableSpan(s *span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
+func newAggregableSpan(s *Span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
 	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
 		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
@@ -591,7 +591,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
-func shouldKeep(s *span) bool {
+func shouldKeep(s *Span) bool {
 	if p, ok := s.context.samplingPriority(); ok && p > 0 {
 		// positive sampling priorities stay
 		return true
@@ -608,7 +608,7 @@ func shouldKeep(s *span) bool {
 
 // shouldComputeStats mentions whether this span needs to have stats computed for.
 // Warning: callers must guard!
-func shouldComputeStats(s *span) bool {
+func shouldComputeStats(s *Span) bool {
 	if v, ok := s.Metrics[keyMeasured]; ok && v == 1 {
 		return true
 	}
@@ -620,7 +620,7 @@ func shouldComputeStats(s *span) bool {
 
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
-func (s *span) String() string {
+func (s *Span) String() string {
 	s.RLock()
 	defer s.RUnlock()
 	lines := []string{
@@ -647,7 +647,7 @@ func (s *span) String() string {
 }
 
 // Format implements fmt.Formatter.
-func (s *span) Format(f fmt.State, c rune) {
+func (s *Span) Format(f fmt.State, c rune) {
 	switch c {
 	case 's':
 		fmt.Fprint(f, s.String())

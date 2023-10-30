@@ -27,7 +27,7 @@ func TestImplementsTraceWriter(t *testing.T) {
 }
 
 // makeSpan returns a span, adding n entries to meta and metrics each.
-func makeSpan(n int) *span {
+func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", random.Uint64(), random.Uint64(), random.Uint64())
 	for i := 0; i < n; i++ {
 		istr := fmt.Sprintf("%0.10d", i)
@@ -106,7 +106,7 @@ func TestLogWriter(t *testing.T) {
 		h.w = &buf
 		s := makeSpan(0)
 		for i := 0; i < 20; i++ {
-			h.add([]*span{s, s})
+			h.add([]*Span{s, s})
 		}
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
@@ -134,7 +134,7 @@ func TestLogWriter(t *testing.T) {
 		s.Metrics["nan"] = math.NaN()
 		s.Metrics["+inf"] = math.Inf(1)
 		s.Metrics["-inf"] = math.Inf(-1)
-		h.add([]*span{s})
+		h.add([]*Span{s})
 		h.flush()
 		json := string(buf.Bytes())
 		assert.NotContains(json, `"nan":`)
@@ -167,7 +167,7 @@ func TestLogWriter(t *testing.T) {
 		type jsonPayload struct {
 			Traces [][]jsonSpan `json:"traces"`
 		}
-		s := &span{
+		s := &Span{
 			Name:     "basicName",
 			Service:  "basicService",
 			Resource: "basicResource",
@@ -212,7 +212,7 @@ func TestLogWriter(t *testing.T) {
 			Duration: 456,
 			Error:    789,
 		}
-		h.add([]*span{s})
+		h.add([]*Span{s})
 		h.flush()
 		d := json.NewDecoder(&buf)
 		var payload jsonPayload
@@ -251,7 +251,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10000)
-		h.add([]*span{s})
+		h.add([]*Span{s})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
@@ -271,7 +271,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
-		var trace []*span
+		var trace []*Span
 		for i := 0; i < 500; i++ {
 			trace = append(trace, s)
 		}
@@ -302,8 +302,8 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(4000)
-		h.add([]*span{s})
-		h.add([]*span{s})
+		h.add([]*Span{s})
+		h.add([]*Span{s})
 		h.flush()
 		v := struct{ Traces [][]map[string]interface{} }{}
 		d := json.NewDecoder(&buf)
@@ -380,7 +380,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 		"datadog.tracer.traces_dropped": 1,
 	}
 
-	ss := []*span{makeSpan(0)}
+	ss := []*Span{makeSpan(0)}
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {

@@ -158,7 +158,7 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	tracer := newTracer(WithPropagator(propagator))
 	defer tracer.Stop()
 
-	root := tracer.StartSpan("web.request").(*span)
+	root := tracer.StartSpan("web.request").(*Span)
 	root.SetBaggageItem("item", "x")
 	root.SetTag(ext.SamplingPriority, 0)
 	ctx := root.Context()
@@ -410,7 +410,7 @@ func TestTextMapPropagator(t *testing.T) {
 		})
 		tracer := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
-		root := tracer.StartSpan("web.request").(*span)
+		root := tracer.StartSpan("web.request").(*Span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		ctx := root.Context().(*spanContext)
@@ -494,7 +494,7 @@ func TestEnvVars(t *testing.T) {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 					defer tracer.Stop()
-					root := tracer.StartSpan("web.request").(*span)
+					root := tracer.StartSpan("web.request").(*Span)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.traceID = test.tid
 					ctx.spanID = test.spanID
@@ -696,7 +696,7 @@ func TestEnvVars(t *testing.T) {
 			t.Run(fmt.Sprintf("b3 single header inject #%d", i), func(t *testing.T) {
 				tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 				defer tracer.Stop()
-				root := tracer.StartSpan("myrequest").(*span)
+				root := tracer.StartSpan("myrequest").(*Span)
 				ctx, ok := root.Context().(*spanContext)
 				require.True(t, ok)
 				ctx.traceID = traceIDFrom64Bits(tc.in[0])
@@ -753,7 +753,7 @@ func TestEnvVars(t *testing.T) {
 				t.Run(fmt.Sprintf("inject with env=%q", testEnv), func(t *testing.T) {
 					tracer := newTracer(WithPropagator(NewPropagator(&PropagatorConfig{B3: true})), WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 					defer tracer.Stop()
-					root := tracer.StartSpan("web.request").(*span)
+					root := tracer.StartSpan("web.request").(*Span)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.traceID = traceIDFrom64Bits(tc.in[0])
 					ctx.spanID = tc.in[1]
@@ -886,7 +886,7 @@ func TestEnvVars(t *testing.T) {
 				t.Run(fmt.Sprintf("inject and extract with env=%q", testEnv), func(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 					defer tracer.Stop()
-					root := tracer.StartSpan("web.request").(*span)
+					root := tracer.StartSpan("web.request").(*Span)
 					root.SetTag(ext.SamplingPriority, -1)
 					root.SetBaggageItem("item", "x")
 					ctx, ok := root.Context().(*spanContext)
@@ -1209,7 +1209,7 @@ func TestEnvVars(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*Span)
 					defer root.Finish()
 					sctx, ok := ctx.(*spanContext)
 					sctx.origin = tc.origin
@@ -1395,7 +1395,7 @@ func TestEnvVars(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
-					root := tracer.StartSpan("web.request").(*span)
+					root := tracer.StartSpan("web.request").(*Span)
 					root.SetTag(ext.SamplingPriority, tc.priority)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.origin = tc.origin
@@ -1423,7 +1423,7 @@ func TestEnvVars(t *testing.T) {
 					tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
-					root := tracer.StartSpan("web.request").(*span)
+					root := tracer.StartSpan("web.request").(*Span)
 					root.SetTag(ext.SamplingPriority, ext.PriorityUserKeep)
 					ctx, ok := root.Context().(*spanContext)
 					ctx.origin = "old_tracestate"
@@ -1494,7 +1494,7 @@ func TestEnvVars(t *testing.T) {
 				ctx, err := tracer.Extract(tc.inHeaders)
 				assert.Nil(err)
 
-				root := tracer.StartSpan("web.request", ChildOf(ctx)).(*span)
+				root := tracer.StartSpan("web.request", ChildOf(ctx)).(*Span)
 				defer root.Finish()
 				sctx, ok := ctx.(*spanContext)
 				headers := TextMapCarrier(map[string]string{})
@@ -1744,7 +1744,7 @@ func TestNonePropagator(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none")
 		tracer := newTracer()
 		defer tracer.Stop()
-		root := tracer.StartSpan("web.request").(*span)
+		root := tracer.StartSpan("web.request").(*Span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		ctx, ok := root.Context().(*spanContext)
@@ -1767,7 +1767,7 @@ func TestNonePropagator(t *testing.T) {
 		defer tracer.Stop()
 		// reinitializing to capture log output, since propagators are parsed before logger is set
 		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
-		root := tracer.StartSpan("web.request").(*span)
+		root := tracer.StartSpan("web.request").(*Span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		ctx, ok := root.Context().(*spanContext)
@@ -1790,7 +1790,7 @@ func TestNonePropagator(t *testing.T) {
 		assert := assert.New(t)
 		tracer := newTracer()
 		defer tracer.Stop()
-		root := tracer.StartSpan("web.request").(*span)
+		root := tracer.StartSpan("web.request").(*Span)
 		root.SetTag(ext.SamplingPriority, -1)
 		root.SetBaggageItem("item", "x")
 		headers := TextMapCarrier(map[string]string{})
@@ -1806,7 +1806,7 @@ func TestNonePropagator(t *testing.T) {
 			t.Setenv(headerPropagationStyle, "NoNe")
 			tracer := newTracer()
 			defer tracer.Stop()
-			root := tracer.StartSpan("web.request").(*span)
+			root := tracer.StartSpan("web.request").(*Span)
 			root.SetTag(ext.SamplingPriority, -1)
 			root.SetBaggageItem("item", "x")
 			ctx, ok := root.Context().(*spanContext)
@@ -1830,7 +1830,7 @@ func TestNonePropagator(t *testing.T) {
 			t.Setenv(headerPropagationStyleInject, "NoNe")
 			tracer := newTracer()
 			defer tracer.Stop()
-			root := tracer.StartSpan("web.request").(*span)
+			root := tracer.StartSpan("web.request").(*Span)
 			root.SetTag(ext.SamplingPriority, -1)
 			root.SetBaggageItem("item", "x")
 			ctx, ok := root.Context().(*spanContext)
@@ -2106,7 +2106,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
@@ -2119,7 +2119,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
@@ -2132,7 +2132,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
+		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
 	})

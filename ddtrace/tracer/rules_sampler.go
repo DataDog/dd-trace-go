@@ -44,9 +44,9 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.apply(s) }
+func (r *rulesSampler) SampleTrace(s *Span) bool { return r.traces.apply(s) }
 
-func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
+func (r *rulesSampler) SampleSpan(s *Span) bool { return r.spans.apply(s) }
 
 func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 
@@ -77,7 +77,7 @@ type SamplingRule struct {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
-func (sr *SamplingRule) match(s *span) bool {
+func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
 	} else if sr.exactService != "" && sr.exactService != s.Service {
@@ -251,7 +251,7 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) {
 // provided span. If the rules don't match, and a default rate hasn't been
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *span) bool {
+func (rs *traceRulesSampler) apply(span *Span) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -278,7 +278,7 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 	return true
 }
 
-func (rs *traceRulesSampler) applyRule(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRule(span *Span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
@@ -360,7 +360,7 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
-func (rs *singleSpanRulesSampler) apply(span *span) bool {
+func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate

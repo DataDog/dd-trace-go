@@ -82,7 +82,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.(*span).Metrics {
+						for range root.(*Span).Metrics {
 							// this range simulates iterating over the metrics map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -98,7 +98,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.(*span).Meta {
+						for range root.(*Span).Meta {
 							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -167,11 +167,11 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.(*span).context.trace.setTag("someTraceTag", "someValue")
-		var children []*span
+		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
+		var children []*Span
 		for i := 0; i < 3; i++ { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
-			children = append(children, child.(*span))
+			children = append(children, child.(*Span))
 			child.Finish()
 		}
 		flush(1)
@@ -200,7 +200,7 @@ func TestPartialFlush(t *testing.T) {
 		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
 		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
-		comparePayloadSpans(t, root.(*span), tsRoot[0][0])
+		comparePayloadSpans(t, root.(*Span), tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 		// TODO: (Support MetricKindDist) Re-enable this when we actually support `MetricKindDist`
@@ -213,11 +213,11 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.(*span).context.trace.setTag("someTraceTag", "someValue")
-		var children []*span
+		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
+		var children []*Span
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
-			children = append(children, child.(*span))
+			children = append(children, child.(*Span))
 			child.Finish()
 		}
 	})
@@ -269,7 +269,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
 	span3a := trc.StartSpan("name3", ChildOf(span3.Context()))
 
-	trace := []*span{root.(*span), span2.(*span), span3.(*span), span3a.(*span)}
+	trace := []*Span{root.(*Span), span2.(*Span), span3.(*Span), span3a.(*Span)}
 
 	for i, span := range trace {
 		span.context.trace = buffer
@@ -498,7 +498,7 @@ func TestSpanPeerService(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		assertSpan := func(t *testing.T, s *span) {
+		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
 				assert.NotContains(t, s.Meta, "peer.service")
 			} else {
@@ -544,7 +544,7 @@ func TestSpanPeerService(t *testing.T) {
 }
 
 func TestSpanDDBaseService(t *testing.T) {
-	run := func(t *testing.T, tracerOpts []StartOption, spanOpts []StartSpanOption) []*span {
+	run := func(t *testing.T, tracerOpts []StartOption, spanOpts []StartSpanOption) []*Span {
 		prevSvc := globalconfig.ServiceName()
 		t.Cleanup(func() { globalconfig.SetServiceName(prevSvc) })
 
@@ -632,7 +632,7 @@ func TestSpanDDBaseService(t *testing.T) {
 
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
-		span := &span{
+		span := &Span{
 			TraceID:  1,
 			SpanID:   2,
 			ParentID: 3,
@@ -648,7 +648,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("priority", func(t *testing.T) {
-		span := &span{
+		span := &Span{
 			TraceID:  1,
 			SpanID:   2,
 			ParentID: 3,
@@ -687,7 +687,7 @@ func TestNewSpanContext(t *testing.T) {
 }
 
 func TestSpanContextParent(t *testing.T) {
-	s := &span{
+	s := &Span{
 		TraceID:  1,
 		SpanID:   2,
 		ParentID: 3,
@@ -703,7 +703,7 @@ func TestSpanContextParent(t *testing.T) {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
-				spans:    []*span{newBasicSpan("abc")},
+				spans:    []*Span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
 			},
 		},
@@ -711,12 +711,12 @@ func TestSpanContextParent(t *testing.T) {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
-				spans:            []*span{newBasicSpan("abc")},
+				spans:            []*Span{newBasicSpan("abc")},
 				samplingDecision: decisionKeep,
 			},
 		},
 		"origin": {
-			trace:  &trace{spans: []*span{newBasicSpan("abc")}},
+			trace:  &trace{spans: []*Span{newBasicSpan("abc")}},
 			origin: "synthetics",
 		},
 	} {
