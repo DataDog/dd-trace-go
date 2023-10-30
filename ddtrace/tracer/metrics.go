@@ -20,7 +20,7 @@ const defaultMetricsReportInterval = 10 * time.Second
 
 // reportRuntimeMetrics periodically reports go runtime metrics at
 // the given interval.
-func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
+func (t *Tracer) reportRuntimeMetrics(interval time.Duration) {
 	var ms runtime.MemStats
 	gc := debug.GCStats{
 		// When len(stats.PauseQuantiles) is 5, it will be filled with the
@@ -85,7 +85,7 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 	}
 }
 
-func (t *tracer) reportHealthMetrics(interval time.Duration) {
+func (t *Tracer) reportHealthMetrics(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

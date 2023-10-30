@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -25,7 +26,7 @@ func Example() {
 	defer tracer.Stop()
 
 	// Start a root span.
-	span, ctx := tracer.StartSpanFromContext(ctx, "parent")
+	span, ctx := ddtrace.StartSpanFromContext(ctx, "parent")
 	defer span.Finish()
 
 	// Run some code.
@@ -37,7 +38,7 @@ func Example() {
 
 func doSomething(ctx context.Context) (err error) {
 	// Create a child, using the context of the parent span.
-	span, ctx := tracer.StartSpanFromContext(ctx, "do.something", tracer.Tag(ext.ResourceName, "alarm"))
+	span, ctx := ddtrace.StartSpanFromContext(ctx, "do.something", tracer.Tag(ext.ResourceName, "alarm"))
 	defer func() {
 		span.Finish(tracer.WithError(err))
 	}()

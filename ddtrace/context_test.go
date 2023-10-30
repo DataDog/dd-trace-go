@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracer
+package ddtrace
 
 import (
 	"context"
@@ -11,8 +11,6 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -40,11 +38,11 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
+		_, ok = span.(*NoopSpan)
 		assert.True(ok)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
+		_, ok = span.(*NoopSpan)
 		assert.True(ok)
 	})
 }
@@ -70,7 +68,7 @@ func TestStartSpanFromContext(t *testing.T) {
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*traceinternal.NoopSpan)
+	_, ok = gotctx.(*NoopSpan)
 	assert.False(ok)
 
 	assert.Equal(uint64(456), got.TraceID)
@@ -117,9 +115,9 @@ func Test128(t *testing.T) {
 
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
-	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
+	w3cCtx, ok := span.Context().(SpanContextW3C)
 	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+		assert.Fail(t, "couldn't cast to SpanContextW3C")
 	}
 	id128 := w3cCtx.TraceID128()
 	assert.Len(t, id128, 32) // ensure there are enough leading zeros
@@ -132,9 +130,9 @@ func Test128(t *testing.T) {
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
-	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)
+	w3cCtx, ok = span128.Context().(SpanContextW3C)
 	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+		assert.Fail(t, "couldn't cast to SpanContextW3C")
 	}
 	id128bit := w3cCtx.TraceID128()
 	assert.NotEmpty(t, id128bit)

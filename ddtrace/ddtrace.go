@@ -17,6 +17,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -39,6 +40,7 @@ type SpanContextW3C interface {
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
 	StartSpan(operationName string, opts ...StartSpanOption) Span
+	StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context)
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
@@ -155,4 +157,44 @@ type Logger interface {
 // UseLogger sets l as the logger for all tracer and profiler logs.
 func UseLogger(l Logger) {
 	log.UseLogger(l)
+}
+
+// ContextWithSpan returns a copy of the given context which includes the span s.
+func ContextWithSpan(ctx context.Context, s Span) context.Context {
+	return context.WithValue(ctx, internal.ActiveSpanKey, s)
+}
+
+// StartSpan starts a new span with the given operation name and set of options.
+// If the tracer is not started, calling this function is a no-op.
+func StartSpan(operationName string, opts ...StartSpanOption) Span {
+	return GetGlobalTracer().StartSpan(operationName, opts...)
+}
+
+// SpanFromContext returns the span contained in the given context. A second return
+// value indicates if a span was found in the context. If no span is found, a no-op
+// span is returned.
+func SpanFromContext(ctx context.Context) (Span, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v := ctx.Value(internal.ActiveSpanKey)
+	if s, ok := v.(Span); ok {
+		return s, true
+	}
+	return nil, false
+}
+
+// StartSpanFromContext returns a new span with the given operation name and options. If a span
+// is found in the context, it will be used as the parent of the resulting span. If the ChildOf
+// option is passed, it will only be used as the parent if there is no span found in `ctx`.
+func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
+	return GetGlobalTracer().StartSpanFromContext(ctx, operationName, opts...)
+}
+
+// ChildOf tells StartSpan to use the given span context as a parent for the
+// created span.
+func ChildOf(ctx SpanContext) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		cfg.Parent = ctx
+	}
 }

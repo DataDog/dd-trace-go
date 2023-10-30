@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -72,7 +73,7 @@ func testAsyncSpanRace(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(t *testing.T) {
-			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+			root, ctx := ddtrace.StartSpanFromContext(context.Background(), "root", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
 			var wg sync.WaitGroup
 			done := make(chan struct{})
 			wg.Add(1)
@@ -115,7 +116,7 @@ func testAsyncSpanRace(t *testing.T) {
 					for i := 0; i < 50; i++ {
 						// to trigger the bug, the child should be created after the root was finished,
 						// as its being flushed
-						child, _ := StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
+						child, _ := ddtrace.StartSpanFromContext(ctx, "child", Tag(ext.SamplingPriority, ext.PriorityUserKeep))
 						child.Finish()
 					}
 					return
@@ -170,7 +171,7 @@ func TestPartialFlush(t *testing.T) {
 		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 3; i++ { // create 3 child spans
-			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
+			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ddtrace.ChildOf(root.Context()))
 			children = append(children, child.(*Span))
 			child.Finish()
 		}
@@ -216,7 +217,7 @@ func TestPartialFlush(t *testing.T) {
 		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
-			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
+			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ddtrace.ChildOf(root.Context()))
 			children = append(children, child.(*Span))
 			child.Finish()
 		}
@@ -265,9 +266,9 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	traceID := random.Uint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
-	span2 := trc.StartSpan("name2", ChildOf(root.Context()))
-	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
-	span3a := trc.StartSpan("name3", ChildOf(span3.Context()))
+	span2 := trc.StartSpan("name2", ddtrace.ChildOf(root.Context()))
+	span3 := trc.StartSpan("name3", ddtrace.ChildOf(root.Context()))
+	span3a := trc.StartSpan("name3", ddtrace.ChildOf(span3.Context()))
 
 	trace := []*Span{root.(*Span), span2.(*Span), span3.(*Span), span3a.(*Span)}
 
@@ -305,7 +306,7 @@ func TestSpanFinishPriority(t *testing.T) {
 	)
 	child := tracer.StartSpan(
 		"child",
-		ChildOf(root.Context()),
+		ddtrace.ChildOf(root.Context()),
 		Tag(ext.SamplingPriority, 2),
 	)
 	child.Finish()
@@ -523,7 +524,7 @@ func TestSpanPeerService(t *testing.T) {
 			tracer.config.peerServiceMappings = tc.peerServiceMappings
 
 			p := tracer.StartSpan("parent-span", tc.spanOpts...)
-			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
+			opts := append([]StartSpanOption{ddtrace.ChildOf(p.Context())}, tc.spanOpts...)
 			s := tracer.StartSpan("child-span", opts...)
 			s.Finish()
 			p.Finish()
@@ -552,7 +553,7 @@ func TestSpanDDBaseService(t *testing.T) {
 		t.Cleanup(stop)
 
 		p := tracer.StartSpan("parent-span", spanOpts...)
-		childSpanOpts := append([]StartSpanOption{ChildOf(p.Context())}, spanOpts...)
+		childSpanOpts := append([]StartSpanOption{ddtrace.ChildOf(p.Context())}, spanOpts...)
 		s := tracer.StartSpan("child-span", childSpanOpts...)
 		s.Finish()
 		p.Finish()
@@ -678,7 +679,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Nil(err)
 		sctx, ok := ctx.(*spanContext)
 		assert.True(ok)
-		span := StartSpan("some-span", ChildOf(ctx))
+		span := ddtrace.StartSpan("some-span", ddtrace.ChildOf(ctx))
 		assert.EqualValues(uint64(1), sctx.traceID.Lower())
 		assert.EqualValues(2, sctx.spanID)
 		assert.EqualValues(3, *sctx.trace.priority)

@@ -58,7 +58,7 @@ func (ht headerTag) toString() string {
 }
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
-func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+func (t *Tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
 	u, found := updates[state.ProductAPMTracing]
 	if !found {

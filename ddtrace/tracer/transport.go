@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -146,7 +146,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
+	if t, ok := ddtrace.GetGlobalTracer().(*Tracer); ok {
 		if t.config.canComputeStats() {
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}

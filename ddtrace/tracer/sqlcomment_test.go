@@ -279,7 +279,7 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 	}
 }
 
-func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
+func setupBenchmark() (*Tracer, ddtrace.SpanContext, SQLCommentCarrier) {
 	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*Span)
 	root.SetTag(ext.SamplingPriority, 2)

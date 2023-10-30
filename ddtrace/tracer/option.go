@@ -1158,21 +1158,6 @@ func WithSpanID(id uint64) StartSpanOption {
 	}
 }
 
-// ChildOf tells StartSpan to use the given span context as a parent for the
-// created span.
-func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.Parent = ctx
-	}
-}
-
-// withContext associates the ctx with the span.
-func withContext(ctx context.Context) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.Context = ctx
-	}
-}
-
 // StartTime sets a custom time as the start time for the created span. By
 // default a span is started using the creation time.
 func StartTime(t time.Time) StartSpanOption {

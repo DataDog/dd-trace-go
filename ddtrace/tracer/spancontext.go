@@ -17,7 +17,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	ginternal "github.com/DataDog/dd-trace-go/v2/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -344,13 +343,18 @@ func (t *trace) push(sp *Span) {
 	if t.full {
 		return
 	}
-	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	root := t.root
+	var tr *Tracer
+	if root != nil {
+		tr = root.tracer
+	}
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil // GC
 		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
-		if haveTracer {
+		//TODO(kjn v2): Do we still need this check?
+		if tr != nil {
 			atomic.AddUint32(&tr.tracesDropped, 1)
 		}
 		return
@@ -359,14 +363,15 @@ func (t *trace) push(sp *Span) {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
+	//TODO(kjn v2): Do we still need this check?
+	if tr != nil {
 		atomic.AddUint32(&tr.spansStarted, 1)
 	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span, tr *tracer) {
+func (t *trace) setTraceTags(s *Span, tr *Tracer) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -403,7 +408,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	t.finished++
-	tr, ok := internal.GetGlobalTracer().(*tracer)
+	tr, ok := ddtrace.GetGlobalTracer().(*Tracer)
 	if !ok {
 		return
 	}
@@ -469,7 +474,7 @@ func (t *trace) finishedOne(s *Span) {
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+func (t *trace) finishChunk(tr *Tracer, ch *chunk) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes

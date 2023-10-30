@@ -25,7 +25,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -86,6 +85,7 @@ type Span struct {
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+	tracer  *Tracer
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -501,7 +501,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+	if t := s.tracer; t != nil {
 		// we have an active tracer
 		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats
@@ -655,7 +655,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if tr := s.tracer; tr != nil {
 			if tr.config.env != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tr.config.env)
 			}

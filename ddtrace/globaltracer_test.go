@@ -3,27 +3,25 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal // import "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+package ddtrace
 
 import (
 	"sync"
 	"testing"
-
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 )
 
 type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
+func (*raceTestTracer) StartSpan(_ string, _ ...StartSpanOption) Span {
 	return NoopSpan{}
 }
 func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
-func (*raceTestTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
+func (*raceTestTracer) Extract(_ interface{}) (SpanContext, error) {
 	return NoopSpanContext{}, nil
 }
-func (*raceTestTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return nil }
+func (*raceTestTracer) Inject(_ SpanContext, _ interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }
@@ -51,7 +49,7 @@ func TestGlobalTracer(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(index int) {
 			defer wg.Done()
-			var tracer ddtrace.Tracer = tracers[index]
+			var tracer Tracer = tracers[index]
 			SetGlobalTracer(tracer)
 
 			// get the global tracer: it must be any raceTestTracer

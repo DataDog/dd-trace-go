@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/httpmem"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -112,7 +112,7 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 
 	err := propagator.Inject(&spanContext{}, 2)
 	assert.Equal(ErrInvalidCarrier, err)
-	err = propagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
+	err = propagator.Inject(ddtrace.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err)
 	err = propagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err) // no traceID and spanID
@@ -222,7 +222,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
 	assert.True(t, ok)
-	child := tracer.StartSpan("test", ChildOf(sctx))
+	child := tracer.StartSpan("test", ddtrace.ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
 	assert.Equal(t, map[string]string{
 		"hello":    "world=",
@@ -252,7 +252,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Nil(t, err)
 	sctx, ok := ctx.(*spanContext)
 	assert.True(t, ok)
-	child := tracer.StartSpan("test", ChildOf(sctx))
+	child := tracer.StartSpan("test", ddtrace.ChildOf(sctx))
 	childSpanID := child.Context().(*spanContext).spanID
 	assert.Equal(t, map[string]string{
 		"hello":    "world",
@@ -339,7 +339,7 @@ func TestTextMapPropagator(t *testing.T) {
 			t.Setenv(headerPropagationStyleInject, tc.injectStyle)
 			tracer := newTracer()
 			defer tracer.Stop()
-			internal.SetGlobalTracer(tracer)
+			ddtrace.SetGlobalTracer(tracer)
 			child := tracer.StartSpan("test")
 			for k, v := range tc.tags {
 				child.Context().(*spanContext).trace.setPropagatingTag(k, v)
@@ -1209,7 +1209,7 @@ func TestEnvVars(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					root := tracer.StartSpan("web.request", ChildOf(ctx)).(*Span)
+					root := tracer.StartSpan("web.request", ddtrace.ChildOf(ctx)).(*Span)
 					defer root.Finish()
 					sctx, ok := ctx.(*spanContext)
 					sctx.origin = tc.origin
@@ -1494,7 +1494,7 @@ func TestEnvVars(t *testing.T) {
 				ctx, err := tracer.Extract(tc.inHeaders)
 				assert.Nil(err)
 
-				root := tracer.StartSpan("web.request", ChildOf(ctx)).(*Span)
+				root := tracer.StartSpan("web.request", ddtrace.ChildOf(ctx)).(*Span)
 				defer root.Finish()
 				sctx, ok := ctx.(*spanContext)
 				headers := TextMapCarrier(map[string]string{})
@@ -1624,7 +1624,7 @@ func TestEnvVars(t *testing.T) {
 					if err != nil {
 						t.FailNow()
 					}
-					s := tracer.StartSpan("op", ChildOf(pCtx), WithSpanID(1))
+					s := tracer.StartSpan("op", ddtrace.ChildOf(pCtx), WithSpanID(1))
 					sctx, ok := s.Context().(*spanContext)
 					assert.True(ok)
 					// changing priority must set ctx.updated = true
@@ -2094,9 +2094,9 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 
 func TestMalformedTID(t *testing.T) {
 	tracer := newTracer()
-	internal.SetGlobalTracer(tracer)
+	ddtrace.SetGlobalTracer(tracer)
 	defer tracer.Stop()
-	defer internal.SetGlobalTracer(&internal.NoopTracer{})
+	defer ddtrace.SetGlobalTracer(&ddtrace.NoopTracer{})
 
 	t.Run("datadog, short tid", func(t *testing.T) {
 		headers := TextMapCarrier(map[string]string{
@@ -2106,7 +2106,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
+		root := tracer.StartSpan("web.request", ddtrace.ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
@@ -2119,7 +2119,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
+		root := tracer.StartSpan("web.request", ddtrace.ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
@@ -2132,7 +2132,7 @@ func TestMalformedTID(t *testing.T) {
 		})
 		sctx, err := tracer.Extract(headers)
 		assert.Nil(t, err)
-		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*Span)
+		root := tracer.StartSpan("web.request", ddtrace.ChildOf(sctx)).(*Span)
 		root.Finish()
 		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
 	})

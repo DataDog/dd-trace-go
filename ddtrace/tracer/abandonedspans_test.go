@@ -38,7 +38,7 @@ func spanAge(s *Span) string {
 	return fmt.Sprintf("%d sec", (now()-s.Start)/int64(time.Second))
 }
 
-func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, finishedSpans int) {
+func assertProcessedSpans(assert *assert.Assertions, t *Tracer, startedSpans, finishedSpans int) {
 	d := t.abandonedSpansDebugger
 	cond := func() bool {
 		return atomic.LoadUint32(&d.addedSpans) >= uint32(startedSpans) &&

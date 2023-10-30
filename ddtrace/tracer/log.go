@@ -77,7 +77,7 @@ func checkEndpoint(c *http.Client, endpoint string) error {
 
 // logStartup generates a startupInfo for a tracer and writes it to the log in
 // JSON format.
-func logStartup(t *tracer) {
+func logStartup(t *Tracer) {
 	tags := make(map[string]string)
 	for k, v := range t.config.globalTags {
 		tags[k] = fmt.Sprintf("%v", v)

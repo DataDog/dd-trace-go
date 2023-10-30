@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -380,7 +380,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			defer tracer.Stop()
 			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
-			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*Span)
+			span := tracer.StartSpan("non-local root span", ddtrace.ChildOf(spanCtx)).(*Span)
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
@@ -413,7 +413,7 @@ func TestSpanStart(t *testing.T) {
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
+	ddtrace.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -507,7 +507,7 @@ func TestSpanError(t *testing.T) {
 	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
+	ddtrace.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -553,7 +553,7 @@ func TestSpanError_Typed(t *testing.T) {
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
+	ddtrace.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -862,13 +862,13 @@ func TestRootSpanAccessor(t *testing.T) {
 	t.Run("root-with-children", func(t *testing.T) {
 		root := tracer.StartSpan("root")
 		defer root.Finish()
-		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ddtrace.ChildOf(root.Context()))
 		defer child1.Finish()
-		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
+		child2 := tracer.StartSpan("child2", ddtrace.ChildOf(root.Context()))
 		defer child2.Finish()
-		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
+		child21 := tracer.StartSpan("child2.1", ddtrace.ChildOf(child2.Context()))
 		defer child21.Finish()
-		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
+		child211 := tracer.StartSpan("child2.1.1", ddtrace.ChildOf(child21.Context()))
 		defer child211.Finish()
 
 		require.Equal(t, root, root.(*Span).Root())
@@ -881,13 +881,13 @@ func TestRootSpanAccessor(t *testing.T) {
 	t.Run("root-finished-with-children", func(t *testing.T) {
 		root := tracer.StartSpan("root")
 		root.Finish()
-		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ddtrace.ChildOf(root.Context()))
 		defer child1.Finish()
-		child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
+		child2 := tracer.StartSpan("child2", ddtrace.ChildOf(root.Context()))
 		defer child2.Finish()
-		child21 := tracer.StartSpan("child2.1", ChildOf(child2.Context()))
+		child21 := tracer.StartSpan("child2.1", ddtrace.ChildOf(child2.Context()))
 		defer child21.Finish()
-		child211 := tracer.StartSpan("child2.1.1", ChildOf(child21.Context()))
+		child211 := tracer.StartSpan("child2.1.1", ddtrace.ChildOf(child21.Context()))
 		defer child211.Finish()
 
 		require.Equal(t, root, root.(*Span).Root())
@@ -936,7 +936,7 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 	// Service 2, extract user
 	c, err := tracer.Extract(TextMapCarrier(m))
 	require.NoError(t, err)
-	s = tracer.StartSpan("op", ChildOf(c))
+	s = tracer.StartSpan("op", ddtrace.ChildOf(c))
 	s.(*Span).SetUser("userino")
 	assert.True(t, s.(*Span).context.updated)
 }

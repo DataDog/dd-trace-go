@@ -14,9 +14,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	rt "runtime/trace"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/stretchr/testify/assert"
 	gotraceui "honnef.co/go/gotraceui/trace"
 )
@@ -37,8 +39,8 @@ func TestExecutionTraceSpans(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	root, ctx := StartSpanFromContext(context.Background(), "root")
-	child, _ := StartSpanFromContext(ctx, "child")
+	root, ctx := ddtrace.StartSpanFromContext(context.Background(), "root")
+	child, _ := ddtrace.StartSpanFromContext(ctx, "child")
 	root.Finish()
 	child.Finish()
 
@@ -61,6 +63,7 @@ func TestExecutionTraceSpans(t *testing.T) {
 		case gotraceui.EvUserTaskCreate:
 			id := int(ev.Args[0])
 			name := execTrace.Strings[ev.Args[2]]
+			fmt.Printf("ID: %d, NAME: %s, PARENT NAME ID: %d\n", id, name, ev.Args[1])
 			var parent string
 			if p, ok := spans[int(ev.Args[1])]; ok {
 				parent = p.name

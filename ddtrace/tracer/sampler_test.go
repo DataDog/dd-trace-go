@@ -18,7 +18,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -175,7 +174,7 @@ func TestRateSampler(t *testing.T) {
 	assert.True(NewRateSampler(1).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
-	assert.False(NewRateSampler(0.99).Sample(internal.NoopSpan{}))
+	assert.False(NewRateSampler(0.99).Sample(ddtrace.NoopSpan{}))
 }
 
 func TestRateSamplerSetting(t *testing.T) {
@@ -776,10 +775,10 @@ func TestSamplingLimiter(t *testing.T) {
 func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
 
-	benchmarkStartSpan := func(b *testing.B, t *tracer) {
-		internal.SetGlobalTracer(t)
+	benchmarkStartSpan := func(b *testing.B, t *Tracer) {
+		ddtrace.SetGlobalTracer(t)
 		defer func() {
-			internal.SetGlobalTracer(&internal.NoopTracer{})
+			ddtrace.SetGlobalTracer(&ddtrace.NoopTracer{})
 		}()
 		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{

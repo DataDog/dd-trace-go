@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	gocontext "context"
 	"encoding/binary"
 	"os"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -32,17 +32,17 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
-var _ ddtrace.Tracer = (*tracer)(nil)
+var _ ddtrace.Tracer = (*Tracer)(nil)
 
-// tracer creates, buffers and submits Spans which are used to time blocks of
+// Tracer creates, buffers and submits Spans which are used to time blocks of
 // computation. They are accumulated and streamed into an internal payload,
 // which is flushed to the agent whenever its size exceeds a specific threshold
 // or when a certain interval of time has passed, whichever happens first.
 //
-// tracer operates based on a worker loop which responds to various request
+// Tracer operates based on a worker loop which responds to various request
 // channels. It additionally holds two buffers which accumulates error and trace
 // queues to be processed by the payload encoder.
-type tracer struct {
+type Tracer struct {
 	config *config
 
 	// stats specifies the concentrator used to compute statistics, when client-side
@@ -132,7 +132,7 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) {
-	if internal.Testing {
+	if ddtrace.Testing {
 		return // mock tracer active
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
@@ -144,7 +144,7 @@ func Start(opts ...StartOption) {
 		// share control of the global telemetry client.
 		return
 	}
-	internal.SetGlobalTracer(t)
+	ddtrace.SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -167,28 +167,22 @@ func Start(opts ...StartOption) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
+	ddtrace.SetGlobalTracer(&ddtrace.NoopTracer{})
 	log.Flush()
-}
-
-// StartSpan starts a new span with the given operation name and set of options.
-// If the tracer is not started, calling this function is a no-op.
-func StartSpan(operationName string, opts ...StartSpanOption) ddtrace.Span {
-	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return internal.GetGlobalTracer().Extract(carrier)
+	return ddtrace.GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	return internal.GetGlobalTracer().Inject(ctx, carrier)
+	return ddtrace.GetGlobalTracer().Inject(ctx, carrier)
 }
 
 // SetUser associates user information to the current trace which the
@@ -212,7 +206,7 @@ func SetUser(s ddtrace.Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) *tracer {
+func newUnstartedTracer(opts ...StartOption) *Tracer {
 	c := newConfig(opts...)
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
@@ -245,7 +239,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			return f.DataStreams
 		})
 	}
-	t := &tracer{
+	t := &Tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
@@ -275,7 +269,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
 // internal.SetGlobalTracer(...) with the tracer provided by this function.
-func newTracer(opts ...StartOption) *tracer {
+func newTracer(opts ...StartOption) *Tracer {
 	t := newUnstartedTracer(opts...)
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
@@ -323,7 +317,7 @@ func newTracer(opts ...StartOption) *tracer {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+	if t, ok := ddtrace.GetGlobalTracer().(*Tracer); ok {
 		t.flushSync()
 		if t.dataStreams != nil {
 			t.dataStreams.Flush()
@@ -332,7 +326,7 @@ func Flush() {
 }
 
 // flushSync triggers a flush and waits for it to complete.
-func (t *tracer) flushSync() {
+func (t *Tracer) flushSync() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
@@ -340,7 +334,7 @@ func (t *tracer) flushSync() {
 
 // worker receives finished traces to be added into the payload, as well
 // as periodically flushes traces to the transport.
-func (t *tracer) worker(tick <-chan time.Time) {
+func (t *Tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
@@ -391,7 +385,7 @@ type chunk struct {
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleChunk(c *chunk) {
+func (t *Tracer) sampleChunk(c *chunk) {
 	if len(c.spans) > 0 {
 		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
@@ -420,7 +414,7 @@ func (t *tracer) sampleChunk(c *chunk) {
 	}
 }
 
-func (t *tracer) pushChunk(trace *chunk) {
+func (t *Tracer) pushChunk(trace *chunk) {
 	select {
 	case <-t.stop:
 		return
@@ -434,7 +428,32 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *Tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	s, _ := t.StartSpanFromContext(context.Background(), operationName, options...)
+	return s
+}
+
+// withContext associates the ctx with the span.
+func withContext(ctx context.Context) ddtrace.StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.Context = ctx
+	}
+}
+
+func (t *Tracer) StartSpanFromContext(ctx context.Context, operationName string, options ...ddtrace.StartSpanOption) (ddtrace.Span, context.Context) {
+	// copy opts in case the caller reuses the slice in parallel
+	// we will add at least 1, at most 2 items
+	optsLocal := make([]StartSpanOption, len(options), len(options)+2)
+	copy(optsLocal, options)
+
+	if ctx == nil {
+		// default to context.Background() to avoid panics on Go >= 1.15
+		ctx = context.Background()
+	} else if s, ok := ddtrace.SpanFromContext(ctx); ok {
+		optsLocal = append(optsLocal, ddtrace.ChildOf(s.Context()))
+	}
+	options = optsLocal
+
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -488,6 +507,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		TraceID:      id,
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
+		tracer:       t,
 	}
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
@@ -573,7 +593,15 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	return span
+	// TODO(kjn v2): Need to make this work for V2
+	if span.pprofCtxActive != nil {
+		// If pprof labels were applied for this span, use the derived ctx that
+		// includes them. Otherwise a child of this span wouldn't be able to
+		// correctly restore the labels of its parent when it finishes.
+		ctx = span.pprofCtxActive
+	}
+
+	return span, ddtrace.ContextWithSpan(ctx, span)
 }
 
 // generateSpanID returns a random uint64 that has been XORd with the startTime.
@@ -587,7 +615,7 @@ func generateSpanID(startTime int64) uint64 {
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
+func (t *Tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	var labels []string
 	if t.config.profilerHotspots {
 		// allocate the max-length slice to avoid growing it later
@@ -624,7 +652,7 @@ func spanResourcePIISafe(s *Span) bool {
 }
 
 // Stop stops the tracer.
-func (t *tracer) Stop() {
+func (t *Tracer) Stop() {
 	t.stopOnce.Do(func() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
@@ -641,12 +669,12 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+func (t *Tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (t *Tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 
@@ -654,7 +682,7 @@ func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
-func (t *tracer) sample(span *Span) {
+func (t *Tracer) sample(span *Span) {
 	if _, ok := span.context.samplingPriority(); ok {
 		// sampling decision was already made
 		return
@@ -712,7 +740,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 
 func noopTaskEnd() {}
 
-func (t *tracer) hostname() string {
+func (t *Tracer) hostname() string {
 	if !t.config.enableHostnameDetection {
 		return ""
 	}
