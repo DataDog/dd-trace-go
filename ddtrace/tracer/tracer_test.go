@@ -1893,20 +1893,24 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	}
 }
 
+func BenchmarkBigTraces(b *testing.B) {
+	genBigTraces(b, 100_000, 10)
+}
+
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, 10_000, 10)
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, 10_000, 10)
 	})
 }
 
-func genBigTraces(b *testing.B) {
+func genBigTraces(b *testing.B, spanCount int, parentCount int) {
 	tracer, transport, flush, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
 	defer stop()
 
@@ -1934,9 +1938,9 @@ func genBigTraces(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		for i := 0; i < 10; i++ {
+		for i := 0; i < parentCount; i++ {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
-			for i := 0; i < 10_000; i++ {
+			for i := 0; i < spanCount; i++ {
 				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
 				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
 				sp.Finish()
