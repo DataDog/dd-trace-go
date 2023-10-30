@@ -240,6 +240,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	if spans != nil {
 		c.spanRules = spans
 	}
+	globalRate := globalSampleRate()
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
+	c.traceSampleRate = newDynamicConfig(globalRate, rulesSampler.traces.setGlobalSampleRate)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -253,7 +256,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
-		rulesSampling:    newRulesSampler(c.traceRules, c.spanRules),
+		rulesSampling:    rulesSampler,
 		prioritySampling: sampler,
 		pid:              os.Getpid(),
 		stats:            newConcentrator(c, defaultStatsBucketSize),
