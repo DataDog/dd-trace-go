@@ -3,12 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
+package grpcutil // import "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/internal/grpcutil"
 
 import (
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"google.golang.org/grpc/metadata"
 )

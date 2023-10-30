@@ -6,7 +6,7 @@
 package aws_test
 
 import (
-	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"

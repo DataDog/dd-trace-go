@@ -8,7 +8,7 @@ package mongo_test
 import (
 	"context"
 
-	mongotrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo"
+	mongotrace "github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver/mongo"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"

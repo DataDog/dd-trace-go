@@ -8,8 +8,8 @@ package fasthttptrace
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"

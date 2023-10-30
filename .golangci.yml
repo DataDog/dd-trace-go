@@ -13,7 +13,7 @@ linters-settings:
   gci:
     sections:
       - standard
-      - prefix(gopkg.in/DataDog/dd-trace-go.v1)
+      - prefix(github.com/DataDog/dd-trace-go/v2)
       - default
     skip-generated: true
     custom-order: true

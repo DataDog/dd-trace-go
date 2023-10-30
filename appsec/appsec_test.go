@@ -9,10 +9,10 @@ import (
 	"context"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	privateAppsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	privateAppsec "github.com/DataDog/dd-trace-go/v2/internal/appsec"
 
 	"github.com/stretchr/testify/require"
 )

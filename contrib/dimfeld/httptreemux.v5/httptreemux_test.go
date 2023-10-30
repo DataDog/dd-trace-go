@@ -10,10 +10,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/namingschematest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/dimfeld/httptreemux/v5"
 	"github.com/stretchr/testify/assert"
@@ -44,6 +44,7 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Equal("/200", s.Tag(ext.HTTPRoute))
 }
 
 func TestHttpTracer404(t *testing.T) {
@@ -71,6 +72,7 @@ func TestHttpTracer404(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal(nil, s.Tag(ext.Error))
+	assert.NotContains(s.Tags(), ext.HTTPRoute)
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -98,6 +100,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
 	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("/500", s.Tag(ext.HTTPRoute))
 }
 
 func TestDefaultResourceNamer(t *testing.T) {
@@ -170,6 +173,7 @@ func TestDefaultResourceNamer(t *testing.T) {
 			assert.Equal(tc.method, s.Tag(ext.HTTPMethod))
 			assert.Equal("http://example.com"+tc.url, s.Tag(ext.HTTPURL))
 			assert.Equal(nil, s.Tag(ext.Error))
+			assert.Equal(tc.path, s.Tag(ext.HTTPRoute))
 		})
 	}
 }

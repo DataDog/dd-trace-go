@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package web provides functions to trace the zenazn/goji/web package (https://github.com/zenazn/goji).
-package web // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/zenazn/goji.v1/web"
+package web // import "github.com/DataDog/dd-trace-go/v2/contrib/zenazn/goji.v1/web"
 
 import (
 	"fmt"
@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"sync"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/zenazn/goji/web"
 )
@@ -52,8 +52,10 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resource := r.Method
 			p := web.GetMatch(*c).RawPattern()
+			route := ""
 			if p != nil {
-				resource += fmt.Sprintf(" %s", p)
+				route = fmt.Sprintf("%s", p)
+				resource = resource + " " + route
 			} else {
 				warnonce.Do(func() {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
@@ -64,6 +66,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 				Resource:   resource,
 				FinishOpts: cfg.finishOpts,
 				SpanOpts:   cfg.spanOpts,
+				Route:      route,
 			})
 		})
 	}

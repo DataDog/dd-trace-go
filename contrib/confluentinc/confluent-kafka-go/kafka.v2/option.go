@@ -11,8 +11,8 @@ import (
 	"net"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )

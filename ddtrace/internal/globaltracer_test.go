@@ -3,13 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+package internal // import "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 
 import (
 	"sync"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 )
 
 type raceTestTracer struct {

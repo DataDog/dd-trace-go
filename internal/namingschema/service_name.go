@@ -5,7 +5,7 @@
 
 package namingschema
 
-import "gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+import "github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
 // NewDefaultServiceName returns a Schema with the standard logic to be used for contrib span service names
 // (in-code override > DD_SERVICE environment variable > integration default name).

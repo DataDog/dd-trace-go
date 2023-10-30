@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package fiber provides tracing functions for tracing the fiber package (https://github.com/gofiber/fiber).
-package fiber // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2"
+package fiber // import "github.com/DataDog/dd-trace-go/v2/contrib/gofiber/fiber.v2"
 
 import (
 	"fmt"
@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -61,8 +61,10 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
 		opts = append(opts, cfg.spanOpts...)
-		opts = append(opts, tracer.Tag(ext.Component, componentName))
-		opts = append(opts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+		opts = append(opts,
+			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+		)
 		span, ctx := tracer.StartSpanFromContext(c.Context(), cfg.spanName, opts...)
 
 		defer span.Finish()
@@ -74,6 +76,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		err := c.Next()
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(c))
+		span.SetTag(ext.HTTPRoute, c.Route().Path)
 
 		status := c.Response().StatusCode()
 		// on the off chance we don't yet have a status after the rest of the things have run
