@@ -11,6 +11,11 @@ if [[ $# -eq 0 ]]; then
 	echo "Use the -h flag for help"
 fi
 
+if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
+  # Needed to run integration tests on Apple Silicon
+  export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		-a|--appsec)
