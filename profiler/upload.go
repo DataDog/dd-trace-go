@@ -140,7 +140,7 @@ type uploadEvent struct {
 	Family           string            `json:"family"`
 	Version          string            `json:"version"`
 	EndpointCounts   map[string]uint64 `json:"endpoint_counts,omitempty"`
-	CustomAttributes []string          `json:"customAttributes,omitempty"`
+	CustomAttributes []string          `json:"custom_attributes,omitempty"`
 }
 
 // encode encodes the profile as a multipart mime request.
