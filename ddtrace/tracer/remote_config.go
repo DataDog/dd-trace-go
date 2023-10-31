@@ -81,3 +81,17 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 	}
 	return statuses
 }
+
+// startRemoteConfig starts the remote config client
+// and registers the APM_TRACING product and its callback.
+func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
+	err := remoteconfig.Start(rcConfig)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
+	if err != nil {
+		return err
+	}
+	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
+}
