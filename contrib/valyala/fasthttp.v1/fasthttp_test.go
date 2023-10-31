@@ -42,7 +42,7 @@ func startServer(t *testing.T, opts ...Option) string {
 		switch string(fctx.Path()) {
 		case "/any":
 			WrapHandler(func(c *fasthttp.RequestCtx) {
-				fmt.Fprintf(c, "Hi there! RequestURI is %q", c.RequestURI())
+				fmt.Fprintf(c, "Hi there!")
 			}, opts...)(fctx)
 		case "/err":
 			WrapHandler(func(c *fasthttp.RequestCtx) {
@@ -52,7 +52,7 @@ func startServer(t *testing.T, opts ...Option) string {
 			WrapHandler(func(c *fasthttp.RequestCtx) {
 				c.Error(errMsg, 600)
 			}, opts...)(fctx)
-		case "/propagation":
+		case "/contextExtract":
 			WrapHandler(func(c *fasthttp.RequestCtx) {
 				_, ok := tracer.SpanFromContext(c)
 				if !ok {
@@ -84,7 +84,7 @@ func startServer(t *testing.T, opts ...Option) string {
 
 	httpAddr := "http://" + addr
 	checkServerReady := func() bool {
-		resp, err := http.DefaultClient.Get(httpAddr + "/any")
+		resp, err := (&http.Client{}).Get(httpAddr + "/any")
 		if err != nil {
 			return false
 		}
@@ -114,7 +114,7 @@ func TestTrace200(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	resp, err := http.DefaultClient.Get(addr + "/any")
+	resp, err := (&http.Client{}).Get(addr + "/any")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -141,7 +141,7 @@ func TestStatusError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	resp, err := http.DefaultClient.Get(addr + "/err")
+	resp, err := (&http.Client{}).Get(addr + "/err")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -166,7 +166,7 @@ func TestWithStatusCheck(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		resp, err := http.DefaultClient.Get(addr + "/customErr")
+		resp, err := (&http.Client{}).Get(addr + "/customErr")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -185,7 +185,7 @@ func TestWithStatusCheck(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		resp, err := http.DefaultClient.Get(addr + "/err")
+		resp, err := (&http.Client{}).Get(addr + "/err")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -208,7 +208,7 @@ func TestCustomResourceNamer(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	resp, err := http.DefaultClient.Get(addr + "/any")
+	resp, err := (&http.Client{}).Get(addr + "/any")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -226,7 +226,7 @@ func TestWithIgnoreRequest(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	resp, err := http.DefaultClient.Get(addr + "/any")
+	resp, err := (&http.Client{}).Get(addr + "/any")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -242,7 +242,7 @@ func TestChildSpan(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	resp, err := http.DefaultClient.Get(addr + "/propagation")
+	resp, err := (&http.Client{}).Get(addr + "/contextExtract")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -257,7 +257,7 @@ func TestPropagation(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	c := httptrace.WrapClient(http.DefaultClient)
+	c := httptrace.WrapClient(&http.Client{})
 	resp, err := c.Get(addr + "/any")
 	require.NoError(t, err)
 	defer resp.Body.Close()
