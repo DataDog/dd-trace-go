@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"encoding/binary"
 	"errors"
+	"google.golang.org/grpc/attributes"
 	"strconv"
 	"strings"
 
@@ -145,4 +146,113 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 	for _, attr := range kv {
 		s.SetTag(string(attr.Key), attr.Value.AsInterface())
 	}
+}
+
+const (
+	httpServer = "http.server.request"
+	httpClient = "http.client.request"
+)
+
+func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (name string) {
+	defer func() {
+		name = strings.ToLower(name)
+	}()
+	spanKind := cfg.SpanKind()
+	isClient := spanKind == oteltrace.SpanKindClient
+	isServer := spanKind == oteltrace.SpanKindServer
+	// client set the value explicitly
+	if v := attrs.Value("operation.name"); v != nil {
+		return v.(string)
+	}
+
+	// http
+	if isHttp := attrs.Value("http.request.method"); isHttp != nil {
+		switch spanKind {
+		case oteltrace.SpanKindServer:
+			return httpServer
+		case oteltrace.SpanKindClient:
+			return httpClient
+		}
+	}
+
+	// database
+	if v := valueFromAttributes(attrs, "db.system"); v != "" && isClient {
+		return v + ".query"
+	}
+
+	// messaging
+	system := valueFromAttributes(attrs, "messaging.system")
+	op := valueFromAttributes(attrs, "messaging.operation")
+	if system != "" && op != "" {
+		switch spanKind {
+		case oteltrace.SpanKindClient, oteltrace.SpanKindConsumer, oteltrace.SpanKindProducer:
+			return system + "." + op
+		}
+	}
+
+	// RPC & AWS
+	isRpc := attrs.Value("rpc.system") != ""
+	isAws := isRpc && (attrs.Value("rpc.system") == "aws-api")
+	// AWS client
+	if isAws && isClient {
+		if service := valueFromAttributes(attrs, "rpc.service"); service != "" {
+			return "aws." + service + ".request"
+		}
+		return "aws.request"
+	}
+	// RPC client
+	if isRpc && isClient {
+		return valueFromAttributes(attrs, "rpc.system") + ".client.request"
+	}
+	// RPC server
+	if isRpc && isServer {
+		return valueFromAttributes(attrs, "rpc.system") + ".server.request"
+	}
+
+	// FAAS client
+	//faas.invoked_provider") && span.hasAttr("faas.invoked_name"
+	provider := valueFromAttributes(attrs, "faas.invoked_provider")
+	faasName := valueFromAttributes(attrs, "faas.invoked_name")
+	if provider != "" && faasName != "" && isClient {
+		return provider + "." + faasName + ".invoke"
+	}
+
+	//	FAAS server
+	trigger := valueFromAttributes(attrs, "faas.invoked_name")
+	if trigger != "" && isServer {
+		return trigger + ".invoke"
+	}
+
+	//	Graphql
+	if valueFromAttributes(attrs, "graphql.operation.type") != "" {
+		return "graphql.server.request"
+	}
+
+	protocol := valueFromAttributes(attrs, "network.protocol.name")
+	if isServer {
+		if protocol != "" {
+			return protocol + ".server.request"
+		}
+		return "server.request"
+	}
+
+	if isClient {
+		if protocol != "" {
+			return protocol + ".client.request"
+		}
+		return "client.request"
+	}
+
+	if spanKind != oteltrace.SpanKindUnspecified {
+		return spanKind.String()
+	}
+
+	return "otel_unknown"
+}
+
+func valueFromAttributes(attrs attributes.Attributes, key string) string {
+	if v := attrs.Value(key); v != nil {
+		return v.(string)
+	}
+	return ""
 }

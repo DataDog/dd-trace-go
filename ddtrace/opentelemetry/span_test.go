@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc/attributes"
 	"io"
 	"net/http"
 	"strings"
@@ -426,4 +427,18 @@ func TestTracerStartOptions(t *testing.T) {
 	}
 	assert.Contains(payload, "\"service\":\"test_serv\"")
 	assert.Contains(payload, "\"env\":\"test_env\"")
+}
+
+func TestRemapName(t *testing.T) {
+	_, _, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	defer cleanup()
+
+	tr := otel.Tracer("")
+	_, sp := tr.Start(context.Background(), "faas.invoked_provider")
+	sp.End()
+
+	attrs := attributes.New("faas.invoked_provider", "some_provIDER")
+	attrs.WithValue("faas.invoked_name", "some_NAME")
+	name := remapOperationName(oteltrace.NewSpanStartConfig(oteltrace.WithSpanKind(oteltrace.SpanKindClient)), *attrs)
+	fmt.Println(name)
 }
