@@ -16,7 +16,6 @@ const defaultServiceName = "graphql.server"
 
 type config struct {
 	serviceName   string
-	querySpanName string
 	analyticsRate float64
 }
 
@@ -24,7 +23,6 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.querySpanName = namingschema.NewGraphqlServerOp().GetName()
 	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

@@ -413,8 +413,6 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 			return
 		}
 
-		fmt.Println("GraphQL - Query Start!")
-
 		var (
 			events       []json.RawMessage
 			mu           sync.Mutex

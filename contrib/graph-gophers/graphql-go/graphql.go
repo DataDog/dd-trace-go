@@ -37,13 +37,17 @@ func init() {
 
 const (
 	tagGraphqlField         = "graphql.field"
-	tagGraphqlQuery         = "graphql.query"
-	tagGraphqlType          = "graphql.type"
+	tagGraphqlSource        = "graphql.source"
+	tagGraphqlOperationType = "graphql.operation.type"
 	tagGraphqlOperationName = "graphql.operation.name"
 )
 
-// A Tracer implements the graphql-go/trace.Tracer and graphql-go/trace.ValidationTracer interface
-// by sending traces to the Datadog tracer.
+var (
+	spanTagKind = ddtracer.Tag(ext.SpanKind, ext.SpanKindServer)
+	spanTagType = ddtracer.Tag(ext.SpanType, ext.SpanTypeGraphQL)
+)
+
+// A Tracer implements the graphql-go/trace.Tracer interface by sending traces to the Datadog tracer.
 type Tracer struct {
 	cfg *config
 }
@@ -58,10 +62,17 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
-		ddtracer.Tag(tagGraphqlQuery, queryString),
-		ddtracer.Tag(tagGraphqlOperationName, operationName),
+		spanTagKind,
+		spanTagType,
+		ddtracer.Tag(tagGraphqlSource, queryString),
 		ddtracer.Tag(ext.Component, componentName),
 		ddtracer.Measured(),
+	}
+	if operationName != "" {
+		opts = append(opts, ddtracer.Tag(tagGraphqlOperationName, operationName))
+	}
+	for key, value := range variables {
+		opts = append(opts, ddtracer.Tag(fmt.Sprintf("graphql.variables.%s", key), value))
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
@@ -89,15 +100,20 @@ func (t *Tracer) TraceField(ctx context.Context, _ string, typeName string, fiel
 	}
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
+		spanTagKind,
+		spanTagType,
 		ddtracer.Tag(tagGraphqlField, fieldName),
-		ddtracer.Tag(tagGraphqlType, typeName),
 		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", typeName, fieldName)),
 		ddtracer.Measured(),
+	}
+	for key, value := range variables {
+		opts = append(opts, ddtracer.Tag(fmt.Sprintf("graphql.variables.%s", key), value))
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.field", opts...)
+	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.resolve", opts...)
 
 	return ctx, func(err *errors.QueryError) {
 		defer op.Finish(graphqlsec.FieldResult{Error: err})
@@ -110,30 +126,8 @@ func (t *Tracer) TraceField(ctx context.Context, _ string, typeName string, fiel
 	}
 }
 
-// TraceValidation traces GraphQL input validation against the schema.
-func (t *Tracer) TraceValidation(ctx context.Context) func([]*errors.QueryError) {
-	opts := []ddtrace.StartSpanOption{
-		ddtracer.ServiceName(t.cfg.serviceName),
-		ddtracer.Tag(ext.Component, componentName),
-		ddtracer.Measured(),
-	}
-	if !math.IsNaN(t.cfg.analyticsRate) {
-		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
-	}
-	span, _ := ddtracer.StartSpanFromContext(ctx, "graphql.validation", opts...)
-
-	return func(errs []*errors.QueryError) {
-		span.Finish(ddtracer.WithError(toError(errs)))
-	}
-}
-
-type CompleteTracer interface {
-	tracer.Tracer
-	tracer.ValidationTracer
-}
-
 // NewTracer creates a new Tracer.
-func NewTracer(opts ...Option) CompleteTracer {
+func NewTracer(opts ...Option) tracer.Tracer {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
