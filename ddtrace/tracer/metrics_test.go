@@ -255,15 +255,16 @@ func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
 
 func TestReportRuntimeMetrics(t *testing.T) {
 	var tg testStatsdClient
-	trc := newUnstartedTracer(withStatsdClient(&tg))
+	trc, err := newUnstartedTracer(withStatsdClient(&tg))
 	defer trc.statsd.Close()
+	assert.NoError(t, err)
 
 	trc.wg.Add(1)
 	go func() {
 		defer trc.wg.Done()
 		trc.reportRuntimeMetrics(time.Millisecond)
 	}()
-	err := tg.Wait(35, 1*time.Second)
+	err = tg.Wait(35, 1*time.Second)
 	close(trc.stop)
 	assert := assert.New(t)
 	assert.NoError(err)
@@ -281,7 +282,8 @@ func TestReportHealthMetrics(t *testing.T) {
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
 	statsInterval = time.Nanosecond
 
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 	defer stop()
 
 	tracer.StartSpan("operation").Finish()
@@ -297,7 +299,8 @@ func TestReportHealthMetrics(t *testing.T) {
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
 	var tg testStatsdClient
-	tracer, _, flush, stop := startTestTracer(t, withStatsdClient(&tg))
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)

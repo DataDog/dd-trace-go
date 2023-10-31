@@ -287,7 +287,7 @@ const partialFlushMinSpansDefault = 1000
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
-func newConfig(opts ...StartOption) *config {
+func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.sampler = NewAllSampler()
 
@@ -299,6 +299,7 @@ func newConfig(opts ...StartOption) *config {
 		c.hostname, err = os.Hostname()
 		if err != nil {
 			log.Warn("unable to look up hostname: %v", err)
+			return c, fmt.Errorf("unable to look up hostnamet: %v", err)
 		}
 	}
 	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
@@ -430,8 +431,6 @@ func newConfig(opts ...StartOption) *config {
 				globalconfig.SetServiceName(s)
 			}
 		} else {
-			// There is not an explicit service set, default to binary name.
-			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
@@ -488,8 +487,7 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
-
-	return c
+	return c, nil
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {

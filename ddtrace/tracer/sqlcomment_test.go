@@ -101,9 +101,10 @@ func TestSQLCommentCarrier(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
 			// as per the sqlcommenter spec
-			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+			tracer, err := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 			defer globalconfig.SetServiceName("")
 			defer tracer.Stop()
+			assert.NoError(t, err)
 
 			var spanCtx ddtrace.SpanContext
 			var traceID uint64
@@ -115,7 +116,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			}
 
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db"}
-			err := carrier.Inject(spanCtx)
+			err = carrier.Inject(spanCtx)
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
 			assert.Equal(t, expected, carrier.Query)
@@ -280,7 +281,7 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 }
 
 func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
-	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	tracer, _ := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
 	root.SetTag(ext.SamplingPriority, 2)
 	spanCtx := root.Context()

@@ -256,8 +256,9 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	c := &http.Client{}
 	rt := wrapRecordingRoundTripper(c)
-	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc, err := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
 	defer trc.Stop()
+	assert.NoError(err)
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
@@ -291,9 +292,10 @@ func TestWithUDS(t *testing.T) {
 	go srv.Serve(unixListener)
 	defer srv.Close()
 
-	trc := newTracer(WithUDS(udsPath))
+	trc, err := newTracer(WithUDS(udsPath))
 	rt := wrapRecordingRoundTripper(trc.config.httpClient)
 	defer trc.Stop()
+	assert.NoError(err)
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
