@@ -373,7 +373,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 	sentCounts := map[string]int64{
 		"datadog.tracer.decode_error": 1,
-		"datadog.tracer.flush_bytes":  172,
+		"datadog.tracer.flush_bytes":  194,
 		"datadog.tracer.flush_traces": 1,
 	}
 	droppedCounts := map[string]int64{

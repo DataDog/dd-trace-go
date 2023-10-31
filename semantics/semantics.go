@@ -29,8 +29,12 @@ var Version string
 
 // TODO: use code gen to build this from the schema
 const (
-	HTTP_URL      SemanticID = 1
-	SQL_STATEMENT            = 2
+	HTTP_URL            SemanticID = 1
+	SQL_QUERY                      = 2
+	REDIS_COMMAND                  = 3
+	MEMCACHED_COMMAND              = 4
+	MONGODB_QUERY                  = 5
+	ELASTICSEARCH_QUERY            = 6
 )
 
 func init() {

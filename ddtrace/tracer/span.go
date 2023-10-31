@@ -113,6 +113,11 @@ func (s *span) BaggageItem(key string) string {
 func (s *span) SetTag(key string, value interface{}) {
 	s.Lock()
 	defer s.Unlock()
+	s.setTag(key, value)
+}
+
+// SetTag adds a set of key/value metadata to the span.
+func (s *span) setTag(key string, value interface{}) {
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -169,9 +174,14 @@ func (s *span) SetTag(key string, value interface{}) {
 }
 
 func (s *span) SetTagSemantically(key string, value interface{}, semanticID semantics.SemanticID) {
+	s.Lock()
+	defer s.Unlock()
+	if s.SemanticTags == nil {
+		s.SemanticTags = map[string]uint64{}
+	}
 	s.SemanticTags[key] = uint64(semanticID)
 	s.SemanticsSchemaURL = semantics.Version
-	s.SetTag(key, value)
+	s.setTag(key, value)
 }
 
 // setSamplingPriority locks then span, then updates the sampling priority.
