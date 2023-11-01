@@ -1894,7 +1894,9 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 }
 
 func BenchmarkBigTraces(b *testing.B) {
-	genBigTraces(b, 100_000, 10)
+	b.Run("Big traces", func(b *testing.B) {
+		genBigTraces(b, 50, 10_000)
+	})
 }
 
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
