@@ -238,6 +238,62 @@ func TestNamingSchema(t *testing.T) {
 	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }
 
+func TestTrailingSlashRoutes(t *testing.T) {
+	t.Run("unknown if no handler matches", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		url := "/unknown/"
+		r := httptest.NewRequest(http.MethodGet, url, nil)
+		w := httptest.NewRecorder()
+		router().ServeHTTP(w, r)
+		assert.Equal(404, w.Code)
+		assert.Equal("404 page not found\n", w.Body.String())
+
+		spans := mt.FinishedSpans()
+		assert.Equal(1, len(spans))
+
+		s := spans[0]
+		assert.Equal("http.request", s.OperationName())
+		assert.Equal("my-service", s.Tag(ext.ServiceName))
+		assert.Equal("GET unknown", s.Tag(ext.ResourceName))
+		assert.Equal("404", s.Tag(ext.HTTPCode))
+		assert.Equal("GET", s.Tag(ext.HTTPMethod))
+		assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
+		assert.Equal("testvalue", s.Tag("testkey"))
+		assert.Equal(nil, s.Tag(ext.Error))
+		assert.NotContains(s.Tags(), ext.HTTPRoute)
+	})
+
+	t.Run("parametrizes URL with trailing slash", func(t *testing.T) {
+		assert := assert.New(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		url := "/api/paramvalue/"
+		r := httptest.NewRequest("GET", url, nil)
+		w := httptest.NewRecorder()
+		router().ServeHTTP(w, r)
+		assert.Equal(301, w.Code)
+		assert.Contains(w.Body.String(), "Moved Permanently")
+
+		spans := mt.FinishedSpans()
+		assert.Equal(1, len(spans))
+
+		s := spans[0]
+		assert.Equal("http.request", s.OperationName())
+		assert.Equal("my-service", s.Tag(ext.ServiceName))
+		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
+		assert.Equal("301", s.Tag(ext.HTTPCode))
+		assert.Equal("GET", s.Tag(ext.HTTPMethod))
+		assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
+		assert.Equal("testvalue", s.Tag("testkey"))
+		assert.Equal(nil, s.Tag(ext.Error))
+		assert.Contains(s.Tags(), ext.HTTPRoute)
+	})
+}
+
 func router() http.Handler {
 	router := New(
 		WithServiceName("my-service"),
@@ -246,6 +302,7 @@ func router() http.Handler {
 
 	router.GET("/200", handler200)
 	router.GET("/500", handler500)
+	router.GET("/api/:parameter", handlerDummy)
 
 	return router
 }
@@ -256,4 +313,8 @@ func handler200(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 
 func handler500(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	http.Error(w, "500!", http.StatusInternalServerError)
+}
+
+func handlerDummy(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
+	w.WriteHeader(http.StatusAccepted)
 }
