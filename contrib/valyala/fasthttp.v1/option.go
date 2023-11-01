@@ -80,6 +80,6 @@ func defaultResourceNamer(fctx *fasthttp.RequestCtx) string {
 	return string(fctx.Method()) + " " + string(fctx.Path())
 }
 
-func defaultIgnoreRequest(fctx *fasthttp.RequestCtx) bool {
+func defaultIgnoreRequest(_ *fasthttp.RequestCtx) bool {
 	return false
 }
