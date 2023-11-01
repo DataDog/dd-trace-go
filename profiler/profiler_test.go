@@ -655,8 +655,9 @@ func TestVersionResolution(t *testing.T) {
 	}
 
 	t.Run("tags only", func(t *testing.T) {
-		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		data := doOneProfileUpload(WithTags("version:4.5.6", "version:7.8.9"))
 		assert.Contains(t, data.tags, "version:4.5.6")
+		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -674,5 +675,11 @@ func TestVersionResolution(t *testing.T) {
 		assert.NotContains(t, data.tags, "version:1.2.3")
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:7.8.9")
+	})
+
+	t.Run("case insensitive", func(t *testing.T) {
+		data := doOneProfileUpload(WithTags("Version:4.5.6", "version:7.8.9"))
+		assert.Contains(t, data.tags, "Version:4.5.6")
+		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
 }

@@ -195,13 +195,18 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		logStartup(cfg)
 	}
 	var tags []string
+	var seenVersionTag bool
 	for _, tag := range cfg.tags.Slice() {
 		// If the user configured a tag via DD_VERSION or WithVersion,
 		// override any version tags the user provided via WithTags,
 		// since having more than one version tag breaks the comparison
-		// UI
-		if cfg.version != "" && strings.HasPrefix(tag, "version:") {
-			continue
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
 		}
 		tags = append(tags, tag)
 	}
