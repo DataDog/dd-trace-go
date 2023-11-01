@@ -344,14 +344,14 @@ func (t *trace) push(sp *span) {
 	if t.full {
 		return
 	}
-	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	tr := internal.GetGlobalTracer()
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
-		t.spans = nil // GC
-		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
-		if haveTracer {
-			atomic.AddUint32(&tr.tracesDropped, 1)
+		t.spans = nil // allow our spans to be collected by GC.
+		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize)
+		if tr != nil {
+			tr.Signal(ddtrace.TraceDropped)
 		}
 		return
 	}
@@ -359,14 +359,14 @@ func (t *trace) push(sp *span) {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
-		atomic.AddUint32(&tr.spansStarted, 1)
+	if tr != nil {
+		tr.Signal(ddtrace.SpanStarted)
 	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *span, tr *tracer) {
+func (t *trace) setTraceTags(s *span) { //tr *tracer) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -379,9 +379,11 @@ func (t *trace) setTraceTags(s *span, tr *tracer) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
-	if hn := tr.hostname(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
-	}
+	// TODO(kjn v2): Move this into the tracer or delete it.
+	// Do we still want to do this hostname junk?
+	// if hn := tr.hostname(); hn != "" {
+	// 	s.setMeta(keyTracerHostname, hn)
+	// }
 }
 
 // finishedOne acknowledges that another span in the trace has finished, and checks
@@ -403,16 +405,17 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
+	tr := internal.GetGlobalTracer()
+	if tr == nil {
 		return
 	}
-	setPeerService(s, tr.config)
+	tc := tr.TracerConf()
+	setPeerService(s, tr)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.Service != "" && !strings.EqualFold(s.Service, tr.config.serviceName) {
-		s.Meta[keyBaseService] = tr.config.serviceName
+	if s.Service != "" && !strings.EqualFold(s.Service, tc.ServiceTag) {
+		s.Meta[keyBaseService] = tc.ServiceTag
 	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
@@ -427,7 +430,7 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s, tr)
+		t.setTraceTags(s)
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
@@ -439,7 +442,7 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 
-	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
+	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
@@ -460,7 +463,7 @@ func (t *trace) finishedOne(s *span) {
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0], tr)
+		t.setTraceTags(finishedSpans[0])
 	}
 	t.finishChunk(tr, &chunk{
 		spans:    finishedSpans,
@@ -469,21 +472,23 @@ func (t *trace) finishedOne(s *span) {
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
-	tr.pushChunk(ch)
+func (t *trace) finishChunk(tr ddtrace.Tracer, ch *chunk) {
+	//atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	//tr.pushChunk(ch)
+	tr.SubmitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *span, cfg *config) {
+func setPeerService(s *span, t ddtrace.Tracer) {
+	tc := t.TracerConf()
 	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
 		spanKind := s.Meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
-		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		shouldSetDefaultPeerService := isOutboundRequest && tc.PeerServiceDefaults
 		if !shouldSetDefaultPeerService {
 			return
 		}
@@ -496,7 +501,7 @@ func setPeerService(s *span, cfg *config) {
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.Meta[ext.PeerService]
-	if to, ok := cfg.peerServiceMappings[ps]; ok {
+	if to, ok := tc.PeerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}

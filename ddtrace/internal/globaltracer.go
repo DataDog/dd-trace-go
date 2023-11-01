@@ -63,6 +63,18 @@ func (NoopTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return ni
 // Stop implements ddtrace.Tracer.
 func (NoopTracer) Stop() {}
 
+// TODO(kjn v2): These should be removed. They are here temporarily to facilitate
+// the shift to the v2 API.
+func (NoopTracer) TracerConf() ddtrace.TracerConf {
+	return ddtrace.TracerConf{}
+}
+
+func (NoopTracer) SubmitStats(ddtrace.Span)               {}
+func (NoopTracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
+func (NoopTracer) SubmitChunk(any)                        {}
+func (NoopTracer) Flush()                                 {}
+func (NoopTracer) Signal(ddtrace.Event)                   {}
+
 var _ ddtrace.Span = (*NoopSpan)(nil)
 
 // NoopSpan is an implementation of ddtrace.Span that is a no-op.

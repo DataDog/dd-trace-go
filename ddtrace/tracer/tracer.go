@@ -328,19 +328,19 @@ func newTracer(opts ...StartOption) *tracer {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		t.flushSync()
-		if t.dataStreams != nil {
-			t.dataStreams.Flush()
-		}
+	if t := internal.GetGlobalTracer(); t != nil {
+		t.Flush()
 	}
 }
 
-// flushSync triggers a flush and waits for it to complete.
-func (t *tracer) flushSync() {
+// Flush triggers a flush and waits for it to complete.
+func (t *tracer) Flush() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
+	if t.dataStreams != nil {
+		t.dataStreams.Flush()
+	}
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -425,7 +425,16 @@ func (t *tracer) sampleChunk(c *chunk) {
 	}
 }
 
+func (t *tracer) SubmitChunk(c any) {
+	// TODO(kjn v2): This will be unified with pushChunk, and only one function will exist.
+	// This is here right now because of the lack of appropriate exported types.
+
+	ch := c.(*chunk) // TODO(kjn v2): This can panic. Once the appropriate types are moved, this assertion will be removed.
+	t.pushChunk(ch)
+}
+
 func (t *tracer) pushChunk(trace *chunk) {
+	atomic.AddUint32(&t.spansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
 		return
@@ -653,6 +662,56 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
+}
+
+func (t *tracer) TracerConf() ddtrace.TracerConf {
+	return ddtrace.TracerConf{
+		CanComputeStats:      t.config.canComputeStats(),
+		CanDropP0s:           t.config.canDropP0s(),
+		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		PartialFlush:         t.config.partialFlushEnabled,
+		PartialFlushMinSpans: t.config.partialFlushMinSpans,
+		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
+		PeerServiceMappings:  t.config.peerServiceMappings,
+		EnvTag:               t.config.env,
+		VersionTag:           t.config.version,
+		ServiceTag:           t.config.serviceName,
+	}
+}
+
+func (t *tracer) SubmitStats(s Span) {
+	sp, ok := s.(*span)
+	if !ok {
+		return
+	}
+	select {
+	case t.stats.In <- newAggregableSpan(sp, t.obfuscator):
+		// ok
+	default:
+		log.Error("Stats channel full, disregarding span.")
+	}
+}
+
+func (t *tracer) SubmitAbandonedSpan(s Span, finished bool) {
+	sp, ok := s.(*span)
+	if !ok {
+		return
+	}
+	select {
+	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(sp, finished):
+		// ok
+	default:
+		log.Error("Abandoned spans channel full, disregarding span.")
+	}
+}
+
+func (t *tracer) Signal(e ddtrace.Event) {
+	switch e {
+	case ddtrace.TraceDropped:
+		atomic.AddUint32(&t.tracesDropped, 1)
+	case ddtrace.SpanStarted:
+		atomic.AddUint32(&t.spansStarted, 1)
+	}
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.

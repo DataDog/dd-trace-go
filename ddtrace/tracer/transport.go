@@ -16,10 +16,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
-	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
@@ -146,21 +144,23 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
-		if t.config.canComputeStats() {
-			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
-		}
-		droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
-		partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
-		droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
-		if stats := t.statsd; stats != nil {
-			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
-				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
-			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
-		}
-		req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
-		req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
-	}
+	// TODO(kjn v2): Figure out the stats. They probably don't belong in the Tracer interface?
+	// Looking for input from other engineers.
+	// if t, ok := traceinternal.GetGlobalTracer().(*tracer); ok {
+	// 	if t.config.canComputeStats() {
+	// 		req.Header.Set("Datadog-Client-Computed-Stats", "yes")
+	// 	}
+	// 	droppedTraces := int(atomic.SwapUint32(&t.droppedP0Traces, 0))
+	// 	partialTraces := int(atomic.SwapUint32(&t.partialTraces, 0))
+	// 	droppedSpans := int(atomic.SwapUint32(&t.droppedP0Spans, 0))
+	// 	if stats := t.statsd; stats != nil {
+	// 		stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+	// 			[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
+	// 		stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+	// 	}
+	// 	req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
+	// 	req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
+	// }
 	response, err := t.client.Do(req)
 	if err != nil {
 		return nil, err

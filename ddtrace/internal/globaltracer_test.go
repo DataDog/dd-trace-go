@@ -28,6 +28,16 @@ func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }
 
+func (t *raceTestTracer) TracerConf() ddtrace.TracerConf {
+	return ddtrace.TracerConf{}
+}
+
+func (t *raceTestTracer) SubmitStats(ddtrace.Span)               {}
+func (t *raceTestTracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
+func (t *raceTestTracer) SubmitChunk(any)                        {}
+func (t *raceTestTracer) Flush()                                 {}
+func (t *raceTestTracer) Signal(ddtrace.Event)                   {}
+
 func TestGlobalTracer(t *testing.T) {
 	// at module initialization, the tracer must be seet
 	if GetGlobalTracer() == nil {
