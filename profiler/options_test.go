@@ -201,7 +201,7 @@ func TestOptions(t *testing.T) {
 	t.Run("WithVersion", func(t *testing.T) {
 		var cfg config
 		WithVersion("1.2.3")(&cfg)
-		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
+		assert.Equal(t, cfg.version, "1.2.3")
 	})
 
 	t.Run("WithVersion/override", func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestOptions(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		WithVersion("1.2.3")(cfg)
-		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
+		assert.Equal(t, cfg.version, "1.2.3")
 	})
 
 	t.Run("WithTags", func(t *testing.T) {
@@ -311,7 +311,7 @@ func TestEnvVars(t *testing.T) {
 		t.Setenv("DD_VERSION", "1.2.3")
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
-		assert.Contains(t, cfg.tags.Slice(), "version:1.2.3")
+		assert.Equal(t, cfg.version, "1.2.3")
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
