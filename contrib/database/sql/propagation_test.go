@@ -311,7 +311,7 @@ func TestDBMPropagation_PreventFullMode(t *testing.T) {
 
 	spans := tr.FinishedSpans()
 	for _, s := range spansOfType(spans, QueryTypeExec) {
-		assert.Contains(t, s.Tags(), keyDBMTraceInjected)
+		assert.NotContains(t, s.Tags(), keyDBMTraceInjected)
 	}
 }
 
