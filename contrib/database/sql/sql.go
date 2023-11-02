@@ -123,9 +123,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 
 	cfg := new(config)
 	defaults(cfg, driverName, nil)
-	for _, fn := range opts {
-		fn(cfg)
-	}
+	processOptions(cfg, driverName, opts...)
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
@@ -196,9 +194,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		driverName = reflect.TypeOf(c.Driver()).String()
 		defaults(cfg, driverName, nil)
 	}
-	for _, fn := range opts {
-		fn(cfg)
-	}
+	processOptions(cfg, driverName, opts...)
 	tc := &tracedConnector{
 		connector:  c,
 		driverName: driverName,
@@ -235,4 +231,31 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		return OpenDB(connector, opts...), nil
 	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
+}
+
+func processOptions(cfg *config, driverName string, opts ...Option) {
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	checkDBMPropagation(cfg, driverName)
+}
+
+func checkDBMPropagation(cfg *config, driverName string) {
+	isSupported := func() bool {
+		// list of drivers that do not support DBM propagation "full" mode
+		unsupportedDrivers := []string{"sqlserver", "oracle"}
+		for _, dr := range unsupportedDrivers {
+			if dr == driverName {
+				return false
+			}
+		}
+		return true
+	}
+	if cfg.dbmPropagationMode == tracer.DBMPropagationModeFull && !isSupported() {
+		log.Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s. See "+
+			"https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
+			driverName,
+		)
+		cfg.dbmPropagationMode = tracer.DBMPropagationModeService
+	}
 }

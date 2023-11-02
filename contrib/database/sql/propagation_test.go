@@ -288,6 +288,33 @@ func TestDBMTraceContextTagging(t *testing.T) {
 	}
 }
 
+func TestDBMPropagation_PreventFullMode(t *testing.T) {
+	tr := mocktracer.Start()
+	defer tr.Stop()
+
+	// test we prevent full mode with incompatible drivers
+	driverName := "sqlserver"
+	opts := []Option{WithDBMPropagation(tracer.DBMPropagationModeFull)}
+	// use the mock driver, as the real mssql driver does not implement Execer and Querier interfaces and always falls back
+	// to Prepare which always uses service propagation mode, so we can't test whether the DBM propagation mode gets downgraded or not.
+	Register(driverName, &internal.MockDriver{}, opts...)
+	defer unregister(driverName)
+
+	db, err := Open(driverName, "sqlserver://sa:myPassw0rd@127.0.0.1:1433?database=master", opts...)
+	require.NoError(t, err)
+	defer db.Close()
+
+	s, ctx := tracer.StartSpanFromContext(context.Background(), "test.call", tracer.WithSpanID(1))
+	_, err = db.ExecContext(ctx, "SELECT * FROM INFORMATION_SCHEMA.TABLES")
+	require.NoError(t, err)
+	s.Finish()
+
+	spans := tr.FinishedSpans()
+	for _, s := range spansOfType(spans, QueryTypeExec) {
+		assert.Contains(t, s.Tags(), keyDBMTraceInjected)
+	}
+}
+
 func spansOfType(spans []mocktracer.Span, spanType string) (filtered []mocktracer.Span) {
 	filtered = make([]mocktracer.Span, 0)
 	for _, s := range spans {
