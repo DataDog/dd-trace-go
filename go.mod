@@ -94,7 +94,6 @@ require (
 	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/jinzhu/gorm.v1 v1.9.2
-	gopkg.in/olivere/elastic.v3 v3.0.75
 	gopkg.in/olivere/elastic.v5 v5.0.84
 	gorm.io/driver/mysql v1.0.1
 	gorm.io/driver/postgres v1.4.6
