@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -60,11 +61,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
+	spanOpts := append(r.config.spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+
+	// Use the below code snippet to impact the r.config:
+	// 	cfg.spanOpts = append(cfg.spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
-		SpanOpts: r.config.spanOpts,
+		SpanOpts: spanOpts,
 		Route:    route,
 	})
 }
