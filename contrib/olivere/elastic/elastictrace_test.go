@@ -21,15 +21,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	elasticv3 "gopkg.in/olivere/elastic.v3"
-	elasticv5 "gopkg.in/olivere/elastic.v5"
+	"gopkg.in/olivere/elastic.v5"
 )
 
 const debug = false
 
 const (
-	elasticV5URL   = "http://127.0.0.1:9201"
-	elasticV3URL   = "http://127.0.0.1:9200"
+	elasticURL     = "http://127.0.0.1:9201"
 	elasticFakeURL = "http://127.0.0.1:29201"
 )
 
@@ -42,17 +40,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestClientV5(t *testing.T) {
+func TestClient(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv5.NewClient(
-		elasticv5.SetURL(elasticV5URL),
-		elasticv5.SetHttpClient(tc),
-		elasticv5.SetSniff(false),
-		elasticv5.SetHealthcheck(false),
+	client, err := elastic.NewClient(
+		elastic.SetURL(elasticURL),
+		elastic.SetHttpClient(tc),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
 	)
 	assert.NoError(err)
 
@@ -77,18 +75,18 @@ func TestClientV5(t *testing.T) {
 	checkErrTrace(assert, mt, "127.0.0.1")
 }
 
-func TestClientV5Gzip(t *testing.T) {
+func TestClientGzip(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv5.NewClient(
-		elasticv5.SetURL(elasticV5URL),
-		elasticv5.SetHttpClient(tc),
-		elasticv5.SetSniff(false),
-		elasticv5.SetHealthcheck(false),
-		elasticv5.SetGzip(true),
+	client, err := elastic.NewClient(
+		elastic.SetURL(elasticURL),
+		elastic.SetHttpClient(tc),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
+		elastic.SetGzip(true),
 	)
 	assert.NoError(err)
 
@@ -113,7 +111,7 @@ func TestClientV5Gzip(t *testing.T) {
 	checkErrTrace(assert, mt, "127.0.0.1")
 }
 
-func TestClientErrorCutoffV3(t *testing.T) {
+func TestClientErrorCutoff(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -124,41 +122,11 @@ func TestClientErrorCutoffV3(t *testing.T) {
 	bodyCutoff = 10
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv5.NewClient(
-		elasticv5.SetURL(elasticV3URL),
-		elasticv5.SetHttpClient(tc),
-		elasticv5.SetSniff(false),
-		elasticv5.SetHealthcheck(false),
-	)
-	assert.NoError(err)
-
-	_, err = client.Index().
-		Index("twitter").Id("1").
-		Type("tweet").
-		BodyString(`{"user": "test", "message": "hello"}`).
-		Do(context.TODO())
-	assert.NoError(err)
-
-	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"user": "`, span.Tag("elasticsearch.body"))
-}
-
-func TestClientErrorCutoffV5(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	oldCutoff := bodyCutoff
-	defer func() {
-		bodyCutoff = oldCutoff
-	}()
-	bodyCutoff = 10
-
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv5.NewClient(
-		elasticv5.SetURL(elasticV5URL),
-		elasticv5.SetHttpClient(tc),
-		elasticv5.SetSniff(false),
-		elasticv5.SetHealthcheck(false),
+	client, err := elastic.NewClient(
+		elastic.SetURL(elasticURL),
+		elastic.SetHttpClient(tc),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
 	)
 	assert.NoError(err)
 
@@ -170,82 +138,18 @@ func TestClientErrorCutoffV5(t *testing.T) {
 	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
 }
 
-func TestClientV3(t *testing.T) {
+func TestClientFailure(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv3.NewClient(
-		elasticv3.SetURL(elasticV3URL),
-		elasticv3.SetHttpClient(tc),
-		elasticv3.SetSniff(false),
-		elasticv3.SetHealthcheck(false),
-	)
-	assert.NoError(err)
-
-	_, err = client.Index().
-		Index("twitter").Id("1").
-		Type("tweet").
-		BodyString(`{"user": "test", "message": "hello"}`).
-		DoC(context.TODO())
-	assert.NoError(err)
-	checkPUTTrace(assert, mt, "127.0.0.1")
-
-	mt.Reset()
-	_, err = client.Get().Index("twitter").Type("tweet").
-		Id("1").DoC(context.TODO())
-	assert.NoError(err)
-	checkGETTrace(assert, mt, "127.0.0.1")
-
-	mt.Reset()
-	_, err = client.Get().Index("not-real-index").
-		Id("1").DoC(context.TODO())
-	assert.Error(err)
-	checkErrTrace(assert, mt, "127.0.0.1")
-}
-
-func TestClientV3Failure(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv3.NewClient(
+	client, err := elastic.NewClient(
 		// inexistent service, it must fail
-		elasticv3.SetURL(elasticFakeURL),
-		elasticv3.SetHttpClient(tc),
-		elasticv3.SetSniff(false),
-		elasticv3.SetHealthcheck(false),
-	)
-	assert.NoError(err)
-
-	_, err = client.Index().
-		Index("twitter").Id("1").
-		Type("tweet").
-		BodyString(`{"user": "test", "message": "hello"}`).
-		DoC(context.TODO())
-	assert.Error(err)
-
-	spans := mt.FinishedSpans()
-	checkPUTTrace(assert, mt, "127.0.0.1")
-
-	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
-}
-
-func TestClientV5Failure(t *testing.T) {
-	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
-	client, err := elasticv5.NewClient(
-		// inexistent service, it must fail
-		elasticv5.SetURL(elasticFakeURL),
-		elasticv5.SetHttpClient(tc),
-		elasticv5.SetSniff(false),
-		elasticv5.SetHealthcheck(false),
+		elastic.SetURL(elasticFakeURL),
+		elastic.SetHttpClient(tc),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
 	)
 	assert.NoError(err)
 
@@ -342,11 +246,11 @@ func TestResourceNamerSettings(t *testing.T) {
 		defer mt.Stop()
 
 		tc := NewHTTPClient()
-		client, err := elasticv5.NewClient(
-			elasticv5.SetURL(elasticV3URL),
-			elasticv5.SetHttpClient(tc),
-			elasticv5.SetSniff(false),
-			elasticv5.SetHealthcheck(false),
+		client, err := elastic.NewClient(
+			elastic.SetURL(elasticURL),
+			elastic.SetHttpClient(tc),
+			elastic.SetSniff(false),
+			elastic.SetHealthcheck(false),
 		)
 		assert.NoError(t, err)
 
@@ -364,11 +268,11 @@ func TestResourceNamerSettings(t *testing.T) {
 		defer mt.Stop()
 
 		tc := NewHTTPClient(WithResourceNamer(staticNamer))
-		client, err := elasticv5.NewClient(
-			elasticv5.SetURL(elasticV3URL),
-			elasticv5.SetHttpClient(tc),
-			elasticv5.SetSniff(false),
-			elasticv5.SetHealthcheck(false),
+		client, err := elastic.NewClient(
+			elastic.SetURL(elasticURL),
+			elastic.SetHttpClient(tc),
+			elastic.SetSniff(false),
+			elastic.SetHealthcheck(false),
 		)
 		assert.NoError(t, err)
 
@@ -459,11 +363,11 @@ func TestPeek(t *testing.T) {
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 		tc := NewHTTPClient(opts...)
-		client, err := elasticv5.NewClient(
-			elasticv5.SetURL(elasticV5URL),
-			elasticv5.SetHttpClient(tc),
-			elasticv5.SetSniff(false),
-			elasticv5.SetHealthcheck(false),
+		client, err := elastic.NewClient(
+			elastic.SetURL(elasticURL),
+			elastic.SetHttpClient(tc),
+			elastic.SetSniff(false),
+			elastic.SetHealthcheck(false),
 		)
 		assert.NoError(t, err)
 
@@ -534,11 +438,11 @@ func TestNamingSchema(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		tc := NewHTTPClient(opts...)
-		client, err := elasticv5.NewClient(
-			elasticv5.SetURL(elasticV5URL),
-			elasticv5.SetHttpClient(tc),
-			elasticv5.SetSniff(false),
-			elasticv5.SetHealthcheck(false),
+		client, err := elastic.NewClient(
+			elastic.SetURL(elasticURL),
+			elastic.SetHttpClient(tc),
+			elastic.SetSniff(false),
+			elastic.SetHealthcheck(false),
 		)
 		require.NoError(t, err)
 
