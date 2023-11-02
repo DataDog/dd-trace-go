@@ -18,6 +18,11 @@ const (
 	DroppedP0Traces
 	DroppedP0Spans
 	PartialTraces
+
+	// Read-only. We duplicate some of the stats so that we can send them to the
+	// agent in headers as well as counting them with statsd.
+	AgentDroppedP0Traces
+	AgentDroppedP0Spans
 )
 
 // These integers track metrics about spans and traces as they are started,
@@ -30,6 +35,9 @@ var droppedP0Traces, droppedP0Spans uint32
 // partialTrace the number of partially dropped traces.
 var partialTraces uint32
 
+// Copies of the stats to be sent to the agent.
+var agentDroppedP0Traces, agentDroppedP0Spans uint32
+
 func Signal(e Event, count uint32) {
 	switch e {
 	case SpanStarted:
@@ -40,8 +48,10 @@ func Signal(e Event, count uint32) {
 		atomic.AddUint32(&tracesDropped, count)
 	case DroppedP0Traces:
 		atomic.AddUint32(&droppedP0Traces, count)
+		atomic.AddUint32(&agentDroppedP0Traces, count)
 	case DroppedP0Spans:
 		atomic.AddUint32(&droppedP0Spans, count)
+		atomic.AddUint32(&agentDroppedP0Spans, count)
 	case PartialTraces:
 		atomic.AddUint32(&partialTraces, count)
 	}
@@ -61,6 +71,10 @@ func Count(e Event) uint32 {
 		return atomic.SwapUint32(&droppedP0Spans, 0)
 	case PartialTraces:
 		return atomic.SwapUint32(&partialTraces, 0)
+	case AgentDroppedP0Traces:
+		return atomic.SwapUint32(&agentDroppedP0Traces, 0)
+	case AgentDroppedP0Spans:
+		return atomic.SwapUint32(&agentDroppedP0Spans, 0)
 	}
 	return 0
 }
@@ -72,4 +86,6 @@ func Reset() {
 	atomic.StoreUint32(&droppedP0Traces, 0)
 	atomic.StoreUint32(&droppedP0Spans, 0)
 	atomic.StoreUint32(&partialTraces, 0)
+	atomic.StoreUint32(&agentDroppedP0Traces, 0)
+	atomic.StoreUint32(&agentDroppedP0Spans, 0)
 }
