@@ -2100,7 +2100,7 @@ func BenchmarkStartSpan(b *testing.B) {
 
 // startTestTracer returns a Tracer with a DummyTransport
 func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func(), err error) {
-  tracerstats.Reset()
+	tracerstats.Reset()
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
