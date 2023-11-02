@@ -66,7 +66,7 @@ type (
 
 var (
 	queryStartArgsType = reflect.TypeOf((*QueryArguments)(nil)).Elem()
-	queryFinishResType = reflect.TypeOf((*Result)(nil)).Elem()
+	queryFinishResType = reflect.TypeOf((*QueryResult)(nil)).Elem()
 )
 
 func (OnQueryStart) ListenedType() reflect.Type { return queryStartArgsType }
