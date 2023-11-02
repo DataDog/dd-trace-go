@@ -92,9 +92,9 @@ type datadogExtension struct{ config }
 type contextKey struct{}
 type contextData struct {
 	serverSpan    tracer.Span
+	variables     map[string]any
 	query         string
 	operationName string
-	variables     map[string]any
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
