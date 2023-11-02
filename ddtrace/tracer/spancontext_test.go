@@ -39,7 +39,8 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	assert.Nil(t, err)
 	defer stop()
 	parent := newBasicSpan("test1")                  // 1st span in trace
 	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
@@ -66,7 +67,8 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 func testAsyncSpanRace(t *testing.T) {
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	for i := 0; i < 100; i++ {
@@ -135,7 +137,8 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	_, transport, flush, stop := startTestTracer(t)
+	_, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	traceID := random.Uint64()
@@ -163,7 +166,8 @@ func TestPartialFlush(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		telemetryClient.ProductStart(telemetry.NamespaceTracers, nil)
 		defer telemetry.MockGlobalClient(telemetryClient)()
-		tracer, transport, flush, stop := startTestTracer(t)
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root")
@@ -209,7 +213,8 @@ func TestPartialFlush(t *testing.T) {
 
 	// This test covers an issue where partial flushing + a rate sampler would panic
 	t.Run("WithRateSamplerNoPanic", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t, WithSampler(NewRateSampler(0.000001)))
+		tracer, _, _, stop, err := startTestTracer(t, WithSampler(NewRateSampler(0.000001)))
+		assert.Nil(t, err)
 		defer stop()
 
 		root := tracer.StartSpan("root")
@@ -231,7 +236,8 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	assert.Nil(err)
 	defer stop()
 
 	buffer := newTrace()
@@ -257,7 +263,8 @@ func TestSpanTracePushSeveral(t *testing.T) {
 
 	assert := assert.New(t)
 
-	trc, transport, flush, stop := startTestTracer(t)
+	trc, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
@@ -296,7 +303,8 @@ func TestSpanTracePushSeveral(t *testing.T) {
 // priority metric set by inheriting it from a child.
 func TestSpanFinishPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer, transport, flush, stop := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	root := tracer.StartSpan(
@@ -516,7 +524,8 @@ func TestSpanPeerService(t *testing.T) {
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			tracer, transport, flush, stop := startTestTracer(t)
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
 			defer stop()
 
 			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
@@ -548,7 +557,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		prevSvc := globalconfig.ServiceName()
 		t.Cleanup(func() { globalconfig.SetServiceName(prevSvc) })
 
-		tracer, transport, flush, stop := startTestTracer(t, tracerOpts...)
+		tracer, transport, flush, stop, err := startTestTracer(t, tracerOpts...)
+		assert.Nil(t, err)
 		t.Cleanup(stop)
 
 		p := tracer.StartSpan("parent-span", spanOpts...)
@@ -667,7 +677,8 @@ func TestNewSpanContext(t *testing.T) {
 
 	t.Run("root", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleExtract, "datadog")
-		_, _, _, stop := startTestTracer(t)
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
 		defer stop()
 		assert := assert.New(t)
 		ctx, err := NewPropagator(nil).Extract(TextMapCarrier(map[string]string{
@@ -745,7 +756,8 @@ func TestSpanContextPushFull(t *testing.T) {
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	_, _, _, stop := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true))
+	assert.Nil(t, err)
 	defer stop()
 
 	span1 := newBasicSpan("span1")

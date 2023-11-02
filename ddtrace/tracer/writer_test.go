@@ -98,7 +98,8 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg := newConfig()
+		cfg, err := newConfig()
+		assert.NoError(err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -124,7 +125,8 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg := newConfig()
+		cfg, err := newConfig()
+		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -145,7 +147,8 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg := newConfig()
+		cfg, err := newConfig()
+		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -244,7 +247,8 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		cfg := newConfig(withStatsdClient(&tg))
+		cfg, err := newConfig(withStatsdClient(&tg))
+		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -264,7 +268,8 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg testStatsdClient
-		cfg := newConfig(withStatsdClient(&tg))
+		cfg, err := newConfig(withStatsdClient(&tg))
+		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -295,7 +300,8 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg := newConfig()
+		cfg, err := newConfig()
+		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
@@ -389,10 +395,11 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c := newConfig(func(c *config) {
+			c, err := newConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 			})
+			assert.Nil(err)
 			var statsd testStatsdClient
 
 			h := newAgentTraceWriter(c, nil, &statsd)

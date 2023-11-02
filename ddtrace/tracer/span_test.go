@@ -79,8 +79,9 @@ func TestSpanFinish(t *testing.T) {
 
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// the finish should set finished and the duration
@@ -94,7 +95,8 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert := assert.New(t)
 	wait := time.Millisecond * 2
 
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(err)
 	defer stop()
 
 	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
@@ -368,16 +370,18 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		{ext.ManualDrop, false, 1},
 	} {
 		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
+			tracer, err := newTracer()
 			defer tracer.Stop()
+			assert.NoError(t, err)
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
+			tracer, err := newTracer()
 			defer tracer.Stop()
+			assert.NoError(t, err)
 			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
@@ -402,8 +406,9 @@ func TestSpanSetDatadogTags(t *testing.T) {
 
 func TestSpanStart(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// a new span sets the Start after the initialization
@@ -412,7 +417,8 @@ func TestSpanStart(t *testing.T) {
 
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -472,8 +478,9 @@ func TestSpanSetMetric(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			tracer := newTracer(withTransport(newDefaultTransport()))
+			tracer, err := newTracer(withTransport(newDefaultTransport()))
 			defer tracer.Stop()
+			assert.NoError(err)
 			span := tracer.newRootSpan("http.request", "mux.router", "/")
 			tt(assert, span)
 		})
@@ -481,8 +488,9 @@ func TestSpanSetMetric(t *testing.T) {
 }
 
 func TestSpanProfilingTags(t *testing.T) {
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(t, err)
 
 	for _, profilerEnabled := range []bool{false, true} {
 		name := fmt.Sprintf("profilerEnabled=%t", profilerEnabled)
@@ -506,13 +514,14 @@ func TestSpanProfilingTags(t *testing.T) {
 func TestSpanError(t *testing.T) {
 	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
-	err := errors.New("Something wrong")
+	err = errors.New("Something wrong")
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("Something wrong", span.Meta[ext.ErrorMsg])
@@ -537,12 +546,13 @@ func TestSpanError(t *testing.T) {
 
 func TestSpanError_Typed(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
 	// check the error is set in the default meta
-	err := &boomError{}
+	err = &boomError{}
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(1), span.Error)
 	assert.Equal("boom", span.Meta[ext.ErrorMsg])
@@ -552,7 +562,8 @@ func TestSpanError_Typed(t *testing.T) {
 
 func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	assert.NoError(err)
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -585,7 +596,8 @@ func TestUniqueTagKeys(t *testing.T) {
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	done := make(chan struct{})
@@ -616,8 +628,9 @@ func TestSpanModifyWhileFlushing(t *testing.T) {
 
 func TestSpanSamplingPriority(t *testing.T) {
 	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	defer tracer.Stop()
+	assert.NoError(err)
 
 	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
 	_, ok := span.Metrics[keySamplingPriority]
@@ -651,7 +664,8 @@ func TestSpanLog(t *testing.T) {
 	// this test is executed multiple times to ensure we clean up global state correctly
 	noServiceTest := func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -661,7 +675,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -670,7 +685,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("env", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -679,7 +695,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("version", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -688,7 +705,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("full", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -700,7 +718,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("subservice", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", ServiceName("subservice name")).(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -715,7 +734,8 @@ func TestSpanLog(t *testing.T) {
 		os.Setenv("DD_ENV", "testenv")
 		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0"`, span.TraceID, span.SpanID)
@@ -724,7 +744,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("badformat", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		expect := fmt.Sprintf(`%%!b(ddtrace.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%d" dd.span_id="%d" dd.parent_id="0")`, span.TraceID, span.SpanID)
@@ -733,7 +754,8 @@ func TestSpanLog(t *testing.T) {
 
 	t.Run("notracer/options", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithServiceVersion("1.2.3"), WithEnv("testenv"))
+		assert.Nil(err)
 		span := tracer.StartSpan("test.request").(*span)
 		stop()
 		// no service, env, or version after the tracer is stopped
@@ -749,7 +771,8 @@ func TestSpanLog(t *testing.T) {
 		os.Setenv("DD_ENV", "testenv")
 		defer os.Unsetenv("DD_ENV")
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
 		span := tracer.StartSpan("test.request").(*span)
 		stop()
 		// service is not included: it is cleared when we stop the tracer
@@ -764,7 +787,8 @@ func TestSpanLog(t *testing.T) {
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		// DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED is false by default
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		span.TraceID = 12345678
@@ -780,7 +804,8 @@ func TestSpanLog(t *testing.T) {
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is false by default
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		span.TraceID = 12345678
@@ -796,7 +821,8 @@ func TestSpanLog(t *testing.T) {
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request").(*span)
 		span.SpanID = 87654321
@@ -812,7 +838,8 @@ func TestSpanLog(t *testing.T) {
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
 		span.context.traceID.SetUpper(1)
@@ -827,7 +854,8 @@ func TestSpanLog(t *testing.T) {
 		// are empty, so the dd.trace_id should be printed as raw digits (not hex).
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
-		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
+		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321)).(*span)
 		span.Finish()
@@ -839,7 +867,8 @@ func TestSpanLog(t *testing.T) {
 }
 
 func TestRootSpanAccessor(t *testing.T) {
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	t.Run("nil-span", func(t *testing.T) {
@@ -900,7 +929,8 @@ func TestRootSpanAccessor(t *testing.T) {
 
 func TestSpanStartAndFinishLogs(t *testing.T) {
 	tp := new(log.RecordLogger)
-	tracer, _, _, stop := startTestTracer(t, WithLogger(tp), WithDebugMode(true))
+	tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugMode(true))
+	assert.Nil(t, err)
 	defer stop()
 
 	span := tracer.StartSpan("op")
@@ -923,14 +953,15 @@ func TestSpanStartAndFinishLogs(t *testing.T) {
 }
 
 func TestSetUserPropagatedUserID(t *testing.T) {
-	tracer, _, _, stop := startTestTracer(t)
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	// Service 1, create span with propagated user
 	s := tracer.StartSpan("op")
 	s.(*span).SetUser("userino", WithPropagation())
 	m := make(map[string]string)
-	err := tracer.Inject(s.Context(), TextMapCarrier(m))
+	err = tracer.Inject(s.Context(), TextMapCarrier(m))
 	require.NoError(t, err)
 
 	// Service 2, extract user
