@@ -63,9 +63,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := req.Method + " " + route
 	spanOpts := append(r.config.spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 
-	// Use the below code snippet to impact the r.config:
-	// 	cfg.spanOpts = append(cfg.spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
-
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
