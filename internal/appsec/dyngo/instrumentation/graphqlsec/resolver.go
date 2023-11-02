@@ -13,17 +13,17 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
-type Operation struct {
+type ResolveOperation struct {
 	dyngo.Operation
 	instrumentation.TagsHolder
 	instrumentation.SecurityEventsHolder
 }
 
-func StartResolverOperation(ctx context.Context, listeners ...dyngo.DataListener) (context.Context, *Operation) {
+func StartResolverOperation(ctx context.Context, listeners ...dyngo.DataListener) (context.Context, *ResolveOperation) {
 	// The parent will typically be the Field operation that previously fired...
 	parent, _ := ctx.Value(instrumentation.ContextKey{}).(dyngo.Operation)
 
-	op := &Operation{
+	op := &ResolveOperation{
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: instrumentation.NewTagsHolder(),
 	}
@@ -38,12 +38,9 @@ func StartResolverOperation(ctx context.Context, listeners ...dyngo.DataListener
 	return newCtx, op
 }
 
-type OperationResult struct {
-	Data  any
-	Error error
-}
-
-func (o *Operation) Finish(res OperationResult) []json.RawMessage {
-	dyngo.FinishOperation(o, res)
+func (o *ResolveOperation) Finish(res Result) []json.RawMessage {
+	dyngo.FinishOperation(o, ResolveResult(res))
 	return o.Events()
 }
+
+type ResolveResult Result

@@ -419,29 +419,23 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 			allResolvers map[string][]map[string]any
 		)
 
-		event, _ := runWAF(wafCtx, map[string]any{graphQLServerAllResolversAddr: nil}, timeout)
-		if len(event) > 0 {
-			log.Debug("appsec: GraphQL query-level attack detected by the GraphQL")
-			mu.Lock()
-			defer mu.Unlock()
-			events = append(events, event)
-		}
-
 		query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
-			event, _ := runWAF(
-				wafCtx,
-				map[string]any{
-					graphQLServerResolverAddr: map[string]any{
-						args.FieldName: args.Arguments,
+			if _, found := addresses[graphQLServerResolverAddr]; found {
+				event, _ := runWAF(
+					wafCtx,
+					map[string]any{
+						graphQLServerResolverAddr: map[string]any{
+							args.FieldName: args.Arguments,
+						},
 					},
-				},
-				timeout,
-			)
-			if len(event) > 0 {
-				log.Debug("appsec: GraphQL resolver-level attack detected by the WAF")
-				mu.Lock()
-				defer mu.Unlock()
-				events = append(events, event)
+					timeout,
+				)
+				if len(event) > 0 {
+					log.Debug("appsec: GraphQL resolver-level attack detected by the WAF")
+					mu.Lock()
+					defer mu.Unlock()
+					events = append(events, event)
+				}
 			}
 
 			if args.FieldName != "" {
@@ -460,8 +454,8 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 		query.On(graphqlsec.OnQueryFinish(func(query *graphqlsec.Query, res graphqlsec.QueryResult) {
 			defer wafCtx.Close()
 
-			if len(allResolvers) > 0 {
-				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late.
+			if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
+				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
 				event, _ := runWAF(wafCtx, map[string]any{graphQLServerAllResolversAddr: allResolvers}, timeout)
 				if len(event) > 0 {
 					log.Debug("appsec: GraphQL query-level attack detected by the WAF")

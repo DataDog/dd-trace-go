@@ -22,24 +22,16 @@ type Field struct {
 
 // FieldArguments describes arguments passed to a GraphQL field operation.
 type FieldArguments struct {
-	// Label is the user-specified label for the field
+	// Arguments is the arguments provided to the field resolver
+	Arguments map[string]any
+	// Label is the user-specified label for the field. Blank if unavailable.
 	Label string
 	// TypeName is the name of the field's type
 	TypeName string
 	// FieldName is the name of the field
 	FieldName string
-	// Trivial determines whether the resolution is trivial or not
+	// Trivial determines whether the resolution is trivial or not. Leave as false if undetermined.
 	Trivial bool
-	// Arguments is the arguments provided to the field resolver
-	Arguments map[string]any
-}
-
-// FieldResult describes the result of a GraphQL field execution.
-type FieldResult struct {
-	// Data is the data returned from processing the field.
-	Data any
-	// Error is the error returned by processing the field, if any.
-	Error error
 }
 
 // StartField starts a new GraphQL Field operation, along with the given arguments, and emits a
@@ -63,14 +55,16 @@ func StartField(ctx context.Context, args FieldArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Field) Finish(res FieldResult) []json.RawMessage {
-	dyngo.FinishOperation(q, res)
+func (q *Field) Finish(res Result) []json.RawMessage {
+	dyngo.FinishOperation(q, FieldResult(res))
 	return q.Events()
 }
 
 type (
 	OnFieldStart  func(*Field, FieldArguments)
 	OnFieldFinish func(*Field, FieldResult)
+
+	FieldResult Result
 )
 
 var (

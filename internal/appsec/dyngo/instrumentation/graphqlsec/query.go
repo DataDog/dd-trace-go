@@ -26,20 +26,12 @@ type Query struct {
 
 // QueryArguments describes arguments passed to a GraphQL query operation.
 type QueryArguments struct {
+	// Variables is the user-provided variables object for the query.
+	Variables map[string]any
 	// Query is the query that is being executed.
 	Query string
 	// OperationName is the user-provided operation name for the query.
 	OperationName string
-	// Variables is the user-provided variables object for the query.
-	Variables map[string]any
-}
-
-// QueryResult describes the result of a GraphQL query execution.
-type QueryResult struct {
-	// Data is the data returned from processing the query.
-	Data any
-	// Error is the error returned by processing the query, if any.
-	Error error
 }
 
 // StartQuery starts a new GraphQL query operation, along with the given arguments, and emits a
@@ -60,19 +52,21 @@ func StartQuery(ctx context.Context, args QueryArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Query) Finish(res QueryResult) []json.RawMessage {
-	dyngo.FinishOperation(q, res)
+func (q *Query) Finish(res Result) []json.RawMessage {
+	dyngo.FinishOperation(q, QueryResult(res))
 	return q.Events()
 }
 
 type (
 	OnQueryStart  func(*Query, QueryArguments)
 	OnQueryFinish func(*Query, QueryResult)
+
+	QueryResult Result
 )
 
 var (
 	queryStartArgsType = reflect.TypeOf((*QueryArguments)(nil)).Elem()
-	queryFinishResType = reflect.TypeOf((*QueryResult)(nil)).Elem()
+	queryFinishResType = reflect.TypeOf((*Result)(nil)).Elem()
 )
 
 func (OnQueryStart) ListenedType() reflect.Type { return queryStartArgsType }

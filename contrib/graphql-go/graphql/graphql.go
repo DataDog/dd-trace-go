@@ -65,15 +65,12 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 				blocked = a.Blocking()
 			}))
 			defer func() {
-				events := op.Finish(graphqlsec.OperationResult{Data: data, Error: err})
+				span, _ := tracer.SpanFromContext(p.Context)
+				instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: data, Error: err}))
 				if blocked {
 					op.AddTag(instrumentation.BlockedRequestTag, true)
 				}
-				span, _ := tracer.SpanFromContext(p.Context)
 				instrumentation.SetTags(span, op.Tags())
-				if len(events) > 0 {
-					// TODO(romain.marcadier): set security event tags
-				}
 			}()
 			p.Context = ctx
 			data, err = resolver(p)
@@ -184,12 +181,10 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
-		defer op.Finish(graphqlsec.QueryResult{
-			Data:  result.Data,
-			Error: err,
-		})
-
 		span.Finish(tracer.WithError(err))
+
+		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))
+		instrumentation.SetTags(span, op.Tags())
 	}
 }
 
@@ -199,7 +194,6 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		FieldName: info.FieldName,
 		TypeName:  info.ParentType.Name(),
 		Arguments: info.VariableValues,
-		// TODO(romain.marcadier): More fields?
 	})
 
 	var operationName string
@@ -239,12 +233,9 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.resolve", opts...)
 
 	return ctx, func(result any, err error) {
-		defer op.Finish(graphqlsec.FieldResult{
-			Error: err,
-			Data:  result,
-		})
-
 		span.Finish(tracer.WithError(err))
+		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
+		instrumentation.SetTags(span, op.Tags())
 	}
 }
 

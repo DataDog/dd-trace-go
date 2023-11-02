@@ -102,7 +102,13 @@ func SetAppSecEnabledTags(span TagSetter) {
 }
 
 // SetEventSpanTags sets the security event span tags into the service entry span.
+// This is a no-op if events is empty.
 func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
+	if len(events) == 0 {
+		// No events, so we skip adding event tags...
+		return nil
+	}
+
 	// Set the appsec event span tag
 	val, err := makeEventTagValue(events)
 	if err != nil {

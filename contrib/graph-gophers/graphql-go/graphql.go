@@ -19,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -81,7 +82,9 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
 		span.Finish(tracer.WithError(err))
-		query.Finish(graphqlsec.QueryResult{Error: err})
+
+		instrumentation.SetEventSpanTags(span, query.Finish(graphqlsec.Result{Error: err}))
+		instrumentation.SetTags(span, query.Tags())
 	}
 }
 
@@ -97,7 +100,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 
 	if t.cfg.omitTrivial && trivial {
 		return ctx, func(queryError *errors.QueryError) {
-			field.Finish(graphqlsec.FieldResult{Error: queryError})
+			field.Finish(graphqlsec.Result{Error: queryError})
 		}
 	}
 	opts := []ddtrace.StartSpanOption{
@@ -119,7 +122,8 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		} else {
 			span.Finish()
 		}
-		field.Finish(graphqlsec.FieldResult{Error: err})
+		instrumentation.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
+		instrumentation.SetTags(span, field.Tags())
 	}
 }
 
