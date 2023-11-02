@@ -15,10 +15,11 @@ import (
 const defaultServiceName = "graphql.server"
 
 type config struct {
-	serviceName   string
-	querySpanName string
-	analyticsRate float64
-	omitTrivial   bool
+	serviceName    string
+	querySpanName  string
+	analyticsRate  float64
+	omitTrivial    bool
+	traceVariables bool
 }
 
 // Option represents an option that can be used customize the Tracer.
@@ -69,5 +70,13 @@ func WithAnalyticsRate(rate float64) Option {
 func WithOmitTrivial() Option {
 	return func(cfg *config) {
 		cfg.omitTrivial = true
+	}
+}
+
+// WithTraceVariables enables tracing of variables passed into GraphQL queries
+// and resolvers.
+func WithTraceVariables() Option {
+	return func(cfg *config) {
+		cfg.traceVariables = true
 	}
 }

@@ -38,10 +38,16 @@ func init() {
 }
 
 const (
+	spanServer              = "graphql.server"
+	spanParse               = "graphql.parse"
+	spanValidate            = "graphql.validate"
+	spanExecute             = "graphql.execute"
+	spanResolve             = "graphql.resolve"
 	tagGraphqlField         = "graphql.field"
-	tagGraphqlSource        = "graphql.source"
-	tagGraphqlOperationType = "graphql.operation.type"
 	tagGraphqlOperationName = "graphql.operation.name"
+	tagGraphqlOperationType = "graphql.operation.type"
+	tagGraphqlSource        = "graphql.source"
+	tagGraphqlVariables     = "graphql.variables"
 )
 
 func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, error) {
@@ -85,6 +91,7 @@ type datadogExtension struct{ config }
 
 type contextKey struct{}
 type contextData struct {
+	serverSpan    tracer.Span
 	query         string
 	operationName string
 	variables     map[string]any
@@ -95,10 +102,24 @@ var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
 // Init is used to help you initialize the extension
 func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) context.Context {
 	if ctx == nil {
-		// In case we didn't get a user context, use a stand-in context.TODO
-		ctx = context.TODO()
+		// No init context is available, attempt to fall back to a suitable alternative...
+		if params.Context != nil {
+			ctx = params.Context
+		} else {
+			// In case we didn't get a user context, use a stand-in context.TODO
+			ctx = context.TODO()
+		}
 	}
-	return context.WithValue(ctx, contextKey{}, contextData{query: params.RequestString, operationName: params.OperationName, variables: params.VariableValues})
+
+	span, ctx := tracer.StartSpanFromContext(ctx, spanServer,
+		tracer.ServiceName(i.config.serviceName),
+		spanTagKind,
+		spanTagType,
+		tracer.Tag(ext.Component, componentName),
+		tracer.Measured(),
+	)
+
+	return context.WithValue(ctx, contextKey{}, contextData{query: params.RequestString, operationName: params.OperationName, variables: params.VariableValues, serverSpan: span})
 }
 
 // Name returns the name of the extension (make sure it's custom)
@@ -123,7 +144,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.parse", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, spanParse, opts...)
 
 	return ctx, func(err error) {
 		span.Finish(tracer.WithError(err))
@@ -147,7 +168,7 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.validate", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, spanValidate, opts...)
 
 	return ctx, func(errs []gqlerrors.FormattedError) {
 		span.Finish(tracer.WithError(toError(errs)))
@@ -171,17 +192,25 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
+	if i.config.traceVariables {
+		for key, value := range data.variables {
+			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+		}
+	}
 	if data.operationName != "" {
 		opts = append(opts, tracer.Tag(tagGraphqlOperationName, data.operationName))
 	}
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.execute", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
 
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
-		span.Finish(tracer.WithError(err))
+		defer func() {
+			data.serverSpan.Finish(tracer.WithError(err))
+			span.Finish(tracer.WithError(err))
+		}()
 
 		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))
 		instrumentation.SetTags(span, op.Tags())
@@ -220,8 +249,10 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", info.ParentType.Name(), info.FieldName)),
 		tracer.Measured(),
 	}
-	for key, value := range info.VariableValues {
-		opts = append(opts, tracer.Tag(fmt.Sprintf("graphql.variables.%s", key), value))
+	if i.config.traceVariables {
+		for key, value := range info.VariableValues {
+			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+		}
 	}
 	if operationName != "" {
 		opts = append(opts, tracer.Tag(tagGraphqlOperationName, operationName))
@@ -230,10 +261,10 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.resolve", opts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
 
 	return ctx, func(result any, err error) {
-		span.Finish(tracer.WithError(err))
+		defer span.Finish(tracer.WithError(err))
 		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
 		instrumentation.SetTags(span, op.Tags())
 	}

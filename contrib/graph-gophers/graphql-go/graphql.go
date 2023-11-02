@@ -41,6 +41,7 @@ const (
 	tagGraphqlQuery         = "graphql.query"
 	tagGraphqlType          = "graphql.type"
 	tagGraphqlOperationName = "graphql.operation.name"
+	tagGraphqlVariables     = "graphql.variables"
 )
 
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
@@ -66,6 +67,11 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
+	if t.cfg.traceVariables {
+		for key, value := range variables {
+			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+		}
+	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
@@ -81,7 +87,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		default:
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
-		span.Finish(tracer.WithError(err))
+		defer span.Finish(tracer.WithError(err))
 
 		instrumentation.SetEventSpanTags(span, query.Finish(graphqlsec.Result{Error: err}))
 		instrumentation.SetTags(span, query.Tags())
@@ -110,20 +116,26 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
+	if t.cfg.traceVariables {
+		for key, value := range arguments {
+			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+		}
+	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field", opts...)
 
 	return ctx, func(err *errors.QueryError) {
+		instrumentation.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
+		instrumentation.SetTags(span, field.Tags())
+
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {
 			span.Finish(tracer.WithError(err))
 		} else {
 			span.Finish()
 		}
-		instrumentation.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
-		instrumentation.SetTags(span, field.Tags())
 	}
 }
 

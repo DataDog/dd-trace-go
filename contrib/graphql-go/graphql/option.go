@@ -15,8 +15,9 @@ import (
 const defaultServiceName = "graphql.server"
 
 type config struct {
-	serviceName   string
-	analyticsRate float64
+	serviceName    string
+	analyticsRate  float64
+	traceVariables bool
 }
 
 type Option func(*config)
@@ -27,13 +28,6 @@ func defaults(cfg *config) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
-	}
-}
-
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
 	}
 }
 
@@ -57,5 +51,20 @@ func WithAnalyticsRate(rate float64) Option {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithServiceName sets the given service name for the client.
+func WithServiceName(name string) Option {
+	return func(cfg *config) {
+		cfg.serviceName = name
+	}
+}
+
+// WithTraceVariables enables tracing of variables passed into GraphQL queries
+// and resolvers.
+func WithTraceVariables() Option {
+	return func(cfg *config) {
+		cfg.traceVariables = true
 	}
 }

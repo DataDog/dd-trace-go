@@ -134,7 +134,7 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 
 	// Check there are supported addresses in the rule
 	httpAddresses, grpcAddresses, graphQLAddresses, notSupported := supportedAddresses(ruleAddresses)
-	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 {
+	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 && len(graphQLAddresses) == 0 {
 		return nil, fmt.Errorf("the addresses present in the rules are not supported: %v", notSupported)
 	}
 
@@ -414,9 +414,8 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 		}
 
 		var (
-			events       []json.RawMessage
-			mu           sync.Mutex
-			allResolvers map[string][]map[string]any
+			allResolvers   map[string][]map[string]any
+			allResolversMu sync.Mutex
 		)
 
 		query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
@@ -431,17 +430,14 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 					timeout,
 				)
 				if len(event) > 0 {
-					log.Debug("appsec: GraphQL resolver-level attack detected by the WAF")
-					mu.Lock()
-					defer mu.Unlock()
-					events = append(events, event)
+					addSecurityEvents(field, limiter, event)
 				}
 			}
 
 			if args.FieldName != "" {
 				// Register in all resolvers
-				mu.Lock()
-				defer mu.Unlock()
+				allResolversMu.Lock()
+				defer allResolversMu.Unlock()
 				if allResolvers == nil {
 					allResolvers = make(map[string][]map[string]any)
 				}
@@ -458,10 +454,7 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
 				event, _ := runWAF(wafCtx, map[string]any{graphQLServerAllResolversAddr: allResolvers}, timeout)
 				if len(event) > 0 {
-					log.Debug("appsec: GraphQL query-level attack detected by the WAF")
-					mu.Lock()
-					defer mu.Unlock()
-					events = append(events, event)
+					addSecurityEvents(query, limiter, event)
 				}
 			}
 
@@ -472,8 +465,6 @@ func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}
 
 			addRulesMonitoringTags(query, rInfo)
 			query.AddTag(ext.ManualKeep, samplernames.AppSec)
-
-			addSecurityEvents(query, limiter, events...)
 		}))
 	})
 }
