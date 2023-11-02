@@ -67,7 +67,7 @@ func Test(t *testing.T) {
 		// The order of the spans isn't deterministic.
 		helloSpanIndex := 0
 		helloNonTrivialSpanIndex := 1
-		if spans[helloSpanIndex].Tag(tagGraphqlField) == "helloNonTrivial" {
+		if spans[0].Tag(tagGraphqlField) == "helloNonTrivial" {
 			helloNonTrivialSpanIndex = 0
 			helloSpanIndex = 1
 		}
@@ -76,9 +76,9 @@ func Test(t *testing.T) {
 			assert.Equal(t, "helloNonTrivial", s.Tag(tagGraphqlField))
 			assert.Nil(t, s.Tag(ext.Error))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-			assert.Equal(t, "Query", s.Tag(tagGraphqlOperationType))
-			assert.Equal(t, "graphql.resolve", s.OperationName())
-			assert.Equal(t, "graphql.resolve", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
+			assert.Equal(t, "graphql.field", s.OperationName())
+			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 		{
@@ -86,19 +86,19 @@ func Test(t *testing.T) {
 			assert.Equal(t, "hello", s.Tag(tagGraphqlField))
 			assert.Nil(t, s.Tag(ext.Error))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-			assert.Equal(t, "Query", s.Tag(tagGraphqlOperationType))
-			assert.Equal(t, "graphql.resolve", s.OperationName())
-			assert.Equal(t, "graphql.resolve", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
+			assert.Equal(t, "graphql.field", s.OperationName())
+			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 		{
 			s := spans[2]
-			assert.Equal(t, "query TestQuery() { hello, helloNonTrivial }", s.Tag(tagGraphqlSource))
+			assert.Equal(t, "query TestQuery() { hello, helloNonTrivial }", s.Tag(tagGraphqlQuery))
 			assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
 			assert.Nil(t, s.Tag(ext.Error))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-			assert.Equal(t, "graphql.execute", s.OperationName())
-			assert.Equal(t, "graphql.execute", s.Tag(ext.ResourceName))
+			assert.Equal(t, "graphql.request", s.OperationName())
+			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 	})
@@ -113,19 +113,22 @@ func Test(t *testing.T) {
 		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID())
 		{
 			s := spans[0]
+			assert.Equal(t, "helloNonTrivial", s.Tag(tagGraphqlField))
 			assert.Nil(t, s.Tag(ext.Error))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-			assert.Equal(t, "graphql.resolve", s.OperationName())
-			assert.Equal(t, "graphql.resolve", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Query", s.Tag(tagGraphqlType))
+			assert.Equal(t, "graphql.field", s.OperationName())
+			assert.Equal(t, "graphql.field", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 		{
 			s := spans[1]
+			assert.Equal(t, "query TestQuery() { hello, helloNonTrivial }", s.Tag(tagGraphqlQuery))
 			assert.Equal(t, "TestQuery", s.Tag(tagGraphqlOperationName))
 			assert.Nil(t, s.Tag(ext.Error))
 			assert.Equal(t, "test-graphql-service", s.Tag(ext.ServiceName))
-			assert.Equal(t, "graphql.execute", s.OperationName())
-			assert.Equal(t, "graphql.execute", s.Tag(ext.ResourceName))
+			assert.Equal(t, "graphql.request", s.OperationName())
+			assert.Equal(t, "graphql.request", s.Tag(ext.ResourceName))
 			assert.Equal(t, "graph-gophers/graphql-go", s.Tag(ext.Component))
 		}
 	})
@@ -143,9 +146,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
 
-		for _, span := range spans {
-			assert.Equal(t, rate, span.Tag(ext.EventSampleRate))
-		}
+		assert.Equal(t, rate, spans[0].Tag(ext.EventSampleRate))
+		assert.Equal(t, rate, spans[1].Tag(ext.EventSampleRate))
 	}
 	t.Run("defaults", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -207,13 +209,13 @@ func TestNamingSchema(t *testing.T) {
 	})
 	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 2)
-		assert.Equal(t, "graphql.resolve", spans[0].OperationName())
-		assert.Equal(t, "graphql.execute", spans[1].OperationName())
+		assert.Equal(t, "graphql.field", spans[0].OperationName())
+		assert.Equal(t, "graphql.request", spans[1].OperationName())
 	}
 	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
 		require.Len(t, spans, 2)
-		assert.Equal(t, "graphql.resolve", spans[0].OperationName())
-		assert.Equal(t, "graphql.server.execute", spans[1].OperationName())
+		assert.Equal(t, "graphql.field", spans[0].OperationName())
+		assert.Equal(t, "graphql.server.request", spans[1].OperationName())
 	}
 	ddService := namingschematest.TestDDService
 	serviceOverride := namingschematest.TestServiceOverride
