@@ -241,8 +241,7 @@ func processOptions(cfg *config, driverName string, opts ...Option) {
 }
 
 func checkDBMPropagation(cfg *config, driverName string) {
-	isSupported := func() bool {
-		// list of drivers that do not support DBM propagation "full" mode
+	fullModeSupported := func() bool {
 		unsupportedDrivers := []string{"sqlserver", "oracle"}
 		for _, dr := range unsupportedDrivers {
 			if dr == driverName {
@@ -251,7 +250,7 @@ func checkDBMPropagation(cfg *config, driverName string) {
 		}
 		return true
 	}
-	if cfg.dbmPropagationMode == tracer.DBMPropagationModeFull && !isSupported() {
+	if cfg.dbmPropagationMode == tracer.DBMPropagationModeFull && !fullModeSupported() {
 		log.Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s. See "+
 			"https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
 			driverName,
