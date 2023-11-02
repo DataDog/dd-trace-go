@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	rules "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -126,9 +127,9 @@ func TestConfig(t *testing.T) {
 				os.Remove(file.Name())
 			}()
 			expCfg := *expectedDefaultConfig
-			expCfg.rulesManager, err = newRulesManager([]byte(staticRecommendedRules))
+			expCfg.rulesManager, err = newRulesManager([]byte(rules.StaticRecommendedRules))
 			require.NoError(t, err)
-			_, err = file.WriteString(staticRecommendedRules)
+			_, err = file.WriteString(rules.StaticRecommendedRules)
 			require.NoError(t, err)
 			os.Setenv(rulesEnvVar, file.Name())
 			cfg, err := newConfig()
