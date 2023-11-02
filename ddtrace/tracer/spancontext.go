@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	ginternal "github.com/DataDog/dd-trace-go/v2/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -351,7 +352,7 @@ func (t *trace) push(sp *span) {
 		t.spans = nil // allow our spans to be collected by GC.
 		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize)
 		if tr != nil {
-			tr.Signal(ddtrace.TraceDropped)
+			tracerstats.Signal(tracerstats.TracesDropped, 1)
 		}
 		return
 	}
@@ -360,7 +361,7 @@ func (t *trace) push(sp *span) {
 	}
 	t.spans = append(t.spans, sp)
 	if tr != nil {
-		tr.Signal(ddtrace.SpanStarted)
+		tracerstats.Signal(tracerstats.SpanStarted, 1)
 	}
 }
 

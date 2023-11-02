@@ -13,12 +13,12 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -74,16 +74,6 @@ type tracer struct {
 
 	// pid of the process
 	pid int
-
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
-
-	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint32
-
-	// partialTrace the number of partially dropped traces.
-	partialTraces uint32
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
@@ -413,13 +403,13 @@ func (t *tracer) sampleChunk(c *chunk) {
 		}
 		if len(kept) > 0 && len(kept) < len(c.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
-			atomic.AddUint32(&t.partialTraces, 1)
+			tracerstats.Signal(tracerstats.PartialTraces, 1)
 		}
 	}
 	if len(kept) == 0 {
-		atomic.AddUint32(&t.droppedP0Traces, 1)
+		tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
 	}
-	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
+	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
 		c.spans = kept
 	}
@@ -434,7 +424,7 @@ func (t *tracer) SubmitChunk(c any) {
 }
 
 func (t *tracer) pushChunk(trace *chunk) {
-	atomic.AddUint32(&t.spansFinished, uint32(len(trace.spans)))
+	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
 		return
@@ -702,15 +692,6 @@ func (t *tracer) SubmitAbandonedSpan(s Span, finished bool) {
 		// ok
 	default:
 		log.Error("Abandoned spans channel full, disregarding span.")
-	}
-}
-
-func (t *tracer) Signal(e ddtrace.Event) {
-	switch e {
-	case ddtrace.TraceDropped:
-		atomic.AddUint32(&t.tracesDropped, 1)
-	case ddtrace.SpanStarted:
-		atomic.AddUint32(&t.spansStarted, 1)
 	}
 }
 

@@ -73,7 +73,6 @@ func (NoopTracer) SubmitStats(ddtrace.Span)               {}
 func (NoopTracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
 func (NoopTracer) SubmitChunk(any)                        {}
 func (NoopTracer) Flush()                                 {}
-func (NoopTracer) Signal(ddtrace.Event)                   {}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 

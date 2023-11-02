@@ -206,4 +206,3 @@ func (t *mocktracer) SubmitStats(ddtrace.Span)               {}
 func (t *mocktracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
 func (t *mocktracer) SubmitChunk(any)                        {}
 func (t *mocktracer) Flush()                                 {}
-func (t *mocktracer) Signal(ddtrace.Event)                   {}

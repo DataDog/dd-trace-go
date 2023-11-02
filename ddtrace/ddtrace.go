@@ -62,7 +62,7 @@ type Tracer interface {
 
 	// TODO(kjn v2): Not sure if this belongs in the tracer.
 	// May be better to have a separate stats counting package / type.
-	Signal(Event)
+	//	Signal(Event)
 }
 
 type TracerConf struct {
@@ -77,15 +77,6 @@ type TracerConf struct {
 	VersionTag           string
 	ServiceTag           string
 }
-
-// Events are things that happen in the tracer such as a trace being dropped or
-// a span being started. These are counted and submitted as metrics.
-type Event int
-
-const (
-	TraceDropped Event = iota
-	SpanStarted
-)
 
 // Span represents a chunk of computation time. Spans have names, durations,
 // timestamps and other metadata. A Tracer is used to create hierarchies of
