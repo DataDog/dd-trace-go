@@ -6,11 +6,13 @@
 package tracer
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
-	"sync/atomic"
+	"strconv"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -91,9 +93,13 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 	for {
 		select {
 		case <-ticker.C:
-			t.statsd.Count("datadog.tracer.spans_started", int64(atomic.SwapUint32(&t.spansStarted, 0)), nil, 1)
-			t.statsd.Count("datadog.tracer.spans_finished", int64(atomic.SwapUint32(&t.spansFinished, 0)), nil, 1)
-			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
+			t.statsd.Count("datadog.tracer.dropped_p0_traces", int64(tracerstats.Count(tracerstats.AgentDroppedP0Traces)),
+				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(tracerstats.Count(tracerstats.PartialTraces) > 0))}, 1)
+			t.statsd.Count("datadog.tracer.dropped_p0_spans", int64(tracerstats.Count(tracerstats.AgentDroppedP0Spans)), nil, 1)
+
+			t.statsd.Count("datadog.tracer.spans_started", int64(tracerstats.Count(tracerstats.SpanStarted)), nil, 1)
+			t.statsd.Count("datadog.tracer.spans_finished", int64(tracerstats.Count(tracerstats.SpansFinished)), nil, 1)
+			t.statsd.Count("datadog.tracer.traces_dropped", int64(tracerstats.Count(tracerstats.TracesDropped)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return
 		}

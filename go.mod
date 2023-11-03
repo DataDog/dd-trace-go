@@ -34,9 +34,7 @@ require (
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.4.0
-	github.com/emicklei/go-restful v2.16.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.11.0
-	github.com/garyburd/redigo v1.6.4
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/go-chi/chi v1.5.4
@@ -58,7 +56,6 @@ require (
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/jackc/pgx/v5 v5.3.1
-	github.com/jinzhu/gorm v1.9.16
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
@@ -80,7 +77,6 @@ require (
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.50.0
 	github.com/vektah/gqlparser/v2 v2.5.8
-	github.com/zenazn/goji v1.0.1
 	go.mongodb.org/mongo-driver v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	go.opentelemetry.io/otel v1.18.0
@@ -93,7 +89,6 @@ require (
 	google.golang.org/api v0.128.0
 	google.golang.org/grpc v1.57.1
 	google.golang.org/protobuf v1.30.0
-	gopkg.in/jinzhu/gorm.v1 v1.9.2
 	gopkg.in/olivere/elastic.v5 v5.0.84
 	gorm.io/driver/mysql v1.0.1
 	gorm.io/driver/postgres v1.4.6
@@ -154,7 +149,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.15.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
