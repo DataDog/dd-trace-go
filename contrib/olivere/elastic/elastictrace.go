@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package elastic provides functions to trace the gopkg.in/olivere/elastic.v{3,5} packages.
+// Package elastic provides functions to trace the gopkg.in/olivere/elastic.v5 packages.
 package elastic // import "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic"
 
 import (
@@ -30,7 +30,6 @@ const componentName = "olivere/elastic"
 func init() {
 	telemetry.LoadIntegration(componentName)
 	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v5")
-	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v3")
 }
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
