@@ -197,3 +197,12 @@ func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) er
 	})
 	return nil
 }
+
+func (t *mocktracer) TracerConf() ddtrace.TracerConf {
+	return ddtrace.TracerConf{}
+}
+
+func (t *mocktracer) SubmitStats(ddtrace.Span)               {}
+func (t *mocktracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
+func (t *mocktracer) SubmitChunk(any)                        {}
+func (t *mocktracer) Flush()                                 {}

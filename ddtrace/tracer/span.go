@@ -501,29 +501,20 @@ func (s *span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+	if t := internal.GetGlobalTracer(); t != nil {
+		tc := t.TracerConf()
 		// we have an active tracer
-		if t.config.canComputeStats() && shouldComputeStats(s) {
+		if tc.CanComputeStats && shouldComputeStats(s) {
 			// the agent supports computed stats
-			select {
-			case t.stats.In <- newAggregableSpan(s, t.obfuscator):
-				// ok
-			default:
-				log.Error("Stats channel full, disregarding span.")
-			}
+			t.SubmitStats(s)
 		}
-		if t.config.canDropP0s() {
+		if tc.CanDropP0s {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
-		if t.config.debugAbandonedSpans {
+		if tc.DebugAbandonedSpans {
 			// the tracer supports debugging abandoned spans
-			select {
-			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
-				// ok
-			default:
-				log.Error("Abandoned spans channel full, disregarding span.")
-			}
+			t.SubmitAbandonedSpan(s, true)
 		}
 	}
 	if keep {
@@ -655,18 +646,16 @@ func (s *span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr, ok := internal.GetGlobalTracer().(*tracer); ok {
-			if tr.config.env != "" {
-				fmt.Fprintf(f, "dd.env=%s ", tr.config.env)
-			}
-			if tr.config.version != "" {
-				fmt.Fprintf(f, "dd.version=%s ", tr.config.version)
-			}
-		} else {
-			if env := os.Getenv("DD_ENV"); env != "" {
+		if tr := internal.GetGlobalTracer(); tr != nil {
+			tc := tr.TracerConf()
+			if tc.EnvTag != "" {
+				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
+			} else if env := os.Getenv("DD_ENV"); env != "" {
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
-			if v := os.Getenv("DD_VERSION"); v != "" {
+			if tc.VersionTag != "" {
+				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
+			} else if v := os.Getenv("DD_VERSION"); v != "" {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}

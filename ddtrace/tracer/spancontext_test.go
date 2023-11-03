@@ -51,7 +51,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	child.context = newSpanContext(child, parent.context)
 
 	log.Flush()
-	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2)")
+	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
 }
 
 func TestAsyncSpanRace(t *testing.T) {
@@ -774,7 +774,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	assert.Len(tp.Logs(), 0)
 	buffer.push(span3)
 	log.Flush()
-	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2)")
+	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
 }
 
 func TestSpanContextBaggage(t *testing.T) {

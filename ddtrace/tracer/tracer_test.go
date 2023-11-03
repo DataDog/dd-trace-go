@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -418,8 +419,8 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
-			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
 		tracer.config.sampler = NewRateSampler(0)
@@ -449,8 +450,8 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
-			assert.Equal(t, uint32(1), tracer.droppedP0Spans)
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
 		tracer.config.agent.DropP0s = true
@@ -480,8 +481,8 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracer.droppedP0Traces)
-			assert.Equal(t, uint32(1), tracer.droppedP0Spans)
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -509,8 +510,8 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracer.droppedP0Traces)
-			assert.Equal(t, uint32(2), tracer.droppedP0Spans)
+			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -2099,6 +2100,7 @@ func BenchmarkStartSpan(b *testing.B) {
 
 // startTestTracer returns a Tracer with a DummyTransport
 func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func(), err error) {
+	tracerstats.Reset()
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
@@ -2341,7 +2343,7 @@ loop:
 	assert.Len(t, tw.Flushed(), 0)
 	assert.Zero(t, ts.flushed)
 	assert.Len(t, transport.Stats(), 0)
-	tr.flushSync()
+	tr.Flush()
 	assert.Len(t, tw.Flushed(), 1)
 	assert.Equal(t, 1, ts.flushed)
 	assert.Len(t, transport.Stats(), 1)

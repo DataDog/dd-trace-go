@@ -14,12 +14,12 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
@@ -75,16 +75,6 @@ type tracer struct {
 
 	// pid of the process
 	pid int
-
-	// These integers track metrics about spans and traces as they are started,
-	// finished, and dropped
-	spansStarted, spansFinished, tracesDropped uint32
-
-	// Records the number of dropped P0 traces and spans.
-	droppedP0Traces, droppedP0Spans uint32
-
-	// partialTrace the number of partially dropped traces.
-	partialTraces uint32
 
 	// rulesSampling holds an instance of the rules sampler used to apply either trace sampling,
 	// or single span sampling rules on spans. These are user-defined
@@ -341,19 +331,19 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		t.flushSync()
-		if t.dataStreams != nil {
-			t.dataStreams.Flush()
-		}
+	if t := internal.GetGlobalTracer(); t != nil {
+		t.Flush()
 	}
 }
 
-// flushSync triggers a flush and waits for it to complete.
-func (t *tracer) flushSync() {
+// Flush triggers a flush and waits for it to complete.
+func (t *tracer) Flush() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
+	if t.dataStreams != nil {
+		t.dataStreams.Flush()
+	}
 }
 
 // worker receives finished traces to be added into the payload, as well
@@ -426,19 +416,28 @@ func (t *tracer) sampleChunk(c *chunk) {
 		}
 		if len(kept) > 0 && len(kept) < len(c.spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
-			atomic.AddUint32(&t.partialTraces, 1)
+			tracerstats.Signal(tracerstats.PartialTraces, 1)
 		}
 	}
 	if len(kept) == 0 {
-		atomic.AddUint32(&t.droppedP0Traces, 1)
+		tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
 	}
-	atomic.AddUint32(&t.droppedP0Spans, uint32(len(c.spans)-len(kept)))
+	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.spans)-len(kept)))
 	if !c.willSend {
 		c.spans = kept
 	}
 }
 
+func (t *tracer) SubmitChunk(c any) {
+	// TODO(kjn v2): This will be unified with pushChunk, and only one function will exist.
+	// This is here right now because of the lack of appropriate exported types.
+
+	ch := c.(*chunk) // TODO(kjn v2): This can panic. Once the appropriate types are moved, this assertion will be removed.
+	t.pushChunk(ch)
+}
+
 func (t *tracer) pushChunk(trace *chunk) {
+	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
 		return
@@ -666,6 +665,47 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
+}
+
+func (t *tracer) TracerConf() ddtrace.TracerConf {
+	return ddtrace.TracerConf{
+		CanComputeStats:      t.config.canComputeStats(),
+		CanDropP0s:           t.config.canDropP0s(),
+		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		PartialFlush:         t.config.partialFlushEnabled,
+		PartialFlushMinSpans: t.config.partialFlushMinSpans,
+		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
+		PeerServiceMappings:  t.config.peerServiceMappings,
+		EnvTag:               t.config.env,
+		VersionTag:           t.config.version,
+		ServiceTag:           t.config.serviceName,
+	}
+}
+
+func (t *tracer) SubmitStats(s Span) {
+	sp, ok := s.(*span)
+	if !ok {
+		return
+	}
+	select {
+	case t.stats.In <- newAggregableSpan(sp, t.obfuscator):
+		// ok
+	default:
+		log.Error("Stats channel full, disregarding span.")
+	}
+}
+
+func (t *tracer) SubmitAbandonedSpan(s Span, finished bool) {
+	sp, ok := s.(*span)
+	if !ok {
+		return
+	}
+	select {
+	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(sp, finished):
+		// ok
+	default:
+		log.Error("Abandoned spans channel full, disregarding span.")
+	}
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
