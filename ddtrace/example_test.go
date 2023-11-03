@@ -13,10 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/opentracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
-	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // The below example illustrates a simple use case using the "tracer" package,
@@ -51,19 +48,6 @@ func Example_datadog() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-// The below example illustrates how to set up an opentracing.Tracer using Datadog's
-// tracer.
-func Example_opentracing() {
-	// Start a Datadog tracer, optionally providing a set of options,
-	// returning an opentracing.Tracer which wraps it.
-	t := opentracer.New(tracer.WithAgentAddr("host:port"))
-	defer tracer.Stop() // important for data integrity (flushes any leftovers)
-
-	// Use it with the Opentracing API. The (already started) Datadog tracer
-	// may be used in parallel with the Opentracing API if desired.
-	opentracing.SetGlobalTracer(t)
 }
 
 // The code below illustrates a scenario of how one could use a mock tracer in tests
