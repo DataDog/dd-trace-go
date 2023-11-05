@@ -153,16 +153,16 @@ const (
 	httpClient = "http.client.request"
 )
 
-func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (name string) {
+func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attributes) (name string) {
 	defer func() {
 		name = strings.ToLower(name)
 	}()
-	spanKind := cfg.SpanKind()
 	isClient := spanKind == oteltrace.SpanKindClient
 	isServer := spanKind == oteltrace.SpanKindServer
 	// client set the value explicitly
-	if v := attrs.Value("operation.name"); v != nil {
-		return v.(string)
+	// TODO what if operation name isn't a string?
+	if v := valueFromAttributes(attrs, "operation.name"); v != "" {
+		return v
 	}
 
 	// http
@@ -191,8 +191,9 @@ func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (
 	}
 
 	// RPC & AWS
-	isRpc := attrs.Value("rpc.system") != ""
-	isAws := isRpc && (attrs.Value("rpc.system") == "aws-api")
+	rpcValue := valueFromAttributes(attrs, "rpc.system")
+	isRpc := rpcValue != ""
+	isAws := isRpc && (rpcValue == "aws-api")
 	// AWS client
 	if isAws && isClient {
 		if service := valueFromAttributes(attrs, "rpc.service"); service != "" {
@@ -202,15 +203,14 @@ func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (
 	}
 	// RPC client
 	if isRpc && isClient {
-		return valueFromAttributes(attrs, "rpc.system") + ".client.request"
+		return rpcValue + ".client.request"
 	}
 	// RPC server
 	if isRpc && isServer {
-		return valueFromAttributes(attrs, "rpc.system") + ".server.request"
+		return rpcValue + ".server.request"
 	}
 
 	// FAAS client
-	//faas.invoked_provider") && span.hasAttr("faas.invoked_name"
 	provider := valueFromAttributes(attrs, "faas.invoked_provider")
 	faasName := valueFromAttributes(attrs, "faas.invoked_name")
 	if provider != "" && faasName != "" && isClient {
@@ -228,6 +228,7 @@ func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (
 		return "graphql.server.request"
 	}
 
+	// if nothing matches, checking for generic http server/client
 	protocol := valueFromAttributes(attrs, "network.protocol.name")
 	if isServer {
 		if protocol != "" {
@@ -250,9 +251,13 @@ func remapOperationName(cfg oteltrace.SpanConfig, attrs attributes.Attributes) (
 	return "otel_unknown"
 }
 
-func valueFromAttributes(attrs attributes.Attributes, key string) string {
-	if v := attrs.Value(key); v != nil {
-		return v.(string)
+func valueFromAttributes(attrs *attributes.Attributes, key string) string {
+	v := attrs.Value(key)
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
 	}
 	return ""
 }

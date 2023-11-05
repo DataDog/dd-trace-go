@@ -430,15 +430,128 @@ func TestTracerStartOptions(t *testing.T) {
 }
 
 func TestRemapName(t *testing.T) {
+	testCases := []struct {
+		name     string
+		spanKind oteltrace.SpanKind
+		in       map[string]interface{}
+		out      string
+	}{
+		{
+			in:  map[string]interface{}{"operation.name": "Ops"},
+			out: "ops",
+		},
+		{
+			in:       map[string]interface{}{"http.request.method": "POST"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "http.client.request",
+		},
+		{
+			in:       map[string]interface{}{"http.request.method": "POST"},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "http.server.request",
+		},
+		{
+			in:       map[string]interface{}{"db.system": "Redis"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "redis.query",
+		},
+		{
+			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			spanKind: oteltrace.SpanKindProducer,
+			out:      "kafka.receive",
+		},
+		{
+			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			spanKind: oteltrace.SpanKindConsumer,
+			out:      "kafka.receive",
+		},
+		{
+			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "kafka.receive",
+		},
+		{
+			in:       map[string]interface{}{"rpc.system": "aws-api", "rpc.service": "Example_Method"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "aws." + "example_method" + ".request",
+		},
+		{
+			in:       map[string]interface{}{"rpc.system": "aws-api", "rpc.service": ""},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "aws.request",
+		},
+		{
+			in:       map[string]interface{}{"rpc.system": "myservice.EchoService"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "myservice.echoservice.client.request",
+		},
+		{
+			in:       map[string]interface{}{"rpc.system": "myservice.EchoService"},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "myservice.echoservice.server.request",
+		},
+		{
+			in:       map[string]interface{}{"faas.invoked_provider": "some_provIDER", "faas.invoked_name": "some_NAME"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "some_provider.some_name.invoke",
+		},
+		{
+			in:       map[string]interface{}{"faas.invoked_name": "some_NAME"},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "some_name.invoke",
+		},
+		{
+			in:  map[string]interface{}{"graphql.operation.type": "subscription"},
+			out: "graphql.server.request",
+		},
+		{
+			in:       map[string]interface{}{"network.protocol.name": "amqp"},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "amqp.server.request",
+		},
+		{
+			in:       map[string]interface{}{"network.protocol.name": ""},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "server.request",
+		},
+		{
+			in:       map[string]interface{}{"network.protocol.name": "amqp"},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "amqp.client.request",
+		},
+		{
+			in:       map[string]interface{}{"network.protocol.name": ""},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "client.request",
+		},
+		// Corner Cases
+		{
+			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "server.request",
+		},
+		// TODO pertains to the question of non-string attributes
+		{
+			in:  map[string]interface{}{"operation.name": 2},
+			out: "otel_unknown",
+		},
+	}
+
 	_, _, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	defer cleanup()
 
 	tr := otel.Tracer("")
 	_, sp := tr.Start(context.Background(), "faas.invoked_provider")
 	sp.End()
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			attrs := attributes.New("", "")
+			for k, v := range test.in {
+				attrs = attrs.WithValue(k, v)
+			}
+			name := remapOperationName(test.spanKind, attrs)
+			assert.Equal(t, test.out, name)
+		})
+	}
 
-	attrs := attributes.New("faas.invoked_provider", "some_provIDER")
-	attrs.WithValue("faas.invoked_name", "some_NAME")
-	name := remapOperationName(oteltrace.NewSpanStartConfig(oteltrace.WithSpanKind(oteltrace.SpanKindClient)), *attrs)
-	fmt.Println(name)
 }

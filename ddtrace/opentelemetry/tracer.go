@@ -9,7 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-
+	"google.golang.org/grpc/attributes"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -43,8 +43,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if t := ssConfig.Timestamp(); !t.IsZero() {
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
+	// constructing the attributes set to be used later in remapOperationName
+	var attrs *attributes.Attributes
 	for _, attr := range ssConfig.Attributes() {
-		ddopts = append(ddopts, tracer.Tag(string(attr.Key), attr.Value.AsInterface()))
+		k, v := string(attr.Key), attr.Value.AsInterface()
+		attrs = attrs.WithValue(k, v)
+		ddopts = append(ddopts, tracer.Tag(k, v))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.SpanType(k.String()))
@@ -53,6 +57,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, opts...)
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	if ops := remapOperationName(ssConfig.SpanKind(), attrs); ops != "" {
+		spanName = ops
+	}
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
