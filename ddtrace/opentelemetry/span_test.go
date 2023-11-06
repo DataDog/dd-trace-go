@@ -269,7 +269,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
@@ -303,7 +303,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.NotContains(p, "discarded")
 }
 
