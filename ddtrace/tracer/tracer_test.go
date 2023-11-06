@@ -414,7 +414,7 @@ func TestSamplingDecision(t *testing.T) {
 		span := tracer.StartSpan("name_1").(*span)
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
-		p, ok := span.context.samplingPriority()
+		p, ok := span.context.SamplingPriority()
 		require.True(t, ok)
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
@@ -712,8 +712,9 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
 	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
-	assert := assert.New(t)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -728,6 +729,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
 		// Enable 128 bit trace ids
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		opts128 := []StartSpanOption{
@@ -1141,7 +1143,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
-	p, ok := s.context.samplingPriority()
+	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
 	s.Finish()
@@ -1183,7 +1185,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
-		p, ok := s.context.samplingPriority()
+		p, ok := s.context.SamplingPriority()
 		assert.True(ok)
 		assert.EqualValues(p, prio)
 
@@ -1811,10 +1813,26 @@ func TestGitMetadata(t *testing.T) {
 		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
 	})
 
+	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
+	})
+
 	t.Run("git-metadata-from-env", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
-		// git metadata env has priority under DD_TAGS
+		// git metadata env has priority over DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
@@ -1828,6 +1846,22 @@ func TestGitMetadata(t *testing.T) {
 
 		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
@@ -1900,6 +1934,13 @@ func BenchmarkPartialFlushing(b *testing.B) {
 		genBigTraces(b)
 	})
 	b.Run("Disabled", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+// BenchmarkBigTraces tests the performance of creating a lot of spans in a single thread
+func BenchmarkBigTraces(b *testing.B) {
+	b.Run("Big traces", func(b *testing.B) {
 		genBigTraces(b)
 	})
 }
@@ -2013,6 +2054,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	return tracer, transport, flushFunc, func() {
 		internal.SetGlobalTracer(&internal.NoopTracer{})
 		tracer.Stop()
+		// clear any service name that was set: we want the state to be the same as startup
+		globalconfig.SetServiceName("")
 	}
 }
 

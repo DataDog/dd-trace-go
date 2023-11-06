@@ -161,6 +161,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("emicklei/go-restful.v3", span.Tag(ext.Component))
+	assert.Equal("/user/{id}", span.Tag(ext.HTTPRoute))
 }
 
 func TestError(t *testing.T) {

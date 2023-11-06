@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,6 +102,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
 			// as per the sqlcommenter spec
 			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+			defer globalconfig.SetServiceName("")
 			defer tracer.Stop()
 
 			var spanCtx ddtrace.SpanContext
@@ -133,7 +135,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 				assert.Equal(t, carrier.SpanID, xctx.spanID)
 				assert.Equal(t, traceID, xctx.traceID.Lower())
 
-				p, ok := xctx.samplingPriority()
+				p, ok := xctx.SamplingPriority()
 				assert.True(t, ok)
 				assert.Equal(t, tc.samplingPriority, p)
 			}
@@ -166,7 +168,7 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	assert.Equal(t, lower, xctx.traceID.Lower())
 	assert.Equal(t, upper, xctx.traceID.Upper())
 
-	p, ok := xctx.samplingPriority()
+	p, ok := xctx.SamplingPriority()
 	assert.True(t, ok)
 	assert.Equal(t, priority, p)
 }
@@ -244,7 +246,7 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 				wanted: %d`, xctx.traceID.Upper(), traceIDUpper)
 		}
 
-		p, ok := xctx.samplingPriority()
+		p, ok := xctx.SamplingPriority()
 		if !ok {
 			t.Fatalf("Error retrieving sampling priority")
 		}

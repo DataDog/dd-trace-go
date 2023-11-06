@@ -148,6 +148,7 @@ func TestSpanEnd(t *testing.T) {
 	assert.NotContains(payload, ignoredName)
 	assert.Contains(payload, msg)
 	assert.NotContains(payload, ignoredMsg)
+	assert.Contains(payload, `"error":1`) // this should be an error span
 
 	for k, v := range attributes {
 		assert.Contains(payload, fmt.Sprintf("\"%s\":\"%s\"", k, v))
@@ -374,6 +375,7 @@ func TestSpanEndOptions(t *testing.T) {
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, `"duration":5000000000,`)
 	assert.Contains(p, `persisted_option`)
+	assert.Contains(p, `"error":1`)
 }
 
 func TestSpanSetAttributes(t *testing.T) {
@@ -387,23 +389,40 @@ func TestSpanSetAttributes(t *testing.T) {
 
 	attributes := [][]string{{"k1", "v1_old"},
 		{"k2", "v2"},
-		{"k1", "v1_new"}}
+		{"k1", "v1_new"},
+		// maps to 'name'
+		{"operation.name", "ops"},
+		// maps to 'service'
+		{"service.name", "srv"},
+		// maps to 'resource'
+		{"resource.name", "rsr"},
+		// maps to 'type'
+		{"span.type", "db"},
+	}
 
 	_, sp := tr.Start(context.Background(), "test")
 	for _, tag := range attributes {
 		sp.SetAttributes(attribute.String(tag[0], tag[1]))
 	}
+	// maps to '_dd1.sr.eausr'
+	sp.SetAttributes(attribute.Int("analytics.event", 1))
+
 	sp.End()
 	tracer.Flush()
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(payload, "k1")
-	assert.Contains(payload, "k2")
-	assert.Contains(payload, "v1_new")
-	assert.Contains(payload, "v2")
+	assert.Contains(payload, `"k1":"v1_new"`)
+	assert.Contains(payload, `"k2":"v2"`)
 	assert.NotContains(payload, "v1_old")
+
+	// reserved attributes
+	assert.Contains(payload, `"name":"ops"`)
+	assert.Contains(payload, `"service":"srv"`)
+	assert.Contains(payload, `"resource":"rsr"`)
+	assert.Contains(payload, `"type":"db"`)
+	assert.Contains(payload, `"_dd1.sr.eausr":1`)
 }
 
 func TestTracerStartOptions(t *testing.T) {

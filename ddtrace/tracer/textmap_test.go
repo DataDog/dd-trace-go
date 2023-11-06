@@ -837,7 +837,7 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(test.traceID128Full, id128FromSpan(assert, ctx))  // add when 128-bit trace id support is enabled
 					assert.Equal(tc.out[0], sctx.traceID.Lower())
 					assert.Equal(tc.out[1], sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[2]), p)
 				})
@@ -1108,7 +1108,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.out[0], sctx.spanID)
 					assert.Equal(tc.origin, sctx.origin)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 
@@ -1217,7 +1217,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.sid, sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(tc.priority, p)
 
@@ -1703,7 +1703,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.out[0], sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 				})
@@ -2032,7 +2032,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		if parseTraceparent(ctx, header) != nil {
 			t.Skipf("Error parsing parent")
 		}
-		parsedSamplingPriority, ok := ctx.samplingPriority()
+		parsedSamplingPriority, ok := ctx.SamplingPriority()
 		if !ok {
 			t.Skipf("Error retrieving sampling priority")
 		}
@@ -2093,52 +2093,47 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 }
 
 func TestMalformedTID(t *testing.T) {
-	assert := assert.New(t)
+	tracer := newTracer()
+	internal.SetGlobalTracer(tracer)
+	defer tracer.Stop()
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
+
 	t.Run("datadog, short tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=1234567890abcde",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
 
 	t.Run("datadog, malformed tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=XXXXXXXXXXXXXXXX",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(t, root.Meta, keyTraceID128)
 	})
 
 	t.Run("datadog, valid tid", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
-		tracer := newTracer()
-		defer tracer.Stop()
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
 			traceTagsHeader:       "_dd.p.tid=640cfd8d00000000",
 		})
 		sctx, err := tracer.Extract(headers)
-		assert.Nil(err)
+		assert.Nil(t, err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx)).(*span)
 		root.Finish()
-		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+		assert.Equal(t, "640cfd8d00000000", root.Meta[keyTraceID128])
 	})
 }
