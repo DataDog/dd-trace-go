@@ -270,7 +270,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
@@ -304,7 +304,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.NotContains(p, "discarded")
 }
 
@@ -409,6 +409,29 @@ func TestSpanSetAttributes(t *testing.T) {
 	assert.NotContains(payload, "v1_old")
 }
 
+func TestSpanSetAttributesWithRemapping(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "custom")
+	sp.SetAttributes(attribute.String("graphql.operation.type", "subscription"))
+
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, "graphql.server.request")
+}
+
 func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -429,6 +452,26 @@ func TestTracerStartOptions(t *testing.T) {
 	assert.Contains(payload, "\"env\":\"test_env\"")
 }
 
+func TestOperationNameRemapping(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "operation", oteltrace.WithAttributes(attribute.String("graphql.operation.type", "subscription")))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	fmt.Println(string(p))
+	assert.Contains(p, "graphql.server.request")
+}
 func TestRemapName(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -553,5 +596,4 @@ func TestRemapName(t *testing.T) {
 			assert.Equal(t, test.out, name)
 		})
 	}
-
 }

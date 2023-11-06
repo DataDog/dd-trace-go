@@ -27,6 +27,7 @@ var _ oteltrace.Span = (*span)(nil)
 type span struct {
 	tracer.Span
 	finished   bool
+	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
@@ -143,8 +144,21 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
-	for _, attr := range kv {
-		s.SetTag(string(attr.Key), attr.Value.AsInterface())
+	var attrs *attributes.Attributes
+	for _, attribute := range kv {
+		attrs = attrs.WithValue(string(attribute.Key), attribute.Value)
+		// TODO add other datadog reserved remapping
+		if t := attrs.Value("span.type"); t != nil {
+			kind := oteltrace.SpanKind(attribute.Value.AsInt64())
+			s.spanKind = kind
+			s.Span.SetTag(ext.SpanKind, kind.String())
+		}
+		s.SetTag(string(attribute.Key), attribute.Value.AsInterface())
+	}
+	// TODO what if the customer already set explicitly the 'operation.name',
+	// which overrides any other logic
+	if ops := remapOperationName(s.spanKind, attrs); ops != "otel_unknown" {
+		s.SetOperationName(ops)
 	}
 }
 
@@ -258,6 +272,9 @@ func valueFromAttributes(attrs *attributes.Attributes, key string) string {
 	}
 	if s, ok := v.(string); ok {
 		return s
+	}
+	if s, ok := v.(attribute.Value); ok {
+		return s.AsString()
 	}
 	return ""
 }
