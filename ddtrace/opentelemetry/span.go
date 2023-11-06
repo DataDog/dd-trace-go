@@ -143,26 +143,31 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // Every value is propagated as an interface.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 	for _, attr := range kv {
-		k, v := string(attr.Key), attr.Value
-		switch k {
-		case "operation.name":
-			s.SetName(v.AsString())
-		case "service.name":
-			s.SetTag(ext.ServiceName, v.AsString())
-		case "resource.name":
-			s.SetTag(ext.ResourceName, v.AsString())
-		case "span.type":
-			s.SetTag(ext.SpanType, v.AsString())
-		case "analytics.event":
-			var rate int
-			if v.AsBool() {
-				rate = 1
-			} else {
-				rate = 0
-			}
-			s.SetTag(ext.EventSampleRate, rate)
-		default:
-			s.SetTag(string(attr.Key), attr.Value.AsInterface())
+		s.SetTag(toSpecialAttributes(string(attr.Key), attr.Value))
+	}
+}
+
+// toSpecialAttributes recognizes a set of span attributes that have a special meaning.
+// These tags should supersede other values.
+func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
+	switch k {
+	case "operation.name":
+		return ext.SpanName, v.AsString()
+	case "service.name":
+		return ext.ServiceName, v.AsString()
+	case "resource.name":
+		return ext.ResourceName, v.AsString()
+	case "span.type":
+		return ext.SpanType, v.AsString()
+	case "analytics.event":
+		var rate int
+		if v.AsBool() {
+			rate = 1
+		} else {
+			rate = 0
 		}
+		return ext.EventSampleRate, rate
+	default:
+		return k, v.AsInterface()
 	}
 }
