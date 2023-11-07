@@ -340,20 +340,7 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 				})
 				return
 			}
-			// The current workaround of the WAF context limitations is to
-			// simply instantiate and release the WAF context for the operation
-			// lifetime so that:
-			//   1. We avoid growing the memory usage of the context every time
-			//      a grpc.server.request.message value is added to it during
-			//      the RPC lifetime.
-			//   2. We avoid the limitation of 1 event per attack type.
-			// TODO(Julio-Guerra): a future libddwaf API should solve this out.
-			wafCtx := waf.NewContext(handle.Handle)
-			if wafCtx == nil {
-				// The WAF event listener got concurrently released
-				return
-			}
-			defer wafCtx.Close()
+
 			// Run the WAF on the rule addresses available in the args
 			// Note that we don't check if the address is present in the rules
 			// as we only support one at the moment, so this callback cannot be

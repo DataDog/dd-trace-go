@@ -7,8 +7,10 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -24,6 +26,11 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
+	const ddAppsecEnabledEnvVar = "DD_APPSEC_ENABLED"
+	oldEnv := os.Getenv(ddAppsecEnabledEnvVar)
+	os.Setenv(ddAppsecEnabledEnvVar, "true")
+	defer os.Setenv(ddAppsecEnabledEnvVar, oldEnv)
+
 	appsec.Start()
 	defer appsec.Stop()
 	if !appsec.Enabled() {
@@ -81,14 +88,16 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, "passed", res.Message)
 		require.NoError(t, err)
 
-		// Send a SQLi attack
-		err = stream.Send(&FixtureRequest{Name: "-1' and 1=1 union select * from users--"})
-		require.NoError(t, err)
+		for i := 0; i < 5; i++ { // Fire multiple times, each time should result in a detected event
+			// Send a SQLi attack
+			err = stream.Send(&FixtureRequest{Name: fmt.Sprintf("-%[1]d' and %[1]d=%[1]d union select * from users--", i)})
+			require.NoError(t, err)
 
-		// Check that the handler was properly called
-		res, err = stream.Recv()
-		require.Equal(t, "passed", res.Message)
-		require.NoError(t, err)
+			// Check that the handler was properly called
+			res, err = stream.Recv()
+			require.Equal(t, "passed", res.Message)
+			require.NoError(t, err)
+		}
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -96,14 +105,34 @@ func TestAppSec(t *testing.T) {
 		stream.Recv()
 
 		finished := mt.FinishedSpans()
-		require.Len(t, finished, 6)
+		require.Len(t, finished, 14)
 
 		// The request should have the attack attempts
-		event, _ := finished[5].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event, "crs-941-110")) // XSS attack attempt
-		require.True(t, strings.Contains(event, "crs-942-100")) // SQL-injection attack attempt
-		require.True(t, strings.Contains(event, "ua0-600-55x")) // canary rule attack attempt
+		event := finished[len(finished)-1].Tag("_dd.appsec.json")
+		require.NotNil(t, event, "the _dd.appsec.json tag was not found")
+
+		jsonText := event.(string)
+		type trigger struct {
+			Rule struct {
+				ID string `json:"id"`
+			} `json:"rule"`
+		}
+		var parsed struct {
+			Triggers []trigger `json:"triggers"`
+		}
+		err = json.Unmarshal([]byte(jsonText), &parsed)
+		require.NoError(t, err)
+
+		histogram := map[string]uint8{}
+		for _, tr := range parsed.Triggers {
+			histogram[tr.Rule.ID]++
+		}
+
+		require.EqualValues(t, 1, histogram["crs-941-110"]) // XSS attack attempt
+		require.EqualValues(t, 5, histogram["crs-942-270"]) // SQL-injection attack attempt
+		require.EqualValues(t, 1, histogram["ua0-600-55x"]) // canary rule attack attempt
+
+		require.Len(t, histogram, 3)
 	})
 }
 
