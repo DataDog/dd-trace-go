@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"google.golang.org/grpc/attributes"
 	"io"
 	"net/http"
 	"strings"
@@ -27,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/attributes"
 )
 
 func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {

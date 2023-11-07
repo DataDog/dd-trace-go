@@ -8,7 +8,6 @@ package opentelemetry
 import (
 	"encoding/binary"
 	"errors"
-	"google.golang.org/grpc/attributes"
 	"strconv"
 	"strings"
 
@@ -20,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/attributes"
 )
 
 var _ oteltrace.Span = (*span)(nil)

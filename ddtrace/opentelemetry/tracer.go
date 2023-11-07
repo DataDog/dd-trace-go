@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"google.golang.org/grpc/attributes"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -17,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/attributes"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
