@@ -407,14 +407,15 @@ func TestTextMapPropagator(t *testing.T) {
 
 	t.Run("InjectExtract", func(t *testing.T) {
 		// TODO: Why is the 128-bit trace id not being propagated correctly by default?
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
-			BaggagePrefix: "bg-",
-			TraceHeader:   "tid",
-			ParentHeader:  "pid",
+			BaggagePrefix:    "bg-",
+			TraceHeader:      "tid",
+			ParentHeader:     "pid",
+			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
 		})
 		tracer := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
