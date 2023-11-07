@@ -406,7 +406,6 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		// TODO: Why is the 128-bit trace id not being propagated correctly by default?
 		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		t.Setenv(headerPropagationStyleExtract, "datadog")

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -79,10 +80,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	var parentBytes oteltrace.TraceID
-	// TraceID is big-endian so the LOW order bits are at the END of parentBytes
-	uint64ToByte(parent.Context().TraceID(), parentBytes[8:])
-	assert.Equal(parentBytes, child.SpanContext().TraceID())
+	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
+	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
 }
 
 func TestTracerOptions(t *testing.T) {
