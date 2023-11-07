@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"google.golang.org/grpc/attributes"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -49,17 +50,20 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	for _, attr := range ssConfig.Attributes() {
 		k, v := string(attr.Key), attr.Value.AsInterface()
 		attrs = attrs.WithValue(k, v)
-		ddopts = append(ddopts, tracer.Tag(k, v))
+		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
-	if opts, ok := spanOptionsFromContext(ctx); ok {
-		ddopts = append(ddopts, opts...)
-	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	if ops := remapOperationName(ssConfig.SpanKind(), attrs); ops != "otel_unknown" {
+		// TODO set resource to the OTel name
+		// OTel name is akin to resource name in Datadog
+		ddopts = append(ddopts, tracer.ResourceName(spanName))
 		spanName = ops
+	}
+	if opts, ok := spanOptionsFromContext(ctx); ok {
+		ddopts = append(ddopts, opts...)
 	}
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
