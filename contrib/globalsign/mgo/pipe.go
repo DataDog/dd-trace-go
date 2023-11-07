@@ -38,7 +38,7 @@ func (p *Pipe) All(result interface{}) error {
 // One invokes and traces Pipe.One
 func (p *Pipe) One(result interface{}) (err error) {
 	span := newChildSpanFromContext(p.cfg, p.tags)
-	defer span.Finish(tracer.WithError(err))
+	defer func() { span.Finish(tracer.WithError(err)) }()
 	err = p.Pipe.One(result)
 	return
 }
@@ -46,7 +46,7 @@ func (p *Pipe) One(result interface{}) (err error) {
 // Explain invokes and traces Pipe.Explain
 func (p *Pipe) Explain(result interface{}) (err error) {
 	span := newChildSpanFromContext(p.cfg, p.tags)
-	defer span.Finish(tracer.WithError(err))
+	defer func() { span.Finish(tracer.WithError(err)) }()
 	err = p.Pipe.Explain(result)
 	return
 }

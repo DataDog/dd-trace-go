@@ -153,12 +153,37 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 			s.spanKind = kind
 			s.Span.SetTag(ext.SpanKind, kind.String())
 		}
-		s.SetTag(string(attribute.Key), attribute.Value.AsInterface())
+		s.SetTag(toSpecialAttributes(string(attribute.Key), attribute.Value))
 	}
 	// TODO what if the customer already set explicitly the 'operation.name',
 	// which overrides any other logic
 	if ops := remapOperationName(s.spanKind, attrs); ops != "otel_unknown" {
 		s.SetOperationName(ops)
+	}
+}
+
+// toSpecialAttributes recognizes a set of span attributes that have a special meaning.
+// These tags should supersede other values.
+func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
+	switch k {
+	case "operation.name":
+		return ext.SpanName, v.AsString()
+	case "service.name":
+		return ext.ServiceName, v.AsString()
+	case "resource.name":
+		return ext.ResourceName, v.AsString()
+	case "span.type":
+		return ext.SpanType, v.AsString()
+	case "analytics.event":
+		var rate int
+		if v.AsBool() {
+			rate = 1
+		} else {
+			rate = 0
+		}
+		return ext.EventSampleRate, rate
+	default:
+		return k, v.AsInterface()
 	}
 }
 
