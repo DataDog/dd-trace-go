@@ -11,7 +11,6 @@ package graphqlsec
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -52,7 +51,7 @@ func StartQuery(ctx context.Context, args QueryArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Query) Finish(res Result) []json.RawMessage {
+func (q *Query) Finish(res Result) []any {
 	dyngo.FinishOperation(q, QueryResult(res))
 	return q.Events()
 }

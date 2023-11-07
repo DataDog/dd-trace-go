@@ -7,7 +7,6 @@ package graphqlsec
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -55,7 +54,7 @@ func StartField(ctx context.Context, args FieldArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Field) Finish(res Result) []json.RawMessage {
+func (q *Field) Finish(res Result) []any {
 	dyngo.FinishOperation(q, FieldResult(res))
 	return q.Events()
 }

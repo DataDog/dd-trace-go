@@ -111,6 +111,8 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		}
 	}
 
+	// This span allows us to regroup parse, validate & resolvers under a single service entry span. It is finished once
+	// the execution is done (or after parse or validate have failed).
 	span, ctx := tracer.StartSpanFromContext(ctx, spanServer,
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
@@ -148,6 +150,10 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 
 	return ctx, func(err error) {
 		span.Finish(tracer.WithError(err))
+		if err != nil {
+			// There were errors, so the query will not be executed, finish the graphql.server span now.
+			data.serverSpan.Finish()
+		}
 	}
 }
 
@@ -172,6 +178,10 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 
 	return ctx, func(errs []gqlerrors.FormattedError) {
 		span.Finish(tracer.WithError(toError(errs)))
+		if len(errs) > 0 {
+			// There were errors, so the query will not be executed, finish the graphql.server span now.
+			data.serverSpan.Finish()
+		}
 	}
 }
 
@@ -208,8 +218,8 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
 		defer func() {
-			data.serverSpan.Finish(tracer.WithError(err))
 			span.Finish(tracer.WithError(err))
+			data.serverSpan.Finish()
 		}()
 
 		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))

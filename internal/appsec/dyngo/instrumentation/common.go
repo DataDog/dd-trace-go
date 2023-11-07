@@ -33,7 +33,7 @@ type (
 	// used by composition in an Operation to allow said operation to handle security events addition/retrieval.
 	// See httpsec/http.go and grpcsec/grpc.go.
 	SecurityEventsHolder struct {
-		events []json.RawMessage
+		events []any
 		mu     sync.RWMutex
 	}
 	// ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)
@@ -59,14 +59,14 @@ func (m *TagsHolder) Tags() map[string]interface{} {
 
 // AddSecurityEvents adds the security events to the collected events list.
 // Thread safe.
-func (s *SecurityEventsHolder) AddSecurityEvents(events ...json.RawMessage) {
+func (s *SecurityEventsHolder) AddSecurityEvents(events []any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, events...)
 }
 
 // Events returns the list of stored events.
-func (s *SecurityEventsHolder) Events() []json.RawMessage {
+func (s *SecurityEventsHolder) Events() []any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.events
@@ -103,7 +103,7 @@ func SetAppSecEnabledTags(span TagSetter) {
 
 // SetEventSpanTags sets the security event span tags into the service entry span.
 // This is a no-op if events is empty.
-func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
+func SetEventSpanTags(span TagSetter, events []any) error {
 	if len(events) == 0 {
 		// No events, so we skip adding event tags...
 		return nil
@@ -129,42 +129,14 @@ func SetEventSpanTags(span TagSetter, events []json.RawMessage) error {
 }
 
 // Create the value of the security event tag.
-// TODO(Julio-Guerra): a future libddwaf version should return something
-//
-//	avoiding us the following events concatenation logic which currently
-//	involves unserializing the top-level JSON arrays to concatenate them
-//	together.
-//
-// TODO(Julio-Guerra): avoid serializing the json in the request hot path
-func makeEventTagValue(events []json.RawMessage) (json.RawMessage, error) {
-	var v interface{}
-	if l := len(events); l == 1 {
-		// eventTag is the structure to use in the `_dd.appsec.json` span tag.
-		// In this case of 1 event, it already is an array as expected.
-		type eventTag struct {
-			Triggers json.RawMessage `json:"triggers"`
-		}
-		v = eventTag{Triggers: events[0]}
-	} else {
-		// eventTag is the structure to use in the `_dd.appsec.json` span tag.
-		// With more than one event, we need to concatenate the arrays together
-		// (ie. convert [][]json.RawMessage into []json.RawMessage).
-		type eventTag struct {
-			Triggers []json.RawMessage `json:"triggers"`
-		}
-		concatenated := make([]json.RawMessage, 0, l) // at least len(events)
-		for _, event := range events {
-			// Unmarshal the top level array
-			var tmp []json.RawMessage
-			if err := json.Unmarshal(event, &tmp); err != nil {
-				return nil, fmt.Errorf("unexpected error while unserializing the appsec event `%s`: %v", string(event), err)
-			}
-			concatenated = append(concatenated, tmp...)
-		}
-		v = eventTag{Triggers: concatenated}
+func makeEventTagValue(events []any) (json.RawMessage, error) {
+	triggers := struct {
+		Triggers []any `json:"triggers"`
+	}{
+		Triggers: events,
 	}
 
-	tag, err := json.Marshal(v)
+	tag, err := json.Marshal(triggers)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
 	}

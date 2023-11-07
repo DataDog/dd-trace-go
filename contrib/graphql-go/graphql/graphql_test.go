@@ -6,6 +6,7 @@
 package graphql
 
 import (
+	"fmt"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -55,7 +56,7 @@ func Test(t *testing.T) {
 		require.Empty(t, resp.Errors)
 
 		spans := mt.FinishedSpans()
-		require.Len(t, spans, 5)
+		require.Len(t, spans, 6)
 
 		traceID := spans[0].TraceID()
 		for i := 1; i < len(spans); i++ {
@@ -78,30 +79,31 @@ func Test(t *testing.T) {
 			hasTag(tagGraphqlSource, "query TestQuery { hello, helloNonTrivial }"),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.validate"),
-			hasTag(ext.ResourceName, "graphql.validation"),
+			hasTag(ext.ResourceName, "graphql.validate"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
 
 		// Fields may be resolved in any order, so span ordering below is not deterministic
 		expectedFields := []string{"hello", "helloNonTrivial"}
+		var foundField string
 
 		assertSpanMatches(t, spans[2],
-			hasTagFrom(tagGraphqlField, &expectedFields),
+			hasTagFrom(tagGraphqlField, &expectedFields, &foundField),
 			hasNoTag(ext.Error),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasTag(tagGraphqlOperationType, "query"),
 			hasOperationName("graphql.resolve"),
-			hasTag(ext.ResourceName, "graphql.field"),
+			hasTagf(ext.ResourceName, "Query.%s", &foundField),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
 
 		assertSpanMatches(t, spans[3],
-			hasTagFrom(tagGraphqlField, &expectedFields),
+			hasTagFrom(tagGraphqlField, &expectedFields, &foundField),
 			hasNoTag(ext.Error),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasTag(tagGraphqlOperationType, "query"),
 			hasOperationName("graphql.resolve"),
-			hasTag(ext.ResourceName, "graphql.field"),
+			hasTagf(ext.ResourceName, "Query.%s", &foundField),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
 
@@ -111,7 +113,15 @@ func Test(t *testing.T) {
 			hasTag(tagGraphqlSource, "query TestQuery { hello, helloNonTrivial }"),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.execute"),
-			hasTag(ext.ResourceName, "graphql.request"),
+			hasTag(ext.ResourceName, "graphql.execute"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
+
+		assertSpanMatches(t, spans[5],
+			hasNoTag(ext.Error),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.server"),
+			hasTag(ext.ResourceName, "graphql.server"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
 	})
@@ -130,19 +140,97 @@ func Test(t *testing.T) {
 		}
 
 		spans := mt.FinishedSpans()
-		require.Len(t, spans, 10)
+		require.Len(t, spans, 12)
 
 		// First trace
 		traceID := spans[0].TraceID()
-		for i := 1; i < 5; i++ {
+		for i := 1; i < 6; i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
 		}
 
 		// Second trace
-		traceID = spans[5].TraceID()
-		for i := 6; i < len(spans); i++ {
+		traceID = spans[6].TraceID()
+		for i := 7; i < len(spans); i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
 		}
+	})
+
+	t.Run("request fails parsing", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp := graphql.Do(graphql.Params{
+			Schema:        schema,
+			RequestString: `query is invalid`,
+			OperationName: "Båd",
+		})
+		// There is a single error (the query is invalid)
+		require.Len(t, resp.Errors, 1)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		assertSpanMatches(t, spans[0],
+			hasTag(ext.Error, resp.Errors[0].OriginalError()),
+			hasTag(tagGraphqlOperationName, "Båd"),
+			hasTag(tagGraphqlSource, "query is invalid"),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.parse"),
+			hasTag(ext.ResourceName, "graphql.parse"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
+
+		assertSpanMatches(t, spans[1],
+			hasNoTag(ext.Error),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.server"),
+			hasTag(ext.ResourceName, "graphql.server"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
+	})
+
+	t.Run("request fails validation", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp := graphql.Do(graphql.Params{
+			Schema:        schema,
+			RequestString: `query TestQuery { hello, helloNonTrivial, invalidField }`,
+			OperationName: "TestQuery",
+		})
+		// There is a single error (the query is invalid)
+		require.Len(t, resp.Errors, 1)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+
+		assertSpanMatches(t, spans[0],
+			hasNoTag(ext.Error),
+			hasTag(tagGraphqlOperationName, "TestQuery"),
+			hasTag(tagGraphqlSource, "query TestQuery { hello, helloNonTrivial, invalidField }"),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.parse"),
+			hasTag(ext.ResourceName, "graphql.parse"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
+
+		assertSpanMatches(t, spans[1],
+			hasTag(ext.Error, resp.Errors[0]),
+			hasTag(tagGraphqlOperationName, "TestQuery"),
+			hasTag(tagGraphqlSource, "query TestQuery { hello, helloNonTrivial, invalidField }"),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.validate"),
+			hasTag(ext.ResourceName, "graphql.validate"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
+
+		assertSpanMatches(t, spans[2],
+			hasNoTag(ext.Error),
+			hasTag(ext.ServiceName, "test-graphql-service"),
+			hasOperationName("graphql.server"),
+			hasTag(ext.ResourceName, "graphql.server"),
+			hasTag(ext.Component, "graphql-go/graphql"),
+		)
 	})
 }
 
@@ -160,26 +248,42 @@ func hasOperationName(name string) spanMatcher {
 	}
 }
 
-func hasTag(name string, value string) spanMatcher {
+func hasTag(name string, value any) spanMatcher {
 	return func(t *testing.T, span mocktracer.Span) {
 		_ = assert.Equal(t, value, span.Tag(name), "tag %s", name)
 	}
 }
 
+func hasTagf(name string, pattern string, ptrs ...*string) spanMatcher {
+	return func(t *testing.T, span mocktracer.Span) {
+		args := make([]any, len(ptrs))
+		for i, ptr := range ptrs {
+			if ptr != nil {
+				args[i] = *ptr
+			}
+		}
+		expected := fmt.Sprintf(pattern, args...)
+		_ = assert.Equal(t, expected, span.Tag(name), "tag %s", name)
+	}
+}
+
 // hasTagFrom asserts the tag with the given name is one of the values in the
 // provided slice. If that is the case, the found value is removed from the
-// slice.
-func hasTagFrom(name string, values *[]string) spanMatcher {
+// slice. If found is non-nil, it's value will be set to the found value.
+func hasTagFrom[T comparable](name string, values *[]T, found *T) spanMatcher {
 	return func(t *testing.T, span mocktracer.Span) {
-		tag := span.Tag(name)
+		tag, _ := span.Tag(name).(T)
 		if assert.Contains(t, *values, tag, "tag %s", name) {
-			remaining := make([]string, 0, len(*values)-1)
+			remaining := make([]T, 0, len(*values)-1)
 			for _, value := range *values {
 				if value != tag {
 					remaining = append(remaining, value)
 				}
 			}
 			*values = remaining
+			if found != nil {
+				*found = tag
+			}
 		}
 	}
 }

@@ -7,7 +7,6 @@ package graphqlsec
 
 import (
 	"context"
-	"encoding/json"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
@@ -38,7 +37,7 @@ func StartResolverOperation(ctx context.Context, listeners ...dyngo.DataListener
 	return newCtx, op
 }
 
-func (o *ResolveOperation) Finish(res Result) []json.RawMessage {
+func (o *ResolveOperation) Finish(res Result) []any {
 	dyngo.FinishOperation(o, ResolveResult(res))
 	return o.Events()
 }

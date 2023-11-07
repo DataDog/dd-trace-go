@@ -25,19 +25,11 @@ func (c *clientOutboundOp) V0() string {
 	if c.cfg.overrideV0 != nil {
 		return *c.cfg.overrideV0
 	}
-	suffix := "request"
-	if c.cfg.suffix != nil {
-		suffix = *c.cfg.suffix
-	}
-	return fmt.Sprintf("%s.%s", c.system, suffix)
+	return fmt.Sprintf("%s.request", c.system)
 }
 
 func (c *clientOutboundOp) V1() string {
-	suffix := "request"
-	if c.cfg.suffix != nil {
-		suffix = *c.cfg.suffix
-	}
-	return fmt.Sprintf("%s.client.%s", c.system, suffix)
+	return fmt.Sprintf("%s.client.request", c.system)
 }
 
 type serverInboundOp struct {
@@ -58,19 +50,11 @@ func (s *serverInboundOp) V0() string {
 	if s.cfg.overrideV0 != nil {
 		return *s.cfg.overrideV0
 	}
-	suffix := "request"
-	if s.cfg.suffix != nil {
-		suffix = *s.cfg.suffix
-	}
-	return fmt.Sprintf("%s.%s", s.system, suffix)
+	return fmt.Sprintf("%s.request", s.system)
 }
 
 func (s *serverInboundOp) V1() string {
-	suffix := "request"
-	if s.cfg.suffix != nil {
-		suffix = *s.cfg.suffix
-	}
-	return fmt.Sprintf("%s.server.%s", s.system, suffix)
+	return fmt.Sprintf("%s.server.request", s.system)
 }
 
 // NewHTTPClientOp creates a new schema for HTTP client outbound operations.
@@ -97,6 +81,5 @@ func NewGRPCServerOp(opts ...Option) *Schema {
 
 // NewGraphqlServerOp creates a new schema for GraphQL server inbound operations.
 func NewGraphqlServerOp(opts ...Option) *Schema {
-	newOpts := append([]Option{WithOverrideSuffix("execute")}, opts...)
-	return NewServerInboundOp("graphql", newOpts...)
+	return NewServerInboundOp("graphql", opts...)
 }
