@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -47,7 +48,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
-		ddopts = append(ddopts, tracer.SpanType(k.String()))
+		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
