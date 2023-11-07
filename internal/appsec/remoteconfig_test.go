@@ -705,9 +705,9 @@ func TestWafRCUpdate(t *testing.T) {
 			serverRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		matches, actions := runWAF(wafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Empty(t, actions)
+		result := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
 		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
 		for _, status := range statuses {
@@ -720,8 +720,14 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Contains(t, actions, "block")
+		result = runWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Contains(t, result.Actions, "block")
 	})
+}
+
+func jsonString(t *testing.T, v any) string {
+	bytes, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(bytes)
 }
