@@ -491,7 +491,6 @@ func TestOperationNameRemapping(t *testing.T) {
 }
 func TestRemapName(t *testing.T) {
 	testCases := []struct {
-		name     string
 		spanKind oteltrace.SpanKind
 		in       map[string]interface{}
 		out      string
@@ -538,7 +537,7 @@ func TestRemapName(t *testing.T) {
 		{
 			in:       map[string]interface{}{"rpc.system": "aws-api", "rpc.service": ""},
 			spanKind: oteltrace.SpanKindClient,
-			out:      "aws.request",
+			out:      "aws.client.request",
 		},
 		{
 			in:       map[string]interface{}{"rpc.system": "myservice.EchoService"},
@@ -556,7 +555,7 @@ func TestRemapName(t *testing.T) {
 			out:      "some_provider.some_name.invoke",
 		},
 		{
-			in:       map[string]interface{}{"faas.invoked_name": "some_NAME"},
+			in:       map[string]interface{}{"faas.trigger": "some_NAME"},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "some_name.invoke",
 		},
@@ -584,11 +583,10 @@ func TestRemapName(t *testing.T) {
 			spanKind: oteltrace.SpanKindClient,
 			out:      "client.request",
 		},
-		// Corner Cases
 		{
 			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
 			spanKind: oteltrace.SpanKindServer,
-			out:      "server.request",
+			out:      "kafka.receive",
 		},
 		// TODO pertains to the question of non-string attributes
 		{
@@ -604,7 +602,7 @@ func TestRemapName(t *testing.T) {
 	_, sp := tr.Start(context.Background(), "faas.invoked_provider")
 	sp.End()
 	for _, test := range testCases {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run("", func(t *testing.T) {
 			attrs := attributes.New("", "")
 			for k, v := range test.in {
 				attrs = attrs.WithValue(k, v)

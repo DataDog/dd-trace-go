@@ -49,7 +49,6 @@ func TestHttpDistributedTrace(t *testing.T) {
 	p := <-payloads
 	numSpans := strings.Count(p, "\"span_id\"")
 	assert.Equal(t, 3, numSpans)
-	// todo operation name will no longer be "HTTP GET"
 	assert.Contains(t, p, `"name":"testRootSpan"`)
 	assert.Contains(t, p, `name":"server.request`)
 	assert.Contains(t, p, `name":"client.request"`)

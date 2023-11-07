@@ -224,7 +224,8 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 	op := valueFromAttributes(attrs, "messaging.operation")
 	if system != "" && op != "" {
 		switch spanKind {
-		case oteltrace.SpanKindClient, oteltrace.SpanKindConsumer, oteltrace.SpanKindProducer:
+		case oteltrace.SpanKindClient, oteltrace.SpanKindServer,
+			oteltrace.SpanKindConsumer, oteltrace.SpanKindProducer:
 			return system + "." + op
 		}
 	}
@@ -238,7 +239,7 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 		if service := valueFromAttributes(attrs, "rpc.service"); service != "" {
 			return "aws." + service + ".request"
 		}
-		return "aws.request"
+		return "aws.client.request"
 	}
 	// RPC client
 	if isRPC && isClient {
@@ -257,7 +258,7 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 	}
 
 	//	FAAS server
-	trigger := valueFromAttributes(attrs, "faas.invoked_name")
+	trigger := valueFromAttributes(attrs, "faas.trigger")
 	if trigger != "" && isServer {
 		return trigger + ".invoke"
 	}
