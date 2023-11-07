@@ -237,7 +237,8 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 			values := map[string]any{}
 			if _, ok := addresses[serverResponseStatusAddr]; ok {
-				values[serverResponseStatusAddr] = res.Status
+				// serverResponseStatusAddr is a string address, so we must format the status code...
+				values[serverResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
 			}
 
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
