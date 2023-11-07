@@ -45,7 +45,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
 	for _, attr := range ssConfig.Attributes() {
-		ddopts = append(ddopts, tracer.Tag(string(attr.Key), attr.Value.AsInterface()))
+		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
