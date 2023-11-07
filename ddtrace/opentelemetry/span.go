@@ -205,7 +205,7 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 	}
 
 	// http
-	if isHttp := attrs.Value("http.request.method"); isHttp != nil {
+	if isHTTP := attrs.Value("http.request.method"); isHTTP != nil {
 		switch spanKind {
 		case oteltrace.SpanKindServer:
 			return httpServer
@@ -231,8 +231,8 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 
 	// RPC & AWS
 	rpcValue := valueFromAttributes(attrs, "rpc.system")
-	isRpc := rpcValue != ""
-	isAws := isRpc && (rpcValue == "aws-api")
+	isRPC := rpcValue != ""
+	isAws := isRPC && (rpcValue == "aws-api")
 	// AWS client
 	if isAws && isClient {
 		if service := valueFromAttributes(attrs, "rpc.service"); service != "" {
@@ -241,11 +241,11 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 		return "aws.request"
 	}
 	// RPC client
-	if isRpc && isClient {
+	if isRPC && isClient {
 		return rpcValue + ".client.request"
 	}
 	// RPC server
-	if isRpc && isServer {
+	if isRPC && isServer {
 		return rpcValue + ".server.request"
 	}
 
