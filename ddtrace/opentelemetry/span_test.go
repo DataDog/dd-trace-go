@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc/attributes"
 )
 
 func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan string, cleanup func()) {
@@ -82,7 +81,7 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, `"name":"OperationName"`)
+	assert.Contains(p, `"name":"otel_unknown"`)
 	assert.Contains(p, `"resource":"OperationName"`)
 }
 
@@ -486,133 +485,137 @@ func TestOperationNameRemapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	fmt.Println(string(p))
 	assert.Contains(p, "graphql.server.request")
 }
 func TestRemapName(t *testing.T) {
 	testCases := []struct {
 		spanKind oteltrace.SpanKind
-		in       map[string]interface{}
+		in       []attribute.KeyValue
 		out      string
 	}{
 		{
-			in:  map[string]interface{}{"operation.name": "Ops"},
+			in:  []attribute.KeyValue{attribute.String("operation.name", "Ops")},
 			out: "ops",
 		},
 		{
-			in:  map[string]interface{}{},
+			in:  []attribute.KeyValue{},
 			out: "otel_unknown",
 		},
 		{
-			in:       map[string]interface{}{"http.request.method": "POST"},
+			in:       []attribute.KeyValue{attribute.String("http.request.method", "POST")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "http.client.request",
 		},
 		{
-			in:       map[string]interface{}{"http.request.method": "POST"},
+			in:       []attribute.KeyValue{attribute.String("http.request.method", "POST")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "http.server.request",
 		},
 		{
-			in:       map[string]interface{}{"db.system": "Redis"},
+			in:       []attribute.KeyValue{attribute.String("db.system", "Redis")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "redis.query",
 		},
 		{
-			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
 			spanKind: oteltrace.SpanKindProducer,
 			out:      "kafka.receive",
 		},
 		{
-			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
 			spanKind: oteltrace.SpanKindConsumer,
 			out:      "kafka.receive",
 		},
 		{
-			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "kafka.receive",
 		},
 		{
-			in:       map[string]interface{}{"rpc.system": "aws-api", "rpc.service": "Example_Method"},
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "aws-api"), attribute.String("rpc.service", "Example_Method")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "aws." + "example_method" + ".request",
 		},
 		{
-			in:       map[string]interface{}{"rpc.system": "aws-api", "rpc.service": ""},
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "aws-api"), attribute.String("rpc.service", "")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "aws.client.request",
 		},
 		{
-			in:       map[string]interface{}{"rpc.system": "myservice.EchoService"},
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "myservice.EchoService")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "myservice.echoservice.client.request",
 		},
 		{
-			in:       map[string]interface{}{"rpc.system": "myservice.EchoService"},
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "myservice.EchoService")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "myservice.echoservice.server.request",
 		},
 		{
-			in:       map[string]interface{}{"faas.invoked_provider": "some_provIDER", "faas.invoked_name": "some_NAME"},
+			in:       []attribute.KeyValue{attribute.String("faas.invoked_provider", "some_provIDER"), attribute.String("faas.invoked_name", "some_NAME")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "some_provider.some_name.invoke",
 		},
 		{
-			in:       map[string]interface{}{"faas.trigger": "some_NAME"},
+			in:       []attribute.KeyValue{attribute.String("faas.trigger", "some_NAME")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "some_name.invoke",
 		},
 		{
-			in:  map[string]interface{}{"graphql.operation.type": "subscription"},
+			in:  []attribute.KeyValue{attribute.String("graphql.operation.type", "subscription")},
 			out: "graphql.server.request",
 		},
 		{
-			in:       map[string]interface{}{"network.protocol.name": "amqp"},
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "amqp")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "amqp.server.request",
 		},
 		{
-			in:       map[string]interface{}{"network.protocol.name": ""},
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "server.request",
 		},
 		{
-			in:       map[string]interface{}{"network.protocol.name": "amqp"},
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "amqp")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "amqp.client.request",
 		},
 		{
-			in:       map[string]interface{}{"network.protocol.name": ""},
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "")},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "client.request",
 		},
 		{
-			in:       map[string]interface{}{"messaging.system": "kafka", "messaging.operation": "receive"},
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
 			spanKind: oteltrace.SpanKindServer,
 			out:      "kafka.receive",
 		},
 		// TODO pertains to the question of non-string attributes
 		{
-			in:  map[string]interface{}{"operation.name": 2},
+			in:  []attribute.KeyValue{attribute.Int("operation.name", 2)},
 			out: "otel_unknown",
 		},
 	}
 
-	_, _, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
 	defer cleanup()
 
-	tr := otel.Tracer("")
-	_, sp := tr.Start(context.Background(), "faas.invoked_provider")
-	sp.End()
 	for _, test := range testCases {
 		t.Run("", func(t *testing.T) {
-			attrs := attributes.New("", "")
-			for k, v := range test.in {
-				attrs = attrs.WithValue(k, v)
+			_, sp := tr.Start(context.Background(), "some_name",
+				oteltrace.WithSpanKind(test.spanKind), oteltrace.WithAttributes(test.in...))
+			sp.End()
+
+			tracer.Flush()
+			p, err := waitForPayload(ctx, payloads)
+			if err != nil {
+				t.Fatalf(err.Error())
 			}
-			name := remapOperationName(test.spanKind, attrs)
-			assert.Equal(t, test.out, name)
+			assert.Contains(t, p, test.out)
 		})
 	}
 }

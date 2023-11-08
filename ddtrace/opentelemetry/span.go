@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc/attributes"
 )
 
 var _ oteltrace.Span = (*span)(nil)
@@ -144,20 +143,16 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
-	var attrs *attributes.Attributes
-	for _, attribute := range kv {
-		attrs = attrs.WithValue(string(attribute.Key), attribute.Value)
-		// TODO add other datadog reserved remapping
-		if t := attrs.Value("span.type"); t != nil {
-			kind := oteltrace.SpanKind(attribute.Value.AsInt64())
-			s.spanKind = kind
-			s.Span.SetTag(ext.SpanKind, kind.String())
-		}
-		s.SetTag(toSpecialAttributes(string(attribute.Key), attribute.Value))
+	for _, keyValue := range kv {
+		s.SetTag(toSpecialAttributes(string(keyValue.Key), keyValue.Value))
 	}
-	// TODO what if the customer already set explicitly the 'operation.name',
-	// which overrides any other logic
-	if ops := remapOperationName(s.spanKind, attrs); ops != "otel_unknown" {
+	atttributesSet := attribute.NewSet(kv...)
+	if t, ok := atttributesSet.Value("span.type"); ok {
+		spanKind := oteltrace.SpanKind(t.AsInt64())
+		s.spanKind = spanKind
+		s.Span.SetTag(ext.SpanKind, spanKind.String())
+	}
+	if ops := remapOperationName(s.spanKind, atttributesSet); ops != "otel_unknown" {
 		s.SetOperationName(ops)
 	}
 }
@@ -167,7 +162,11 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
 	switch k {
 	case "operation.name":
-		return ext.SpanName, v.AsString()
+		if ops := strings.ToLower(v.AsString()); ops != "" {
+			return ext.SpanName, strings.ToLower(v.AsString())
+		}
+		// ignoring non-string values
+		return "", nil
 	case "service.name":
 		return ext.ServiceName, v.AsString()
 	case "resource.name":
@@ -192,20 +191,17 @@ const (
 	httpClient = "http.client.request"
 )
 
-func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attributes) (name string) {
-	defer func() {
-		name = strings.ToLower(name)
-	}()
+func remapOperationName(spanKind oteltrace.SpanKind, attrs attribute.Set) string {
 	isClient := spanKind == oteltrace.SpanKindClient
 	isServer := spanKind == oteltrace.SpanKindServer
 	// client set the value explicitly
 	// TODO what if operation name isn't a string?
-	if v := valueFromAttributes(attrs, "operation.name"); v != "" {
-		return v
+	if name := valueFromAttributes(attrs, "operation.name"); name != "" {
+		return strings.ToLower(name)
 	}
 
 	// http
-	if isHTTP := attrs.Value("http.request.method"); isHTTP != nil {
+	if _, ok := attrs.Value("http.request.method"); ok {
 		switch spanKind {
 		case oteltrace.SpanKindServer:
 			return httpServer
@@ -291,16 +287,10 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs *attributes.Attribute
 	return "otel_unknown"
 }
 
-func valueFromAttributes(attrs *attributes.Attributes, key string) string {
-	v := attrs.Value(key)
-	if v == nil {
+func valueFromAttributes(attrs attribute.Set, key string) string {
+	v, ok := attrs.Value(attribute.Key(key))
+	if !ok {
 		return ""
 	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	if s, ok := v.(attribute.Value); ok {
-		return s.AsString()
-	}
-	return ""
+	return strings.ToLower(v.AsString())
 }

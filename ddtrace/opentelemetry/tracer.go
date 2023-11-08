@@ -15,8 +15,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
+	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc/attributes"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -45,27 +45,27 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if t := ssConfig.Timestamp(); !t.IsZero() {
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
-	// constructing the attributes set to be used later in remapOperationName
-	var attrs *attributes.Attributes
+	// constructing the attributes to be used later in remapOperationName
+	var attrs []attribute.KeyValue
 	for _, attr := range ssConfig.Attributes() {
-		k, v := string(attr.Key), attr.Value.AsInterface()
-		attrs = attrs.WithValue(k, v)
-		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
+		attrs = append(attrs, attribute.KeyValue{
+			Key:   attr.Key,
+			Value: attr.Value,
+		})
+		if k, v := toSpecialAttributes(string(attr.Key), attr.Value); k != "" {
+			ddopts = append(ddopts, tracer.Tag(k, v))
+		}
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	if ops := remapOperationName(ssConfig.SpanKind(), attrs); ops != "otel_unknown" {
-		// TODO set resource to the OTel name
-		// OTel name is akin to resource name in Datadog
-		ddopts = append(ddopts, tracer.ResourceName(spanName))
-		spanName = ops
-	}
+	// OTel name is akin to resource name in Datadog
+	ddopts = append(ddopts, tracer.ResourceName(spanName))
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
-	s := tracer.StartSpan(spanName, ddopts...)
+	s := tracer.StartSpan(remapOperationName(ssConfig.SpanKind(), attribute.NewSet(attrs...)), ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
 		oteltracer: t,
