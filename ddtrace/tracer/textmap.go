@@ -276,7 +276,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	var ctx ddtrace.SpanContext
 	for _, v := range p.extractors {
 		if p, isW3C := v.(*propagatorW3c); isW3C && ctx != nil {
-			fmt.Println("HERE")
 			// A valid trace context has already been extracted. We should now extract
 			// and propagate the W3C tracestate header if the trace-id matches.
 			p.propagateTracestate(ctx.(*spanContext), carrier)

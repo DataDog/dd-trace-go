@@ -110,6 +110,7 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	tests := []struct {
 		name, propagationStyle, traceparent string
+		onlyExtractFirst                    bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 		wantTracestatePropagation           bool
 	}{
 		{
@@ -139,7 +140,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				the returned trace context.
 			*/
 			name:                      "datadog-and-w3c-mismatching-ids",
-			propagationStyle:          "datadog",
+			propagationStyle:          "datadog,tracecontext",
 			traceparent:               "00-00000000000000000000000000000088-2222222222222222-01",
 			wantTracestatePropagation: false,
 		},
@@ -150,14 +151,30 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				the returned trace context.
 			*/
 			name:                      "datadog-and-w3c-malformed",
-			propagationStyle:          "datadog",
+			propagationStyle:          "datadog,tracecontext",
 			traceparent:               "00-00000000000000000000000000000004-22asdf!2-01", // malformed
+			wantTracestatePropagation: false,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but DD_TRACE_PROPAGATION_EXTRACT_FIRST
+				is true, so the tracestate header should be ignored, and not propagated to
+				the returned trace context.
+			*/
+			name:                      "datadog-and-w3c-only-extract-first",
+			propagationStyle:          "datadog,tracecontext",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01", // malformed
+			onlyExtractFirst:          true,
 			wantTracestatePropagation: false,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
 			t.Setenv(headerPropagationStyle, tc.propagationStyle)
+			if tc.onlyExtractFirst {
+				os.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
+				defer os.Unsetenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST")
+			}
 			tracer := newTracer()
 			assert := assert.New(t)
 			headers := TextMapCarrier(map[string]string{
