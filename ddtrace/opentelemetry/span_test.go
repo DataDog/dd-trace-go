@@ -636,6 +636,7 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	sp.SetAttributes(attribute.String("operation.name", "Overriden.name"))
 	sp.SetAttributes(attribute.String("service.name", "new.service.name"))
 	sp.SetAttributes(attribute.String("span.type", "new.span.type"))
+	sp.SetAttributes(attribute.String("analytics.event", "true"))
 	sp.End()
 
 	tracer.Flush()
@@ -647,5 +648,5 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	assert.Contains(t, p, `"resource":"new.name"`)
 	assert.Contains(t, p, `"service":"new.service.name"`)
 	assert.Contains(t, p, `"type":"new.span.type"`)
-	assert.Contains(t, p, `"type":"new.span.type"`)
+	assert.Contains(t, p, `"_dd1.sr.eausr":1`)
 }

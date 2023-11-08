@@ -195,7 +195,9 @@ func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
 		return ext.SpanType, v.AsString()
 	case "analytics.event":
 		var rate int
-		if v.AsBool() {
+		if b, err := strconv.ParseBool(v.AsString()); err == nil && b {
+			rate = 1
+		} else if v.AsBool() {
 			rate = 1
 		} else {
 			rate = 0
