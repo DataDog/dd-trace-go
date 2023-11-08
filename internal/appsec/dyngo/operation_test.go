@@ -555,35 +555,35 @@ func TestUsage(t *testing.T) {
 }
 
 func TestSwapRootOperation(t *testing.T) {
-	var onStartCalled, onFinishCalled int
+	var onStartCalled, onFinishCalled atomic.Int32
 
 	root := dyngo.NewRootOperation()
 	root.On(OnMyOperationStart(func(dyngo.Operation, MyOperationArgs) {
-		onStartCalled++
+		onStartCalled.Add(1)
 	}))
 	root.On(OnMyOperationFinish(func(dyngo.Operation, MyOperationRes) {
-		onFinishCalled++
+		onFinishCalled.Add(1)
 	}))
 
 	dyngo.SwapRootOperation(root)
 	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-	require.Equal(t, 1, onStartCalled)
-	require.Equal(t, 1, onFinishCalled)
+	require.EqualValues(t, 1, onStartCalled.Load())
+	require.EqualValues(t, 1, onFinishCalled.Load())
 
 	dyngo.SwapRootOperation(dyngo.NewRootOperation())
 	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-	require.Equal(t, 1, onStartCalled)
-	require.Equal(t, 1, onFinishCalled)
+	require.EqualValues(t, 1, onStartCalled.Load())
+	require.EqualValues(t, 1, onFinishCalled.Load())
 
 	dyngo.SwapRootOperation(nil)
 	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-	require.Equal(t, 1, onStartCalled)
-	require.Equal(t, 1, onFinishCalled)
+	require.EqualValues(t, 1, onStartCalled.Load())
+	require.EqualValues(t, 1, onFinishCalled.Load())
 
 	dyngo.SwapRootOperation(root)
 	runOperation(nil, MyOperationArgs{}, MyOperationRes{}, func(op dyngo.Operation) {})
-	require.Equal(t, 2, onStartCalled)
-	require.Equal(t, 2, onFinishCalled)
+	require.EqualValues(t, 2, onStartCalled.Load())
+	require.EqualValues(t, 2, onFinishCalled.Load())
 }
 
 // Helper type wrapping a dyngo.Operation to provide some helper function and
