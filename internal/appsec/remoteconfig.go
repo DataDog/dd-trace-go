@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	waf "github.com/DataDog/go-libddwaf"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
@@ -165,6 +166,33 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			statuses[k] = genApplyStatus(true, err)
 		}
 	} else {
+		wafDiags := a.wafHandle.Diagnostics()
+		for field, entry := range map[string]*waf.DiagnosticEntry{
+			"rules":           wafDiags.Rules,
+			"custom_rules":    wafDiags.CustomRules,
+			"exclusions":      wafDiags.Exclusions,
+			"rules_overrides": wafDiags.RulesOverrides,
+			"rules_data":      wafDiags.RulesData,
+			"processors":      wafDiags.Processors,
+			"scanners":        wafDiags.Scanners,
+		} {
+			if entry == nil {
+				continue
+			}
+			if entry.Error != "" {
+				for k := range statuses {
+					statuses[k] = genApplyStatus(true, fmt.Errorf("the WAF rejected invalid %s: %s", field, entry.Error))
+				}
+				break // We are reporting failure, bail out now...
+			}
+			if len(entry.Failed) > 0 {
+				for k := range statuses {
+					statuses[k] = genApplyStatus(true, fmt.Errorf("the WAF failed to load some %s: %#v", field, entry.Failed))
+				}
+				break // We are reporting failure, bail out now...
+			}
+		}
+
 		// Replace the rulesManager with the new one holding the new state
 		a.cfg.rulesManager = r
 	}

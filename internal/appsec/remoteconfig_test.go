@@ -633,7 +633,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the WAF"))},
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'"))},
 		},
 		{
 			name:     "multiple/ack",
@@ -644,8 +644,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("could not instantiate the WAF")),
-				"invalid":   genApplyStatus(true, errors.New("could not instantiate the WAF")),
+				"overrides": genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'")),
+				"invalid":   genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'")),
 			},
 		},
 		{
@@ -670,7 +670,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				}
 			} else {
 				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses))
+				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
 			}
 		})
 	}
