@@ -619,3 +619,33 @@ func TestRemapName(t *testing.T) {
 		})
 	}
 }
+
+func TestRemapWithMultipleSetAttributes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "otel_span_name",
+		oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+
+	sp.SetAttributes(attribute.String("http.request.method", "GET"))
+	sp.SetAttributes(attribute.String("resource.name", "new.name"))
+	sp.SetAttributes(attribute.String("operation.name", "Overriden.name"))
+	sp.SetAttributes(attribute.String("service.name", "new.service.name"))
+	sp.SetAttributes(attribute.String("span.type", "new.span.type"))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(t, p, `"name":"overriden.name"`)
+	assert.Contains(t, p, `"resource":"new.name"`)
+	assert.Contains(t, p, `"service":"new.service.name"`)
+	assert.Contains(t, p, `"type":"new.span.type"`)
+	assert.Contains(t, p, `"type":"new.span.type"`)
+}

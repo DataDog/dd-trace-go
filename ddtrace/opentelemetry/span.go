@@ -25,7 +25,11 @@ var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
 	tracer.Span
-	finished   bool
+	finished bool
+	// nameSet signifies if the span operation name was set with specifically `operation.name` tag
+	// it is persisted here since it's not possible to see how the name was set,
+	// nor access the span attributes set before
+	nameSet    bool
 	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
 	statusInfo
@@ -144,15 +148,31 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // Every value is propagated as an interface.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 	for _, keyValue := range kv {
-		s.SetTag(toSpecialAttributes(string(keyValue.Key), keyValue.Value))
+		// remapping OTel attributes to Datadog semantics
+		k, v := toSpecialAttributes(string(keyValue.Key), keyValue.Value)
+		if k == ext.SpanName && v != "" {
+			s.nameSet = true
+		}
+		s.SetTag(k, v)
 	}
+	// if 'operation.name' was provided explicitly before or with new attributes,
+	// there is no need to recalculate the operation name
+	if s.nameSet {
+		return
+	}
+
+	// setting new attributes may affect span operation name,
+	// so we have to recalculate it
 	atttributesSet := attribute.NewSet(kv...)
-	if t, ok := atttributesSet.Value("span.type"); ok {
+
+	// remapping operation name relies on span.kind, which we can't get from the span once it was created,
+	// so we have to persist it locally
+	if t, ok := atttributesSet.Value("span.kind"); ok {
 		spanKind := oteltrace.SpanKind(t.AsInt64())
 		s.spanKind = spanKind
 		s.Span.SetTag(ext.SpanKind, spanKind.String())
 	}
-	if ops := remapOperationName(s.spanKind, atttributesSet); ops != "otel_unknown" {
+	if ops := remapOperationName(s.spanKind, atttributesSet, s.nameSet); ops != "otel_unknown" {
 		s.SetOperationName(ops)
 	}
 }
@@ -187,26 +207,29 @@ func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
 }
 
 const (
-	httpServer = "http.server.request"
-	httpClient = "http.client.request"
+	httpServerKey    = "http.server.request"
+	httpClientKey    = "http.client.request"
+	operationNameKey = "operation.name"
 )
 
-func remapOperationName(spanKind oteltrace.SpanKind, attrs attribute.Set) string {
+func remapOperationName(spanKind oteltrace.SpanKind, attrs attribute.Set, opsNameSet bool) string {
 	isClient := spanKind == oteltrace.SpanKindClient
 	isServer := spanKind == oteltrace.SpanKindServer
-	// client set the value explicitly
-	// TODO what if operation name isn't a string?
-	if name := valueFromAttributes(attrs, "operation.name"); name != "" {
-		return strings.ToLower(name)
+
+	// we can't check if and how the span name was set, so we have to persist it locally.
+	// opsNameSet signifies if the span name was set with specifically `operation.name` tag
+	// which has priority over the remapped operation name
+	if opsNameSet {
+		return ""
 	}
 
 	// http
 	if _, ok := attrs.Value("http.request.method"); ok {
 		switch spanKind {
 		case oteltrace.SpanKindServer:
-			return httpServer
+			return httpServerKey
 		case oteltrace.SpanKindClient:
-			return httpClient
+			return httpClientKey
 		}
 	}
 

@@ -30,7 +30,8 @@ type oteltracer struct {
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
-	var ddopts []ddtrace.StartSpanOption
+	// OTel name is akin to resource name in Datadog
+	ddopts := []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -45,13 +46,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if t := ssConfig.Timestamp(); !t.IsZero() {
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
-	// constructing the attributes to be used later in remapOperationName
-	var attrs []attribute.KeyValue
 	for _, attr := range ssConfig.Attributes() {
-		attrs = append(attrs, attribute.KeyValue{
-			Key:   attr.Key,
-			Value: attr.Value,
-		})
 		if k, v := toSpecialAttributes(string(attr.Key), attr.Value); k != "" {
 			ddopts = append(ddopts, tracer.Tag(k, v))
 		}
@@ -60,14 +55,24 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	// OTel name is akin to resource name in Datadog
-	ddopts = append(ddopts, tracer.ResourceName(spanName))
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
-	s := tracer.StartSpan(remapOperationName(ssConfig.SpanKind(), attribute.NewSet(attrs...)), ddopts...)
+	// since there is no way to see if and how the span operation name was set,
+	// we have to record it locally with span.nameSet field if it was changed
+	// with the explicit value of 'operation.name' tag
+	attributeSet := attribute.NewSet(ssConfig.Attributes()...)
+	opName, opNamePresent := "", false
+	if name := valueFromAttributes(attributeSet, operationNameKey); name != "" {
+		opName = name
+		opNamePresent = true
+	} else {
+		opName = remapOperationName(ssConfig.SpanKind(), attributeSet, false)
+	}
+	s := tracer.StartSpan(opName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
+		nameSet:    opNamePresent,
 		oteltracer: t,
 		spanKind:   ssConfig.SpanKind(),
 	})
