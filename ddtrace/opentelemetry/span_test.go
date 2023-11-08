@@ -500,6 +500,10 @@ func TestRemapName(t *testing.T) {
 			out: "ops",
 		},
 		{
+			in:  map[string]interface{}{},
+			out: "otel_unknown",
+		},
+		{
 			in:       map[string]interface{}{"http.request.method": "POST"},
 			spanKind: oteltrace.SpanKindClient,
 			out:      "http.client.request",
