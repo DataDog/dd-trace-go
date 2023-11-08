@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"testing"
 
@@ -26,14 +25,6 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	{
-		const ddAppsecEnabledEnvVar = "DD_APPSEC_ENABLED"
-		oldEnv := os.Getenv(ddAppsecEnabledEnvVar)
-		os.Setenv(ddAppsecEnabledEnvVar, "true")
-		defer os.Setenv(ddAppsecEnabledEnvVar, oldEnv)
-
-		appsec.Start()
-	}
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
