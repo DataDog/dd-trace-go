@@ -107,6 +107,83 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
+func TestTextMapExtractTracestatePropagation(t *testing.T) {
+	tests := []struct {
+		name, propagationStyle, traceparent string
+		wantTracestatePropagation           bool
+	}{
+		{
+			/*
+				With only Datadog propagation set, the tracestate header should
+				be ignored, and not propagated to the returned trace context.
+			*/
+			name:                      "datadog-only",
+			propagationStyle:          "datadog",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
+			wantTracestatePropagation: false,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, the tracestate header should
+				be propagated to the returned trace context.
+			*/
+			name:                      "datadog-and-w3c",
+			propagationStyle:          "datadog,tracecontext",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
+			wantTracestatePropagation: true,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but mismatching trace-ids,
+				the tracestate header should be ignored, and not propagated to
+				the returned trace context.
+			*/
+			name:                      "datadog-and-w3c-mismatching-ids",
+			propagationStyle:          "datadog",
+			traceparent:               "00-00000000000000000000000000000088-2222222222222222-01",
+			wantTracestatePropagation: false,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but mismatching trace-ids,
+				the tracestate header should be ignored, and not propagated to
+				the returned trace context.
+			*/
+			name:                      "datadog-and-w3c-malformed",
+			propagationStyle:          "datadog",
+			traceparent:               "00-00000000000000000000000000000004-22asdf!2-01", // malformed
+			wantTracestatePropagation: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
+			t.Setenv(headerPropagationStyle, tc.propagationStyle)
+			tracer := newTracer()
+			assert := assert.New(t)
+			headers := TextMapCarrier(map[string]string{
+				DefaultTraceIDHeader:  "4",
+				DefaultParentIDHeader: "1",
+				traceparentHeader:     tc.traceparent,
+				tracestateHeader:      "dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+			})
+
+			ctx, err := tracer.Extract(headers)
+			assert.Nil(err)
+			sctx, ok := ctx.(*spanContext)
+			assert.True(ok)
+			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+			assert.Equal(uint64(1), sctx.spanID)
+			if tc.wantTracestatePropagation {
+				assert.Equal("dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
+			} else if sctx.trace != nil {
+				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
+			}
+			// TODO: This could still benefit from some tests verifying that other fields are not changed,
+			// and only the tracestate header was propagated.
+		})
+	}
+}
+
 func TestTextMapPropagatorErrors(t *testing.T) {
 	t.Setenv(headerPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)

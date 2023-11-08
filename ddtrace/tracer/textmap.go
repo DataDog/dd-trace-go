@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -265,21 +266,59 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 	return nil
 }
 
-// Extract implements Propagator.
+// Extract implements Propagator. This method will attempt to extract the context
+// based on the precedence order of the propagators. Generally, the first valid
+// trace context that could be extracted will be returned, and other extractors will
+// be ignored. However, the W3C tracestate header value will always be extracted and
+// stored in the local trace context even if a previous propagator has already succeeded
+// so long as the trace-ids match.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	var ctx ddtrace.SpanContext
 	for _, v := range p.extractors {
-		ctx, err := v.Extract(carrier)
+		if p, isW3C := v.(*propagatorW3c); isW3C && ctx != nil {
+			fmt.Println("HERE")
+			// A valid trace context has already been extracted. We should now extract
+			// and propagate the W3C tracestate header if the trace-id matches.
+			p.propagateTracestate(ctx.(*spanContext), carrier)
+			sctx := ctx.(*spanContext)
+			fmt.Println(sctx)
+			break
+		}
+		var err error
+		ctx, err = v.Extract(carrier)
 		if ctx != nil {
-			// first extractor returns
-			log.Debug("Extracted span context: %#v", ctx)
-			return ctx, nil
+			if internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false) {
+				return ctx, nil
+			}
+		} else if err != ErrSpanContextNotFound {
+			return nil, err
 		}
-		if err == ErrSpanContextNotFound {
-			continue
-		}
-		return nil, err
+	}
+	if ctx != nil {
+		log.Debug("Extracted span context: %#v", ctx)
+		return ctx, nil
 	}
 	return nil, ErrSpanContextNotFound
+}
+
+func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{}) {
+	w3cCtx, _ := p.Extract(carrier)
+	if w3cCtx == nil {
+		return // It's not valid, so ignore it.
+	}
+	if ctx.TraceID() != w3cCtx.TraceID() {
+		return // The trace-ids must match.
+	}
+	if w3cCtx.(*spanContext).trace == nil {
+		// extractors initialize a new spanContext, so the trace might be nil
+		w3cCtx.(*spanContext).trace = newTrace()
+	}
+	// Get the tracestate header from extracted w3C context, and propagate
+	// it to the span context that will be returned.
+	// Note: Other trace context fields like sampling priority, propagated tags,
+	// and origin will remain unchanged.
+	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
+	setPropagatingTag(ctx, tracestateHeader, ts)
 }
 
 // propagator implements Propagator and injects/extracts span contexts
