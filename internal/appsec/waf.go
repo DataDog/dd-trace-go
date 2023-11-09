@@ -158,6 +158,7 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	wafDiags := handle.Diagnostics()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		wafCtx := waf.NewContext(handle.Handle)
@@ -246,13 +247,12 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
 
 			// Add WAF metrics.
-			wafDiags := handle.Diagnostics()
 			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
 			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 			// Add the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, wafDiags)
+				addRulesMonitoringTags(op, &wafDiags)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
@@ -269,6 +269,7 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 // to enable it.
 func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	wafDiags := handle.Diagnostics()
 
 	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
@@ -374,12 +375,11 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
 			defer wafCtx.Close()
-			wafDiags := handle.Diagnostics()
 			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs.Load(), internalRuntimeNs.Load(), nbTimeouts.Load())
 
 			// Log the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, wafDiags)
+				addRulesMonitoringTags(op, &wafDiags)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
@@ -476,7 +476,7 @@ type tagsHolder interface {
 }
 
 // Add the tags related to security rules monitoring
-func addRulesMonitoringTags(th tagsHolder, wafDiags waf.Diagnostics) {
+func addRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
 	rInfo := wafDiags.Rules
 	if rInfo == nil {
 		return
