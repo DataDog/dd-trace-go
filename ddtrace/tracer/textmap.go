@@ -309,8 +309,7 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 		return // The trace-ids must match.
 	}
 	if w3cCtx.(*spanContext).trace == nil {
-		// extractors initialize a new spanContext, so the trace might be nil
-		w3cCtx.(*spanContext).trace = newTrace()
+		return // this shouldn't happen, since it should have a propagating tag already
 	}
 	// Get the tracestate header from extracted w3C context, and propagate
 	// it to the span context that will be returned.
