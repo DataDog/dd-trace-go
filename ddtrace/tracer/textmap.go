@@ -298,6 +298,12 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 	return nil, ErrSpanContextNotFound
 }
 
+// propagateTracestate will add the tracestate propagating tag to the given
+// *spanContext. The W3C trace context will be extracted from the provided
+// carrier. The trace id of this W3C trace context must match the trace id
+// provided by the given *spanContext. If it matches, then the tracestate
+// will be re-composed based on the composition of the given *spanContext,
+// but will include the non-DD vendors in the W3C trace context's tracestate.
 func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{}) {
 	w3cCtx, _ := p.Extract(carrier)
 	if w3cCtx == nil {
@@ -309,12 +315,16 @@ func (p *propagatorW3c) propagateTracestate(ctx *spanContext, carrier interface{
 	if w3cCtx.(*spanContext).trace == nil {
 		return // this shouldn't happen, since it should have a propagating tag already
 	}
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
 	// Get the tracestate header from extracted w3C context, and propagate
 	// it to the span context that will be returned.
 	// Note: Other trace context fields like sampling priority, propagated tags,
 	// and origin will remain unchanged.
 	ts := w3cCtx.(*spanContext).trace.propagatingTag(tracestateHeader)
-	setPropagatingTag(ctx, tracestateHeader, ts)
+	priority, _ := ctx.SamplingPriority()
+	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 }
 
 // propagator implements Propagator and injects/extracts span contexts

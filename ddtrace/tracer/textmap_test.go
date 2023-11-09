@@ -118,10 +118,9 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				With only Datadog propagation set, the tracestate header should
 				be ignored, and not propagated to the returned trace context.
 			*/
-			name:                      "datadog-only",
-			propagationStyle:          "datadog",
-			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
-			wantTracestatePropagation: false,
+			name:             "datadog-only",
+			propagationStyle: "datadog",
+			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01",
 		},
 		{
 			/*
@@ -150,10 +149,9 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
-			name:                      "datadog-and-w3c-mismatching-ids",
-			propagationStyle:          "datadog,tracecontext",
-			traceparent:               "00-00000000000000000000000000000088-2222222222222222-01",
-			wantTracestatePropagation: false,
+			name:             "datadog-and-w3c-mismatching-ids",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000088-2222222222222222-01",
 		},
 		{
 			/*
@@ -161,10 +159,9 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
-			name:                      "datadog-and-w3c-malformed",
-			propagationStyle:          "datadog,tracecontext",
-			traceparent:               "00-00000000000000000000000000000004-22asdf!2-01", // malformed
-			wantTracestatePropagation: false,
+			name:             "datadog-and-w3c-malformed",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000004-22asdf!2-01", // malformed
 		},
 		{
 			/*
@@ -172,9 +169,8 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
-			name:                      "datadog-and-w3c-no-traceparent",
-			propagationStyle:          "datadog,tracecontext",
-			wantTracestatePropagation: false,
+			name:             "datadog-and-w3c-no-traceparent",
+			propagationStyle: "datadog,tracecontext",
 		},
 		{
 			/*
@@ -182,11 +178,10 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				is true, the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
-			name:                      "datadog-and-w3c-only-extract-first",
-			propagationStyle:          "datadog,tracecontext",
-			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01", // malformed
-			onlyExtractFirst:          true,
-			wantTracestatePropagation: false,
+			name:             "datadog-and-w3c-only-extract-first",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01", // malformed
+			onlyExtractFirst: true,
 		},
 	}
 	for _, tc := range tests {
@@ -201,6 +196,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			headers := TextMapCarrier(map[string]string{
 				DefaultTraceIDHeader:  "4",
 				DefaultParentIDHeader: "1",
+				originHeader:          "synthetics",
 				b3TraceIDHeader:       "0021dc1807524785",
 				traceparentHeader:     tc.traceparent,
 				tracestateHeader:      "dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
@@ -213,7 +209,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
 			assert.Equal(uint64(1), sctx.spanID)
 			if tc.wantTracestatePropagation {
-				assert.Equal("dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
+				assert.Equal("dd=s:0;o:synthetics,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
 			}
