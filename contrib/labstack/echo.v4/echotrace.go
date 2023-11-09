@@ -40,9 +40,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
+	}
+	for k, v := range cfg.tags {
+		spanOpts = append(spanOpts, tracer.Tag(k, v))
+	}
+	spanOpts = append(spanOpts, []ddtrace.StartSpanOption{
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-	}
+	}...)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing

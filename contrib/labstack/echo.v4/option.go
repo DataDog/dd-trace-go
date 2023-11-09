@@ -27,6 +27,7 @@ type config struct {
 	isStatusError     func(statusCode int) bool
 	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        *internal.LockMap
+	tags              map[string]interface{}
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -40,6 +41,7 @@ func defaults(cfg *config) {
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.tags = make(map[string]interface{})
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
 		if errors.As(err, &echoErr) {
@@ -124,5 +126,17 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
+}
+
+// WithTag sets a key/value pair that should be set as metadata on the new span.
+// The custom tag will be set when the span starts and can be replaced by
+// default tags.
+func WithTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }
