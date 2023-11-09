@@ -163,7 +163,7 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 
 	// setting new attributes may affect span operation name,
 	// so we have to recalculate it
-	atttributesSet := attribute.NewSet(kv...)
+	attributesSet := attribute.NewSet(kv...)
 
 	// remapping operation name relies on span.kind, which we can't get from the span once it was created,
 	// so we have to persist it locally
