@@ -129,10 +129,9 @@ func WithHeaderTags(headers []string) Option {
 	}
 }
 
-// WithTag sets a key/value pair that should be set as metadata on the new span.
-// The custom tag will be set when the span starts and can be replaced by
-// default tags.
-func WithTag(key string, value interface{}) Option {
+// WithCustomTag will attach the value to the span tagged by the key. Standard
+// span tags cannot be replaced.
+func WithCustomTag(key string, value interface{}) Option {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})

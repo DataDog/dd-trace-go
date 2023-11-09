@@ -589,7 +589,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 }
 
-func TestWithTags(t *testing.T) {
+func TestWithCustomTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -599,9 +599,9 @@ func TestWithTags(t *testing.T) {
 	router := echo.New()
 	router.Use(Middleware(
 		WithServiceName("foobar"),
-		WithTag("customTag1", "customValue1"),
-		WithTag("customTag2", "customValue2"),
-		WithTag(ext.SpanKind, "replace me"),
+		WithCustomTag("customTag1", "customValue1"),
+		WithCustomTag("customTag2", "customValue2"),
+		WithCustomTag(ext.SpanKind, "replace me"),
 	))
 
 	// a handler with an error and make the requests
