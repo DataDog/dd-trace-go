@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -46,11 +45,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if t := ssConfig.Timestamp(); !t.IsZero() {
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
-	for _, attr := range ssConfig.Attributes() {
-		if k, v := toSpecialAttributes(string(attr.Key), attr.Value); k != "" {
-			ddopts = append(ddopts, tracer.Tag(k, v))
-		}
-	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
@@ -58,23 +52,15 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 	}
-	// since there is no way to see if and how the span operation name was set,
-	// we have to record it locally with span.nameSet field if it was changed
-	// with the explicit value of 'operation.name' tag
-	attributeSet := attribute.NewSet(ssConfig.Attributes()...)
-	opName, opNamePresent := "", false
-	if name := valueFromAttributes(attributeSet, operationNameKey); name != "" {
-		opName = name
-		opNamePresent = true
-	} else {
-		opName = remapOperationName(ssConfig.SpanKind(), attributeSet, false)
-	}
-	s := tracer.StartSpan(opName, ddopts...)
+	// Since there is no way to see if and how the span operation name was set,
+	// we have to record the attributes  locally.
+	// The span operation name will be calculated when it's ended.
+	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		Span:       s,
-		nameSet:    opNamePresent,
 		oteltracer: t,
 		spanKind:   ssConfig.SpanKind(),
+		attributes: ssConfig.Attributes(),
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
