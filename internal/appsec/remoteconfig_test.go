@@ -633,7 +633,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'"))},
+			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New(`the WAF reported a top-level error: in "rules_override": bad cast, expected 'map', obtained 'float'`))},
 		},
 		{
 			name:     "multiple/ack",
@@ -644,8 +644,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'")),
-				"invalid":   genApplyStatus(true, errors.New("the WAF rejected invalid rules_overrides: bad cast, expected 'map', obtained 'float'")),
+				"overrides": genApplyStatus(true, errors.New(`the WAF reported a top-level error: in "rules_override": bad cast, expected 'map', obtained 'float'`)),
+				"invalid":   genApplyStatus(true, errors.New(`the WAF reported a top-level error: in "rules_override": bad cast, expected 'map', obtained 'float'`)),
 			},
 		},
 		{
