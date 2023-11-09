@@ -156,11 +156,12 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.PriorityHeader == "" {
 		cfg.PriorityHeader = DefaultPriorityHeader
 	}
+	cp := new(chainedPropagator)
+	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	if len(propagators) > 0 {
-		return &chainedPropagator{
-			injectors:  propagators,
-			extractors: propagators,
-		}
+		cp.injectors = propagators
+		cp.extractors = propagators
+		return cp
 	}
 	injectorsPs := os.Getenv(headerPropagationStyleInject)
 	if injectorsPs == "" {
@@ -174,24 +175,20 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 			log.Warn("%v is deprecated. Please use %v or %v instead.\n", headerPropagationStyleExtractDeprecated, headerPropagationStyleExtract, headerPropagationStyle)
 		}
 	}
-	injectors, injectorNames := getPropagators(cfg, injectorsPs)
-	extractors, extractorsNames := getPropagators(cfg, extractorsPs)
-	return &chainedPropagator{
-		injectors,
-		extractors,
-		injectorNames,
-		extractorsNames,
-	}
+	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	return cp
 }
 
 // chainedPropagator implements Propagator and applies a list of injectors and extractors.
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors       []Propagator
-	extractors      []Propagator
-	injectorNames   string
-	extractorsNames string
+	injectors        []Propagator
+	extractors       []Propagator
+	injectorNames    string
+	extractorsNames  string
+	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated
@@ -275,9 +272,12 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	var ctx ddtrace.SpanContext
 	for _, v := range p.extractors {
-		if p, isW3C := v.(*propagatorW3c); isW3C && ctx != nil {
-			// A valid trace context has already been extracted. We should now extract
-			// and propagate the W3C tracestate header if the trace-id matches.
+		if ctx != nil {
+			// A local trace context has already been extracted.
+			p, isW3C := v.(*propagatorW3c)
+			if !isW3C {
+				continue // Ignore other propagators.
+			}
 			p.propagateTracestate(ctx.(*spanContext), carrier)
 			break
 		}

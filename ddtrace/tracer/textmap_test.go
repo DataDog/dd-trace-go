@@ -125,6 +125,17 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		},
 		{
 			/*
+				With Datadog, B3, AND w3c propagation set, the tracestate header should
+				be propagated to the returned trace context. This test also verifies that
+				b3 extraction doesn't override the local context value.
+			*/
+			name:                      "datadog-b3-w3c",
+			propagationStyle:          "datadog,b3,tracecontext",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
+			wantTracestatePropagation: true,
+		},
+		{
+			/*
 				With Datadog AND w3c propagation set, the tracestate header should
 				be propagated to the returned trace context.
 			*/
@@ -180,6 +191,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			headers := TextMapCarrier(map[string]string{
 				DefaultTraceIDHeader:  "4",
 				DefaultParentIDHeader: "1",
+				b3TraceIDHeader:       "0021dc1807524785",
 				traceparentHeader:     tc.traceparent,
 				tracestateHeader:      "dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
 			})
