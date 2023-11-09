@@ -167,12 +167,12 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 
 	// remapping operation name relies on span.kind, which we can't get from the span once it was created,
 	// so we have to persist it locally
-	if t, ok := atttributesSet.Value("span.kind"); ok {
+	if t, ok := attributesSet.Value("span.kind"); ok {
 		spanKind := oteltrace.SpanKind(t.AsInt64())
 		s.spanKind = spanKind
 		s.Span.SetTag(ext.SpanKind, spanKind.String())
 	}
-	if ops := remapOperationName(s.spanKind, atttributesSet, s.nameSet); ops != "otel_unknown" {
+	if ops := remapOperationName(s.spanKind, attributesSet, s.nameSet); ops != "otel_unknown" {
 		s.SetOperationName(ops)
 	}
 }
