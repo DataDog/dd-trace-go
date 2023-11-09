@@ -147,7 +147,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		{
 			/*
 				With Datadog AND w3c propagation set, but mismatching trace-ids,
-				the tracestate header should be ignored, and not propagated to
+				the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
 			name:                      "datadog-and-w3c-mismatching-ids",
@@ -157,8 +157,8 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		},
 		{
 			/*
-				With Datadog AND w3c propagation set, but mismatching trace-ids,
-				the tracestate header should be ignored, and not propagated to
+				With Datadog AND w3c propagation set, but the traceparent is malformed,
+				the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
 			name:                      "datadog-and-w3c-malformed",
@@ -168,8 +168,18 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		},
 		{
 			/*
+				With Datadog AND w3c propagation set, but there is no traceparent,
+				the tracestate header should be ignored and not propagated to
+				the returned trace context.
+			*/
+			name:                      "datadog-and-w3c-no-traceparent",
+			propagationStyle:          "datadog,tracecontext",
+			wantTracestatePropagation: false,
+		},
+		{
+			/*
 				With Datadog AND w3c propagation set, but DD_TRACE_PROPAGATION_EXTRACT_FIRST
-				is true, so the tracestate header should be ignored, and not propagated to
+				is true, the tracestate header should be ignored and not propagated to
 				the returned trace context.
 			*/
 			name:                      "datadog-and-w3c-only-extract-first",
