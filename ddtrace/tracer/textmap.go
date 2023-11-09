@@ -280,7 +280,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 			// and propagate the W3C tracestate header if the trace-id matches.
 			p.propagateTracestate(ctx.(*spanContext), carrier)
 			sctx := ctx.(*spanContext)
-			fmt.Println(sctx)
 			break
 		}
 		var err error
