@@ -276,11 +276,8 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
-			nbEvents          atomic.Uint32
-			logOnce           sync.Once // per request
-			overallRuntimeNs  atomic.Uint64
-			internalRuntimeNs atomic.Uint64
-			nbTimeouts        atomic.Uint64
+			nbEvents atomic.Uint32
+			logOnce  sync.Once // per request
 
 			events []any
 			mu     sync.Mutex // events mutex
@@ -356,14 +353,6 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			// response is not supported at the moment.
 			wafResult := runWAF(wafCtx, values, timeout)
 
-			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
-			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
-			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
-			overall, internal := wafCtx.TotalRuntime()
-			overallRuntimeNs.Add(overall)
-			internalRuntimeNs.Add(internal)
-			nbTimeouts.Add(wafCtx.TotalTimeouts())
-
 			if wafResult.HasEvents() {
 				log.Debug("appsec: attack detected by the grpc waf")
 				nbEvents.Inc()
@@ -375,7 +364,8 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
 			defer wafCtx.Close()
-			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs.Load(), internalRuntimeNs.Load(), nbTimeouts.Load())
+			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
+			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 			// Log the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
