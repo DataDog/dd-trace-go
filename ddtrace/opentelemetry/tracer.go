@@ -31,7 +31,7 @@ type oteltracer struct {
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
-	var ddopts []ddtrace.StartSpanOption
+	var ddopts = []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -54,7 +54,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if ok {
 		ddopts = append(ddopts, ctxOpts...)
 	}
-	ddopts = append(ddopts, tracer.ResourceName(spanName))
 	var cfg ddtrace.StartSpanConfig
 	for _, option := range ctxOpts {
 		option(&cfg)

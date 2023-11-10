@@ -245,7 +245,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 			tracer.StartTime(startTime),
 			tracer.WithSpanID(spanID),
 		), "op_name",
-		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
+		oteltrace.WithAttributes(
+			attribute.String(ext.ResourceName, ""),
+			attribute.String(ext.ServiceName, "discarded")),
 		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
 	)
 
@@ -269,7 +271,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	}
 	fmt.Println(p)
 	assert.Contains(p, `"service":"persisted_srv"`)
-	assert.Contains(p, `"resource":"op_name"`)
+	assert.Contains(p, `"resource":"persisted_ctx_rsc"`)
 	assert.Contains(p, `"span.kind":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
