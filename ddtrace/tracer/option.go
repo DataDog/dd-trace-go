@@ -1189,6 +1189,43 @@ func AnalyticsRate(rate float64) StartSpanOption {
 	return Tag(ext.EventSampleRate, rate)
 }
 
+// WithConfig merges the given StartSpanConfig into the one used to start the span.
+// It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
+func WithConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
+	return func(c *ddtrace.StartSpanConfig) {
+		// copy cfg into c only if cfg fields are not zero values
+		// c fields have precedence, as they may have been set up before running this option
+		if c.SpanID == 0 {
+			c.SpanID = cfg.SpanID
+		}
+
+		if c.Parent == nil {
+			c.Parent = cfg.Parent
+		}
+
+		if c.Context == nil {
+			c.Context = cfg.Context
+		}
+
+		if c.StartTime.IsZero() {
+			c.StartTime = cfg.StartTime
+		}
+
+		// tags are a special case, as we need to merge them
+		if c.Tags == nil {
+			// if cfg.Tags is nil, this is a no-op
+			c.Tags = cfg.Tags
+		} else if cfg.Tags != nil {
+			for k, v := range cfg.Tags {
+				// only set the tag if it's not already set
+				if _, ok := c.Tags[k]; !ok {
+					c.Tags[k] = v
+				}
+			}
+		}
+	}
+}
+
 // FinishOption is a configuration option for FinishSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
 // more correct to refer to it as the type as the origin, ddtrace.FinishOption.
