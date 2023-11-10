@@ -59,6 +59,11 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 		}
 	}()
 
+	wafDiags := newHandle.Diagnostics()
+	if err := wafDiags.TopLevelError(); err != nil {
+		log.Debug("the WAF reported a top-level error (some of the new configuration may not have been applied): %v", err)
+	}
+
 	listeners, err := newWAFEventListeners(newHandle, a.cfg, a.limiter)
 	if err != nil {
 		return err
@@ -473,14 +478,13 @@ func addRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
 		return
 	}
 
-	if len(rInfo.Errors) == 0 {
-		rInfo.Errors = nil
+	if len(rInfo.Errors) > 0 {
+		rulesetErrors, err := json.Marshal(rInfo.Errors)
+		if err != nil {
+			log.Error("appsec: could not marshal the waf ruleset info errors to json")
+		}
+		th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
 	}
-	rulesetErrors, err := json.Marshal(rInfo.Errors)
-	if err != nil {
-		log.Error("appsec: could not marshal the waf ruleset info errors to json")
-	}
-	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
 	th.AddTag(eventRulesLoadedTag, float64(len(rInfo.Loaded)))
 	th.AddTag(eventRulesFailedTag, float64(len(rInfo.Failed)))
 	th.AddTag(wafVersionTag, waf.Version())
