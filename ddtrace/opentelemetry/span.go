@@ -26,7 +26,7 @@ var _ oteltrace.Span = (*span)(nil)
 type span struct {
 	tracer.Span
 	finished   bool
-	attributes []attribute.KeyValue
+	attributes map[string]interface{}
 	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
 	statusInfo
@@ -38,7 +38,7 @@ func (s *span) AddEvent(_ string, _ ...oteltrace.EventOption)   { /*	no-op */ }
 func (s *span) RecordError(_ error, _ ...oteltrace.EventOption) { /*	no-op */ }
 
 func (s *span) SetName(name string) {
-	s.attributes = append(s.attributes, attribute.String(ext.SpanName, name))
+	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -46,26 +46,23 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	s.finished = true
-	tagMap := map[string]interface{}{}
-	var opName string
-	for _, kv := range s.attributes {
+	for k, v := range s.attributes {
 		//	if we find operation.name,
-		if kv.Key == operationNameKey || kv.Key == ext.SpanName {
+		if k == operationNameKey || k == ext.SpanName {
 			//	set it and keep track that it was set to ignore everything else
-			opName = strings.ToLower(kv.Value.AsString())
-		}
-		if k, v := toSpecialAttributes(string(kv.Key), kv.Value); k != "" {
-			tagMap[k] = v
+			if name, ok := v.(string); ok {
+				s.attributes[ext.SpanName] = strings.ToLower(name)
+			}
 		}
 	}
 
 	// if no operation name was explicitly set,
 	// operation name has to be calculated from the attributes
-	if opName == "" {
-		tagMap[ext.SpanName] = strings.ToLower(remapOperationName(s.spanKind, tagMap))
+	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
+		s.attributes[ext.SpanName] = strings.ToLower(remapOperationName(s.spanKind, s.attributes))
 	}
 
-	for k, v := range tagMap {
+	for k, v := range s.attributes {
 		s.SetTag(k, v)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
@@ -168,7 +165,11 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
-	s.attributes = append(s.attributes, kv...)
+	for _, kv := range kv {
+		if k, v := toSpecialAttributes(string(kv.Key), kv.Value); k != "" {
+			s.attributes[k] = v
+		}
+	}
 }
 
 // toSpecialAttributes recognizes a set of span attributes that have a special meaning.

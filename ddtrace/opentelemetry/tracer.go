@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"go.opentelemetry.io/otel/attribute"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -30,7 +31,7 @@ type oteltracer struct {
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
-	ddopts := []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
+	var ddopts []ddtrace.StartSpanOption
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -49,9 +50,16 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	if opts, ok := spanOptionsFromContext(ctx); ok {
-		ddopts = append(ddopts, opts...)
+	ctxOpts, ok := spanOptionsFromContext(ctx)
+	if ok {
+		ddopts = append(ddopts, ctxOpts...)
 	}
+	ddopts = append(ddopts, tracer.ResourceName(spanName))
+	var cfg ddtrace.StartSpanConfig
+	for _, option := range ctxOpts {
+		option(&cfg)
+	}
+	finalTags := reconcileTags(cfg.Tags, ssConfig.Attributes())
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
@@ -60,13 +68,25 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		Span:       s,
 		oteltracer: t,
 		spanKind:   ssConfig.SpanKind(),
-		attributes: ssConfig.Attributes(),
+		attributes: finalTags,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
+}
+
+func reconcileTags(ddMap map[string]interface{}, otelMap []attribute.KeyValue) map[string]interface{} {
+	result := make(map[string]interface{})
+	for _, attr := range otelMap {
+		result[string(attr.Key)] = attr.Value.AsInterface()
+	}
+
+	for k, v := range ddMap {
+		result[k] = v
+	}
+	return result
 }
 
 type otelCtxToDDCtx struct {

@@ -103,7 +103,7 @@ func TestSpanSetName(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, "NewName")
+	assert.Contains(p, strings.ToLower("NewName"))
 }
 
 func TestSpanEnd(t *testing.T) {
@@ -267,8 +267,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	if strings.Count(p, "span_id") != 2 {
 		t.Fatalf("payload does not contain two spans\n%s", p)
 	}
-	assert.Contains(p, "persisted_ctx_rsc")
-	assert.Contains(p, "persisted_srv")
+	fmt.Println(p)
+	assert.Contains(p, `"service":"persisted_srv"`)
+	assert.Contains(p, `"resource":"op_name"`)
 	assert.Contains(p, `"span.kind":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
