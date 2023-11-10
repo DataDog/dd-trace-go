@@ -1522,3 +1522,35 @@ func TestWithConfig(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, s.Type)
 	assert.Equal(tm.UnixNano(), s.Start)
 }
+
+func optsTestConsumer(opts ...StartSpanOption) {
+	var cfg ddtrace.StartSpanConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+}
+
+func BenchmarkConfig(b *testing.B) {
+	b.Run("usage=none", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			optsTestConsumer(
+				ServiceName("SomeService"),
+				ResourceName("SomeResource"),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+		}
+	})
+	b.Run("usage=WithConfig", func(b *testing.B) {
+		b.ReportAllocs()
+		cfg := ddtrace.NewStartSpanConfig(
+			ServiceName("SomeService"),
+			ResourceName("SomeResource"),
+			Tag(ext.HTTPRoute, "/some/route/?"),
+		)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			optsTestConsumer(WithConfig(cfg))
+		}
+	})
+}
