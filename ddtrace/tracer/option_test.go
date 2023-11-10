@@ -1563,8 +1563,8 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		defer tracer.Stop()
 		assert.NoError(b, err)
 		b.ReportAllocs()
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.ResetTimer()
 			tracer.StartSpan("test",
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1582,8 +1582,8 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 			ServiceName("SomeService"),
 			ResourceName("SomeResource"),
 		)
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			b.ResetTimer()
 			tracer.StartSpan("test",
 				WithConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
