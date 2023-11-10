@@ -284,18 +284,20 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		var err error
 		ctx, err = v.Extract(carrier)
 		if ctx != nil {
-			if internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false) {
+			if p.onlyExtractFirst {
+				// Return early if the customer configured that only the first successful
+				// extraction should occur.
 				return ctx, nil
 			}
 		} else if err != ErrSpanContextNotFound {
 			return nil, err
 		}
 	}
-	if ctx != nil {
-		log.Debug("Extracted span context: %#v", ctx)
-		return ctx, nil
+	if ctx == nil {
+		return nil, ErrSpanContextNotFound
 	}
-	return nil, ErrSpanContextNotFound
+	log.Debug("Extracted span context: %#v", ctx)
+	return ctx, nil
 }
 
 // propagateTracestate will add the tracestate propagating tag to the given
