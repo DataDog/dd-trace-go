@@ -1531,7 +1531,7 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
-	b.Run("usage=none", func(b *testing.B) {
+	b.Run("scenario=none", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			optsTestConsumer(
@@ -1541,16 +1541,53 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
-	b.Run("usage=WithConfig", func(b *testing.B) {
+	b.Run("scenario=WithConfig", func(b *testing.B) {
 		b.ReportAllocs()
 		cfg := ddtrace.NewStartSpanConfig(
 			ServiceName("SomeService"),
 			ResourceName("SomeResource"),
-			Tag(ext.HTTPRoute, "/some/route/?"),
 		)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			optsTestConsumer(WithConfig(cfg))
+			optsTestConsumer(
+				WithConfig(cfg),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+		}
+	})
+}
+
+func BenchmarkStartSpanConfig(b *testing.B) {
+	b.Run("scenario=none", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			b.ResetTimer()
+			tracer.StartSpan("test",
+				ServiceName("SomeService"),
+				ResourceName("SomeResource"),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+
+		}
+	})
+	b.Run("scenario=WithConfig", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		b.ReportAllocs()
+		cfg := ddtrace.NewStartSpanConfig(
+			ServiceName("SomeService"),
+			ResourceName("SomeResource"),
+		)
+		for i := 0; i < b.N; i++ {
+			b.ResetTimer()
+			tracer.StartSpan("test",
+				WithConfig(cfg),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
 		}
 	})
 }
