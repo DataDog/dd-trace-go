@@ -161,7 +161,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			*/
 			name:             "datadog-and-w3c-malformed",
 			propagationStyle: "datadog,tracecontext",
-			traceparent:      "00-00000000000000000000000000000004-22asdf!2-01", // malformed
+			traceparent:      "00-00000000000000000000000000000004-22asdf!2-01",
 		},
 		{
 			/*
@@ -180,7 +180,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			*/
 			name:             "datadog-and-w3c-only-extract-first",
 			propagationStyle: "datadog,tracecontext",
-			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01", // malformed
+			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01",
 			onlyExtractFirst: true,
 		},
 	}
@@ -207,14 +207,13 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 			sctx, ok := ctx.(*spanContext)
 			assert.True(ok)
 			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
-			assert.Equal(uint64(1), sctx.spanID)
+			assert.Equal(uint64(1), sctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
+			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
 				assert.Equal("dd=s:0;o:synthetics,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
 			} else if sctx.trace != nil {
 				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
 			}
-			// TODO: This could still benefit from some tests verifying that other fields are not changed,
-			// and only the tracestate header was propagated.
 		})
 	}
 }
