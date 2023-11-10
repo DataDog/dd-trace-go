@@ -29,7 +29,7 @@ func TestTagsTypes(t *testing.T) {
 		},
 	}
 
-	addRulesMonitoringTags(&th, wafDiags)
+	addRulesMonitoringTags(&th, &wafDiags)
 	addWAFMonitoringTags(&th, "1.2.3", 2, 1, 3)
 
 	tags := th.Tags()
