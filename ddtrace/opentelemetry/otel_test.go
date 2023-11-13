@@ -49,7 +49,10 @@ func TestHttpDistributedTrace(t *testing.T) {
 	p := <-payloads
 	numSpans := strings.Count(p, "\"span_id\"")
 	assert.Equal(t, 3, numSpans)
-	assert.Contains(t, p, "\"name\":\"testRootSpan\"")
-	assert.Contains(t, p, "\"name\":\"testOperation\"")
-	assert.Contains(t, p, "\"name\":\"HTTP GET\"")
+	assert.Contains(t, p, `"name":"internal"`)
+	assert.Contains(t, p, `"name":"server.request`)
+	assert.Contains(t, p, `"name":"client.request"`)
+	assert.Contains(t, p, `"resource":"testRootSpan"`)
+	assert.Contains(t, p, `"resource":"testOperation"`)
+	assert.Contains(t, p, `"resource":"HTTP GET"`)
 }
