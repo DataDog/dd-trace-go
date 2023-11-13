@@ -92,10 +92,12 @@ func TestUserRules(t *testing.T) {
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("match-response-header", "match-response-header")
-		w.WriteHeader(200)
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("match-response-header", "match-response-header")
+		w.WriteHeader(204)
 	})
 
 	srv := httptest.NewServer(mux)
@@ -108,16 +110,17 @@ func TestUserRules(t *testing.T) {
 	}{
 		{
 			name: "custom-001",
+			url:  "/hello",
 			rule: "custom-001",
 		},
 		{
 			name: "custom-action",
-			url:  "?match=match-request-query",
+			url:  "/hello?match=match-request-query",
 			rule: "query-002",
 		},
 		{
 			name: "response-headers",
-			url:  "",
+			url:  "/response-header",
 			rule: "headers-003",
 		},
 	} {
