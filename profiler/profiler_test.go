@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/goleak"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -36,7 +37,7 @@ func TestMain(m *testing.M) {
 	// so we want to discard it during tests to avoid flooding the terminal
 	// with logs
 	log.UseLogger(log.DiscardLogger{})
-	os.Exit(m.Run())
+	goleak.VerifyTestMain(m)
 }
 
 func TestStart(t *testing.T) {
