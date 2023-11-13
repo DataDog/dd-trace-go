@@ -165,9 +165,12 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 // Some attribute keys are reserved and will be remapped to Datadog reserved tags.
-// The mapping for reserved tags is as follows:
-//   - "operation.name" is remapped to "span.name"
-//   - "analytics.event" is remapped to "_dd1.sr.eausr"
+// The reserved tags list is as follows:
+//   - "operation.name" (remapped to "span.name")
+//   - "analytics.event" (remapped to "_dd1.sr.eausr")
+//   - "service.name"
+//   - "resource.name"
+//   - "span.type"
 //
 // The list of reserved tags might be extended in the future.
 // Any other non-reserved tags will be set as provided.

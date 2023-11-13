@@ -52,19 +52,14 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	var cfg ddtrace.StartSpanConfig
+	for _, attr := range ssConfig.Attributes() {
+		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
+	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {
 			o(&cfg)
 		}
-	}
-	finalTags := make(map[string]interface{})
-	for _, attr := range ssConfig.Attributes() {
-		finalTags[string(attr.Key)] = attr.Value.AsInterface()
-	}
-
-	for k, v := range cfg.Tags {
-		finalTags[k] = v
 	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
@@ -74,7 +69,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		DD:         s,
 		oteltracer: t,
 		spanKind:   ssConfig.SpanKind(),
-		attributes: finalTags,
+		attributes: cfg.Tags,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
