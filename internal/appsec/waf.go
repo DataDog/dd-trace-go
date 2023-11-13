@@ -243,6 +243,10 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 				values[serverResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
 			}
 
+			if _, ok := addresses[serverResponseHeadersNoCookiesAddr]; ok && res.Headers != nil {
+				values[serverResponseHeadersNoCookiesAddr] = res.Headers
+			}
+
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
 			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
@@ -391,16 +395,17 @@ func runWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duratio
 
 // HTTP rule addresses currently supported by the WAF
 const (
-	serverRequestMethodAddr           = "server.request.method"
-	serverRequestRawURIAddr           = "server.request.uri.raw"
-	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
-	serverRequestCookiesAddr          = "server.request.cookies"
-	serverRequestQueryAddr            = "server.request.query"
-	serverRequestPathParamsAddr       = "server.request.path_params"
-	serverRequestBodyAddr             = "server.request.body"
-	serverResponseStatusAddr          = "server.response.status"
-	httpClientIPAddr                  = "http.client_ip"
-	userIDAddr                        = "usr.id"
+	serverRequestMethodAddr            = "server.request.method"
+	serverRequestRawURIAddr            = "server.request.uri.raw"
+	serverRequestHeadersNoCookiesAddr  = "server.request.headers.no_cookies"
+	serverRequestCookiesAddr           = "server.request.cookies"
+	serverRequestQueryAddr             = "server.request.query"
+	serverRequestPathParamsAddr        = "server.request.path_params"
+	serverRequestBodyAddr              = "server.request.body"
+	serverResponseStatusAddr           = "server.response.status"
+	serverResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
+	httpClientIPAddr                   = "http.client_ip"
+	userIDAddr                         = "usr.id"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
@@ -413,6 +418,7 @@ var httpAddresses = []string{
 	serverRequestPathParamsAddr,
 	serverRequestBodyAddr,
 	serverResponseStatusAddr,
+	serverResponseHeadersNoCookiesAddr,
 	httpClientIPAddr,
 	userIDAddr,
 }
