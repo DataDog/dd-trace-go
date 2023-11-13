@@ -19,12 +19,14 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	tracer.Span
+	noop.Span  // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	DD         tracer.Span
 	finished   bool
 	attributes map[string]interface{}
 	spanKind   oteltrace.SpanKind
@@ -33,9 +35,7 @@ type span struct {
 	*oteltracer
 }
 
-func (s *span) TracerProvider() oteltrace.TracerProvider        { return s.oteltracer.provider }
-func (s *span) AddEvent(_ string, _ ...oteltrace.EventOption)   { /*	no-op */ }
-func (s *span) RecordError(_ error, _ ...oteltrace.EventOption) { /*	no-op */ }
+func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
 
 func (s *span) SetName(name string) {
 	s.attributes[ext.SpanName] = strings.ToLower(name)
@@ -59,16 +59,16 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	// if no operation name was explicitly set,
 	// operation name has to be calculated from the attributes
 	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
-		s.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
+		s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
 	}
 
 	for k, v := range s.attributes {
-		s.SetTag(k, v)
+		s.DD.SetTag(k, v)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
@@ -77,7 +77,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
 	}
-	s.Finish(opts...)
+	s.DD.Finish(opts...)
 }
 
 // EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
@@ -91,7 +91,7 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	ctx := s.Span.Context()
+	ctx := s.DD.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
 	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); ok {
@@ -111,7 +111,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 
 func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	headers := tracer.TextMapCarrier{}
-	if err := tracer.Inject(s.Context(), headers); err != nil {
+	if err := tracer.Inject(s.DD.Context(), headers); err != nil {
 		return
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
