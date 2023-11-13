@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -33,7 +35,8 @@ var (
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.
 //
-// It may return an error if a hostname is not found.
+// It may return an error if an API key is not provided by means of the
+// WithAPIKey option, or if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -139,14 +142,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
-	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
+	// WithAgentlessUpload can be used to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("Agentless upload requires a valid API key. Use the DD_API_KEY env variable to set it")
+			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
+		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
@@ -155,7 +158,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		// key configured, we warn the customers that this is probably a
 		// misconfiguration.
 		if cfg.apiKey != "" {
-			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.")
+			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
 		}
 		cfg.targetURL = cfg.agentURL
 	}
@@ -191,6 +194,26 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
+	var tags []string
+	var seenVersionTag bool
+	for _, tag := range cfg.tags.Slice() {
+		// If the user configured a tag via DD_VERSION or WithVersion,
+		// override any version tags the user provided via WithTags,
+		// since having more than one version tag breaks the comparison
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
+		}
+		tags = append(tags, tag)
+	}
+	if cfg.version != "" {
+		tags = append(tags, "version:"+cfg.version)
+	}
+	cfg.tags = immutable.NewStringSlice(tags)
 
 	p := profiler{
 		cfg:    cfg,
