@@ -289,11 +289,12 @@ func (s *span) createOperationName() string {
 		return "client.request"
 	}
 
-	if s.spanKind != oteltrace.SpanKindUnspecified {
+	if s.spanKind != 0 {
 		return s.spanKind.String()
 	}
-
-	return "otel_unknown"
+	// no span kind was set/detected, so span kind will be set to Internal explicitly.
+	s.attributes[ext.SpanKind] = oteltrace.SpanKindInternal
+	return oteltrace.SpanKindInternal.String()
 }
 
 func (s *span) valueFromAttributes(key string) (string, bool) {

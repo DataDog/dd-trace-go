@@ -81,7 +81,7 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, `"name":"otel_unknown"`)
+	assert.Contains(p, `"name":"internal"`)
 	assert.Contains(p, `"resource":"OperationName"`)
 }
 
@@ -501,7 +501,7 @@ func TestRemapName(t *testing.T) {
 		},
 		{
 			in:  []attribute.KeyValue{},
-			out: "otel_unknown",
+			out: "internal",
 		},
 		{
 			in:       []attribute.KeyValue{attribute.String("http.request.method", "POST")},
@@ -592,10 +592,9 @@ func TestRemapName(t *testing.T) {
 			spanKind: oteltrace.SpanKindServer,
 			out:      "kafka.receive",
 		},
-		// TODO pertains to the question of non-string attributes
 		{
 			in:  []attribute.KeyValue{attribute.Int("operation.name", 2)},
-			out: "otel_unknown",
+			out: "internal",
 		},
 	}
 
