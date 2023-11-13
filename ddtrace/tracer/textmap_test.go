@@ -191,8 +191,9 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				os.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 				defer os.Unsetenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST")
 			}
-			tracer := newTracer()
+			tracer, err := newTracer()
 			assert := assert.New(t)
+			assert.NoError(err)
 			headers := TextMapCarrier(map[string]string{
 				DefaultTraceIDHeader:  "4",
 				DefaultParentIDHeader: "1",
