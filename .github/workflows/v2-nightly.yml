@@ -4,7 +4,37 @@ on:
     - cron: "0 0 * * *"
 
 jobs:
-  appsec:
+  appsec-v2:
     uses: ./.github/workflows/appsec.yml
     with:
-      ref: v2-dev
+      ref: refs/heads/v2-dev
+
+  codeql-v2:
+    uses: ./.github/workflows/codeql-analysis.yml
+    with:
+      ref: refs/heads/v2-dev
+
+  govulncheck-v2:
+    uses: ./.github/workflows/govulncheck.yml
+    with:
+      ref: refs/heads/v2-dev
+
+  parametric-v2:
+    uses: ./.github/workflows/parametric-tests.yml
+    with:
+      ref: refs/heads/v2-dev
+
+  smoke-v2:
+    uses: ./.github/workflows/smoke-tests.yml
+    with:
+      ref: refs/heads/v2-dev
+
+  system-v2:
+    uses: ./.github/workflows/system-tests.yml
+    with:
+      ref: refs/heads/v2-dev
+
+  test-apps-v2:
+    uses: ./.github/workflows/test-apps.yml
+    with:
+      ref: refs/heads/v2-dev

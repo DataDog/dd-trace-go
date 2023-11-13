@@ -1,6 +1,12 @@
 name: System Tests
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -98,6 +104,7 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
+          ref: ${{ inputs.ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
       - name: Build weblog
