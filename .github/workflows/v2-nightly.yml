@@ -1,0 +1,10 @@
+on:
+  workflow_dispatch: # manually
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  appsec:
+    uses: ./.github/workflows/appsec.yml
+    with:
+      ref: v2-dev
