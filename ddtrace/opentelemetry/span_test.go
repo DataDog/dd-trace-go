@@ -269,7 +269,6 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	if strings.Count(p, "span_id") != 2 {
 		t.Fatalf("payload does not contain two spans\n%s", p)
 	}
-	fmt.Println(p)
 	assert.Contains(p, `"service":"persisted_srv"`)
 	assert.Contains(p, `"resource":"persisted_ctx_rsc"`)
 	assert.Contains(p, `"span.kind":"producer"`)

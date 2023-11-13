@@ -48,7 +48,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	s.finished = true
 	for k, v := range s.attributes {
 		//	if we find operation.name,
-		if k == operationNameKey || k == ext.SpanName {
+		if k == "operation.name" || k == ext.SpanName {
 			//	set it and keep track that it was set to ignore everything else
 			if name, ok := v.(string); ok {
 				s.attributes[ext.SpanName] = strings.ToLower(name)
@@ -59,7 +59,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	// if no operation name was explicitly set,
 	// operation name has to be calculated from the attributes
 	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
-		s.attributes[ext.SpanName] = strings.ToLower(remapOperationName(s.spanKind, s.attributes))
+		s.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
 	}
 
 	for k, v := range s.attributes {
@@ -164,31 +164,31 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
+// Some attribute keys are reserved and will be remapped to Datadog reserved tags.
+// The mapping for reserved tags is as follows:
+//   - "operation.name" is remapped to "span.name"
+//   - "analytics.event" is remapped to "_dd1.sr.eausr"
+//
+// The list of reserved tags might be extended in the future.
+// Any other non-reserved tags will be set as provided.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 	for _, kv := range kv {
-		if k, v := toSpecialAttributes(string(kv.Key), kv.Value); k != "" {
+		if k, v := toReservedAttributes(string(kv.Key), kv.Value); k != "" {
 			s.attributes[k] = v
 		}
 	}
 }
 
-// toSpecialAttributes recognizes a set of span attributes that have a special meaning.
+// toReservedAttributes recognizes a set of span attributes that have a special meaning.
 // These tags should supersede other values.
-func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
+func toReservedAttributes(k string, v attribute.Value) (string, interface{}) {
 	switch k {
-	case operationNameKey:
+	case "operation.name":
 		if ops := strings.ToLower(v.AsString()); ops != "" {
 			return ext.SpanName, strings.ToLower(v.AsString())
 		}
 		// ignoring non-string values
 		return "", nil
-	//	todo check if we need to remap these as they are the same
-	//case "service.name":
-	//	return ext.ServiceName, v.AsString()
-	//case "resource.name":
-	//	return ext.ResourceName, v.AsString()
-	//case "span.type":
-	//	return ext.SpanType, v.AsString()
 	case "analytics.event":
 		var rate int
 		if b, err := strconv.ParseBool(v.AsString()); err == nil && b {
@@ -204,36 +204,31 @@ func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
 	}
 }
 
-const (
-	httpServerKey    = "http.server.request"
-	httpClientKey    = "http.client.request"
-	operationNameKey = "operation.name"
-)
-
-func remapOperationName(spanKind oteltrace.SpanKind, attrs map[string]interface{}) string {
-	isClient := spanKind == oteltrace.SpanKindClient
-	isServer := spanKind == oteltrace.SpanKindServer
+func (s *span) createOperationName() string {
+	isClient := s.spanKind == oteltrace.SpanKindClient
+	isServer := s.spanKind == oteltrace.SpanKindServer
 
 	// http
-	if _, ok := attrs["http.request.method"]; ok {
-		switch spanKind {
+	if _, ok := s.attributes["http.request.method"]; ok {
+		switch s.spanKind {
 		case oteltrace.SpanKindServer:
-			return httpServerKey
+			return "http.server.request"
 		case oteltrace.SpanKindClient:
-			return httpClientKey
+			return "http.client.request"
 		}
 	}
 
 	// database
-	if v := valueFromAttributes(attrs, "db.system"); v != "" && isClient {
+	if v, ok := s.valueFromAttributes("db.system"); ok && isClient {
 		return v + ".query"
 	}
 
 	// messaging
-	system := valueFromAttributes(attrs, "messaging.system")
-	op := valueFromAttributes(attrs, "messaging.operation")
-	if system != "" && op != "" {
-		switch spanKind {
+
+	system, systemOk := s.valueFromAttributes("messaging.system")
+	op, opOk := s.valueFromAttributes("messaging.operation")
+	if systemOk && opOk {
+		switch s.spanKind {
 		case oteltrace.SpanKindClient, oteltrace.SpanKindServer,
 			oteltrace.SpanKindConsumer, oteltrace.SpanKindProducer:
 			return system + "." + op
@@ -241,12 +236,11 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs map[string]interface{
 	}
 
 	// RPC & AWS
-	rpcValue := valueFromAttributes(attrs, "rpc.system")
-	isRPC := rpcValue != ""
+	rpcValue, isRPC := s.valueFromAttributes("rpc.system")
 	isAws := isRPC && (rpcValue == "aws-api")
 	// AWS client
 	if isAws && isClient {
-		if service := valueFromAttributes(attrs, "rpc.service"); service != "" {
+		if service, ok := s.valueFromAttributes("rpc.service"); ok {
 			return "aws." + service + ".request"
 		}
 		return "aws.client.request"
@@ -261,57 +255,58 @@ func remapOperationName(spanKind oteltrace.SpanKind, attrs map[string]interface{
 	}
 
 	// FAAS client
-	provider := valueFromAttributes(attrs, "faas.invoked_provider")
-	faasName := valueFromAttributes(attrs, "faas.invoked_name")
-	if provider != "" && faasName != "" && isClient {
-		return provider + "." + faasName + ".invoke"
+	provider, pOk := s.valueFromAttributes("faas.invoked_provider")
+	invokedName, inOk := s.valueFromAttributes("faas.invoked_name")
+	if pOk && inOk && isClient {
+		return provider + "." + invokedName + ".invoke"
 	}
 
 	//	FAAS server
-	trigger := valueFromAttributes(attrs, "faas.trigger")
-	if trigger != "" && isServer {
+	trigger, tOk := s.valueFromAttributes("faas.trigger")
+	if tOk && isServer {
 		return trigger + ".invoke"
 	}
 
 	//	Graphql
-	if valueFromAttributes(attrs, "graphql.operation.type") != "" {
+	if _, ok := s.valueFromAttributes("graphql.operation.type"); ok {
 		return "graphql.server.request"
 	}
 
 	// if nothing matches, checking for generic http server/client
-	protocol := valueFromAttributes(attrs, "network.protocol.name")
+	protocol, pOk := s.valueFromAttributes("network.protocol.name")
 	if isServer {
-		if protocol != "" {
+		if pOk {
 			return protocol + ".server.request"
 		}
 		return "server.request"
-	}
-
-	if isClient {
-		if protocol != "" {
+	} else if isClient {
+		if pOk {
 			return protocol + ".client.request"
 		}
 		return "client.request"
 	}
 
-	if spanKind != oteltrace.SpanKindUnspecified {
-		return spanKind.String()
+	if s.spanKind != oteltrace.SpanKindUnspecified {
+		return s.spanKind.String()
 	}
 
 	return "otel_unknown"
 }
 
-func valueFromAttributes(attrs map[string]interface{}, key string) string {
-	v, ok := attrs[key]
+func (s *span) valueFromAttributes(key string) (string, bool) {
+	v, ok := s.attributes[key]
 	if !ok {
-		return ""
+		return "", false
 	}
 	attr, ok := v.(attribute.Value)
 	if ok {
-		return strings.ToLower(attr.AsString())
+		if s := strings.ToLower(attr.AsString()); s != "" {
+			return s, true
+		}
+		return "", false
 	}
 	if s := v.(string); s != "" {
-		return strings.ToLower(s)
+		return strings.ToLower(s), true
 	}
-	return ""
+	return "", false
 }

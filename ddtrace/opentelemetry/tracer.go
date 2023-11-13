@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -50,15 +49,21 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	ctxOpts, ok := spanOptionsFromContext(ctx)
-	if ok {
-		ddopts = append(ddopts, ctxOpts...)
-	}
 	var cfg ddtrace.StartSpanConfig
-	for _, option := range ctxOpts {
-		option(&cfg)
+	if opts, ok := spanOptionsFromContext(ctx); ok {
+		ddopts = append(ddopts, opts...)
+		for _, o := range opts {
+			o(&cfg)
+		}
 	}
-	finalTags := reconcileTags(cfg.Tags, ssConfig.Attributes())
+	finalTags := make(map[string]interface{})
+	for _, attr := range ssConfig.Attributes() {
+		finalTags[string(attr.Key)] = attr.Value.AsInterface()
+	}
+
+	for k, v := range cfg.Tags {
+		finalTags[k] = v
+	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
@@ -74,18 +79,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
-}
-
-func reconcileTags(ddMap map[string]interface{}, otelMap []attribute.KeyValue) map[string]interface{} {
-	result := make(map[string]interface{})
-	for _, attr := range otelMap {
-		result[string(attr.Key)] = attr.Value.AsInterface()
-	}
-
-	for k, v := range ddMap {
-		result[k] = v
-	}
-	return result
 }
 
 type otelCtxToDDCtx struct {
