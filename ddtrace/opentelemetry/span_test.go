@@ -253,7 +253,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	ddChild := child.(*span)
 	// this verifies that options passed to the parent, such as tracer.WithSpanID(spanID)
 	// weren't passed down to the child
-	assert.NotEqual(spanID, ddChild.Context().SpanID())
+	assert.NotEqual(spanID, ddChild.DD.Context().SpanID())
 	child.End()
 
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
