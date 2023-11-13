@@ -17,6 +17,10 @@ import (
 
 // Test that the profiler sends the correct telemetry information
 func TestTelemetryEnabled(t *testing.T) {
+	// Avoids goroutine leak detected in TestMain.
+	// @TODO(fg) fix the hostname implementation.
+	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
+
 	t.Run("tracer start, profiler start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
