@@ -163,7 +163,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 	if value != nil {
 		// Arrays will be translated to dot notation. e.g.
-		// { "myarr.0": "foo", "myarr.1": "bar"}
+		// {"myarr.0": "foo", "myarr.1": "bar"}
 		// which will be displayed as an array in the UI.
 		switch reflect.TypeOf(value).Kind() {
 		case reflect.Slice:
@@ -174,7 +174,7 @@ func (s *span) SetTag(key string, value interface{}) {
 				if num, ok := toFloat64(v.Interface()); ok {
 					s.setMetric(key, num)
 				} else {
-					s.setMeta(key, fmt.Sprintf("%s", v))
+					s.setMeta(key, fmt.Sprintf("%v", v))
 				}
 			}
 			return

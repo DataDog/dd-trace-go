@@ -341,6 +341,10 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("foo", span.Meta["somestrings.0"])
 	assert.Equal("bar", span.Meta["somestrings.1"])
 
+	span.SetTag("somebools", []bool{true, false})
+	assert.Equal("true", span.Meta["somebools.0"])
+	assert.Equal("false", span.Meta["somebools.1"])
+
 	span.SetTag("somenums", []int{-1, 5, 2})
 	assert.Equal(-1., span.Metrics["somenums.0"])
 	assert.Equal(5., span.Metrics["somenums.1"])
