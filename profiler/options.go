@@ -92,6 +92,7 @@ type config struct {
 	apiURL               string // apiURL is the Datadog intake API URL
 	agentURL             string // agentURL is the Datadog agent profiling URL
 	service, env         string
+	version              string
 	hostname             string
 	statsd               StatsdClient
 	httpClient           *http.Client
@@ -113,60 +114,36 @@ type config struct {
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
-	info := struct {
-		Date                 string   `json:"date"`         // ISO 8601 date and time of start
-		OSName               string   `json:"os_name"`      // Windows, Darwin, Debian, etc.
-		OSVersion            string   `json:"os_version"`   // Version of the OS
-		Version              string   `json:"version"`      // Profiler version
-		Lang                 string   `json:"lang"`         // "Go"
-		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
-		Hostname             string   `json:"hostname"`
-		DeltaProfiles        bool     `json:"delta_profiles"`
-		Service              string   `json:"service"`
-		Env                  string   `json:"env"`
-		TargetURL            string   `json:"target_url"`
-		Agentless            bool     `json:"agentless"`
-		Tags                 []string `json:"tags"`
-		ProfilePeriod        string   `json:"profile_period"`
-		EnabledProfiles      []string `json:"enabled_profiles"`
-		CPUDuration          string   `json:"cpu_duration"`
-		CPUProfileRate       int      `json:"cpu_profile_rate"`
-		BlockProfileRate     int      `json:"block_profile_rate"`
-		MutexProfileFraction int      `json:"mutex_profile_fraction"`
-		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
-		UploadTimeout        string   `json:"upload_timeout"`
-		TraceEnabled         bool     `json:"execution_trace_enabled"`
-		TracePeriod          string   `json:"execution_trace_period"`
-		TraceSizeLimit       int      `json:"execution_trace_size_limit"`
-		EndpointCountEnabled bool     `json:"endpoint_count_enabled"`
-	}{
-		Date:                 time.Now().Format(time.RFC3339),
-		OSName:               osinfo.OSName(),
-		OSVersion:            osinfo.OSVersion(),
-		Version:              version.Tag,
-		Lang:                 "Go",
-		LangVersion:          runtime.Version(),
-		Hostname:             c.hostname,
-		DeltaProfiles:        c.deltaProfiles,
-		Service:              c.service,
-		Env:                  c.env,
-		TargetURL:            c.targetURL,
-		Agentless:            c.agentless,
-		Tags:                 c.tags.Slice(),
-		ProfilePeriod:        c.period.String(),
-		CPUDuration:          c.cpuDuration.String(),
-		CPUProfileRate:       c.cpuProfileRate,
-		BlockProfileRate:     c.blockRate,
-		MutexProfileFraction: c.mutexFraction,
-		MaxGoroutinesWait:    c.maxGoroutinesWait,
-		UploadTimeout:        c.uploadTimeout.String(),
-		TraceEnabled:         c.traceConfig.Enabled,
-		TracePeriod:          c.traceConfig.Period.String(),
-		TraceSizeLimit:       c.traceConfig.Limit,
-		EndpointCountEnabled: c.endpointCountEnabled,
-	}
+	var enabledProfiles []string
 	for t := range c.types {
-		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
+		enabledProfiles = append(enabledProfiles, t.String())
+	}
+	info := map[string]any{
+		"date":                       time.Now().Format(time.RFC3339),
+		"os_name":                    osinfo.OSName(),
+		"os_version":                 osinfo.OSVersion(),
+		"version":                    version.Tag,
+		"lang":                       "Go",
+		"lang_version":               runtime.Version(),
+		"hostname":                   c.hostname,
+		"delta_profiles":             c.deltaProfiles,
+		"service":                    c.service,
+		"env":                        c.env,
+		"target_url":                 c.targetURL,
+		"agentless":                  c.agentless,
+		"tags":                       c.tags.Slice(),
+		"profile_period":             c.period.String(),
+		"enabled_profiles":           enabledProfiles,
+		"cpu_duration":               c.cpuDuration.String(),
+		"cpu_profile_rate":           c.cpuProfileRate,
+		"block_profile_rate":         c.blockRate,
+		"mutex_profile_fraction":     c.mutexFraction,
+		"max_goroutines_wait":        c.maxGoroutinesWait,
+		"upload_timeout":             c.uploadTimeout.String(),
+		"execution_trace_enabled":    c.traceConfig.Enabled,
+		"execution_trace_period":     c.traceConfig.Period.String(),
+		"execution_trace_size_limit": c.traceConfig.Limit,
+		"endpoint_count_enabled":     c.endpointCountEnabled,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -441,7 +418,9 @@ func WithEnv(env string) Option {
 
 // WithVersion specifies the service version tag to attach to profiles
 func WithVersion(version string) Option {
-	return WithTags("version:" + version)
+	return func(cfg *config) {
+		cfg.version = version
+	}
 }
 
 // WithTags specifies a set of tags to be attached to the profiler. These may help

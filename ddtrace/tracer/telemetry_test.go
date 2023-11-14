@@ -8,6 +8,7 @@ package tracer
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -28,6 +29,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
 		)
+		defer globalconfig.SetServiceName("")
 		defer Stop()
 
 		assert.True(t, telemetryClient.Started)
@@ -59,6 +61,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		Start(
 			WithService("test-serv"),
 		)
+		defer globalconfig.SetServiceName("")
 		defer Stop()
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 2)
