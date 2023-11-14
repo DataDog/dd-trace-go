@@ -18,9 +18,9 @@ fi
 
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		-a|--appsec)
-			tags="$TAGS appsec"
-			export DD_APPSEC_ENABLED=true
+		--no-appsec)
+			tags="$tags datadog.no-asm"
+			export DD_APPSEC_ENABLED=false
 			shift
 			;;
 		-i|--integration)
@@ -33,7 +33,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--all)
 			contrib=true
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			export INTEGRATION=true
 			shift
@@ -55,7 +54,7 @@ while [[ $# -gt 0 ]]; do
 			echo "test.sh - Run the tests for dd-trace-go"
 			echo "	this script requires gotestsum, goimports, docker and docker-compose."
 			echo "	-l | --lint		- Run the linter"
-			echo "	-a | --appsec		- Test with appsec enabled"
+			echo "	--no-appsec		- Test with appsec disabled (including code-level support)"
 			echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
 			echo "	-c | --contrib		- Run contrib tests"
 			echo "	--all			- Synonym for -l -a -i -c"
@@ -102,7 +101,7 @@ fi
 ## CORE
 echo testing core
 PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -115,5 +114,5 @@ if [[ "$contrib" != "" ]]; then
 	fi
 
 	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
-	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES
 fi

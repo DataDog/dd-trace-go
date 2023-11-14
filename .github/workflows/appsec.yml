@@ -36,9 +36,9 @@ jobs:
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
-        build_tags: # test it compiles with and without the appsec build tag
+        build_tags: # test it compiles with and without the appsec removal build tag
           - ""
-          - "appsec"
+          - "datadog.no-asm"
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
@@ -90,9 +90,9 @@ jobs:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        build_tags: # test it compiles with and without the appsec build tag
+        build_tags: # test it compiles with and without the appsec removal build tag
           - ""
-          - "appsec"
+          - "datadog.no-asm"
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
@@ -133,7 +133,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ env.JUNIT_REPORT }}
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
 
   linux-arm64:
     runs-on: ubuntu-latest
