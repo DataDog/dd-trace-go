@@ -19,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 

@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 

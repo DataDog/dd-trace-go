@@ -633,10 +633,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1/go.mod h1:Vc+snp
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPprz7Z+s8=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
-github.com/DataDog/go-libddwaf v1.7.1-0.20231109130850-65b7c618f4c6 h1:bxMJ7yCkDNBhQ3YT7YTQKsNsIpKNhELJbUPw0UkLPOY=
-github.com/DataDog/go-libddwaf v1.7.1-0.20231109130850-65b7c618f4c6/go.mod h1:0YGwA9Q3PfORLEETvd+zE4+3XcCN9MOtCBUAawGwll4=
 github.com/DataDog/go-libddwaf v1.7.1-0.20231110085759-9a2682afd755 h1:Qcjvutz4zvgo0MywPm+YA3me0ZlB9MxVpzm+x7zAL3Q=
 github.com/DataDog/go-libddwaf v1.7.1-0.20231110085759-9a2682afd755/go.mod h1:TyIt7HZLwd5wRFknJ4YdgaLAYDyEdwWQUuRPZV+rwP8=
+github.com/DataDog/go-libddwaf/v2 v2.0.1-0.20231114101740-2caefa3d4d11 h1:PAWQhCIEFJ998kvojm+C00rXTMGd5u3OdECZ/IQAvbk=
+github.com/DataDog/go-libddwaf/v2 v2.0.1-0.20231114101740-2caefa3d4d11/go.mod h1:X/Kc+PpP1FvvfMJvsmh/YZwGHSnhI40UkKPnDXfdTl4=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=
 github.com/DataDog/go-tuf v1.0.2-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
 github.com/DataDog/gostackparse v0.7.0 h1:i7dLkXHvYzHV308hnkvVGDL3BR4FWl7IsXNPz/IGQh4=
