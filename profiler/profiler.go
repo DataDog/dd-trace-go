@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -192,6 +194,26 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
+	var tags []string
+	var seenVersionTag bool
+	for _, tag := range cfg.tags.Slice() {
+		// If the user configured a tag via DD_VERSION or WithVersion,
+		// override any version tags the user provided via WithTags,
+		// since having more than one version tag breaks the comparison
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
+		}
+		tags = append(tags, tag)
+	}
+	if cfg.version != "" {
+		tags = append(tags, "version:"+cfg.version)
+	}
+	cfg.tags = immutable.NewStringSlice(tags)
 
 	p := profiler{
 		cfg:    cfg,

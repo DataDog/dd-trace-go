@@ -253,6 +253,12 @@ type config struct {
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
+
+	// traceSampleRate holds the trace sample rate.
+	traceSampleRate dynamicConfig[float64]
+
+	// headerAsTags holds the header as tags configuration.
+	headerAsTags dynamicConfig[[]string]
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -316,6 +322,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
+	c.headerAsTags = newDynamicConfig(nil, setHeaderTags)
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		WithHeaderTags(strings.Split(v, ","))(c)
 	}
@@ -423,6 +430,8 @@ func newConfig(opts ...StartOption) *config {
 				globalconfig.SetServiceName(s)
 			}
 		} else {
+			// There is not an explicit service set, default to binary name.
+			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
@@ -1210,14 +1219,19 @@ func StackFrames(n, skip uint) FinishOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		globalconfig.ClearHeaderTags()
-		for _, h := range headerAsTags {
-			if strings.HasPrefix(h, "x-datadog-") {
-				continue
-			}
-			header, tag := normalizer.HeaderTag(h)
-			globalconfig.SetHeaderTag(header, tag)
+		c.headerAsTags = newDynamicConfig(headerAsTags, setHeaderTags)
+		setHeaderTags(headerAsTags)
+	}
+}
+
+func setHeaderTags(headerAsTags []string) {
+	globalconfig.ClearHeaderTags()
+	for _, h := range headerAsTags {
+		if strings.HasPrefix(h, "x-datadog-") {
+			continue
 		}
+		header, tag := normalizer.HeaderTag(h)
+		globalconfig.SetHeaderTag(header, tag)
 	}
 }
 
