@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-//go:build !datadog.no-asm
-// +build !datadog.no-asm
+//go:build !datadog.noasm
+// +build !datadog.noasm
 
 package appsec
 

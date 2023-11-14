@@ -38,7 +38,7 @@ jobs:
           - 1
         build_tags: # test it compiles with and without the appsec removal build tag
           - ""
-          - "datadog.no-asm"
+          - "datadog.noasm"
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
@@ -92,7 +92,7 @@ jobs:
         distribution: [ bookworm, bullseye, buster, alpine ]
         build_tags: # test it compiles with and without the appsec removal build tag
           - ""
-          - "datadog.no-asm"
+          - "datadog.noasm"
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1

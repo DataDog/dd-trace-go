@@ -19,7 +19,7 @@ fi
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--no-appsec)
-			tags="$tags datadog.no-asm"
+			tags="$tags datadog.noasm"
 			export DD_APPSEC_ENABLED=false
 			shift
 			;;
