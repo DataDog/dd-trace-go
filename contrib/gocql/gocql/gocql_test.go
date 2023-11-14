@@ -426,7 +426,7 @@ func TestWithWrapOptions(t *testing.T) {
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
 	q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	q = q.WithWrapOptions(WithResourceName("test-resource"))
+	q = q.WithWrapOptions(WithResourceName("test-resource"), WithCustomTag("custom_tag", "value"))
 	err = q.Iter().Close()
 	require.NoError(t, err)
 
@@ -438,6 +438,7 @@ func TestWithWrapOptions(t *testing.T) {
 	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 	assert.Equal(span.Tag(ext.ServiceName), "test-service")
 	assert.Equal(span.Tag(ext.ResourceName), "test-resource")
+	assert.Equal(span.Tag("custom_tag"), "value")
 
 	mt.Reset()
 
@@ -446,7 +447,7 @@ func TestWithWrapOptions(t *testing.T) {
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
 	tb.Query(stmt, "Lucas", 60, "Another person")
 	tb = tb.WithContext(context.Background()).WithTimestamp(time.Now().Unix() * 1e3)
-	tb = tb.WithWrapOptions(WithResourceName("test-resource"))
+	tb = tb.WithWrapOptions(WithResourceName("test-resource"), WithCustomTag("custom_tag", "value"))
 
 	err = tb.ExecuteBatch(session.Session)
 	require.NoError(t, err)
@@ -459,6 +460,50 @@ func TestWithWrapOptions(t *testing.T) {
 	assert.Equal(span.Tag(ext.CassandraContactPoints), "127.0.0.1:9042")
 	assert.Equal(span.Tag(ext.ServiceName), "test-service")
 	assert.Equal(span.Tag(ext.ResourceName), "test-resource")
+	assert.Equal(span.Tag("custom_tag"), "value")
+}
+
+func TestWithCustomTag(t *testing.T) {
+	cluster := newCassandraCluster()
+	cluster.Keyspace = "trace"
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+
+	t.Run("WrapQuery", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
+		iter := WrapQuery(q, WithCustomTag("custom_tag", "value")).Iter()
+		err = iter.Close()
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "cassandra.query", s0.OperationName())
+		assert.Equal(t, "value", s0.Tag("custom_tag"))
+	})
+	t.Run("WrapBatch", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		b := session.NewBatch(gocql.UnloggedBatch)
+		tb := WrapBatch(b, WithCustomTag("custom_tag", "value"))
+		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
+		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
+		tb.Query(stmt, "Lucas", 60, "Another person")
+		err = tb.WithTimestamp(time.Now().Unix() * 1e3).ExecuteBatch(session)
+		require.NoError(t, err)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		s0 := spans[0]
+		assert.Equal(t, "cassandra.batch", s0.OperationName())
+		assert.Equal(t, "value", s0.Tag("custom_tag"))
+	})
 }
 
 func TestNamingSchema(t *testing.T) {

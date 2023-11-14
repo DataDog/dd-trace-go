@@ -79,7 +79,7 @@ type span struct {
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer.
+	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	context      *spanContext `msg:"-"` // span propagation context
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
@@ -200,7 +200,9 @@ func (s *span) root() *span {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
-	var cfg UserMonitoringConfig
+	cfg := UserMonitoringConfig{
+		Metadata: make(map[string]string),
+	}
 	for _, fn := range opts {
 		fn(&cfg)
 	}
@@ -228,14 +230,19 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 		}
 		delete(root.Meta, keyPropagatedUserID)
 	}
-	for k, v := range map[string]string{
+
+	usrData := map[string]string{
 		keyUserID:        id,
 		keyUserEmail:     cfg.Email,
 		keyUserName:      cfg.Name,
 		keyUserScope:     cfg.Scope,
 		keyUserRole:      cfg.Role,
 		keyUserSessionID: cfg.SessionID,
-	} {
+	}
+	for k, v := range cfg.Metadata {
+		usrData[fmt.Sprintf("usr.%s", k)] = v
+	}
+	for k, v := range usrData {
 		if v != "" {
 			// setMeta is used since the span is already locked
 			root.setMeta(k, v)
@@ -492,7 +499,6 @@ func (s *span) finish(finishTime int64) {
 	if s.Duration < 0 {
 		s.Duration = 0
 	}
-	s.finished = true
 
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -509,6 +515,15 @@ func (s *span) finish(finishTime int64) {
 		if t.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
+		}
+		if t.config.debugAbandonedSpans {
+			// the tracer supports debugging abandoned spans
+			select {
+			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
+				// ok
+			default:
+				log.Error("Abandoned spans channel full, disregarding span.")
+			}
 		}
 	}
 	if keep {
@@ -577,7 +592,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
 func shouldKeep(s *span) bool {
-	if p, ok := s.context.samplingPriority(); ok && p > 0 {
+	if p, ok := s.context.SamplingPriority(); ok && p > 0 {
 		// positive sampling priorities stay
 		return true
 	}
@@ -662,7 +677,8 @@ func (s *span) Format(f fmt.State, c rune) {
 			traceID = fmt.Sprintf("%d", s.TraceID)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
-		fmt.Fprintf(f, `dd.span_id="%d"`, s.SpanID)
+		fmt.Fprintf(f, `dd.span_id="%d" `, s.SpanID)
+		fmt.Fprintf(f, `dd.parent_id="%d"`, s.ParentID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}
@@ -704,6 +720,8 @@ const (
 	keyPeerServiceSource = "_dd.peer.service.source"
 	// keyPeerServiceRemappedFrom indicates the previous value for peer.service, in case remapping happened.
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
+	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
+	keyBaseService = "_dd.base_service"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

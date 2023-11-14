@@ -7,7 +7,6 @@
 package echo
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -28,6 +27,7 @@ const componentName = "labstack/echo.v4"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/labstack/echo/v4")
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
@@ -38,11 +38,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
-	spanOpts := []ddtrace.StartSpanOption{
-		tracer.ServiceName(cfg.serviceName),
+	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
+	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
+	for k, v := range cfg.tags {
+		spanOpts = append(spanOpts, tracer.Tag(k, v))
+	}
+	spanOpts = append(spanOpts,
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-	}
+	)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
@@ -87,8 +91,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
-				var echoErr *echo.HTTPError
-				if errors.As(err, &echoErr) {
+				if echoErr, ok := cfg.translateError(err); ok {
 					if cfg.isStatusError(echoErr.Code) {
 						finishOpts = append(finishOpts, tracer.WithError(err))
 					}

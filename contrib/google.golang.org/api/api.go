@@ -25,6 +25,7 @@ import (
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -42,12 +43,21 @@ var apiEndpointsTree *tree.Tree
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 	initAPIEndpointsTree()
 }
 
-func initAPIEndpointsTree() {
-	var apiEndpoints []tree.Endpoint
+func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
+	var apiEndpoints []*tree.Endpoint
 	if err := json.Unmarshal(endpointBytes, &apiEndpoints); err != nil {
+		return nil, err
+	}
+	return apiEndpoints, nil
+}
+
+func initAPIEndpointsTree() {
+	apiEndpoints, err := loadEndpointsFromJSON()
+	if err != nil {
 		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
 		return
 	}

@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	rules "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
@@ -33,7 +34,7 @@ type (
 		Overrides   []interface{}   `json:"rules_override,omitempty"`
 		Exclusions  []interface{}   `json:"exclusions,omitempty"`
 		RulesData   []ruleDataEntry `json:"rules_data,omitempty"`
-		Actions     []interface{}   `json:"actions,omitempty"`
+		Actions     []actionEntry   `json:"actions,omitempty"`
 		CustomRules []interface{}   `json:"custom_rules,omitempty"`
 	}
 
@@ -41,12 +42,23 @@ type (
 	rulesData     struct {
 		RulesData []ruleDataEntry `json:"rules_data"`
 	}
+
+	actionEntry struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Parameters struct {
+			StatusCode     int    `json:"status_code"`
+			GRPCStatusCode *int   `json:"grpc_status_code,omitempty"`
+			Type           string `json:"type,omitempty"`
+			Location       string `json:"location,omitempty"`
+		} `json:"parameters,omitempty"`
+	}
 )
 
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {
 	var f rulesFragment
-	if err := json.Unmarshal([]byte(staticRecommendedRules), &f); err != nil {
+	if err := json.Unmarshal([]byte(rules.StaticRecommendedRules), &f); err != nil {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f
@@ -121,7 +133,6 @@ func (r *rulesManager) compile() {
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		r.latest.RulesData = append(r.latest.RulesData, v.RulesData...)
 		r.latest.CustomRules = append(r.latest.CustomRules, v.CustomRules...)
-		// TODO (Francois): process more fields once we expose the adequate capabilities (custom actions, custom rules, etc...)
 	}
 }
 
