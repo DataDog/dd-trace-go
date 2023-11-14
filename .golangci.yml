@@ -6,7 +6,6 @@ linters:
   disable-all: true
   enable:
   - gofmt
-  - gci
   - revive
   - bodyclose
 linters-settings:

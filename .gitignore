@@ -14,3 +14,8 @@ go.work*
 .idea
 dd-trace-go.iml
 vendor
+
+/contrib/google.golang.org/grpc.v12/vendor/
+/contrib_coverage.txt
+/core_coverage.txt
+/gotestsum-report.xml

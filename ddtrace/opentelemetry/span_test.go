@@ -81,7 +81,7 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, `"name":"OperationName"`)
+	assert.Contains(p, `"name":"internal"`)
 	assert.Contains(p, `"resource":"OperationName"`)
 }
 
@@ -103,7 +103,7 @@ func TestSpanSetName(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(p, "NewName")
+	assert.Contains(p, strings.ToLower("NewName"))
 }
 
 func TestSpanEnd(t *testing.T) {
@@ -245,7 +245,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 			tracer.StartTime(startTime),
 			tracer.WithSpanID(spanID),
 		), "op_name",
-		oteltrace.WithAttributes(attribute.String(ext.ServiceName, "discarded")),
+		oteltrace.WithAttributes(
+			attribute.String(ext.ResourceName, ""),
+			attribute.String(ext.ServiceName, "discarded")),
 		oteltrace.WithSpanKind(oteltrace.SpanKindProducer),
 	)
 
@@ -253,7 +255,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	ddChild := child.(*span)
 	// this verifies that options passed to the parent, such as tracer.WithSpanID(spanID)
 	// weren't passed down to the child
-	assert.NotEqual(spanID, ddChild.Context().SpanID())
+	assert.NotEqual(spanID, ddChild.DD.Context().SpanID())
 	child.End()
 
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
@@ -267,9 +269,9 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	if strings.Count(p, "span_id") != 2 {
 		t.Fatalf("payload does not contain two spans\n%s", p)
 	}
-	assert.Contains(p, "persisted_ctx_rsc")
-	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"service":"persisted_srv"`)
+	assert.Contains(p, `"resource":"persisted_ctx_rsc"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
@@ -303,7 +305,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"type":"producer"`)
+	assert.Contains(p, `"span.kind":"producer"`)
 	assert.NotContains(p, "discarded")
 }
 
@@ -389,23 +391,63 @@ func TestSpanSetAttributes(t *testing.T) {
 
 	attributes := [][]string{{"k1", "v1_old"},
 		{"k2", "v2"},
-		{"k1", "v1_new"}}
+		{"k1", "v1_new"},
+		// maps to 'name'
+		{"operation.name", "ops"},
+		// maps to 'service'
+		{"service.name", "srv"},
+		// maps to 'resource'
+		{"resource.name", "rsr"},
+		// maps to 'type'
+		{"span.type", "db"},
+	}
 
 	_, sp := tr.Start(context.Background(), "test")
 	for _, tag := range attributes {
 		sp.SetAttributes(attribute.String(tag[0], tag[1]))
 	}
+	// maps to '_dd1.sr.eausr'
+	sp.SetAttributes(attribute.Int("analytics.event", 1))
+
 	sp.End()
 	tracer.Flush()
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(payload, "k1")
-	assert.Contains(payload, "k2")
-	assert.Contains(payload, "v1_new")
-	assert.Contains(payload, "v2")
+	assert.Contains(payload, `"k1":"v1_new"`)
+	assert.Contains(payload, `"k2":"v2"`)
 	assert.NotContains(payload, "v1_old")
+
+	// reserved attributes
+	assert.Contains(payload, `"name":"ops"`)
+	assert.Contains(payload, `"service":"srv"`)
+	assert.Contains(payload, `"resource":"rsr"`)
+	assert.Contains(payload, `"type":"db"`)
+	assert.Contains(payload, `"_dd1.sr.eausr":1`)
+}
+
+func TestSpanSetAttributesWithRemapping(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "custom")
+	sp.SetAttributes(attribute.String("graphql.operation.type", "subscription"))
+
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, "graphql.server.request")
 }
 
 func TestTracerStartOptions(t *testing.T) {
@@ -426,4 +468,186 @@ func TestTracerStartOptions(t *testing.T) {
 	}
 	assert.Contains(payload, "\"service\":\"test_serv\"")
 	assert.Contains(payload, "\"env\":\"test_env\"")
+}
+
+func TestOperationNameRemapping(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(ctx, "operation", oteltrace.WithAttributes(attribute.String("graphql.operation.type", "subscription")))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(p, "graphql.server.request")
+}
+func TestRemapName(t *testing.T) {
+	testCases := []struct {
+		spanKind oteltrace.SpanKind
+		in       []attribute.KeyValue
+		out      string
+	}{
+		{
+			in:  []attribute.KeyValue{attribute.String("operation.name", "Ops")},
+			out: "ops",
+		},
+		{
+			in:  []attribute.KeyValue{},
+			out: "internal",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("http.request.method", "POST")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "http.client.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("http.request.method", "POST")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "http.server.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("db.system", "Redis")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "redis.query",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
+			spanKind: oteltrace.SpanKindProducer,
+			out:      "kafka.receive",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
+			spanKind: oteltrace.SpanKindConsumer,
+			out:      "kafka.receive",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "kafka.receive",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "aws-api"), attribute.String("rpc.service", "Example_Method")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "aws." + "example_method" + ".request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "aws-api"), attribute.String("rpc.service", "")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "aws.client.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "myservice.EchoService")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "myservice.echoservice.client.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("rpc.system", "myservice.EchoService")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "myservice.echoservice.server.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("faas.invoked_provider", "some_provIDER"), attribute.String("faas.invoked_name", "some_NAME")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "some_provider.some_name.invoke",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("faas.trigger", "some_NAME")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "some_name.invoke",
+		},
+		{
+			in:  []attribute.KeyValue{attribute.String("graphql.operation.type", "subscription")},
+			out: "graphql.server.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "amqp")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "amqp.server.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "server.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "amqp")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "amqp.client.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("network.protocol.name", "")},
+			spanKind: oteltrace.SpanKindClient,
+			out:      "client.request",
+		},
+		{
+			in:       []attribute.KeyValue{attribute.String("messaging.system", "kafka"), attribute.String("messaging.operation", "receive")},
+			spanKind: oteltrace.SpanKindServer,
+			out:      "kafka.receive",
+		},
+		{
+			in:  []attribute.KeyValue{attribute.Int("operation.name", 2)},
+			out: "internal",
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	for _, test := range testCases {
+		t.Run("", func(t *testing.T) {
+			_, sp := tr.Start(context.Background(), "some_name",
+				oteltrace.WithSpanKind(test.spanKind), oteltrace.WithAttributes(test.in...))
+			sp.End()
+
+			tracer.Flush()
+			p, err := waitForPayload(ctx, payloads)
+			if err != nil {
+				t.Fatalf(err.Error())
+			}
+			assert.Contains(t, p, test.out)
+		})
+	}
+}
+
+func TestRemapWithMultipleSetAttributes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "otel_span_name",
+		oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+
+	sp.SetAttributes(attribute.String("http.request.method", "GET"))
+	sp.SetAttributes(attribute.String("resource.name", "new.name"))
+	sp.SetAttributes(attribute.String("operation.name", "Overriden.name"))
+	sp.SetAttributes(attribute.String("service.name", "new.service.name"))
+	sp.SetAttributes(attribute.String("span.type", "new.span.type"))
+	sp.SetAttributes(attribute.String("analytics.event", "true"))
+	sp.End()
+
+	tracer.Flush()
+	p, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.Contains(t, p, `"name":"overriden.name"`)
+	assert.Contains(t, p, `"resource":"new.name"`)
+	assert.Contains(t, p, `"service":"new.service.name"`)
+	assert.Contains(t, p, `"type":"new.span.type"`)
+	assert.Contains(t, p, `"_dd1.sr.eausr":1`)
 }
