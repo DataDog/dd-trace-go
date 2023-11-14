@@ -3,18 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
-package appsec
+package util
 
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 )
 
 // Test that internal functions used to set span tags use the correct types
@@ -29,8 +25,8 @@ func TestTagsTypes(t *testing.T) {
 		},
 	}
 
-	addRulesMonitoringTags(&th, &wafDiags)
-	addWAFMonitoringTags(&th, "1.2.3", 2, 1, 3)
+	AddRulesMonitoringTags(&th, &wafDiags)
+	AddWAFMonitoringTags(&th, "1.2.3", 2, 1, 3)
 
 	tags := th.Tags()
 	_, ok := tags[eventRulesErrorsTag].(string)

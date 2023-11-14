@@ -3,10 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
-package appsec
+package limiter
 
 import (
 	"sync/atomic"

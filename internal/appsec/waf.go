@@ -9,24 +9,17 @@
 package appsec
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
-	"sort"
-	"sync"
-	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/limiter"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphql"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpc"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
 	waf "github.com/DataDog/go-libddwaf/v2"
-	"go.uber.org/atomic"
 )
 
 const (
@@ -42,8 +35,8 @@ const (
 
 type wafHandle struct {
 	*waf.Handle
-	// Actions are tightly link to a ruleset, which is linked to a waf handle
-	actions map[string]*sharedsec.Action
+	// actions are tightly link to a ruleset, which is linked to a waf handle
+	actions sharedsec.Actions
 }
 
 func (a *appsec) swapWAF(rules rulesFragment) (err error) {
@@ -125,17 +118,35 @@ func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	}, err
 }
 
-func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []dyngo.EventListener, err error) {
+func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (listeners []dyngo.EventListener, err error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
 		return nil, errors.New("no addresses found in the rule")
 	}
 
-	// Check there are supported addresses in the rule
-	httpAddresses, grpcAddresses, graphQLAddresses, notSupported := supportedAddresses(ruleAddresses)
-	if len(httpAddresses) == 0 && len(grpcAddresses) == 0 && len(graphQLAddresses) == 0 {
-		return nil, fmt.Errorf("the addresses present in the rules are not supported: %v", notSupported)
+	// Check which addresses are supported by what listener
+	httpAddresses := make(map[string]struct{}, len(ruleAddresses))
+	grpcAddresses := make(map[string]struct{}, len(ruleAddresses))
+	graphQLAddresses := make(map[string]struct{}, len(ruleAddresses))
+	notSupported := make([]string, 0, len(ruleAddresses))
+	for _, address := range ruleAddresses {
+		supported := false
+		if http.SupportsAddress(address) {
+			httpAddresses[address] = struct{}{}
+			supported = true
+		}
+		if grpc.SupportsAddress(address) {
+			grpcAddresses[address] = struct{}{}
+			supported = true
+		}
+		if graphql.SupportsAddress(address) {
+			graphQLAddresses[address] = struct{}{}
+			supported = true
+		}
+		if !supported {
+			notSupported = append(notSupported, address)
+		}
 	}
 
 	if len(notSupported) > 0 {
@@ -145,477 +156,18 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 	// Register the WAF event listeners
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, newHTTPWAFEventListener(waf, httpAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, http.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, newGRPCWAFEventListener(waf, grpcAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, grpc.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(graphQLAddresses) > 0 {
 		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
-		listeners = append(listeners, newGraphQLWAFEventListener(waf, graphQLAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, graphql.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
 	}
 
 	return listeners, nil
-}
-
-// newWAFEventListener returns the WAF event listener to register in order to enable it.
-func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
-	var monitorRulesOnce sync.Once // per instantiation
-	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
-	wafDiags := handle.Diagnostics()
-
-	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
-		wafCtx := waf.NewContext(handle.Handle)
-
-		if wafCtx == nil {
-			// The WAF event listener got concurrently released
-			return
-		}
-
-		if _, ok := addresses[userIDAddr]; ok {
-			// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
-			// see if the associated user should be blocked. Since we don't control the execution flow in this case
-			// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-				wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{userIDAddr: args.UserID}}, timeout)
-				if wafResult.HasActions() || wafResult.HasEvents() {
-					processHTTPSDKAction(operation, handle.actions, wafResult.Actions)
-					addSecurityEvents(op, limiter, wafResult.Events)
-					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
-				}
-			}))
-		}
-
-		values := make(map[string]any, 7)
-		for addr := range addresses {
-			switch addr {
-			case httpClientIPAddr:
-				if args.ClientIP.IsValid() {
-					values[httpClientIPAddr] = args.ClientIP.String()
-				}
-			case serverRequestMethodAddr:
-				values[serverRequestMethodAddr] = args.Method
-			case serverRequestRawURIAddr:
-				values[serverRequestRawURIAddr] = args.RequestURI
-			case serverRequestHeadersNoCookiesAddr:
-				if headers := args.Headers; headers != nil {
-					values[serverRequestHeadersNoCookiesAddr] = headers
-				}
-			case serverRequestCookiesAddr:
-				if cookies := args.Cookies; cookies != nil {
-					values[serverRequestCookiesAddr] = cookies
-				}
-			case serverRequestQueryAddr:
-				if query := args.Query; query != nil {
-					values[serverRequestQueryAddr] = query
-				}
-			case serverRequestPathParamsAddr:
-				if pathParams := args.PathParams; pathParams != nil {
-					values[serverRequestPathParamsAddr] = pathParams
-				}
-			}
-		}
-
-		wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
-		if wafResult.HasActions() || wafResult.HasEvents() {
-			interrupt := processActions(op, handle.actions, wafResult.Actions)
-			addSecurityEvents(op, limiter, wafResult.Events)
-			log.Debug("appsec: WAF detected an attack before executing the request")
-			if interrupt {
-				wafCtx.Close()
-				return
-			}
-		}
-
-		if _, ok := addresses[serverRequestBodyAddr]; ok {
-			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
-				wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{serverRequestBodyAddr: args.Body}}, timeout)
-				if wafResult.HasActions() || wafResult.HasEvents() {
-					processHTTPSDKAction(sdkBodyOp, handle.actions, wafResult.Actions)
-					addSecurityEvents(op, limiter, wafResult.Events)
-					log.Debug("appsec: WAF detected a suspicious request body")
-				}
-			}))
-		}
-
-		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
-			defer wafCtx.Close()
-
-			values := map[string]any{}
-			if _, ok := addresses[serverResponseStatusAddr]; ok {
-				// serverResponseStatusAddr is a string address, so we must format the status code...
-				values[serverResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
-			}
-
-			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
-			// response is not supported at the moment.
-			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
-
-			// Add WAF metrics.
-			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
-
-			// Add the following metrics once per instantiation of a WAF handle
-			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, &wafDiags)
-				op.AddTag(ext.ManualKeep, samplernames.AppSec)
-			})
-
-			// Log the attacks if any
-			if wafResult.HasEvents() {
-				log.Debug("appsec: attack detected by the waf")
-				addSecurityEvents(op, limiter, wafResult.Events)
-			}
-		}))
-	})
-}
-
-// newGRPCWAFEventListener returns the WAF event listener to register in order
-// to enable it.
-func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
-	var monitorRulesOnce sync.Once // per instantiation
-	wafDiags := handle.Diagnostics()
-
-	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
-		// Limit the maximum number of security events, as a streaming RPC could
-		// receive unlimited number of messages where we could find security events
-		const maxWAFEventsPerRequest = 10
-		var (
-			nbEvents atomic.Uint32
-			logOnce  sync.Once // per request
-
-			events []any
-			mu     sync.Mutex // events mutex
-		)
-
-		wafCtx := waf.NewContext(handle.Handle)
-		if wafCtx == nil {
-			// The WAF event listener got concurrently released
-			return
-		}
-
-		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
-		// see if the associated user should be blocked. Since we don't control the execution flow in this case
-		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		op.On(sharedsec.OnUserIDOperationStart(func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			values := map[string]any{}
-			for addr := range addresses {
-				if addr == userIDAddr {
-					values[userIDAddr] = args.UserID
-				}
-			}
-			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
-			if wafResult.HasActions() || wafResult.HasEvents() {
-				for _, id := range wafResult.Actions {
-					if a, ok := handle.actions[id]; ok && a.Blocking() {
-						code, err := a.GRPC()(map[string][]string{})
-						userIDOp.EmitData(grpcsec.NewMonitoringError(err.Error(), code))
-					}
-				}
-				addSecurityEvents(op, limiter, wafResult.Events)
-				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
-			}
-		}))
-
-		// The same address is used for gRPC and http when it comes to client ip
-		values := map[string]any{}
-		for addr := range addresses {
-			if addr == httpClientIPAddr && handlerArgs.ClientIP.IsValid() {
-				values[httpClientIPAddr] = handlerArgs.ClientIP.String()
-			}
-		}
-
-		wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
-		if wafResult.HasActions() || wafResult.HasEvents() {
-			interrupt := processActions(op, handle.actions, wafResult.Actions)
-			addSecurityEvents(op, limiter, wafResult.Events)
-			log.Debug("appsec: WAF detected an attack before executing the request")
-			if interrupt {
-				wafCtx.Close()
-				return
-			}
-		}
-
-		op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
-			if nbEvents.Load() == maxWAFEventsPerRequest {
-				logOnce.Do(func() {
-					log.Debug("appsec: ignoring the rpc message due to the maximum number of security events per grpc call reached")
-				})
-				return
-			}
-
-			// Run the WAF on the rule addresses available in the args
-			// Note that we don't check if the address is present in the rules
-			// as we only support one at the moment, so this callback cannot be
-			// set when the address is not present.
-			values := waf.RunAddressData{
-				Ephemeral: map[string]any{grpcServerRequestMessage: res.Message},
-			}
-			if md := handlerArgs.Metadata; len(md) > 0 {
-				values.Persistent = map[string]any{grpcServerRequestMetadata: md}
-			}
-			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
-			// response is not supported at the moment.
-			wafResult := runWAF(wafCtx, values, timeout)
-
-			if wafResult.HasEvents() {
-				log.Debug("appsec: attack detected by the grpc waf")
-				nbEvents.Inc()
-				mu.Lock()
-				defer mu.Unlock()
-				events = append(events, wafResult.Events...)
-			}
-		}))
-
-		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
-			defer wafCtx.Close()
-			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
-
-			// Log the following metrics once per instantiation of a WAF handle
-			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, &wafDiags)
-				op.AddTag(ext.ManualKeep, samplernames.AppSec)
-			})
-
-			addSecurityEvents(op, limiter, events)
-		}))
-	})
-}
-
-func newGraphQLWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
-	return graphqlsec.OnQueryStart(func(query *graphqlsec.Query, args graphqlsec.QueryArguments) {
-		wafCtx := waf.NewContext(handle.Handle)
-		if wafCtx == nil {
-			return
-		}
-
-		var (
-			allResolvers   map[string][]map[string]any
-			allResolversMu sync.Mutex
-		)
-
-		query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
-			if _, found := addresses[graphQLServerResolverAddr]; found {
-				wafResult := runWAF(
-					wafCtx,
-					waf.RunAddressData{
-						Ephemeral: map[string]any{
-							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
-						},
-					},
-					timeout,
-				)
-				addSecurityEvents(field, limiter, wafResult.Events)
-			}
-
-			if args.FieldName != "" {
-				// Register in all resolvers
-				allResolversMu.Lock()
-				defer allResolversMu.Unlock()
-				if allResolvers == nil {
-					allResolvers = make(map[string][]map[string]any)
-				}
-				allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
-			}
-
-			// field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {}))
-		}))
-
-		query.On(graphqlsec.OnQueryFinish(func(query *graphqlsec.Query, res graphqlsec.QueryResult) {
-			defer wafCtx.Close()
-
-			if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
-				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
-				wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{graphQLServerAllResolversAddr: allResolvers}}, timeout)
-				addSecurityEvents(query, limiter, wafResult.Events)
-			}
-
-			wafDiags := handle.Diagnostics()
-			overall, internal := wafCtx.TotalRuntime()
-			nbTimeouts := wafCtx.TotalTimeouts()
-			addWAFMonitoringTags(query, wafDiags.Version, overall, internal, nbTimeouts)
-
-			addRulesMonitoringTags(query, &wafDiags)
-			query.AddTag(ext.ManualKeep, samplernames.AppSec)
-		}))
-	})
-}
-
-func runWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
-	result, err := wafCtx.Run(values, timeout)
-	if err == waf.ErrTimeout {
-		log.Debug("appsec: waf timeout value of %s reached", timeout)
-	} else if err != nil {
-		log.Error("appsec: unexpected waf error: %v", err)
-	}
-	return result
-}
-
-// HTTP rule addresses currently supported by the WAF
-const (
-	serverRequestMethodAddr           = "server.request.method"
-	serverRequestRawURIAddr           = "server.request.uri.raw"
-	serverRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
-	serverRequestCookiesAddr          = "server.request.cookies"
-	serverRequestQueryAddr            = "server.request.query"
-	serverRequestPathParamsAddr       = "server.request.path_params"
-	serverRequestBodyAddr             = "server.request.body"
-	serverResponseStatusAddr          = "server.response.status"
-	httpClientIPAddr                  = "http.client_ip"
-	userIDAddr                        = "usr.id"
-)
-
-// List of HTTP rule addresses currently supported by the WAF
-var httpAddresses = []string{
-	serverRequestMethodAddr,
-	serverRequestRawURIAddr,
-	serverRequestHeadersNoCookiesAddr,
-	serverRequestCookiesAddr,
-	serverRequestQueryAddr,
-	serverRequestPathParamsAddr,
-	serverRequestBodyAddr,
-	serverResponseStatusAddr,
-	httpClientIPAddr,
-	userIDAddr,
-}
-
-// gRPC rule addresses currently supported by the WAF
-const (
-	grpcServerRequestMessage  = "grpc.server.request.message"
-	grpcServerRequestMetadata = "grpc.server.request.metadata"
-)
-
-// List of gRPC rule addresses currently supported by the WAF
-var grpcAddresses = []string{
-	grpcServerRequestMessage,
-	grpcServerRequestMetadata,
-	httpClientIPAddr,
-	userIDAddr,
-}
-
-// GraphQL rule addresses currently supported by the WAF
-const (
-	graphQLServerAllResolversAddr = "graphql.server.all_resolvers"
-	graphQLServerResolverAddr     = "graphql.server.resolver"
-)
-
-// List of GraphQL rule addresses currently supported by the WAF
-var graphQLAddresses = []string{
-	graphQLServerAllResolversAddr,
-	graphQLServerResolverAddr,
-}
-
-func init() {
-	// sort the address lists to avoid mistakes and use sort.SearchStrings()
-	sort.Strings(httpAddresses)
-	sort.Strings(grpcAddresses)
-	sort.Strings(graphQLAddresses)
-}
-
-// supportedAddresses returns the list of addresses we actually support from the
-// given rule addresses.
-func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC, supportedGraphQL map[string]struct{}, notSupported []string) {
-	mark := struct{}{}
-	// Filter the supported addresses only
-	supportedHTTP = map[string]struct{}{}
-	supportedGRPC = map[string]struct{}{}
-	supportedGraphQL = map[string]struct{}{}
-	for _, addr := range ruleAddresses {
-		supported := false
-		if i := sort.SearchStrings(httpAddresses, addr); i < len(httpAddresses) && httpAddresses[i] == addr {
-			supportedHTTP[addr] = mark
-			supported = true
-		}
-		if i := sort.SearchStrings(grpcAddresses, addr); i < len(grpcAddresses) && grpcAddresses[i] == addr {
-			supportedGRPC[addr] = mark
-			supported = true
-		}
-		if i := sort.SearchStrings(graphQLAddresses, addr); i < len(graphQLAddresses) && graphQLAddresses[i] == addr {
-			supportedGraphQL[addr] = mark
-			supported = true
-		}
-
-		if !supported {
-			notSupported = append(notSupported, addr)
-		}
-	}
-
-	return
-}
-
-type tagsHolder interface {
-	AddTag(string, any)
-}
-
-// Add the tags related to security rules monitoring
-func addRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
-	rInfo := wafDiags.Rules
-	if rInfo == nil {
-		return
-	}
-
-	if len(rInfo.Errors) == 0 {
-		rInfo.Errors = nil
-	}
-	rulesetErrors, err := json.Marshal(wafDiags.Rules.Errors)
-	if err != nil {
-		log.Error("appsec: could not marshal the waf ruleset info errors to json")
-	}
-	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
-	th.AddTag(eventRulesLoadedTag, float64(len(rInfo.Loaded)))
-	th.AddTag(eventRulesFailedTag, float64(len(rInfo.Failed)))
-	th.AddTag(wafVersionTag, waf.Version())
-}
-
-// Add the tags related to the monitoring of the WAF
-func addWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, internalRuntimeNs, timeouts uint64) {
-	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
-	th.AddTag(eventRulesVersionTag, rulesVersion)
-	th.AddTag(wafTimeoutTag, float64(timeouts))
-	th.AddTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
-	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
-}
-
-type securityEventsAdder interface {
-	AddSecurityEvents(events []any)
-}
-
-// Helper function to add sec events to an operation taking into account the rate limiter.
-func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches []any) {
-	if len(matches) > 0 && limiter.Allow() {
-		op.AddSecurityEvents(matches)
-	}
-}
-
-// processActions sends the relevant actions to the operation's data listener.
-// It returns true if at least one of those actions require interrupting the request handler
-func processActions(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) (interrupt bool) {
-	for _, id := range actionIds {
-		if a, ok := actions[id]; ok {
-			op.EmitData(actions[id])
-			interrupt = interrupt || a.Blocking()
-		}
-	}
-	return interrupt
-}
-
-// processHTTPSDKAction does two things:
-//   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
-//   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
-//     their handler.
-func processHTTPSDKAction(op dyngo.Operation, actions map[string]*sharedsec.Action, actionIds []string) {
-	for _, id := range actionIds {
-		if action, ok := actions[id]; ok {
-			if op.Parent() != nil {
-				op.Parent().EmitData(action) // Send the action so that the handler gets executed
-			}
-			if action.Blocking() { // Send the error to be returned by the SDK
-				op.EmitData(httpsec.NewMonitoringError("Request blocked")) // Send error
-			}
-		}
-	}
 }
