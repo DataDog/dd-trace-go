@@ -41,6 +41,7 @@ func newConfig(opts ...Option) *config {
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
@@ -129,6 +130,8 @@ func WithConfig(cg *kafka.ConfigMap) Option {
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+//
+// Deprecated: Use the environment variable DD_DATA_STREAMS_ENABLED instead
 func WithDataStreams() Option {
 	return func(cfg *config) {
 		cfg.dataStreamsEnabled = true
