@@ -6,7 +6,6 @@
 package grpcsec
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"testing"
@@ -22,7 +21,7 @@ import (
 func TestTags(t *testing.T) {
 	for _, eventCase := range []struct {
 		name          string
-		events        []json.RawMessage
+		events        []any
 		expectedTag   string
 		expectedError bool
 	}{
@@ -32,28 +31,13 @@ func TestTags(t *testing.T) {
 		},
 		{
 			name:        "one-event",
-			events:      []json.RawMessage{json.RawMessage(`["one","two"]`)},
-			expectedTag: `{"triggers":["one","two"]}`,
-		},
-		{
-			name:          "one-event-with-json-error",
-			events:        []json.RawMessage{json.RawMessage(`["one",two"]`)},
-			expectedError: true,
+			events:      []any{"one"},
+			expectedTag: `{"triggers":["one"]}`,
 		},
 		{
 			name:        "two-events",
-			events:      []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three","four"]`)},
-			expectedTag: `{"triggers":["one","two","three","four"]}`,
-		},
-		{
-			name:          "two-events-with-json-error",
-			events:        []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three,"four"]`)},
-			expectedError: true,
-		},
-		{
-			name:          "three-events-with-json-error",
-			events:        []json.RawMessage{json.RawMessage(`["one","two"]`), json.RawMessage(`["three","four"]`), json.RawMessage(`"five"`)},
-			expectedError: true,
+			events:      []any{"one", "two"},
+			expectedTag: `{"triggers":["one","two"]}`,
 		},
 	} {
 		eventCase := eventCase
