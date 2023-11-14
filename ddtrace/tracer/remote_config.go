@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -64,6 +65,7 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 	if !found {
 		return statuses
 	}
+	var telemConfigs []telemetry.Configuration
 	for path, raw := range u {
 		if raw == nil {
 			continue
@@ -76,8 +78,18 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 			continue
 		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
-		t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
+		if updated {
+			telemConfigs = append(telemConfigs, telemetry.Sanitize(t.config.traceSampleRate.telemetry()))
+		}
+		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.telemetry())
+		}
+	}
+	if len(telemConfigs) > 0 {
+		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
+		telemetry.GlobalClient.ConfigChange(telemConfigs)
 	}
 	return statuses
 }

@@ -32,6 +32,7 @@ import (
 // agent).
 type Client interface {
 	ProductStart(namespace Namespace, configuration []Configuration)
+	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)
