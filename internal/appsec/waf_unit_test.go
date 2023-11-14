@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,13 +23,13 @@ func TestTagsTypes(t *testing.T) {
 	wafDiags := waf.Diagnostics{
 		Version: "1.3.0",
 		Rules: &waf.DiagnosticEntry{
-			Loaded: []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"},
-			Failed: []string{"bad1"},
+			Loaded: []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"},
+			Failed: []string{"1337"},
 			Errors: map[string][]string{"test": {"1", "2"}},
 		},
 	}
 
-	addRulesMonitoringTags(&th, wafDiags)
+	addRulesMonitoringTags(&th, &wafDiags)
 	addWAFMonitoringTags(&th, "1.2.3", 2, 1, 3)
 
 	tags := th.Tags()

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -103,6 +105,117 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 		return want
 	})
 	assert.Equal(t, got, want)
+}
+
+func TestTextMapExtractTracestatePropagation(t *testing.T) {
+	tests := []struct {
+		name, propagationStyle, traceparent string
+		onlyExtractFirst                    bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
+		wantTracestatePropagation           bool
+	}{
+		{
+			/*
+				With only Datadog propagation set, the tracestate header should
+				be ignored, and not propagated to the returned trace context.
+			*/
+			name:             "datadog-only",
+			propagationStyle: "datadog",
+			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01",
+		},
+		{
+			/*
+				With Datadog, B3, AND w3c propagation set, the tracestate header should
+				be propagated to the returned trace context. This test also verifies that
+				b3 extraction doesn't override the local context value.
+			*/
+			name:                      "datadog-b3-w3c",
+			propagationStyle:          "datadog,b3,tracecontext",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
+			wantTracestatePropagation: true,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, the tracestate header should
+				be propagated to the returned trace context.
+			*/
+			name:                      "datadog-and-w3c",
+			propagationStyle:          "datadog,tracecontext",
+			traceparent:               "00-00000000000000000000000000000004-2222222222222222-01",
+			wantTracestatePropagation: true,
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but mismatching trace-ids,
+				the tracestate header should be ignored and not propagated to
+				the returned trace context.
+			*/
+			name:             "datadog-and-w3c-mismatching-ids",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000088-2222222222222222-01",
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but the traceparent is malformed,
+				the tracestate header should be ignored and not propagated to
+				the returned trace context.
+			*/
+			name:             "datadog-and-w3c-malformed",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000004-22asdf!2-01",
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but there is no traceparent,
+				the tracestate header should be ignored and not propagated to
+				the returned trace context.
+			*/
+			name:             "datadog-and-w3c-no-traceparent",
+			propagationStyle: "datadog,tracecontext",
+		},
+		{
+			/*
+				With Datadog AND w3c propagation set, but DD_TRACE_PROPAGATION_EXTRACT_FIRST
+				is true, the tracestate header should be ignored and not propagated to
+				the returned trace context.
+			*/
+			name:             "datadog-and-w3c-only-extract-first",
+			propagationStyle: "datadog,tracecontext",
+			traceparent:      "00-00000000000000000000000000000004-2222222222222222-01",
+			onlyExtractFirst: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
+			t.Setenv(headerPropagationStyle, tc.propagationStyle)
+			if tc.onlyExtractFirst {
+				os.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
+				defer os.Unsetenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST")
+			}
+			tracer := newTracer()
+			assert := assert.New(t)
+			headers := TextMapCarrier(map[string]string{
+				DefaultTraceIDHeader:  "4",
+				DefaultParentIDHeader: "1",
+				originHeader:          "synthetics",
+				b3TraceIDHeader:       "0021dc1807524785",
+				traceparentHeader:     tc.traceparent,
+				tracestateHeader:      "dd=s:2;o:rum;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+			})
+
+			ctx, err := tracer.Extract(headers)
+			assert.Nil(err)
+			sctx, ok := ctx.(*spanContext)
+			assert.True(ok)
+			assert.Equal("00000000000000000000000000000004", sctx.traceID.HexEncoded())
+			assert.Equal(uint64(1), sctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
+			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
+			if tc.wantTracestatePropagation {
+				assert.Equal("dd=s:0;o:synthetics,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
+			} else if sctx.trace != nil {
+				assert.False(sctx.trace.hasPropagatingTag(tracestateHeader))
+			}
+		})
+	}
 }
 
 func TestTextMapPropagatorErrors(t *testing.T) {
@@ -359,6 +472,9 @@ func TestTextMapPropagator(t *testing.T) {
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 			assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+			if tc.xDatadogTagsHeader != "" {
+				tc.xDatadogTagsHeader += fmt.Sprintf(",_dd.p.tid=%s", child.Context().(ddtrace.SpanContextW3C).TraceID128()[:16])
+			}
 			assertTraceTags(t, tc.xDatadogTagsHeader, dst["x-datadog-tags"])
 			if strings.Contains(tc.injectStyle, "tracecontext") {
 				// other unit tests check the value of these W3C headers, so just make sure they're present
@@ -401,12 +517,15 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
-			BaggagePrefix: "bg-",
-			TraceHeader:   "tid",
-			ParentHeader:  "pid",
+			BaggagePrefix:    "bg-",
+			TraceHeader:      "tid",
+			ParentHeader:     "pid",
+			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
 		})
 		tracer := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
@@ -425,7 +544,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 		xctx, ok := sctx.(*spanContext)
 		assert.True(ok)
-		assert.Equal(xctx.traceID, ctx.traceID)
+		assert.Equal(xctx.traceID.HexEncoded(), ctx.traceID.HexEncoded())
 		assert.Equal(xctx.spanID, ctx.spanID)
 		assert.Equal(xctx.baggage, ctx.baggage)
 		assert.Equal(xctx.trace.priority, ctx.trace.priority)

@@ -158,6 +158,9 @@ func Start(opts ...StartOption) {
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
+	if err := t.startRemoteConfig(cfg); err != nil {
+		log.Warn("Remote config startup error: %s", err)
+	}
 	appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
@@ -643,6 +646,7 @@ func (t *tracer) Stop() {
 		t.dataStreams.Stop()
 	}
 	appsec.Stop()
+	remoteconfig.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

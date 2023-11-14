@@ -102,13 +102,7 @@ func SetAppSecEnabledTags(span TagSetter) {
 }
 
 // SetEventSpanTags sets the security event span tags into the service entry span.
-// This is a no-op if events is empty.
 func SetEventSpanTags(span TagSetter, events []any) error {
-	if len(events) == 0 {
-		// No events, so we skip adding event tags...
-		return nil
-	}
-
 	// Set the appsec event span tag
 	val, err := makeEventTagValue(events)
 	if err != nil {
@@ -130,13 +124,7 @@ func SetEventSpanTags(span TagSetter, events []any) error {
 
 // Create the value of the security event tag.
 func makeEventTagValue(events []any) (json.RawMessage, error) {
-	triggers := struct {
-		Triggers []any `json:"triggers"`
-	}{
-		Triggers: events,
-	}
-
-	tag, err := json.Marshal(triggers)
+	tag, err := json.Marshal(map[string][]any{"triggers": events})
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
 	}

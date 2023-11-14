@@ -1002,3 +1002,20 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		}
 	})
 }
+
+func TestSetGlobalSampleRate(t *testing.T) {
+	rs := newTraceRulesSampler([]SamplingRule{ServiceRule("test-service", 1.0)}, 1.0)
+	assert.Equal(t, 1.0, rs.globalRate)
+
+	// valid
+	rs.setGlobalSampleRate(0.5)
+	assert.Equal(t, 0.5, rs.globalRate)
+
+	// valid
+	rs.setGlobalSampleRate(0.0)
+	assert.Equal(t, 0.0, rs.globalRate)
+
+	// ignore out of bound value
+	rs.setGlobalSampleRate(2)
+	assert.Equal(t, 0.0, rs.globalRate)
+}
