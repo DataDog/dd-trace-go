@@ -1,0 +1,47 @@
+on:
+  workflow_dispatch: # manually
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  appsec-v2:
+    uses: ./.github/workflows/appsec.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  codeql-v2:
+    uses: ./.github/workflows/codeql-analysis.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  govulncheck-v2:
+    uses: ./.github/workflows/govulncheck.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  parametric-v2:
+    uses: ./.github/workflows/parametric-tests.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  smoke-v2:
+    uses: ./.github/workflows/smoke-tests.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  system-v2:
+    uses: ./.github/workflows/system-tests.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev
+
+  test-apps-v2:
+    uses: ./.github/workflows/test-apps.yml
+    secrets: inherit
+    with:
+      ref: refs/heads/v2-dev

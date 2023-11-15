@@ -6,7 +6,6 @@
 package httpsec
 
 import (
-	"encoding/json"
 	"os"
 	"sort"
 	"strings"
@@ -73,13 +72,13 @@ func init() {
 }
 
 // SetSecurityEventsTags sets the AppSec-specific span tags when a security event occurred into the service entry span.
-func SetSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) {
+func SetSecurityEventsTags(span instrumentation.TagSetter, events []any) {
 	if err := instrumentation.SetEventSpanTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
-func setSecurityEventsTags(span instrumentation.TagSetter, events []json.RawMessage) error {
+func setSecurityEventsTags(span instrumentation.TagSetter, events []any) error {
 	if len(events) == 0 {
 		return nil
 	}
