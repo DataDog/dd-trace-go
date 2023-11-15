@@ -247,6 +247,7 @@ jobs:
               go test -v ./contrib/google.golang.org/api/...
 
       - name: Testing outlier gRPC v1.2
+        if: inputs.ref != 'refs/heads/v2-dev'
         run: |
               # This hacky approach is necessary because running the tests regularly
               # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
