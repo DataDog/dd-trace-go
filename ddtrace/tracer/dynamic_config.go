@@ -82,6 +82,8 @@ func equal[T comparable](x, y T) bool {
 	return x == y
 }
 
+// equalSlice compares two slices of comparable values
+// The comparison takes into account the order of the elements
 func equalSlice[T comparable](x, y []T) bool {
 	if len(x) != len(y) {
 		return false
