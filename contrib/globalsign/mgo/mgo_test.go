@@ -78,10 +78,7 @@ func TestIter_NoSpanKind(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -103,6 +100,7 @@ func TestIter_NoSpanKind(t *testing.T) {
 		}
 	}
 	assert.Equal(3, numSpanKindClient, "Iter() should not get span.kind tag")
+
 }
 
 func TestCollection_Insert(t *testing.T) {
@@ -113,10 +111,7 @@ func TestCollection_Insert(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -138,10 +133,7 @@ func TestCollection_Update(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -164,10 +156,7 @@ func TestCollection_UpdateId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -191,10 +180,7 @@ func TestIssue874(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -220,10 +206,7 @@ func TestCollection_Upsert(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -249,10 +232,7 @@ func TestCollection_UpdateAll(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -273,10 +253,7 @@ func TestCollection_FindId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -298,10 +275,7 @@ func TestCollection_Remove(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -322,10 +296,7 @@ func TestCollection_RemoveId(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	removeByID := func(collection *Collection) {
 		collection.Insert(entity)
@@ -352,10 +323,7 @@ func TestCollection_RemoveAll(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -435,10 +403,7 @@ func TestCollection_FindAndIter(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		collection.Insert(entity)
@@ -471,10 +436,7 @@ func TestCollection_Bulk(t *testing.T) {
 			Name: "entity",
 			Value: bson.DocElem{
 				Name:  "index",
-				Value: 0,
-			},
-		},
-	}
+				Value: 0}}}
 
 	insert := func(collection *Collection) {
 		bulk := collection.Bulk()
@@ -585,25 +547,4 @@ func TestNamingSchema(t *testing.T) {
 		return mt.FinishedSpans()
 	})
 	namingschematest.NewMongoDBTest(genSpans, "mongodb")(t)
-}
-
-func TestIssue2165(t *testing.T) {
-	assert := assert.New(t)
-	insert := func(collection *Collection) {
-		p := collection.Pipe(bson.M{})
-		p.One(nil)
-		p.Explain(nil)
-	}
-
-	spans := testMongoCollectionCommand(t, insert)
-	assert.Equal(3, len(spans))
-
-	for _, val := range spans {
-		if val.OperationName() != "mgo-unittest" {
-			assert.Equal("mongodb", val.Tag(ext.DBSystem))
-			if err, ok := val.Tags()[ext.Error]; ok {
-				assert.NotNil(err)
-			}
-		}
-	}
 }

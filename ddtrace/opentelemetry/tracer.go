@@ -11,12 +11,10 @@ import (
 	"encoding/hex"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -24,9 +22,8 @@ var _ oteltrace.Tracer = (*oteltracer)(nil)
 var telemetryTags = []string{`"integration_name":"otel"`}
 
 type oteltracer struct {
-	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
-	provider    *TracerProvider
-	DD          ddtrace.Tracer
+	provider *TracerProvider
+	ddtrace.Tracer
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
@@ -47,10 +44,10 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
 	for _, attr := range ssConfig.Attributes() {
-		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
+		ddopts = append(ddopts, tracer.Tag(string(attr.Key), attr.Value.AsInterface()))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
-		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
+		ddopts = append(ddopts, tracer.SpanType(k.String()))
 	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
@@ -58,7 +55,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
-		DD:         s,
+		Span:       s,
 		oteltracer: t,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
@@ -91,4 +88,12 @@ func (c *otelCtxToDDCtx) TraceID128() string {
 
 func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
 	return c.oc.TraceID()
+}
+
+var _ oteltrace.Tracer = (*noopOteltracer)(nil)
+
+type noopOteltracer struct{}
+
+func (n *noopOteltracer) Start(_ context.Context, _ string, _ ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
+	return nil, nil
 }

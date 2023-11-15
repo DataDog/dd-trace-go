@@ -1,12 +1,10 @@
 github.com/DataDog/appsec-internal-go v1.0.0 h1:2u5IkF4DBj3KVeQn5Vg2vjPUtt513zxEYglcqnd500U=
 github.com/DataDog/appsec-internal-go v1.0.0/go.mod h1:+Y+4klVWKPOnZx6XESG7QHydOaUGEXyH2j/vSg9JiNM=
-github.com/DataDog/appsec-internal-go v1.0.1/go.mod h1:+Y+4klVWKPOnZx6XESG7QHydOaUGEXyH2j/vSg9JiNM=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.46.0 h1:rUNnUcHC4AlxoImuXmZeOfi6H80BDBHzeagWXWCVhnA=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.46.0/go.mod h1:e933RWa4kAWuHi5jpzEuOiULlv21HcCFEVIYegmaB5c=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0/go.mod h1:HzySONXnAgSmIQfL6gOv9hWprKJkx8CicuXuUbmgWfo=
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df h1:PbzrhHhs2+RRdKKti7JBSM8ATIeiji2T2cVt/d8GT8k=
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.0-devel.0.20230725154044-2549ba9058df/go.mod h1:5Q39ZOIOwZMnFyRadp+5gH1bFdjmb+Pgxe+j5XOwaTg=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.1.1/go.mod h1:KhiYb2Badlv9/rofz+OznKoEF5XKTonWyhx5K83AP8E=
 github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPprz7Z+s8=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=

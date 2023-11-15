@@ -152,9 +152,6 @@ func Start(opts ...StartOption) error {
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
-	if err := t.startRemoteConfig(cfg); err != nil {
-		log.Warn("Remote config startup error: %s", err)
-	}
 	appsec.Start(appsec.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
@@ -404,7 +401,7 @@ type chunk struct {
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *chunk) {
 	if len(c.spans) > 0 {
-		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
+		if p, ok := c.spans[0].context.samplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -516,7 +513,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// this is a child span
 		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
-		if p, ok := context.SamplingPriority(); ok {
+		if p, ok := context.samplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
@@ -567,7 +564,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.env != "" {
 		span.setMeta(ext.Environment, t.config.env)
 	}
-	if _, ok := span.context.SamplingPriority(); !ok {
+	if _, ok := span.context.samplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
@@ -658,7 +655,6 @@ func (t *tracer) Stop() {
 		t.dataStreams.Stop()
 	}
 	appsec.Stop()
-	remoteconfig.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -717,7 +713,7 @@ const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
 func (t *tracer) sample(span *span) {
-	if _, ok := span.context.SamplingPriority(); ok {
+	if _, ok := span.context.samplingPriority(); ok {
 		// sampling decision was already made
 		return
 	}

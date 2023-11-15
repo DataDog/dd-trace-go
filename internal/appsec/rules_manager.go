@@ -11,7 +11,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
-	rules "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
@@ -58,7 +57,7 @@ type (
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {
 	var f rulesFragment
-	if err := json.Unmarshal([]byte(rules.StaticRecommendedRules), &f); err != nil {
+	if err := json.Unmarshal([]byte(staticRecommendedRules), &f); err != nil {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f

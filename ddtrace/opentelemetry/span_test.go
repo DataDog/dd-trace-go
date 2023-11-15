@@ -253,7 +253,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	ddChild := child.(*span)
 	// this verifies that options passed to the parent, such as tracer.WithSpanID(spanID)
 	// weren't passed down to the child
-	assert.NotEqual(spanID, ddChild.DD.Context().SpanID())
+	assert.NotEqual(spanID, ddChild.Context().SpanID())
 	child.End()
 
 	EndOptions(sp, tracer.FinishTime(startTime.Add(duration)))
@@ -269,7 +269,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"span.kind":"producer"`)
+	assert.Contains(p, `"type":"producer"`)
 	assert.Contains(p, fmt.Sprint(spanID))
 	assert.Contains(p, fmt.Sprint(startTime.UnixNano()))
 	assert.Contains(p, fmt.Sprint(duration.Nanoseconds()))
@@ -303,7 +303,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	}
 	assert.Contains(p, "persisted_ctx_rsc")
 	assert.Contains(p, "persisted_srv")
-	assert.Contains(p, `"span.kind":"producer"`)
+	assert.Contains(p, `"type":"producer"`)
 	assert.NotContains(p, "discarded")
 }
 
@@ -389,40 +389,23 @@ func TestSpanSetAttributes(t *testing.T) {
 
 	attributes := [][]string{{"k1", "v1_old"},
 		{"k2", "v2"},
-		{"k1", "v1_new"},
-		// maps to 'name'
-		{"operation.name", "ops"},
-		// maps to 'service'
-		{"service.name", "srv"},
-		// maps to 'resource'
-		{"resource.name", "rsr"},
-		// maps to 'type'
-		{"span.type", "db"},
-	}
+		{"k1", "v1_new"}}
 
 	_, sp := tr.Start(context.Background(), "test")
 	for _, tag := range attributes {
 		sp.SetAttributes(attribute.String(tag[0], tag[1]))
 	}
-	// maps to '_dd1.sr.eausr'
-	sp.SetAttributes(attribute.Int("analytics.event", 1))
-
 	sp.End()
 	tracer.Flush()
 	payload, err := waitForPayload(ctx, payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	assert.Contains(payload, `"k1":"v1_new"`)
-	assert.Contains(payload, `"k2":"v2"`)
+	assert.Contains(payload, "k1")
+	assert.Contains(payload, "k2")
+	assert.Contains(payload, "v1_new")
+	assert.Contains(payload, "v2")
 	assert.NotContains(payload, "v1_old")
-
-	// reserved attributes
-	assert.Contains(payload, `"name":"ops"`)
-	assert.Contains(payload, `"service":"srv"`)
-	assert.Contains(payload, `"resource":"rsr"`)
-	assert.Contains(payload, `"type":"db"`)
-	assert.Contains(payload, `"_dd1.sr.eausr":1`)
 }
 
 func TestTracerStartOptions(t *testing.T) {

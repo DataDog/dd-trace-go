@@ -429,7 +429,7 @@ func TestSamplingDecision(t *testing.T) {
 		span := tracer.StartSpan("name_1").(*span)
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
-		p, ok := span.context.SamplingPriority()
+		p, ok := span.context.samplingPriority()
 		require.True(t, ok)
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
@@ -742,8 +742,6 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -759,7 +757,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		// 128-bit trace ids are enabled by default.
+		// Enable 128 bit trace ids
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		opts128 := []StartSpanOption{
 			WithSpanID(987654),
 			StartTime(time.Unix(123456, 0)),
@@ -1091,9 +1090,8 @@ func TestNewSpanChild(t *testing.T) {
 
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
-		if !is128 {
-			os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-			defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+		if is128 {
+			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		}
 		assert := assert.New(t)
 
@@ -1196,7 +1194,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
-	p, ok := s.context.SamplingPriority()
+	p, ok := s.context.samplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
 	s.Finish()
@@ -1238,7 +1236,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
-		p, ok := s.context.SamplingPriority()
+		p, ok := s.context.samplingPriority()
 		assert.True(ok)
 		assert.EqualValues(p, prio)
 
@@ -2018,13 +2016,6 @@ func BenchmarkPartialFlushing(b *testing.B) {
 		genBigTraces(b)
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
-	})
-}
-
-// BenchmarkBigTraces tests the performance of creating a lot of spans in a single thread
-func BenchmarkBigTraces(b *testing.B) {
-	b.Run("Big traces", func(b *testing.B) {
 		genBigTraces(b)
 	})
 }

@@ -19,9 +19,7 @@
 //	yourCode(ctx)
 //	sp.End()
 //
-// Not every feature provided by OpenTelemetry is supported with this wrapper today, and any new API methods
-// added to the OpenTelemetry API will default to being a no-op until implemented by this library. See the
-// OpenTelemetry package docs for more details: https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+// Not every feature provided by OpenTelemetry is supported with this wrapper today.
 // This package seeks to implement a minimal set of functions within
 // the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
 // to allow users to send traces to Datadog using existing OpenTelemetry code with minimal changes to the application.
@@ -38,7 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
@@ -48,9 +45,8 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 // trace computational workflows.
 // WithInstrumentationVersion and WithSchemaURL TracerOptions are not supported.
 type TracerProvider struct {
-	noop.TracerProvider // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
-	tracer              *oteltracer
-	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
+	tracer  *oteltracer
+	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
 }
 
@@ -62,7 +58,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	tracer.Start(opts...)
 	p := &TracerProvider{}
 	t := &oteltracer{
-		DD:       internal.GetGlobalTracer(),
+		Tracer:   internal.GetGlobalTracer(),
 		provider: p,
 	}
 	p.tracer = t
@@ -74,7 +70,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
-		return noop.NewTracerProvider().Tracer("")
+		return &noopOteltracer{}
 	}
 	return p.tracer
 }

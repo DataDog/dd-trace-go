@@ -242,10 +242,6 @@ func (rs *traceRulesSampler) enabled() bool {
 }
 
 func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) {
-	if rate < 0.0 || rate > 1.0 {
-		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
-		return
-	}
 	rs.m.Lock()
 	defer rs.m.Unlock()
 	rs.globalRate = rate

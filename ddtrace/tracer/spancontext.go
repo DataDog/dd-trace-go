@@ -123,7 +123,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.Start) / time.Second
@@ -189,7 +189,7 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	c.trace.setSamplingPriority(p, sampler)
 }
 
-func (c *spanContext) SamplingPriority() (p int, ok bool) {
+func (c *spanContext) samplingPriority() (p int, ok bool) {
 	if c.trace == nil {
 		return 0, false
 	}

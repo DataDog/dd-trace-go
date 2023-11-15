@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"os"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
@@ -120,7 +119,6 @@ func Test128(t *testing.T) {
 	assert.Nil(t, err)
 	defer stop()
 
-	os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
 	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
@@ -135,7 +133,7 @@ func Test128(t *testing.T) {
 	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 
 	// Enable 128 bit trace ids
-	os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
 	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)
