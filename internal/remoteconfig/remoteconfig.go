@@ -10,12 +10,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -55,6 +57,9 @@ const (
 	ASMCustomBlockingResponse
 )
 
+// ErrClientNotStarted is returned when the remote config client is not started.
+var ErrClientNotStarted = errors.New("remote config client not started")
+
 // ProductUpdate represents an update for a specific product.
 // It is a map of file path to raw file content
 type ProductUpdate map[string][]byte
@@ -62,6 +67,7 @@ type ProductUpdate map[string][]byte
 // A Client interacts with an Agent to update and track the state of remote
 // configuration
 type Client struct {
+	sync.RWMutex
 	ClientConfig
 
 	clientID   string
@@ -69,13 +75,24 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks []Callback
+	callbacks    []Callback
+	products     map[string]struct{}
+	capabilities map[Capability]struct{}
 
 	lastError error
 }
 
-// NewClient creates a new remoteconfig Client
-func NewClient(config ClientConfig) (*Client, error) {
+// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
+// Using a single RC client instance in the tracer is a requirement for remote configuration.
+var client *Client
+
+var (
+	startOnce sync.Once
+	stopOnce  sync.Once
+)
+
+// newClient creates a new remoteconfig Client
+func newClient(config ClientConfig) (*Client, error) {
 	repo, err := rc.NewUnverifiedRepository()
 	if err != nil {
 		return nil, err
@@ -92,37 +109,67 @@ func NewClient(config ClientConfig) (*Client, error) {
 		stop:         make(chan struct{}),
 		lastError:    nil,
 		callbacks:    []Callback{},
+		capabilities: map[Capability]struct{}{},
+		products:     map[string]struct{}{},
 	}, nil
 }
 
-// Start starts the client's update poll loop in a fresh goroutine
-func (c *Client) Start() {
-	go func() {
-		ticker := time.NewTicker(c.PollInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-c.stop:
-				close(c.stop)
-				return
-			case <-ticker.C:
-				c.updateState()
-			}
+// Start starts the client's update poll loop in a fresh goroutine.
+// Noop if the client has already started.
+func Start(config ClientConfig) error {
+	var err error
+	startOnce.Do(func() {
+		client, err = newClient(config)
+		if err != nil {
+			return
 		}
-	}()
+		go func() {
+			ticker := time.NewTicker(client.PollInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-client.stop:
+					close(client.stop)
+					return
+				case <-ticker.C:
+					client.Lock()
+					client.updateState()
+					client.Unlock()
+				}
+			}
+		}()
+	})
+	return err
 }
 
-// Stop stops the client's update poll loop
-func (c *Client) Stop() {
-	log.Debug("remoteconfig: gracefully stopping the client")
-	c.stop <- struct{}{}
-	select {
-	case <-c.stop:
-		log.Debug("remoteconfig: client stopped successfully")
-	case <-time.After(time.Second):
-		log.Debug("remoteconfig: client stopping timeout")
+// Stop stops the client's update poll loop.
+// Noop if the client has already been stopped.
+// The remote config client is supposed to have the same lifecycle as the tracer.
+// It can't be restarted after a call to Stop() unless explicitly calling Reset().
+func Stop() {
+	if client == nil {
+		// In case Stop() is called before Start()
+		return
 	}
+	stopOnce.Do(func() {
+		log.Debug("remoteconfig: gracefully stopping the client")
+		client.stop <- struct{}{}
+		select {
+		case <-client.stop:
+			log.Debug("remoteconfig: client stopped successfully")
+		case <-time.After(time.Second):
+			log.Debug("remoteconfig: client stopping timeout")
+		}
+	})
+}
+
+// Reset destroys the client instance.
+// To be used only in tests to reset the state of the client.
+func Reset() {
+	client = nil
+	startOnce = sync.Once{}
+	stopOnce = sync.Once{}
 }
 
 func (c *Client) updateState() {
@@ -176,52 +223,110 @@ func (c *Client) updateState() {
 // RegisterCallback allows registering a callback that will be invoked when the client
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
-func (c *Client) RegisterCallback(f Callback) {
-	c.callbacks = append(c.callbacks, f)
+func RegisterCallback(f Callback) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	client.callbacks = append(client.callbacks, f)
+	return nil
 }
 
 // UnregisterCallback removes a previously registered callback from the active callbacks list
 // This remove operation preserves ordering
-func (c *Client) UnregisterCallback(f Callback) {
+func UnregisterCallback(f Callback) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
 	fValue := reflect.ValueOf(f)
-	for i, callback := range c.callbacks {
+	for i, callback := range client.callbacks {
 		if reflect.ValueOf(callback) == fValue {
-			c.callbacks = append(c.callbacks[:i], c.callbacks[i+1:]...)
+			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
 		}
 	}
+	return nil
 }
 
 // RegisterProduct adds a product to the list of products listened by the client
-func (c *Client) RegisterProduct(p string) {
-	c.Products[p] = struct{}{}
+func RegisterProduct(p string) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	client.products[p] = struct{}{}
+	return nil
 }
 
 // UnregisterProduct removes a product from the list of products listened by the client
-func (c *Client) UnregisterProduct(p string) {
-	delete(c.Products, p)
+func UnregisterProduct(p string) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	delete(client.products, p)
+	return nil
+}
+
+// HasProduct returns whether a given product was registered
+func HasProduct(p string) (bool, error) {
+	if client == nil {
+		return false, ErrClientNotStarted
+	}
+	client.RLock()
+	defer client.RUnlock()
+	_, found := client.products[p]
+	return found, nil
 }
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func (c *Client) RegisterCapability(cap Capability) {
-	c.Capabilities[cap] = struct{}{}
+func RegisterCapability(cap Capability) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	client.capabilities[cap] = struct{}{}
+	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func (c *Client) UnregisterCapability(cap Capability) {
-	delete(c.Capabilities, cap)
+func UnregisterCapability(cap Capability) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	delete(client.capabilities, cap)
+	return nil
+}
+
+// HasCapability returns whether a given capability was registered
+func HasCapability(cap Capability) (bool, error) {
+	if client == nil {
+		return false, ErrClientNotStarted
+	}
+	client.RLock()
+	defer client.RUnlock()
+	_, found := client.capabilities[cap]
+	return found, nil
 }
 
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
-	productUpdates := make(map[string]ProductUpdate, len(c.Products))
-	for p := range c.Products {
+	productUpdates := make(map[string]ProductUpdate, len(c.products))
+	for p := range c.products {
 		productUpdates[p] = make(ProductUpdate)
 	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for p := range c.Products {
+		for p := range c.products {
 			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
@@ -353,11 +458,11 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := big.NewInt(0)
-	for i := range c.Capabilities {
+	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, 0, len(c.Products))
-	for p := range c.Products {
+	products := make([]string, 0, len(c.products))
+	for p := range c.products {
 		products = append(products, p)
 	}
 	req := clientGetConfigsRequest{

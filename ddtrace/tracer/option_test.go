@@ -904,6 +904,7 @@ func TestServiceName(t *testing.T) {
 		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
+		defer globalconfig.SetServiceName("")
 	})
 }
 
@@ -1118,6 +1119,7 @@ func TestEnvConfig(t *testing.T) {
 func TestStatsTags(t *testing.T) {
 	assert := assert.New(t)
 	c := newConfig(WithService("serviceName"), WithEnv("envName"))
+	defer globalconfig.SetServiceName("")
 	c.hostname = "hostName"
 	tags := statsTags(c)
 

@@ -6,10 +6,12 @@
 package profiler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -465,12 +467,22 @@ func TestExecutionTrace(t *testing.T) {
 	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
 	defer server.Close()
 
+	// cpuProfileRate is picked randomly so we can check for it in the trace
+	// data to reduce the chance that it occurs in the trace data for some other
+	// reduce. In theory we could use the entire int64 space, but when we do
+	// this the runtime can crash with the error shown below.
+	//
+	// runtime: kevent on fd 3 failed with 60
+	// fatal error: runtime: netpoll failed
+	cpuProfileRate := int(9999 + rand.Int63n(9999))
+
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(CPUProfile),
 		WithPeriod(1*time.Second),
+		CPUProfileRate(int(cpuProfileRate)),
 	)
 	require.NoError(t, err)
 	defer Stop()
@@ -489,6 +501,7 @@ func TestExecutionTrace(t *testing.T) {
 		t.Log(m.event.Attachments, m.tags)
 		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
+			assertContainsCPUProfileRateLog(t, m.attachments["go.trace"], cpuProfileRate)
 		}
 	}
 	// With a trace frequency of 3 seconds and a profiling period of 1
@@ -497,6 +510,13 @@ func TestExecutionTrace(t *testing.T) {
 	if seenTraces != 2 {
 		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
 	}
+}
+
+// assertContainsCPUProfileRateLog checks for the presence of the log written by
+// traceLogCPUProfileRate. It's a bit hacky, but probably good enough for now :).
+func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
+	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
+	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
 }
 
 // TestEndpointCounts verfies that the unit of work feature works end to end.
@@ -617,4 +637,49 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
 	}
+}
+
+func TestVersionResolution(t *testing.T) {
+	doOneProfileUpload := func(opts ...Option) profileMeta {
+		received := make(chan profileMeta)
+		server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: received})
+		defer server.Close()
+
+		opts = append(opts,
+			WithHTTPClient(client), WithProfileTypes(), WithPeriod(10*time.Millisecond),
+		)
+		err := Start(opts...)
+		require.NoError(t, err)
+		defer Stop()
+		return <-received
+	}
+
+	t.Run("tags only", func(t *testing.T) {
+		data := doOneProfileUpload(WithTags("version:4.5.6", "version:7.8.9"))
+		assert.Contains(t, data.tags, "version:4.5.6")
+		assert.NotContains(t, data.tags, "version:7.8.9")
+	})
+
+	t.Run("env", func(t *testing.T) {
+		// Environment variable gets priority over tags
+		t.Setenv("DD_VERSION", "1.2.3")
+		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		assert.NotContains(t, data.tags, "version:4.5.6")
+		assert.Contains(t, data.tags, "version:1.2.3")
+	})
+
+	t.Run("WithVersion", func(t *testing.T) {
+		// WithVersion gets the highest priority
+		t.Setenv("DD_VERSION", "1.2.3")
+		data := doOneProfileUpload(WithTags("version:4.5.6"), WithVersion("7.8.9"))
+		assert.NotContains(t, data.tags, "version:1.2.3")
+		assert.NotContains(t, data.tags, "version:4.5.6")
+		assert.Contains(t, data.tags, "version:7.8.9")
+	})
+
+	t.Run("case insensitive", func(t *testing.T) {
+		data := doOneProfileUpload(WithTags("Version:4.5.6", "version:7.8.9"))
+		assert.Contains(t, data.tags, "Version:4.5.6")
+		assert.NotContains(t, data.tags, "version:7.8.9")
+	})
 }

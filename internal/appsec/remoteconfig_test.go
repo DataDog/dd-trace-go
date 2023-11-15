@@ -10,7 +10,6 @@ package appsec
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"reflect"
 	"sort"
@@ -20,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +32,8 @@ func TestASMFeaturesCallback(t *testing.T) {
 	cfg, err := newConfig()
 	require.NoError(t, err)
 	a := newAppSec(cfg)
+	err = a.startRC()
+	require.NoError(t, err)
 
 	t.Setenv(enabledEnvVar, "")
 	os.Unsetenv(enabledEnvVar)
@@ -333,22 +334,27 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 		require.NotNil(t, activeAppSec)
 		require.False(t, Enabled())
-		client := activeAppSec.rc
-		require.NotNil(t, client)
-		require.Contains(t, client.Capabilities, remoteconfig.ASMActivation)
-		require.Contains(t, client.Products, rc.ProductASMFeatures)
+		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+		require.NoError(t, err)
+		require.True(t, found)
+		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		require.NoError(t, err)
+		require.True(t, found)
 	})
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
 		t.Setenv(enabledEnvVar, "true")
+		remoteconfig.Reset()
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
 		require.True(t, Enabled())
-		client := activeAppSec.rc
-		require.NotNil(t, client)
-		require.NotContains(t, client.Capabilities, remoteconfig.ASMActivation)
-		require.NotContains(t, client.Products, rc.ProductASMFeatures)
+		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+		require.NoError(t, err)
+		require.False(t, found)
+		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		require.NoError(t, err)
+		require.False(t, found)
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
@@ -397,11 +403,10 @@ func TestCapabilities(t *testing.T) {
 			if !Enabled() && activeAppSec == nil {
 				t.Skip()
 			}
-			require.NotNil(t, activeAppSec.rc)
-			require.Len(t, activeAppSec.rc.Capabilities, len(tc.expected))
 			for _, cap := range tc.expected {
-				_, contained := activeAppSec.rc.Capabilities[cap]
-				require.True(t, contained)
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
 			}
 		})
 	}
@@ -627,7 +632,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the WAF"))},
+			expected: map[string]rc.ApplyStatus{"invalid": ackStatus}, // Success, as there exists at least 1 usable rule in the whole set
 		},
 		{
 			name:     "multiple/ack",
@@ -638,8 +643,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("could not instantiate the WAF")),
-				"invalid":   genApplyStatus(true, errors.New("could not instantiate the WAF")),
+				"overrides": ackStatus, // Success, as there exists at least 1 usable rule in the whole set
+				"invalid":   ackStatus, // Success, as there exists at least 1 usable rule in the whole set
 			},
 		},
 		{
@@ -664,7 +669,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				}
 			} else {
 				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses))
+				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
 			}
 		})
 	}
@@ -699,9 +704,9 @@ func TestWafRCUpdate(t *testing.T) {
 			serverRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		matches, actions := runWAF(wafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Empty(t, actions)
+		result := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
 		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
 		for _, status := range statuses {
@@ -714,8 +719,14 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Contains(t, actions, "block")
+		result = runWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Contains(t, result.Actions, "block")
 	})
+}
+
+func jsonString(t *testing.T, v any) string {
+	bytes, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(bytes)
 }
