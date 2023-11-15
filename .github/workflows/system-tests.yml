@@ -112,7 +112,7 @@ jobs:
         run: |
           cd utils/build/docker/golang/app
           find -type f -name '*.go' -exec sed -i 's#gopkg.in/DataDog/dd-trace-go.v1#github.com/DataDog/dd-trace-go/v2#g' {} \;
-          echo "replace github.com/DataDog/dd-trace-go/v2 => ../../../../binaries/dd-trace-go" >> go.mod
+          echo "replace github.com/DataDog/dd-trace-go/v2 => /home/runner/work/dd-trace-go/dd-trace-go/binaries/dd-trace-go" >> go.mod
           go mod tidy
 
       - name: Build weblog
