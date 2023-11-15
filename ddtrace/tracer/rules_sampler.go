@@ -251,6 +251,8 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	rs.m.Lock()
 	defer rs.m.Unlock()
 	if math.IsNaN(rs.globalRate) && math.IsNaN(rate) {
+		// NaN is not considered equal to any number, including itself.
+		// It should be compared with math.IsNaN
 		return false
 	}
 	if rs.globalRate == rate {
