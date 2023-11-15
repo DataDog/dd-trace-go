@@ -107,6 +107,13 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
+      - name: Patch dd-trace-go version
+        if: ${{ inputs.branch_ref == 'refs/heads/v2-dev' }}
+        run: |
+          cd utils/build/docker/golang/app
+          echo "replace github.com/DataDog/dd-trace-go/v2 => ../../../../binaries/dd-trace-go" >> go.mod
+          go mod tidy
+
       - name: Build weblog
         run: ./build.sh -i weblog
 
