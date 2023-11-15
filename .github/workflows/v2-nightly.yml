@@ -38,7 +38,7 @@ jobs:
     uses: ./.github/workflows/system-tests.yml
     secrets: inherit
     with:
-      ref: refs/heads/v2-dev
+      branch_ref: refs/heads/v2-dev
 
   test-apps-v2:
     uses: ./.github/workflows/test-apps.yml
