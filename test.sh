@@ -18,9 +18,8 @@ fi
 
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		--no-appsec)
-			tags="$tags datadog.noasm"
-			export DD_APPSEC_ENABLED=false
+		--appsec)
+			export DD_APPSEC_ENABLED=true
 			shift
 			;;
 		-i|--integration)

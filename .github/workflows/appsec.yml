@@ -36,9 +36,6 @@ jobs:
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
-        build_tags: # test it compiles with and without the appsec removal build tag
-          - ""
-          - "datadog.noasm"
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
@@ -90,9 +87,6 @@ jobs:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        build_tags: # test it compiles with and without the appsec removal build tag
-          - ""
-          - "datadog.noasm"
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
