@@ -66,7 +66,8 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithOmitTrivial enables omission of graphql fields marked as trivial.
+// WithOmitTrivial enables omission of graphql fields marked as trivial. This
+// also opts trivial fields out of Threat Detection (and blocking).
 func WithOmitTrivial() Option {
 	return func(cfg *config) {
 		cfg.omitTrivial = true
