@@ -24,7 +24,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"go.uber.org/atomic"
 )
 
@@ -158,6 +158,8 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l Limiter) (listeners []d
 // newWAFEventListener returns the WAF event listener to register in order to enable it.
 func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
+	wafDiags := handle.Diagnostics()
 
 	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		wafCtx := waf.NewContext(handle.Handle)
@@ -171,16 +173,16 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			// see if the associated user should be blocked. Since we don't control the execution flow in this case
 			// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-				matches, actionIds := runWAF(wafCtx, map[string]interface{}{userIDAddr: args.UserID}, timeout)
-				if len(matches) > 0 {
-					processHTTPSDKAction(operation, handle.actions, actionIds)
-					addSecurityEvents(op, limiter, matches)
+				wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{userIDAddr: args.UserID}}, timeout)
+				if wafResult.HasActions() || wafResult.HasEvents() {
+					processHTTPSDKAction(operation, handle.actions, wafResult.Actions)
+					addSecurityEvents(op, limiter, wafResult.Events)
 					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
 			}))
 		}
 
-		values := map[string]interface{}{}
+		values := make(map[string]any, 7)
 		for addr := range addresses {
 			switch addr {
 			case httpClientIPAddr:
@@ -210,10 +212,10 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 			}
 		}
 
-		matches, actionIds := runWAF(wafCtx, values, timeout)
-		if len(matches) > 0 {
-			interrupt := processActions(op, handle.actions, actionIds)
-			addSecurityEvents(op, limiter, matches)
+		wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+		if wafResult.HasActions() || wafResult.HasEvents() {
+			interrupt := processActions(op, handle.actions, wafResult.Actions)
+			addSecurityEvents(op, limiter, wafResult.Events)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
 				wafCtx.Close()
@@ -223,10 +225,10 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 
 		if _, ok := addresses[serverRequestBodyAddr]; ok {
 			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
-				matches, actionIds := runWAF(wafCtx, map[string]interface{}{serverRequestBodyAddr: args.Body}, timeout)
-				if len(matches) > 0 {
-					processHTTPSDKAction(sdkBodyOp, handle.actions, actionIds)
-					addSecurityEvents(op, limiter, matches)
+				wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{serverRequestBodyAddr: args.Body}}, timeout)
+				if wafResult.HasActions() || wafResult.HasEvents() {
+					processHTTPSDKAction(sdkBodyOp, handle.actions, wafResult.Actions)
+					addSecurityEvents(op, limiter, wafResult.Events)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
 			}))
@@ -235,32 +237,31 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
-			values := make(map[string]interface{}, 1)
+			values := map[string]any{}
 			if _, ok := addresses[serverResponseStatusAddr]; ok {
-				values[serverResponseStatusAddr] = res.Status
+				// serverResponseStatusAddr is a string address, so we must format the status code...
+				values[serverResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
 			}
 
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			matches, _ := runWAF(wafCtx, values, timeout)
+			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
 
 			// Add WAF metrics.
-			rInfo := handle.RulesetInfo()
 			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-			addWAFMonitoringTags(op, rInfo.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 			// Add the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, rInfo)
+				addRulesMonitoringTags(op, &wafDiags)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
 			// Log the attacks if any
-			if len(matches) == 0 {
-				return
+			if wafResult.HasEvents() {
+				log.Debug("appsec: attack detected by the waf")
+				addSecurityEvents(op, limiter, wafResult.Events)
 			}
-			log.Debug("appsec: attack detected by the waf")
-			addSecurityEvents(op, limiter, matches)
 		}))
 	})
 }
@@ -269,19 +270,17 @@ func newHTTPWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 // to enable it.
 func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, timeout time.Duration, limiter Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
+	wafDiags := handle.Diagnostics()
 
 	return grpcsec.OnHandlerOperationStart(func(op *grpcsec.HandlerOperation, handlerArgs grpcsec.HandlerOperationArgs) {
 		// Limit the maximum number of security events, as a streaming RPC could
 		// receive unlimited number of messages where we could find security events
 		const maxWAFEventsPerRequest = 10
 		var (
-			nbEvents          atomic.Uint32
-			logOnce           sync.Once // per request
-			overallRuntimeNs  atomic.Uint64
-			internalRuntimeNs atomic.Uint64
-			nbTimeouts        atomic.Uint64
+			nbEvents atomic.Uint32
+			logOnce  sync.Once // per request
 
-			events []json.RawMessage
+			events []any
 			mu     sync.Mutex // events mutex
 		)
 
@@ -295,37 +294,37 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		op.On(sharedsec.OnUserIDOperationStart(func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-			values := map[string]interface{}{}
+			values := map[string]any{}
 			for addr := range addresses {
 				if addr == userIDAddr {
 					values[userIDAddr] = args.UserID
 				}
 			}
-			matches, actionIds := runWAF(wafCtx, values, timeout)
-			if len(matches) > 0 {
-				for _, id := range actionIds {
+			wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+			if wafResult.HasActions() || wafResult.HasEvents() {
+				for _, id := range wafResult.Actions {
 					if a, ok := handle.actions[id]; ok && a.Blocking() {
 						code, err := a.GRPC()(map[string][]string{})
 						userIDOp.EmitData(grpcsec.NewMonitoringError(err.Error(), code))
 					}
 				}
-				addSecurityEvents(op, limiter, matches)
+				addSecurityEvents(op, limiter, wafResult.Events)
 				log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 			}
 		}))
 
 		// The same address is used for gRPC and http when it comes to client ip
-		values := map[string]interface{}{}
+		values := map[string]any{}
 		for addr := range addresses {
 			if addr == httpClientIPAddr && handlerArgs.ClientIP.IsValid() {
 				values[httpClientIPAddr] = handlerArgs.ClientIP.String()
 			}
 		}
 
-		matches, actionIds := runWAF(wafCtx, values, timeout)
-		if len(matches) > 0 {
-			interrupt := processActions(op, handle.actions, actionIds)
-			addSecurityEvents(op, limiter, matches)
+		wafResult := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+		if wafResult.HasActions() || wafResult.HasEvents() {
+			interrupt := processActions(op, handle.actions, wafResult.Actions)
+			addSecurityEvents(op, limiter, wafResult.Events)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
 				wafCtx.Close()
@@ -340,77 +339,54 @@ func newGRPCWAFEventListener(handle *wafHandle, addresses map[string]struct{}, t
 				})
 				return
 			}
-			// The current workaround of the WAF context limitations is to
-			// simply instantiate and release the WAF context for the operation
-			// lifetime so that:
-			//   1. We avoid growing the memory usage of the context every time
-			//      a grpc.server.request.message value is added to it during
-			//      the RPC lifetime.
-			//   2. We avoid the limitation of 1 event per attack type.
-			// TODO(Julio-Guerra): a future libddwaf API should solve this out.
-			wafCtx := waf.NewContext(handle.Handle)
-			if wafCtx == nil {
-				// The WAF event listener got concurrently released
-				return
-			}
-			defer wafCtx.Close()
+
 			// Run the WAF on the rule addresses available in the args
 			// Note that we don't check if the address is present in the rules
 			// as we only support one at the moment, so this callback cannot be
 			// set when the address is not present.
-			values := map[string]interface{}{grpcServerRequestMessage: res.Message}
+			values := waf.RunAddressData{
+				Ephemeral: map[string]any{grpcServerRequestMessage: res.Message},
+			}
 			if md := handlerArgs.Metadata; len(md) > 0 {
-				values[grpcServerRequestMetadata] = md
+				values.Persistent = map[string]any{grpcServerRequestMetadata: md}
 			}
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			event, _ := runWAF(wafCtx, values, timeout)
+			wafResult := runWAF(wafCtx, values, timeout)
 
-			// WAF run durations are WAF context bound. As of now we need to keep track of those externally since
-			// we use a new WAF context for each callback. When we are able to re-use the same WAF context across
-			// callbacks, we can get rid of these variables and simply use the WAF bindings in OnHandlerOperationFinish.
-			overall, internal := wafCtx.TotalRuntime()
-			overallRuntimeNs.Add(overall)
-			internalRuntimeNs.Add(internal)
-			nbTimeouts.Add(wafCtx.TotalTimeouts())
-
-			if len(event) == 0 {
-				return
+			if wafResult.HasEvents() {
+				log.Debug("appsec: attack detected by the grpc waf")
+				nbEvents.Inc()
+				mu.Lock()
+				defer mu.Unlock()
+				events = append(events, wafResult.Events...)
 			}
-			log.Debug("appsec: attack detected by the grpc waf")
-			nbEvents.Inc()
-			mu.Lock()
-			events = append(events, event)
-			mu.Unlock()
 		}))
 
 		op.On(grpcsec.OnHandlerOperationFinish(func(op *grpcsec.HandlerOperation, _ grpcsec.HandlerOperationRes) {
 			defer wafCtx.Close()
-			rInfo := handle.RulesetInfo()
-			addWAFMonitoringTags(op, rInfo.Version, overallRuntimeNs.Load(), internalRuntimeNs.Load(), nbTimeouts.Load())
+			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
+			addWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 			// Log the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
-				addRulesMonitoringTags(op, rInfo)
+				addRulesMonitoringTags(op, &wafDiags)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
-			addSecurityEvents(op, limiter, events...)
+			addSecurityEvents(op, limiter, events)
 		}))
 	})
 }
 
-func runWAF(wafCtx *waf.Context, values map[string]interface{}, timeout time.Duration) ([]byte, []string) {
-	matches, actions, err := wafCtx.Run(values, timeout)
-	if err != nil {
-		if err == waf.ErrTimeout {
-			log.Debug("appsec: waf timeout value of %s reached", timeout)
-		} else {
-			log.Error("appsec: unexpected waf error: %v", err)
-			return nil, nil
-		}
+func runWAF(wafCtx *waf.Context, values waf.RunAddressData, timeout time.Duration) waf.Result {
+	result, err := wafCtx.Run(values, timeout)
+	if err == waf.ErrTimeout {
+		log.Debug("appsec: waf timeout value of %s reached", timeout)
+	} else if err != nil {
+		log.Error("appsec: unexpected waf error: %v", err)
 	}
-	return matches, actions
+	return result
 }
 
 // HTTP rule addresses currently supported by the WAF
@@ -487,11 +463,16 @@ func supportedAddresses(ruleAddresses []string) (supportedHTTP, supportedGRPC ma
 }
 
 type tagsHolder interface {
-	AddTag(string, interface{})
+	AddTag(string, any)
 }
 
 // Add the tags related to security rules monitoring
-func addRulesMonitoringTags(th tagsHolder, rInfo waf.RulesetInfo) {
+func addRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
+	rInfo := wafDiags.Rules
+	if rInfo == nil {
+		return
+	}
+
 	if len(rInfo.Errors) == 0 {
 		rInfo.Errors = nil
 	}
@@ -500,8 +481,8 @@ func addRulesMonitoringTags(th tagsHolder, rInfo waf.RulesetInfo) {
 		log.Error("appsec: could not marshal the waf ruleset info errors to json")
 	}
 	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
-	th.AddTag(eventRulesLoadedTag, float64(rInfo.Loaded))
-	th.AddTag(eventRulesFailedTag, float64(rInfo.Failed))
+	th.AddTag(eventRulesLoadedTag, float64(len(rInfo.Loaded)))
+	th.AddTag(eventRulesFailedTag, float64(len(rInfo.Failed)))
 	th.AddTag(wafVersionTag, waf.Version())
 }
 
@@ -515,13 +496,13 @@ func addWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 }
 
 type securityEventsAdder interface {
-	AddSecurityEvents(events ...json.RawMessage)
+	AddSecurityEvents(events []any)
 }
 
 // Helper function to add sec events to an operation taking into account the rate limiter.
-func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches ...json.RawMessage) {
+func addSecurityEvents(op securityEventsAdder, limiter Limiter, matches []any) {
 	if len(matches) > 0 && limiter.Allow() {
-		op.AddSecurityEvents(matches...)
+		op.AddSecurityEvents(matches)
 	}
 }
 

@@ -10,7 +10,6 @@ package appsec
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"reflect"
 	"sort"
@@ -20,7 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -633,7 +632,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]rulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": genApplyStatus(true, errors.New("could not instantiate the WAF"))},
+			expected: map[string]rc.ApplyStatus{"invalid": ackStatus}, // Success, as there exists at least 1 usable rule in the whole set
 		},
 		{
 			name:     "multiple/ack",
@@ -644,8 +643,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			name:    "multiple/single-error",
 			updates: craftRCUpdates(map[string]rulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
 			expected: map[string]rc.ApplyStatus{
-				"overrides": genApplyStatus(true, errors.New("could not instantiate the WAF")),
-				"invalid":   genApplyStatus(true, errors.New("could not instantiate the WAF")),
+				"overrides": ackStatus, // Success, as there exists at least 1 usable rule in the whole set
+				"invalid":   ackStatus, // Success, as there exists at least 1 usable rule in the whole set
 			},
 		},
 		{
@@ -670,7 +669,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 				}
 			} else {
 				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses))
+				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
 			}
 		})
 	}
@@ -705,9 +704,9 @@ func TestWafRCUpdate(t *testing.T) {
 			serverRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		matches, actions := runWAF(wafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Empty(t, actions)
+		result := runWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
 		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
 		for _, status := range statuses {
@@ -720,8 +719,14 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		matches, actions = runWAF(newWafCtx, values, cfg.wafTimeout)
-		require.Contains(t, string(matches), "crs-913-120")
-		require.Contains(t, actions, "block")
+		result = runWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
+		require.Contains(t, result.Actions, "block")
 	})
+}
+
+func jsonString(t *testing.T, v any) string {
+	bytes, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(bytes)
 }
