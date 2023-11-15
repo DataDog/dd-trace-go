@@ -4,11 +4,12 @@ go 1.19
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
-	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.0.1
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
+	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-00010101000000-000000000000
 	github.com/DataDog/go-libddwaf v1.5.0
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.2
@@ -26,14 +27,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
 	github.com/aws/smithy-go v1.14.2
-	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
+	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.2.0
-	github.com/denisenkom/go-mssqldb v0.11.0
-	github.com/dimfeld/httptreemux/v5 v5.5.0
-	github.com/elastic/go-elasticsearch/v6 v6.8.5
-	github.com/elastic/go-elasticsearch/v7 v7.17.1
-	github.com/elastic/go-elasticsearch/v8 v8.4.0
+	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
@@ -43,7 +40,7 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gocql/gocql v0.0.0-20220224095938-0eacd3183625
 	github.com/gofiber/fiber/v2 v2.50.0
 	github.com/golang/protobuf v1.5.3
@@ -59,8 +56,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
-	github.com/lib/pq v1.10.2
-	github.com/mattn/go-sqlite3 v1.14.16
+	github.com/lib/pq v1.10.9
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55
 	github.com/redis/go-redis/v9 v9.1.0
@@ -75,7 +71,6 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.50.0
-	github.com/vektah/gqlparser/v2 v2.5.8
 	go.mongodb.org/mongo-driver v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	go.opentelemetry.io/otel v1.20.0
@@ -93,7 +88,7 @@ require (
 	gorm.io/driver/postgres v1.4.6
 	gorm.io/driver/sqlserver v1.4.2
 	gorm.io/gorm v1.25.3
-	honnef.co/go/gotraceui v0.2.0
+	honnef.co/go/gotraceui v0.3.0
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
 )
@@ -105,7 +100,6 @@ require (
 	cloud.google.com/go/iam v1.1.2 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.13 // indirect
@@ -135,7 +129,6 @@ require (
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/ebitengine/purego v0.5.0-alpha.1 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.1.0 // indirect
 	github.com/fatih/color v1.15.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
@@ -159,7 +152,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
 	github.com/googleapis/gax-go/v2 v2.11.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -173,7 +165,6 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect
@@ -265,4 +256,9 @@ require (
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
+)
+
+replace (
+	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache => ./contrib/bradfitz/gomemcache
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql => ./contrib/database/sql
 )
