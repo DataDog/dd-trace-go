@@ -28,6 +28,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
+			WithHeaderTags([]string{"key:val", "key2:val2"}),
 		)
 		defer globalconfig.SetServiceName("")
 		defer Stop()
@@ -44,6 +45,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
+		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)

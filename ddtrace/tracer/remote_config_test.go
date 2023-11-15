@@ -105,7 +105,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, "my-tag-name", globalconfig.HeaderTag("X-Test-Header"))
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: []string{"X-Test-Header:my-tag-name"}, Origin: "remote_config"}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name", Origin: "remote_config"}})
 
 		// Unset RC. Assert header tags are not set
 		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
@@ -115,8 +115,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
-		var val []string
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: val, Origin: ""}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "", Origin: ""}})
 	})
 
 	t.Run("DD_TRACE_HEADER_TAGS=X-Test-Header:my-tag-name-from-env and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
@@ -138,7 +137,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: []string{"X-Test-Header:my-tag-name-from-rc"}, Origin: "remote_config"}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the DD_TRACE_HEADER_TAGS header tag
 		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
@@ -149,7 +148,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: []string{"X-Test-Header:my-tag-name-from-env"}, Origin: ""}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: ""}})
 	})
 
 	t.Run("In code header tags = X-Test-Header:my-tag-name-in-code and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
@@ -170,7 +169,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: []string{"X-Test-Header:my-tag-name-from-rc"}, Origin: "remote_config"}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the in-code header tag
 		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
@@ -181,7 +180,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
-		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: []string{"X-Test-Header:my-tag-name-in-code"}, Origin: ""}})
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: ""}})
 	})
 
 	t.Run("Invalid payload", func(t *testing.T) {
