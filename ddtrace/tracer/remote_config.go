@@ -80,11 +80,11 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
 		if updated {
-			telemConfigs = append(telemConfigs, t.config.traceSampleRate.telemetry())
+			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
 		}
 		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
 		if updated {
-			telemConfigs = append(telemConfigs, t.config.headerAsTags.telemetry())
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
 		}
 	}
 	if len(telemConfigs) > 0 {

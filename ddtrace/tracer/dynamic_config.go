@@ -67,8 +67,8 @@ func (dc *dynamicConfig[T]) handleRC(val *T) bool {
 	return dc.reset()
 }
 
-// telemetry returns the current configuration value as telemetry.Configuration
-func (dc *dynamicConfig[T]) telemetry() telemetry.Configuration {
+// toTelemetry returns the current configuration value as telemetry.Configuration
+func (dc *dynamicConfig[T]) toTelemetry() telemetry.Configuration {
 	dc.RLock()
 	defer dc.RUnlock()
 	return telemetry.Sanitize(telemetry.Configuration{
