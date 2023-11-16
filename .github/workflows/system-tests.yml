@@ -101,7 +101,6 @@ jobs:
         if: ${{ env.V2_BRANCH != 'true' }}
         with:
           repository: 'DataDog/system-tests'
-          # TODO(darccio): remove ref on v2 release
           ref: ${{ inputs.ref }}
 
       - name: Checkout system tests (v2)
