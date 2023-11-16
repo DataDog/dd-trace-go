@@ -18,7 +18,8 @@ import (
 // An Option is used to configure the telemetry client's settings
 type Option func(*client)
 
-// ApplyOps sets various fields of the client
+// ApplyOps sets various fields of the client.
+// To be called before starting any product.
 func (c *client) ApplyOps(opts ...Option) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

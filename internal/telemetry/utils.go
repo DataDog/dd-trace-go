@@ -8,6 +8,8 @@
 package telemetry
 
 import (
+	"math"
+	"strings"
 	"testing"
 )
 
@@ -47,4 +49,21 @@ func SetAgentlessEndpoint(endpoint string) string {
 	prev := agentlessURL
 	agentlessURL = endpoint
 	return prev
+}
+
+// Sanitize ensures the configuration values are valid and compatible.
+// It removes NaN and Inf values and converts string slices into comma-separated strings.
+func Sanitize(c Configuration) Configuration {
+	switch val := c.Value.(type) {
+	case float64:
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			// Those values cause marshalling errors.
+			// https://github.com/golang/go/issues/59627
+			c.Value = nil
+		}
+	case []string:
+		// The telemetry API only supports primitive types.
+		c.Value = strings.Join(val, ",")
+	}
+	return c
 }

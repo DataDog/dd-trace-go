@@ -14,9 +14,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
-	"github.com/DataDog/go-libddwaf"
+	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -66,7 +65,9 @@ func Start(opts ...StartOption) {
 
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
-	appsec.startRC()
+	if err := appsec.startRC(); err != nil {
+		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
+	}
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
@@ -114,23 +115,13 @@ func setActiveAppSec(a *appsec) {
 type appsec struct {
 	cfg       *Config
 	limiter   *TokenTicker
-	rc        *remoteconfig.Client
 	wafHandle *wafHandle
 	started   bool
 }
 
 func newAppSec(cfg *Config) *appsec {
-	var client *remoteconfig.Client
-	var err error
-	if cfg.rc != nil {
-		client, err = remoteconfig.NewClient(*cfg.rc)
-	}
-	if err != nil {
-		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
-	}
 	return &appsec{
 		cfg: cfg,
-		rc:  client,
 	}
 }
 

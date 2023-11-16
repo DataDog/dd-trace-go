@@ -164,10 +164,11 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
-	} else {
-		// Replace the rulesManager with the new one holding the new state
-		a.cfg.rulesManager = r
+		return statuses
 	}
+	// Replace the rulesManager with the new one holding the new state
+	a.cfg.rulesManager = r
+
 	return statuses
 }
 
@@ -287,95 +288,109 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 	return entries
 }
 
-func (a *appsec) startRC() {
-	if a.rc != nil {
-		a.rc.Start()
+func (a *appsec) startRC() error {
+	if a.cfg.rc != nil {
+		return remoteconfig.Start(*a.cfg.rc)
 	}
+	return nil
 }
 
 func (a *appsec) stopRC() {
-	if a.rc != nil {
-		a.rc.Stop()
+	if a.cfg.rc != nil {
+		remoteconfig.Stop()
 	}
 }
 
 func (a *appsec) registerRCProduct(p string) error {
-	if a.rc == nil {
+	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.cfg.rc.Products[p] = struct{}{}
-	a.rc.RegisterProduct(p)
-	return nil
-}
-
-func (a *appsec) unregisterRCProduct(p string) error {
-	if a.rc == nil {
-		return fmt.Errorf("no valid remote configuration client")
-	}
-	delete(a.cfg.rc.Products, p)
-	a.rc.UnregisterProduct(p)
-	return nil
+	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
-	a.cfg.rc.Capabilities[c] = struct{}{}
-	if a.rc == nil {
+	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.rc.RegisterCapability(c)
-	return nil
+	return remoteconfig.RegisterCapability(c)
 }
 
-func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) {
-	if a.rc == nil {
+func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
+	if a.cfg.rc == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
-		return
+		return nil
 	}
-	delete(a.cfg.rc.Capabilities, c)
-	a.rc.UnregisterCapability(c)
+	return remoteconfig.UnregisterCapability(c)
 }
 
 func (a *appsec) enableRemoteActivation() error {
-	if a.rc == nil {
+	if a.cfg.rc == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	a.registerRCProduct(rc.ProductASMFeatures)
-	a.registerRCCapability(remoteconfig.ASMActivation)
-	a.rc.RegisterCallback(a.onRemoteActivation)
-	return nil
+	err := a.registerRCProduct(rc.ProductASMFeatures)
+	if err != nil {
+		return err
+	}
+	err = a.registerRCCapability(remoteconfig.ASMActivation)
+	if err != nil {
+		return err
+	}
+	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
 func (a *appsec) enableRCBlocking() {
-	if a.rc == nil {
+	if a.cfg.rc == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return
 	}
 
-	a.registerRCProduct(rc.ProductASM)
-	a.registerRCProduct(rc.ProductASMDD)
-	a.registerRCProduct(rc.ProductASMData)
-	a.rc.RegisterCallback(a.onRCRulesUpdate)
+	products := []string{rc.ProductASM, rc.ProductASMDD, rc.ProductASMData}
+	for _, p := range products {
+		if err := a.registerRCProduct(p); err != nil {
+			log.Debug("appsec: Remote config: couldn't register product %s: %v", p, err)
+		}
+	}
+
+	if err := remoteconfig.RegisterCallback(a.onRCRulesUpdate); err != nil {
+		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
+	}
 
 	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
-		a.registerRCCapability(remoteconfig.ASMUserBlocking)
-		a.registerRCCapability(remoteconfig.ASMRequestBlocking)
-		a.registerRCCapability(remoteconfig.ASMIPBlocking)
-		a.registerRCCapability(remoteconfig.ASMDDRules)
-		a.registerRCCapability(remoteconfig.ASMExclusions)
-		a.registerRCCapability(remoteconfig.ASMCustomRules)
-		a.registerRCCapability(remoteconfig.ASMCustomBlockingResponse)
+		caps := []remoteconfig.Capability{
+			remoteconfig.ASMUserBlocking,
+			remoteconfig.ASMRequestBlocking,
+			remoteconfig.ASMIPBlocking,
+			remoteconfig.ASMDDRules,
+			remoteconfig.ASMExclusions,
+			remoteconfig.ASMCustomRules,
+			remoteconfig.ASMCustomBlockingResponse,
+		}
+		for _, c := range caps {
+			if err := a.registerRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+			}
+		}
 	}
 }
 
 func (a *appsec) disableRCBlocking() {
-	if a.rc == nil {
+	if a.cfg.rc == nil {
 		return
 	}
-	a.unregisterRCCapability(remoteconfig.ASMDDRules)
-	a.unregisterRCCapability(remoteconfig.ASMExclusions)
-	a.unregisterRCCapability(remoteconfig.ASMIPBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMRequestBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMUserBlocking)
-	a.unregisterRCCapability(remoteconfig.ASMCustomRules)
-	a.rc.UnregisterCallback(a.onRCRulesUpdate)
+	caps := []remoteconfig.Capability{
+		remoteconfig.ASMDDRules,
+		remoteconfig.ASMExclusions,
+		remoteconfig.ASMIPBlocking,
+		remoteconfig.ASMRequestBlocking,
+		remoteconfig.ASMUserBlocking,
+		remoteconfig.ASMCustomRules,
+	}
+	for _, c := range caps {
+		if err := a.unregisterRCCapability(c); err != nil {
+			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+		}
+	}
+	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {
+		log.Debug("appsec: Remote config: couldn't unregister callback: %v", err)
+	}
 }
