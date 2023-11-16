@@ -397,8 +397,9 @@ func TestTraceManualKeepRace(t *testing.T) {
 	const numGoroutines = 100
 
 	t.Run("SetTag", func(t *testing.T) {
-		tracer := newTracer()
+		tracer, err := newTracer()
 		defer tracer.Stop()
+		assert.NoError(t, err)
 		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
 		defer rootSpan.Finish()
 
@@ -417,8 +418,9 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 	// setting the tag using a StartSpan option has the same race
 	t.Run("StartSpanOption", func(t *testing.T) {
-		tracer := newTracer()
+		tracer, err := newTracer()
 		defer tracer.Stop()
+		assert.NoError(t, err)
 		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
 		defer rootSpan.Finish()
 
