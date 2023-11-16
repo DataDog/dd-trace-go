@@ -53,6 +53,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	for _, attr := range ssConfig.Attributes() {
 		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
 	}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	var cfg ddtrace.StartSpanConfig
+	cfg.Tags = make(map[string]interface{})
+	for _, attr := range ssConfig.Attributes() {
+		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
+	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {
