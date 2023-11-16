@@ -1008,3 +1008,28 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		}
 	})
 }
+
+func TestSetGlobalSampleRate(t *testing.T) {
+	rs := newTraceRulesSampler(nil, math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+
+	// Comparing NaN values
+	b := rs.setGlobalSampleRate(math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+	assert.False(t, b)
+
+	// valid
+	b = rs.setGlobalSampleRate(0.5)
+	assert.Equal(t, 0.5, rs.globalRate)
+	assert.True(t, b)
+
+	// valid
+	b = rs.setGlobalSampleRate(0.0)
+	assert.Equal(t, 0.0, rs.globalRate)
+	assert.True(t, b)
+
+	// ignore out of bound value
+	b = rs.setGlobalSampleRate(2)
+	assert.Equal(t, 0.0, rs.globalRate)
+	assert.False(t, b)
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -64,6 +65,7 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 	if !found {
 		return statuses
 	}
+	var telemConfigs []telemetry.Configuration
 	for path, raw := range u {
 		if raw == nil {
 			continue
@@ -76,8 +78,32 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 			continue
 		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
-		t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
+		}
+	}
+	if len(telemConfigs) > 0 {
+		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
+		telemetry.GlobalClient.ConfigChange(telemConfigs)
 	}
 	return statuses
+}
+
+// startRemoteConfig starts the remote config client
+// and registers the APM_TRACING product and its callback.
+func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
+	err := remoteconfig.Start(rcConfig)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
+	if err != nil {
+		return err
+	}
+	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
 }
