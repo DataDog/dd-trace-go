@@ -183,10 +183,10 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.priority != nil && *c.trace.priority != float64(p) {
+	if c.trace.setSamplingPriority(p, sampler) {
+		// the trace's sampling priority was updated: mark this as updated
 		c.updated = true
 	}
-	c.trace.setSamplingPriority(p, sampler)
 }
 
 func (c *spanContext) SamplingPriority() (p int, ok bool) {
@@ -291,10 +291,11 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return t.samplingPriorityLocked()
 }
 
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+// setSamplingPriority sets the sampling priority and returns true if it was modified.
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p, sampler)
+	return t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -318,10 +319,13 @@ func (t *trace) setTagLocked(key, value string) {
 	t.tags[key] = value
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
 	if t.locked {
-		return
+		return false
 	}
+
+	updatedPriority := t.priority == nil || *t.priority != float64(p)
+
 	if t.priority == nil {
 		t.priority = new(float64)
 	}
@@ -335,6 +339,8 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
+
+	return updatedPriority
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns

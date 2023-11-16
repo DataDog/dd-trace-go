@@ -3,7 +3,7 @@ name: System Tests
 on:
   workflow_call: # allows to reuse this workflow
     inputs:
-      ref:
+      wfc_ref:
         description: 'The branch to run the workflow on'
         required: true
         type: string
@@ -101,6 +101,7 @@ jobs:
           repository: 'DataDog/system-tests'
           # TODO(darccio): remove ref on v2 release
           ref: 5af583da64c7458daf3fdf5e5538b90cdc4d9154
+          # ref: ${{ inputs.wfc_ref || inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
