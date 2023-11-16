@@ -183,8 +183,7 @@ func doClientRequest(
 		span.SetTag(tagMethodKind, methodKind)
 	}
 	if host, _, err := net.SplitHostPort(cc.Target()); err == nil {
-		// TODO: change to use the correct tag name
-		span.SetTag(ext.NetworkDestinationName, host)
+		span.SetTag(ext.PeerHostname, host)
 	}
 	// fill in the peer so we can add it to the tags
 	var p peer.Peer
