@@ -21,6 +21,10 @@ on:
       runs-on:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
 
 jobs:
   test-multi-os:
