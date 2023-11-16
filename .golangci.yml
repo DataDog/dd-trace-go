@@ -6,14 +6,5 @@ linters:
   disable-all: true
   enable:
   - gofmt
-  - gci
   - revive
   - bodyclose
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - prefix(github.com/DataDog/dd-trace-go/v2)
-      - default
-    skip-generated: true
-    custom-order: true
