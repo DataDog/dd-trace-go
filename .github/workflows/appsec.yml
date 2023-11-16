@@ -1,5 +1,11 @@
 name: AppSec Tests
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   workflow_dispatch: # manually
   schedule: # nightly
     - cron: "0 0 * * *"
@@ -40,6 +46,8 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
@@ -99,6 +107,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git
@@ -138,6 +148,8 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - name: Go modules cache
         uses: actions/cache@v3
         with:

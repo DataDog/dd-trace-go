@@ -1,5 +1,11 @@
 name: Nightly govulncheck
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -14,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: 'DataDog/dd-trace-go'
+          ref: ${{ inputs.ref || github.ref }}
       - name: Checkout Go
         uses: actions/setup-go@v3
         with:
