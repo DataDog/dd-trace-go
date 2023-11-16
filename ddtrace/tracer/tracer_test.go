@@ -2022,6 +2022,13 @@ func BenchmarkPartialFlushing(b *testing.B) {
 	})
 }
 
+// BenchmarkBigTraces tests the performance of creating a lot of spans in a single thread
+func BenchmarkBigTraces(b *testing.B) {
+	b.Run("Big traces", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
 func genBigTraces(b *testing.B) {
 	tracer, transport, flush, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}))
 	assert.Nil(b, err)
