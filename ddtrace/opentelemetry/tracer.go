@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
@@ -47,7 +48,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
 	if k := ssConfig.SpanKind(); k != 0 {
-		ddopts = append(ddopts, tracer.SpanType(k.String()))
+		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	var cfg ddtrace.StartSpanConfig
