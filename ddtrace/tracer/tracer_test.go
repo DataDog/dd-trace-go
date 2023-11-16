@@ -742,6 +742,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -757,8 +759,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		// Enable 128 bit trace ids
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		// 128-bit trace ids are enabled by default.
 		opts128 := []StartSpanOption{
 			WithSpanID(987654),
 			StartTime(time.Unix(123456, 0)),
@@ -1090,8 +1091,9 @@ func TestNewSpanChild(t *testing.T) {
 
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
-		if is128 {
-			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		if !is128 {
+			os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+			defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		}
 		assert := assert.New(t)
 

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/httpmem"
@@ -478,6 +479,9 @@ func TestTextMapPropagator(t *testing.T) {
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 			assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
+			if tc.xDatadogTagsHeader != "" {
+				tc.xDatadogTagsHeader += fmt.Sprintf(",_dd.p.tid=%s", child.Context().(ddtrace.SpanContextW3C).TraceID128()[:16])
+			}
 			assertTraceTags(t, tc.xDatadogTagsHeader, dst["x-datadog-tags"])
 			if strings.Contains(tc.injectStyle, "tracecontext") {
 				// other unit tests check the value of these W3C headers, so just make sure they're present
@@ -522,12 +526,15 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
-			BaggagePrefix: "bg-",
-			TraceHeader:   "tid",
-			ParentHeader:  "pid",
+			BaggagePrefix:    "bg-",
+			TraceHeader:      "tid",
+			ParentHeader:     "pid",
+			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
 		})
 		tracer, err := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
@@ -547,7 +554,7 @@ func TestTextMapPropagator(t *testing.T) {
 
 		xctx, ok := sctx.(*spanContext)
 		assert.True(ok)
-		assert.Equal(xctx.traceID, ctx.traceID)
+		assert.Equal(xctx.traceID.HexEncoded(), ctx.traceID.HexEncoded())
 		assert.Equal(xctx.spanID, ctx.spanID)
 		assert.Equal(xctx.baggage, ctx.baggage)
 		assert.Equal(xctx.trace.priority, ctx.trace.priority)
