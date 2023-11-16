@@ -189,7 +189,7 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	c.trace.setSamplingPriority(p, sampler)
 }
 
-func (c *spanContext) samplingPriority() (p int, ok bool) {
+func (c *spanContext) SamplingPriority() (p int, ok bool) {
 	if c.trace == nil {
 		return 0, false
 	}

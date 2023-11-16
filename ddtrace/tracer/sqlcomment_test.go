@@ -136,7 +136,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 				assert.Equal(t, carrier.SpanID, xctx.spanID)
 				assert.Equal(t, traceID, xctx.traceID.Lower())
 
-				p, ok := xctx.samplingPriority()
+				p, ok := xctx.SamplingPriority()
 				assert.True(t, ok)
 				assert.Equal(t, tc.samplingPriority, p)
 			}
@@ -169,7 +169,7 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	assert.Equal(t, lower, xctx.traceID.Lower())
 	assert.Equal(t, upper, xctx.traceID.Upper())
 
-	p, ok := xctx.samplingPriority()
+	p, ok := xctx.SamplingPriority()
 	assert.True(t, ok)
 	assert.Equal(t, priority, p)
 }
@@ -247,7 +247,7 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 				wanted: %d`, xctx.traceID.Upper(), traceIDUpper)
 		}
 
-		p, ok := xctx.samplingPriority()
+		p, ok := xctx.SamplingPriority()
 		if !ok {
 			t.Fatalf("Error retrieving sampling priority")
 		}

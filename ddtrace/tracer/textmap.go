@@ -310,7 +310,7 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	}
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
 	writer.Set(p.cfg.ParentHeader, strconv.FormatUint(ctx.spanID, 10))
-	if sp, ok := ctx.samplingPriority(); ok {
+	if sp, ok := ctx.SamplingPriority(); ok {
 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
 	}
 	if ctx.origin != "" {
@@ -502,7 +502,7 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
 	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
+	if p, ok := ctx.SamplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			writer.Set(b3SampledHeader, "1")
 		} else {
@@ -585,7 +585,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 		traceID = w3Cctx.TraceID128()
 	}
 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
-	if p, ok := ctx.samplingPriority(); ok {
+	if p, ok := ctx.SamplingPriority(); ok {
 		if p >= ext.PriorityAutoKeep {
 			sb.WriteString("-1")
 		} else {
@@ -681,7 +681,7 @@ func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapW
 		return ErrInvalidSpanContext
 	}
 	flags := ""
-	p, ok := ctx.samplingPriority()
+	p, ok := ctx.SamplingPriority()
 	if ok && p >= ext.PriorityAutoKeep {
 		flags = "01"
 	} else {
@@ -982,7 +982,7 @@ func parseTracestate(ctx *spanContext, header string) {
 				// The sampling priority and decision maker values are set based on
 				// the specification in the internal W3C context propagation RFC.
 				// See the document for more details.
-				parentP, _ := ctx.samplingPriority()
+				parentP, _ := ctx.SamplingPriority()
 				if (parentP == 1 && stateP > 0) || (parentP == 0 && stateP <= 0) {
 					// As extracted from tracestate
 					ctx.setSamplingPriority(stateP, samplernames.Unknown)

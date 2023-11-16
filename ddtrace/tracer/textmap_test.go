@@ -852,7 +852,7 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(test.traceID128Full, id128FromSpan(assert, ctx))  // add when 128-bit trace id support is enabled
 					assert.Equal(tc.out[0], sctx.traceID.Lower())
 					assert.Equal(tc.out[1], sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[2]), p)
 				})
@@ -1125,7 +1125,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.out[0], sctx.spanID)
 					assert.Equal(tc.origin, sctx.origin)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 
@@ -1235,7 +1235,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.sid, sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(tc.priority, p)
 
@@ -1727,7 +1727,7 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.tid, sctx.traceID)
 					assert.Equal(tc.out[0], sctx.spanID)
-					p, ok := sctx.samplingPriority()
+					p, ok := sctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
 				})
@@ -2064,7 +2064,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		if parseTraceparent(ctx, header) != nil {
 			t.Skipf("Error parsing parent")
 		}
-		parsedSamplingPriority, ok := ctx.samplingPriority()
+		parsedSamplingPriority, ok := ctx.SamplingPriority()
 		if !ok {
 			t.Skipf("Error retrieving sampling priority")
 		}
