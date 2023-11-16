@@ -442,7 +442,7 @@ func TestTextMapPropagator(t *testing.T) {
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		}, {
 			name:               "Tracestate-Datadog",
-			injectStyle:        "tracecontext,datadog",
+			injectStyle:        "datadog,tracecontext",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=kept"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		},
@@ -1574,7 +1574,7 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("datadog extract / w3c,datadog inject", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "tracecontext,datadog")
+		t.Setenv(headerPropagationStyleInject, "datadog,tracecontext")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		var tests = []struct {
 			outHeaders TextMapCarrier
