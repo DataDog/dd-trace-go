@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestGetTracer(t *testing.T) {
@@ -31,7 +32,7 @@ func TestGetTracer(t *testing.T) {
 	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
-	assert.Equal(ott.Tracer, dd)
+	assert.Equal(ott.DD, dd)
 }
 
 func TestGetTracerMultiple(t *testing.T) {
@@ -51,7 +52,7 @@ func TestSpanWithContext(t *testing.T) {
 	got, ok := tracer.SpanFromContext(ctx)
 
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(got, sp.(*span).DD)
 	assert.Equal(fmt.Sprintf("%016x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
@@ -65,7 +66,7 @@ func TestSpanWithNewRoot(t *testing.T) {
 	otelCtx, child := tr.Start(ddCtx, "otel.child", oteltrace.WithNewRoot())
 	got, ok := tracer.SpanFromContext(otelCtx)
 	assert.True(ok)
-	assert.Equal(got, child.(*span).Span)
+	assert.Equal(got, child.(*span).DD)
 
 	var parentBytes oteltrace.TraceID
 	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
@@ -92,7 +93,7 @@ func TestTracerOptions(t *testing.T) {
 	ctx, sp := tr.Start(context.Background(), "otel.test")
 	got, ok := tracer.SpanFromContext(ctx)
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(got, sp.(*span).DD)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
@@ -188,12 +189,12 @@ func TestShutdownOnce(t *testing.T) {
 	tp.Shutdown()
 	// attempt to get the Tracer after shutdown and
 	// start a span. The context and span returned
-	// from calling Start should be nil.
+	// should be no-op types.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
 	assert.Equal(uint32(1), tp.stopped)
-	assert.Equal(sp, nil)
-	assert.Equal(ctx, nil)
+	assert.Equal(noop.Span{}, sp)
+	assert.Equal(oteltrace.ContextWithSpan(context.Background(), noop.Span{}), ctx)
 }
 
 func TestSpanTelemetry(t *testing.T) {

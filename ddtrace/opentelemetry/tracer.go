@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
@@ -22,8 +23,9 @@ var _ oteltrace.Tracer = (*oteltracer)(nil)
 var telemetryTags = []string{`"integration_name":"otel"`}
 
 type oteltracer struct {
-	provider *TracerProvider
-	ddtrace.Tracer
+	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	provider    *TracerProvider
+	DD          ddtrace.Tracer
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
@@ -70,7 +72,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
-		Span:       s,
+		DD:         s,
 		oteltracer: t,
 		spanKind:   ssConfig.SpanKind(),
 		attributes: cfg.Tags,
@@ -105,12 +107,4 @@ func (c *otelCtxToDDCtx) TraceID128() string {
 
 func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
 	return c.oc.TraceID()
-}
-
-var _ oteltrace.Tracer = (*noopOteltracer)(nil)
-
-type noopOteltracer struct{}
-
-func (n *noopOteltracer) Start(_ context.Context, _ string, _ ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
-	return nil, nil
 }
