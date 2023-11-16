@@ -102,7 +102,9 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(clientSpan)
 			assert.NotNil(rootSpan)
 
+			// this tag always contains the resolved address
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.NetworkDestinationName), "localhost")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
@@ -617,7 +619,7 @@ func newRigWithInterceptors(
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
+	conn, err := grpc.Dial("localhost:"+port, clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
