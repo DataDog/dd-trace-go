@@ -148,6 +148,10 @@ func Start(config ClientConfig) error {
 // The remote config client is supposed to have the same lifecycle as the tracer.
 // It can't be restarted after a call to Stop() unless explicitly calling Reset().
 func Stop() {
+	if client == nil {
+		// In case Stop() is called before Start()
+		return
+	}
 	stopOnce.Do(func() {
 		log.Debug("remoteconfig: gracefully stopping the client")
 		client.stop <- struct{}{}
