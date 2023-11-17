@@ -28,7 +28,7 @@ jobs:
       group: "APM Larger Runners"
     env:
       TEST_LIBRARY: golang
-      V2_BRANCH: false
+      V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
     steps:
       - name: Checkout system tests
         uses: actions/checkout@v3
