@@ -109,7 +109,7 @@ jobs:
         with:
           repository: 'DataDog/system-tests'
           # TODO(darccio): remove ref on v2 release
-          ref: 81d97102843c2c7e4958312392b39e284bd14329
+          ref: d8f4585f86462032d68575afe749165dbc5b6659
           # ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
