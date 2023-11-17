@@ -51,6 +51,7 @@ jobs:
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
+       V2_BRANCH: true
     services:
       datadog-agent:
         image: datadog/agent:latest
@@ -247,7 +248,7 @@ jobs:
               go test -v ./contrib/google.golang.org/api/...
 
       - name: Testing outlier gRPC v1.2
-        if: inputs.ref != 'refs/heads/v2-dev'
+        if: ${{ env.V2_BRANCH != 'true' }}
         run: |
               # This hacky approach is necessary because running the tests regularly
               # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0
