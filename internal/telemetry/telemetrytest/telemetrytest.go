@@ -94,3 +94,9 @@ func (c *MockClient) ApplyOps(args ...telemetry.Option) {
 	c.On("ApplyOps", args).Return()
 	_ = c.Called(args)
 }
+
+// ConfigChange is a mock for the ConfigChange method.
+func (c *MockClient) ConfigChange(args []telemetry.Configuration) {
+	c.On("ConfigChange", args).Return()
+	_ = c.Called(args)
+}

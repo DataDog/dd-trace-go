@@ -1,6 +1,12 @@
 name: "CodeQL"
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches: [ main, master ]
   pull_request:
@@ -27,6 +33,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref || github.ref }}
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
