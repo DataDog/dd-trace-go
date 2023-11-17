@@ -27,6 +27,7 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: gotestsum-report.xml
   TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+  V2_BRANCH: false
 jobs:
   native:
     strategy:
