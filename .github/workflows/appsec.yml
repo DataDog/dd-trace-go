@@ -27,6 +27,7 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: gotestsum-report.xml
   TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+  V2_BRANCH: false
 jobs:
   native:
     strategy:
@@ -164,5 +165,13 @@ jobs:
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
+    if: ${{ env.V2_BRANCH != 'true' }}
+    with:
+      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  smoke-tests-v2:
+    # TODO(darccio): change to main branch on v2 release
+    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@dario.castane/AIT-3705/dd-trace-go.v2
+    if: ${{ env.V2_BRANCH == 'true' }}
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
