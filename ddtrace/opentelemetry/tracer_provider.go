@@ -29,7 +29,6 @@
 package opentelemetry
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -84,7 +83,6 @@ func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace
 func (p *TracerProvider) Shutdown() error {
 	p.Once.Do(func() {
 		tracer.Stop()
-		telemetry.GlobalClient.Stop()
 		atomic.StoreUint32(&p.stopped, 1)
 	})
 	return nil
