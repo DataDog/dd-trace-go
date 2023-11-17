@@ -20,7 +20,7 @@ import (
 
 func TestEnabled(t *testing.T) {
 	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-	wafSupported, _ := waf.SupportsTarget()
+	wafSupported, _ := waf.Health()
 	canBeEnabled := enabledConfig && wafSupported
 
 	require.False(t, appsec.Enabled())

@@ -43,9 +43,9 @@ func Start(opts ...StartOption) {
 		return
 	}
 
-	// Check whether libddwaf - required for Threats Detection - is supported or not
-	if supported, err := waf.SupportsTarget(); !supported {
-		log.Error("appsec: threats detection is not supported: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	// Check whether libddwaf - required for Threats Detection - is ok or not
+	if ok, err := waf.Health(); !ok {
+		log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 		return
 	}
 
