@@ -1004,18 +1004,26 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 }
 
 func TestSetGlobalSampleRate(t *testing.T) {
-	rs := newTraceRulesSampler([]SamplingRule{ServiceRule("test-service", 1.0)}, 1.0)
-	assert.Equal(t, 1.0, rs.globalRate)
+	rs := newTraceRulesSampler(nil, math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+
+	// Comparing NaN values
+	b := rs.setGlobalSampleRate(math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+	assert.False(t, b)
 
 	// valid
-	rs.setGlobalSampleRate(0.5)
+	b = rs.setGlobalSampleRate(0.5)
 	assert.Equal(t, 0.5, rs.globalRate)
+	assert.True(t, b)
 
 	// valid
-	rs.setGlobalSampleRate(0.0)
+	b = rs.setGlobalSampleRate(0.0)
 	assert.Equal(t, 0.0, rs.globalRate)
+	assert.True(t, b)
 
 	// ignore out of bound value
-	rs.setGlobalSampleRate(2)
+	b = rs.setGlobalSampleRate(2)
 	assert.Equal(t, 0.0, rs.globalRate)
+	assert.False(t, b)
 }

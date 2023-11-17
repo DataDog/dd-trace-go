@@ -6,8 +6,6 @@
 package grpcsec
 
 import (
-	"encoding/json"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
@@ -15,13 +13,13 @@ import (
 )
 
 // SetSecurityEventsTags sets the AppSec events span tags.
-func SetSecurityEventsTags(span ddtrace.Span, events []json.RawMessage) {
+func SetSecurityEventsTags(span ddtrace.Span, events []any) {
 	if err := setSecurityEventsTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
-func setSecurityEventsTags(span ddtrace.Span, events []json.RawMessage) error {
+func setSecurityEventsTags(span ddtrace.Span, events []any) error {
 	if events == nil {
 		return nil
 	}
