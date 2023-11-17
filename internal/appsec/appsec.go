@@ -45,10 +45,14 @@ func Start(opts ...StartOption) {
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := waf.Health(); !ok {
+		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
 		if set {
-			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			// DD_APPSEC_ENABLED is explicitly set so we log an error
+			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 		} else {
-			log.Debug("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
+			// debug message instead to avoid showing an error to APM-tracing-only users.
+			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v.", err)
 		}
 		return
 	}
