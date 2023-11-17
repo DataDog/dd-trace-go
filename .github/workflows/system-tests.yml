@@ -93,7 +93,7 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-      V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
+      V2_BRANCH: ${{ inputs.branch_ref == 'refs/heads/v2-dev' }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
