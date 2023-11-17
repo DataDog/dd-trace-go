@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 env:
-  V2_BRANCH: false
+  V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
 
 jobs:
   govulncheck-tests:

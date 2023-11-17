@@ -51,7 +51,7 @@ jobs:
     env:
        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
-       V2_BRANCH: false
+       V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
     services:
       datadog-agent:
         image: datadog/agent:latest
