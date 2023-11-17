@@ -200,4 +200,40 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
 	})
+
+	t.Run("Service mismatch", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		input := map[string]remoteconfig.ProductUpdate{
+			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`)},
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
+		require.Equal(t, "service mismatch", applyStatus["path"].Error)
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
+	})
+
+	t.Run("Env mismatch", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		input := map[string]remoteconfig.ProductUpdate{
+			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`)},
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
+		require.Equal(t, "env mismatch", applyStatus["path"].Error)
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
+	})
 }
