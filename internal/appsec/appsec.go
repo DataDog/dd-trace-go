@@ -45,7 +45,11 @@ func Start(opts ...StartOption) {
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := waf.Health(); !ok {
-		log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		if set {
+			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		} else {
+			log.Debug("appsec: threats detection cannot be enabled for the following reasons: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		}
 		return
 	}
 
