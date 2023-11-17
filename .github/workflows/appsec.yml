@@ -169,7 +169,7 @@ jobs:
       v2_branch: ${{ steps.eval_v2_branch.outputs.v2_branch }}
     steps:
       - id: eval_v2_branch
-        run: echo "v2_branch=$V2_BRANCH" >> "$GITHUB_OUTPUT"
+        run: echo "::set-output name=v2_branch::$V2_BRANCH"
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
