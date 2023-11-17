@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
 			echo "test.sh - Run the tests for dd-trace-go"
 			echo "	this script requires gotestsum, goimports, docker and docker-compose."
 			echo "	-l | --lint		- Run the linter"
-			echo "	--no-appsec		- Test with appsec disabled (including code-level support)"
+			echo "	--appsec		- Test with appsec enabled"
 			echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
 			echo "	-c | --contrib		- Run contrib tests"
 			echo "	--all			- Synonym for -l -a -i -c"
