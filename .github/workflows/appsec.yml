@@ -165,7 +165,7 @@ jobs:
   # TODO(darccio): remove condition on merging into main
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
-    if: 'foo' == 'bar'
+    if: 1 != 2
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
