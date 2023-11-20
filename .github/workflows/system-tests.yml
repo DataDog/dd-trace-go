@@ -103,14 +103,13 @@ jobs:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
+      # TODO(darccio): remove ref on v2 release
       - name: Checkout system tests (v2)
-        if: ${{ env.V2_BRANCH == 'true' }}
         uses: actions/checkout@v3
+        if: ${{ env.V2_BRANCH == 'true' }}
         with:
           repository: 'DataDog/system-tests'
-          # TODO(darccio): remove ref on v2 release
-          ref: d8f4585f86462032d68575afe749165dbc5b6659
-          # ref: ${{ inputs.ref }}
+          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3

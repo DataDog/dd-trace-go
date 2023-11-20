@@ -21,7 +21,7 @@ import (
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
-var telemetryTags = []string{`"integration_name":"otel"`}
+var telemetryTags = []string{"integration_name:otel"}
 
 type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations

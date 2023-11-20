@@ -77,6 +77,16 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 			continue
 		}
+		if c.ServiceTarget.Service != t.config.serviceName {
+			log.Debug("Skipping config for service %s. Current service is %s", c.ServiceTarget.Service, t.config.serviceName)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
+			continue
+		}
+		if c.ServiceTarget.Env != t.config.env {
+			log.Debug("Skipping config for env %s. Current env is %s", c.ServiceTarget.Env, t.config.env)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "env mismatch"}
+			continue
+		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
 		if updated {
@@ -102,6 +112,14 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		return err
 	}
 	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingSampleRate)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingHTTPHeaderTags)
 	if err != nil {
 		return err
 	}
