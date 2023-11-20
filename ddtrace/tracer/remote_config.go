@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -64,6 +65,7 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 	if !found {
 		return statuses
 	}
+	var telemConfigs []telemetry.Configuration
 	for path, raw := range u {
 		if raw == nil {
 			continue
@@ -75,9 +77,29 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 			continue
 		}
+		if c.ServiceTarget.Service != t.config.serviceName {
+			log.Debug("Skipping config for service %s. Current service is %s", c.ServiceTarget.Service, t.config.serviceName)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
+			continue
+		}
+		if c.ServiceTarget.Env != t.config.env {
+			log.Debug("Skipping config for env %s. Current env is %s", c.ServiceTarget.Env, t.config.env)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "env mismatch"}
+			continue
+		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
-		t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
+		}
+	}
+	if len(telemConfigs) > 0 {
+		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
+		telemetry.GlobalClient.ConfigChange(telemConfigs)
 	}
 	return statuses
 }
@@ -90,6 +112,14 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		return err
 	}
 	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingSampleRate)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingHTTPHeaderTags)
 	if err != nil {
 		return err
 	}

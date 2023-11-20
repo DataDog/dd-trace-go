@@ -35,8 +35,7 @@ var (
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.
 //
-// It may return an error if an API key is not provided by means of the
-// WithAPIKey option, or if a hostname is not found.
+// It may return an error if a hostname is not found.
 func Start(opts ...Option) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -142,14 +141,14 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
-	// WithAgentlessUpload can be used to enable it for testing and debugging.
+	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
 		if !isAPIKeyValid(cfg.apiKey) {
-			return nil, errors.New("profiler.WithAgentlessUpload requires a valid API key. Use profiler.WithAPIKey or the DD_API_KEY env variable to set it")
+			return nil, errors.New("Agentless upload requires a valid API key. Use the DD_API_KEY env variable to set it")
 		}
 		// Always warn people against using this mode for now. All customers should
 		// use agent based uploading at this point.
-		log.Warn("profiler.WithAgentlessUpload is currently for internal usage only and not officially supported.")
+		log.Warn("Agentless upload is currently for internal usage only and not officially supported.")
 		cfg.targetURL = cfg.apiURL
 	} else {
 		// Historically people could use an API Key to enable agentless uploading.
@@ -158,7 +157,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		// key configured, we warn the customers that this is probably a
 		// misconfiguration.
 		if cfg.apiKey != "" {
-			log.Warn("You are currently setting profiler.WithAPIKey or the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please see the profiler.WithAPIKey go docs and verify that your integration is still working. If you can't remove DD_API_KEY from your environment, you can use WithAPIKey(\"\") to silence this warning.")
+			log.Warn("You are currently setting the DD_API_KEY env variable, but as of dd-trace-go v1.30.0 this value is getting ignored by the profiler. Please verify that your integration is still working.")
 		}
 		cfg.targetURL = cfg.agentURL
 	}

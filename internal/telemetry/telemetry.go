@@ -42,6 +42,13 @@ func (c *client) ProductStart(namespace Namespace, configuration []Configuration
 	}
 }
 
+// ConfigChange is a thread-safe method to enqueue an app-client-configuration-change event.
+func (c *client) ConfigChange(configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.configChange(configuration)
+}
+
 // configChange enqueues an app-client-configuration-change event to be flushed.
 // Must be called with c.mu locked.
 func (c *client) configChange(configuration []Configuration) {

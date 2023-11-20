@@ -34,6 +34,8 @@ func defaults(cfg *config) {
 	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
 	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
 
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
