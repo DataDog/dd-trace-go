@@ -115,5 +115,13 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if err != nil {
 		return err
 	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingSampleRate)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingHTTPHeaderTags)
+	if err != nil {
+		return err
+	}
 	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
 }
