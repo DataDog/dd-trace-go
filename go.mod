@@ -8,8 +8,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
-	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-00010101000000-000000000000
 	github.com/DataDog/go-libddwaf/v2 v2.1.0
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.2
@@ -57,6 +55,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.14
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/miekg/dns v1.1.55
 	github.com/redis/go-redis/v9 v9.1.0
