@@ -176,7 +176,6 @@ func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-
 	return cfg
 }
 
