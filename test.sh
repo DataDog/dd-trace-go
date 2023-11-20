@@ -18,7 +18,7 @@ fi
 
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		--appsec)
+		-a|--appsec)
 			export DD_APPSEC_ENABLED=true
 			shift
 			;;
