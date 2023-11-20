@@ -1,5 +1,11 @@
 name: Nightly govulncheck
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -8,13 +14,16 @@ on:
     - cron: '00 00 * * *'
   workflow_dispatch:
 
+env:
+  V2_BRANCH: true
+
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: 'DataDog/dd-trace-go'
+          ref: ${{ inputs.ref || github.ref }}
       - name: Checkout Go
         uses: actions/setup-go@v3
         with:
@@ -25,6 +34,13 @@ jobs:
       - name: Run govulncheck
         run: govulncheck -tags appsec ./ddtrace/... ./appsec/... ./profiler/... ./internal/... 
       - name: Run govulncheck-contribs
+        if: ${{ env.V2_BRANCH != 'true' }}
+        run: |
+          go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
+            govulncheck -C $dir .
+          done
+      - name: Run govulncheck-contribs (v2)
+        if: ${{ env.V2_BRANCH == 'true' }}
         run: |
           go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
             govulncheck -C $dir .

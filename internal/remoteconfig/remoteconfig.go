@@ -53,8 +53,20 @@ const (
 	ASMUserBlocking
 	// ASMCustomRules represents the capability for ASM to receive and use user-defined security rules
 	ASMCustomRules
-	// ASMCustomRules represents the capability for ASM to receive and use user-defined blocking responses
+	// ASMCustomBlockingResponse represents the capability for ASM to receive and use user-defined blocking responses
 	ASMCustomBlockingResponse
+	// ASMTrustedIPs represents Trusted IPs through the ASM product
+	ASMTrustedIPs
+	// ASMApiSecuritySampleRate represents API Security sampling rate
+	ASMApiSecuritySampleRate
+	// APMTracingSampleRate represents the rate at which to sample traces from APM client libraries
+	APMTracingSampleRate
+	// APMTracingLogsInjection enables APM client libraries to inject trace ids into log records
+	APMTracingLogsInjection
+	// APMTracingHTTPHeaderTags enables APM client libraries to tag http header values to http server or client spans
+	APMTracingHTTPHeaderTags
+	// APMTracingCustomTags enables APM client to set custom tags on all spans
+	APMTracingCustomTags
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.

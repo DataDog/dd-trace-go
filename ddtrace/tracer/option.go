@@ -323,7 +323,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
-	c.headerAsTags = newDynamicConfig(nil, setHeaderTags)
+	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		WithHeaderTags(strings.Split(v, ","))(c)
 	}
@@ -431,6 +431,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 				globalconfig.SetServiceName(s)
 			}
 		} else {
+			// There is not an explicit service set, default to binary name.
+			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.serviceName = filepath.Base(os.Args[0])
 		}
 	}
@@ -1274,12 +1276,14 @@ func StackFrames(n, skip uint) FinishOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		c.headerAsTags = newDynamicConfig(headerAsTags, setHeaderTags)
+		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
 		setHeaderTags(headerAsTags)
 	}
 }
 
-func setHeaderTags(headerAsTags []string) {
+// setHeaderTags sets the global header tags.
+// Always resets the global value and returns true.
+func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
 		if strings.HasPrefix(h, "x-datadog-") {
@@ -1288,6 +1292,7 @@ func setHeaderTags(headerAsTags []string) {
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
 	}
+	return true
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

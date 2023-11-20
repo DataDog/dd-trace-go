@@ -1320,11 +1320,14 @@ func TestWithLogStartup(t *testing.T) {
 
 func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig()
 		assert.Equal(0, globalconfig.HeaderTagsLen())
 	})
+
 	t.Run("single-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		newConfig(WithHeaderTags([]string{header}))
@@ -1332,6 +1335,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("header-and-tag", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		tag := "tag"
@@ -1340,6 +1344,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("multi-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
@@ -1348,6 +1353,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("normalization", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
 		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
@@ -1355,6 +1361,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("envvar-only", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 
@@ -1366,6 +1373,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("env-override", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
@@ -1373,6 +1381,9 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
+
+	// ensures we cleaned up global state correctly
+	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
 func TestHostnameDisabled(t *testing.T) {

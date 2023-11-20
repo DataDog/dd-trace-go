@@ -1,6 +1,12 @@
 name: Main Branch and Release Tests
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -21,6 +27,7 @@ jobs:
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: ${{ matrix.go-version }}
+      ref: ${{ inputs.ref || github.ref }}
     secrets: inherit
   multios-unit-tests:
     strategy:
@@ -32,4 +39,5 @@ jobs:
     with:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
+      ref: ${{ inputs.ref || github.ref }}
     secrets: inherit

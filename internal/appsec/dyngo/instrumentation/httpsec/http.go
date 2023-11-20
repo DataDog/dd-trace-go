@@ -14,7 +14,6 @@ import (
 	"context"
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
-	"encoding/json"
 	"net/http"
 	"reflect"
 	"strings"
@@ -263,7 +262,7 @@ func fromContext(ctx context.Context) *Operation {
 
 // Finish the HTTP handler operation, along with the given results and emits a
 // finish event up in the operation stack.
-func (op *Operation) Finish(res HandlerOperationRes) []json.RawMessage {
+func (op *Operation) Finish(res HandlerOperationRes) []any {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
 }
