@@ -21,7 +21,7 @@ import (
 
 var _ oteltrace.Tracer = (*oteltracer)(nil)
 
-var telemetryTags = []string{`"integration_name":"otel"`}
+var telemetryTags = []string{"integration_name:otel"}
 
 type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
@@ -31,7 +31,8 @@ type oteltracer struct {
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
-	var ddopts []ddtrace.StartSpanOption
+	// OTel name is akin to resource name in Datadog
+	var ddopts = []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -46,24 +47,34 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if t := ssConfig.Timestamp(); !t.IsZero() {
 		ddopts = append(ddopts, tracer.StartTime(ssConfig.Timestamp()))
 	}
-	for _, attr := range ssConfig.Attributes() {
-		ddopts = append(ddopts, tracer.Tag(toSpecialAttributes(string(attr.Key), attr.Value)))
-	}
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	var cfg ddtrace.StartSpanConfig
+	cfg.Tags = make(map[string]interface{})
+	for _, attr := range ssConfig.Attributes() {
+		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
+	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
+		for _, o := range opts {
+			o(&cfg)
+		}
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	// Since there is no way to see if and how the span operation name was set,
+	// we have to record the attributes  locally.
+	// The span operation name will be calculated when it's ended.
 	s := tracer.StartSpan(spanName, ddopts...)
 	os := oteltrace.Span(&span{
 		DD:         s,
 		oteltracer: t,
+		spanKind:   ssConfig.SpanKind(),
+		attributes: cfg.Tags,
 	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
-	// Wrap the span in Opentelemetry and Datadog contexts to propagate span context values
+	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
 	ctx = oteltrace.ContextWithSpan(tracer.ContextWithSpan(ctx, s), os)
 	return ctx, os
 }

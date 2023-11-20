@@ -32,6 +32,7 @@ import (
 // agent).
 type Client interface {
 	ProductStart(namespace Namespace, configuration []Configuration)
+	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
 	ApplyOps(opts ...Option)
@@ -75,7 +76,7 @@ var (
 	// also the default URL in case connecting to the agent URL fails.
 	agentlessURL = "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry"
 
-	defaultHeartbeatInterval = 60 // seconds
+	defaultHeartbeatInterval = 60.0 // seconds
 
 	// LogPrefix specifies the prefix for all telemetry logging
 	LogPrefix = "Instrumentation telemetry: "
@@ -221,14 +222,17 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	}
 
 	c.flush()
+	c.heartbeatInterval = heartbeatInterval()
+	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
+}
 
-	heartbeat := internal.IntEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
-	if heartbeat < 1 || heartbeat > 3600 {
-		log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %d", heartbeat, defaultHeartbeatInterval)
+func heartbeatInterval() time.Duration {
+	heartbeat := internal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", defaultHeartbeatInterval)
+	if heartbeat <= 0 || heartbeat > 3600 {
+		log("DD_TELEMETRY_HEARTBEAT_INTERVAL=%d not in [1,3600] range, setting to default of %f", heartbeat, defaultHeartbeatInterval)
 		heartbeat = defaultHeartbeatInterval
 	}
-	c.heartbeatInterval = time.Duration(heartbeat) * time.Second
-	c.heartbeatT = time.AfterFunc(c.heartbeatInterval, c.backgroundHeartbeat)
+	return time.Duration(heartbeat * float64(time.Second))
 }
 
 // Stop notifies the telemetry endpoint that the app is closing. All outstanding
