@@ -1191,9 +1191,9 @@ func AnalyticsRate(rate float64) StartSpanOption {
 	return Tag(ext.EventSampleRate, rate)
 }
 
-// WithConfig merges the given StartSpanConfig into the one used to start the span.
+// WithStartSpanConfig merges the given StartSpanConfig into the one used to start the span.
 // It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
-func WithConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
+func WithStartSpanConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
 	return func(c *ddtrace.StartSpanConfig) {
 		// copy cfg into c only if cfg fields are not zero values
 		// c fields have precedence, as they may have been set up before running this option

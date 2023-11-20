@@ -1521,7 +1521,7 @@ func TestWithConfig(t *testing.T) {
 	defer tracer.Stop()
 	assert.NoError(err)
 
-	s := tracer.StartSpan("test", WithConfig(cfg)).(*span)
+	s := tracer.StartSpan("test", WithStartSpanConfig(cfg)).(*span)
 	defer s.Finish()
 	assert.Equal(float64(1), s.Metrics[keyMeasured])
 	assert.Equal("value", s.Meta["key"])
@@ -1552,7 +1552,7 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
-	b.Run("scenario=WithConfig", func(b *testing.B) {
+	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
 		b.ReportAllocs()
 		cfg := ddtrace.NewStartSpanConfig(
 			ServiceName("SomeService"),
@@ -1561,7 +1561,7 @@ func BenchmarkConfig(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			optsTestConsumer(
-				WithConfig(cfg),
+				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
 			)
 		}
@@ -1584,7 +1584,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 
 		}
 	})
-	b.Run("scenario=WithConfig", func(b *testing.B) {
+	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)
@@ -1596,7 +1596,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			tracer.StartSpan("test",
-				WithConfig(cfg),
+				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
 			)
 		}
