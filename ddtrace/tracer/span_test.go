@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -404,6 +405,53 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 	}
+}
+
+// This test previously failed when running with -race.
+func TestTraceManualKeepRace(t *testing.T) {
+	const numGoroutines = 100
+
+	t.Run("SetTag", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
+		defer rootSpan.Finish()
+
+		wg := &sync.WaitGroup{}
+		wg.Add(numGoroutines)
+		for j := 0; j < numGoroutines; j++ {
+			go func() {
+				defer wg.Done()
+				childSpan := tracer.newChildSpan("child", rootSpan)
+				childSpan.SetTag(ext.ManualKeep, true)
+				childSpan.Finish()
+			}()
+		}
+		wg.Wait()
+	})
+
+	// setting the tag using a StartSpan option has the same race
+	t.Run("StartSpanOption", func(t *testing.T) {
+		tracer := newTracer()
+		defer tracer.Stop()
+		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
+		defer rootSpan.Finish()
+
+		wg := &sync.WaitGroup{}
+		wg.Add(numGoroutines)
+		for j := 0; j < numGoroutines; j++ {
+			go func() {
+				defer wg.Done()
+				childSpan := tracer.StartSpan(
+					"child",
+					ChildOf(rootSpan.Context()),
+					Tag(ext.ManualKeep, true),
+				)
+				childSpan.Finish()
+			}()
+		}
+		wg.Wait()
+	})
 }
 
 func TestSpanSetDatadogTags(t *testing.T) {
