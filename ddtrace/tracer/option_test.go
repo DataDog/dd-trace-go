@@ -1494,7 +1494,7 @@ func TestWithStatsComputation(t *testing.T) {
 	})
 }
 
-func TestWithConfig(t *testing.T) {
+func TestWithStartSpanConfig(t *testing.T) {
 	var (
 		assert  = assert.New(t)
 		service = "service"
@@ -1532,6 +1532,29 @@ func TestWithConfig(t *testing.T) {
 	assert.Equal(spanID, s.SpanID)
 	assert.Equal(ext.SpanTypeWeb, s.Type)
 	assert.Equal(tm.UnixNano(), s.Start)
+}
+
+func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
+	var (
+		assert = assert.New(t)
+	)
+	cfg := ddtrace.NewStartSpanConfig(
+		Tag("key", "value"),
+		Tag("k2", "shouldnt_override"),
+	)
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan(
+		"test",
+		Tag("k2", "v2"),
+		WithStartSpanConfig(cfg),
+	).(*span)
+	defer s.Finish()
+	assert.Equal("v2", s.Meta["k2"])
+	assert.Equal("value", s.Meta["key"])
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {
