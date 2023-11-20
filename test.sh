@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-tags=""
 contrib=""
 sleeptime=30
 unset INTEGRATION
@@ -100,7 +99,7 @@ fi
 ## CORE
 echo testing core
 PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $PACKAGE_NAMES
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -113,5 +112,5 @@ if [[ "$contrib" != "" ]]; then
 	fi
 
 	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
-	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES
+	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
 fi
