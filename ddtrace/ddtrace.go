@@ -171,6 +171,16 @@ type StartSpanConfig struct {
 	Context context.Context
 }
 
+// NewStartSpanConfig allows to build a base config struct. It accepts the same options as StartSpan.
+// It's useful to reduce the number of operations in any hot path and update it for request/operation specifics.
+func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
+	var cfg StartSpanConfig
+	for _, fn := range opts {
+		fn(&cfg)
+	}
+	return cfg
+}
+
 // Logger implementations are able to log given messages that the tracer or profiler might output.
 type Logger interface {
 	// Log prints the given message.

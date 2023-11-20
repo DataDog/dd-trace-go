@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -1489,5 +1491,137 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newConfig(WithStatsComputation(true))
 		assert.NoError(err)
 		assert.True(c.statsComputationEnabled)
+	})
+}
+
+func TestWithStartSpanConfig(t *testing.T) {
+	var (
+		assert  = assert.New(t)
+		service = "service"
+		parent  = newSpan("", service, "", 0, 1, 2)
+		spanID  = uint64(123)
+		tm, _   = time.Parse(time.RFC3339, "2019-01-01T00:00:00Z")
+	)
+	cfg := ddtrace.NewStartSpanConfig(
+		ChildOf(parent.Context()),
+		Measured(),
+		ResourceName("resource"),
+		ServiceName(service),
+		SpanType(ext.SpanTypeWeb),
+		StartTime(tm),
+		Tag("key", "value"),
+		WithSpanID(spanID),
+		withContext(context.Background()),
+	)
+	// It's difficult to test the context was used to initialize the span
+	// in a meaningful way, so we just check it was set in the SpanConfig.
+	assert.Equal(cfg.Context, cfg.Context)
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan("test", WithStartSpanConfig(cfg)).(*span)
+	defer s.Finish()
+	assert.Equal(float64(1), s.Metrics[keyMeasured])
+	assert.Equal("value", s.Meta["key"])
+	assert.Equal(parent.Context().SpanID(), s.ParentID)
+	assert.Equal(parent.Context().TraceID(), s.TraceID)
+	assert.Equal("resource", s.Resource)
+	assert.Equal(service, s.Service)
+	assert.Equal(spanID, s.SpanID)
+	assert.Equal(ext.SpanTypeWeb, s.Type)
+	assert.Equal(tm.UnixNano(), s.Start)
+}
+
+func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
+	var (
+		assert = assert.New(t)
+	)
+	cfg := ddtrace.NewStartSpanConfig(
+		Tag("key", "value"),
+		Tag("k2", "shouldnt_override"),
+	)
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan(
+		"test",
+		Tag("k2", "v2"),
+		WithStartSpanConfig(cfg),
+	).(*span)
+	defer s.Finish()
+	assert.Equal("v2", s.Meta["k2"])
+	assert.Equal("value", s.Meta["key"])
+}
+
+func optsTestConsumer(opts ...StartSpanOption) {
+	var cfg ddtrace.StartSpanConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+}
+
+func BenchmarkConfig(b *testing.B) {
+	b.Run("scenario=none", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			optsTestConsumer(
+				ServiceName("SomeService"),
+				ResourceName("SomeResource"),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+		}
+	})
+	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+		b.ReportAllocs()
+		cfg := ddtrace.NewStartSpanConfig(
+			ServiceName("SomeService"),
+			ResourceName("SomeResource"),
+		)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			optsTestConsumer(
+				WithStartSpanConfig(cfg),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+		}
+	})
+}
+
+func BenchmarkStartSpanConfig(b *testing.B) {
+	b.Run("scenario=none", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tracer.StartSpan("test",
+				ServiceName("SomeService"),
+				ResourceName("SomeResource"),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+
+		}
+	})
+	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		b.ReportAllocs()
+		cfg := ddtrace.NewStartSpanConfig(
+			ServiceName("SomeService"),
+			ResourceName("SomeResource"),
+		)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			tracer.StartSpan("test",
+				WithStartSpanConfig(cfg),
+				Tag(ext.HTTPRoute, "/some/route/?"),
+			)
+		}
 	})
 }
