@@ -63,7 +63,7 @@ require (
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.50.0
-	github.com/vektah/gqlparser/v2 v2.5.10
+	github.com/vektah/gqlparser/v2 v2.5.8
 	go.mongodb.org/mongo-driver v1.12.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	go.opentelemetry.io/otel v1.20.0
