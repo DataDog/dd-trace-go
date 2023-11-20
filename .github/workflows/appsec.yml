@@ -162,9 +162,10 @@ jobs:
           platforms: arm64
       - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
 
+  # TODO(darccio): remove condition on merging into main
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
-    if: 'foo' == 'bar' # TODO(darccio): remove on merging into main
+    if: 'foo' == 'bar'
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
