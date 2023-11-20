@@ -237,3 +237,21 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
 	})
 }
+
+func TestStartRemoteConfig(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+	found, err := remoteconfig.HasProduct(state.ProductAPMTracing)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingSampleRate)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingHTTPHeaderTags)
+	require.NoError(t, err)
+	require.True(t, found)
+}
