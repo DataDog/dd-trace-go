@@ -1200,19 +1200,15 @@ func WithConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
 		if c.SpanID == 0 {
 			c.SpanID = cfg.SpanID
 		}
-
 		if c.Parent == nil {
 			c.Parent = cfg.Parent
 		}
-
 		if c.Context == nil {
 			c.Context = cfg.Context
 		}
-
 		if c.StartTime.IsZero() {
 			c.StartTime = cfg.StartTime
 		}
-
 		// tags are a special case, as we need to merge them
 		if c.Tags == nil {
 			// if cfg.Tags is nil, this is a no-op
