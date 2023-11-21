@@ -10,8 +10,8 @@ CONTRIBS=$(find ./contrib -mindepth 2 -maxdepth 3 -type f -name go.mod -exec dir
 
 for contrib in $CONTRIBS; do
   echo "Testing contrib module: $contrib"
-  contrib_id=$(echo $contrib | sed 's/[\/\.]/_/g')
+  contrib_id=$(echo $contrib | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd $contrib
-  gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-$contrib_id.xml -- . -v -race -coverprofile=coverage-$contrib_id.txt -covermode=atomic
+  gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-$contrib_id.xml -- ./... -v -race -coverprofile=coverage-$contrib_id.txt -covermode=atomic
   cd -
 done
