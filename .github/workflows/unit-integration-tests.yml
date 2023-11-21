@@ -208,7 +208,7 @@ jobs:
 
       - name: Test Contrib Submodules (v2)
         if: ${{ env.V2_BRANCH == 'true' }} && always()
-        run: ./.github/workflows/test-contrib-submodules.sh
+        run: ./.github/workflows/apps/test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         if: always()
