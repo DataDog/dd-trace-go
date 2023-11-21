@@ -22,12 +22,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -40,7 +40,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"}})
 
 		// Unset RC. Assert _dd.rule_psr is not set
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
+		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request").(*span)
@@ -58,12 +58,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.1")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -76,7 +76,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.2, Origin: "remote_config"}})
 
 		// Unset RC. Assert _dd.rule_psr shows the previous sampling rate (0.1) is applied
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
+		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request").(*span)
@@ -92,12 +92,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name"}]}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -108,7 +108,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name", Origin: "remote_config"}})
 
 		// Unset RC. Assert header tags are not set
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
+		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 0, globalconfig.HeaderTagsLen())
@@ -123,12 +123,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
 		t.Setenv("DD_TRACE_HEADER_TAGS", "X-Test-Header:my-tag-name-from-env")
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -140,7 +140,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the DD_TRACE_HEADER_TAGS header tag
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
+		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 1, globalconfig.HeaderTagsLen())
@@ -155,12 +155,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop := startTestTracer(t, WithHeaderTags([]string{"X-Test-Header:my-tag-name-in-code"}))
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"), WithHeaderTags([]string{"X-Test-Header:my-tag-name-in-code"}))
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -172,7 +172,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the in-code header tag
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}}`)}
+		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 1, globalconfig.HeaderTagsLen())
@@ -187,11 +187,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop := startTestTracer(t)
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		defer stop()
 
 		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": "string value"}}`)},
+			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": "string value", "service_target": {"service": "my-service", "env": "my-env"}}}`)},
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
@@ -200,4 +200,58 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
 	})
+
+	t.Run("Service mismatch", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		input := map[string]remoteconfig.ProductUpdate{
+			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`)},
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
+		require.Equal(t, "service mismatch", applyStatus["path"].Error)
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
+	})
+
+	t.Run("Env mismatch", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		tracer, _, _, stop := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		input := map[string]remoteconfig.ProductUpdate{
+			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`)},
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
+		require.Equal(t, "env mismatch", applyStatus["path"].Error)
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
+	})
+}
+
+func TestStartRemoteConfig(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+
+	tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+	found, err := remoteconfig.HasProduct(state.ProductAPMTracing)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingSampleRate)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingHTTPHeaderTags)
+	require.NoError(t, err)
+	require.True(t, found)
 }

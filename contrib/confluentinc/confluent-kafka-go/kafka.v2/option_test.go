@@ -14,6 +14,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestDataStreamsActivation(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		cfg := newConfig()
+		assert.False(t, cfg.dataStreamsEnabled)
+	})
+	t.Run("withOption", func(t *testing.T) {
+		cfg := newConfig(WithDataStreams())
+		assert.True(t, cfg.dataStreamsEnabled)
+	})
+	t.Run("withEnv", func(t *testing.T) {
+		t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+		cfg := newConfig()
+		assert.True(t, cfg.dataStreamsEnabled)
+	})
+	t.Run("optionOverridesEnv", func(t *testing.T) {
+		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
+		cfg := newConfig(WithDataStreams())
+		assert.True(t, cfg.dataStreamsEnabled)
+	})
+}
+
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := newConfig()
