@@ -4,18 +4,18 @@ go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231120163110-7c9f0d67deef
-	github.com/aws/aws-sdk-go v1.47.9
-	github.com/aws/aws-sdk-go-v2 v1.22.2
-	github.com/aws/aws-sdk-go-v2/config v1.23.0
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.25.1
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.132.0
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.24.1
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.22.1
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.42.1
-	github.com/aws/aws-sdk-go-v2/service/sfn v1.21.1
-	github.com/aws/aws-sdk-go-v2/service/sns v1.25.1
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.28.0
-	github.com/aws/smithy-go v1.16.0
+	github.com/aws/aws-sdk-go v1.44.327
+	github.com/aws/aws-sdk-go-v2 v1.20.3
+	github.com/aws/aws-sdk-go-v2/config v1.18.21
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.93.2
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.20.4
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.18.4
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.32.0
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4
+	github.com/aws/aws-sdk-go-v2/service/sns v1.21.4
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.4
+	github.com/aws/smithy-go v1.14.2
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -28,21 +28,21 @@ require (
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.0 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.15.2 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.14.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.2.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.5.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.6.0 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.10.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.2.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.8.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.10.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.17.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.19.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.25.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.13 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.40 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.33 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.1.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.27 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.34 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.26 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.14.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.12.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.18.9 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
