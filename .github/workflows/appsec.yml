@@ -75,6 +75,7 @@ jobs:
           files: ${{ env.JUNIT_REPORT }}
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
+  # Tests cases were appsec end up being disable
   waf-disabled:
     strategy:
       fail-fast: false
