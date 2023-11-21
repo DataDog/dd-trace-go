@@ -207,7 +207,7 @@ jobs:
           gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Test Contrib Submodules (v2)
-        if: ${{ env.V2_BRANCH == 'true' }}
+        if: ${{ env.V2_BRANCH == 'true' }} && always()
         run: ./.github/workflows/test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
