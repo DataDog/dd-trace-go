@@ -97,11 +97,10 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, trace.FieldFinishFunc) {
 	ctx, field := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
-		Label:     label,
 		TypeName:  typeName,
 		FieldName: fieldName,
-		Trivial:   trivial,
 		Arguments: arguments,
+		Trivial:   trivial,
 	})
 
 	if t.cfg.omitTrivial && trivial {

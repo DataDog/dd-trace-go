@@ -14,10 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graphql-go/graphql"
@@ -58,32 +56,7 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 	}
 
 	config.Extensions = append(config.Extensions, extension)
-	decorated := map[*graphql.FieldResolveFn]struct{}{}
-	for _, field := range config.Query.Fields() {
-		if _, found := decorated[&field.Resolve]; found {
-			// Resolver was re-used for several fields...
-			continue
-		}
-		resolver := field.Resolve
-		field.Resolve = func(p graphql.ResolveParams) (data interface{}, err error) {
-			var blocked bool
-			ctx, op := graphqlsec.StartResolverOperation(p.Context, dyngo.NewDataListener(func(a *sharedsec.Action) {
-				blocked = a.Blocking()
-			}))
-			defer func() {
-				span, _ := tracer.SpanFromContext(p.Context)
-				instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: data, Error: err}))
-				if blocked {
-					op.AddTag(instrumentation.BlockedRequestTag, true)
-				}
-				instrumentation.SetTags(span, op.Tags())
-			}()
-			p.Context = ctx
-			data, err = resolver(p)
-			return
-		}
-		decorated[&field.Resolve] = struct{}{}
-	}
+
 	return graphql.NewSchema(config)
 }
 
@@ -188,12 +161,6 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 // ExecutionDidStart notifies about the start of the execution
 func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Context, graphql.ExecutionFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	ctx, op := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
-		Query:         data.query,
-		OperationName: data.operationName,
-		Variables:     data.variables,
-	})
-
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
@@ -215,6 +182,12 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
 
+	ctx, op := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
+		Query:         data.query,
+		OperationName: data.operationName,
+		Variables:     data.variables,
+	})
+
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
 		defer func() {
@@ -229,12 +202,6 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 
 // ResolveFieldDidStart notifies about the start of the resolving of a field
 func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphql.ResolveInfo) (context.Context, graphql.ResolveFieldFinishFunc) {
-	ctx, op := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
-		FieldName: info.FieldName,
-		TypeName:  info.ParentType.Name(),
-		Arguments: info.VariableValues,
-	})
-
 	var operationName string
 	switch def := info.Operation.(type) {
 	case *ast.OperationDefinition:
@@ -273,6 +240,12 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
 
+	ctx, op := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
+		TypeName:  info.ParentType.Name(),
+		FieldName: info.FieldName,
+		Arguments: collectArguments(info),
+	})
+
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
 		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
@@ -288,6 +261,44 @@ func (i datadogExtension) HasResult() bool {
 // GetResult returns the data that the extension wants to add to the result
 func (i datadogExtension) GetResult(context.Context) interface{} {
 	return nil
+}
+
+func collectArguments(info *graphql.ResolveInfo) map[string]any {
+	var args map[string]any
+	for _, field := range info.FieldASTs {
+		if args == nil && len(field.Arguments) > 0 {
+			args = make(map[string]any, len(field.Arguments))
+		}
+		for _, arg := range field.Arguments {
+			argName := arg.Name.Value
+			argValue := resolveValue(arg.Value, info.VariableValues)
+			args[argName] = argValue
+		}
+	}
+	return args
+}
+
+func resolveValue(value ast.Value, variableValues map[string]any) any {
+	switch value := value.(type) {
+	case *ast.Variable:
+		varName := value.GetValue().(*ast.Name).Value
+		return variableValues[varName]
+	case *ast.ObjectValue:
+		fields := make(map[string]any, len(value.Fields))
+		for _, field := range value.Fields {
+			fields[field.Name.Value] = resolveValue(field.Value, variableValues)
+		}
+		return fields
+	case *ast.ListValue:
+		items := make([]any, len(value.Values))
+		for i, item := range value.Values {
+			items[i] = resolveValue(item, variableValues)
+		}
+		return items
+	default:
+		// Note - *ast.IntValue and *ast.FloatValue both use a string representation here. This is okay.
+		return value.GetValue()
+	}
 }
 
 func toError(errs []gqlerrors.FormattedError) error {

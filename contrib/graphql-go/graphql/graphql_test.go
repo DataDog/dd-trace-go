@@ -17,25 +17,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var rootQuery = graphql.NewObject(graphql.ObjectConfig{
-	Name: "Query",
-	Fields: graphql.Fields{
-		"hello": {
-			Type: graphql.String,
-			Resolve: func(p graphql.ResolveParams) (any, error) {
-				return "Hello, world!", nil
-			},
-		},
-		"helloNonTrivial": {
-			Type: graphql.String,
-			Resolve: func(p graphql.ResolveParams) (any, error) {
-				return "Hello, world!", nil
-			},
-		},
-	},
-})
-
 func Test(t *testing.T) {
+	rootQuery := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Query",
+		Fields: graphql.Fields{
+			"hello": {
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (any, error) {
+					return "Hello, world!", nil
+				},
+			},
+			"helloNonTrivial": {
+				Type: graphql.String,
+				Resolve: func(p graphql.ResolveParams) (any, error) {
+					return "Hello, world!", nil
+				},
+			},
+		},
+	})
+
 	opts := []Option{WithServiceName("test-graphql-service")}
 	schema, err := NewSchema(
 		graphql.SchemaConfig{

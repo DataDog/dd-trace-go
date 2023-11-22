@@ -21,14 +21,12 @@ type Field struct {
 
 // FieldArguments describes arguments passed to a GraphQL field operation.
 type FieldArguments struct {
-	// Arguments is the arguments provided to the field resolver
-	Arguments map[string]any
-	// Label is the user-specified label for the field. Blank if unavailable.
-	Label string
 	// TypeName is the name of the field's type
 	TypeName string
 	// FieldName is the name of the field
 	FieldName string
+	// Arguments is the arguments provided to the field resolver
+	Arguments map[string]any
 	// Trivial determines whether the resolution is trivial or not. Leave as false if undetermined.
 	Trivial bool
 }
