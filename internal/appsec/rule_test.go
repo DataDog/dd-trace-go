@@ -12,7 +12,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	waf "github.com/DataDog/go-libddwaf"
+	rules "github.com/DataDog/appsec-internal-go/appsec"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,9 +23,9 @@ func TestStaticRule(t *testing.T) {
 		return
 	}
 
-	var rules rulesFragment
-	require.NoError(t, json.Unmarshal([]byte(staticRecommendedRules), &rules))
-	waf, err := waf.NewHandle(rules, "", "")
+	var parsedRules rulesFragment
+	require.NoError(t, json.Unmarshal([]byte(rules.StaticRecommendedRules), &parsedRules))
+	waf, err := waf.NewHandle(parsedRules, "", "")
 	require.NoError(t, err)
 	require.NotNil(t, waf)
 	waf.Close()

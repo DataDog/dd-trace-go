@@ -19,4 +19,5 @@ jobs:
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: "1.19"
+      ref: ${{ github.ref }}
     secrets: inherit
