@@ -54,7 +54,7 @@ jobs:
        V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
     services:
       datadog-agent:
-        image: datadog/agent:latest
+        image: us.gcr.io/cloud-containers-mirror/datadog/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
@@ -282,7 +282,7 @@ jobs:
        INTEGRATION: true
     services:
       datadog-agent:
-        image: datadog/agent:latest
+        image: us.gcr.io/cloud-containers-mirror/datadog/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
