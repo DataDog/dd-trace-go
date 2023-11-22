@@ -51,7 +51,8 @@ type (
 	// HandlerOperationRes is the HTTP handler operation results.
 	HandlerOperationRes struct {
 		// Status corresponds to the address `server.response.status`.
-		Status int
+		Status  int
+		Headers map[string][]string
 	}
 
 	// SDKBodyOperationArgs is the SDK body operation arguments.
@@ -132,12 +133,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		r = r.WithContext(ctx)
 
 		defer func() {
-			var status int
-			if mw, ok := w.(interface{ Status() int }); ok {
-				status = mw.Status()
-			}
-
-			events := op.Finish(HandlerOperationRes{Status: status})
+			events := op.Finish(MakeHandlerOperationRes(w))
 
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
@@ -173,16 +169,8 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
 func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
-	headers := make(http.Header, len(r.Header))
-	for k, v := range r.Header {
-		k := strings.ToLower(k)
-		if k == "cookie" {
-			// Do not include cookies in the request headers
-			continue
-		}
-		headers[k] = v
-	}
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
+	headers := headersRemoveCookies(r.Header)
 	headers["host"] = []string{r.Host}
 	return HandlerOperationArgs{
 		Method:     r.Method,
@@ -201,7 +189,21 @@ func MakeHandlerOperationRes(w http.ResponseWriter) HandlerOperationRes {
 	if mw, ok := w.(interface{ Status() int }); ok {
 		status = mw.Status()
 	}
-	return HandlerOperationRes{Status: status}
+	return HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
+}
+
+// Remove cookies from the request headers and return the map of headers
+// Used from `server.request.headers.no_cookies` and server.response.headers.no_cookies` addresses for the WAF
+func headersRemoveCookies(headers http.Header) map[string][]string {
+	headersNoCookies := make(http.Header, len(headers))
+	for k, v := range headers {
+		k := strings.ToLower(k)
+		if k == "cookie" {
+			continue
+		}
+		headersNoCookies[k] = v
+	}
+	return headersNoCookies
 }
 
 // Return the map of parsed cookies if any and following the specification of
