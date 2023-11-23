@@ -468,8 +468,11 @@ func (t *trace) finishedOne(s *span) {
 	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
+	priority = t.priority.Load()
+	if priority != nil {
+		finishedSpans[0].setMetric(keySamplingPriority, *priority)
+	}
 
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority.Load())
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0], tr)
