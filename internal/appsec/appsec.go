@@ -144,7 +144,7 @@ func (a *appsec) start() error {
 		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
 	}
 
-	a.limiter = limiter.NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
+	a.limiter = limiter.NewTokenTicker(a.cfg.traceRateLimit, a.cfg.traceRateLimit)
 	a.limiter.Start()
 	// Register the WAF operation event listener
 	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
