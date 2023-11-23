@@ -325,8 +325,10 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		return false
 	}
 	priority := t.priority.Load()
+	oldPriority := priority
 	if priority == nil {
 		priority = new(float64)
+		oldPriority = priority
 	}
 	*priority = float64(p)
 	t.priority.Store(priority)
@@ -340,7 +342,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 
-	return updatedPriority
+	return *priority != *oldPriority
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -466,7 +468,8 @@ func (t *trace) finishedOne(s *span) {
 	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+
+	finishedSpans[0].setMetric(keySamplingPriority, *t.priority.Load())
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0], tr)
