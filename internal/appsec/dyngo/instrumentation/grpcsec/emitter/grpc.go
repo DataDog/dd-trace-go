@@ -7,7 +7,7 @@
 // defining an abstract run-time representation of gRPC handlers.
 // gRPC integrations must use this package to enable AppSec features for gRPC,
 // which listens to this package's operation events.
-package grpcsec
+package emitter
 
 import (
 	"context"

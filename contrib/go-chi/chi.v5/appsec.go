@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -17,7 +17,7 @@ import (
 func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
-		return httpsec.WrapHandler(next, span, nil)
+		return emitter.WrapHandler(next, span, nil)
 	}
 	var pathParams map[string]string
 	keys := rctx.URLParams.Keys
@@ -28,5 +28,5 @@ func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handl
 			pathParams[key] = values[i]
 		}
 	}
-	return httpsec.WrapHandler(next, span, pathParams)
+	return emitter.WrapHandler(next, span, pathParams)
 }

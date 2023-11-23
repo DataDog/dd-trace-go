@@ -11,9 +11,9 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/http"
+	grpc "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec/listener"
+	http "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -31,7 +31,7 @@ const (
 type wafHandle struct {
 	*waf.Handle
 	// actions are tightly link to a ruleset, which is linked to a waf handle
-	actions sharedsec.Actions
+	actions emitter.Actions
 }
 
 func (a *appsec) swapWAF(rules rulesFragment) (err error) {
@@ -78,16 +78,16 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	return nil
 }
 
-func actionFromEntry(e *actionEntry) *sharedsec.Action {
+func actionFromEntry(e *actionEntry) *emitter.Action {
 	switch e.Type {
 	case "block_request":
 		grpcCode := 10 // use the grpc.Codes value for "Aborted" by default
 		if e.Parameters.GRPCStatusCode != nil {
 			grpcCode = *e.Parameters.GRPCStatusCode
 		}
-		return sharedsec.NewBlockRequestAction(e.Parameters.StatusCode, grpcCode, e.Parameters.Type)
+		return emitter.NewBlockRequestAction(e.Parameters.StatusCode, grpcCode, e.Parameters.Type)
 	case "redirect_request":
-		return sharedsec.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
+		return emitter.NewRedirectRequestAction(e.Parameters.StatusCode, e.Parameters.Location)
 	default:
 		log.Debug("appsec: unknown action type `%s`", e.Type)
 		return nil
@@ -96,9 +96,9 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	handle, err := waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
-	actions := map[string]*sharedsec.Action{
+	actions := map[string]*emitter.Action{
 		// Default built-in block action
-		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
+		"block": emitter.NewBlockRequestAction(403, 10, "auto"),
 	}
 
 	for _, entry := range rules.Actions {

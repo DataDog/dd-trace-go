@@ -11,9 +11,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
+	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec/emitter"
+	httpsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -33,7 +33,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 		args := grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
-		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, dyngo.NewDataListener(func(a *emitter.Action) {
 			code, e := a.GRPC()(md)
 			blocked = a.Blocking()
 			err = status.Error(codes.Code(code), e.Error())
@@ -73,7 +73,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		clientIP := setClientIP(ctx, span, md)
 		grpcsec.SetRequestMetadataTags(span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *emitter.Action) {
 			code, e := a.GRPC()(md)
 			blocked = a.Blocking()
 			err = status.Error(codes.Code(code), e.Error())

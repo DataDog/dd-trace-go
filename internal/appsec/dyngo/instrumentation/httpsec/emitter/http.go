@@ -8,7 +8,7 @@
 // helper functions to wrap (aka. instrument) standard net/http handlers.
 // HTTP integrations must use this package to enable AppSec features for HTTP,
 // which listens to this package's operation events.
-package httpsec
+package emitter
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -101,7 +101,7 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
 	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	sharedsec.OnErrorData(op, func(e error) {
+	emitter.OnErrorData(op, func(e error) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
@@ -126,7 +126,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *sharedsec.Action) {
+		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *emitter.Action) {
 			bypassHandler = a.HTTP()
 			blocking = a.Blocking()
 		}))

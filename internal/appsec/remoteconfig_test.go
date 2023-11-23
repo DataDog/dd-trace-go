@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/shared"
+	http "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -703,7 +703,7 @@ func TestWafRCUpdate(t *testing.T) {
 			http.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		result := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		result := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
@@ -718,7 +718,7 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = shared.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		result = listener.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block")
 	})

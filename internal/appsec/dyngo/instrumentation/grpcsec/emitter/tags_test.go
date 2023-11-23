@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package grpcsec
+package emitter
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/require"
@@ -146,7 +146,7 @@ func TestClientIP(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := httpsec.ClientIPTags(tc.md, false, tc.addr.String())
+			_, clientIP := emitter.ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
 			require.Equal(t, expectedClientIP.String(), clientIP.String())
 		})

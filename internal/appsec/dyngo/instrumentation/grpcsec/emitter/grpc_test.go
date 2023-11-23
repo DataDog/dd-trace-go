@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package grpcsec_test
+package emitter_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
+	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec/emitter"
 
 	"github.com/stretchr/testify/require"
 )

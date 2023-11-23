@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package http
+package listener
 
 import (
 	"fmt"
@@ -14,9 +14,9 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/shared"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
+	sharedsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -62,7 +62,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
 	wafDiags := handle.Diagnostics()
 
-	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
+	return emitter.OnHandlerOperationStart(func(op *emitter.Operation, args emitter.HandlerOperationArgs) {
 		wafCtx := waf.NewContext(handle)
 
 		if wafCtx == nil {
@@ -75,10 +75,10 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			// see if the associated user should be blocked. Since we don't control the execution flow in this case
 			// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
-				wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, timeout)
+				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, timeout)
 				if wafResult.HasActions() || wafResult.HasEvents() {
-					shared.ProcessHTTPSDKAction(operation, actions, wafResult.Actions)
-					shared.AddSecurityEvents(op, limiter, wafResult.Events)
+					listener.ProcessHTTPSDKAction(operation, actions, wafResult.Actions)
+					listener.AddSecurityEvents(op, limiter, wafResult.Events)
 					log.Debug("appsec: WAF detected a suspicious user: %s", args.UserID)
 				}
 			}))
@@ -114,10 +114,10 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			}
 		}
 
-		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
 		if wafResult.HasActions() || wafResult.HasEvents() {
-			interrupt := shared.ProcessActions(op, actions, wafResult.Actions)
-			shared.AddSecurityEvents(op, limiter, wafResult.Events)
+			interrupt := listener.ProcessActions(op, actions, wafResult.Actions)
+			listener.AddSecurityEvents(op, limiter, wafResult.Events)
 			log.Debug("appsec: WAF detected an attack before executing the request")
 			if interrupt {
 				wafCtx.Close()
@@ -126,17 +126,17 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 		}
 
 		if _, ok := addresses[ServerRequestBodyAddr]; ok {
-			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
-				wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, timeout)
+			op.On(emitter.OnSDKBodyOperationStart(func(sdkBodyOp *emitter.SDKBodyOperation, args emitter.SDKBodyOperationArgs) {
+				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, timeout)
 				if wafResult.HasActions() || wafResult.HasEvents() {
-					shared.ProcessHTTPSDKAction(sdkBodyOp, actions, wafResult.Actions)
-					shared.AddSecurityEvents(op, limiter, wafResult.Events)
+					listener.ProcessHTTPSDKAction(sdkBodyOp, actions, wafResult.Actions)
+					listener.AddSecurityEvents(op, limiter, wafResult.Events)
 					log.Debug("appsec: WAF detected a suspicious request body")
 				}
 			}))
 		}
 
-		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
+		op.On(emitter.OnHandlerOperationFinish(func(op *emitter.Operation, res emitter.HandlerOperationRes) {
 			defer wafCtx.Close()
 
 			values := make(map[string]any, 2)
@@ -151,22 +151,22 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
 
 			// Add WAF metrics.
 			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-			shared.AddWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+			listener.AddWAFMonitoringTags(op, wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 			// Add the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
-				shared.AddRulesMonitoringTags(op, &wafDiags)
+				listener.AddRulesMonitoringTags(op, &wafDiags)
 				op.AddTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
 			// Log the attacks if any
 			if wafResult.HasEvents() {
 				log.Debug("appsec: attack detected by the waf")
-				shared.AddSecurityEvents(op, limiter, wafResult.Events)
+				listener.AddSecurityEvents(op, limiter, wafResult.Events)
 			}
 		}))
 	})
