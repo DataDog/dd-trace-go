@@ -34,10 +34,10 @@ func main() {
 		contribPath    = path.Clean(os.Args[1])
 		dependencyPath = os.Args[2]
 	)
-	if err := os.Chdir(contribPath); err != nil {
+	if err := generateGoMod(contribPath, dependencyPath); err != nil {
 		panic(err)
 	}
-	if err := generateGoMod(contribPath, dependencyPath); err != nil {
+	if err := os.Chdir(contribPath); err != nil {
 		panic(err)
 	}
 	commitMsg := fmt.Sprintf("%s: add go.mod", contribPath)
