@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
@@ -18,7 +15,7 @@ import (
 )
 
 func TestStaticRule(t *testing.T) {
-	if supported, _ := waf.SupportsTarget(); !supported {
+	if supported, _ := waf.Health(); !supported {
 		t.Skip("waf disabled")
 		return
 	}
