@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec_test
 
 import (
@@ -23,7 +20,7 @@ import (
 
 func TestEnabled(t *testing.T) {
 	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-	wafSupported, _ := waf.SupportsTarget()
+	wafSupported, _ := waf.Health()
 	canBeEnabled := enabledConfig && wafSupported
 
 	require.False(t, appsec.Enabled())
