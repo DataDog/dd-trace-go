@@ -1,0 +1,3 @@
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231123171024-216d3125b991 h1:CqjQmlUwvz5TBNAS/gTBuS9/er66V6mFEoKKccjO8yQ=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231123171024-216d3125b991/go.mod h1:YAkJa0WkbfE1O6YKCYnqLv6pF+elmo7yvftId+ML2sA=
+github.com/gin-gonic/gin v1.9.1/go.mod h1:hPrL7YrpYKXt5YId3A/Tnip5kqbEAP+KLuI3SUcPTeU=
