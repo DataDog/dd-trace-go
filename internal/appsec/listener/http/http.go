@@ -139,7 +139,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
-			values := map[string]any{}
+			values := make(map[string]any, 2)
 			if _, ok := addresses[ServerResponseStatusAddr]; ok {
 				// serverResponseStatusAddr is a string address, so we must format the status code...
 				values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
