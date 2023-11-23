@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"text/template"
 
 	"golang.org/x/mod/modfile"
@@ -148,5 +149,5 @@ func revParse(ref string) string {
 	if err := cmd.Run(); err != nil {
 		panic(err)
 	}
-	return buf.String()
+	return strings.TrimSpace(buf.String())
 }
