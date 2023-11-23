@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 const defaultServiceName = "graphql"
@@ -22,7 +23,10 @@ type config struct {
 type Option func(t *config)
 
 func defaults(t *config) {
-	t.serviceName = defaultServiceName
+	t.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
 	t.analyticsRate = globalconfig.AnalyticsRate()
 }
 

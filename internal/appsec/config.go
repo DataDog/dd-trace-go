@@ -16,6 +16,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+
+	rules "github.com/DataDog/appsec-internal-go/appsec"
 )
 
 const (
@@ -66,17 +68,17 @@ type ObfuscatorConfig struct {
 }
 
 // isEnabled returns true when appsec is enabled when the environment variable
-// It also returns whether the env var is actually set in the env or not
 // DD_APPSEC_ENABLED is set to true.
+// It also returns whether the env var is actually set in the env or not.
 func isEnabled() (enabled bool, set bool, err error) {
 	enabledStr, set := os.LookupEnv(enabledEnvVar)
 	if enabledStr == "" {
 		return false, set, nil
 	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
 		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
-	} else {
-		return enabled, set, nil
 	}
+
+	return enabled, set, nil
 }
 
 func newConfig() (*Config, error) {
@@ -162,12 +164,11 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 	return val
 }
 
-func readRulesConfig() (rules []byte, err error) {
-	rules = []byte(staticRecommendedRules)
+func readRulesConfig() ([]byte, error) {
 	filepath := os.Getenv(rulesEnvVar)
 	if filepath == "" {
-		log.Info("appsec: starting with the default recommended security rules")
-		return rules, nil
+		log.Debug("appsec: using the default built-in recommended security rules")
+		return []byte(rules.StaticRecommendedRules), nil
 	}
 	buf, err := os.ReadFile(filepath)
 	if err != nil {
@@ -176,7 +177,7 @@ func readRulesConfig() (rules []byte, err error) {
 		}
 		return nil, err
 	}
-	log.Info("appsec: starting with the security rules from file %s", filepath)
+	log.Debug("appsec: using the security rules from file %s", filepath)
 	return buf, nil
 }
 

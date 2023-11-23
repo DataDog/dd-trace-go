@@ -8,10 +8,10 @@ package chi_test
 import (
 	"net/http"
 
-	"github.com/go-chi/chi"
-
 	chitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/go-chi/chi"
 )
 
 func handler(w http.ResponseWriter, _ *http.Request) {

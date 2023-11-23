@@ -24,6 +24,7 @@ const componentName = "gin-gonic/gin"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gin-gonic/gin")
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
@@ -48,7 +49,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
-
+		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, c.Writer.Status())

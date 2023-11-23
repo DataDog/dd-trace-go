@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
+	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -29,7 +30,7 @@ var (
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
-func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) []mocktracer.Span {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -38,7 +39,6 @@ func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, prod
 
 	// first write a message to the topic
 	p, err := NewProducer(&kafka.ConfigMap{
-		"group.id":            testGroupID,
 		"bootstrap.servers":   "127.0.0.1:9092",
 		"go.delivery.reports": true,
 	}, producerOpts...)
@@ -62,8 +62,9 @@ func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, prod
 	c, err := NewConsumer(&kafka.ConfigMap{
 		"group.id":                 testGroupID,
 		"bootstrap.servers":        "127.0.0.1:9092",
-		"socket.timeout.ms":        1000,
-		"session.timeout.ms":       1000,
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
@@ -83,7 +84,7 @@ func genIntegrationTestSpans(t *testing.T, consumerAction consumerActionFn, prod
 	require.Len(t, spans, 2)
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
-	return spans
+	return spans, msg2
 }
 
 func TestConsumerChannel(t *testing.T) {
@@ -99,7 +100,7 @@ func TestConsumerChannel(t *testing.T) {
 		"socket.timeout.ms":        10,
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
-	}, WithAnalyticsRate(0.3))
+	}, WithAnalyticsRate(0.3), WithDataStreams())
 	assert.NoError(t, err)
 
 	err = c.Subscribe(testTopic, nil)
@@ -145,9 +146,17 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
 		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
-		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s.Tag(ext.Component))
+		assert.Equal(t, componentName, s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+	}
+	for _, msg := range []*kafka.Message{msg1, msg2} {
+		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+		assert.True(t, ok)
+		expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+		expected, _ := datastreams.PathwayFromContext(expectedCtx)
+		assert.NotEqual(t, expected.GetHash(), 0)
+		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
 }
 
@@ -199,7 +208,7 @@ func TestConsumerFunctional(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			spans := genIntegrationTestSpans(t, tt.action, []Option{WithAnalyticsRate(0.1)}, nil)
+			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()})
 
 			s0 := spans[0] // produce
 			assert.Equal(t, "kafka.produce", s0.OperationName())
@@ -208,9 +217,10 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 			assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s0.Tag(ext.Component))
+			assert.Equal(t, componentName, s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -219,9 +229,20 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
 			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka", s1.Tag(ext.Component))
+			assert.Equal(t, componentName, s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
+
+			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+			assert.True(t, ok)
+			mt := mocktracer.Start()
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			expected, _ := datastreams.PathwayFromContext(expectedCtx)
+			mt.Stop()
+			assert.NotEqual(t, expected.GetHash(), 0)
+			assert.Equal(t, expected.GetHash(), p.GetHash())
 		})
 	}
 }
@@ -349,14 +370,8 @@ func TestNamingSchema(t *testing.T) {
 		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
 			return c.ReadMessage(3000 * time.Millisecond)
 		})
-		return genIntegrationTestSpans(t, consumerAction, opts, opts)
+		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
+		return spans
 	}
-	// first is producer and second is consumer span
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"kafka", "kafka"},
-		WithDDService:            []string{"kafka", namingschematest.TestDDService},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "kafka", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewKafkaOpNameTest(genSpans))
+	namingschematest.NewKafkaTest(genSpans)(t)
 }

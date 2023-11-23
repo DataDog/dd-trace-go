@@ -33,8 +33,11 @@ const (
 )
 
 var (
-	mu sync.RWMutex
-	sv Version
+	sv   Version
+	svMu sync.RWMutex
+
+	useGlobalServiceName   bool
+	useGlobalServiceNameMu sync.RWMutex
 )
 
 // ParseVersion attempts to parse the version string.
@@ -51,15 +54,15 @@ func ParseVersion(v string) (Version, bool) {
 
 // GetVersion returns the global naming schema version used for this application.
 func GetVersion() Version {
-	mu.RLock()
-	defer mu.RUnlock()
+	svMu.RLock()
+	defer svMu.RUnlock()
 	return sv
 }
 
 // SetVersion sets the global naming schema version used for this application.
 func SetVersion(v Version) {
-	mu.Lock()
-	defer mu.Unlock()
+	svMu.Lock()
+	defer svMu.Unlock()
 	sv = v
 }
 
@@ -67,6 +70,20 @@ func SetVersion(v Version) {
 func SetDefaultVersion() Version {
 	SetVersion(defaultSchemaVersion)
 	return defaultSchemaVersion
+}
+
+// UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
+func UseGlobalServiceName() bool {
+	useGlobalServiceNameMu.RLock()
+	defer useGlobalServiceNameMu.RUnlock()
+	return useGlobalServiceName
+}
+
+// SetUseGlobalServiceName sets the value of the useGlobalServiceName setting used for this application.
+func SetUseGlobalServiceName(v bool) {
+	useGlobalServiceNameMu.Lock()
+	defer useGlobalServiceNameMu.Unlock()
+	useGlobalServiceName = v
 }
 
 // VersionSupportSchema is an interface that ensures all the available naming schema versions are implemented by the caller.
@@ -83,7 +100,10 @@ type Schema struct {
 
 // New initializes a new Schema.
 func New(vSchema VersionSupportSchema) *Schema {
-	return &Schema{selectedVersion: GetVersion(), vSchema: vSchema}
+	return &Schema{
+		selectedVersion: GetVersion(),
+		vSchema:         vSchema,
+	}
 }
 
 // GetName returns the proper name for this Schema for the user selected version.

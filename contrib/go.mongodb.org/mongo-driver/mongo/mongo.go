@@ -30,6 +30,7 @@ const componentName = "go.mongodb.org/mongo-driver/mongo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("go.mongodb.org/mongo-driver")
 }
 
 type spanKey struct {
@@ -51,9 +52,10 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName("mongo." + evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
-		tracer.Tag("mongodb.query", string(b)),
+		tracer.Tag(m.cfg.spanName, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
+		tracer.Tag(ext.NetworkDestinationName, hostname),
 		tracer.Tag(ext.PeerPort, port),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
@@ -62,7 +64,7 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "mongodb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName, opts...)
 	key := spanKey{
 		ConnectionID: evt.ConnectionID,
 		RequestID:    evt.RequestID,

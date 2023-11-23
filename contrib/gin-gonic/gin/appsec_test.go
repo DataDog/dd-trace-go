@@ -55,6 +55,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the server behaved as intended
 		require.Equal(t, http.StatusOK, res.StatusCode)
 		b, err := io.ReadAll(res.Body)
@@ -82,6 +83,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
@@ -107,6 +109,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 		require.Equal(t, 404, res.StatusCode)
 
 		finished := mt.FinishedSpans()
@@ -129,6 +132,7 @@ func TestAppSec(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -289,8 +293,7 @@ func TestControlFlow(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				status := spans[0].Tag(ext.HTTPCode).(string)
-				// AppSec doesn't see past the handler so the latest status code recorded will be that set by the handler
-				require.Equal(t, fmt.Sprint(handlerResponseStatus), status)
+				require.Equal(t, fmt.Sprint(middlewareResponseStatus), status)
 			},
 		},
 		{
@@ -396,11 +399,12 @@ func TestBlocking(t *testing.T) {
 		req.Header.Set("x-forwarded-for", "1.2.3.4")
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the request was blocked
 		b, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
-		require.NotEqual(t, "Hello World!\n", string(b))
+		require.NotContains(t, string(b), "Hello World!\n")
 		require.Equal(t, 403, res.StatusCode)
 	})
 
@@ -421,6 +425,7 @@ func TestBlocking(t *testing.T) {
 		for _, r := range []*http.Request{req1, req2} {
 			res, err := srv.Client().Do(r)
 			require.NoError(t, err)
+			defer res.Body.Close()
 			// Check that the request was not blocked
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)

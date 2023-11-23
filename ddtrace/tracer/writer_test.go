@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 func TestImplementsTraceWriter(t *testing.T) {

@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,7 +49,7 @@ type testStatsdCall struct {
 	rate     float64
 }
 
-func withStatsdClient(s statsdClient) StartOption {
+func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 	return func(c *config) {
 		c.statsdClient = s
 	}

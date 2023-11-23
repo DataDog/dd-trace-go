@@ -13,12 +13,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 )
 
 // outChannelSize specifies the size of the profile output channel.
@@ -48,6 +50,7 @@ func Start(opts ...Option) error {
 	}
 	activeProfiler = p
 	activeProfiler.run()
+	traceprof.SetProfilerEnabled(true)
 	return nil
 }
 
@@ -58,6 +61,7 @@ func Stop() {
 	if activeProfiler != nil {
 		activeProfiler.stop()
 		activeProfiler = nil
+		traceprof.SetProfilerEnabled(false)
 	}
 	mu.Unlock()
 }
@@ -72,7 +76,7 @@ type profiler struct {
 	stopOnce        sync.Once         // stopOnce ensures the profiler is stopped exactly once.
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
-	deltas          map[ProfileType]deltaProfiler
+	deltas          map[ProfileType]*fastDeltaProfiler
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
@@ -83,7 +87,8 @@ type profiler struct {
 }
 
 func (p *profiler) shouldTrace() bool {
-	return p.cfg.traceEnabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
+	p.cfg.traceConfig.Refresh()
+	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
 }
 
 // testHooks are functions that are replaced during testing which would normally
@@ -122,6 +127,9 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		return nil, errors.New("profiling not supported in AWS Lambda runtimes")
+	}
 	cfg, err := defaultConfig()
 	if err != nil {
 		return nil, err
@@ -186,17 +194,37 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
+	var tags []string
+	var seenVersionTag bool
+	for _, tag := range cfg.tags.Slice() {
+		// If the user configured a tag via DD_VERSION or WithVersion,
+		// override any version tags the user provided via WithTags,
+		// since having more than one version tag breaks the comparison
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
+		}
+		tags = append(tags, tag)
+	}
+	if cfg.version != "" {
+		tags = append(tags, "version:"+cfg.version)
+	}
+	cfg.tags = immutable.NewStringSlice(tags)
 
 	p := profiler{
 		cfg:    cfg,
 		out:    make(chan batch, outChannelSize),
 		exit:   make(chan struct{}),
 		met:    newMetrics(),
-		deltas: make(map[ProfileType]deltaProfiler),
+		deltas: make(map[ProfileType]*fastDeltaProfiler),
 	}
 	for pt := range cfg.types {
 		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
-			p.deltas[pt] = newDeltaProfiler(p.cfg, d...)
+			p.deltas[pt] = newFastDeltaProfiler(d...)
 		}
 	}
 	p.uploadFunc = p.upload
@@ -258,6 +286,13 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 			seq:   p.seq,
 			host:  p.cfg.hostname,
 			start: now(),
+			extraTags: []string{
+				// _dd.profiler.go_execution_trace_enabled indicates whether execution
+				// tracing is enabled, to distinguish between missing a trace
+				// because we don't collect them every profiling cycle from
+				// missing a trace because the feature isn't turned on.
+				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+			},
 		}
 		p.seq++
 
@@ -297,6 +332,11 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		}
 		wg.Wait()
 		for _, prof := range completed {
+			if prof.pt == executionTrace {
+				// If the profile batch includes a runtime execution trace, add a tag so
+				// that the uploads are more easily discoverable in the UI.
+				bat.extraTags = append(bat.extraTags, "go_execution_traced:yes")
+			}
 			bat.addProfile(prof)
 		}
 

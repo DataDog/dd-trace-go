@@ -18,12 +18,12 @@ const (
 	DBUser = "db.user"
 	// DBStatement records a database statement for the given database type.
 	DBStatement = "db.statement"
+	// DBSystem indicates the database management system (DBMS) product being used.
+	DBSystem = "db.system"
 )
 
-// DBSystem indicates the database management system (DBMS) product being used.
-// The following list includes the tag name and all the available values for it.
+// Available values for db.system.
 const (
-	DBSystem                   = "db.system"
 	DBSystemMemcached          = "memcached"
 	DBSystemMySQL              = "mysql"
 	DBSystemPostgreSQL         = "postgresql"
@@ -55,4 +55,33 @@ const (
 const (
 	// RedisDatabaseIndex indicates the Redis database index connected to.
 	RedisDatabaseIndex = "db.redis.database_index"
+)
+
+// Cassandra tags.
+const (
+	// CassandraQuery is the tag name used for cassandra queries.
+	// Deprecated: this value is no longer used internally and will be removed in future versions.
+	CassandraQuery = "cassandra.query"
+
+	// CassandraBatch is the tag name used for cassandra batches.
+	// Deprecated: this value is no longer used internally and will be removed in future versions.
+	CassandraBatch = "cassandra.batch"
+
+	// CassandraConsistencyLevel is the tag name to set for consitency level.
+	CassandraConsistencyLevel = "cassandra.consistency_level"
+
+	// CassandraCluster specifies the tag name that is used to set the cluster.
+	CassandraCluster = "cassandra.cluster"
+
+	// CassandraRowCount specifies the tag name to use when settings the row count.
+	CassandraRowCount = "cassandra.row_count"
+
+	// CassandraKeyspace is used as tag name for setting the key space.
+	CassandraKeyspace = "cassandra.keyspace"
+
+	// CassandraPaginated specifies the tag name for paginated queries.
+	CassandraPaginated = "cassandra.paginated"
+
+	// CassandraContactPoints holds the list of cassandra initial seed nodes used to discover the cluster.
+	CassandraContactPoints = "db.cassandra.contact.points"
 )

@@ -19,9 +19,11 @@ func TestServerAndClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Do(r); err != nil {
+	resp, err := c.Do(r)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer resp.Body.Close()
 }
 
 func TestServerClosed(t *testing.T) {
@@ -31,7 +33,10 @@ func TestServerClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Do(r); err == nil {
-		t.Fatal("request should have failed, but it succeeded")
+	resp, err := c.Do(r)
+	if err != nil {
+		return
 	}
+	defer resp.Body.Close()
+	t.Fatal("request should have failed, but it succeeded")
 }

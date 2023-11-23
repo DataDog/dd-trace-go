@@ -12,14 +12,45 @@ import (
 	"strconv"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+
 	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
+
+func TestHeaderTagsFromRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("header1", "val1")
+	r.Header.Set("header2", " val2 ")
+	r.Header.Set("header3", "v a l 3")
+
+	expectedHeaderTags := map[string]string{
+		"tag1": "val1",
+		"tag2": "val2",
+		"tag3": "v a l 3",
+	}
+
+	hs := []string{"header1:tag1", "header2:tag2", "header3:tag3"}
+	ht := internal.NewLockMap(normalizer.HeaderTagSlice(hs))
+	s, _ := StartRequestSpan(r, HeaderTagsFromRequest(r, ht))
+	s.Finish()
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	for expectedTag, expectedTagVal := range expectedHeaderTags {
+		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
+	}
+}
 
 func TestStartRequestSpan(t *testing.T) {
 	mt := mocktracer.Start()
@@ -206,5 +237,23 @@ func TestURLTag(t *testing.T) {
 			url := urlFromRequest(&r)
 			require.Equal(t, tc.expectedURL, url)
 		})
+	}
+}
+
+func BenchmarkStartRequestSpan(b *testing.B) {
+	b.ReportAllocs()
+	r, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		b.Errorf("Failed to create request: %v", err)
+		return
+	}
+	opts := []ddtrace.StartSpanOption{
+		tracer.ServiceName("SomeService"),
+		tracer.ResourceName("SomeResource"),
+		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		StartRequestSpan(r, opts...)
 	}
 }

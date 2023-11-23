@@ -24,20 +24,27 @@ func NewDBOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (d *dbOutboundOp) V0() string {
-	if v, ok := d.cfg.versionOverrides[SchemaV0]; ok {
-		return v
+	if d.cfg.overrideV0 != nil {
+		return *d.cfg.overrideV0
 	}
 	return d.V1()
 }
 
 func (d *dbOutboundOp) V1() string {
-	if v, ok := d.cfg.versionOverrides[SchemaV1]; ok {
-		return v
-	}
 	return fmt.Sprintf("%s.query", d.system)
 }
 
 // NewElasticsearchOutboundOp creates a new schema for Elasticsearch (db) outbound operations.
 func NewElasticsearchOutboundOp(opts ...Option) *Schema {
 	return NewDBOutboundOp("elasticsearch", opts...)
+}
+
+// NewMongoDBOutboundOp creates a new schema for MongoDB (db) outbound operations.
+func NewMongoDBOutboundOp(opts ...Option) *Schema {
+	return NewDBOutboundOp("mongodb", opts...)
+}
+
+// NewCassandraOutboundOp creates a new schema for Cassandra (db) outbound operations.
+func NewCassandraOutboundOp(opts ...Option) *Schema {
+	return NewDBOutboundOp("cassandra", opts...)
 }

@@ -12,24 +12,29 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
+const defaultServiceName = "kafka"
+
 type config struct {
-	consumerServiceName   string
-	producerServiceName   string
-	consumerOperationName string
-	producerOperationName string
-	analyticsRate         float64
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	dataStreamsEnabled  bool
+	groupID             string
 }
 
 func defaults(cfg *config) {
-	cfg.consumerServiceName = namingschema.NewServiceNameSchema("", "kafka").GetName()
-	cfg.producerServiceName = namingschema.NewServiceNameSchema(
-		"",
-		"kafka",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "kafka"),
+	cfg.consumerServiceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.producerServiceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 
-	cfg.consumerOperationName = namingschema.NewKafkaInboundOp().GetName()
-	cfg.producerOperationName = namingschema.NewKafkaOutboundOp().GetName()
+	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
+	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
+
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SARAMA_ANALYTICS_ENABLED", false) {
@@ -47,6 +52,20 @@ func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
+	}
+}
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
+	}
+}
+
+// WithGroupID tags the produced data streams metrics with the given groupID (aka consumer group)
+func WithGroupID(groupID string) Option {
+	return func(cfg *config) {
+		cfg.groupID = groupID
 	}
 }
 

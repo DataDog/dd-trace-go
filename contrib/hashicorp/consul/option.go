@@ -7,9 +7,12 @@ package consul
 
 import (
 	"math"
+	"net"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	consul "github.com/hashicorp/consul/api"
 )
 
 const (
@@ -18,22 +21,22 @@ const (
 
 type clientConfig struct {
 	serviceName   string
-	operationName string
+	spanName      string
 	analyticsRate float64
+	hostname      string
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
-	cfg.operationName = namingschema.NewDBOutboundOp(
+	cfg.spanName = namingschema.NewDBOutboundOp(
 		"consul",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "consul.command"),
+		namingschema.WithOverrideV0("consul.command"),
 	).GetName()
 
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
@@ -69,6 +72,15 @@ func WithAnalyticsRate(rate float64) ClientOption {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
+		}
+	}
+}
+
+// WithConfig extracts the config information for the client to be tagged
+func WithConfig(config *consul.Config) ClientOption {
+	return func(cfg *clientConfig) {
+		if host, _, err := net.SplitHostPort(config.Address); err == nil {
+			cfg.hostname = host
 		}
 	}
 }

@@ -27,6 +27,7 @@ const componentName = "syndtr/goleveldb/leveldb"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/syndtr/goleveldb")
 }
 
 // A DB wraps a leveldb.DB and traces all queries.
@@ -285,6 +286,6 @@ func startSpan(cfg *config, name string) ddtrace.Span {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(cfg.ctx, "leveldb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(cfg.ctx, cfg.spanName, opts...)
 	return span
 }

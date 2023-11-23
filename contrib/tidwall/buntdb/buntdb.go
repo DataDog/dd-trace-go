@@ -23,6 +23,7 @@ const componentName = "tidwall/buntdb"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/tidwall/buntdb")
 }
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
@@ -112,7 +113,7 @@ func (tx *Tx) startSpan(name string) ddtrace.Span {
 	if !math.IsNaN(tx.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tx.cfg.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, "buntdb.query", opts...)
+	span, _ := tracer.StartSpanFromContext(tx.cfg.ctx, tx.cfg.spanName, opts...)
 	return span
 }
 

@@ -9,24 +9,34 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
+
+const defaultServiceName = "redis.client"
 
 type clientConfig struct {
 	serviceName   string
+	spanName      string
 	analyticsRate float64
+	errCheck      func(error) bool
 }
 
 // ClientOption represents an option that can be used to create or wrap a client.
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = "redis.client"
+	cfg.serviceName = namingschema.NewDefaultServiceName(
+		defaultServiceName,
+		namingschema.WithOverrideV0(defaultServiceName),
+	).GetName()
+	cfg.spanName = namingschema.NewRedisOutboundOp().GetName()
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_REDIS_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
 		cfg.analyticsRate = math.NaN()
 	}
+	cfg.errCheck = func(error) bool { return true }
 }
 
 // WithServiceName sets the given service name for the client.
@@ -56,5 +66,13 @@ func WithAnalyticsRate(rate float64) ClientOption {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error.
+func WithErrorCheck(fn func(err error) bool) ClientOption {
+	return func(cfg *clientConfig) {
+		cfg.errCheck = fn
 	}
 }

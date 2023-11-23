@@ -392,7 +392,7 @@ func TestRulesSampler(t *testing.T) {
 	}
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		rs := newRulesSampler(nil, nil)
+		rs := newRulesSampler(nil, nil, globalSampleRate())
 
 		span := makeSpan("http.request", "test-service")
 		result := rs.SampleTrace(span)
@@ -410,7 +410,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(v, nil)
+				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -433,7 +433,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				rs := newRulesSampler(v, nil)
+				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
@@ -470,7 +470,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules)
+				rs := newRulesSampler(nil, rules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
@@ -510,7 +510,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules)
+				rs := newRulesSampler(nil, rules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
@@ -551,7 +551,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules)
+				rs := newRulesSampler(nil, rules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
@@ -593,7 +593,7 @@ func TestRulesSampler(t *testing.T) {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
 				c := newConfig(WithSamplingRules(tt.rules))
-				rs := newRulesSampler(nil, c.spanRules)
+				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
@@ -621,7 +621,7 @@ func TestRulesSampler(t *testing.T) {
 					assert := assert.New(t)
 					os.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
 					defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-					rs := newRulesSampler(nil, rules)
+					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
@@ -678,7 +678,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("full-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil)
+		rs := newRulesSampler(nil, nil, globalSampleRate())
 		// set samplingLimiter to specific state
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
 		rs.traces.limiter.allowed = 1
@@ -693,7 +693,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("limited-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		rs := newRulesSampler(nil, nil)
+		rs := newRulesSampler(nil, nil, globalSampleRate())
 		// force sampling limiter to 1.0 spans/sec
 		rs.traces.limiter.limiter = rate.NewLimiter(rate.Limit(1.0), 1)
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
@@ -1001,4 +1001,29 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestSetGlobalSampleRate(t *testing.T) {
+	rs := newTraceRulesSampler(nil, math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+
+	// Comparing NaN values
+	b := rs.setGlobalSampleRate(math.NaN())
+	assert.True(t, math.IsNaN(rs.globalRate))
+	assert.False(t, b)
+
+	// valid
+	b = rs.setGlobalSampleRate(0.5)
+	assert.Equal(t, 0.5, rs.globalRate)
+	assert.True(t, b)
+
+	// valid
+	b = rs.setGlobalSampleRate(0.0)
+	assert.Equal(t, 0.0, rs.globalRate)
+	assert.True(t, b)
+
+	// ignore out of bound value
+	b = rs.setGlobalSampleRate(2)
+	assert.Equal(t, 0.0, rs.globalRate)
+	assert.False(t, b)
 }

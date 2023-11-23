@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec_test
 
 import (
@@ -64,8 +61,9 @@ func TestCustomRules(t *testing.T) {
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
-			_, err = srv.Client().Do(req)
+			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -76,6 +74,70 @@ func TestCustomRules(t *testing.T) {
 				require.NotNil(t, event)
 				require.Contains(t, event, tc.ruleMatch)
 			}
+		})
+	}
+}
+
+func TestUserRules(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
+	appsec.Start()
+	defer appsec.Stop()
+
+	if !appsec.Enabled() {
+		t.Skip("appsec disabled")
+	}
+
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	mux.HandleFunc("/response-header", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("match-response-header", "match-response-header")
+		w.WriteHeader(204)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		rule string
+	}{
+		{
+			name: "custom-001",
+			url:  "/hello",
+			rule: "custom-001",
+		},
+		{
+			name: "custom-action",
+			url:  "/hello?match=match-request-query",
+			rule: "query-002",
+		},
+		{
+			name: "response-headers",
+			url:  "/response-header",
+			rule: "headers-003",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+tc.url, nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			event := spans[0].Tag("_dd.appsec.json")
+			require.Contains(t, event, tc.rule)
+
 		})
 	}
 }
@@ -114,6 +176,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -145,6 +208,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -210,6 +274,7 @@ func TestWAF(t *testing.T) {
 		}
 		res, err := srv.Client().Do(req)
 		require.NoError(t, err)
+		defer res.Body.Close()
 
 		// Check that the handler was properly called
 		b, err := io.ReadAll(res.Body)
@@ -241,6 +306,7 @@ func TestBlocking(t *testing.T) {
 	const (
 		ipBlockingRule   = "blk-001-001"
 		userBlockingRule = "blk-001-002"
+		bodyBlockingRule = "crs-933-130-block"
 	)
 
 	// Start and trace an HTTP server
@@ -254,6 +320,14 @@ func TestBlocking(t *testing.T) {
 		}
 		w.Write([]byte("Hello World!\n"))
 	})
+	mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+		buf := new(strings.Builder)
+		io.Copy(buf, r.Body)
+		if err := pAppsec.MonitorParsedHTTPBody(r.Context(), buf.String()); err != nil {
+			return
+		}
+		w.Write([]byte("Hello World!\n"))
+	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -263,6 +337,7 @@ func TestBlocking(t *testing.T) {
 		endpoint  string
 		status    int
 		ruleMatch string
+		reqBody   string
 	}{
 		{
 			name:     "ip/no-block/no-ip",
@@ -309,17 +384,31 @@ func TestBlocking(t *testing.T) {
 			status:    403,
 			ruleMatch: ipBlockingRule,
 		},
+		{
+			name:     "body/no-block",
+			endpoint: "/body",
+			status:   200,
+			reqBody:  "Happy body existing",
+		},
+		{
+			name:      "body/block",
+			endpoint:  "/body",
+			status:    403,
+			reqBody:   "$globals",
+			ruleMatch: bodyBlockingRule,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
+			defer res.Body.Close()
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)

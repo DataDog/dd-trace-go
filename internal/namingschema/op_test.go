@@ -8,14 +8,13 @@ package namingschema_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestOpContribSchemas(t *testing.T) {
-	optOverrideV0 := namingschema.WithVersionOverride(namingschema.SchemaV0, "override-v0")
-	optOverrideV1 := namingschema.WithVersionOverride(namingschema.SchemaV1, "override-v1")
+	optOverrideV0 := namingschema.WithOverrideV0("override-v0")
 
 	testCases := []struct {
 		name      string
@@ -40,12 +39,36 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "kafka.process",
 		},
 		{
-			name: "db outbound override",
+			name: "gcp pubsub outbound",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewDBOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewGCPPubsubOutboundOp()
+			},
+			wantV0: "pubsub.publish",
+			wantV1: "gcp.pubsub.send",
+		},
+		{
+			name: "gcp pubsub inbound",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGCPPubsubInboundOp()
+			},
+			wantV0: "pubsub.receive",
+			wantV1: "gcp.pubsub.process",
+		},
+		{
+			name: "messaging outbound override",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewMessagingOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.send",
+		},
+		{
+			name: "messaging inbound override",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewMessagingInboundOp("test", optOverrideV0)
+			},
+			wantV0: "override-v0",
+			wantV1: "test.process",
 		},
 		{
 			name: "http client",
@@ -68,7 +91,7 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCClientOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.client",
 			wantV1: "grpc.client.request",
 		},
 		{
@@ -76,24 +99,32 @@ func TestOpContribSchemas(t *testing.T) {
 			newSchema: func() *namingschema.Schema {
 				return namingschema.NewGRPCServerOp()
 			},
-			wantV0: "grpc.request",
+			wantV0: "grpc.server",
 			wantV1: "grpc.server.request",
+		},
+		{
+			name: "graphql server",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewGraphqlServerOp()
+			},
+			wantV0: "graphql.request",
+			wantV1: "graphql.server.request",
 		},
 		{
 			name: "client outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewClientOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewClientOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.client.request",
 		},
 		{
 			name: "server inbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewServerInboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewServerInboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.server.request",
 		},
 		{
 			name: "memcached outbound",
@@ -104,12 +135,20 @@ func TestOpContribSchemas(t *testing.T) {
 			wantV1: "memcached.command",
 		},
 		{
+			name: "redis outbound",
+			newSchema: func() *namingschema.Schema {
+				return namingschema.NewRedisOutboundOp()
+			},
+			wantV0: "redis.command",
+			wantV1: "redis.command",
+		},
+		{
 			name: "cache outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewCacheOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewCacheOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.command",
 		},
 		{
 			name: "elasticsearch outbound",
@@ -122,10 +161,10 @@ func TestOpContribSchemas(t *testing.T) {
 		{
 			name: "db outbound override",
 			newSchema: func() *namingschema.Schema {
-				return namingschema.NewDBOutboundOp("test", optOverrideV0, optOverrideV1)
+				return namingschema.NewDBOutboundOp("test", optOverrideV0)
 			},
 			wantV0: "override-v0",
-			wantV1: "override-v1",
+			wantV1: "test.query",
 		},
 	}
 	for _, tc := range testCases {

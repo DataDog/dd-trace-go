@@ -9,11 +9,11 @@ import (
 	"log"
 	"strings"
 
-	elasticsearch "github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
-
 	elastictrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	elasticsearch "github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
 func Example_v8() {

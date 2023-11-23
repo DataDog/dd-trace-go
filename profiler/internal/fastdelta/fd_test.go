@@ -22,13 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+
 	"github.com/google/pprof/profile"
 	"github.com/richardartoul/molecule"
 	"github.com/richardartoul/molecule/src/protowire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
 )
 
 const heapFile = "heap.pprof"

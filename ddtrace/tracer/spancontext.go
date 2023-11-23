@@ -8,17 +8,21 @@ package tracer
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -47,13 +51,13 @@ func (t *traceID) SetUpper(i uint64) {
 	binary.BigEndian.PutUint64(t[:8], i)
 }
 
-func (t *traceID) SetUpperFromHex(s string) {
+func (t *traceID) SetUpperFromHex(s string) error {
 	u, err := strconv.ParseUint(s, 16, 64)
 	if err != nil {
-		log.Debug("Attempted to decode an invalid hex traceID %s", s)
-		return
+		return fmt.Errorf("malformed %q: %s", s, err)
 	}
 	t.SetUpper(u)
+	return nil
 }
 
 func (t *traceID) Empty() bool {
@@ -189,10 +193,9 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if priority != nil && *priority != float64(p) {
 		c.updated = true
 	}
-	c.trace.setSamplingPriority(p, sampler)
 }
 
-func (c *spanContext) samplingPriority() (p int, ok bool) {
+func (c *spanContext) SamplingPriority() (p int, ok bool) {
 	if c.trace == nil {
 		return 0, false
 	}
@@ -289,10 +292,11 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 	return int(*priority), true
 }
 
-func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+// setSamplingPriority sets the sampling priority and returns true if it was modified.
+func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setSamplingPriorityLocked(p, sampler)
+	return t.setSamplingPriorityLocked(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -304,38 +308,21 @@ func (t *trace) drop() {
 }
 
 func (t *trace) setTag(key, value string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.setTagLocked(key, value)
+}
+
+func (t *trace) setTagLocked(key, value string) {
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
 }
 
-// setPropagatingTag sets the key/value pair as a trace propagating tag.
-func (t *trace) setPropagatingTag(key, value string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
-}
-
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
-// Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
-	if t.propagatingTags == nil {
-		t.propagatingTags = make(map[string]string, 1)
-	}
-	t.propagatingTags[key] = value
-}
-
-// unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
-func (t *trace) unsetPropagatingTag(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.propagatingTags, key)
-}
-
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) {
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
 	if t.locked {
-		return
+		return false
 	}
 	priority := t.priority.Load()
 	if priority == nil {
@@ -352,6 +339,8 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if p <= 0 && ok {
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
+
+	return updatedPriority
 }
 
 // push pushes a new span into the trace. If the buffer is full, it returns
@@ -382,20 +371,57 @@ func (t *trace) push(sp *span) {
 	}
 }
 
+// setTraceTags sets all "trace level" tags on the provided span
+// t must already be locked.
+func (t *trace) setTraceTags(s *span, tr *tracer) {
+	for k, v := range t.tags {
+		s.setMeta(k, v)
+	}
+	for k, v := range t.propagatingTags {
+		s.setMeta(k, v)
+	}
+	for k, v := range ginternal.GetTracerGitMetadataTags() {
+		s.setMeta(k, v)
+	}
+	if s.context != nil && s.context.traceID.HasUpper() {
+		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+	}
+	if hn := tr.hostname(); hn != "" {
+		s.setMeta(keyTracerHostname, hn)
+	}
+}
+
 // finishedOne acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
-// the given priority, if non-nil, to mark the root span.
+// the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
+// if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
+// The provided span must be locked.
 func (t *trace) finishedOne(s *span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
 		// be accurate and would trigger a pre-mature flush, exposing us
 		// to a race condition where spans can be modified while flushing.
+		//
+		// TODO(partialFlush): should we do a partial flush in this scenario?
 		return
 	}
 	t.finished++
+
+	tr, ok := internal.GetGlobalTracer().(*tracer)
+	if !ok {
+		return
+	}
+	setPeerService(s, tr.config)
+
+	// attach the _dd.base_service tag only when the globally configured service name is different from the
+	// span service name.
+	if s.Service != "" && !strings.EqualFold(s.Service, tr.config.serviceName) {
+		s.Meta[keyBaseService] = tr.config.serviceName
+	}
 	priority := t.priority.Load()
 	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
@@ -410,37 +436,133 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		for k, v := range t.tags {
-			s.setMeta(k, v)
-		}
-		for k, v := range t.propagatingTags {
-			s.setMeta(k, v)
-		}
-		for k, v := range ginternal.GetTracerGitMetadataTags() {
-			s.setMeta(k, v)
-		}
+		t.setTraceTags(s, tr)
 	}
-	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
-	}
-	if len(t.spans) != t.finished {
-		return
-	}
-	defer func() {
+
+	if len(t.spans) == t.finished { // perform a full flush of all spans
+		t.finishChunk(tr, &chunk{
+			spans:    t.spans,
+			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		})
 		t.spans = nil
-		t.finished = 0 // important, because a buffer can be used for several flushes
-	}()
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
 		return
 	}
-	if hn := tr.hostname(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
+
+	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
+	if !doPartialFlush {
+		return // The trace hasn't completed and partial flushing will not occur
 	}
-	// we have a tracer that can receive completed traces.
-	atomic.AddUint32(&tr.spansFinished, uint32(len(t.spans)))
-	tr.pushTrace(&finishedTrace{
-		spans:    t.spans,
+	log.Debug("Partial flush triggered with %d finished spans", t.finished)
+	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", 1, []string{"reason:large_trace"}, true)
+	finishedSpans := make([]*span, 0, t.finished)
+	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+	for _, s2 := range t.spans {
+		if s2.finished {
+			finishedSpans = append(finishedSpans, s2)
+		} else {
+			leftoverSpans = append(leftoverSpans, s2)
+		}
+	}
+	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
+	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
+	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
+	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+	if s != t.spans[0] {
+		// Make sure the first span in the chunk has the trace-level tags
+		t.setTraceTags(finishedSpans[0], tr)
+	}
+	t.finishChunk(tr, &chunk{
+		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
+	t.spans = leftoverSpans
+}
+
+func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
+	tr.pushChunk(ch)
+	t.finished = 0 // important, because a buffer can be used for several flushes
+}
+
+// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// tags as applicable for the given span.
+func setPeerService(s *span, cfg *config) {
+	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else { // no peer.service currently set
+		spanKind := s.Meta[ext.SpanKind]
+		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		if !shouldSetDefaultPeerService {
+			return
+		}
+		source := setPeerServiceFromSource(s)
+		if source == "" {
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
+			return
+		}
+		s.setMeta(keyPeerServiceSource, source)
+	}
+	// Overwrite existing peer.service value if remapped by the user
+	ps := s.Meta[ext.PeerService]
+	if to, ok := cfg.peerServiceMappings[ps]; ok {
+		s.setMeta(keyPeerServiceRemappedFrom, ps)
+		s.setMeta(ext.PeerService, to)
+	}
+}
+
+// setPeerServiceFromSource sets peer.service from the sources determined
+// by the tags on the span. It returns the source tag name that it used for
+// the peer.service value, or the empty string if no valid source tag was available.
+func setPeerServiceFromSource(s *span) string {
+	has := func(tag string) bool {
+		_, ok := s.Meta[tag]
+		return ok
+	}
+	var sources []string
+	useTargetHost := true
+	switch {
+	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	case has("aws_service"):
+		sources = []string{
+			"queuename",
+			"topicname",
+			"streamname",
+			"tablename",
+			"bucketname",
+		}
+	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
+		sources = []string{
+			ext.CassandraContactPoints,
+		}
+		useTargetHost = false
+	case has(ext.DBSystem):
+		sources = []string{
+			ext.DBName,
+			ext.DBInstance,
+		}
+	case has(ext.MessagingSystem):
+		sources = []string{
+			ext.KafkaBootstrapServers,
+		}
+	case has(ext.RPCSystem):
+		sources = []string{
+			ext.RPCService,
+		}
+	}
+	// network destination tags will be used as fallback unless there are higher priority sources already set.
+	if useTargetHost {
+		sources = append(sources, []string{
+			ext.NetworkDestinationName,
+			ext.PeerHostname,
+			ext.TargetHost,
+		}...)
+	}
+	for _, source := range sources {
+		if val, ok := s.Meta[source]; ok {
+			s.setMeta(ext.PeerService, val)
+			return source
+		}
+	}
+	return ""
 }

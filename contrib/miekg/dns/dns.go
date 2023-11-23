@@ -11,19 +11,20 @@ import (
 	"net"
 	"time"
 
-	"github.com/miekg/dns"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/miekg/dns"
 )
 
 const componentName = "miekg/dns"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/miekg/dns")
 }
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.

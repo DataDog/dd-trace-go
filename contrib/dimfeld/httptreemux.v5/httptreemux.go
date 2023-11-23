@@ -23,6 +23,7 @@ const componentName = "dimfeld/httptreemux.v5"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/dimfeld/httptreemux/v5")
 }
 
 // Router is a traced version of httptreemux.TreeMux.
@@ -48,11 +49,13 @@ func New(opts ...RouterOption) *Router {
 // ServeHTTP implements http.Handler.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
+	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }
 
@@ -81,11 +84,13 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 // ServeHTTP implements http.Handler.
 func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
+	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
 		SpanOpts: r.config.spanOpts,
+		Route:    route,
 	})
 }
 
@@ -94,10 +99,18 @@ func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // route from the request. If the lookup fails to find a match the route is set
 // to "unknown".
 func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string {
+	route, ok := getRoute(router, w, req)
+	if !ok {
+		route = "unknown"
+	}
+	return req.Method + " " + route
+}
+
+func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) (string, bool) {
 	route := req.URL.Path
 	lr, found := router.Lookup(w, req)
 	if !found {
-		return req.Method + " unknown"
+		return "", false
 	}
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
@@ -112,5 +125,5 @@ func defaultResourceNamer(router *httptreemux.TreeMux, w http.ResponseWriter, re
 		newP = "/:" + k
 		route = strings.Replace(route, oldP, newP, 1)
 	}
-	return req.Method + " " + route
+	return route, true
 }

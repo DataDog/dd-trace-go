@@ -13,6 +13,7 @@ package appsec
 
 import (
 	"context"
+	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -22,17 +23,22 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
+var appsecDisabledLog sync.Once
+
 // MonitorParsedHTTPBody runs the security monitoring rules on the given *parsed*
-// HTTP request body. The given context must be the HTTP request context as returned
+// HTTP request body and returns if the HTTP request is suspicious and configured to be blocked.
+// The given context must be the HTTP request context as returned
 // by the Context() method of an HTTP request. Calls to this function are ignored if
 // AppSec is disabled or the given context is incorrect.
 // Note that passing the raw bytes of the HTTP request body is not expected and would
 // result in inaccurate attack detection.
-func MonitorParsedHTTPBody(ctx context.Context, body interface{}) {
-	if appsec.Enabled() {
-		httpsec.MonitorParsedBody(ctx, body)
+// This function always returns nil when appsec is disabled.
+func MonitorParsedHTTPBody(ctx context.Context, body interface{}) error {
+	if !appsec.Enabled() {
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
+		return nil
 	}
-	// bonus: use sync.Once to log a debug message once if AppSec is disabled
+	return httpsec.MonitorParsedBody(ctx, body)
 }
 
 // SetUser wraps tracer.SetUser() and extends it with user blocking.
@@ -51,7 +57,7 @@ func SetUser(ctx context.Context, id string, opts ...tracer.UserMonitoringOption
 	}
 	tracer.SetUser(s, id, opts...)
 	if !appsec.Enabled() {
-		log.Debug("appsec: not enabled. User blocking checks won't be performed.")
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
 		return nil
 	}
 	return sharedsec.MonitorUser(ctx, id)

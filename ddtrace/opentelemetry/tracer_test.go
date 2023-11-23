@@ -12,26 +12,36 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	oteltrace "go.opentelemetry.io/otel/trace"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+
+	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd, ok := internal.GetGlobalTracer().(ddtrace.Tracer)
-	assert.True(ok)
+	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
-	assert.Equal(ott.Tracer, dd)
+	assert.Equal(ott.DD, dd)
+}
+
+func TestGetTracerMultiple(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider()
+	tr := tp.Tracer("ot")
+	tr2 := tp.Tracer("ot")
+	assert.True(tr == tr2) // they should have the same pointer
 }
 
 func TestSpanWithContext(t *testing.T) {
@@ -43,7 +53,7 @@ func TestSpanWithContext(t *testing.T) {
 	got, ok := tracer.SpanFromContext(ctx)
 
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(got, sp.(*span).DD)
 	assert.Equal(fmt.Sprintf("%016x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
@@ -57,7 +67,7 @@ func TestSpanWithNewRoot(t *testing.T) {
 	otelCtx, child := tr.Start(ddCtx, "otel.child", oteltrace.WithNewRoot())
 	got, ok := tracer.SpanFromContext(otelCtx)
 	assert.True(ok)
-	assert.Equal(got, child.(*span).Span)
+	assert.Equal(got, child.(*span).DD)
 
 	var parentBytes oteltrace.TraceID
 	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
@@ -71,10 +81,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	var parentBytes oteltrace.TraceID
-	// TraceID is big-endian so the LOW order bits are at the END of parentBytes
-	uint64ToByte(parent.Context().TraceID(), parentBytes[8:])
-	assert.Equal(parentBytes, child.SpanContext().TraceID())
+	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
+	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
 }
 
 func TestTracerOptions(t *testing.T) {
@@ -84,7 +92,7 @@ func TestTracerOptions(t *testing.T) {
 	ctx, sp := tr.Start(context.Background(), "otel.test")
 	got, ok := tracer.SpanFromContext(ctx)
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).Span)
+	assert.Equal(got, sp.(*span).DD)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
@@ -180,15 +188,26 @@ func TestShutdownOnce(t *testing.T) {
 	tp.Shutdown()
 	// attempt to get the Tracer after shutdown and
 	// start a span. The context and span returned
-	// from calling Start should be nil.
+	// should be no-op types.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
 	assert.Equal(uint32(1), tp.stopped)
-	assert.Equal(sp, nil)
-	assert.Equal(ctx, nil)
+	assert.Equal(noop.Span{}, sp)
+	assert.Equal(oteltrace.ContextWithSpan(context.Background(), noop.Span{}), ctx)
 }
 
-func BenchmarkApiWithNoTags(b *testing.B) {
+func TestSpanTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.MockClient)
+	defer telemetry.MockGlobalClient(telemetryClient)()
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+	_, _ = tr.Start(context.Background(), "otel.span")
+	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
+	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+}
+
+func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	testData := struct {
 		env, srv, op string
 	}{"test_env", "test_srv", "op_name"}
@@ -216,7 +235,8 @@ func BenchmarkApiWithNoTags(b *testing.B) {
 		}
 	})
 }
-func BenchmarkApiWithCustomTags(b *testing.B) {
+
+func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	testData := struct {
 		env, srv, oldOp, newOp, tagKey, tagValue string
 	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
@@ -249,7 +269,7 @@ func BenchmarkApiWithCustomTags(b *testing.B) {
 	})
 }
 
-func BenchmarkOtelConcurrentTracing(b *testing.B) {
+func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tp := NewTracerProvider()
 	defer tp.Shutdown()
 	otel.SetTracerProvider(NewTracerProvider())

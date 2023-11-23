@@ -38,9 +38,12 @@ const (
 	// RequestTypeAppHeartbeat is sent periodically by the client to indicate
 	// that the app is still running
 	RequestTypeAppHeartbeat RequestType = "app-heartbeat"
-	// RequestTypeGenerateMetrics contains all metrics accumulated by the
+	// RequestTypeGenerateMetrics contains count, gauge, or rate metrics accumulated by the
 	// client, and is sent periodically along with the heartbeat
 	RequestTypeGenerateMetrics RequestType = "generate-metrics"
+	// RequestTypeDistributions is to send distribution type metrics accumulated by the
+	// client, and is sent periodically along with the heartbeat
+	RequestTypeDistributions RequestType = "distributions"
 	// RequestTypeAppClosing is sent when the telemetry client is stopped
 	RequestTypeAppClosing RequestType = "app-closing"
 	// RequestTypeDependenciesLoaded is sent if DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
@@ -61,6 +64,8 @@ const (
 type Namespace string
 
 const (
+	// NamespaceGeneral is for general use
+	NamespaceGeneral Namespace = "general"
 	// NamespaceTracers is for distributed tracing
 	NamespaceTracers Namespace = "tracers"
 	// NamespaceProfilers is for continuous profiling
@@ -102,6 +107,7 @@ type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 	Error             Error               `json:"error,omitempty"`
+	RemoteConfig      *RemoteConfig       `json:"remote_config,omitempty"`
 }
 
 // IntegrationsChange corresponds to the app-integrations-change requesty type
@@ -122,8 +128,8 @@ type Integration struct {
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event
 // that contains information about configuration changes since the app-started event
 type ConfigurationChange struct {
-	Configuration []Configuration `json:"conf_key_values"`
-	RemoteConfig  RemoteConfig    `json:"remote_config"`
+	Configuration []Configuration `json:"configuration"`
+	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
 }
 
 // Configuration is a library-specific configuration value
@@ -189,7 +195,10 @@ type Dependency struct {
 type RemoteConfig struct {
 	UserEnabled     string `json:"user_enabled"`     // whether the library has made a request to fetch remote-config
 	ConfigsRecieved bool   `json:"configs_received"` // whether the library receives a valid config response
-	Error           Error  `json:"error"`
+	RcID            string `json:"rc_id,omitempty"`
+	RcRevision      string `json:"rc_revision,omitempty"`
+	RcVersion       string `json:"rc_version,omitempty"`
+	Error           Error  `json:"error,omitempty"`
 }
 
 // Error stores error information about various tracer events
@@ -211,17 +220,42 @@ type Metrics struct {
 	Series    []Series  `json:"series"`
 }
 
-// Series is a sequence of observations for a single named metric
+// DistributionMetrics corresponds to the "distributions" request type
+type DistributionMetrics struct {
+	Namespace Namespace            `json:"namespace"`
+	Series    []DistributionSeries `json:"series"`
+}
+
+// Series is a sequence of observations for a single named metric.
+// The `Points` field will store a timestamp and value.
 type Series struct {
 	Metric string       `json:"metric"`
 	Points [][2]float64 `json:"points"`
-	Type   string       `json:"type"`
-	Tags   []string     `json:"tags"`
+	// Interval is required for gauge and rate metrics
+	Interval int      `json:"interval,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Tags     []string `json:"tags"`
 	// Common distinguishes metrics which are cross-language vs.
 	// language-specific.
 	//
 	// NOTE: If this field isn't present in the request, the API assumes
-	// assumed the metric is common. So we can't "omitempty" even though the
+	// the metric is common. So we can't "omitempty" even though the
+	// field is technically optional.
+	Common    bool   `json:"common"`
+	Namespace string `json:"namespace"`
+}
+
+// DistributionSeries is a sequence of observations for a distribution metric.
+// Unlike `Series`, DistributionSeries does not store timestamps in `Points`
+type DistributionSeries struct {
+	Metric string    `json:"metric"`
+	Points []float64 `json:"points"`
+	Tags   []string  `json:"tags"`
+	// Common distinguishes metrics which are cross-language vs.
+	// language-specific.
+	//
+	// NOTE: If this field isn't present in the request, the API assumes
+	// the metric is common. So we can't "omitempty" even though the
 	// field is technically optional.
 	Common bool `json:"common"`
 }

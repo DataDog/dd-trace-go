@@ -4,6 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package restful provides functions to trace the emicklei/go-restful package (https://github.com/emicklei/go-restful).
+// WARNING: The underlying v2 version of emicklei/go-restful has known security vulnerabilities that have been resolved in v3
+// and is no longer under active development. As such consider this package DEPRECATED.
+// It is highly recommended that you update to the latest version available at emicklei/go-restful.v3.
 package restful
 
 import (
@@ -23,6 +26,7 @@ const componentName = "emicklei/go-restful"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/emicklei/go-restful")
 }
 
 // FilterFunc returns a restful.FilterFunction which will automatically trace incoming request.
@@ -41,6 +45,7 @@ func FilterFunc(configOpts ...Option) restful.FilterFunction {
 		if !math.IsNaN(cfg.analyticsRate) {
 			spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
+		spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req.Request, cfg.headerTags))
 		span, ctx := httptrace.StartRequestSpan(req.Request, spanOpts...)
 		defer func() {
 			httptrace.FinishRequestSpan(span, resp.StatusCode(), tracer.WithError(resp.Error()))

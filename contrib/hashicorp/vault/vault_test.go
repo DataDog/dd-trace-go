@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
@@ -116,6 +118,12 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 	fullPath := "/v1" + key
 	data := map[string]interface{}{"Key1": "Val1", "Key2": "Val2"}
 
+	hostname := ""
+	url, err := url.Parse(c.Address())
+	if err == nil {
+		hostname = strings.TrimPrefix(url.Hostname(), "www.")
+	}
+
 	t.Run("mount", func(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
@@ -138,6 +146,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
 
 	t.Run("write", func(t *testing.T) {
@@ -166,6 +175,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
 
 	t.Run("read", func(t *testing.T) {
@@ -201,6 +211,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
 }
 
@@ -216,6 +227,12 @@ func TestReadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mountKV(client, t)()
+
+	hostname := ""
+	url, err := url.Parse(client.Address())
+	if err == nil {
+		hostname = strings.TrimPrefix(url.Hostname(), "www.")
+	}
 
 	key := "/some/bad/key"
 	fullPath := "/v1" + key
@@ -239,6 +256,7 @@ func TestReadError(t *testing.T) {
 	assert.Nil(span.Tag("vault.namespace"))
 	assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+	assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 }
 
 func TestNamespace(t *testing.T) {
@@ -254,6 +272,12 @@ func TestNamespace(t *testing.T) {
 	client.SetNamespace(namespace)
 	key := secretMountPath + "/testNamespace"
 	fullPath := "/v1" + key
+
+	hostname := ""
+	url, err := url.Parse(client.Address())
+	if err == nil {
+		hostname = strings.TrimPrefix(url.Hostname(), "www.")
+	}
 
 	t.Run("write", func(t *testing.T) {
 		assert := assert.New(t)
@@ -281,6 +305,7 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
 
 	t.Run("read", func(t *testing.T) {
@@ -314,6 +339,7 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
+		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
 }
 
@@ -448,6 +474,6 @@ func TestNamingSchema(t *testing.T) {
 		WithDDService:            []string{"vault", "vault"},
 		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
 	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, "vault", wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
+	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

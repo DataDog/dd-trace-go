@@ -29,6 +29,8 @@ const componentName = "olivere/elastic"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v5")
+	tracer.MarkIntegrationImported("gopkg.in/olivere/elastic.v3")
 }
 
 // NewHTTPClient returns a new http.Client which traces requests under the given service name.
@@ -65,11 +67,12 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
+		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.operationName, opts...)
+	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.spanName, opts...)
 	defer span.Finish()
 
 	contentEncoding := req.Header.Get("Content-Encoding")
