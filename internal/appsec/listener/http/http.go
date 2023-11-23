@@ -23,30 +23,32 @@ import (
 
 // HTTP rule addresses currently supported by the WAF
 const (
-	ServerRequestMethodAddr           = "server.request.method"
-	ServerRequestRawURIAddr           = "server.request.uri.raw"
-	ServerRequestHeadersNoCookiesAddr = "server.request.headers.no_cookies"
-	ServerRequestCookiesAddr          = "server.request.cookies"
-	ServerRequestQueryAddr            = "server.request.query"
-	ServerRequestPathParamsAddr       = "server.request.path_params"
-	ServerRequestBodyAddr             = "server.request.body"
-	ServerResponseStatusAddr          = "server.response.status"
-	HTTPClientIPAddr                  = "http.client_ip"
-	UserIDAddr                        = "usr.id"
+	ServerRequestMethodAddr            = "server.request.method"
+	ServerRequestRawURIAddr            = "server.request.uri.raw"
+	ServerRequestHeadersNoCookiesAddr  = "server.request.headers.no_cookies"
+	ServerRequestCookiesAddr           = "server.request.cookies"
+	ServerRequestQueryAddr             = "server.request.query"
+	ServerRequestPathParamsAddr        = "server.request.path_params"
+	ServerRequestBodyAddr              = "server.request.body"
+	ServerResponseStatusAddr           = "server.response.status"
+	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
+	HTTPClientIPAddr                   = "http.client_ip"
+	UserIDAddr                         = "usr.id"
 )
 
 // List of HTTP rule addresses currently supported by the WAF
 var supportedpAddresses = map[string]struct{}{
-	ServerRequestMethodAddr:           {},
-	ServerRequestRawURIAddr:           {},
-	ServerRequestHeadersNoCookiesAddr: {},
-	ServerRequestCookiesAddr:          {},
-	ServerRequestQueryAddr:            {},
-	ServerRequestPathParamsAddr:       {},
-	ServerRequestBodyAddr:             {},
-	ServerResponseStatusAddr:          {},
-	HTTPClientIPAddr:                  {},
-	UserIDAddr:                        {},
+	ServerRequestMethodAddr:            {},
+	ServerRequestRawURIAddr:            {},
+	ServerRequestHeadersNoCookiesAddr:  {},
+	ServerRequestCookiesAddr:           {},
+	ServerRequestQueryAddr:             {},
+	ServerRequestPathParamsAddr:        {},
+	ServerRequestBodyAddr:              {},
+	ServerResponseStatusAddr:           {},
+	ServerResponseHeadersNoCookiesAddr: {},
+	HTTPClientIPAddr:                   {},
+	UserIDAddr:                         {},
 }
 
 func SupportsAddress(addr string) bool {
@@ -141,6 +143,10 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			if _, ok := addresses[ServerResponseStatusAddr]; ok {
 				// serverResponseStatusAddr is a string address, so we must format the status code...
 				values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
+			}
+
+			if _, ok := addresses[ServerResponseHeadersNoCookiesAddr]; ok && res.Headers != nil {
+				values[ServerResponseHeadersNoCookiesAddr] = res.Headers
 			}
 
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
