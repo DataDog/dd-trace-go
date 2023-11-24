@@ -64,11 +64,11 @@ jobs:
       - name: go test
         shell: bash
         run: |
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
           cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./../../gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
           cd -
 
       - name: Upload the results to Datadog CI App
@@ -108,11 +108,11 @@ jobs:
       - name: go test
         shell: bash
         run: |
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
           cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./../../gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
           cd -
 
       - name: Upload the results to Datadog CI App
@@ -162,11 +162,11 @@ jobs:
       - name: go test
         run: |
           # Install gotestsum to get the results in a junit file
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
           cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./../../gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
           cd -
 
       - name: Upload the results to Datadog CI App
