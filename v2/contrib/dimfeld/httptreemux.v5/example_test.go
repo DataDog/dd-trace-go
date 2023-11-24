@@ -10,7 +10,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
@@ -24,7 +24,7 @@ func Hello(w http.ResponseWriter, _ *http.Request, params map[string]string) {
 }
 
 func Example() {
-	router := httptreemux.New()
+	router := httptrace.New()
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 
@@ -32,7 +32,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	router := httptreemux.New(httptreemux.WithServiceName("http.router"))
+	router := httptrace.New(httptrace.WithServiceName("http.router"))
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 
@@ -40,9 +40,9 @@ func Example_withServiceName() {
 }
 
 func Example_withSpanOpts() {
-	router := httptreemux.New(
-		httptreemux.WithServiceName("http.router"),
-		httptreemux.WithSpanOptions(
+	router := httptrace.New(
+		httptrace.WithServiceName("http.router"),
+		httptrace.WithSpanOptions(
 			tracer.Tag(ext.SamplingPriority, ext.PriorityUserKeep),
 		),
 	)

@@ -8,7 +8,7 @@ package kafka_test
 import (
 	"fmt"
 
-	kafka2 "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka"
+	kafkatrace "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -25,7 +25,7 @@ func Example() {
 	tracer.Start()
 	defer tracer.Stop()
 
-	c, err := kafka2.NewConsumer(&kafka.ConfigMap{
+	c, err := kafkatrace.NewConsumer(&kafka.ConfigMap{
 		"go.events.channel.enable": true, // required for the events channel to be turned on
 		"group.id":                 testGroupID,
 		"socket.timeout.ms":        10,
@@ -54,7 +54,7 @@ func Example() {
 		}
 
 		// Inject the span context in the message to be produced
-		carrier := kafka2.NewMessageCarrier(msg)
+		carrier := kafkatrace.NewMessageCarrier(msg)
 		tracer.Inject(parentSpan.Context(), carrier)
 
 		c.Consumer.Events() <- msg
@@ -64,7 +64,7 @@ func Example() {
 	msg := (<-c.Events()).(*kafka.Message)
 
 	// Extract the context from the message
-	carrier := kafka2.NewMessageCarrier(msg)
+	carrier := kafkatrace.NewMessageCarrier(msg)
 	spanContext, err := tracer.Extract(carrier)
 	if err != nil {
 		panic(err)

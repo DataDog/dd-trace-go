@@ -10,7 +10,7 @@ import (
 	"log"
 	"net/http"
 
-	restful2 "github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3"
+	restfultrace "github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/emicklei/go-restful/v3"
@@ -22,8 +22,8 @@ func Example() {
 	ws := new(restful.WebService)
 
 	// create the Datadog filter
-	filter := restful2.FilterFunc(
-		restful2.WithServiceName("my-service"),
+	filter := restfultrace.FilterFunc(
+		restfultrace.WithServiceName("my-service"),
 	)
 
 	// use it
@@ -42,8 +42,8 @@ func Example() {
 
 func Example_spanFromContext() {
 	ws := new(restful.WebService)
-	ws.Filter(restful2.FilterFunc(
-		restful2.WithServiceName("my-service"),
+	ws.Filter(restfultrace.FilterFunc(
+		restfultrace.WithServiceName("my-service"),
 	))
 
 	ws.Route(ws.GET("/image/encode").To(

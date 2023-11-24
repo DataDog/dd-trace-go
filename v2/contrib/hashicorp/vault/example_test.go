@@ -10,15 +10,15 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
+	vaulttrace "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
 	"github.com/hashicorp/vault/api"
 )
 
 // This is the most basic way to enable tracing with Vault.
 func ExampleNewHTTPClient() {
 	c, err := api.NewClient(&api.Config{
-		HttpClient: vault.NewHTTPClient(),
-		Address:    "http://vault.mydomain.com:8200",
+		HttpClient: vaulttrace.NewHTTPClient(),
+		Address:    "http://vaulttrace.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -30,11 +30,11 @@ func ExampleNewHTTPClient() {
 // NewHTTPClient can be called with additional options for further configuration.
 func ExampleNewHTTPClient_withOptions() {
 	c, err := api.NewClient(&api.Config{
-		HttpClient: vault.NewHTTPClient(
-			vault.WithServiceName("my.vault"),
-			vault.WithAnalytics(true),
+		HttpClient: vaulttrace.NewHTTPClient(
+			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithAnalytics(true),
 		),
-		Address: "http://vault.mydomain.com:8200",
+		Address: "http://vaulttrace.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -56,8 +56,8 @@ func ExampleWrapHTTPClient() {
 		},
 	}
 	client, err := api.NewClient(&api.Config{
-		HttpClient: vault.WrapHTTPClient(c),
-		Address:    "http://vault.mydomain.com:8200",
+		HttpClient: vaulttrace.WrapHTTPClient(c),
+		Address:    "http://vaulttrace.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -79,12 +79,12 @@ func ExampleWrapHTTPClient_withOptions() {
 		},
 	}
 	client, err := api.NewClient(&api.Config{
-		HttpClient: vault.WrapHTTPClient(
+		HttpClient: vaulttrace.WrapHTTPClient(
 			c,
-			vault.WithServiceName("my.vault"),
-			vault.WithAnalytics(true),
+			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithAnalytics(true),
 		),
-		Address: "http://vault.mydomain.com:8200",
+		Address: "http://vaulttrace.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)

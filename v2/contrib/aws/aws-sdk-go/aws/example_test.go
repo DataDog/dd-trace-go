@@ -6,7 +6,7 @@
 package aws_test
 
 import (
-	aws2 "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
+	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -17,7 +17,7 @@ import (
 func Example() {
 	cfg := aws.NewConfig().WithRegion("us-west-2")
 	sess := session.Must(session.NewSession(cfg))
-	sess = aws2.WrapSession(sess)
+	sess = awstrace.WrapSession(sess)
 
 	s3api := s3.New(sess)
 	s3api.CreateBucket(&s3.CreateBucketInput{

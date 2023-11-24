@@ -9,7 +9,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2/aws"
+	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go-v2/aws"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
@@ -20,7 +20,7 @@ func Example() {
 		log.Fatalf(err.Error())
 	}
 
-	aws.AppendMiddleware(&awsCfg)
+	awstrace.AppendMiddleware(&awsCfg)
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
