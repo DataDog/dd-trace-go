@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,10 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
@@ -630,8 +627,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "ddagent.consul.local:58126"}, c.agentURL)
-		assert.NotNil(c.globalTags)
-		assert.Equal("v", c.globalTags["k"])
+		assert.NotNil(c.globalTags.get())
+		assert.Equal("v", c.globalTags.get()["k"])
 		assert.Equal("testEnv", c.env)
 		assert.True(c.debug)
 	})
@@ -642,14 +639,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 		assert := assert.New(t)
 		c, err := newConfig()
-
 		assert.NoError(err)
-		assert.Equal("test", c.globalTags["env"])
-		assert.Equal("aVal", c.globalTags["aKey"])
-		assert.Equal("bVal", c.globalTags["bKey"])
-		assert.Equal("", c.globalTags["cKey"])
+		globalTags := c.globalTags.get()
+		assert.Equal("test", globalTags["env"])
+		assert.Equal("aVal", globalTags["aKey"])
+		assert.Equal("bVal", globalTags["bKey"])
+		assert.Equal("", globalTags["cKey"])
 
-		dVal, ok := c.globalTags["dKey"]
+		dVal, ok := globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
@@ -1095,8 +1092,9 @@ func TestTagSeparators(t *testing.T) {
 			defer os.Unsetenv("DD_TAGS")
 			c, err := newConfig()
 			assert.NoError(err)
+			globalTags := c.globalTags.get()
 			for key, expected := range tag.out {
-				got, ok := c.globalTags[key]
+				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
 				assert.Equal(expected, got)
 			}

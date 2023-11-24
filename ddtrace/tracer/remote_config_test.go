@@ -8,6 +8,7 @@ package tracer
 import (
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -27,8 +28,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -41,7 +42,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.5, Origin: "remote_config"}})
 
 		// Unset RC. Assert _dd.rule_psr is not set
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request").(*span)
@@ -64,8 +65,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		// Apply RC. Assert _dd.rule_psr shows the RC sampling rate (0.2) is applied
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -78,7 +79,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_sample_rate", Value: 0.2, Origin: "remote_config"}})
 
 		// Unset RC. Assert _dd.rule_psr shows the previous sampling rate (0.1) is applied
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request").(*span)
@@ -99,8 +100,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -111,7 +112,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name", Origin: "remote_config"}})
 
 		// Unset RC. Assert header tags are not set
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 0, globalconfig.HeaderTagsLen())
@@ -131,8 +132,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -144,7 +145,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the DD_TRACE_HEADER_TAGS header tag
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 1, globalconfig.HeaderTagsLen())
@@ -164,8 +165,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		defer stop()
 
 		// Apply RC. Assert global config shows the RC header tag is applied
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-name-from-rc"}]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -177,7 +178,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-rc", Origin: "remote_config"}})
 
 		// Unset RC. Assert global config shows the in-code header tag
-		input["APM_TRACING"] = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, 1, globalconfig.HeaderTagsLen())
@@ -196,8 +197,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {"tracing_sampling_rate": "string value", "service_target": {"service": "my-service", "env": "my-env"}}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": "string value", "service_target": {"service": "my-service", "env": "my-env"}}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
@@ -215,8 +216,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {}, "service_target": {"service": "other-service", "env": "my-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
@@ -234,8 +235,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		input := map[string]remoteconfig.ProductUpdate{
-			"APM_TRACING": {"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`)},
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "other-env"}}`),
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateError, applyStatus["path"].State)
@@ -243,6 +244,53 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 0)
+	})
+
+	t.Run("DD_TAGS=key0:val0,key1:val1, WithGlobalTag=key2:val2 and RC tags = key3:val3,key4:val4", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		t.Setenv("DD_TAGS", "key0:val0,key1:val1")
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"), WithGlobalTag("key2", "val2"))
+		require.Nil(t, err)
+		defer stop()
+
+		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_tags": ["key3:val3","key4:val4"]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		s := tracer.StartSpan("web.request").(*span)
+		s.Finish()
+		require.NotContains(t, "key0", s.Meta)
+		require.NotContains(t, "key1", s.Meta)
+		require.NotContains(t, "key2", s.Meta)
+		require.Equal(t, "val3", s.Meta["key3"])
+		require.Equal(t, "val4", s.Meta["key4"])
+		require.Equal(t, globalconfig.RuntimeID(), s.Meta[ext.RuntimeID])
+		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: "remote_config"}})
+
+		// Unset RC. Assert config shows the original DD_TAGS + WithGlobalTag + runtime ID
+		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
+		applyStatus = tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		s = tracer.StartSpan("web.request").(*span)
+		s.Finish()
+		require.Equal(t, "val0", s.Meta["key0"])
+		require.Equal(t, "val1", s.Meta["key1"])
+		require.Equal(t, "val2", s.Meta["key2"])
+		require.NotContains(t, "key3", s.Meta)
+		require.NotContains(t, "key4", s.Meta)
+		require.Equal(t, globalconfig.RuntimeID(), s.Meta[ext.RuntimeID])
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: ""}})
 	})
 }
 
@@ -261,6 +309,10 @@ func TestStartRemoteConfig(t *testing.T) {
 	require.True(t, found)
 
 	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingHTTPHeaderTags)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingCustomTags)
 	require.NoError(t, err)
 	require.True(t, found)
 }

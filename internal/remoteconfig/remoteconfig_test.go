@@ -69,6 +69,27 @@ func TestRCClient(t *testing.T) {
 		err := client.applyUpdate(resp)
 		require.NoError(t, err)
 	})
+
+	t.Run("subscribe", func(t *testing.T) {
+		client, err = newClient(cfg)
+		require.NoError(t, err)
+
+		cfgPath := "datadog/2/APM_TRACING/foo/bar"
+		err = Subscribe(rc.ProductAPMTracing, func(u ProductUpdate) map[string]rc.ApplyStatus {
+			statuses := map[string]rc.ApplyStatus{}
+			require.NotNil(t, u)
+			require.Len(t, u, 1)
+			require.NotNil(t, u[cfgPath])
+			require.Equal(t, string(u[cfgPath]), "test")
+			statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+			return statuses
+		})
+		require.NoError(t, err)
+
+		resp := genUpdateResponse([]byte("test"), cfgPath)
+		err := client.applyUpdate(resp)
+		require.NoError(t, err)
+	})
 }
 
 func TestPayloads(t *testing.T) {
@@ -288,4 +309,37 @@ func TestRegistration(t *testing.T) {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
 		}
 	})
+}
+
+func TestSubscribe(t *testing.T) {
+	var err error
+	client, err = newClient(DefaultClientConfig())
+	require.NoError(t, err)
+
+	var callback Callback = func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var pCallback ProductCallback = func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }
+
+	err = Subscribe("my-product", pCallback)
+	require.NoError(t, err)
+	require.Len(t, client.callbacks, 0)
+	require.Len(t, client.productsWithCallbacks, 1)
+	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(client.productsWithCallbacks["my-product"]))
+
+	err = RegisterProduct("my-product")
+	require.Error(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = RegisterProduct("my-second-product")
+	require.NoError(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = Subscribe("my-second-product", pCallback)
+	require.Error(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = RegisterCallback(callback)
+	require.NoError(t, err)
+	require.Len(t, client.callbacks, 1)
+	require.Len(t, client.productsWithCallbacks, 1)
+	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(client.callbacks[0]))
 }

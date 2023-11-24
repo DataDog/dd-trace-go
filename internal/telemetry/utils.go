@@ -8,7 +8,9 @@
 package telemetry
 
 import (
+	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -52,7 +54,7 @@ func SetAgentlessEndpoint(endpoint string) string {
 }
 
 // Sanitize ensures the configuration values are valid and compatible.
-// It removes NaN and Inf values and converts string slices into comma-separated strings.
+// It removes NaN and Inf values and converts string slices and maps into comma-separated strings.
 func Sanitize(c Configuration) Configuration {
 	switch val := c.Value.(type) {
 	case float64:
@@ -64,6 +66,25 @@ func Sanitize(c Configuration) Configuration {
 	case []string:
 		// The telemetry API only supports primitive types.
 		c.Value = strings.Join(val, ",")
+	case map[string]interface{}:
+		// The telemetry API only supports primitive types.
+		// Sort the keys to ensure the order is deterministic.
+		// This is technically not required but makes testing easier + it's not in a hot path.
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var sb strings.Builder
+		for _, k := range keys {
+			if sb.Len() > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString(k)
+			sb.WriteString(":")
+			sb.WriteString(fmt.Sprint(val[k]))
+		}
+		c.Value = sb.String()
 	}
 	return c
 }
