@@ -6,10 +6,10 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 h1:5nE6N3JSs2IG3
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPprz7Z+s8=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20231122105332-e105fa5fbafd h1:Y3pSh2/6hjDTfdO+KTHjgRR8B2WSolzZaQy6k1hiW4E=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20231122105332-e105fa5fbafd/go.mod h1:M7A4Iej4B/FEN5tuiUq5HSQu3iKEnYs79qXpt2X6wO0=
-github.com/DataDog/go-libddwaf/v2 v2.1.0 h1:ODQibem9zg7AC6LbU222gZwuobhnnFz5okJjh+4W3v4=
-github.com/DataDog/go-libddwaf/v2 v2.1.0/go.mod h1:X/Kc+PpP1FvvfMJvsmh/YZwGHSnhI40UkKPnDXfdTl4=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231124161728-6418d6f033cc h1:da/ppqr2Q/DsL1jZuhwx8BgK7RkEH+UOam87jkMOWeI=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231124161728-6418d6f033cc/go.mod h1:oguK6LMqgUpeS7Ld5OQj4kuqw2SbNyD89CSDW8usTV0=
+github.com/DataDog/go-libddwaf/v2 v2.2.0 h1:UWMPPE2jVKMl4aTrpNPFUgEV5SwLcv1YuvCkHqSzWN8=
+github.com/DataDog/go-libddwaf/v2 v2.2.0/go.mod h1:UH7CLwSL++Ij9U7LmdZRH+71hzD+AfH28lF7pTTpWhs=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=
 github.com/DataDog/go-tuf v1.0.2-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
 github.com/DataDog/gostackparse v0.7.0 h1:i7dLkXHvYzHV308hnkvVGDL3BR4FWl7IsXNPz/IGQh4=
@@ -38,7 +38,7 @@ github.com/dvyukov/go-fuzz v0.0.0-20210103155950-6a8e9d1f2415/go.mod h1:11Gm+ccJ
 github.com/ebitengine/purego v0.5.0 h1:JrMGKfRIAM4/QVKaesIIT7m/UVjTj5GYhRSQYwfVdpo=
 github.com/ebitengine/purego v0.5.0/go.mod h1:ah1In8AOtksoNK6yk5z1HTJeUkC1Ez4Wk2idgGslMwQ=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
-github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMG2Eq3H6Qgoqeo13Bk2Mv/nBs=
+github.com/fatih/color v1.13.0 h1:8LOYc1KYPPmyKMuN8QV2DNRWNbLo6LZ0iLs8+mlH53w=
 github.com/go-jose/go-jose/v3 v3.0.0 h1:s6rrhirfEP/CGIoc6p+PZAeogN2SxKav6Wp7+dyMWVo=
 github.com/go-jose/go-jose/v3 v3.0.0/go.mod h1:RNkWWRld676jZEYoV3+XK8L2ZnNSvIsxFMht0mSX+u8=
 github.com/go-test/deep v1.1.0 h1:WOcxcdHcvdgThNXjw0t76K42FXTU7HpNQWHpA2HHNlg=
@@ -61,7 +61,7 @@ github.com/hashicorp/errwrap v1.1.0/go.mod h1:YH+1FKiLXxHSkmPseP+kNlulaMuP3n2brv
 github.com/hashicorp/go-cleanhttp v0.5.2 h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
 github.com/hashicorp/go-cleanhttp v0.5.2/go.mod h1:kO/YDlP8L1346E6Sodw+PrpBSV4/SoxCXGY6BqNFT48=
 github.com/hashicorp/go-hclog v0.9.2/go.mod h1:5CU+agLiy3J7N7QjHK5d05KxGsuXiQLrjA0H7acj2lQ=
-github.com/hashicorp/go-hclog v1.5.0 h1:bI2ocEMgcVlz55Oj1xZNBsVi900c7II+fWDyV9o+13c=
+github.com/hashicorp/go-hclog v1.4.0 h1:ctuWFGrhFha8BnnzxqeRGidlEcQkDyL5u8J8t5eA11I=
 github.com/hashicorp/go-multierror v1.0.0/go.mod h1:dHtQlpGsu+cZNNAkkCN/P3hoUDHhCYQXV3UM06sGGrk=
 github.com/hashicorp/go-multierror v1.1.1 h1:H5DkEtf6CXdFp0N0Em5UCwQpXMWke8IA0+lD48awMYo=
 github.com/hashicorp/go-multierror v1.1.1/go.mod h1:iw975J/qwKPdAO1clOe2L8331t/9/fmwbPZ6JB6eMoM=
