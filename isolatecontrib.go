@@ -146,7 +146,6 @@ func push(upstream string) error {
 }
 
 func revParse(ref string) string {
-	// Get the current branch name.
 	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", ref)
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
