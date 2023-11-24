@@ -75,10 +75,9 @@ func (t *tags) toMap() *map[string]interface{} {
 }
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
-func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
-	u, found := updates[state.ProductAPMTracing]
-	if !found {
+	if u == nil {
 		return statuses
 	}
 	var telemConfigs []telemetry.Configuration
@@ -131,21 +130,11 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if err != nil {
 		return err
 	}
-	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
-	if err != nil {
-		return err
-	}
-	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingSampleRate)
-	if err != nil {
-		return err
-	}
-	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingHTTPHeaderTags)
-	if err != nil {
-		return err
-	}
-	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingCustomTags)
-	if err != nil {
-		return err
-	}
-	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
+	return remoteconfig.Subscribe(
+		state.ProductAPMTracing,
+		t.onRemoteConfigUpdate,
+		remoteconfig.APMTracingSampleRate,
+		remoteconfig.APMTracingHTTPHeaderTags,
+		remoteconfig.APMTracingCustomTags,
+	)
 }
