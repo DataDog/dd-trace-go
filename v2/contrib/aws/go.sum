@@ -8,8 +8,11 @@ github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPpr
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20231120163110-7c9f0d67deef h1:PEDv4BcM9EAQ//Z1258lXAPO1QhVn5tgkBEARQsxgpM=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20231120163110-7c9f0d67deef/go.mod h1:ldmCyzW3qGbNC3OrYBFXQ17f/j9PYT4g6LnQIhfXroo=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231123083837-9d363fb1a25b h1:Fuqahx4Gmc+TemXeAijFBFqqmrNgbVKD2uyilRxgITc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231123083837-9d363fb1a25b/go.mod h1:tY61sjd0hA9S8BvDeE8C/MvBcVHcSCcqT8PVvst1EA8=
 github.com/DataDog/go-libddwaf/v2 v2.1.0 h1:ODQibem9zg7AC6LbU222gZwuobhnnFz5okJjh+4W3v4=
 github.com/DataDog/go-libddwaf/v2 v2.1.0/go.mod h1:X/Kc+PpP1FvvfMJvsmh/YZwGHSnhI40UkKPnDXfdTl4=
+github.com/DataDog/go-libddwaf/v2 v2.2.0/go.mod h1:UH7CLwSL++Ij9U7LmdZRH+71hzD+AfH28lF7pTTpWhs=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=
 github.com/DataDog/go-tuf v1.0.2-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
 github.com/DataDog/sketches-go v1.4.2 h1:gppNudE9d19cQ98RYABOetxIhpTCl4m7CnbRZjvVA/o=
