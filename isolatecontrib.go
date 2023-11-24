@@ -40,6 +40,7 @@ func main() {
 	if err := generateGoMod(contribPath, dependencyPath); err != nil {
 		panic(err)
 	}
+	pwd := os.Getwd()
 	if err := os.Chdir(contribPath); err != nil {
 		panic(err)
 	}
@@ -58,6 +59,12 @@ func main() {
 		panic(err)
 	}
 	if err := push(""); err != nil {
+		panic(err)
+	}
+	if err := os.Chdir(pwd); err != nil {
+		panic(err)
+	}
+	if err := moveContrib(contribPath); err != nil {
 		panic(err)
 	}
 }
@@ -154,4 +161,20 @@ func revParse(ref string) string {
 		panic(err)
 	}
 	return strings.TrimSpace(buf.String())
+}
+
+func moveContrib(contribPath string) error {
+	dst := fmt.Sprintf("v2/%s", contribPath)
+	p := strings.Split(dst, "/")
+	c := path.Join(p[:len(p)-1]...)
+	if err := os.MkdirAll(c, 0755); err != nil {
+		return err
+	}
+	if err := os.Rename(contribPath, dst); err != nil {
+		return err
+	}
+	p = strings.Split(contribPath, "/")
+	c = path.Join(p[:len(p)-1]...)
+	_ = os.Remove(c)
+	return nil
 }
