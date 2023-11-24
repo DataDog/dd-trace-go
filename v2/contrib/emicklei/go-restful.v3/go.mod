@@ -3,6 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3
 go 1.19
 
 require (
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231124161728-6418d6f033cc
 	github.com/emicklei/go-restful/v3 v3.11.0
 	github.com/stretchr/testify v1.8.4
 )
@@ -12,7 +13,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231124161728-6418d6f033cc
 	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
