@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231123083837-9d363fb1a25b
+	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/stretchr/testify v1.8.4
 )
 
