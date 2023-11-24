@@ -134,7 +134,6 @@ func commit(message string) error {
 }
 
 func push(upstream string) error {
-	fmt.Println(upstream)
 	var cmd *exec.Cmd
 	if upstream == "" {
 		cmd = exec.Command("git", "push")
