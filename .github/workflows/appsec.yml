@@ -25,7 +25,7 @@ on:
     branches: release-v*
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
-  JUNIT_REPORT: gotestsum-report
+  JUNIT_REPORT: /tmp/gotestsum-report
   TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/...
 jobs:
   native:
