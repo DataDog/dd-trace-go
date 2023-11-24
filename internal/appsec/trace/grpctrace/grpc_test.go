@@ -3,19 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package emitter
+package grpctrace
 
 import (
 	"fmt"
-	"net"
 	"testing"
 
 	testlib "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/_testlib"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
 
-	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestTags(t *testing.T) {
@@ -103,52 +99,5 @@ func TestTags(t *testing.T) {
 				require.False(t, span.Finished)
 			})
 		}
-	}
-}
-
-func TestClientIP(t *testing.T) {
-	for _, tc := range []struct {
-		name             string
-		addr             net.Addr
-		md               metadata.MD
-		expectedClientIP string
-	}{
-		{
-			name:             "tcp-ipv4-address",
-			addr:             &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
-			expectedClientIP: "1.2.3.4",
-		},
-		{
-			name:             "tcp-ipv4-address",
-			addr:             &net.TCPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
-			md:               map[string][]string{"x-client-ip": {"127.0.0.1, 2.3.4.5"}},
-			expectedClientIP: "2.3.4.5",
-		},
-		{
-			name:             "tcp-ipv6-address",
-			addr:             &net.TCPAddr{IP: net.ParseIP("::1"), Port: 6789},
-			expectedClientIP: "::1",
-		},
-		{
-			name:             "udp-ipv4-address",
-			addr:             &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 6789},
-			expectedClientIP: "1.2.3.4",
-		},
-		{
-			name:             "udp-ipv6-address",
-			addr:             &net.UDPAddr{IP: net.ParseIP("::1"), Port: 6789},
-			expectedClientIP: "::1",
-		},
-		{
-			name: "unix-socket-address",
-			addr: &net.UnixAddr{Name: "/var/my.sock"},
-		},
-	} {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			_, clientIP := emitter.ClientIPTags(tc.md, false, tc.addr.String())
-			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
-			require.Equal(t, expectedClientIP.String(), clientIP.String())
-		})
 	}
 }

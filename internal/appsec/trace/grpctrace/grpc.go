@@ -3,12 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package emitter
+package grpctrace
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -23,12 +23,12 @@ func setSecurityEventsTags(span ddtrace.Span, events []any) error {
 	if events == nil {
 		return nil
 	}
-	return instrumentation.SetEventSpanTags(span, events)
+	return trace.SetEventSpanTags(span, events)
 }
 
 // SetRequestMetadataTags sets the gRPC request metadata span tags.
 func SetRequestMetadataTags(span ddtrace.Span, md map[string][]string) {
-	for h, v := range emitter.NormalizeHTTPHeaders(md) {
+	for h, v := range httptrace.NormalizeHTTPHeaders(md) {
 		span.SetTag("grpc.metadata."+h, v)
 	}
 }

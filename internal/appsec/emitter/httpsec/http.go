@@ -8,7 +8,7 @@
 // helper functions to wrap (aka. instrument) standard net/http handlers.
 // HTTP integrations must use this package to enable AppSec features for HTTP,
 // which listens to this package's operation events.
-package emitter
+package httpsec
 
 import (
 	"context"
@@ -21,8 +21,10 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -101,7 +103,7 @@ func MonitorParsedBody(ctx context.Context, body interface{}) error {
 func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
 	var err error
 	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	emitter.OnErrorData(op, func(e error) {
+	sharedsec.OnErrorData(op, func(e error) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
@@ -117,16 +119,16 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) 
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
 func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
-	instrumentation.SetAppSecEnabledTags(span)
+	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ipTags, clientIP := ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
 		log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", clientIP, r.Header)
-		instrumentation.SetStringTags(span, ipTags)
+		trace.SetTags(span, ipTags)
 
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *emitter.Action) {
+		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *sharedsec.Action) {
 			bypassHandler = a.HTTP()
 			blocking = a.Blocking()
 		}))
@@ -138,7 +140,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
 			if blocking {
-				op.AddTag(instrumentation.BlockedRequestTag, true)
+				op.AddTag(trace.BlockedRequestTag, true)
 				for _, f := range onBlock {
 					f()
 				}
@@ -153,9 +155,9 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			// map
 			setRequestHeadersTags(span, args.Headers)
 			setResponseHeadersTags(span, w.Header())
-			instrumentation.SetTags(span, op.Tags())
+			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {
-				SetSecurityEventsTags(span, events)
+				httptrace.SetSecurityEventsTags(span, events)
 			}
 		}()
 
@@ -227,8 +229,8 @@ func makeCookies(r *http.Request) map[string][]string {
 type (
 	Operation struct {
 		dyngo.Operation
-		instrumentation.TagsHolder
-		instrumentation.SecurityEventsHolder
+		trace.TagsHolder
+		trace.SecurityEventsHolder
 		mu sync.RWMutex
 	}
 
@@ -245,12 +247,12 @@ type (
 func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners ...dyngo.DataListener) (context.Context, *Operation) {
 	op := &Operation{
 		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: instrumentation.NewTagsHolder(),
+		TagsHolder: trace.NewTagsHolder(),
 	}
 	for _, l := range listeners {
 		op.OnData(l)
 	}
-	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
+	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
@@ -258,7 +260,7 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners ..
 // fromContext returns the Operation object stored in the context, if any
 func fromContext(ctx context.Context) *Operation {
 	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(instrumentation.ContextKey{}).(*Operation)
+	op, _ := ctx.Value(listener.ContextKey{}).(*Operation)
 	return op
 }
 

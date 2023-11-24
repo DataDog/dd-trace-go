@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package listener
+package grpcsec
 
 import (
 	"sync"
@@ -15,10 +15,10 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec/emitter"
-	http "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -27,8 +27,8 @@ import (
 const (
 	GRPCServerRequestMessage  = "grpc.server.request.message"
 	GRPCServerRequestMetadata = "grpc.server.request.metadata"
-	HTTPClientIPAddr          = http.HTTPClientIPAddr
-	UserIDAddr                = http.UserIDAddr
+	HTTPClientIPAddr          = httpsec.HTTPClientIPAddr
+	UserIDAddr                = httpsec.UserIDAddr
 )
 
 // List of gRPC rule addresses currently supported by the WAF
@@ -46,7 +46,7 @@ func SupportsAddress(addr string) bool {
 
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
-func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
+func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	wafDiags := handle.Diagnostics()
 
@@ -71,7 +71,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 		// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-		op.On(emitter.OnUserIDOperationStart(func(userIDOp *emitter.UserIDOperation, args emitter.UserIDOperationArgs) {
+		op.On(sharedsec.OnUserIDOperationStart(func(userIDOp *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
 			values := map[string]any{}
 			for addr := range addresses {
 				if addr == UserIDAddr {

@@ -3,19 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package listener
+package sharedsec
 
 import (
 	"testing"
 
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
 
 // Test that internal functions used to set span tags use the correct types
 func TestTagsTypes(t *testing.T) {
-	th := instrumentation.NewTagsHolder()
+	th := trace.NewTagsHolder()
 	wafDiags := waf.Diagnostics{
 		Version: "1.3.0",
 		Rules: &waf.DiagnosticEntry{

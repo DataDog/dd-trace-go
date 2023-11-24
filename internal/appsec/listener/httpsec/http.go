@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package listener
+package httpsec
 
 import (
 	"fmt"
@@ -14,9 +14,9 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
-	sharedsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	emitter "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -57,12 +57,12 @@ func SupportsAddress(addr string) bool {
 }
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
-func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
+func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
 	wafDiags := handle.Diagnostics()
 
-	return emitter.OnHandlerOperationStart(func(op *emitter.Operation, args emitter.HandlerOperationArgs) {
+	return httpsec.OnHandlerOperationStart(func(op *httpsec.Operation, args httpsec.HandlerOperationArgs) {
 		wafCtx := waf.NewContext(handle)
 
 		if wafCtx == nil {
@@ -74,7 +74,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 			// see if the associated user should be blocked. Since we don't control the execution flow in this case
 			// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
-			op.On(sharedsec.OnUserIDOperationStart(func(operation *sharedsec.UserIDOperation, args sharedsec.UserIDOperationArgs) {
+			op.On(emitter.OnUserIDOperationStart(func(operation *emitter.UserIDOperation, args emitter.UserIDOperationArgs) {
 				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, timeout)
 				if wafResult.HasActions() || wafResult.HasEvents() {
 					listener.ProcessHTTPSDKAction(operation, actions, wafResult.Actions)
@@ -126,7 +126,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 		}
 
 		if _, ok := addresses[ServerRequestBodyAddr]; ok {
-			op.On(emitter.OnSDKBodyOperationStart(func(sdkBodyOp *emitter.SDKBodyOperation, args emitter.SDKBodyOperationArgs) {
+			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
 				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, timeout)
 				if wafResult.HasActions() || wafResult.HasEvents() {
 					listener.ProcessHTTPSDKAction(sdkBodyOp, actions, wafResult.Actions)
@@ -136,7 +136,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			}))
 		}
 
-		op.On(emitter.OnHandlerOperationFinish(func(op *emitter.Operation, res emitter.HandlerOperationRes) {
+		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
 			values := make(map[string]any, 2)

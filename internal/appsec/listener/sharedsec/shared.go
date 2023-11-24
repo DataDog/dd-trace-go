@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package listener
+package sharedsec
 
 import (
 	"encoding/json"
@@ -12,8 +12,8 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	httpsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/httpsec/emitter"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec/emitter"
+	httpsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -84,7 +84,7 @@ func AddWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
-func ProcessActions(op dyngo.Operation, actions map[string]*emitter.Action, actionIds []string) (interrupt bool) {
+func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {
 	for _, id := range actionIds {
 		if a, ok := actions[id]; ok {
 			op.EmitData(actions[id])
@@ -98,7 +98,7 @@ func ProcessActions(op dyngo.Operation, actions map[string]*emitter.Action, acti
 //   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
 //   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
 //     their handler.
-func ProcessHTTPSDKAction(op dyngo.Operation, actions emitter.Actions, actionIds []string) {
+func ProcessHTTPSDKAction(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) {
 	for _, id := range actionIds {
 		if action, ok := actions[id]; ok {
 			if op.Parent() != nil {
