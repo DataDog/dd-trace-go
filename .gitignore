@@ -1,5 +1,6 @@
 # go
 bin/
+go.work*
 
 # profiling
 *.test
