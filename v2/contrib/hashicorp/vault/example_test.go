@@ -18,7 +18,7 @@ import (
 func ExampleNewHTTPClient() {
 	c, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.NewHTTPClient(),
-		Address:    "http://vaulttrace.mydomain.com:8200",
+		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -34,7 +34,7 @@ func ExampleNewHTTPClient_withOptions() {
 			vaulttrace.WithServiceName("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
-		Address: "http://vaulttrace.mydomain.com:8200",
+		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -57,7 +57,7 @@ func ExampleWrapHTTPClient() {
 	}
 	client, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.WrapHTTPClient(c),
-		Address:    "http://vaulttrace.mydomain.com:8200",
+		Address:    "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
@@ -84,7 +84,7 @@ func ExampleWrapHTTPClient_withOptions() {
 			vaulttrace.WithServiceName("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
-		Address: "http://vaulttrace.mydomain.com:8200",
+		Address: "http://vault.mydomain.com:8200",
 	})
 	if err != nil {
 		log.Fatalf("Failed to create Vault client: %s\n", err)
