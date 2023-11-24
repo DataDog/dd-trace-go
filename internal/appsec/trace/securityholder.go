@@ -6,7 +6,6 @@
 package trace
 
 import (
-	"slices"
 	"sync"
 )
 
@@ -35,7 +34,11 @@ func (s *SecurityEventsHolder) Events() []any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	// Return a copy, since the lock is released upon return.
-	return slices.Clone(s.events)
+	clone := make([]any, len(s.events))
+	for i, e := range s.events {
+		clone[i] = e
+	}
+	return clone
 }
 
 // ClearEvents clears the list of stored events
