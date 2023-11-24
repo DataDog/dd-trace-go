@@ -16,7 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
-	httptreemux "github.com/dimfeld/httptreemux/v5"
+	"github.com/dimfeld/httptreemux/v5"
 )
 
 const componentName = "dimfeld/httptreemux.v5"

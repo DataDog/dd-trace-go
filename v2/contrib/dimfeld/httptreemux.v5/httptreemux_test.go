@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
+	"github.com/dimfeld/httptreemux/v5"
 	"github.com/stretchr/testify/assert"
 )
 
