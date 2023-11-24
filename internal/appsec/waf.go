@@ -96,7 +96,7 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	handle, err := waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
-	actions := map[string]*sharedsec.Action{
+	actions := sharedsec.Actions{
 		// Default built-in block action
 		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
 	}
