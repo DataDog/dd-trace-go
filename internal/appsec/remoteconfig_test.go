@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
@@ -16,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/util"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -26,7 +23,7 @@ import (
 )
 
 func TestASMFeaturesCallback(t *testing.T) {
-	if supported, _ := waf.SupportsTarget(); !supported {
+	if supported, _ := waf.Health(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
@@ -324,7 +321,7 @@ func TestMergeRulesDataEntries(t *testing.T) {
 
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
-	if supported, _ := waf.SupportsTarget(); !supported {
+	if supported, _ := waf.Health(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 
@@ -555,7 +552,7 @@ func TestOnRCUpdate(t *testing.T) {
 	}
 
 	t.Run("post-stop", func(t *testing.T) {
-		if supported, _ := waf.SupportsTarget(); !supported {
+		if supported, _ := waf.Health(); !supported {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
@@ -690,7 +687,7 @@ func TestWafRCUpdate(t *testing.T) {
 		},
 	}
 
-	if supported, _ := waf.SupportsTarget(); !supported {
+	if supported, _ := waf.Health(); !supported {
 		t.Skip("WAF needs to be available for this test")
 	}
 
@@ -703,10 +700,10 @@ func TestWafRCUpdate(t *testing.T) {
 		wafCtx := waf.NewContext(wafHandle)
 		defer wafCtx.Close()
 		values := map[string]interface{}{
-			http.ServerRequestPathParamsAddr: "/rfiinc.txt",
+			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
 		// Make sure the rule matches as expected
-		result := util.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
@@ -721,7 +718,7 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx := waf.NewContext(newWafHandle)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = util.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
+		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values}, cfg.wafTimeout)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block")
 	})

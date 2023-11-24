@@ -14,8 +14,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graphql-go/graphql"
@@ -195,8 +195,8 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 			data.serverSpan.Finish()
 		}()
 
-		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))
-		instrumentation.SetTags(span, op.Tags())
+		trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))
+		trace.SetTags(span, op.Tags())
 	}
 }
 
@@ -248,8 +248,8 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
-		instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
-		instrumentation.SetTags(span, op.Tags())
+		trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
+		trace.SetTags(span, op.Tags())
 	}
 }
 

@@ -49,8 +49,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -125,7 +125,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			ctxSpan, _ = tracer.SpanFromContext(ctx)
 		}
 		if ctxSpan != nil {
-			instrumentation.SetEventSpanTags(ctxSpan, op.Finish(graphqlsec.Result{
+			trace.SetEventSpanTags(ctxSpan, op.Finish(graphqlsec.Result{
 				Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 				Error: response.Errors,
 			}))
@@ -160,7 +160,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 
 	res, err = next(ctx)
 
-	instrumentation.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: res, Error: err}))
+	trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: res, Error: err}))
 	span.Finish(tracer.WithError(err))
 	return
 }

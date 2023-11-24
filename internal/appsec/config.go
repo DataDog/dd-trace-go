@@ -47,7 +47,7 @@ type Config struct {
 	// Maximum WAF execution time
 	wafTimeout time.Duration
 	// AppSec trace rate limit (traces per second).
-	traceRateLimit uint
+	traceRateLimit int64
 	// Obfuscator configuration parameters
 	obfuscator ObfuscatorConfig
 	// rc is the remote configuration client used to receive product configuration updates. Nil if rc is disabled (default)
@@ -126,22 +126,22 @@ func readWAFTimeoutConfig() (timeout time.Duration) {
 	return parsed
 }
 
-func readRateLimitConfig() (rate uint) {
+func readRateLimitConfig() (rate int64) {
 	rate = defaultTraceRate
 	value := os.Getenv(traceRateLimitEnvVar)
 	if value == "" {
 		return rate
 	}
-	parsed, err := strconv.ParseUint(value, 10, 0)
+	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		logEnvVarParsingError(traceRateLimitEnvVar, value, err, rate)
 		return
 	}
-	if rate == 0 {
+	if rate <= 0 {
 		logUnexpectedEnvVarValue(traceRateLimitEnvVar, parsed, "expecting a value strictly greater than 0", rate)
 		return
 	}
-	return uint(parsed)
+	return parsed
 }
 
 func readObfuscatorConfig() ObfuscatorConfig {

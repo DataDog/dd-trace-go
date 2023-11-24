@@ -30,6 +30,7 @@ type target struct {
 type libConfig struct {
 	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
 	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
+	Tags         *tags       `json:"tracing_tags,omitempty"`
 }
 
 type headerTags []headerTag
@@ -56,6 +57,21 @@ func (ht headerTag) toString() string {
 	sb.WriteString(":")
 	sb.WriteString(ht.TagName)
 	return sb.String()
+}
+
+type tags []string
+
+func (t *tags) toMap() *map[string]interface{} {
+	if t == nil {
+		return nil
+	}
+	m := make(map[string]interface{}, len(*t))
+	for _, tag := range *t {
+		if kv := strings.SplitN(tag, ":", 2); len(kv) == 2 {
+			m[kv[0]] = kv[1]
+		}
+	}
+	return &m
 }
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
@@ -96,6 +112,10 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
 		}
+		updated = t.config.globalTags.handleRC(c.LibConfig.Tags.toMap())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
+		}
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
@@ -120,6 +140,10 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		return err
 	}
 	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingHTTPHeaderTags)
+	if err != nil {
+		return err
+	}
+	err = remoteconfig.RegisterCapability(remoteconfig.APMTracingCustomTags)
 	if err != nil {
 		return err
 	}

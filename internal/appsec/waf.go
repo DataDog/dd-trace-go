@@ -3,23 +3,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
 	"errors"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/limiter"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphql"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
+	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const (
@@ -101,7 +97,7 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 
 func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	handle, err := waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
-	actions := map[string]*sharedsec.Action{
+	actions := sharedsec.Actions{
 		// Default built-in block action
 		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
 	}
@@ -132,15 +128,15 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	notSupported := make([]string, 0, len(ruleAddresses))
 	for _, address := range ruleAddresses {
 		supported := false
-		if http.SupportsAddress(address) {
+		if httpsec.SupportsAddress(address) {
 			httpAddresses[address] = struct{}{}
 			supported = true
 		}
-		if grpc.SupportsAddress(address) {
+		if grpcsec.SupportsAddress(address) {
 			grpcAddresses[address] = struct{}{}
 			supported = true
 		}
-		if graphql.SupportsAddress(address) {
+		if graphqlsec.SupportsAddress(address) {
 			graphQLAddresses[address] = struct{}{}
 			supported = true
 		}
@@ -156,17 +152,17 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	// Register the WAF event listeners
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, http.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, grpc.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(graphQLAddresses) > 0 {
 		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
-		listeners = append(listeners, graphql.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
 	}
 
 	return listeners, nil

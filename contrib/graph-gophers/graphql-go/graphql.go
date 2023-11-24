@@ -18,22 +18,22 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/graphqlsec"
+	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graph-gophers/graphql-go/errors"
 	"github.com/graph-gophers/graphql-go/introspection"
-	trace "github.com/graph-gophers/graphql-go/trace/tracer"
+	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
 const componentName = "graph-gophers/graphql-go"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/graph-gophers/graphql-go")
+	ddtracer.MarkIntegrationImported("github.com/graph-gophers/graphql-go")
 }
 
 const (
@@ -50,10 +50,10 @@ type Tracer struct {
 	cfg *config
 }
 
-var _ trace.Tracer = (*Tracer)(nil)
+var _ tracer.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
-func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, trace.QueryFinishFunc) {
+func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
 	ctx, query := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
 		Query:         queryString,
 		OperationName: operationName,
@@ -61,21 +61,21 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 	})
 
 	opts := []ddtrace.StartSpanOption{
-		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(tagGraphqlQuery, queryString),
-		tracer.Tag(tagGraphqlOperationName, operationName),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Measured(),
+		ddtracer.ServiceName(t.cfg.serviceName),
+		ddtracer.Tag(tagGraphqlQuery, queryString),
+		ddtracer.Tag(tagGraphqlOperationName, operationName),
+		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
 		for key, value := range variables {
-			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+			opts = append(opts, ddtracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
 		}
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
+		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
+	span, ctx := ddtracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
@@ -87,15 +87,15 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 		default:
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
-		defer span.Finish(tracer.WithError(err))
+		defer span.Finish(ddtracer.WithError(err))
 
-		instrumentation.SetEventSpanTags(span, query.Finish(graphqlsec.Result{Error: err}))
-		instrumentation.SetTags(span, query.Tags())
+		trace.SetEventSpanTags(span, query.Finish(graphqlsec.Result{Error: err}))
+		trace.SetTags(span, query.Tags())
 	}
 }
 
 // TraceField traces a GraphQL field access.
-func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, trace.FieldFinishFunc) {
+func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, tracer.FieldFinishFunc) {
 	ctx, field := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
 		TypeName:  typeName,
 		FieldName: fieldName,
@@ -109,29 +109,29 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 		}
 	}
 	opts := []ddtrace.StartSpanOption{
-		tracer.ServiceName(t.cfg.serviceName),
-		tracer.Tag(tagGraphqlField, fieldName),
-		tracer.Tag(tagGraphqlType, typeName),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Measured(),
+		ddtracer.ServiceName(t.cfg.serviceName),
+		ddtracer.Tag(tagGraphqlField, fieldName),
+		ddtracer.Tag(tagGraphqlType, typeName),
+		ddtracer.Tag(ext.Component, componentName),
+		ddtracer.Measured(),
 	}
 	if t.cfg.traceVariables {
 		for key, value := range arguments {
-			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
+			opts = append(opts, ddtracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
 		}
 	}
 	if !math.IsNaN(t.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
+		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, "graphql.field", opts...)
+	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.field", opts...)
 
 	return ctx, func(err *errors.QueryError) {
-		instrumentation.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
-		instrumentation.SetTags(span, field.Tags())
+		trace.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
+		trace.SetTags(span, field.Tags())
 
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {
-			span.Finish(tracer.WithError(err))
+			span.Finish(ddtracer.WithError(err))
 		} else {
 			span.Finish()
 		}
@@ -139,7 +139,7 @@ func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, 
 }
 
 // NewTracer creates a new Tracer.
-func NewTracer(opts ...Option) trace.Tracer {
+func NewTracer(opts ...Option) tracer.Tracer {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
