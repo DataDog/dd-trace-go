@@ -53,7 +53,7 @@ type Tracer struct {
 var _ tracer.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
-func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
+func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
 	ctx, query := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
 		Query:         queryString,
 		OperationName: operationName,
@@ -95,7 +95,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString string, operationNa
 }
 
 // TraceField traces a GraphQL field access.
-func (t *Tracer) TraceField(ctx context.Context, label string, typeName string, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, tracer.FieldFinishFunc) {
+func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, tracer.FieldFinishFunc) {
 	ctx, field := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
 		TypeName:  typeName,
 		FieldName: fieldName,
