@@ -23,6 +23,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
@@ -43,9 +44,7 @@ func init() {
 
 type spanTimestampKey struct{}
 
-// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
-// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
-func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+func prepConfig(opts ...Option) *config {
 	cfg := &config{}
 
 	defaults(cfg)
@@ -53,8 +52,28 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 		opt(cfg)
 	}
 
+	return cfg
+}
+
+func appendMiddleware(cfg *config, opts *[]func(*middleware.Stack) error) {
 	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	*opts = append(*opts, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+}
+
+// WithDataDogTracer returns an AWS config LoadOptionsFunc that adds the DataDog tracing middleware into the
+// APIOptions middleware stack.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func WithDataDogTracer(opts ...Option) awsconfig.LoadOptionsFunc {
+	return func(awsOpt *awsconfig.LoadOptions) error {
+		appendMiddleware(prepConfig(opts...), &awsOpt.APIOptions)
+		return nil
+	}
+}
+
+// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
 }
 
 type traceMiddleware struct {

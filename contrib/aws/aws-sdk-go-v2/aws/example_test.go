@@ -24,5 +24,15 @@ func Example() {
 	awstrace.AppendMiddleware(&awsCfg)
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+	_, _ = sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+}
+
+func ExampleLoadOptions() {
+	awsCfg, err := awscfg.LoadDefaultConfig(context.TODO(), awstrace.WithDataDogTracer())
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	_, _ = sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
 }
