@@ -31,7 +31,6 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
-	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.50.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
 	go.opentelemetry.io/otel v1.20.0
