@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver/mongo
+module github.com/DataDog/dd-trace-go/v2/contrib/go.mongodb.org/mongo-driver
 
 go 1.19
 
