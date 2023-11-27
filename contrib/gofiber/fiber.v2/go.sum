@@ -1,0 +1,3 @@
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102104-ee9de9585877 h1:K59UEphxJ0DYhoDncJA15lgC0VWMwL7idk+ilm5X2UU=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102104-ee9de9585877/go.mod h1:YGXG+kUvEscLkC+QNQKkUyNBa3l8aLCLCUzUDAOzmYM=
+github.com/gofiber/fiber/v2 v2.50.0/go.mod h1:21eytvay9Is7S6z+OgPi7c7n4++tnClWmhpimVHMimw=
