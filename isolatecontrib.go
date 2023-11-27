@@ -40,7 +40,7 @@ func main() {
 	if err := generateGoMod(contribPath, dependencyPath); err != nil {
 		panic(err)
 	}
-	pwd := os.Getwd()
+	pwd, _ := os.Getwd()
 	if err := os.Chdir(contribPath); err != nil {
 		panic(err)
 	}
