@@ -30,9 +30,6 @@ type config struct {
 	headerTags    *internal.LockMap
 }
 
-// MuxOption has been deprecated in favor of Option.
-type MuxOption = Option
-
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
 type Option func(*config)
 
@@ -54,14 +51,14 @@ func defaults(cfg *config) {
 
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
-func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
+func WithIgnoreRequest(f func(*http.Request) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
 	}
 }
 
 // WithServiceName sets the given service name for the returned ServeMux.
-func WithServiceName(name string) MuxOption {
+func WithServiceName(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
@@ -79,7 +76,7 @@ func WithHeaderTags(headers []string) Option {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) MuxOption {
+func WithAnalytics(on bool) Option {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -92,7 +89,7 @@ func WithAnalytics(on bool) MuxOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) MuxOption {
+func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate

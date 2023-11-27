@@ -112,7 +112,7 @@ func (d *driverRegistry) unregister(name string) {
 // Register tells the sql integration package about the driver that we will be tracing. If used, it
 // must be called before Open. It uses the driverName suffixed with ".db" as the default service
 // name.
-func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
+func Register(driverName string, driver driver.Driver, opts ...Option) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}

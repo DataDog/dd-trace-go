@@ -60,15 +60,6 @@ func newConfig(opts ...Option) *config {
 	return cfg
 }
 
-// WithContext sets the config context to ctx.
-// Deprecated: This is deprecated in favor of passing the context
-// via the message headers
-func WithContext(ctx context.Context) Option {
-	return func(cfg *config) {
-		cfg.ctx = ctx
-	}
-}
-
 // WithServiceName sets the config service name to serviceName.
 func WithServiceName(serviceName string) Option {
 	return func(cfg *config) {
