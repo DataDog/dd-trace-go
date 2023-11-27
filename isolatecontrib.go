@@ -54,6 +54,9 @@ func main() {
 	if err := goGetV2(); err != nil {
 		panic(err)
 	}
+	if err := modTidy(); err != nil {
+		panic(err)
+	}
 	commitMsg = fmt.Sprintf("%s: update go.mod", contribPath)
 	if err := os.Chdir(pwd); err != nil {
 		panic(err)
