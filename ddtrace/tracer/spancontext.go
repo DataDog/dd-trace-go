@@ -555,11 +555,7 @@ func setPeerServiceFromSource(s *span) string {
 	}
 	// network destination tags will be used as fallback unless there are higher priority sources already set.
 	if useTargetHost {
-		sources = append(sources, []string{
-			ext.NetworkDestinationName,
-			ext.PeerHostname,
-			ext.TargetHost,
-		}...)
+		sources = append(sources, ext.NetworkDestinationName)
 	}
 	for _, source := range sources {
 		if val, ok := s.Meta[source]; ok {

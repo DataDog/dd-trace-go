@@ -102,8 +102,8 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(clientSpan)
 			assert.NotNil(rootSpan)
 
-			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
-			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
+			assert.Equal(clientSpan.Tag(ext.NetworkDestinationName), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.NetworkDestinationPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
 			assert.Equal(clientSpan.Tag(tagMethodKind), methodKindUnary)
@@ -171,9 +171,9 @@ func TestStreaming(t *testing.T) {
 			}
 			switch span.OperationName() {
 			case "grpc.client":
-				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
+				assert.Equal(t, "127.0.0.1", span.Tag(ext.NetworkDestinationName),
 					"expected target host tag to be set in span: %v", span)
-				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
+				assert.Equal(t, rig.port, span.Tag(ext.NetworkDestinationPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
 			case "grpc.server":

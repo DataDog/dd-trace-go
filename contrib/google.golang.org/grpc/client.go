@@ -202,9 +202,9 @@ func setSpanTargetFromPeer(span ddtrace.Span, p peer.Peer) {
 		host, port, err := net.SplitHostPort(p.Addr.String())
 		if err == nil {
 			if host != "" {
-				span.SetTag(ext.TargetHost, host)
+				span.SetTag(ext.NetworkDestinationName, host)
 			}
-			span.SetTag(ext.TargetPort, port)
+			span.SetTag(ext.NetworkDestinationPort, port)
 		}
 	}
 }

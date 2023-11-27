@@ -12,9 +12,6 @@ const (
 	PeerHostIPV6 = "peer.ipv6"
 	// PeerService records the service name of the peer service.
 	PeerService = "peer.service"
-	// PeerHostname records the host name of the peer.
-	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
-	PeerHostname = "peer.hostname"
 	// PeerPort records the port number of the peer.
 	PeerPort = "peer.port"
 )

@@ -88,8 +88,8 @@ func additionalTagOptions(client redis.UniversalClient) []ddtrace.StartSpanOptio
 				port = "6379"
 			}
 			additionalTags = []ddtrace.StartSpanOption{
-				tracer.Tag(ext.TargetHost, host),
-				tracer.Tag(ext.TargetPort, port),
+				tracer.Tag(ext.NetworkDestinationName, host),
+				tracer.Tag(ext.NetworkDestinationPort, port),
 				tracer.Tag("out.db", strconv.Itoa(opt.DB)),
 				tracer.Tag(ext.RedisDatabaseIndex, opt.DB),
 			}
