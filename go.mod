@@ -31,7 +31,6 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
-	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/negroni v1.0.0
 	github.com/valyala/fasthttp v1.50.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0
