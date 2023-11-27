@@ -343,3 +343,37 @@ func TestSubscribe(t *testing.T) {
 	require.Len(t, client.productsWithCallbacks, 1)
 	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(client.callbacks[0]))
 }
+
+func TestNewUpdateRequest(t *testing.T) {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test-svc"
+	cfg.Env = "test-env"
+	cfg.TracerVersion = "tracer-version"
+	cfg.AppVersion = "app-version"
+	var err error
+	client, err = newClient(cfg)
+	require.NoError(t, err)
+
+	err = RegisterProduct("my-product")
+	require.NoError(t, err)
+	err = RegisterCapability(ASMActivation)
+	require.NoError(t, err)
+	err = Subscribe("my-second-product", func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
+	require.NoError(t, err)
+
+	b, err := client.newUpdateRequest()
+	require.NoError(t, err)
+
+	var req clientGetConfigsRequest
+	err = json.Unmarshal(b.Bytes(), &req)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"my-product", "my-second-product"}, req.Client.Products)
+	require.Equal(t, []uint8([]byte{0x10, 0x2}), req.Client.Capabilities)
+	require.Equal(t, "go", req.Client.ClientTracer.Language)
+	require.Equal(t, "test-svc", req.Client.ClientTracer.Service)
+	require.Equal(t, "test-env", req.Client.ClientTracer.Env)
+	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
+	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
+	require.True(t, req.Client.IsTracer)
+}
