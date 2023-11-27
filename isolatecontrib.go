@@ -40,7 +40,7 @@ func main() {
 	if err := generateGoMod(contribPath, dependencyPath); err != nil {
 		panic(err)
 	}
-	pwd := os.Getwd()
+	pwd, _ := os.Getwd()
 	if err := os.Chdir(contribPath); err != nil {
 		panic(err)
 	}
@@ -55,16 +55,16 @@ func main() {
 		panic(err)
 	}
 	commitMsg = fmt.Sprintf("%s: update go.mod", contribPath)
-	if err := commit(commitMsg); err != nil {
-		panic(err)
-	}
-	if err := push(""); err != nil {
-		panic(err)
-	}
 	if err := os.Chdir(pwd); err != nil {
 		panic(err)
 	}
 	if err := moveContrib(contribPath); err != nil {
+		panic(err)
+	}
+	if err := commit(commitMsg); err != nil {
+		panic(err)
+	}
+	if err := push(""); err != nil {
 		panic(err)
 	}
 }
@@ -99,7 +99,6 @@ func generateGoMod(contribDir, dependencyPath string) error {
 	if dependencyVersion == "" {
 		return fmt.Errorf("dependency %s not found in go.mod", dependencyPath)
 	}
-
 	// Write the go.mod file to dst.
 	dstPath := path.Join(contribDir, "go.mod")
 	dst, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
