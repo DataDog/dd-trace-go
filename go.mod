@@ -28,7 +28,6 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/miekg/dns v1.1.55
 	github.com/richardartoul/molecule v1.0.1-0.20221107223329-32cfee06a052
-	github.com/sirupsen/logrus v1.9.3
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.4
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
