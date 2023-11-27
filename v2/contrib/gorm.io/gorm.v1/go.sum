@@ -1,0 +1,5 @@
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102908-aa3b7401ff09 h1:W/iw+QbQEvlhb7iFvexYSsWsZB4nRZb2yGmWM5x/QHc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102908-aa3b7401ff09/go.mod h1:yxYRg9roJz6b0zN5l0VmnHTUKw6ePAix/tBNVDbunD0=
+github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
+github.com/jinzhu/now v1.1.5/go.mod h1:d3SSVoowX0Lcu0IBviAWJpolVfI5UJVZZ7cO71lE/z8=
+gorm.io/gorm v1.25.3/go.mod h1:L4uxeKpfBml98NYqVqwAdmV1a2nBtAec/cf3fpucW/k=
