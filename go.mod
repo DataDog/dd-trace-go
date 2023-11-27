@@ -10,7 +10,6 @@ require (
 	github.com/DataDog/go-libddwaf/v2 v2.2.0
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.2
-	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/denisenkom/go-mssqldb v0.11.0
@@ -24,7 +23,6 @@ require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.3.1
 	github.com/gorilla/mux v1.8.0
-	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/lib/pq v1.10.2
@@ -104,7 +102,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
