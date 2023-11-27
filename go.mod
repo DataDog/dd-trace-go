@@ -22,7 +22,6 @@ require (
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.3.1
 	github.com/gorilla/mux v1.8.0
-	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
 	github.com/lib/pq v1.10.2
 	github.com/mattn/go-sqlite3 v1.14.16
