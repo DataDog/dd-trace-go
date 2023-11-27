@@ -54,11 +54,17 @@ func main() {
 	if err := goGetV2(); err != nil {
 		panic(err)
 	}
+	if err := modTidy(); err != nil {
+		panic(err)
+	}
 	commitMsg = fmt.Sprintf("%s: update go.mod", contribPath)
 	if err := os.Chdir(pwd); err != nil {
 		panic(err)
 	}
 	if err := moveContrib(contribPath); err != nil {
+		panic(err)
+	}
+	if err := modTidy(); err != nil {
 		panic(err)
 	}
 	if err := commit(commitMsg); err != nil {
@@ -176,4 +182,11 @@ func moveContrib(contribPath string) error {
 	c = path.Join(p[:len(p)-1]...)
 	_ = os.Remove(c)
 	return nil
+}
+
+func modTidy() error {
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
