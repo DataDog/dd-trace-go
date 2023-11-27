@@ -32,9 +32,6 @@ type Option func(*config)
 
 type registerConfig = config
 
-// RegisterOption has been deprecated in favor of Option.
-type RegisterOption = Option
-
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_SQL_ANALYTICS_ENABLED", false) {
@@ -165,15 +162,6 @@ func WithCustomTag(key string, value interface{}) Option {
 		}
 		cfg.tags[key] = value
 	}
-}
-
-// WithSQLCommentInjection enables injection of tags as sql comments on traced queries.
-// This includes dynamic values like span id, trace id and sampling priority which can make queries
-// unique for some cache implementations.
-//
-// Deprecated: Use WithDBMPropagation instead.
-func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
-	return WithDBMPropagation(tracer.DBMPropagationMode(mode))
 }
 
 // WithDBMPropagation enables injection of tags as sql comments on traced queries.

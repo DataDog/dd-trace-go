@@ -32,7 +32,6 @@ type config struct {
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
-	ignoredMethods      map[string]struct{}
 	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
@@ -40,11 +39,6 @@ type config struct {
 	spanOpts            []ddtrace.StartSpanOption
 	tags                map[string]interface{}
 }
-
-// InterceptorOption represents an option that can be passed to the grpc unary
-// client and server interceptors.
-// InterceptorOption is deprecated in favor of Option.
-type InterceptorOption = Option
 
 func defaults(cfg *config) {
 	cfg.traceStreamCalls = true
@@ -120,7 +114,7 @@ func NoDebugStack() Option {
 
 // NonErrorCodes determines the list of codes which will not be considered errors in instrumentation.
 // This call overrides the default handling of codes.Canceled as a non-error.
-func NonErrorCodes(cs ...codes.Code) InterceptorOption {
+func NonErrorCodes(cs ...codes.Code) Option {
 	return func(cfg *config) {
 		cfg.nonErrorCodes = make(map[codes.Code]bool, len(cs))
 		for _, c := range cs {
@@ -145,21 +139,6 @@ func WithAnalyticsRate(rate float64) Option {
 		if rate >= 0.0 && rate <= 1.0 {
 			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
 		}
-	}
-}
-
-// WithIgnoredMethods specifies full methods to be ignored by the server side interceptor.
-// When an incoming request's full method is in ms, no spans will be created.
-//
-// Deprecated: This is deprecated in favor of WithUntracedMethods which applies to both
-// the server side and client side interceptors.
-func WithIgnoredMethods(ms ...string) Option {
-	ims := make(map[string]struct{}, len(ms))
-	for _, e := range ms {
-		ims[e] = struct{}{}
-	}
-	return func(cfg *config) {
-		cfg.ignoredMethods = ims
 	}
 }
 

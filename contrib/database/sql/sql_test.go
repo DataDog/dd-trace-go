@@ -225,7 +225,7 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("WithIgnoreQueryTypes", func(t *testing.T) {
-		registerOpts := []RegisterOption{WithIgnoreQueryTypes(QueryTypeConnect)}
+		registerOpts := []Option{WithIgnoreQueryTypes(QueryTypeConnect)}
 		openDBOpts := []Option{WithIgnoreQueryTypes(QueryTypeConnect, QueryTypePing)}
 		Register(driverName, &pq.Driver{}, registerOpts...)
 		defer unregister(driverName)
@@ -244,7 +244,7 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("RegisterOptionsAsDefault", func(t *testing.T) {
-		registerOpts := []RegisterOption{
+		registerOpts := []Option{
 			WithServiceName("register-override"),
 			WithIgnoreQueryTypes(QueryTypeConnect),
 		}
@@ -351,7 +351,7 @@ func TestRegister(_ *testing.T) {
 func TestNamingSchema(t *testing.T) {
 	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride bool) namingschematest.GenSpansFn {
 		return func(t *testing.T, serviceOverride string) []mocktracer.Span {
-			var registerOpts []RegisterOption
+			var registerOpts []Option
 			// serviceOverride has higher priority than the registerOverride parameter.
 			if serviceOverride != "" {
 				registerOpts = append(registerOpts, WithServiceName(serviceOverride))

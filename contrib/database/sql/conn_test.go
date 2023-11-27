@@ -27,7 +27,7 @@ func TestWithSpanTags(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	type want struct {
 		opName   string
@@ -45,7 +45,7 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts:   []RegisterOption{},
+				opts:   []Option{},
 			},
 			want: want{
 				opName: "mysql.query",
@@ -63,7 +63,7 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithServiceName("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
@@ -127,7 +127,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	testcases := []struct {
 		name         string
@@ -141,7 +141,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
@@ -159,7 +159,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
@@ -196,7 +196,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	testcases := []struct {
 		name        string
@@ -208,7 +208,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithChildSpansOnly(),
 				},
 			},
@@ -219,7 +219,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithChildSpansOnly(),
 					WithServiceName("postgres-test"),
 					WithAnalyticsRate(0.2),
