@@ -8,8 +8,7 @@ package pg_test
 import (
 	"log"
 
-	pgtrace "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
-
+	pg2 "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
 	"github.com/go-pg/pg/v10"
 )
 
@@ -20,7 +19,7 @@ func Example() {
 	})
 
 	// Wrap the connection with the APM hook.
-	pgtrace.Wrap(conn)
+	pg2.Wrap(conn)
 	var user struct {
 		Name string
 	}
