@@ -12,7 +12,6 @@ require (
 	github.com/DataDog/sketches-go v1.4.2
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/denisenkom/go-mssqldb v0.11.0
-	github.com/go-chi/chi/v5 v5.0.10
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
