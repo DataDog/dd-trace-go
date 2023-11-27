@@ -32,7 +32,6 @@ type config struct {
 	traceStreamCalls    bool
 	traceStreamMessages bool
 	noDebugStack        bool
-	ignoredMethods      map[string]struct{}
 	untracedMethods     map[string]struct{}
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
