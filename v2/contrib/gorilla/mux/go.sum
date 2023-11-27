@@ -1,3 +1,0 @@
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102418-41430293e03c h1:kadlZzqD5IPY5Xz3wD5RO9CXhDSScoZo61SixqP0rTk=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102418-41430293e03c/go.mod h1:YGXG+kUvEscLkC+QNQKkUyNBa3l8aLCLCUzUDAOzmYM=
-github.com/gorilla/mux v1.8.0/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
