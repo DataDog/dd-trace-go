@@ -520,10 +520,6 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, 0, len(c.products))
-	for p := range c.products {
-		products = append(products, p)
-	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -534,7 +530,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: products,
+			Products: c.allProducts(),
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
