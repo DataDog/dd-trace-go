@@ -84,7 +84,7 @@ func TestErrorWrapper(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	iter := WrapQuery(q, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Iter()
+	iter := wrapQuery(q, nil, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Iter()
 	err = iter.Close()
 
 	spans := mt.FinishedSpans()
@@ -123,7 +123,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	// Call WithContext before WrapQuery to prove WrapQuery needs to use the query.Context()
 	// instead of context.Background()
 	q := session.Query("SELECT * FROM trace.person").WithContext(ctx)
-	tq := WrapQuery(q, WithServiceName("TestServiceName"))
+	tq := wrapQuery(q, nil, WithServiceName("TestServiceName"))
 	iter := tq.Iter()
 	iter.Close()
 	parentSpan.Finish()
@@ -170,7 +170,7 @@ func TestErrNotFound(t *testing.T) {
 	var age int
 
 	t.Run("default", func(t *testing.T) {
-		tq := WrapQuery(q,
+		tq := wrapQuery(q, nil,
 			WithServiceName("TestServiceName"),
 			// By default, not using WithErrorCheck, any error is an error from tracing POV
 		)
@@ -189,7 +189,7 @@ func TestErrNotFound(t *testing.T) {
 	})
 
 	t.Run("WithErrorCheck", func(t *testing.T) {
-		tq := WrapQuery(q,
+		tq := wrapQuery(q, nil,
 			WithServiceName("TestServiceName"),
 			// Typical use of WithErrorCheck -> do not return errors when the error is
 			// gocql.ErrNotFound, most of the time this is fine, there is just zero rows
@@ -219,16 +219,16 @@ func TestAnalyticsSettings(t *testing.T) {
 
 		// Create a query for testing Iter spans
 		q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-		iter := WrapQuery(q, opts...).Iter()
+		iter := wrapQuery(q, nil, opts...).Iter()
 		iter.Close() // this will error, we're inspecting the trace not the error
 
 		// Create a query for testing Scanner spans
 		q2 := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-		scanner := WrapQuery(q2, opts...).Iter().Scanner()
+		scanner := wrapQuery(q2, nil, opts...).Iter().Scanner()
 		scanner.Err() // this will error, we're inspecting the trace not the error
 
 		// Create a batch query for testing Batch spans
-		b := WrapBatch(session.NewBatch(gocql.UnloggedBatch), opts...)
+		b := wrapBatch(session.NewBatch(gocql.UnloggedBatch), nil, opts...)
 		b.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
 		b.ExecuteBatch(session) // this will error, we're inspecting the trace not the error
 
@@ -298,7 +298,7 @@ func TestIterScanner(t *testing.T) {
 	assert.NoError(err)
 
 	q := session.Query("SELECT * from trace.person")
-	tq := WrapQuery(q, WithServiceName("TestServiceName"))
+	tq := wrapQuery(q, nil, WithServiceName("TestServiceName"))
 	iter := tq.WithContext(ctx).Iter()
 	sc := iter.Scanner()
 	for sc.Next() {
@@ -345,7 +345,7 @@ func TestBatch(t *testing.T) {
 	assert.NoError(err)
 
 	b := session.NewBatch(gocql.UnloggedBatch)
-	tb := WrapBatch(b, WithServiceName("TestServiceName"), WithResourceName("BatchInsert"))
+	tb := wrapBatch(b, nil, WithServiceName("TestServiceName"), WithResourceName("BatchInsert"))
 
 	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
@@ -474,7 +474,7 @@ func TestWithCustomTag(t *testing.T) {
 		defer mt.Stop()
 
 		q := session.Query("CREATE KEYSPACE IF NOT EXISTS trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-		iter := WrapQuery(q, WithCustomTag("custom_tag", "value")).Iter()
+		iter := wrapQuery(q, nil, WithCustomTag("custom_tag", "value")).Iter()
 		err = iter.Close()
 		require.NoError(t, err)
 
@@ -490,7 +490,7 @@ func TestWithCustomTag(t *testing.T) {
 		defer mt.Stop()
 
 		b := session.NewBatch(gocql.UnloggedBatch)
-		tb := WrapBatch(b, WithCustomTag("custom_tag", "value"))
+		tb := wrapBatch(b, nil, WithCustomTag("custom_tag", "value"))
 		stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
 		tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
 		tb.Query(stmt, "Lucas", 60, "Another person")
