@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io
+module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go
 
 go 1.19
 
