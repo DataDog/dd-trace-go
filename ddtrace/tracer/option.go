@@ -745,17 +745,6 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 	}
 }
 
-// WithPrioritySampling is deprecated, and priority sampling is enabled by default.
-// When using distributed tracing, the priority sampling value is propagated in order to
-// get all the parts of a distributed trace sampled.
-// To learn more about priority sampling, please visit:
-// https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
-func WithPrioritySampling() StartOption {
-	return func(c *config) {
-		// This is now enabled by default.
-	}
-}
-
 // WithDebugStack can be used to globally enable or disable the collection of stack traces when
 // spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
 // FinishOption.
@@ -794,21 +783,6 @@ func WithSendRetries(retries int) StartOption {
 func WithPropagator(p Propagator) StartOption {
 	return func(c *config) {
 		c.propagator = p
-	}
-}
-
-// WithServiceName is deprecated. Please use WithService.
-// If you are using an older version and you are upgrading from WithServiceName
-// to WithService, please note that WithService will determine the service name of
-// server and framework integrations.
-func WithServiceName(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		if globalconfig.ServiceName() != "" {
-			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
-				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
-		}
-		globalconfig.SetServiceName("")
 	}
 }
 
@@ -925,15 +899,6 @@ func WithSampler(s Sampler) StartOption {
 	return func(c *config) {
 		c.sampler = s
 	}
-}
-
-// WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
-// The function allows customizing the underlying HTTP transport for emitting spans.
-func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: r,
-		Timeout:   defaultHTTPTimeout,
-	})
 }
 
 // WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
