@@ -150,7 +150,7 @@ type config struct {
 	env string
 
 	// sampler specifies the sampler that will be used for sampling traces.
-	sampler Sampler
+	sampler RateSampler
 
 	// agentURL is the agent URL that receives traces from the tracer.
 	agentURL *url.URL
@@ -745,17 +745,6 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 	}
 }
 
-// WithPrioritySampling is deprecated, and priority sampling is enabled by default.
-// When using distributed tracing, the priority sampling value is propagated in order to
-// get all the parts of a distributed trace sampled.
-// To learn more about priority sampling, please visit:
-// https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
-func WithPrioritySampling() StartOption {
-	return func(c *config) {
-		// This is now enabled by default.
-	}
-}
-
 // WithDebugStack can be used to globally enable or disable the collection of stack traces when
 // spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
 // FinishOption.
@@ -794,21 +783,6 @@ func WithSendRetries(retries int) StartOption {
 func WithPropagator(p Propagator) StartOption {
 	return func(c *config) {
 		c.propagator = p
-	}
-}
-
-// WithServiceName is deprecated. Please use WithService.
-// If you are using an older version and you are upgrading from WithServiceName
-// to WithService, please note that WithService will determine the service name of
-// server and framework integrations.
-func WithServiceName(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		if globalconfig.ServiceName() != "" {
-			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
-				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
-		}
-		globalconfig.SetServiceName("")
 	}
 }
 
@@ -919,21 +893,12 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
-// WithSampler sets the given sampler to be used with the tracer. By default
-// an all-permissive sampler is used.
-func WithSampler(s Sampler) StartOption {
+// WithRateSampler sets the given sampler rate to be used with the tracer.
+// The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
+func WithSamplerRate(rate float64) StartOption {
 	return func(c *config) {
-		c.sampler = s
+		c.sampler = NewRateSampler(rate)
 	}
-}
-
-// WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
-// The function allows customizing the underlying HTTP transport for emitting spans.
-func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
-	return WithHTTPClient(&http.Client{
-		Transport: r,
-		Timeout:   defaultHTTPTimeout,
-	})
 }
 
 // WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.

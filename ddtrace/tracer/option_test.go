@@ -655,7 +655,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("other", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newTracer(
-			WithSampler(NewRateSampler(0.5)),
+			WithSamplerRate(0.5),
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),
@@ -951,18 +951,6 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 }
 
 func TestServiceName(t *testing.T) {
-	t.Run("WithServiceName", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
-		assert := assert.New(t)
-		c, err := newConfig(
-			WithServiceName("api-intake"),
-		)
-
-		assert.NoError(err)
-		assert.Equal("api-intake", c.serviceName)
-		assert.Equal("", globalconfig.ServiceName())
-	})
-
 	t.Run("WithService", func(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)

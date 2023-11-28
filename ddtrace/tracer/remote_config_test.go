@@ -212,7 +212,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop, err := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		require.Nil(t, err)
 		defer stop()
 
@@ -231,7 +231,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		tracer, _, _, stop, err := startTestTracer(t, WithServiceName("my-service"), WithEnv("my-env"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		require.Nil(t, err)
 		defer stop()
 

@@ -148,8 +148,8 @@ func TestTracerCleanStop(t *testing.T) {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
 			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
-			Start(withTransport(transport), WithLambdaMode(true), WithSampler(NewRateSampler(0.99)), withNoopStats())
+			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
+			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 		}
 	}()
 
@@ -997,7 +997,7 @@ func TestTracerSpanServiceMappings(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("WithServiceMapping", func(t *testing.T) {
-		tracer, err := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
+		tracer, err := newTracer(WithService("initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		assert.Nil(err)
 		s := tracer.StartSpan("web.request").(*span)
@@ -1155,8 +1155,8 @@ func TestTracerSampler(t *testing.T) {
 	sampler := NewRateSampler(0.9999) // high probability of sampling
 	tracer, err := newTracer(
 		withTransport(newDefaultTransport()),
-		WithSampler(sampler),
 	)
+	tracer.config.sampler = sampler
 	defer tracer.Stop()
 	assert.NoError(err)
 
@@ -1255,14 +1255,14 @@ func TestTracerEdgeSampler(t *testing.T) {
 	// a sample rate of 0 should sample nothing
 	tracer0, _, _, stop, err := startTestTracer(t,
 		withTransport(newDefaultTransport()),
-		WithSampler(NewRateSampler(0)),
+		WithSamplerRate(0),
 	)
 	assert.Nil(err)
 	defer stop()
 	// a sample rate of 1 should sample everything
 	tracer1, _, _, stop, err := startTestTracer(t,
 		withTransport(newDefaultTransport()),
-		WithSampler(NewRateSampler(1)),
+		WithSamplerRate(1),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -1986,7 +1986,7 @@ func TestGitMetadata(t *testing.T) {
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2079,7 +2079,7 @@ func genBigTraces(b *testing.B) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2090,7 +2090,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 }
 
 func BenchmarkStartSpan(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2481,7 +2481,7 @@ func TestUserMonitoring(t *testing.T) {
 
 // BenchmarkTracerStackFrames tests the performance of taking stack trace.
 func BenchmarkTracerStackFrames(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithSampler(NewRateSampler(0)))
+	tracer, _, _, stop, err := startTestTracer(b, WithSamplerRate(0))
 	assert.Nil(b, err)
 	defer stop()
 

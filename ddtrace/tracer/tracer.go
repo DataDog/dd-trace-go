@@ -727,8 +727,8 @@ func (t *tracer) sample(span *span) {
 		span.context.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.RuleRate)
 		return
 	}
-	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
-		span.setMetric(sampleRateMetricKey, rs.Rate())
+	if sampler.Rate() < 1 {
+		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
 	if t.rulesSampling.SampleTrace(span) {
 		return
