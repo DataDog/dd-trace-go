@@ -31,6 +31,9 @@ import (
 // for each config file received through the update.
 type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 
+// ProductCallback is like Callback but for a specific product.
+type ProductCallback func(update ProductUpdate) map[string]rc.ApplyStatus
+
 // Capability represents a bit index to be set in clientData.Capabilites in order to register a client
 // for a specific capability
 type Capability uint
@@ -87,9 +90,10 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks    []Callback
-	products     map[string]struct{}
-	capabilities map[Capability]struct{}
+	callbacks             []Callback
+	products              map[string]struct{}
+	productsWithCallbacks map[string]ProductCallback
+	capabilities          map[Capability]struct{}
 
 	lastError error
 }
@@ -114,15 +118,16 @@ func newClient(config ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		ClientConfig: config,
-		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
-		repository:   repo,
-		stop:         make(chan struct{}),
-		lastError:    nil,
-		callbacks:    []Callback{},
-		capabilities: map[Capability]struct{}{},
-		products:     map[string]struct{}{},
+		ClientConfig:          config,
+		clientID:              generateID(),
+		endpoint:              fmt.Sprintf("%s/v0.7/config", config.AgentURL),
+		repository:            repo,
+		stop:                  make(chan struct{}),
+		lastError:             nil,
+		callbacks:             []Callback{},
+		capabilities:          map[Capability]struct{}{},
+		products:              map[string]struct{}{},
+		productsWithCallbacks: make(map[string]ProductCallback),
 	}, nil
 }
 
@@ -232,6 +237,24 @@ func (c *Client) updateState() {
 	c.lastError = c.applyUpdate(&update)
 }
 
+// Subscribe registers a product and its callback to be invoked when the client receives configuration updates.
+// Subscribe should be preferred over RegisterProduct and RegisterCallback if your callback only handles a single product.
+func Subscribe(product string, callback ProductCallback, capabilities ...Capability) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.Lock()
+	defer client.Unlock()
+	if _, found := client.products[product]; found {
+		return fmt.Errorf("product %s already registered via RegisterProduct", product)
+	}
+	client.productsWithCallbacks[product] = callback
+	for _, cap := range capabilities {
+		client.capabilities[cap] = struct{}{}
+	}
+	return nil
+}
+
 // RegisterCallback allows registering a callback that will be invoked when the client
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
@@ -269,6 +292,9 @@ func RegisterProduct(p string) error {
 	}
 	client.Lock()
 	defer client.Unlock()
+	if _, found := client.productsWithCallbacks[p]; found {
+		return fmt.Errorf("product %s already registered via Subscribe", p)
+	}
 	client.products[p] = struct{}{}
 	return nil
 }
@@ -292,7 +318,8 @@ func HasProduct(p string) (bool, error) {
 	client.RLock()
 	defer client.RUnlock()
 	_, found := client.products[p]
-	return found, nil
+	_, foundWithCallback := client.productsWithCallbacks[p]
+	return found || foundWithCallback, nil
 }
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
@@ -330,15 +357,27 @@ func HasCapability(cap Capability) (bool, error) {
 	return found, nil
 }
 
+func (c *Client) allProducts() []string {
+	products := make([]string, 0, len(c.products)+len(c.productsWithCallbacks))
+	for p := range c.products {
+		products = append(products, p)
+	}
+	for p := range c.productsWithCallbacks {
+		products = append(products, p)
+	}
+	return products
+}
+
 func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
-	productUpdates := make(map[string]ProductUpdate, len(c.products))
-	for p := range c.products {
+	allProducts := c.allProducts()
+	productUpdates := make(map[string]ProductUpdate, len(allProducts))
+	for _, p := range allProducts {
 		productUpdates[p] = make(ProductUpdate)
 	}
 	for _, f := range pbUpdate.TargetFiles {
 		fileMap[f.Path] = f.Raw
-		for p := range c.products {
+		for _, p := range allProducts {
 			// Check the config file path to make sure it belongs to the right product
 			if strings.Contains(f.Path, "/"+p+"/") {
 				productUpdates[p][f.Path] = f.Raw
@@ -416,6 +455,14 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 			}
 		}
 	}
+	// Call the product-specific callbacks registered via Subscribe
+	for product, update := range productUpdates {
+		if fn, ok := c.productsWithCallbacks[product]; ok {
+			for path, status := range fn(update) {
+				statuses[path] = status
+			}
+		}
+	}
 	for p, s := range statuses {
 		c.repository.UpdateApplyStatus(p, s)
 	}
@@ -473,10 +520,6 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
-	products := make([]string, 0, len(c.products))
-	for p := range c.products {
-		products = append(products, p)
-	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -487,7 +530,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: products,
+			Products: c.allProducts(),
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
