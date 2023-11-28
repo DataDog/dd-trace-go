@@ -23,10 +23,9 @@ type config struct {
 }
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
 	cfg.spanName = namingschema.NewDBOutboundOp("buntdb").GetName()
 	cfg.ctx = context.Background()

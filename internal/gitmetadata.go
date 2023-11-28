@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"net/url"
 	"os"
 	"sync"
 )
@@ -56,7 +57,7 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
 	return map[string]string{
-		TagRepositoryURL: os.Getenv(EnvGitRepositoryURL),
+		TagRepositoryURL: removeCredentials(os.Getenv(EnvGitRepositoryURL)),
 		TagCommitSha:     os.Getenv(EnvGitCommitSha),
 	}
 }
@@ -66,7 +67,7 @@ func getTagsFromDDTags() map[string]string {
 	etags := ParseTagString(os.Getenv(EnvDDTags))
 
 	return map[string]string{
-		TagRepositoryURL: etags[TagRepositoryURL],
+		TagRepositoryURL: removeCredentials(etags[TagRepositoryURL]),
 		TagCommitSha:     etags[TagCommitSha],
 		TagGoPath:        etags[TagGoPath],
 	}
@@ -120,4 +121,23 @@ func GetTracerGitMetadataTags() map[string]string {
 	updateTags(res, TraceTagGoPath, tags[TagGoPath])
 
 	return res
+}
+
+// removeCredentials returns the passed url with potential credentials removed.
+// If the input string is not a valid URL, the string is returned as is.
+func removeCredentials(urlStr string) string {
+	if urlStr == "" {
+		return urlStr
+	}
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		// not an url, nothing to remove
+		return urlStr
+	}
+	if u.User == nil {
+		// nothing to remove
+		return urlStr
+	}
+	u.User = nil
+	return u.String()
 }

@@ -9,15 +9,12 @@ package namingschema
 type Option func(cfg *config)
 
 type config struct {
-	versionOverrides map[Version]string
+	overrideV0 *string
 }
 
-// WithVersionOverride allows to override the behavior with a custom logic for the given Version.
-func WithVersionOverride(v Version, override string) Option {
+// WithOverrideV0 allows to override the value returned for V0 in the given Schema.
+func WithOverrideV0(value string) Option {
 	return func(cfg *config) {
-		if cfg.versionOverrides == nil {
-			cfg.versionOverrides = make(map[Version]string)
-		}
-		cfg.versionOverrides[v] = override
+		cfg.overrideV0 = &value
 	}
 }

@@ -22,16 +22,13 @@ func NewClientOutboundOp(system string, opts ...Option) *Schema {
 }
 
 func (c *clientOutboundOp) V0() string {
-	if v, ok := c.cfg.versionOverrides[SchemaV0]; ok {
-		return v
+	if c.cfg.overrideV0 != nil {
+		return *c.cfg.overrideV0
 	}
 	return fmt.Sprintf("%s.request", c.system)
 }
 
 func (c *clientOutboundOp) V1() string {
-	if v, ok := c.cfg.versionOverrides[SchemaV1]; ok {
-		return v
-	}
 	return fmt.Sprintf("%s.client.request", c.system)
 }
 
@@ -50,16 +47,13 @@ func NewServerInboundOp(system string, opts ...Option) *Schema {
 }
 
 func (s *serverInboundOp) V0() string {
-	if v, ok := s.cfg.versionOverrides[SchemaV0]; ok {
-		return v
+	if s.cfg.overrideV0 != nil {
+		return *s.cfg.overrideV0
 	}
 	return fmt.Sprintf("%s.request", s.system)
 }
 
 func (s *serverInboundOp) V1() string {
-	if v, ok := s.cfg.versionOverrides[SchemaV1]; ok {
-		return v
-	}
 	return fmt.Sprintf("%s.server.request", s.system)
 }
 
@@ -75,10 +69,17 @@ func NewHTTPServerOp(opts ...Option) *Schema {
 
 // NewGRPCClientOp creates a new schema for gRPC client outbound operations.
 func NewGRPCClientOp(opts ...Option) *Schema {
-	return NewClientOutboundOp("grpc", opts...)
+	newOpts := append([]Option{WithOverrideV0("grpc.client")}, opts...)
+	return NewClientOutboundOp("grpc", newOpts...)
 }
 
 // NewGRPCServerOp creates a new schema for gRPC server inbound operations.
 func NewGRPCServerOp(opts ...Option) *Schema {
-	return NewServerInboundOp("grpc", opts...)
+	newOpts := append([]Option{WithOverrideV0("grpc.server")}, opts...)
+	return NewServerInboundOp("grpc", newOpts...)
+}
+
+// NewGraphqlServerOp creates a new schema for GraphQL server inbound operations.
+func NewGraphqlServerOp(opts ...Option) *Schema {
+	return NewServerInboundOp("graphql", opts...)
 }

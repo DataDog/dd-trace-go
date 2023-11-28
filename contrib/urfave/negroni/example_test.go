@@ -7,10 +7,10 @@ package negroni_test
 import (
 	"net/http"
 
-	"github.com/urfave/negroni"
-
 	negronitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/urfave/negroni"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/urfave/negroni"
 )
 
 func handler(w http.ResponseWriter, _ *http.Request) {

@@ -25,8 +25,10 @@ type tracedStmt struct {
 // Close sends a span before closing a statement
 func (s *tracedStmt) Close() (err error) {
 	start := time.Now()
+	ctx, end := startTraceTask(s.ctx, QueryTypeClose)
+	defer end()
 	err = s.Stmt.Close()
-	s.tryTrace(s.ctx, QueryTypeClose, "", start, err)
+	s.tryTrace(ctx, QueryTypeClose, "", start, err)
 	return err
 }
 
@@ -34,6 +36,8 @@ func (s *tracedStmt) Close() (err error) {
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
+		ctx, end := startTraceTask(ctx, QueryTypeExec)
+		defer end()
 		res, err := stmtExecContext.ExecContext(ctx, args)
 		s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
 		return res, err
@@ -47,6 +51,8 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		return nil, ctx.Err()
 	default:
 	}
+	ctx, end := startTraceTask(ctx, QueryTypeExec)
+	defer end()
 	res, err = s.Exec(dargs)
 	s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
 	return res, err
@@ -56,6 +62,8 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
+		ctx, end := startTraceTask(ctx, QueryTypeQuery)
+		defer end()
 		rows, err := stmtQueryContext.QueryContext(ctx, args)
 		s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
 		return rows, err
@@ -69,6 +77,8 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		return nil, ctx.Err()
 	default:
 	}
+	ctx, end := startTraceTask(ctx, QueryTypeQuery)
+	defer end()
 	rows, err = s.Query(dargs)
 	s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
 	return rows, err

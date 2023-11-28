@@ -63,7 +63,7 @@ func TestTryUpload(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
-	assert.ElementsMatch([]string{
+	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
 		"service:my-service",
@@ -78,7 +78,7 @@ func TestTryUpload(t *testing.T) {
 		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
-	}, profile.tags)
+	})
 	assert.Equal(profile.event.Version, "4")
 	assert.Equal(profile.event.Family, "go")
 	assert.NotNil(profile.event.Start)
@@ -230,6 +230,26 @@ func TestGitMetadata(t *testing.T) {
 		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo")
 		assert.Contains(profile.tags, "go_path:somepath")
 	})
+	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:http://u@github.com/user/repo go_path:somepath")
+
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
+
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
+		assert.Contains(profile.tags, "git.repository_url:http://github.com/user/repo")
+		assert.Contains(profile.tags, "go_path:somepath")
+	})
 	t.Run("git-metadata-from-env", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
@@ -252,6 +272,26 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
 		assert.Contains(profile.tags, "git.repository_url:github.com/user/repo_new")
+	})
+	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
+		maininternal.ResetGitMetadataTags()
+		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u@github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		profiles := make(chan profileMeta, 1)
+		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+		defer server.Close()
+		p, err := unstartedProfiler(
+			WithAgentAddr(server.Listener.Addr().String()),
+		)
+		require.NoError(t, err)
+		err = p.doRequest(testBatch)
+		require.NoError(t, err)
+		profile := <-profiles
+
+		assert := assert.New(t)
+		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
+		assert.Contains(profile.tags, "git.repository_url:https://github.com/user/repo_new")
 	})
 
 	t.Run("git-metadata-disabled", func(t *testing.T) {

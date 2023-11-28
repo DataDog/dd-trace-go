@@ -15,32 +15,38 @@ import (
 
 // ProductStart signals that the product has started with some configuration
 // information. It will start the telemetry client if it is not already started.
+// ProductStart assumes that the telemetry client has been configured already by the caller using the ApplyOps method.
 // If the client is already started, it will send any necessary app-product-change
 // events to indicate whether the product is enabled, as well as an app-client-configuration-change
 // event in case any new configuration information is available.
 func (c *client) ProductStart(namespace Namespace, configuration []Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.started {
-		c.configChange(configuration)
-		switch namespace {
-		case NamespaceProfilers:
-			c.productEnabled(NamespaceProfilers)
-		case NamespaceTracers:
-			// Since appsec is integrated with the tracer, we sent an app-product-change
-			// update about appsec when the tracer starts. Any tracer-related configuration
-			// information can be passed along here as well.
-			if appsec.Enabled() {
-				c.productEnabled(NamespaceASM)
-			}
-		case NamespaceASM:
-			c.productEnabled(NamespaceASM)
-		default:
-			log("unknown product namespace provided to ProductStart")
-		}
-	} else {
+	if !c.started {
 		c.start(configuration, namespace)
+		return
 	}
+	c.configChange(configuration)
+	switch namespace {
+	case NamespaceProfilers, NamespaceASM:
+		c.productEnabled(namespace)
+	case NamespaceTracers:
+		// Since appsec is integrated with the tracer, we sent an app-product-change
+		// update about appsec when the tracer starts. Any tracer-related configuration
+		// information can be passed along here as well.
+		if appsec.Enabled() {
+			c.productEnabled(NamespaceASM)
+		}
+	default:
+		log("unknown product namespace provided to ProductStart")
+	}
+}
+
+// ConfigChange is a thread-safe method to enqueue an app-client-configuration-change event.
+func (c *client) ConfigChange(configuration []Configuration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.configChange(configuration)
 }
 
 // configChange enqueues an app-client-configuration-change event to be flushed.
@@ -103,7 +109,7 @@ func LoadIntegration(name string) {
 // of some portion of code. It returns a function that should be called when
 // the desired code finishes executing.
 // For example, by adding:
-// defer Time(namespace, "tracer_init_time", nil, true)()
+// defer Time(namespace, "init_time", nil, true)()
 // at the beginning of the tracer Start function, the tracer start time is measured
 // and stored as a metric to be flushed by the global telemetry client.
 func Time(namespace Namespace, name string, tags []string, common bool) (finish func()) {

@@ -7,14 +7,13 @@ package grpcsec_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation/grpcsec"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestUsage(t *testing.T) {
@@ -49,7 +48,7 @@ func TestUsage(t *testing.T) {
 						require.Equal(t, expectedMessage, res.Message)
 						recvFinished++
 
-						handlerOp.AddSecurityEvents(json.RawMessage(expectedMessage))
+						handlerOp.AddSecurityEvents([]any{expectedMessage})
 					}))
 				}))
 
@@ -69,7 +68,7 @@ func TestUsage(t *testing.T) {
 
 			require.Len(t, secEvents, expectedRecvOperation)
 			for i, e := range secEvents {
-				require.Equal(t, fmt.Sprintf(expectedMessageFormat, i+1), string(e))
+				require.Equal(t, fmt.Sprintf(expectedMessageFormat, i+1), e)
 			}
 		}
 	}

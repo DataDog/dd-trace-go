@@ -4,6 +4,10 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gorm provides helper functions for tracing the jinzhu/gorm package (https://github.com/jinzhu/gorm).
+//
+// Deprecated: The underlying gopkg.in/jinzhu/gorm packages has known security vulnerabilities and is no longer under
+// active development. As such consider this package DEPRECATED.
+// It is highly recommended that you update to the latest version available here as a contrib package "gorm.io/gorm.v1".
 package gorm
 
 import (
@@ -25,6 +29,7 @@ const componentName = "gopkg.in/jinzhu/gorm.v1"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 const (

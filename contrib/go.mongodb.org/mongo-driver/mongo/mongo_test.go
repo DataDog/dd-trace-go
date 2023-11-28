@@ -73,6 +73,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "mongo", s.Tag(ext.ServiceName))
 	assert.Equal(t, "mongo.insert", s.Tag(ext.ResourceName))
 	assert.Equal(t, hostname, s.Tag(ext.PeerHostname))
+	assert.Equal(t, hostname, s.Tag(ext.NetworkDestinationName))
 	assert.Equal(t, port, s.Tag(ext.PeerPort))
 	assert.Contains(t, s.Tag("mongodb.query"), `"test-item":"test-value"`)
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))

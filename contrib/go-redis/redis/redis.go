@@ -29,6 +29,7 @@ const componentName = "go-redis/redis"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/go-redis/redis")
 }
 
 // Client is used to trace requests to a redis server.
@@ -138,7 +139,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
@@ -212,7 +213,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			if !math.IsNaN(p.config.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 			}
-			span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+			span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 			err := tc.process(cmd)
 			var finishOpts []ddtrace.FinishOption
 			if err != redis.Nil {

@@ -28,6 +28,7 @@ const componentName = "elastic/go-elasticsearch.v6"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/elastic/go-elasticsearch/v6")
 }
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.
@@ -67,6 +68,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemElasticsearch),
+		tracer.Tag(ext.NetworkDestinationName, req.URL.Hostname()),
 	}
 	if !math.IsNaN(t.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.config.analyticsRate))

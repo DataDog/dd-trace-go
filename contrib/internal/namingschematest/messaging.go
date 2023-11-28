@@ -32,7 +32,7 @@ func NewKafkaTest(genSpans GenSpansFn) func(t *testing.T) {
 			WithDDService:            []string{"kafka", TestDDService},
 			WithDDServiceAndOverride: []string{TestServiceOverride, TestServiceOverride},
 		}
-		t.Run("ServiceName", NewServiceNameTest(genSpans, "kafka", wantServiceNameV0))
-		t.Run("SpanName", NewOpNameTest(genSpans, assertOpV0, assertOpV1))
+		t.Run("ServiceName", NewServiceNameTest(genSpans, wantServiceNameV0))
+		t.Run("SpanName", NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 	}
 }

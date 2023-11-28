@@ -17,7 +17,7 @@ const defaultServiceName = "elastic.client"
 
 type clientConfig struct {
 	serviceName   string
-	operationName string
+	spanName      string
 	transport     *http.Transport
 	analyticsRate float64
 	resourceNamer func(url, method string) string
@@ -27,12 +27,11 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
-	cfg.operationName = namingschema.NewElasticsearchOutboundOp().GetName()
+	cfg.spanName = namingschema.NewElasticsearchOutboundOp().GetName()
 	cfg.transport = http.DefaultTransport.(*http.Transport)
 	cfg.resourceNamer = quantize
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()

@@ -10,13 +10,13 @@ import (
 	"log"
 	"os"
 
-	opentracing "github.com/opentracing/opentracing-go"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/opentracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 // The below example illustrates a simple use case using the "tracer" package,

@@ -16,7 +16,7 @@ import (
 type config struct {
 	analyticsRate float64
 	serviceName   string
-	operationName string
+	spanName      string
 }
 
 const defaultServiceName = "vault"
@@ -25,14 +25,13 @@ const defaultServiceName = "vault"
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewServiceNameSchema(
-		"",
+	cfg.serviceName = namingschema.NewDefaultServiceName(
 		defaultServiceName,
-		namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+		namingschema.WithOverrideV0(defaultServiceName),
 	).GetName()
-	cfg.operationName = namingschema.NewDBOutboundOp(
+	cfg.spanName = namingschema.NewDBOutboundOp(
 		"vault",
-		namingschema.WithVersionOverride(namingschema.SchemaV0, "http.request"),
+		namingschema.WithOverrideV0("http.request"),
 	).GetName()
 
 	if internal.BoolEnv("DD_TRACE_VAULT_ANALYTICS_ENABLED", false) {

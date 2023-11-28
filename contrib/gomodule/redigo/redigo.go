@@ -29,6 +29,7 @@ const componentName = "gomodule/redigo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gomodule/redigo")
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -163,7 +164,7 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 	if !math.IsNaN(p.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
 	}
-	span, _ := tracer.StartSpanFromContext(ctx, "redis.command", opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 	span.SetTag("out.network", p.network)
 	span.SetTag(ext.TargetPort, p.port)
 	span.SetTag(ext.TargetHost, p.host)
@@ -172,10 +173,9 @@ func newChildSpan(ctx context.Context, p *params) ddtrace.Span {
 
 func withSpan(ctx context.Context, do func(commandName string, args ...interface{}) (interface{}, error), p *params, commandName string, args ...interface{}) (reply interface{}, err error) {
 	// When a context exists in the args, it takes precedence over the passed ctx.
-	var ok bool
 	if n := len(args); n > 0 {
-		ctx, ok = args[n-1].(context.Context)
-		if ok {
+		if argCtx, ok := args[n-1].(context.Context); ok {
+			ctx = argCtx
 			args = args[:n-1]
 		}
 	}

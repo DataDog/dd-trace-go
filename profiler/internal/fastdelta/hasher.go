@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/spaolacci/murmur3"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
+
+	"github.com/spaolacci/murmur3"
 )
 
 // Hash is a 128-bit hash representing sample identity

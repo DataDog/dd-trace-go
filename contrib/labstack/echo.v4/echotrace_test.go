@@ -10,11 +10,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -88,6 +92,7 @@ func TestTrace200(t *testing.T) {
 	assert.Equal(root.Context().SpanID(), span.ParentID())
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+	assert.Equal("/user/:id", span.Tag(ext.HTTPRoute))
 
 	assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
 }
@@ -418,4 +423,206 @@ func TestIgnoreRequestFunc(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 0)
+}
+
+type testCustomError struct {
+	TestCode int
+}
+
+// Error satisfies the apierror interface
+func (e *testCustomError) Error() string {
+	return "test"
+}
+
+func TestWithErrorTranslator(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	translateError := func(e error) (*echo.HTTPError, bool) {
+		return &echo.HTTPError{
+			Message: e.(*testCustomError).Error(),
+			Code:    e.(*testCustomError).TestCode,
+		}, true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithErrorTranslator(translateError)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return &testCustomError{
+			TestCode: 401,
+		}
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal("http.request", span.OperationName())
+	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+	assert.Contains(span.Tag(ext.ResourceName), "/err")
+	assert.Equal("401", span.Tag(ext.HTTPCode))
+	assert.Equal("GET", span.Tag(ext.HTTPMethod))
+}
+
+func TestNamingSchema(t *testing.T) {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		var opts []Option
+		if serviceOverride != "" {
+			opts = append(opts, WithServiceName(serviceOverride))
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		mux := echo.New()
+		mux.Use(Middleware(opts...))
+		mux.GET("/200", func(c echo.Context) error {
+			return c.NoContent(200)
+		})
+		r := httptest.NewRequest("GET", "/200", nil)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+
+		return mt.FinishedSpans()
+	})
+	namingschematest.NewHTTPServerTest(genSpans, "echo")(t)
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	setupReq := func(opts ...Option) *http.Request {
+		router := echo.New()
+		router.Use(Middleware(opts...))
+
+		router.GET("/test", func(c echo.Context) error {
+			return c.String(http.StatusOK, "test")
+		})
+		r := httptest.NewRequest("GET", "/test", nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return r
+	}
+	t.Run("default-off", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+		for _, arg := range htArgs {
+			_, tag := normalizer.HeaderTag(arg)
+			assert.NotContains(s.Tags(), tag)
+		}
+	})
+	t.Run("integration", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+	})
+
+	t.Run("global", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		header, tag := normalizer.HeaderTag("3header")
+		globalconfig.SetHeaderTag(header, tag)
+
+		r := setupReq()
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+	})
+
+	t.Run("override", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		globalH, globalT := normalizer.HeaderTag("3header")
+		globalconfig.SetHeaderTag(globalH, globalT)
+
+		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		r := setupReq(WithHeaderTags(htArgs))
+		spans := mt.FinishedSpans()
+		assert := assert.New(t)
+		assert.Equal(len(spans), 1)
+		s := spans[0]
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags(), globalT)
+	})
+}
+
+func TestWithCustomTags(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called, traced bool
+
+	// setup
+	router := echo.New()
+	router.Use(Middleware(
+		WithServiceName("foobar"),
+		WithCustomTag("customTag1", "customValue1"),
+		WithCustomTag("customTag2", "customValue2"),
+		WithCustomTag(ext.SpanKind, "replace me"),
+	))
+
+	// a handler with an error and make the requests
+	router.GET("/test", func(c echo.Context) error {
+		_, traced = tracer.SpanFromContext(c.Request().Context())
+		called = true
+		return nil
+	})
+	r := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the errors and status are correct
+	assert.True(called)
+	assert.True(traced)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("customValue1", span.Tag("customTag1"))
+	assert.Equal("customValue2", span.Tag("customTag2"))
+	assert.Equal("server", span.Tag(ext.SpanKind))
 }

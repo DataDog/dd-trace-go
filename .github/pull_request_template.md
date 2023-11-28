@@ -20,19 +20,21 @@
 * If this resolves a GitHub issue, include "Fixes #XXXX" to link the issue and auto-close it on merge.
 -->
 
-### Describe how to test/QA your changes
-
-<!--
-* Write here in detail or link to detailed instructions on how this change can
-  be tested/QAd/validated, including any environment setup.
-* Ideally your changes have automated unit and/or integration tests which are run in CI.
--->
-
 ### Reviewer's Checklist
 <!--
 * Authors can use this list as a reference to ensure that there are no problems
   during the review but the signing off is to be done by the reviewer(s).
 -->
 
-- [ ] Changed code has unit tests for its functionality.
+- [ ] Changed code has unit tests for its functionality at or near 100% coverage.
+- [ ] [System-Tests](https://github.com/DataDog/system-tests/) covering this feature have been added and enabled with the va.b.c-dev version tag.
+- [ ] There is a benchmark for any new code, or changes to existing code.
 - [ ] If this interacts with the agent in a new way, a system test has been added.
+- [ ] Add an appropriate team label so this PR gets put in the right place for the release notes.
+
+For Datadog employees:
+
+- [ ] If this PR touches code that handles credentials of any kind, such as Datadog API keys, I've requested a review from `@DataDog/security-design-and-guidance`.
+- [ ] This PR doesn't touch any of that.
+
+Unsure? Have a question? Request a review!

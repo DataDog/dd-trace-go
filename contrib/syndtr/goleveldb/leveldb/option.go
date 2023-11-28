@@ -24,10 +24,9 @@ type config struct {
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
-		serviceName: namingschema.NewServiceNameSchema(
-			"",
+		serviceName: namingschema.NewDefaultServiceName(
 			defaultServiceName,
-			namingschema.WithVersionOverride(namingschema.SchemaV0, defaultServiceName),
+			namingschema.WithOverrideV0(defaultServiceName),
 		).GetName(),
 		spanName: namingschema.NewDBOutboundOp("leveldb").GetName(),
 		ctx:      context.Background(),

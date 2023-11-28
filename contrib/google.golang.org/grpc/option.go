@@ -10,8 +10,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 
 	"google.golang.org/grpc/codes"
+)
+
+const (
+	defaultClientServiceName = "grpc.client"
+	defaultServerServiceName = "grpc.server"
 )
 
 // Option specifies a configuration option for the grpc package. Not all options apply
@@ -19,7 +26,8 @@ import (
 type Option func(*config)
 
 type config struct {
-	serviceName         string
+	serviceName         func() string
+	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
 	traceStreamMessages bool
@@ -33,30 +41,12 @@ type config struct {
 	tags                map[string]interface{}
 }
 
-func (cfg *config) serverServiceName() string {
-	if cfg.serviceName != "" {
-		return cfg.serviceName
-	}
-	if svc := globalconfig.ServiceName(); svc != "" {
-		return svc
-	}
-	return "grpc.server"
-}
-
-func (cfg *config) clientServiceName() string {
-	if cfg.serviceName == "" {
-		return "grpc.client"
-	}
-	return cfg.serviceName
-}
-
 // InterceptorOption represents an option that can be passed to the grpc unary
 // client and server interceptors.
 // InterceptorOption is deprecated in favor of Option.
 type InterceptorOption = Option
 
 func defaults(cfg *config) {
-	// cfg.serviceName defaults are set in interceptors
 	cfg.traceStreamCalls = true
 	cfg.traceStreamMessages = true
 	cfg.nonErrorCodes = map[codes.Code]bool{codes.Canceled: true}
@@ -71,10 +61,36 @@ func defaults(cfg *config) {
 	}
 }
 
+func clientDefaults(cfg *config) {
+	sn := namingschema.NewDefaultServiceName(
+		defaultClientServiceName,
+		namingschema.WithOverrideV0(defaultClientServiceName),
+	).GetName()
+	cfg.serviceName = func() string { return sn }
+	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	defaults(cfg)
+}
+
+func serverDefaults(cfg *config) {
+	// We check for a configured service name, so we don't break users who are incorrectly creating their server
+	// before the call `tracer.Start()`
+	if globalconfig.ServiceName() != "" {
+		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+		cfg.serviceName = func() string { return sn }
+	} else {
+		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
+			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
+		ns := namingschema.NewDefaultServiceName(defaultServerServiceName)
+		cfg.serviceName = ns.GetName
+	}
+	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	defaults(cfg)
+}
+
 // WithServiceName sets the given service name for the intercepted client.
 func WithServiceName(name string) Option {
 	return func(cfg *config) {
-		cfg.serviceName = name
+		cfg.serviceName = func() string { return name }
 	}
 }
 

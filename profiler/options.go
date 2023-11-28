@@ -92,6 +92,7 @@ type config struct {
 	apiURL               string // apiURL is the Datadog intake API URL
 	agentURL             string // agentURL is the Datadog agent profiling URL
 	service, env         string
+	version              string
 	hostname             string
 	statsd               StatsdClient
 	httpClient           *http.Client
@@ -106,71 +107,43 @@ type config struct {
 	blockRate            int
 	outputDir            string
 	deltaProfiles        bool
-	deltaMethod          string
 	logStartup           bool
-	traceEnabled         bool
 	traceConfig          executionTraceConfig
 	endpointCountEnabled bool
 }
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
-	info := struct {
-		Date                 string   `json:"date"`         // ISO 8601 date and time of start
-		OSName               string   `json:"os_name"`      // Windows, Darwin, Debian, etc.
-		OSVersion            string   `json:"os_version"`   // Version of the OS
-		Version              string   `json:"version"`      // Profiler version
-		Lang                 string   `json:"lang"`         // "Go"
-		LangVersion          string   `json:"lang_version"` // Go version, e.g. go1.18
-		Hostname             string   `json:"hostname"`
-		DeltaProfiles        bool     `json:"delta_profiles"`
-		DeltaMethod          string   `json:"delta_method"`
-		Service              string   `json:"service"`
-		Env                  string   `json:"env"`
-		TargetURL            string   `json:"target_url"`
-		Agentless            bool     `json:"agentless"`
-		Tags                 []string `json:"tags"`
-		ProfilePeriod        string   `json:"profile_period"`
-		EnabledProfiles      []string `json:"enabled_profiles"`
-		CPUDuration          string   `json:"cpu_duration"`
-		CPUProfileRate       int      `json:"cpu_profile_rate"`
-		BlockProfileRate     int      `json:"block_profile_rate"`
-		MutexProfileFraction int      `json:"mutex_profile_fraction"`
-		MaxGoroutinesWait    int      `json:"max_goroutines_wait"`
-		UploadTimeout        string   `json:"upload_timeout"`
-		TraceEnabled         bool     `json:"execution_trace_enabled"`
-		TracePeriod          string   `json:"execution_trace_period"`
-		TraceSizeLimit       int      `json:"execution_trace_size_limit"`
-		EndpointCountEnabled bool     `json:"endpoint_count_enabled"`
-	}{
-		Date:                 time.Now().Format(time.RFC3339),
-		OSName:               osinfo.OSName(),
-		OSVersion:            osinfo.OSVersion(),
-		Version:              version.Tag,
-		Lang:                 "Go",
-		LangVersion:          runtime.Version(),
-		Hostname:             c.hostname,
-		DeltaProfiles:        c.deltaProfiles,
-		DeltaMethod:          c.deltaMethod,
-		Service:              c.service,
-		Env:                  c.env,
-		TargetURL:            c.targetURL,
-		Agentless:            c.agentless,
-		Tags:                 c.tags.Slice(),
-		ProfilePeriod:        c.period.String(),
-		CPUDuration:          c.cpuDuration.String(),
-		CPUProfileRate:       c.cpuProfileRate,
-		BlockProfileRate:     c.blockRate,
-		MutexProfileFraction: c.mutexFraction,
-		MaxGoroutinesWait:    c.maxGoroutinesWait,
-		UploadTimeout:        c.uploadTimeout.String(),
-		TraceEnabled:         c.traceEnabled,
-		TracePeriod:          c.traceConfig.Period.String(),
-		TraceSizeLimit:       c.traceConfig.Limit,
-		EndpointCountEnabled: c.endpointCountEnabled,
-	}
+	var enabledProfiles []string
 	for t := range c.types {
-		info.EnabledProfiles = append(info.EnabledProfiles, t.String())
+		enabledProfiles = append(enabledProfiles, t.String())
+	}
+	info := map[string]any{
+		"date":                       time.Now().Format(time.RFC3339),
+		"os_name":                    osinfo.OSName(),
+		"os_version":                 osinfo.OSVersion(),
+		"version":                    version.Tag,
+		"lang":                       "Go",
+		"lang_version":               runtime.Version(),
+		"hostname":                   c.hostname,
+		"delta_profiles":             c.deltaProfiles,
+		"service":                    c.service,
+		"env":                        c.env,
+		"target_url":                 c.targetURL,
+		"agentless":                  c.agentless,
+		"tags":                       c.tags.Slice(),
+		"profile_period":             c.period.String(),
+		"enabled_profiles":           enabledProfiles,
+		"cpu_duration":               c.cpuDuration.String(),
+		"cpu_profile_rate":           c.cpuProfileRate,
+		"block_profile_rate":         c.blockRate,
+		"mutex_profile_fraction":     c.mutexFraction,
+		"max_goroutines_wait":        c.maxGoroutinesWait,
+		"upload_timeout":             c.uploadTimeout.String(),
+		"execution_trace_enabled":    c.traceConfig.Enabled,
+		"execution_trace_period":     c.traceConfig.Period.String(),
+		"execution_trace_size_limit": c.traceConfig.Limit,
+		"endpoint_count_enabled":     c.endpointCountEnabled,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -219,7 +192,6 @@ func defaultConfig() (*config, error) {
 		uploadTimeout:        DefaultUploadTimeout,
 		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
-		deltaMethod:          os.Getenv("DD_PROFILING_DELTA_METHOD"),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
 	}
@@ -310,13 +282,7 @@ func defaultConfig() (*config, error) {
 	}
 
 	// Experimental feature: Go execution trace (runtime/trace) recording.
-	c.traceEnabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", false)
-	c.traceConfig.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 5000*time.Second)
-	c.traceConfig.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
-	if c.traceEnabled && (c.traceConfig.Period == 0 || c.traceConfig.Limit == 0) {
-		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
-		c.traceEnabled = false
-	}
+	c.traceConfig.Refresh()
 	return &c, nil
 }
 
@@ -452,7 +418,9 @@ func WithEnv(env string) Option {
 
 // WithVersion specifies the service version tag to attach to profiles
 func WithVersion(version string) Option {
-	return WithTags("version:" + version)
+	return func(cfg *config) {
+		cfg.version = version
+	}
 }
 
 // WithTags specifies a set of tags to be attached to the profiler. These may help
@@ -542,8 +510,10 @@ func WithHostname(hostname string) Option {
 }
 
 // executionTraceConfig controls how often, and for how long, runtime execution
-// traces are collected, see defaultConfig() for more details.
+// traces are collected.
 type executionTraceConfig struct {
+	// Enabled indicates whether execution tracing is enabled.
+	Enabled bool
 	// Period is the amount of time between traces.
 	Period time.Duration
 	// Limit is the desired upper bound, in bytes, of a collected trace.
@@ -555,4 +525,35 @@ type executionTraceConfig struct {
 	// of events recorded) than duration, so we use that to decide when to
 	// stop tracing.
 	Limit int
+
+	// warned is checked to prevent spamming a log every minute if the trace
+	// config is invalid
+	warned bool
+}
+
+// executionTraceEnabledDefault depends on the Go version and CPU architecture,
+// see go_lt_1_21.go and this [article][] for more details.
+//
+// [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
+var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
+
+// Refresh updates the execution trace configuration to reflect any run-time
+// changes to the configuration environment variables, applying defaults as
+// needed.
+func (e *executionTraceConfig) Refresh() {
+	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault)
+	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
+	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
+
+	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
+		if !e.warned {
+			e.warned = true
+			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
+		}
+		e.Enabled = false
+		return
+	}
+	// If the config is valid, reset e.warned so we'll print another warning
+	// if it's udpated to be invalid
+	e.warned = false
 }

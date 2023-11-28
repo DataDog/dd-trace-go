@@ -25,6 +25,7 @@ const componentName = "zenazn/goji.v1/web"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/zenazn/goji")
 }
 
 // Middleware returns a goji middleware function that will trace incoming requests.
@@ -51,8 +52,10 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resource := r.Method
 			p := web.GetMatch(*c).RawPattern()
+			route := ""
 			if p != nil {
-				resource += fmt.Sprintf(" %s", p)
+				route = fmt.Sprintf("%s", p)
+				resource = resource + " " + route
 			} else {
 				warnonce.Do(func() {
 					log.Warn("contrib/zenazn/goji.v1/web: routes are unavailable. To enable them add the goji Router middleware before the tracer middleware.")
@@ -63,6 +66,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 				Resource:   resource,
 				FinishOpts: cfg.finishOpts,
 				SpanOpts:   cfg.spanOpts,
+				Route:      route,
 			})
 		})
 	}
