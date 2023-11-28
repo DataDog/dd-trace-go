@@ -314,7 +314,6 @@ func handler200(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 func handler500(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
-
 func handlerDummy(w http.ResponseWriter, _ *http.Request, _ map[string]string) {
 	w.WriteHeader(http.StatusAccepted)
 }
