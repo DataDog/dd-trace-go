@@ -79,7 +79,10 @@ jobs:
           cd ./v2/contrib/gorilla/mux
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
           cd -
-          cd ./v2/contrib/go-chi
+          cd ./v2/contrib/go-chi/chi
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
+          cd -
+          cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
           cd ./contrib/labstack/echo.v4
@@ -138,7 +141,10 @@ jobs:
           cd ./v2/contrib/gorilla/mux
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
           cd -
-          cd ./v2/contrib/go-chi
+          cd ./v2/contrib/go-chi/chi
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
+          cd -
+          cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
           cd ./contrib/labstack/echo.v4
@@ -207,7 +213,10 @@ jobs:
           cd ./v2/contrib/gorilla/mux
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
           cd -
-          cd ./v2/contrib/go-chi
+          cd ./v2/contrib/go-chi/chi
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
+          cd -
+          cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
           cd ./contrib/labstack/echo.v4
