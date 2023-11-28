@@ -20,7 +20,7 @@ First, find the library which you'd like to integrate with. The naming conventio
 * The package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`
 
 Second, there are a few tags that should be found in all integration spans:
-* The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../ddtrace/ext/span_kind.go) found in the repository.
+* The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../../ddtrace/ext/span_kind.go) found in the repository.
 If the value is determined to be `internal`, then omit the tag as that is the assumed default value. Otherwise, explicitly set it with a value from above.
 * The `component` tag should be set in all spans with the value equivalent to full naming convention of the integration package explained in the previous step.
 
