@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/unit-of-work
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127181822-2d5ea8d8d86b
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231127182326-4293f77c4c7a
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231128131651-e2b2d5a6bd2e
 	golang.org/x/sync v0.3.0
 )
 

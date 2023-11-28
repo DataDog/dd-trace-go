@@ -32,6 +32,7 @@ while [[ $# -gt 0 ]]; do
 		--all)
 			contrib=true
 			export DD_APPSEC_ENABLED=true
+			export DD_TEST_APPS_ENABLED=true
 			export INTEGRATION=true
 			shift
 			;;
@@ -98,8 +99,8 @@ fi
 
 ## CORE
 echo testing core
-PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $PACKAGE_NAMES
+pkg_names=$(go list ./...)
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $pkg_names
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -111,6 +112,17 @@ if [[ "$contrib" != "" ]]; then
 		sleep $sleeptime
 	fi
 
-	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
-	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
+  find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
+    dir=$(dirname "$go_mod_path")
+    cd "$dir"
+    echo testing "$dir"
+    pkgs=$(go list ./... | grep -v -e google.golang.org/api | tr '\n' ' ' | sed 's/ $//g')
+    pkg_id=$(echo "$pkgs" | head -n1 | sed 's/\//_/g')
+    if [[ -z "$pkg_id" ]]; then
+      cd - > /dev/null
+      continue
+    fi
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic $pkgs
+    cd - > /dev/null
+  done
 fi

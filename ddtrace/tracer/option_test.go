@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"math"
 	"net"
@@ -374,9 +375,44 @@ type contribPkg struct {
 }
 
 func TestIntegrationEnabled(t *testing.T) {
-	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	root, err := filepath.Abs("../../v2/contrib")
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(root); err != nil {
+		t.Fatal(err)
+	}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if filepath.Base(path) != "go.mod" {
+			return nil
+		}
+		rErr := testIntegrationEnabled(t, filepath.Dir(path))
+		if rErr != nil {
+			return fmt.Errorf("path: %s, err: %w", path, rErr)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testIntegrationEnabled(t *testing.T, contribPath string) error {
+	t.Helper()
+	t.Log(contribPath)
+	pwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.Chdir(pwd)
+	}()
+	if err = os.Chdir(contribPath); err != nil {
+		return err
+	}
+	body, err := exec.Command("go", "list", "-json", "./...").Output()
+	if err != nil {
+		return err
 	}
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
@@ -384,7 +420,7 @@ func TestIntegrationEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			return err
 		}
 		packages = append(packages, out)
 	}
@@ -392,13 +428,13 @@ func TestIntegrationEnabled(t *testing.T) {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
 			continue
 		}
-		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
-		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", pkg.Root).Output()
 		if err != nil {
-			t.Fatalf(err.Error())
+			return err
 		}
-		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+		assert.NotZero(t, len(body), "expected %s to call MarkIntegrationImported", pkg.Name)
 	}
+	return nil
 }
 
 func TestTracerOptionsDefaults(t *testing.T) {
