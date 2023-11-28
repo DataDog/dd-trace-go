@@ -199,13 +199,6 @@ jobs:
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
-      - name: Test Contrib (v2)
-        if: ${{ env.V2_BRANCH == 'true' }}
-        run: |
-          mkdir -p $TEST_RESULTS
-          PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
-          gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
-
       - name: Test Contrib Submodules (v2)
         if: ${{ env.V2_BRANCH == 'true' }} && always()
         run: ./.github/workflows/apps/test-contrib-submodules.sh
