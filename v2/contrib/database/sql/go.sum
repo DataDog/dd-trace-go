@@ -2,3 +2,7 @@ github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128094807-9964ee4e8fda h1:ndYid8iU
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128094807-9964ee4e8fda/go.mod h1:d1Lk/PXHhLMNv6Vx4tWAKx395l2HxJKs0LJ3lIzQPeI=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128095711-948f63ccb905 h1:UuLE5XiydyTFRqIv1dbZ2o3HYbC7g2PqIQqwoqKGUlY=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128095711-948f63ccb905/go.mod h1:d1Lk/PXHhLMNv6Vx4tWAKx395l2HxJKs0LJ3lIzQPeI=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128111505-ea1b2fc5123c h1:1Mj4QjRm5Y17hEFI0FUbQuNXwIntnrpQCVR6WqMWr4w=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128111505-ea1b2fc5123c/go.mod h1:zNAJyYlCyw6sx6Mq6EGgX2mITzJBSfxNZdTVYc/euPw=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128112603-463ebf2ba23e h1:k2JpvDTVMlRG0clF38BQv7V72C/MfCn9fO1LL2FloFk=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128112603-463ebf2ba23e/go.mod h1:zNAJyYlCyw6sx6Mq6EGgX2mITzJBSfxNZdTVYc/euPw=
