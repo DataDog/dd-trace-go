@@ -16,9 +16,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2internal/contrib/httptrace"
 
 	"github.com/labstack/echo/v4"
 )

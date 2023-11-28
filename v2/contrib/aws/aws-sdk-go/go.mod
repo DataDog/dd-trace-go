@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128111416-e86d1864fb60
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131153-bb827a5f519c
 	github.com/aws/aws-sdk-go v1.48.6
 	github.com/stretchr/testify v1.8.4
 )
