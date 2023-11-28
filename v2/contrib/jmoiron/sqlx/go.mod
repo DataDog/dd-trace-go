@@ -3,18 +3,20 @@ module github.com/DataDog/dd-trace-go/v2/contrib/jmoiron/sqlx
 go 1.19
 
 require (
-	github.com/denisenkom/go-mssqldb v0.11.0
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/denisenkom/go-mssqldb v0.12.3
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/jmoiron/sqlx v1.3.5
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.10.9
 )
+
+require github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231128114129-31c6dc564058 // indirect
 
 require (
 	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127111504-f9db3ffcbae2
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128113615-ed474dea2fd9
 	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
