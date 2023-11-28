@@ -13,7 +13,7 @@ import (
 
 	sqltrace "github.com/DataDog/dd-trace-go/v2/contrib/database/sql"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal/sqltest"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/sqltest"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
