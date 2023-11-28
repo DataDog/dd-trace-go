@@ -85,7 +85,7 @@ jobs:
           cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
-          cd ./contrib/labstack/echo.v4
+          cd ./v2/contrib/labstack/echo.v4
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
           cd -
 
@@ -147,7 +147,7 @@ jobs:
           cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
-          cd ./contrib/labstack/echo.v4
+          cd ./v2/contrib/labstack/echo.v4
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
           cd -
 
@@ -219,7 +219,7 @@ jobs:
           cd ./v2/contrib/go-chi/chi.v5
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
           cd -
-          cd ./contrib/labstack/echo.v4
+          cd ./v2/contrib/labstack/echo.v4
           env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
           cd -
 
