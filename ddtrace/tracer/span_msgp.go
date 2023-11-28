@@ -11,6 +11,7 @@ package tracer
 
 import (
 	"github.com/tinylib/msgp/msgp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // DecodeMsg implements msgp.Decodable
@@ -65,7 +66,7 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 			if err != nil {
 				return
 			}
-			if z.Meta == nil && zb0002 > 0 {
+			if z.Meta == nil {
 				z.Meta = make(map[string]string, zb0002)
 			} else if len(z.Meta) > 0 {
 				for key := range z.Meta {
@@ -86,32 +87,49 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				z.Meta[za0001] = za0002
 			}
-		case "metrics":
+		case "span_links":
 			var zb0003 uint32
-			zb0003, err = dc.ReadMapHeader()
+			zb0003, err = dc.ReadArrayHeader()
 			if err != nil {
 				return
 			}
-			if z.Metrics == nil && zb0003 > 0 {
-				z.Metrics = make(map[string]float64, zb0003)
+			if cap(z.Links) >= int(zb0003) {
+				z.Links = (z.Links)[:zb0003]
+			} else {
+				z.Links = make([]ddtrace.SpanLink, zb0003)
+			}
+			for za0003 := range z.Links {
+				err = z.Links[za0003].DecodeMsg(dc)
+				if err != nil {
+					return
+				}
+			}
+		case "metrics":
+			var zb0004 uint32
+			zb0004, err = dc.ReadMapHeader()
+			if err != nil {
+				return
+			}
+			if z.Metrics == nil {
+				z.Metrics = make(map[string]float64, zb0004)
 			} else if len(z.Metrics) > 0 {
 				for key := range z.Metrics {
 					delete(z.Metrics, key)
 				}
 			}
-			for zb0003 > 0 {
-				zb0003--
-				var za0003 string
-				var za0004 float64
-				za0003, err = dc.ReadString()
+			for zb0004 > 0 {
+				zb0004--
+				var za0004 string
+				var za0005 float64
+				za0004, err = dc.ReadString()
 				if err != nil {
 					return
 				}
-				za0004, err = dc.ReadFloat64()
+				za0005, err = dc.ReadFloat64()
 				if err != nil {
 					return
 				}
-				z.Metrics[za0003] = za0004
+				z.Metrics[za0004] = za0005
 			}
 		case "span_id":
 			z.SpanID, err = dc.ReadUint64()
@@ -145,9 +163,31 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 12
+	// omitempty: check for empty values
+	zb0001Len := uint32(13)
+	var zb0001Mask uint16 /* 13 bits */
+	if z.Meta == nil {
+		zb0001Len--
+		zb0001Mask |= 0x40
+	}
+	if z.Links == nil {
+		zb0001Len--
+		zb0001Mask |= 0x80
+	}
+	if z.Metrics == nil {
+		zb0001Len--
+		zb0001Mask |= 0x100
+	}
+	// variable map header, size zb0001Len
+	err = en.Append(0x80 | uint8(zb0001Len))
+	if err != nil {
+		return
+	}
+	if zb0001Len == 0 {
+		return
+	}
 	// write "name"
-	err = en.Append(0x8c, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	err = en.Append(0xa4, 0x6e, 0x61, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
@@ -200,42 +240,63 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	// write "meta"
-	err = en.Append(0xa4, 0x6d, 0x65, 0x74, 0x61)
-	if err != nil {
-		return
-	}
-	err = en.WriteMapHeader(uint32(len(z.Meta)))
-	if err != nil {
-		return
-	}
-	for za0001, za0002 := range z.Meta {
-		err = en.WriteString(za0001)
+	if (zb0001Mask & 0x40) == 0 { // if not empty
+		// write "meta"
+		err = en.Append(0xa4, 0x6d, 0x65, 0x74, 0x61)
 		if err != nil {
 			return
 		}
-		err = en.WriteString(za0002)
+		err = en.WriteMapHeader(uint32(len(z.Meta)))
 		if err != nil {
 			return
 		}
+		for za0001, za0002 := range z.Meta {
+			err = en.WriteString(za0001)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(za0002)
+			if err != nil {
+				return
+			}
+		}
 	}
-	// write "metrics"
-	err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
-	if err != nil {
-		return
-	}
-	err = en.WriteMapHeader(uint32(len(z.Metrics)))
-	if err != nil {
-		return
-	}
-	for za0003, za0004 := range z.Metrics {
-		err = en.WriteString(za0003)
+	if (zb0001Mask & 0x80) == 0 { // if not empty
+		// write "span_links"
+		err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
 		if err != nil {
 			return
 		}
-		err = en.WriteFloat64(za0004)
+		err = en.WriteArrayHeader(uint32(len(z.Links)))
 		if err != nil {
 			return
+		}
+		for za0003 := range z.Links {
+			err = z.Links[za0003].EncodeMsg(en)
+			if err != nil {
+				return
+			}
+		}
+	}
+	if (zb0001Mask & 0x100) == 0 { // if not empty
+		// write "metrics"
+		err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteMapHeader(uint32(len(z.Metrics)))
+		if err != nil {
+			return
+		}
+		for za0004, za0005 := range z.Metrics {
+			err = en.WriteString(za0004)
+			if err != nil {
+				return
+			}
+			err = en.WriteFloat64(za0005)
+			if err != nil {
+				return
+			}
 		}
 	}
 	// write "span_id"
@@ -286,11 +347,15 @@ func (z *span) Msgsize() (s int) {
 			s += msgp.StringPrefixSize + len(za0001) + msgp.StringPrefixSize + len(za0002)
 		}
 	}
+	s += 11 + msgp.ArrayHeaderSize
+	for za0003 := range z.Links {
+		s += z.Links[za0003].Msgsize()
+	}
 	s += 8 + msgp.MapHeaderSize
 	if z.Metrics != nil {
-		for za0003, za0004 := range z.Metrics {
-			_ = za0004
-			s += msgp.StringPrefixSize + len(za0003) + msgp.Float64Size
+		for za0004, za0005 := range z.Metrics {
+			_ = za0005
+			s += msgp.StringPrefixSize + len(za0004) + msgp.Float64Size
 		}
 	}
 	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size

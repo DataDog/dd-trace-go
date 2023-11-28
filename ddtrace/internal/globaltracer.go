@@ -68,6 +68,8 @@ var _ ddtrace.Span = (*NoopSpan)(nil)
 // NoopSpan is an implementation of ddtrace.Span that is a no-op.
 type NoopSpan struct{}
 
+func (s NoopSpan) AddLinks(links ...ddtrace.SpanLink) {}
+
 // SetTag implements ddtrace.Span.
 func (NoopSpan) SetTag(_ string, _ interface{}) {}
 

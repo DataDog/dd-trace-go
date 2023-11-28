@@ -8,7 +8,9 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"fmt"
 	"os"
+	"reflect"
 	"runtime/pprof"
 	rt "runtime/trace"
 	"strconv"
@@ -524,6 +526,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
 
+	// add span links from options
+	for i := range opts.Links {
+		l := opts.Links[i]
+		if ok := validateSpanLink(&l, context); ok {
+			span.Links = append(span.Links, l)
+		}
+	}
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -589,6 +598,63 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 // of go services all generating spans.
 func generateSpanID(startTime int64) uint64 {
 	return random.Uint64() ^ uint64(startTime)
+}
+
+func validateSpanLink(l *ddtrace.SpanLink, context *spanContext) bool {
+	// if trace id is none, try to take it from the parent context / W3C
+	// if it is not there, take it from the span trace id
+	if l.TraceID == 0 {
+		// no valid trace id set nor found in the parent context,
+		// dropping the link
+		if context == nil || context.traceID.Empty() {
+			return false
+		}
+		l.TraceID = context.traceID.Lower()
+		l.TraceIDHigh = context.traceID.Upper()
+		if context.trace.propagatingTags != nil {
+			if s := context.trace.propagatingTag(tracestateHeader); s != "" {
+				l.Tracestate = s
+			}
+		}
+		p, ok := context.SamplingPriority()
+		if ok && p >= ext.PriorityAutoKeep {
+			{
+				l.Flags = 1
+			}
+		}
+	}
+	// if span id / traceid invalid, how to autofill values
+	if l.SpanID == 0 {
+		if context == nil || context.spanID == 0 {
+			return false
+		}
+		l.SpanID = context.spanID
+	}
+	attributes := l.Attributes
+	for key, value := range attributes {
+		if value == nil {
+			// TODO: do we want to keep null attributes?
+			delete(l.Attributes, key)
+			continue
+		}
+
+		// remapping attributes with array values to dot notation
+		if reflect.TypeOf(value).Kind() == reflect.Slice {
+			slice := reflect.ValueOf(value)
+			for i := 0; i < slice.Len(); i++ {
+				key := fmt.Sprintf("%s.%d", key, i)
+				v := slice.Index(i)
+				if num, ok := toFloat64(v.Interface()); ok {
+					l.Attributes[key] = num
+				} else {
+					l.Attributes[key] = fmt.Sprintf("%v", v)
+				}
+			}
+			// removing the key-value pair with unexpanded array
+			delete(l.Attributes, key)
+		}
+	}
+	return true
 }
 
 // applyPPROFLabels applies pprof labels for the profiler's code hotspots and
