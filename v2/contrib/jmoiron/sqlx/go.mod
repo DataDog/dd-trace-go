@@ -9,14 +9,17 @@ require (
 	github.com/lib/pq v1.10.9
 )
 
-require github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231128114129-31c6dc564058 // indirect
+require (
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231128131651-e2b2d5a6bd2e
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
+)
 
 require (
 	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128113615-ed474dea2fd9
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect

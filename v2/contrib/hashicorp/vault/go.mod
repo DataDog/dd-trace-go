@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128114129-31c6dc564058
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231128114129-31c6dc564058
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/stretchr/testify v1.8.4

@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/net/http
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131604-8852b5685577
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/stretchr/testify v1.8.4
 )
 
