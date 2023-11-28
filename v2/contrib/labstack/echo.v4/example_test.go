@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package echo
+package echo_test
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ func Example() {
 	r := echo.New()
 
 	// Use the tracer middleware with your desired service name.
-	r.Use(Middleware(WithServiceName("my-web-app")))
+	r.Use(echotrace.Middleware(echotrace.WithServiceName("my-web-app")))
 
 	// Set up an endpoint.
 	r.GET("/hello", func(c echo.Context) error {
@@ -40,7 +40,7 @@ func Example_spanFromContext() {
 	r := echo.New()
 
 	// Use the tracer middleware with your desired service name.
-	r.Use(Middleware(WithServiceName("image-encoder")))
+	r.Use(echotrace.Middleware(echotrace.WithServiceName("image-encoder")))
 
 	// Set up some endpoints.
 	r.GET("/image/encode", func(c echo.Context) error {
