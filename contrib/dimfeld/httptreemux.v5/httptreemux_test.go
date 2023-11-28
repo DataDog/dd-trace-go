@@ -285,7 +285,6 @@ func TestTrailingSlashRoutes(t *testing.T) {
 		assert.Equal("http.request", s.OperationName())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
 		assert.Equal("GET /api/:parameter/", s.Tag(ext.ResourceName))
-		assert.NotEqual("GET /api/paramvalue/", s.Tag(ext.ResourceName))
 		assert.Equal("301", s.Tag(ext.HTTPCode))
 		assert.Equal("GET", s.Tag(ext.HTTPMethod))
 		assert.Equal("http://example.com/api/paramvalue/", s.Tag(ext.HTTPURL))
