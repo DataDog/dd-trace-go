@@ -150,7 +150,7 @@ type config struct {
 	env string
 
 	// sampler specifies the sampler that will be used for sampling traces.
-	sampler Sampler
+	sampler RateSampler
 
 	// agentURL is the agent URL that receives traces from the tracer.
 	agentURL *url.URL
@@ -893,11 +893,11 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
-// WithSampler sets the given sampler to be used with the tracer. By default
-// an all-permissive sampler is used.
-func WithSampler(s Sampler) StartOption {
+// WithRateSampler sets the given sampler rate to be used with the tracer.
+// The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
+func WithSamplerRate(rate float64) StartOption {
 	return func(c *config) {
-		c.sampler = s
+		c.sampler = NewRateSampler(rate)
 	}
 }
 

@@ -619,7 +619,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("other", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newTracer(
-			WithSampler(NewRateSampler(0.5)),
+			WithSamplerRate(0.5),
 			WithAgentAddr("ddagent.consul.local:58126"),
 			WithGlobalTag("k", "v"),
 			WithDebugMode(true),

@@ -213,7 +213,7 @@ func TestPartialFlush(t *testing.T) {
 
 	// This test covers an issue where partial flushing + a rate sampler would panic
 	t.Run("WithRateSamplerNoPanic", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t, WithSampler(NewRateSampler(0.000001)))
+		tracer, _, _, stop, err := startTestTracer(t, WithSamplerRate(0.000001))
 		assert.Nil(t, err)
 		defer stop()
 
