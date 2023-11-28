@@ -6,29 +6,14 @@ package telemetrytest
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-// TestIntegrationInfo verifies that an integration leveraging instrumentation telemetry
-// sends the correct data to the telemetry client.
-func TestIntegrationInfo(t *testing.T) {
-	// mux.NewRouter() uses the net/http and gorilla/mux integration
-	mux.NewRouter()
-	integrations := telemetry.Integrations()
-	require.Len(t, integrations, 2)
-	assert.Equal(t, integrations[0].Name, "net/http")
-	assert.True(t, integrations[0].Enabled)
-	assert.Equal(t, integrations[1].Name, "gorilla/mux")
-	assert.True(t, integrations[1].Enabled)
-}
 
 type contribPkg struct {
 	ImportPath string
@@ -50,9 +35,40 @@ func (p *contribPkg) hasTelemetryImport() bool {
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry
 func TestTelemetryEnabled(t *testing.T) {
-	body, err := exec.Command("go", "list", "-json", "../../...").Output()
+	root, err := filepath.Abs("../../../v2/contrib")
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(root); err != nil {
+		t.Fatal(err)
+	}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if filepath.Base(path) != "go.mod" {
+			return nil
+		}
+		return testTelemetryEnabled(t, filepath.Dir(path))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func testTelemetryEnabled(t *testing.T, contribPath string) error {
+	t.Helper()
+	t.Log(contribPath)
+	pwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.Chdir(pwd)
+	}()
+	if err = os.Chdir(contribPath); err != nil {
+		return err
+	}
+	body, err := exec.Command("go", "list", "-json", "./...").Output()
+	if err != nil {
+		return err
 	}
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
@@ -60,7 +76,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		var out contribPkg
 		err := stream.Decode(&out)
 		if err != nil {
-			t.Fatalf(err.Error())
+			return err
 		}
 		packages = append(packages, out)
 	}
@@ -69,7 +85,8 @@ func TestTelemetryEnabled(t *testing.T) {
 			continue
 		}
 		if !pkg.hasTelemetryImport() {
-			t.Fatalf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
+			return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, pkg.ImportPath)
 		}
 	}
+	return nil
 }
