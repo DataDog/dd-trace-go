@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1
 go 1.19
 
 require (
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/jackc/pgx/v5 v5.3.1
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.10.9
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/stretchr/testify v1.8.4
 	gorm.io/driver/mysql v1.0.1
@@ -14,12 +14,14 @@ require (
 	gorm.io/gorm v1.25.3
 )
 
+require github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231128131651-e2b2d5a6bd2e
+
 require (
 	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231127102908-aa3b7401ff09
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect

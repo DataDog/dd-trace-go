@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/internal/awsnamingschema"
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/internal/tags"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/awsnamingschema"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/tags"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
