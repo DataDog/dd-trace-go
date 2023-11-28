@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/contrib/internal/lists"
+	"github.com/DataDog/dd-trace-go/v2/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschematest"
 
 	"github.com/graph-gophers/graphql-go"
 	"github.com/graph-gophers/graphql-go/relay"

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschematest"
 
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
