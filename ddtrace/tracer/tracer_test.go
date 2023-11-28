@@ -997,7 +997,7 @@ func TestTracerSpanServiceMappings(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("WithServiceMapping", func(t *testing.T) {
-		tracer, err := newTracer(WithServiceName("initial_service"), WithServiceMapping("initial_service", "new_service"))
+		tracer, err := newTracer(WithService("initial_service"), WithServiceMapping("initial_service", "new_service"))
 		defer tracer.Stop()
 		assert.Nil(err)
 		s := tracer.StartSpan("web.request").(*span)

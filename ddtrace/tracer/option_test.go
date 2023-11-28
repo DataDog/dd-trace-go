@@ -915,18 +915,6 @@ func TestDefaultDogstatsdAddr(t *testing.T) {
 }
 
 func TestServiceName(t *testing.T) {
-	t.Run("WithServiceName", func(t *testing.T) {
-		defer globalconfig.SetServiceName("")
-		assert := assert.New(t)
-		c, err := newConfig(
-			WithServiceName("api-intake"),
-		)
-
-		assert.NoError(err)
-		assert.Equal("api-intake", c.serviceName)
-		assert.Equal("", globalconfig.ServiceName())
-	})
-
 	t.Run("WithService", func(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		assert := assert.New(t)
