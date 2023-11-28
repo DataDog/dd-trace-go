@@ -89,12 +89,6 @@ func TestSpanLinkFromContextPropagation(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
 	defer tracer.Stop()
-	//inHeaders: TextMapCarrier{
-	//	DefaultTraceIDHeader:  "123456789",
-	//	DefaultParentIDHeader: "987654321",
-	//	DefaultPriorityHeader: "-2",
-	//	originHeader:          "test.origin",
-	//},
 
 	tts := []struct {
 		propagationStyle string
@@ -112,17 +106,12 @@ func TestSpanLinkFromContextPropagation(t *testing.T) {
 				originHeader:          "test.origin",
 			},
 			out: ddtrace.SpanLink{
-				TraceID:     123456789,
-				TraceIDHigh: 0,
-				Flags:       0,
-
-				SpanID: 987654321,
+				TraceID: 123456789,
+				SpanID:  987654321,
 				Attributes: map[string]interface{}{
 					"attributes.0": "first",
 					"attributes.1": "second",
 				},
-				// TODO(dianashevchenko), do we map negative sampling decision to 0?
-				Tracestate: "",
 			},
 		},
 		{
@@ -254,10 +243,6 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 
 }
 
-func TestSpanLinkDroppedAttributes(t *testing.T) {
-
-}
-
 func TestSpanLinkAttributesToArray(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
@@ -292,6 +277,7 @@ func TestSpanLinkAttributesToArray(t *testing.T) {
 	assert.EqualValues("<nil>", link1.Attributes["misc.2"])
 	assert.EqualValues("[1 2]", link1.Attributes["arr.0"])
 }
+
 func TestSpanLinkPriority(t *testing.T) {
 	assert := assert.New(t)
 	tracer := newTracer()
