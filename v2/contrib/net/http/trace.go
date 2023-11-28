@@ -15,8 +15,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2internal/contrib/httptrace"
 )
 
 const componentName = "net/http"
