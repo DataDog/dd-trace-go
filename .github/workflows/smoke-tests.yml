@@ -1,6 +1,12 @@
 name: Smoke Tests
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -22,6 +28,8 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
       - uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
           go-version: "stable"
@@ -31,6 +39,6 @@ jobs:
           go get -u $PACKAGES
           go mod tidy
       - name: Compile dd-trace-go
-        run: go build -tags appsec $PACKAGES
+        run: go build $PACKAGES
       - name: Test dd-trace-go
-        run: go test -tags appsec $PACKAGES
+        run: go test $PACKAGES

@@ -1,6 +1,12 @@
 name: Test Apps
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   workflow_dispatch: {} # manually
   schedule:
     - cron: "0 0 * * *" # nightly
@@ -29,7 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          repository: 'DataDog/dd-trace-go'
+          ref: ${{ inputs.ref || github.ref }}
 
       - uses: datadog/agent-github-action@v1.3
         with:

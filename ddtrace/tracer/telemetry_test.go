@@ -8,6 +8,7 @@ package tracer
 import (
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -27,11 +28,14 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
+			WithHeaderTags([]string{"key:val", "key2:val2"}),
 		)
+		defer globalconfig.SetServiceName("")
 		defer Stop()
 
 		assert.True(t, telemetryClient.Started)
 		assert.True(t, telemetryClient.AsmEnabled)
+		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_debug_enabled", false)
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetry.Check(t, telemetryClient.Configuration, "env", "test-env")
@@ -41,6 +45,8 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
 		telemetry.Check(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
 		telemetry.Check(t, telemetryClient.Configuration, "orchestrion_enabled", false)
+		telemetry.Check(t, telemetryClient.Configuration, "trace_sample_rate", nil) // default value is NaN which is sanitized to nil
+		telemetry.Check(t, telemetryClient.Configuration, "trace_header_tags", "key:val,key2:val2")
 		if metrics, ok := telemetryClient.Metrics[telemetry.NamespaceGeneral]; ok {
 			if initTime, ok := metrics["init_time"]; ok {
 				assert.True(t, initTime > 0)
@@ -58,8 +64,10 @@ func TestTelemetryEnabled(t *testing.T) {
 		Start(
 			WithService("test-serv"),
 		)
+		defer globalconfig.SetServiceName("")
 		defer Stop()
 		telemetry.Check(t, telemetryClient.Configuration, "service", "test-serv")
+		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 2)
 	})
 	t.Run("orchestrion telemetry", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)

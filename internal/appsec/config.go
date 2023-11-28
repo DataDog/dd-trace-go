@@ -16,6 +16,8 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+
+	rules "github.com/DataDog/appsec-internal-go/appsec"
 )
 
 const (
@@ -74,9 +76,9 @@ func isEnabled() (enabled bool, set bool, err error) {
 		return false, set, nil
 	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
 		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", enabledEnvVar, enabledStr)
-	} else {
-		return enabled, set, nil
 	}
+
+	return enabled, set, nil
 }
 
 func newConfig() (*Config, error) {
@@ -162,12 +164,11 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 	return val
 }
 
-func readRulesConfig() (rules []byte, err error) {
-	rules = []byte(staticRecommendedRules)
+func readRulesConfig() ([]byte, error) {
 	filepath := os.Getenv(rulesEnvVar)
 	if filepath == "" {
 		log.Debug("appsec: using the default built-in recommended security rules")
-		return rules, nil
+		return []byte(rules.StaticRecommendedRules), nil
 	}
 	buf, err := os.ReadFile(filepath)
 	if err != nil {

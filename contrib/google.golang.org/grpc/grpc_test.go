@@ -39,11 +39,6 @@ import (
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
 
-	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
-	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
-	client := rig.client
-
 	for name, tt := range map[string]struct {
 		message     string
 		error       bool
@@ -67,6 +62,11 @@ func TestUnary(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+			require.NoError(t, err, "error setting up rig")
+			defer rig.Close()
+			client := rig.client
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
