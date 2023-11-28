@@ -11,10 +11,10 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
