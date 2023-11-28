@@ -245,7 +245,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	globalRate := globalSampleRate()
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig(globalRate, rulesSampler.traces.setGlobalSampleRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -529,7 +529,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(k, v)
 	}
 	// add global tags
-	for k, v := range t.config.globalTags {
+	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
 	if t.config.serviceMappings != nil {

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClient(t *testing.T) {
@@ -385,5 +387,51 @@ func TestCollectDependencies(t *testing.T) {
 	case <-received:
 	case <-ctx.Done():
 		t.Fatalf("Timed out waiting for dependency payload")
+	}
+}
+
+func Test_heartbeatInterval(t *testing.T) {
+	defaultInterval := time.Second * time.Duration(defaultHeartbeatInterval)
+	tests := []struct {
+		name  string
+		setup func(t *testing.T)
+		want  time.Duration
+	}{
+		{
+			name:  "default",
+			setup: func(t *testing.T) {},
+			want:  defaultInterval,
+		},
+		{
+			name:  "float",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "0.2") },
+			want:  time.Millisecond * 200,
+		},
+		{
+			name:  "integer",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "2") },
+			want:  time.Second * 2,
+		},
+		{
+			name:  "negative",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "-1") },
+			want:  defaultInterval,
+		},
+		{
+			name:  "zero",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "0") },
+			want:  defaultInterval,
+		},
+		{
+			name:  "long",
+			setup: func(t *testing.T) { t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "4000") },
+			want:  defaultInterval,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(t)
+			assert.Equal(t, tt.want, heartbeatInterval())
+		})
 	}
 }

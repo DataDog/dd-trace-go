@@ -41,6 +41,7 @@ func newConfig(opts ...Option) *config {
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
