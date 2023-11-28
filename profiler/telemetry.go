@@ -24,9 +24,15 @@ func startTelemetry(c *config) {
 		_, ok := c.types[t]
 		return ok
 	}
-	configs := []telemetry.Configuration{}
-	telemetry.GlobalClient.ProductStart(telemetry.NamespaceProfilers,
-		append(configs, []telemetry.Configuration{
+	telemetry.GlobalClient.ApplyOps(
+		telemetry.WithService(c.service),
+		telemetry.WithEnv(c.env),
+		telemetry.WithHTTPClient(c.httpClient),
+		telemetry.WithURL(c.agentless, c.agentURL),
+	)
+	telemetry.GlobalClient.ProductStart(
+		telemetry.NamespaceProfilers,
+		[]telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},
 			{Name: "profile_period", Value: c.period.String()},
@@ -46,5 +52,6 @@ func startTelemetry(c *config) {
 			{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
-		}...))
+		},
+	)
 }

@@ -9,10 +9,12 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"os"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -20,7 +22,7 @@ import (
 func TestContextWithSpan(t *testing.T) {
 	want := &span{SpanID: 123}
 	ctx := ContextWithSpan(context.Background(), want)
-	got, ok := ctx.Value(activeSpanKey).(*span)
+	got, ok := ctx.Value(internal.ActiveSpanKey).(*span)
 	assert := assert.New(t)
 	assert.True(ok)
 	assert.Equal(got, want)
@@ -39,11 +41,11 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		_, ok = span.(*internal.NoopSpan)
+		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		_, ok = span.(*internal.NoopSpan)
+		_, ok = span.(*traceinternal.NoopSpan)
 		assert.True(ok)
 	})
 }
@@ -69,7 +71,7 @@ func TestStartSpanFromContext(t *testing.T) {
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*internal.NoopSpan)
+	_, ok = gotctx.(*traceinternal.NoopSpan)
 	assert.False(ok)
 
 	assert.Equal(uint64(456), got.TraceID)
@@ -114,6 +116,7 @@ func Test128(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
+	os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
 	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
@@ -128,7 +131,7 @@ func Test128(t *testing.T) {
 	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 
 	// Enable 128 bit trace ids
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+	os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
 	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)

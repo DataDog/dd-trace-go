@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
@@ -102,6 +103,41 @@ func TestWithHeaderTags(t *testing.T) {
 		}
 		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 		assert.NotContains(s.Tags(), globalT)
+	})
+
+	t.Run("wrap-handler", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+
+		handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
+			WithHeaderTags(htArgs),
+		)
+
+		url := "/"
+		r := httptest.NewRequest("GET", url, nil)
+		r.Header.Set("h!e@a-d.e*r", "val")
+		r.Header.Add("h!e@a-d.e*r", "val2")
+		r.Header.Set("2header", "2val")
+		r.Header.Set("3header", "3val")
+		r.Header.Set("x-datadog-header", "value")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+
+		assert := assert.New(t)
+		assert.Equal(200, w.Code)
+		assert.Equal("OK\n", w.Body.String())
+
+		spans := mt.FinishedSpans()
+		assert.Equal(1, len(spans))
+
+		s := spans[0]
+		assert.Equal("http.request", s.OperationName())
+
+		for _, arg := range htArgs {
+			header, tag := normalizer.HeaderTag(arg)
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		}
 	})
 }
 
@@ -251,6 +287,48 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+}
+
+func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest("GET", "/", nil)
+	resourceNamer := func(_ *http.Request) string {
+		return "custom-resource-name"
+	}
+	h := WrapHandler(http.NotFoundHandler(), "svc", "resc", WithResourceNamer(resourceNamer))
+	mux := http.NewServeMux()
+	mux.Handle("/", h)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			w := httptest.NewRecorder()
+			defer wg.Done()
+			mux.ServeHTTP(w, r)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestServeMuxNoRace(_ *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	r := httptest.NewRequest("GET", "/", nil)
+	mux := NewServeMux()
+	mux.Handle("/", http.NotFoundHandler())
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			w := httptest.NewRecorder()
+			defer wg.Done()
+			mux.ServeHTTP(w, r)
+		}()
+	}
+	wg.Wait()
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -436,7 +514,9 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 	r.Header.Set("Cache-Control", "no-cache")
 
 	w := httptest.NewRecorder()
+	rtr := router()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		router().ServeHTTP(w, r)
+		rtr.ServeHTTP(w, r)
 	}
 }

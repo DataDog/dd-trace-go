@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,11 +38,6 @@ import (
 
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
-
-	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
-	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
-	client := rig.client
 
 	for name, tt := range map[string]struct {
 		message     string
@@ -67,6 +62,11 @@ func TestUnary(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+			require.NoError(t, err, "error setting up rig")
+			defer rig.Close()
+			client := rig.client
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -535,6 +535,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
+	UnimplementedFixtureServer
 	lastRequestMetadata atomic.Value
 }
 

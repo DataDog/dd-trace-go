@@ -36,7 +36,7 @@ func (s *tracedStmt) Close() (err error) {
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (res driver.Result, err error) {
 	start := time.Now()
 	if stmtExecContext, ok := s.Stmt.(driver.StmtExecContext); ok {
-		ctx, end := startTraceTask(s.ctx, QueryTypeExec)
+		ctx, end := startTraceTask(ctx, QueryTypeExec)
 		defer end()
 		res, err := stmtExecContext.ExecContext(ctx, args)
 		s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
@@ -51,7 +51,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 		return nil, ctx.Err()
 	default:
 	}
-	ctx, end := startTraceTask(s.ctx, QueryTypeExec)
+	ctx, end := startTraceTask(ctx, QueryTypeExec)
 	defer end()
 	res, err = s.Exec(dargs)
 	s.tryTrace(ctx, QueryTypeExec, s.query, start, err)
@@ -62,7 +62,7 @@ func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (rows driver.Rows, err error) {
 	start := time.Now()
 	if stmtQueryContext, ok := s.Stmt.(driver.StmtQueryContext); ok {
-		ctx, end := startTraceTask(s.ctx, QueryTypeQuery)
+		ctx, end := startTraceTask(ctx, QueryTypeQuery)
 		defer end()
 		rows, err := stmtQueryContext.QueryContext(ctx, args)
 		s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)
@@ -77,7 +77,7 @@ func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue)
 		return nil, ctx.Err()
 	default:
 	}
-	ctx, end := startTraceTask(s.ctx, QueryTypeQuery)
+	ctx, end := startTraceTask(ctx, QueryTypeQuery)
 	defer end()
 	rows, err = s.Query(dargs)
 	s.tryTrace(ctx, QueryTypeQuery, s.query, start, err)

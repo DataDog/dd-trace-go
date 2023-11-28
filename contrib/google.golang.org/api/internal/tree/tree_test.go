@@ -13,7 +13,7 @@ import (
 )
 
 func TestTree(t *testing.T) {
-	tr, err := New([]Endpoint{
+	tr, err := New([]*Endpoint{
 		{
 			Hostname:     "www.googleapis.com",
 			HTTPMethod:   "DELETE",
