@@ -16,17 +16,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
-// Sampler is the generic interface of any sampler. It must be safe for concurrent use.
-type Sampler interface {
-	// Sample returns true if the given span should be sampled.
-	Sample(span Span) bool
-}
-
 // RateSampler is a sampler implementation which randomly selects spans using a
 // provided rate. For example, a rate of 0.75 will permit 75% of the spans.
 // RateSampler implementations should be safe for concurrent use.
 type RateSampler interface {
-	Sampler
+	// Sample returns true if the given span should be sampled.
+	Sample(span Span) bool
 
 	// Rate returns the current sample rate.
 	Rate() float64
@@ -46,6 +41,12 @@ func NewAllSampler() RateSampler { return NewRateSampler(1) }
 
 // NewRateSampler returns an initialized RateSampler with a given sample rate.
 func NewRateSampler(rate float64) RateSampler {
+	if rate > 1.0 {
+		rate = 1.0
+	}
+	if rate < 0.0 {
+		rate = 0.0
+	}
 	return &rateSampler{rate: rate}
 }
 

@@ -177,6 +177,15 @@ func TestRateSampler(t *testing.T) {
 	assert.False(NewRateSampler(0.99).Sample(internal.NoopSpan{}))
 }
 
+func TestSamplerRates(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal(1.0, NewRateSampler(1).Rate())
+	assert.Equal(0.0, NewRateSampler(0).Rate())
+	assert.Equal(0.5, NewRateSampler(0.5).Rate())
+	assert.Equal(0.0, NewRateSampler(-1).Rate()) // out of bounds
+	assert.Equal(1.0, NewRateSampler(2).Rate())  // out of bounds
+}
+
 func TestRateSamplerSetting(t *testing.T) {
 	assert := assert.New(t)
 	rs := NewRateSampler(1)
