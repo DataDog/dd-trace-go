@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/database/sql
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128113242-2d3cb7874255
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128113615-ed474dea2fd9
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/lib/pq v1.10.9
