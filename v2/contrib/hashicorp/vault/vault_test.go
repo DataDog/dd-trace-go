@@ -17,7 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschematest"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"

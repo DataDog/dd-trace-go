@@ -13,8 +13,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschematest"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	esapi8 "github.com/elastic/go-elasticsearch/v8/esapi"
