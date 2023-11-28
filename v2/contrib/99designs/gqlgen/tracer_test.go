@@ -8,9 +8,9 @@ package gqlgen
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/lists"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/lists"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschematest"
 
 	"github.com/99designs/gqlgen/client"
