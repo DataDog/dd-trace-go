@@ -13,7 +13,6 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/google/uuid v1.3.1
-	github.com/miekg/dns v1.1.55
 	github.com/richardartoul/molecule v1.0.1-0.20221107223329-32cfee06a052
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.4
