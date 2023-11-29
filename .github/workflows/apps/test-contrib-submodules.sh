@@ -6,6 +6,8 @@ set -e
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/unit-integration-tests.yml.
 
+[[ -d ./v2/contrib ]] || exit 0
+
 CONTRIBS=$(find ./v2/contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 
 for contrib in $CONTRIBS; do
