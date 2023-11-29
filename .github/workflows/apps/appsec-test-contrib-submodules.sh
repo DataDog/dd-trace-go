@@ -13,5 +13,6 @@ elif [[ "$V2_BRANCH" == "true" ]]; then
   contrib=$(basename "$SCOPE")
   gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v .
 else
+  contrib=$(basename "$SCOPE")
   gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v "./contrib/$SCOPE/..."
 fi
