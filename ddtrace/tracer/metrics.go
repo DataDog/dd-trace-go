@@ -39,44 +39,46 @@ func (t *tracer) reportRuntimeMetrics(interval time.Duration) {
 			debug.ReadGCStats(&gc)
 
 			statsd := t.statsd
+
+			// The comments behind each metric explain how these metrics map to our "Go Runtime Metrics" Dashboard.
 			// CPU statistics
-			statsd.Gauge("runtime.go.num_cpu", float64(runtime.NumCPU()), nil, 1)
-			statsd.Gauge("runtime.go.num_goroutine", float64(runtime.NumGoroutine()), nil, 1)
-			statsd.Gauge("runtime.go.num_cgo_call", float64(runtime.NumCgoCall()), nil, 1)
+			statsd.Gauge("runtime.go.num_cpu", float64(runtime.NumCPU()), nil, 1)             // NumCPU (Host CPUs, Not Container Limit)
+			statsd.Gauge("runtime.go.num_goroutine", float64(runtime.NumGoroutine()), nil, 1) // Live Goroutines
+			statsd.Gauge("runtime.go.num_cgo_call", float64(runtime.NumCgoCall()), nil, 1)    // NumCGOCall (Function Call Rate)
 			// General statistics
-			statsd.Gauge("runtime.go.mem_stats.alloc", float64(ms.Alloc), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.total_alloc", float64(ms.TotalAlloc), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.sys", float64(ms.Sys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.lookups", float64(ms.Lookups), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.mallocs", float64(ms.Mallocs), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.frees", float64(ms.Frees), nil, 1)
+			statsd.Gauge("runtime.go.mem_stats.alloc", float64(ms.Alloc), nil, 1)            // Unused: Same as HeapAlloc
+			statsd.Gauge("runtime.go.mem_stats.total_alloc", float64(ms.TotalAlloc), nil, 1) // TotalAlloc (Allocation Rate driving GC Rate)
+			statsd.Gauge("runtime.go.mem_stats.sys", float64(ms.Sys), nil, 1)                // Virtual Memory Breakdown: Sys (Virtual Memory Mapped)
+			statsd.Gauge("runtime.go.mem_stats.lookups", float64(ms.Lookups), nil, 1)        // Unused: Seems broken and is probably also useless
+			statsd.Gauge("runtime.go.mem_stats.mallocs", float64(ms.Mallocs), nil, 1)        // Mallocs (Allocation Rate)
+			statsd.Gauge("runtime.go.mem_stats.frees", float64(ms.Frees), nil, 1)            // Frees (Deallocation Rate)
 			// Heap memory statistics
-			statsd.Gauge("runtime.go.mem_stats.heap_alloc", float64(ms.HeapAlloc), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.heap_sys", float64(ms.HeapSys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.heap_idle", float64(ms.HeapIdle), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.heap_inuse", float64(ms.HeapInuse), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.heap_released", float64(ms.HeapReleased), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.heap_objects", float64(ms.HeapObjects), nil, 1)
+			statsd.Gauge("runtime.go.mem_stats.heap_alloc", float64(ms.HeapAlloc), nil, 1)       // HeapAlloc (Live + Dead Objects)
+			statsd.Gauge("runtime.go.mem_stats.heap_sys", float64(ms.HeapSys), nil, 1)           // Unusued: Broken down into gcController.heapInUse.load() + gcController.heapFree.load() + gcController.heapReleased.load() in the Virtual Memory Breakdown
+			statsd.Gauge("runtime.go.mem_stats.heap_idle", float64(ms.HeapIdle), nil, 1)         // Unused: Broken down into gcController.heapFree.load() + gcController.heapReleased.load() in the Virtual Memory Breakdown
+			statsd.Gauge("runtime.go.mem_stats.heap_inuse", float64(ms.HeapInuse), nil, 1)       // Virtual Memory breakdown: HeapInuse (Live + Dead Objects)
+			statsd.Gauge("runtime.go.mem_stats.heap_released", float64(ms.HeapReleased), nil, 1) // Virtual Memory Breakdown: HeapReleased (to OS)
+			statsd.Gauge("runtime.go.mem_stats.heap_objects", float64(ms.HeapObjects), nil, 1)   // HeapObjects (Live + Dead Objects)
 			// Stack memory statistics
-			statsd.Gauge("runtime.go.mem_stats.stack_inuse", float64(ms.StackInuse), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.stack_sys", float64(ms.StackSys), nil, 1)
+			statsd.Gauge("runtime.go.mem_stats.stack_inuse", float64(ms.StackInuse), nil, 1) // StackInuse (Goroutine Stacks)
+			statsd.Gauge("runtime.go.mem_stats.stack_sys", float64(ms.StackSys), nil, 1)     // Virtual Memory Breakdown: StackSys (Goroutine Stacks)
 			// Off-heap memory statistics
-			statsd.Gauge("runtime.go.mem_stats.m_span_inuse", float64(ms.MSpanInuse), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.m_span_sys", float64(ms.MSpanSys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.m_cache_inuse", float64(ms.MCacheInuse), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.m_cache_sys", float64(ms.MCacheSys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.buck_hash_sys", float64(ms.BuckHashSys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.gc_sys", float64(ms.GCSys), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.other_sys", float64(ms.OtherSys), nil, 1)
+			statsd.Gauge("runtime.go.mem_stats.m_span_inuse", float64(ms.MSpanInuse), nil, 1)   // MSpanInuse (Allocator Overhead)
+			statsd.Gauge("runtime.go.mem_stats.m_span_sys", float64(ms.MSpanSys), nil, 1)       // Virtual Memory Breakdown: MSpanSys (Allocator Overhead)
+			statsd.Gauge("runtime.go.mem_stats.m_cache_inuse", float64(ms.MCacheInuse), nil, 1) // MCacheInuse (Allocator Overhead)
+			statsd.Gauge("runtime.go.mem_stats.m_cache_sys", float64(ms.MCacheSys), nil, 1)     // Virtual Memory Breakdown: MCacheSys (Allocator Overhead)
+			statsd.Gauge("runtime.go.mem_stats.buck_hash_sys", float64(ms.BuckHashSys), nil, 1) // Virtual Memory Breakdown: BuckHashSys (Profiler Overhead)
+			statsd.Gauge("runtime.go.mem_stats.gc_sys", float64(ms.GCSys), nil, 1)              // Virtual Memory Breakdown: GCSys (GC Overhead)
+			statsd.Gauge("runtime.go.mem_stats.other_sys", float64(ms.OtherSys), nil, 1)        // Virtual Memory Breakdown: OtherSys (Runtime Overhead)
 			// Garbage collector statistics
-			statsd.Gauge("runtime.go.mem_stats.next_gc", float64(ms.NextGC), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.last_gc", float64(ms.LastGC), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.pause_total_ns", float64(ms.PauseTotalNs), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.num_gc", float64(ms.NumGC), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.num_forced_gc", float64(ms.NumForcedGC), nil, 1)
-			statsd.Gauge("runtime.go.mem_stats.gc_cpu_fraction", ms.GCCPUFraction, nil, 1)
+			statsd.Gauge("runtime.go.mem_stats.next_gc", float64(ms.NextGC), nil, 1)              // NextGC (Heap Goal)
+			statsd.Gauge("runtime.go.mem_stats.last_gc", float64(ms.LastGC), nil, 1)              // Unused: Showing the timestamp of the last GC seems useless
+			statsd.Gauge("runtime.go.mem_stats.pause_total_ns", float64(ms.PauseTotalNs), nil, 1) // PauseTotalNs (GC STW per Second)
+			statsd.Gauge("runtime.go.mem_stats.num_gc", float64(ms.NumGC), nil, 1)                // NumGC (GC Rate)
+			statsd.Gauge("runtime.go.mem_stats.num_forced_gc", float64(ms.NumForcedGC), nil, 1)   // NumForcedGC (Forced GC Rate)
+			statsd.Gauge("runtime.go.mem_stats.gc_cpu_fraction", ms.GCCPUFraction, nil, 1)        // GCCPUFraction (% of CPU used for GC since Program Start)
 			for i, p := range []string{"min", "25p", "50p", "75p", "max"} {
-				statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), nil, 1)
+				statsd.Gauge("runtime.go.gc_stats.pause_quantiles."+p, float64(gc.PauseQuantiles[i]), nil, 1) // PauseQuantiles (GC STW Pauses)
 			}
 
 		case <-t.stop:
