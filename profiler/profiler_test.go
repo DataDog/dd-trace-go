@@ -361,6 +361,7 @@ func TestAllUploaded(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(
@@ -384,7 +385,7 @@ func TestAllUploaded(t *testing.T) {
 			"goroutines.pprof",
 			"goroutineswait.pprof",
 		}
-		if executionTraceEnabledDefault && seq == 0 {
+		if executionTraceEnabledDefault {
 			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
@@ -462,14 +463,14 @@ func TestImmediateProfile(t *testing.T) {
 	}
 }
 
-func TestExecutionTrace(t *testing.T) {
+func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	got := make(chan profileMeta)
 	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
 	defer server.Close()
 
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
-	// reduce. In theory we could use the entire int64 space, but when we do
+	// reason. In theory we could use the entire int64 space, but when we do
 	// this the runtime can crash with the error shown below.
 	//
 	// runtime: kevent on fd 3 failed with 60
@@ -477,12 +478,38 @@ func TestExecutionTrace(t *testing.T) {
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
 	err := Start(
 		WithAgentAddr(server.Listener.Addr().String()),
 		WithProfileTypes(CPUProfile),
-		WithPeriod(1*time.Second),
+		WithPeriod(10*time.Millisecond),
 		CPUProfileRate(int(cpuProfileRate)),
+	)
+	require.NoError(t, err)
+	defer Stop()
+
+	m := <-got
+	assertContainsCPUProfileRateLog(t, m.attachments["go.trace"], cpuProfileRate)
+}
+
+// assertContainsCPUProfileRateLog checks for the presence of the log written by
+// traceLogCPUProfileRate. It's a bit hacky, but probably good enough for now :).
+func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
+	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
+	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
+}
+
+func TestExecutionTraceRandom(t *testing.T) {
+	got := make(chan profileMeta)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "150ms")
+	err := Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
 	)
 	require.NoError(t, err)
 	defer Stop()
@@ -496,27 +523,22 @@ func TestExecutionTrace(t *testing.T) {
 		return false
 	}
 	seenTraces := 0
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 100; i++ {
 		m := <-got
 		t.Log(m.event.Attachments, m.tags)
 		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
-			assertContainsCPUProfileRateLog(t, m.attachments["go.trace"], cpuProfileRate)
 		}
 	}
-	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 4 profile collections: one at
-	// the start, and one 3 seconds later.
-	if seenTraces != 2 {
-		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
-	}
-}
 
-// assertContainsCPUProfileRateLog checks for the presence of the log written by
-// traceLogCPUProfileRate. It's a bit hacky, but probably good enough for now :).
-func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
-	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
-	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
+	// Given 100 profiles with a probability of (10ms/150ms) = 1/15, we expect
+	// an average of 6 profiles with traces. Theres a ~99.9% probability of this
+	// number being between 0 and 15. Call that good enough.
+	// TODO(nick): tighten this up further? We could do more trials at the expense
+	// of making this test much slower
+	if seenTraces > 15 {
+		t.Errorf("saw %d traces, expected between 0 and 15", seenTraces)
+	}
 }
 
 // TestEndpointCounts verfies that the unit of work feature works end to end.

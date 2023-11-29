@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,7 +89,15 @@ type profiler struct {
 
 func (p *profiler) shouldTrace() bool {
 	p.cfg.traceConfig.Refresh()
-	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
+	if !p.cfg.traceConfig.Enabled {
+		return false
+	}
+	if p.cfg.traceConfig.Period < p.cfg.period {
+		return true
+	}
+	// Randomly record a trace with probability (profile period) / (trace period)
+	prob := float64(p.cfg.period) / float64(p.cfg.traceConfig.Period)
+	return rand.Float64() < prob
 }
 
 // testHooks are functions that are replaced during testing which would normally
