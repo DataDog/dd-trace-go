@@ -7,9 +7,11 @@ set -e
 # .github/workflows/appsec.yml.
 
 if [[ -z "$SCOPE" ]]; then
-  gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
-else
+  gotestsum --junitfile "$JUNIT_REPORT.xml" -- -v ./appsec/... ./internal/appsec/...
+elif [[ "$V2_BRANCH" == "true" ]]; then
   cd "./v2/contrib/$SCOPE"
   contrib=$(basename "$SCOPE")
   gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v .
+else
+  gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v "./contrib/$SCOPE/..."
 fi
