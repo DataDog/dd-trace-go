@@ -10,7 +10,8 @@ import (
 	"log"
 	"os"
 
-	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws""gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
