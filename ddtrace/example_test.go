@@ -29,7 +29,7 @@ func Example_datadog() {
 	defer span.Finish()
 
 	// Create a child of it, computing the time needed to read a file.
-	child := tracer.StartSpan("read.file", tracer.ChildOf(span.Context()))
+	child := span.StartChild("read.file")
 	child.SetTag(ext.ResourceName, "test.json")
 
 	// If you are using 128 bit trace ids and want to generate the high

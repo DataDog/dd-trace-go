@@ -1140,8 +1140,9 @@ func WithSpanID(id uint64) StartSpanOption {
 	}
 }
 
-// ChildOf tells StartSpan to use the given span context as a parent for the
-// created span.
+// ChildOf tells StartSpan to use the given span context as a parent for the created span.
+//
+// Deprecated: Use span.StartChild instead.
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx

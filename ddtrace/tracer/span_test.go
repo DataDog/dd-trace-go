@@ -1043,6 +1043,47 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 	assert.True(t, s.(*span).context.updated)
 }
 
+func TestStartChild(t *testing.T) {
+	t.Run("own-service", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
+		defer stop()
+		root := tracer.StartSpan("web.request", ServiceName("root-service")).(*span)
+		child := root.StartChild("db.query", ServiceName("child-service"), WithSpanID(1337)).(*span)
+
+		assert.NotEqual(uint64(0), child.TraceID)
+		assert.NotEqual(uint64(0), child.SpanID)
+		assert.Equal(root.SpanID, child.ParentID)
+		assert.Equal(root.TraceID, child.ParentID)
+		assert.Equal(root.TraceID, child.TraceID)
+		assert.Equal(uint64(1337), child.SpanID)
+		assert.Equal("child-service", child.Service)
+
+		// the root and child are both marked as "top level"
+		assert.Equal(1.0, root.Metrics[keyTopLevel])
+		assert.Equal(1.0, child.Metrics[keyTopLevel])
+	})
+
+	t.Run("inherit-service", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(err)
+		defer stop()
+		root := tracer.StartSpan("web.request", ServiceName("root-service")).(*span)
+		child := root.StartChild("db.query").(*span)
+
+		assert.NotEqual(uint64(0), child.TraceID)
+		assert.NotEqual(uint64(0), child.SpanID)
+		assert.Equal(root.SpanID, child.ParentID)
+
+		assert.Equal("root-service", child.Service)
+		// the root is marked as "top level", but the child is not
+		assert.Equal(1.0, root.Metrics[keyTopLevel])
+		assert.NotContains(child.Metrics, keyTopLevel)
+	})
+}
+
 func BenchmarkSetTagMetric(b *testing.B) {
 	span := newBasicSpan("bench.span")
 	keys := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

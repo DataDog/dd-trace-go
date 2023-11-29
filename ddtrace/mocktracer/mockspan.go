@@ -47,6 +47,9 @@ type Span interface {
 	// Context returns the span's SpanContext.
 	Context() ddtrace.SpanContext
 
+	// StartChild starts a new child span with the given operation name and options.
+	StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 }
@@ -276,4 +279,10 @@ func (s *mockspan) Root() tracer.Span {
 	}
 	root, _ := current.(*mockspan)
 	return root
+}
+
+// StartChild starts a new child span with the given operation name and options.
+func (s *mockspan) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	opts = append(opts, tracer.ChildOf(s.Context()))
+	return s.tracer.StartSpan(operationName, opts...)
 }

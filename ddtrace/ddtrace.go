@@ -100,6 +100,9 @@ type Span interface {
 
 	// Context returns the SpanContext of this Span.
 	Context() SpanContext
+
+	// StartChild starts a new child span with the given operation name and options.
+	StartChild(operationName string, opts ...StartSpanOption) Span
 }
 
 // SpanContext represents a span state that can propagate to descendant spans

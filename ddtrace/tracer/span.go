@@ -269,6 +269,12 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	}
 }
 
+// StartChild starts a new child span with the given operation name and options.
+func (s *span) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	opts = append(opts, ChildOf(s.Context()))
+	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
+}
+
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {

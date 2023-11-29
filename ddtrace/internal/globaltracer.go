@@ -100,6 +100,11 @@ func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracer{} }
 // Context implements ddtrace.Span.
 func (NoopSpan) Context() ddtrace.SpanContext { return NoopSpanContext{} }
 
+// StartSpan implements ddtrace.Span.
+func (NoopSpan) StartChild(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
+	return NoopSpan{}
+}
+
 var _ ddtrace.SpanContext = (*NoopSpanContext)(nil)
 
 // NoopSpanContext is an implementation of ddtrace.SpanContext that is a no-op.
