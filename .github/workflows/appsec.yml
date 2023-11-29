@@ -26,7 +26,7 @@ on:
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: /tmp/gotestsum-report
-  TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+  TO_TEST: ./appsec/... ./internal/appsec/...
 jobs:
   native:
     strategy:
@@ -38,6 +38,7 @@ jobs:
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
+        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         include:
           - cgocheck:
               GODEBUG=cgocheck=2
@@ -66,7 +67,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} SCOPE=${{ matrix.scope }} ./apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -85,6 +86,7 @@ jobs:
         appsec_enabled:
           - DD_APPSEC_ENABLED=true
           - "" # the env var is not defined so that the remote-config path can be taken
+        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         include:
           - runs-on: windows-latest
             go-args: ""
@@ -107,7 +109,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} SCOPE=${{ matrix.scope }} ./apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -133,6 +135,7 @@ jobs:
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
+        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         exclude:
           - go-version: "1.21"
             distribution: buster
@@ -158,7 +161,7 @@ jobs:
           # Install gotestsum to get the results in a junit file
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} SCOPE=${{ matrix.scope }} ./apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
