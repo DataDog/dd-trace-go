@@ -6,6 +6,15 @@ set -e
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/appsec.yml.
 
+echo "Running appsec ARM64 tests for:"
+echo "  SCOPE=$SCOPE"
+echo "  V2_BRANCH=$V2_BRANCH"
+echo "  GODEBUG=$GODEBUG"
+echo "  GOEXPERIMENT=$GOEXPERIMENT"
+echo "  CGO_ENABLED=$CGO_ENABLED"
+echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
+echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
+
 if [[ -z "$SCOPE" ]]; then
   docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=$CGO_ENABLED -eDD_APPSEC_ENABLED=$DD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v ./appsec/... ./internal/appsec/...
 elif [[ "$V2_BRANCH" == "true" ]]; then
