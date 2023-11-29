@@ -181,6 +181,7 @@ jobs:
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
+        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
       fail-fast: false
     steps:
       - uses: actions/checkout@v3
@@ -196,7 +197,8 @@ jobs:
         uses: docker/setup-qemu-action@v2
         with:
           platforms: arm64
-      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v $TO_TEST
+      - run: |
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT SCOPE=${{ matrix.scope }} ./.github/workflows/apps/appsec-test-contrib-submodules.arm64.sh
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
