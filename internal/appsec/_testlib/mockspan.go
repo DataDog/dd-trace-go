@@ -48,3 +48,7 @@ func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
 func (m *MockSpan) Context() ddtrace.SpanContext {
 	panic("unused")
 }
+
+func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	panic("unused")
+}
