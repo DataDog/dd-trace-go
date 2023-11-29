@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
@@ -164,10 +161,11 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
-	} else {
-		// Replace the rulesManager with the new one holding the new state
-		a.cfg.rulesManager = r
+		return statuses
 	}
+	// Replace the rulesManager with the new one holding the new state
+	a.cfg.rulesManager = r
+
 	return statuses
 }
 

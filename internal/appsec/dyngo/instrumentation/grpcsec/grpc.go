@@ -11,7 +11,6 @@ package grpcsec
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
@@ -117,7 +116,7 @@ func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, paren
 
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.
-func (op *HandlerOperation) Finish(res HandlerOperationRes) []json.RawMessage {
+func (op *HandlerOperation) Finish(res HandlerOperationRes) []any {
 	dyngo.FinishOperation(op, res)
 	return op.Events()
 }

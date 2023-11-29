@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -29,6 +30,7 @@ type target struct {
 type libConfig struct {
 	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
 	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
+	Tags         *tags       `json:"tracing_tags,omitempty"`
 }
 
 type headerTags []headerTag
@@ -57,13 +59,28 @@ func (ht headerTag) toString() string {
 	return sb.String()
 }
 
+type tags []string
+
+func (t *tags) toMap() *map[string]interface{} {
+	if t == nil {
+		return nil
+	}
+	m := make(map[string]interface{}, len(*t))
+	for _, tag := range *t {
+		if kv := strings.SplitN(tag, ":", 2); len(kv) == 2 {
+			m[kv[0]] = kv[1]
+		}
+	}
+	return &m
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
-func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
-	u, found := updates[state.ProductAPMTracing]
-	if !found {
+	if u == nil {
 		return statuses
 	}
+	var telemConfigs []telemetry.Configuration
 	for path, raw := range u {
 		if raw == nil {
 			continue
@@ -75,9 +92,33 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 			continue
 		}
+		if c.ServiceTarget.Service != t.config.serviceName {
+			log.Debug("Skipping config for service %s. Current service is %s", c.ServiceTarget.Service, t.config.serviceName)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "service mismatch"}
+			continue
+		}
+		if c.ServiceTarget.Env != t.config.env {
+			log.Debug("Skipping config for env %s. Current env is %s", c.ServiceTarget.Env, t.config.env)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: "env mismatch"}
+			continue
+		}
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
-		t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		updated := t.config.traceSampleRate.handleRC(c.LibConfig.SamplingRate)
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.headerAsTags.handleRC(c.LibConfig.HeaderTags.toSlice())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
+		}
+		updated = t.config.globalTags.handleRC(c.LibConfig.Tags.toMap())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
+		}
+	}
+	if len(telemConfigs) > 0 {
+		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
+		telemetry.GlobalClient.ConfigChange(telemConfigs)
 	}
 	return statuses
 }
@@ -89,9 +130,11 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if err != nil {
 		return err
 	}
-	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
-	if err != nil {
-		return err
-	}
-	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
+	return remoteconfig.Subscribe(
+		state.ProductAPMTracing,
+		t.onRemoteConfigUpdate,
+		remoteconfig.APMTracingSampleRate,
+		remoteconfig.APMTracingHTTPHeaderTags,
+		remoteconfig.APMTracingCustomTags,
+	)
 }
