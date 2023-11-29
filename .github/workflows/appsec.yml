@@ -38,7 +38,6 @@ jobs:
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
-        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         include:
           - cgocheck:
               GODEBUG=cgocheck=2
@@ -86,7 +85,6 @@ jobs:
         appsec_enabled:
           - DD_APPSEC_ENABLED=true
           - "" # the env var is not defined so that the remote-config path can be taken
-        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         include:
           - runs-on: windows-latest
             go-args: ""
@@ -135,7 +133,6 @@ jobs:
           - DD_APPSEC_ENABLED=true
           - DD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
-        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
         exclude:
           - go-version: "1.21"
             distribution: buster
@@ -181,7 +178,6 @@ jobs:
         appsec_enabled: # test it compiles with and without appsec enabled
           - true
           - false
-        scope: [ "", "gin-gonic/gin", "google.golang.org/grpc", "net/http", "gorilla/mux", "go-chi/chi", "go-chi/chi.v5", "labstack/echo.v4" ]
       fail-fast: false
     steps:
       - uses: actions/checkout@v3

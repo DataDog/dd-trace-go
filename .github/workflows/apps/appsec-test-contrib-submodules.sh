@@ -7,20 +7,22 @@ set -e
 # .github/workflows/appsec.yml.
 
 echo "Running appsec tests for:"
-echo "  SCOPE=$SCOPE"
 echo "  V2_BRANCH=$V2_BRANCH"
 echo "  GODEBUG=$GODEBUG"
 echo "  GOEXPERIMENT=$GOEXPERIMENT"
 echo "  CGO_ENABLED=$CGO_ENABLED"
 echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 
-if [[ -z "$SCOPE" ]]; then
-  gotestsum --junitfile "$JUNIT_REPORT.xml" -- -v ./appsec/... ./internal/appsec/...
-elif [[ "$V2_BRANCH" == "true" ]]; then
-  cd "./v2/contrib/$SCOPE"
+gotestsum --junitfile "$JUNIT_REPORT.xml" -- -v ./appsec/... ./internal/appsec/...
+
+SCOPES=("gin-gonic/gin" "google.golang.org/grpc" "net/http" "gorilla/mux" "go-chi/chi" "go-chi/chi.v5" "labstack/echo.v4")
+for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
-  gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v .
-else
-  contrib=$(basename "$SCOPE")
-  gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v "./contrib/$SCOPE/..."
-fi
+  if [[ "$V2_BRANCH" == "true" ]]; then
+    cd "./v2/contrib/$SCOPE"
+    gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v .
+    cd -
+  else
+    gotestsum --junitfile "$JUNIT_REPORT.$contrib.xml" -- -v "./contrib/$SCOPE/..."
+  fi
+done
