@@ -100,6 +100,7 @@ type mockspan struct {
 	sync.RWMutex // guards below fields
 	name         string
 	tags         map[string]interface{}
+	links        []ddtrace.SpanLink
 	finishTime   time.Time
 	finished     bool
 
@@ -173,6 +174,13 @@ func (s *mockspan) SetOperationName(operationName string) {
 	defer s.Unlock()
 	s.name = operationName
 	return
+}
+
+func (s *mockspan) AddLinks(links ...ddtrace.SpanLink) {
+	for i := range links {
+		// todo (dianashevchenko): add link validation
+		s.links = append(s.links, links[i])
+	}
 }
 
 // BaggageItem returns the baggage item with the given key.

@@ -50,7 +50,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if k := ssConfig.SpanKind(); k != 0 {
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	var cfg ddtrace.StartSpanConfig
 	cfg.Tags = make(map[string]interface{})
 	for _, attr := range ssConfig.Attributes() {
@@ -71,11 +70,12 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 				attrs[string(attribute.Key)] = attribute.Value.AsInterface()
 			}
 			ddlink := ddtrace.SpanLink{
-				TraceID:    ctx.TraceID128(),
-				SpanID:     ctx.SpanID(),
-				Attributes: attrs,
-				Tracestate: link.SpanContext.TraceState().String(),
-				Flags:      uint32(link.SpanContext.TraceFlags()),
+				TraceID:     ctx.TraceID(),
+				TraceIDHigh: ctx.TraceIDUpper(),
+				SpanID:      ctx.SpanID(),
+				Attributes:  attrs,
+				Tracestate:  link.SpanContext.TraceState().String(),
+				Flags:       uint32(link.SpanContext.TraceFlags()),
 			}
 			ddLinks = append(ddLinks, ddlink)
 		}
@@ -106,6 +106,11 @@ type otelCtxToDDCtx struct {
 func (c *otelCtxToDDCtx) TraceID() uint64 {
 	id := c.oc.TraceID()
 	return binary.BigEndian.Uint64(id[8:])
+}
+
+func (c *otelCtxToDDCtx) TraceIDUpper() uint64 {
+	id := c.oc.TraceID()
+	return binary.BigEndian.Uint64(id[:8])
 }
 
 func (c *otelCtxToDDCtx) SpanID() uint64 {

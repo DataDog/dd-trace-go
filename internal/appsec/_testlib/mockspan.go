@@ -33,6 +33,10 @@ func (m *MockSpan) SetOperationName(_ string) {
 	panic("unused")
 }
 
+func (m *MockSpan) AddLinks(links ...ddtrace.SpanLink) {
+	panic("unused")
+}
+
 func (m *MockSpan) BaggageItem(_ string) string {
 	panic("unused")
 }

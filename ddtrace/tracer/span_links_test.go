@@ -15,7 +15,7 @@ func TestWithSpanLinks(t *testing.T) {
 
 	parent := tracer.StartSpan("parent")
 	pTraceID := parent.(*span).context.traceID
-	pSpanId := parent.Context().SpanID()
+	pSpanID := parent.Context().SpanID()
 	defer parent.Finish()
 	tts := []struct {
 		name string
@@ -28,7 +28,7 @@ func TestWithSpanLinks(t *testing.T) {
 				// if traceId & spanId specified explicitly,
 				// they won't be overriden during validation
 				TraceID: pTraceID.Lower(),
-				SpanID:  pSpanId,
+				SpanID:  pSpanID,
 				Attributes: map[string]interface{}{
 					"attributes": []string{"first", "second"},
 					"discard":    nil,
@@ -37,7 +37,7 @@ func TestWithSpanLinks(t *testing.T) {
 			out: ddtrace.SpanLink{
 				TraceID:     pTraceID.Lower(),
 				TraceIDHigh: 0,
-				SpanID:      pSpanId,
+				SpanID:      pSpanID,
 				Attributes: map[string]interface{}{
 					"attributes.0": "first",
 					"attributes.1": "second",
@@ -55,7 +55,7 @@ func TestWithSpanLinks(t *testing.T) {
 			out: ddtrace.SpanLink{
 				TraceID:     pTraceID.Lower(),
 				TraceIDHigh: pTraceID.Upper(),
-				SpanID:      pSpanId,
+				SpanID:      pSpanID,
 				Attributes: map[string]interface{}{
 					"attributes.0": "first",
 					"attributes.1": "second",
@@ -174,7 +174,7 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 	defer tracer.Stop()
 
 	tts := []struct {
-		traceId128enabled int
+		traceID128enabled int
 		name              string
 		out               ddtrace.SpanLink
 	}{
@@ -190,7 +190,7 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 		},
 		{
 			name:              "enabled",
-			traceId128enabled: 1,
+			traceID128enabled: 1,
 			out: ddtrace.SpanLink{
 				Attributes: map[string]interface{}{
 					"attributes.0": "first",
@@ -200,7 +200,7 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 		},
 		{
 			name:              "disabled",
-			traceId128enabled: 1,
+			traceID128enabled: 1,
 			out: ddtrace.SpanLink{
 				Attributes: map[string]interface{}{
 					"attributes.0": "first",
@@ -212,13 +212,13 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 
 	for _, tt := range tts {
 		t.Run(tt.name, func(t *testing.T) {
-			enabled := tt.traceId128enabled == 1
-			if tt.traceId128enabled != 0 {
+			enabled := tt.traceID128enabled == 1
+			if tt.traceID128enabled != 0 {
 				os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", strconv.FormatBool(enabled))
 			}
 			parent := tracer.StartSpan("parent")
 			pTraceID := parent.(*span).context.traceID
-			pSpanId := parent.Context().SpanID()
+			pSpanID := parent.Context().SpanID()
 			defer parent.Finish()
 
 			child := tracer.StartSpan("db.query",
@@ -232,7 +232,7 @@ func TestSpanLinkTraceIDWith128Bits(t *testing.T) {
 
 			assert.Len(child.(*span).Links, 1)
 			link := child.(*span).Links[0]
-			assert.EqualValues(link.SpanID, pSpanId)
+			assert.EqualValues(link.SpanID, pSpanID)
 			assert.EqualValues(link.TraceID, pTraceID.Lower())
 			if enabled {
 				assert.NotEqual(link.TraceIDHigh, 0)
