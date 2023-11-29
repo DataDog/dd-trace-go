@@ -199,8 +199,8 @@ jobs:
             PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
             gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 
-      - name: Test Contrib Submodules (v2)
-        if: ${{ env.V2_BRANCH == 'true' }} && always()
+      - name: Test Contrib Submodules
+        if: always()
         run: ./.github/workflows/apps/test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
