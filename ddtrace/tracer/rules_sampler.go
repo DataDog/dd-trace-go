@@ -490,19 +490,32 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 			errs = append(errs, err.Error())
 		}
 	}
+	traceRulesFile := os.Getenv("DD_TRACE_SAMPLING_RULES_FILE")
+	if len(trace) != 0 && traceRulesFile != "" {
+		log.Warn("DIAGNOSTICS Error(s): DD_TRACE_SAMPLING_RULES is available and will take precedence over DD_TRACE_SAMPLING_RULES_FILE")
+	} else if traceRulesFile != "" {
+		rulesFromEnvFile, err := os.ReadFile(traceRulesFile)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_TRACE_SAMPLING_RULES_FILE: %v", err))
+		}
+		trace, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleTrace)
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 	span, err = unmarshalSamplingRules([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SamplingRuleSpan)
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
-	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
+	spanRulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
 	if len(span) != 0 {
-		if rulesFile != "" {
+		if spanRulesFile != "" {
 			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
 		}
 		return trace, span, err
 	}
-	if rulesFile != "" {
-		rulesFromEnvFile, err := os.ReadFile(rulesFile)
+	if spanRulesFile != "" {
+		rulesFromEnvFile, err := os.ReadFile(spanRulesFile)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE: %v", err))
 		}
