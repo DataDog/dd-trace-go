@@ -484,46 +484,42 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
 		}
 	}()
-	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
-	if rulesFromEnv != "" {
-		trace, err = unmarshalSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
+
+	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
+		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
+		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
+		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-	}
-	traceRulesFile := os.Getenv("DD_TRACE_SAMPLING_RULES_FILE")
-	if len(trace) != 0 && traceRulesFile != "" {
-		log.Warn("DIAGNOSTICS Error(s): DD_TRACE_SAMPLING_RULES is available and will take precedence over DD_TRACE_SAMPLING_RULES_FILE")
-	} else if traceRulesFile != "" {
-		rulesFromEnvFile, err := os.ReadFile(traceRulesFile)
+		rulesFile := os.Getenv(env + "_FILE")
+		if len(rules) != 0 {
+			if rulesFile != "" {
+				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
+			}
+			return rules, errs
+		}
+		if rulesFile == "" {
+			return rules, errs
+		}
+		rulesFromEnvFile, err := os.ReadFile(rulesFile)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_TRACE_SAMPLING_RULES_FILE: %v", err))
+			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
 		}
-		trace, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleTrace)
-		if err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	span, err = unmarshalSamplingRules([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SamplingRuleSpan)
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-	spanRulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
-	if len(span) != 0 {
-		if spanRulesFile != "" {
-			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
-		}
-		return trace, span, err
-	}
-	if spanRulesFile != "" {
-		rulesFromEnvFile, err := os.ReadFile(spanRulesFile)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE: %v", err))
-		}
-		span, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
+		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
+		return rules, errs
+	}
+
+	trace, tErrs := rulesByType(SamplingRuleTrace)
+	if len(tErrs) != 0 {
+		errs = append(errs, tErrs...)
+	}
+	span, sErrs := rulesByType(SamplingRuleSpan)
+	if len(sErrs) != 0 {
+		errs = append(errs, sErrs...)
 	}
 	return trace, span, err
 }
