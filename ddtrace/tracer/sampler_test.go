@@ -260,6 +260,10 @@ func TestRuleEnvVars(t *testing.T) {
 				ruleN: 1,
 			},
 			{
+				value: `[{"target_span": "root", "sample_rate": 1.0, "tags": {"host":"h-1234"}}]`,
+				ruleN: 1,
+			},
+			{
 				// invalid rule ignored - target_span must be root or any
 				value:  `[{"target_span": "not_root", "sample_rate": 1.0}]`,
 				errStr: "\n\tat index 0: \"target_span\" value is not expected, must be in [\"any\", \"root\", \"\"]",
