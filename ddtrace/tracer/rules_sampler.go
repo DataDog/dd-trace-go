@@ -76,8 +76,8 @@ type SamplingRule struct {
 	// Tags specifies the map of key-value patterns that span tags must match.
 	Tags map[string]*regexp.Regexp
 
-	// TargetSpan specifies whether sampling should be applied to the root spans only.
-	TargetSpan bool
+	// TargetRoot specifies whether sampling should be applied to the root spans only.
+	TargetRoot bool
 
 	ruleType     SamplingRuleType
 	exactService string
@@ -171,7 +171,7 @@ func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service st
 		Name:       globMatch(name),
 		Resource:   globMatch(resource),
 		Rate:       rate,
-		TargetSpan: targetRoot,
+		TargetRoot: targetRoot,
 		Tags:       tags,
 		ruleType:   SamplingRuleTrace,
 	}
