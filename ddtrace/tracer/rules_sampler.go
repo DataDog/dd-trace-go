@@ -474,7 +474,8 @@ func globMatch(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
 }
 
-// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES,
+// samplingRulesFromEnv parses sampling rules from
+// the DD_TRACE_SAMPLING_RULES, DD_TRACE_SAMPLING_RULES_FILE
 // DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
 func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	var errs []string
