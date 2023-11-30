@@ -591,40 +591,46 @@ func TestWithHeaderTags(t *testing.T) {
 
 func TestWithErrorCheck(t *testing.T) {
 	tests := []struct {
-		name     string
-		err      error
-		errCheck func(error) bool
-		wantErr  error
+		name    string
+		err     error
+		opts    []Option
+		wantErr error
 	}{
 		{
-			name: "echo 404 error",
+			name: "ignore-4xx-404-error",
 			err: &echo.HTTPError{
 				Code:     http.StatusNotFound,
 				Message:  "not found",
 				Internal: errors.New("not found"),
 			},
-			errCheck: func(err error) bool { // do not tag 4xx
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
-					return he.Code < 500 && he.Code >= 400
-				}
-				return false
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
 			},
 			wantErr: nil, // 404 is returned, hence not tagged
 		},
 		{
-			name: "echo 500 error",
+			name: "ignore-4xx-500-error",
 			err: &echo.HTTPError{
 				Code:     http.StatusInternalServerError,
 				Message:  "internal error",
 				Internal: errors.New("internal error"),
 			},
-			errCheck: func(err error) bool { // do not tag 4xx
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
-					return he.Code < 500 && he.Code >= 400
-				}
-				return false
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
 			},
 			wantErr: &echo.HTTPError{
 				Code:     http.StatusInternalServerError,
@@ -633,20 +639,40 @@ func TestWithErrorCheck(t *testing.T) {
 			}, // this is 500, tagged
 		},
 		{
-			name: "any error",
+			name: "ignore-none",
 			err:  errors.New("any error"),
-			errCheck: func(err error) bool { // do not tag *echo.HTTPError
-				var he *echo.HTTPError
-				return errors.As(err, &he)
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return true
+				}),
 			},
 			wantErr: errors.New("any error"),
 		},
 		{
-			name: "no error",
-			err:  nil,
-			errCheck: func(err error) bool { // do not tag *echo.HTTPError
-				var he *echo.HTTPError
-				return errors.As(err, &he)
+			name: "ignore-all",
+			err:  errors.New("any error"),
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
+			},
+			wantErr: nil,
+		},
+		{
+			// withErrorCheck also runs for the errors created from the WithStatusCheck option.
+			name: "ignore-errors-from-status-check",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			opts: []Option{
+				WithStatusCheck(func(statusCode int) bool {
+					return statusCode == http.StatusNotFound
+				}),
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
 			},
 			wantErr: nil,
 		},
@@ -657,7 +683,7 @@ func TestWithErrorCheck(t *testing.T) {
 			defer mt.Stop()
 
 			router := echo.New()
-			router.Use(Middleware(WithErrorCheck(tt.errCheck)))
+			router.Use(Middleware(tt.opts...))
 			var called, traced bool
 
 			// always return the specified error
@@ -677,10 +703,10 @@ func TestWithErrorCheck(t *testing.T) {
 
 			span := spans[0]
 			if tt.wantErr == nil {
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.NotContains(t, span.Tags(), ext.Error)
 				return
 			}
-			assert.Equal(t, tt.wantErr, span.Tag(ext.Error).(error))
+			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
 		})
 	}
 }
