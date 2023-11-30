@@ -38,34 +38,31 @@ func getFreePort(t *testing.T) int {
 }
 
 func startServer(t *testing.T, opts ...Option) string {
-	router := func(fctx *fasthttp.RequestCtx) {
+	router := WrapHandler(func(fctx *fasthttp.RequestCtx) {
 		switch string(fctx.Path()) {
 		case "/any":
-			WrapHandler(func(c *fasthttp.RequestCtx) {
-				fmt.Fprintf(c, "Hi there!")
-			}, opts...)(fctx)
+			fmt.Fprintf(fctx, "Hi there!")
+			return
 		case "/err":
-			WrapHandler(func(c *fasthttp.RequestCtx) {
-				c.Error(errMsg, 500)
-			}, opts...)(fctx)
+			fctx.Error(errMsg, 500)
+			return
 		case "/customErr":
-			WrapHandler(func(c *fasthttp.RequestCtx) {
-				c.Error(errMsg, 600)
-			}, opts...)(fctx)
+			fctx.Error(errMsg, 600)
+			return
 		case "/contextExtract":
-			WrapHandler(func(c *fasthttp.RequestCtx) {
-				_, ok := tracer.SpanFromContext(c)
-				if !ok {
-					c.Error("No span in the request context", 500)
-				} else {
-					c.SetStatusCode(200)
-				}
-				fmt.Fprintf(c, "Hi there! RequestURI is %q", c.RequestURI())
-			}, opts...)(fctx)
+			_, ok := tracer.SpanFromContext(fctx)
+			if !ok {
+				fctx.Error("No span in the request context", 500)
+				return
+			}
+			fctx.SetStatusCode(200)
+			fmt.Fprintf(fctx, "Hi there! RequestURI is %q", fctx.RequestURI())
+			return
 		default:
 			fctx.Error("not found", fasthttp.StatusNotFound)
+			return
 		}
-	}
+	}, opts...)
 	addr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
 	server := &fasthttp.Server{
 		Handler: router,
@@ -165,8 +162,8 @@ func TestWithStatusCheck(t *testing.T) {
 		assert := assert.New(t)
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		resp, err := (&http.Client{}).Get(addr + "/customErr")
+		c := &http.Client{}
+		resp, err := c.Get(addr + "/customErr")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
