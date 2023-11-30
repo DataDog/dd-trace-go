@@ -269,13 +269,13 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetRoot: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetSpan: Tags:map[]}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetRoot: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetSpan: Tags:map[]}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				value:  `not JSON at all`,
@@ -333,7 +333,7 @@ func TestRuleEnvVars(t *testing.T) {
 				// invalid rule ignored
 				value:  `[{"service": "abcd", "sample_rate": 42.0}, {"service": "abcd", "sample_rate": 0.2}]`,
 				ruleN:  1,
-				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetRoot: Tags:map[]}: rate is out of [0.0, 1.0] range",
+				errStr: "\n\tat index 0: ignoring rule {Service:abcd Name: Rate:42.0 MaxPerSecond:0 Resource: TargetSpan: Tags:map[]}: rate is out of [0.0, 1.0] range",
 			},
 			{
 				value:  `not JSON at all`,

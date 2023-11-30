@@ -76,8 +76,8 @@ type SamplingRule struct {
 	// Tags specifies the map of key-value patterns that span tags must match.
 	Tags map[string]*regexp.Regexp
 
-	// TargetSpanRoot specifies whether sampling should be applied to the root spans only.
-	TargetSpanRoot bool
+	// TargetSpan specifies whether sampling should be applied to the root spans only.
+	TargetSpan bool
 
 	ruleType     SamplingRuleType
 	exactService string
@@ -163,18 +163,22 @@ func RateRule(rate float64) SamplingRule {
 	}
 }
 
+// TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
+// resource, name, service and tags provided. Additionally, targetRoot specifies whether the rule should apply to root spans only.
 func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64, targetRoot bool) SamplingRule {
 	return SamplingRule{
-		Service:        globMatch(service),
-		Name:           globMatch(name),
-		Resource:       globMatch(resource),
-		Rate:           rate,
-		TargetSpanRoot: targetRoot,
-		Tags:           tags,
-		ruleType:       SamplingRuleTrace,
+		Service:    globMatch(service),
+		Name:       globMatch(name),
+		Resource:   globMatch(resource),
+		Rate:       rate,
+		TargetSpan: targetRoot,
+		Tags:       tags,
+		ruleType:   SamplingRuleTrace,
 	}
 }
 
+// SpanTagsResourceRule returns a SamplingRule that applies the provided sampling rate to spans that match
+// resource, name, service and tags provided.
 func SpanTagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
 	return SamplingRule{
 		Service:  globMatch(service),
@@ -558,7 +562,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		Rate         json.Number       `json:"sample_rate"`
 		MaxPerSecond float64           `json:"max_per_second"`
 		Resource     string            `json:"resource"`
-		TargetRoot   string            `json:"target_span"`
+		TargetSpan   string            `json:"target_span"`
 		Tags         map[string]string `json:"tags"`
 	}
 	err := json.Unmarshal(b, &jsonRules)
@@ -585,7 +589,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
 			continue
 		}
-		tagGlobs := make(map[string]*regexp.Regexp)
+		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
 		for k, g := range v.Tags {
 			tagGlobs[k] = globMatch(g)
 		}
@@ -618,7 +622,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				continue
 			}
 			var targetRoot bool
-			switch v.TargetRoot {
+			switch strings.ToLower(v.TargetSpan) {
 			case "", "root":
 				targetRoot = true
 			case "any":
