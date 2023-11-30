@@ -28,6 +28,7 @@ type config struct {
 	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        *internal.LockMap
 	errCheck          func(error) bool
+	tags              map[string]interface{}
 }
 
 // Option represents an option that can be passed to Middleware.
@@ -41,6 +42,7 @@ func defaults(cfg *config) {
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.tags = make(map[string]interface{})
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
 		if errors.As(err, &echoErr) {
@@ -132,5 +134,16 @@ func WithHeaderTags(headers []string) Option {
 func WithErrorCheck(errCheck func(error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = errCheck
+  }
+}
+
+// WithCustomTag will attach the value to the span tagged by the key. Standard
+// span tags cannot be replaced.
+func WithCustomTag(key string, value interface{}) Option {
+	return func(cfg *config) {
+		if cfg.tags == nil {
+			cfg.tags = make(map[string]interface{})
+		}
+		cfg.tags[key] = value
 	}
 }
