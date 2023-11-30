@@ -18,8 +18,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	httpsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	sharedsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
