@@ -70,6 +70,15 @@ type SamplingRule struct {
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
 
+	// Resource specifies the regex pattern that a span resource must match.
+	Resource *regexp.Regexp
+
+	// Tags specifies the map of key-value patterns that span tags must match.
+	Tags map[string]*regexp.Regexp
+
+	// TargetRoot specifies whether sampling should be applied to the root spans only.
+	TargetRoot bool
+
 	ruleType     SamplingRuleType
 	exactService string
 	exactName    string
@@ -151,6 +160,33 @@ func NameServiceRule(name string, service string, rate float64) SamplingRule {
 func RateRule(rate float64) SamplingRule {
 	return SamplingRule{
 		Rate: rate,
+	}
+}
+
+// TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
+// resource, name, service and tags provided. Additionally, targetRoot specifies whether the rule should apply to root spans only.
+func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64, targetRoot bool) SamplingRule {
+	return SamplingRule{
+		Service:    globMatch(service),
+		Name:       globMatch(name),
+		Resource:   globMatch(resource),
+		Rate:       rate,
+		TargetRoot: targetRoot,
+		Tags:       tags,
+		ruleType:   SamplingRuleTrace,
+	}
+}
+
+// SpanTagsResourceRule returns a SamplingRule that applies the provided sampling rate to spans that match
+// resource, name, service and tags provided.
+func SpanTagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+	return SamplingRule{
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		Resource: globMatch(resource),
+		Rate:     rate,
+		Tags:     tags,
+		ruleType: SamplingRuleSpan,
 	}
 }
 
@@ -521,10 +557,13 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		return nil, nil
 	}
 	var jsonRules []struct {
-		Service      string      `json:"service"`
-		Name         string      `json:"name"`
-		Rate         json.Number `json:"sample_rate"`
-		MaxPerSecond float64     `json:"max_per_second"`
+		Service      string            `json:"service"`
+		Name         string            `json:"name"`
+		Rate         json.Number       `json:"sample_rate"`
+		MaxPerSecond float64           `json:"max_per_second"`
+		Resource     string            `json:"resource"`
+		TargetSpan   string            `json:"target_span"`
+		Tags         map[string]string `json:"tags"`
 	}
 	err := json.Unmarshal(b, &jsonRules)
 	if err != nil {
@@ -550,6 +589,10 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
 			continue
 		}
+		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
+		for k, g := range v.Tags {
+			tagGlobs[k] = globMatch(g)
+		}
 		switch spanType {
 		case SamplingRuleSpan:
 			rules = append(rules, SamplingRule{
@@ -557,6 +600,8 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				Name:         globMatch(v.Name),
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
+				Resource:     globMatch(v.Resource),
+				Tags:         tagGlobs,
 				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 				ruleType:     SamplingRuleSpan,
 			})
@@ -565,24 +610,28 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
 				continue
 			}
-			rate, err := v.Rate.Float64()
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
-				continue
-			}
-			if rate < 0.0 || rate > 1.0 {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
-				continue
-			}
-
 			switch {
 			case v.Service != "" && v.Name != "":
 				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
+				continue
 			case v.Service != "":
 				rules = append(rules, ServiceRule(v.Service, rate))
+				continue
 			case v.Name != "":
 				rules = append(rules, NameRule(v.Name, rate))
+				continue
 			}
+			var targetRoot bool
+			switch strings.ToLower(v.TargetSpan) {
+			case "", "root":
+				targetRoot = true
+			case "any":
+				targetRoot = false
+			default:
+				errs = append(errs, fmt.Sprintf(`at index %d: "target_span" value is not expected, must be in ["any", "root", ""]`, i))
+				continue
+			}
+			rules = append(rules, TagsResourceRule(tagGlobs, v.Resource, v.Name, v.Service, rate, targetRoot))
 		}
 	}
 	if len(errs) != 0 {

@@ -154,7 +154,7 @@ func TestLogSamplingRules(t *testing.T) {
 	defer stop()
 
 	assert.Len(tp.Logs(), 1)
-	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
+	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0 Resource: TargetSpan: Tags:map\[\]}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
 }
 
 func TestLogAgentReachable(t *testing.T) {
