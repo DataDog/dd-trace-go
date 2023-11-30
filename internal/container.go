@@ -126,11 +126,9 @@ func getCgroupV2Inode(mountsPath, cgroupPath string) string {
 	}
 	defer f.Close()
 	cgroupMountPath := parseCgroupV2MountPath(f)
-
 	if cgroupMountPath == "" {
 		return ""
 	}
-
 	// Parse /proc/self/cgroup to retrieve the cgroup node path
 	f, err = os.Open(cgroupPath)
 	if err != nil {
@@ -141,13 +139,11 @@ func getCgroupV2Inode(mountsPath, cgroupPath string) string {
 	if cgroupNodePath == "" {
 		return ""
 	}
-
 	// Retrieve the cgroup inode from the cgroup mount and cgroup node path
 	fi, err := os.Stat(path.Clean(cgroupMountPath + cgroupNodePath))
 	if err != nil {
 		return ""
 	}
-
 	return fmt.Sprintf("in-%d", fi.Sys().(*syscall.Stat_t).Ino)
 }
 
