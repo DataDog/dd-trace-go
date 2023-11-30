@@ -194,7 +194,7 @@ jobs:
         with:
           platforms: arm64
       - run: |
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.arm64.sh
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
