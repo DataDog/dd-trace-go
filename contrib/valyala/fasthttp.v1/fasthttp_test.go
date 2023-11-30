@@ -66,12 +66,15 @@ func startServer(t *testing.T, opts ...Option) string {
 			fctx.Error("not found", fasthttp.StatusNotFound)
 		}
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
+        ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	
+	addr := ln.Addr()
 	server := &fasthttp.Server{
 		Handler: router,
 	}
 	go func() {
-		require.NoError(t, server.ListenAndServe(addr))
+		require.NoError(t, server.Serve(ln))
 	}()
 	// Stop the server at the end of each test run
 	t.Cleanup(func() {
