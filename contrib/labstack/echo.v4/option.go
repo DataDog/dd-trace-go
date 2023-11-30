@@ -134,7 +134,7 @@ func WithHeaderTags(headers []string) Option {
 func WithErrorCheck(errCheck func(error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = errCheck
-  }
+	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key. Standard
