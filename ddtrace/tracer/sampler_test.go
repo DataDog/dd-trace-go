@@ -358,10 +358,12 @@ func TestRuleEnvVars(t *testing.T) {
 		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 
 		for i, tt := range []struct {
-			rules     string
-			srvRegex  string
-			nameRegex string
-			rate      float64
+			rules         string
+			srvRegex      string
+			nameRegex     string
+			resourceRegex string
+			tagsRegex     map[string]string
+			rate          float64
 		}{
 			{
 				rules:     `[{"name": "abcd?", "sample_rate": 1.0}]`,
@@ -399,6 +401,21 @@ func TestRuleEnvVars(t *testing.T) {
 				srvRegex:  "^.*abcd$",
 				rate:      0.5,
 			},
+			{
+				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "root", "tags": {"host":"h-1234*"}}]`,
+				resourceRegex: "^root$",
+				tagsRegex:     map[string]string{"host": "^h-1234.*$"},
+				nameRegex:     "^.*$",
+				srvRegex:      "^.*abcd$",
+				rate:          0.5,
+			},
+			{
+				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "rsc-[0-9]+" }]`,
+				resourceRegex: "^rsc-\\[0-9\\]\\+$",
+				nameRegex:     "^.*$",
+				srvRegex:      "^.*abcd$",
+				rate:          0.5,
+			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
@@ -406,6 +423,14 @@ func TestRuleEnvVars(t *testing.T) {
 				assert.NoError(err)
 				assert.Equal(tt.srvRegex, rules[0].Service.String())
 				assert.Equal(tt.nameRegex, rules[0].Name.String())
+				if tt.resourceRegex != "" {
+					assert.Equal(tt.resourceRegex, rules[0].Resource.String())
+				}
+				if tt.tagsRegex != nil {
+					for k, v := range tt.tagsRegex {
+						assert.Equal(v, rules[0].Tags[k].String())
+					}
+				}
 				assert.Equal(tt.rate, rules[0].Rate)
 			})
 		}
