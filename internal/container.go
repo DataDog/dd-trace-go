@@ -10,12 +10,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"regexp"
+	"strings"
+	"syscall"
 )
 
 const (
 	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
 	cgroupPath = "/proc/self/cgroup"
+
+	// mountsPath is the path to the mounts file where we can find the cgroup v2 mount point.
+	mountsPath = "/proc/mounts"
 )
 
 const (
@@ -77,9 +83,80 @@ func ContainerID() string {
 	return containerID
 }
 
+// parseCgroupV2MountPath parses the cgroup mount path from /proc/mounts
+// It returns an empty string if cgroup v2 is not used
+func parseCgroupV2MountPath(r io.Reader) string {
+	scn := bufio.NewScanner(r)
+	for scn.Scan() {
+		line := scn.Text()
+		// a correct line line should be formatted as `cgroup2 <path> cgroup2 rw,nosuid,nodev,noexec,relatime,nsdelegate 0 0`
+		tokens := strings.Fields(line)
+		if len(tokens) >= 3 {
+			fsType := tokens[2]
+			if fsType == "cgroup2" {
+				return tokens[1]
+			}
+		}
+	}
+	return ""
+}
+
+// parseCgroupV2NodePath parses the cgroup node path from /proc/self/cgroup
+// It returns an empty string if cgroup v2 is not used
+// With respect to https://man7.org/linux/man-pages/man7/cgroups.7.html#top_of_page, in cgroupv2, only 0::<path> should exist
+func parseCgroupV2NodePath(r io.Reader) string {
+	scn := bufio.NewScanner(r)
+	for scn.Scan() {
+		line := scn.Text()
+		// The cgroup node path is the last element of the line starting with "0::"
+		if strings.HasPrefix(line, "0::") {
+			return line[3:]
+		}
+	}
+	return ""
+}
+
+// getCgroupV2Inode returns the cgroup v2 node inode if it exists otherwise an empty string.
+// The inode is prefixed by "in-" and is used by the agent to retrieve the container ID.
+func getCgroupV2Inode(mountsPath, cgroupPath string) string {
+	// Retrieve a cgroup mount point from /proc/mounts
+	f, err := os.Open(mountsPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	cgroupMountPath := parseCgroupV2MountPath(f)
+
+	if cgroupMountPath == "" {
+		return ""
+	}
+
+	// Parse /proc/self/cgroup to retrieve the cgroup node path
+	f, err = os.Open(cgroupPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	cgroupNodePath := parseCgroupV2NodePath(f)
+	if cgroupNodePath == "" {
+		return ""
+	}
+
+	// Retrieve the cgroup inode from the cgroup mount and cgroup node path
+	fi, err := os.Stat(path.Clean(cgroupMountPath + cgroupNodePath))
+	if err != nil {
+		return ""
+	}
+
+	return fmt.Sprintf("in-%d", fi.Sys().(*syscall.Stat_t).Ino)
+}
+
 // readEntityID attempts to return the cgroup v2 node inode or empty on failure.
 func readEntityID() string {
-	return "cid-" + containerID
+	if containerID != "" {
+		return "cid-" + containerID
+	}
+	return getCgroupV2Inode(mountsPath, cgroupPath)
 }
 
 // EntityID attempts to return the container ID or the cgroup v2 node inode if the container ID is not available.

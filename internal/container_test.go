@@ -6,12 +6,16 @@
 package internal
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadContainerID(t *testing.T) {
@@ -78,4 +82,195 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 
 	actualCID := readContainerID(tmpFile.Name())
 	assert.Equal(t, cid, actualCID)
+}
+
+func TestPrioritizeContainerID(t *testing.T) {
+	// reset cid after test
+	defer func(cid string) { containerID = cid }(containerID)
+
+	containerID = "fakeContainerID"
+	eid := readEntityID()
+	assert.Equal(t, "cid-fakeContainerID", eid)
+}
+
+func TestParseCgroupMountPath(t *testing.T) {
+	// Test cases
+	cases := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name: "cgroup2 and cgroup mounts found",
+			content: `
+none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+cgroup2 /sys/fs/cgroup/cgroup2 cgroup2 rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+tmpfs /sys/fs/cgroup tmpfs ro,nosuid,nodev,noexec,mode=755 0 0
+cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+`,
+			expected: "/sys/fs/cgroup/cgroup2",
+		},
+		{
+			name: "only cgroup found",
+			content: `
+none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /sys/fs/cgroup tmpfs ro,nosuid,nodev,noexec,mode=755 0 0
+cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+`,
+			expected: "",
+		},
+		{
+			name: "cgroup mount not found",
+			content: `
+none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /dev tmpfs rw,nosuid,size=65536k,mode=755 0 0
+`,
+			expected: "",
+		},
+	}
+
+	// Run test cases
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reader := strings.NewReader(c.content)
+			result := parseCgroupV2MountPath(reader)
+			require.Equal(t, c.expected, result)
+		})
+	}
+}
+
+func TestParseCgroupNodePath(t *testing.T) {
+	// Test cases
+	cases := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name:     "cgroup2 normal case",
+			content:  `0::/`,
+			expected: "/",
+		},
+		{
+			name: "cgroup node path found",
+			content: `other_line
+12:pids:/docker/abc123
+11:hugetlb:/docker/abc123
+10:net_cls,net_prio:/docker/abc123
+0::/docker/abc123
+`,
+			expected: "/docker/abc123",
+		},
+		{
+			name: "cgroup node path not found",
+			content: `12:pids:/docker/abc123
+11:hugetlb:/docker/abc123
+10:net_cls,net_prio:/docker/abc123
+`,
+			expected: "",
+		},
+	}
+
+	// Run test cases
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reader := strings.NewReader(c.content)
+			result := parseCgroupV2NodePath(reader)
+			require.Equal(t, c.expected, result)
+		})
+	}
+}
+
+func TestGetCgroupInode(t *testing.T) {
+	tests := []struct {
+		description           string
+		procMountsContent     string
+		cgroupNodeDir         string
+		procSelfCgroupContent string
+		expectedResult        string
+	}{
+		{
+			description:           "default case - matching entry in /proc/self/cgroup and /proc/mounts",
+			procMountsContent:     "cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "in-%d", // Will be formatted with inode number
+		},
+		{
+			description:           "should not match cgroup v1",
+			procMountsContent:     "cgroup %s cgroup rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "",
+		},
+		{
+			description: "hybrid cgroup - should match only cgroup2",
+			procMountsContent: `other_line
+cgroup /sys/fs/cgroup/memory cgroup foo,bar 0 0
+cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
+`,
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "in-%d", // Will be formatted with inode number
+		},
+		{
+			description:           "Non-matching entry in /proc/self/cgroup",
+			procMountsContent:     "cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
+			cgroupNodeDir:         "system.slice/nonmatching-scope.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "",
+		},
+		{
+			description:           "No cgroup2 entry in /proc/mounts",
+			procMountsContent:     "tmpfs %s tmpfs rw,nosuid,nodev,noexec,relatime 0 0\n",
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			// Setup
+			cgroupMountPath, err := os.MkdirTemp(os.TempDir(), "sysfscgroup")
+			require.NoError(t, err)
+			defer os.RemoveAll(cgroupMountPath)
+
+			cgroupNodePath := path.Join(cgroupMountPath, tc.cgroupNodeDir)
+			err = os.MkdirAll(cgroupNodePath, 0755)
+			require.NoError(t, err)
+			defer os.RemoveAll(cgroupNodePath)
+
+			stat, err := os.Stat(cgroupNodePath)
+			require.NoError(t, err)
+
+			expectedInode := ""
+			if tc.expectedResult != "" {
+				expectedInode = fmt.Sprintf(tc.expectedResult, stat.Sys().(*syscall.Stat_t).Ino)
+			}
+
+			procMounts, err := os.CreateTemp("", "procmounts")
+			require.NoError(t, err)
+			defer os.Remove(procMounts.Name())
+			_, err = procMounts.WriteString(fmt.Sprintf(tc.procMountsContent, cgroupMountPath))
+			require.NoError(t, err)
+			err = procMounts.Close()
+			require.NoError(t, err)
+
+			procSelfCgroup, err := os.CreateTemp("", "procselfcgroup")
+			require.NoError(t, err)
+			defer os.Remove(procSelfCgroup.Name())
+			_, err = procSelfCgroup.WriteString(tc.procSelfCgroupContent)
+			require.NoError(t, err)
+			err = procSelfCgroup.Close()
+			require.NoError(t, err)
+
+			// Test
+			result := getCgroupV2Inode(procMounts.Name(), procSelfCgroup.Name())
+			require.Equal(t, expectedInode, result)
+		})
+	}
 }
