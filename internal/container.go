@@ -33,10 +33,17 @@ var (
 
 	// containerID is the containerID read at init from /proc/self/cgroup
 	containerID string
+
+	// entityID is the entityID to use for the container. It is the `cid-<containerID>` if the container id available,
+	// otherwise the cgroup v2 node inode prefixed with `in-` or an empty string on cgroup v1 or incompatible OS.
+	// It is retrieved by finding cgroup2 mounts in /proc/mounts, finding the cgroup v2 node path in /proc/self/cgroup and
+	// calling stat on mountPath+nodePath to get the inode.
+	entityID string
 )
 
 func init() {
 	containerID = readContainerID(cgroupPath)
+	entityID = readEntityID()
 }
 
 // parseContainerID finds the first container ID reading from r and returns it.
@@ -68,4 +75,15 @@ func readContainerID(fpath string) string {
 // ContainerID attempts to return the container ID from /proc/self/cgroup or empty on failure.
 func ContainerID() string {
 	return containerID
+}
+
+// readEntityID attempts to return the cgroup v2 node inode or empty on failure.
+func readEntityID() string {
+	return "cid-" + containerID
+}
+
+// EntityID attempts to return the container ID or the cgroup v2 node inode if the container ID is not available.
+// The cid is prefixed with `cid-` and the inode with `in-`.
+func EntityID() string {
+	return entityID
 }
