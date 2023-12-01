@@ -87,6 +87,9 @@ type SamplingRule struct {
 
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *span) bool {
+	if sr.TargetRoot && s.root().SpanID != s.SpanID {
+		return false
+	}
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
 	} else if sr.exactService != "" && sr.exactService != s.Service {
@@ -96,6 +99,17 @@ func (sr *SamplingRule) match(s *span) bool {
 		return false
 	} else if sr.exactName != "" && sr.exactName != s.Name {
 		return false
+	}
+	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
+		return false
+	}
+	if sr.Tags != nil {
+		for k, regex := range sr.Tags {
+			v, ok := s.Meta[k]
+			if !ok || !regex.MatchString(v) {
+				return false
+			}
+		}
 	}
 	return true
 }
