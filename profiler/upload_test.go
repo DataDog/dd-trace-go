@@ -64,6 +64,7 @@ func TestTryUpload(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
+	assert.Empty(profile.headers.Get("Datadog-Entity-ID"))
 	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
