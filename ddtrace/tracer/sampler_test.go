@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -519,6 +520,73 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
 				assert.False(result)
+			})
+		}
+	})
+
+	t.Run("matching-target-span", func(t *testing.T) {
+
+		testCase := []struct {
+			rulesEnv     string
+			rules        []SamplingRule
+			sampleParent bool
+			sampleChild  bool
+		}{
+			{
+				rules:        []SamplingRule{TagsResourceRule(nil, "res-*", "", "", 1.0, true)},
+				sampleChild:  false,
+				sampleParent: true,
+			},
+			{
+				rules:        []SamplingRule{TagsResourceRule(nil, "res-*", "", "", 1.0, false)},
+				sampleChild:  true,
+				sampleParent: true,
+			},
+			{
+				sampleParent: true,
+				sampleChild:  true,
+				rulesEnv:     `[{"target_span": "any", "sample_rate": 1.0, "tags": {"hostname":"hn-10"}}]`,
+			},
+			{
+				sampleParent: true,
+				sampleChild:  true,
+				rulesEnv:     `[{"target_span": "any", "sample_rate": 1.0, "tags": {"hostname":"hn-10"}}]`,
+			},
+			{
+				// not matching the 'host' tag
+				sampleParent: false,
+				sampleChild:  false,
+				rulesEnv:     `[{"target_span": "any", "sample_rate": 1.0, "tags": {"host":"hn-10"}}]`,
+			},
+			{
+				// not matching the '*' tag
+				sampleParent: false,
+				sampleChild:  false,
+				rulesEnv:     `[{"target_span": "any", "sample_rate": 1.0, "tags": {"*":"hn-10"}}]`,
+			},
+		}
+
+		for _, tt := range testCase {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.rulesEnv)
+				_, _, _, stop := startTestTracer(t)
+				defer stop()
+				opts := []StartSpanOption{ResourceName("res-10"), Tag("hostname", "hn-10")}
+
+				parent, ctx := StartSpanFromContext(context.Background(), "parent", opts...)
+				defer parent.Finish()
+
+				child, ctx := StartSpanFromContext(ctx, "parent", opts...)
+				defer child.Finish()
+
+				rt, _, err := samplingRulesFromEnv()
+				assert.Nil(t, err)
+				if len(rt) == 0 {
+					rt = tt.rules
+				}
+				rs := newRulesSampler(rt, nil, globalSampleRate())
+				assert.Equal(t, tt.sampleParent, rs.SampleTrace(parent.(*span)))
+				assert.Equal(t, tt.sampleChild, rs.SampleTrace(child.(*span)))
 			})
 		}
 	})
@@ -1082,7 +1150,7 @@ func TestSamplingRuleMarshall(t *testing.T) {
 	for _, tt := range []struct {
 		in  SamplingRule
 		out string
-		//	 TODO (dianashevchenko) : add test cases for marshalling with tags and resource amd target_span
+		//TODO (dianashevchenko) : add test cases for marshalling with tags and resource amd target_span
 	}{
 		{SamplingRule{nil, nil, 0, 0, nil, nil, false, 0, "srv", "ops", nil},
 			`{"service":"srv","name":"ops","sample_rate":0,"type":"trace(0)"}`},
