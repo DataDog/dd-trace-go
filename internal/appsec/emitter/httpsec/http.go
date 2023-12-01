@@ -19,13 +19,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -109,6 +109,10 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) 
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, SDKBodyOperationRes{})
 	return err
+}
+
+type Span interface {
+	SetTag(key string, value interface{})
 }
 
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and

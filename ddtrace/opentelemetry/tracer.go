@@ -26,7 +26,7 @@ var telemetryTags = []string{"integration_name:otel"}
 type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	provider    *TracerProvider
-	DD          ddtrace.Tracer
+	DD          tracer.Tracer
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {

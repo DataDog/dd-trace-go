@@ -17,7 +17,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	ginternal "github.com/DataDog/dd-trace-go/v2/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -351,7 +350,7 @@ func (t *trace) push(sp *Span) {
 	if t.full {
 		return
 	}
-	tr := internal.GetGlobalTracer()
+	tr := GetGlobalTracer()
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
@@ -412,7 +411,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	t.finished++
-	tr := internal.GetGlobalTracer()
+	tr := GetGlobalTracer()
 	if tr == nil {
 		return
 	}
@@ -479,7 +478,7 @@ func (t *trace) finishedOne(s *Span) {
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr ddtrace.Tracer, ch *chunk) {
+func (t *trace) finishChunk(tr Tracer, ch *chunk) {
 	//atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	//tr.pushChunk(ch)
 	tr.SubmitChunk(ch)
@@ -488,7 +487,7 @@ func (t *trace) finishChunk(tr ddtrace.Tracer, ch *chunk) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *Span, t ddtrace.Tracer) {
+func setPeerService(s *Span, t Tracer) {
 	tc := t.TracerConf()
 	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)

@@ -84,7 +84,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.(*Span).Metrics {
+						for range root.Metrics {
 							// this range simulates iterating over the metrics map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -100,7 +100,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.(*Span).Meta {
+						for range root.Meta {
 							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -171,11 +171,11 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
+		root.context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 3; i++ { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
-			children = append(children, child.(*Span))
+			children = append(children, child)
 			child.Finish()
 		}
 		flush(1)
@@ -204,7 +204,7 @@ func TestPartialFlush(t *testing.T) {
 		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
 		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
-		comparePayloadSpans(t, root.(*Span), tsRoot[0][0])
+		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 		// TODO: (Support MetricKindDist) Re-enable this when we actually support `MetricKindDist`
@@ -218,11 +218,11 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.(*Span).context.trace.setTag("someTraceTag", "someValue")
+		root.context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
-			children = append(children, child.(*Span))
+			children = append(children, child)
 			child.Finish()
 		}
 	})
@@ -276,7 +276,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	span3 := trc.StartSpan("name3", ChildOf(root.Context()))
 	span3a := trc.StartSpan("name3", ChildOf(span3.Context()))
 
-	trace := []*Span{root.(*Span), span2.(*Span), span3.(*Span), span3a.(*Span)}
+	trace := []*Span{root, span2, span3, span3a}
 
 	for i, span := range trace {
 		span.context.trace = buffer

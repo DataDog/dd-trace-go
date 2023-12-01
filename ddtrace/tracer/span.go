@@ -25,7 +25,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -47,7 +46,7 @@ type (
 )
 
 var (
-	_ ddtrace.DDSpan = (*Span)(nil)
+	//	_ ddtrace.DDSpan = (*Span)(nil)
 	_ msgp.Encodable = (*spanList)(nil)
 	_ msgp.Decodable = (*spanLists)(nil)
 )
@@ -91,7 +90,12 @@ type Span struct {
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
-func (s *Span) Context() ddtrace.SpanContext { return s.context }
+func (s *Span) Context() ddtrace.SpanContext {
+	if s == nil {
+		return nil
+	}
+	return s.context
+}
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
 // are propagated down to descendant spans and injected cross-process. Use with
@@ -194,7 +198,7 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 
 // Root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
-func (s *Span) Root() DDSpan {
+func (s *Span) Root() *Span {
 	return s.root()
 }
 
@@ -270,9 +274,9 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 }
 
 // StartChild starts a new child span with the given operation name and options.
-func (s *Span) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.DDSpan {
+func (s *Span) StartChild(operationName string, opts ...ddtrace.StartSpanOption) *Span {
 	opts = append(opts, ChildOf(s.Context()))
-	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
+	return GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
@@ -445,6 +449,9 @@ func (s *Span) setMetric(key string, v float64) {
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...ddtrace.FinishOption) {
+	if s == nil {
+		return
+	}
 	t := now()
 	if len(opts) > 0 {
 		cfg := ddtrace.FinishConfig{
@@ -526,7 +533,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t := internal.GetGlobalTracer(); t != nil {
+	if t := GetGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		// we have an active tracer
 		if tc.CanComputeStats && shouldComputeStats(s) {
@@ -671,7 +678,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := internal.GetGlobalTracer(); tr != nil {
+		if tr := GetGlobalTracer(); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)

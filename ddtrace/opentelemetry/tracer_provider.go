@@ -33,7 +33,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -62,7 +61,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	tracer.Start(opts...)
 	p := &TracerProvider{}
 	t := &oteltracer{
-		DD:       internal.GetGlobalTracer(),
+		DD:       tracer.GetGlobalTracer(),
 		provider: p,
 	}
 	p.tracer = t

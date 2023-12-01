@@ -1546,7 +1546,7 @@ func TestWithStartSpanConfig(t *testing.T) {
 	defer tracer.Stop()
 	assert.NoError(err)
 
-	s := tracer.StartSpan("test", WithStartSpanConfig(cfg)).(*Span)
+	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
 	defer s.Finish()
 	assert.Equal(float64(1), s.Metrics[keyMeasured])
 	assert.Equal("value", s.Meta["key"])
@@ -1576,7 +1576,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		"test",
 		Tag("k2", "v2"),
 		WithStartSpanConfig(cfg),
-	).(*Span)
+	)
 	defer s.Finish()
 	assert.Equal("v2", s.Meta["k2"])
 	assert.Equal("value", s.Meta["key"])

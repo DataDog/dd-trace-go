@@ -17,7 +17,7 @@ import (
 // The resulting span is then set on the given `fctx`.
 // This function is similar to tracer.StartSpanFromContext, but it modifies the given fasthttp context directly.
 // If the ChildOf option is passed, it will only be used as the parent if there is no span found in `fctx`.
-func StartSpanFromContext(fctx *fasthttp.RequestCtx, operationName string, opts ...tracer.StartSpanOption) tracer.DDSpan {
+func StartSpanFromContext(fctx *fasthttp.RequestCtx, operationName string, opts ...tracer.StartSpanOption) *tracer.Span {
 	s, _ := tracer.StartSpanFromContext(fctx, operationName, opts...)
 	fctx.SetUserValue(internal.ActiveSpanKey, s)
 	return s

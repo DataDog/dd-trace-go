@@ -18,7 +18,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -33,7 +32,69 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
-var _ ddtrace.Tracer = (*tracer)(nil)
+type TracerConf struct {
+	CanComputeStats      bool
+	CanDropP0s           bool
+	DebugAbandonedSpans  bool
+	PartialFlush         bool
+	PartialFlushMinSpans int
+	PeerServiceDefaults  bool
+	PeerServiceMappings  map[string]string
+	EnvTag               string
+	VersionTag           string
+	ServiceTag           string
+}
+
+// SpanContext represents a span state that can propagate to descendant spans
+// and across process boundaries. It contains all the information needed to
+// spawn a direct descendant of the span that it belongs to. It can be used
+// to create distributed tracing by propagating it using the provided interfaces.
+type SpanContext interface {
+	// SpanID returns the span ID that this context is carrying.
+	SpanID() uint64
+
+	// TraceID returns the trace ID that this context is carrying.
+	TraceID() uint64
+
+	// ForeachBaggageItem provides an iterator over the key/value pairs set as
+	// baggage within this context. Iteration stops when the handler returns
+	// false.
+	ForeachBaggageItem(handler func(k, v string) bool)
+}
+
+// Tracer specifies an implementation of the Datadog tracer which allows starting
+// and propagating spans. The official implementation if exposed as functions
+// within the "tracer" package.
+type Tracer interface {
+	// StartSpan starts a span with the given operation name and options.
+	StartSpan(operationName string, opts ...StartSpanOption) *Span
+
+	// Extract extracts a span context from a given carrier. Note that baggage item
+	// keys will always be lower-cased to maintain consistency. It is impossible to
+	// maintain the original casing due to MIME header canonicalization standards.
+	Extract(carrier interface{}) (SpanContext, error)
+
+	// Inject injects a span context into the given carrier.
+	Inject(context SpanContext, carrier interface{}) error
+
+	// Stop stops the tracer. Calls to Stop should be idempotent.
+	Stop()
+
+	// TODO(kjn v2): These can be removed / consolidated. These are
+	// here temporarily as we figure out a sensible API.
+	TracerConf() TracerConf
+
+	SubmitStats(*Span)
+	SubmitAbandonedSpan(*Span, bool)
+	SubmitChunk(any) // This is a horrible signature. This will eventually become SubmitChunk(Chunk)
+	Flush()          // Synchronous flushing
+
+	// TODO(kjn v2): Not sure if this belongs in the tracer.
+	// May be better to have a separate stats counting package / type.
+	//	Signal(Event)
+}
+
+var _ Tracer = (*tracer)(nil)
 
 // tracer creates, buffers and submits Spans which are used to time blocks of
 // computation. They are accumulated and streamed into an internal payload,
@@ -123,7 +184,7 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
-	if internal.Testing {
+	if Testing {
 		return nil // mock tracer active
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
@@ -138,7 +199,7 @@ func Start(opts ...StartOption) error {
 		// share control of the global telemetry client.
 		return nil
 	}
-	internal.SetGlobalTracer(t)
+	SetGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -165,33 +226,33 @@ func Start(opts ...StartOption) error {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
+	SetGlobalTracer(&NoopTracer{})
 	log.Flush()
 }
 
 // DDSpan is an alias for ddtrace.DDSpan. It is here to allow godoc to group methods returning
 // ddtrace.DDSpan. It is recommended and is considered more correct to refer to this type as
 // ddtrace.DDSpan instead.
-type DDSpan = ddtrace.DDSpan
+//type DDSpan = ddtrace.DDSpan
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
-func StartSpan(operationName string, opts ...StartSpanOption) DDSpan {
-	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
+func StartSpan(operationName string, opts ...StartSpanOption) *Span {
+	return GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	return internal.GetGlobalTracer().Extract(carrier)
+func Extract(carrier interface{}) (SpanContext, error) {
+	return GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
-	return internal.GetGlobalTracer().Inject(ctx, carrier)
+func Inject(ctx SpanContext, carrier interface{}) error {
+	return GetGlobalTracer().Inject(ctx, carrier)
 }
 
 // SetUser associates user information to the current trace which the
@@ -199,17 +260,17 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // bit of information gets monitored. In case of distributed traces,
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
-func SetUser(s DDSpan, id string, opts ...UserMonitoringOption) {
+func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	sp, ok := s.(interface {
-		SetUser(string, ...UserMonitoringOption)
-	})
-	if !ok {
-		return
-	}
-	sp.SetUser(id, opts...)
+	//sp, ok := s.(interface {
+	//	SetUser(string, ...UserMonitoringOption)
+	//})
+	//if !ok {
+	//	return
+	//}
+	s.SetUser(id, opts...)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
@@ -282,7 +343,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
-// internal.SetGlobalTracer(...) with the tracer provided by this function.
+// SetGlobalTracer(...) with the tracer provided by this function.
 func newTracer(opts ...StartOption) (*tracer, error) {
 	t, err := newUnstartedTracer(opts...)
 	if err != nil {
@@ -334,7 +395,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t := internal.GetGlobalTracer(); t != nil {
+	if t := GetGlobalTracer(); t != nil {
 		t.Flush()
 	}
 }
@@ -454,7 +515,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.DDSpan {
+func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -662,17 +723,17 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+func (t *tracer) Extract(carrier interface{}) (SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 
-func (t *tracer) TracerConf() ddtrace.TracerConf {
-	return ddtrace.TracerConf{
+func (t *tracer) TracerConf() TracerConf {
+	return TracerConf{
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
@@ -686,26 +747,26 @@ func (t *tracer) TracerConf() ddtrace.TracerConf {
 	}
 }
 
-func (t *tracer) SubmitStats(s DDSpan) {
-	sp, ok := s.(*Span)
-	if !ok {
-		return
-	}
+func (t *tracer) SubmitStats(s *Span) {
+	// sp, ok := s.(*Span)
+	// if !ok {
+	// 	return
+	// }
 	select {
-	case t.stats.In <- newAggregableSpan(sp, t.obfuscator):
+	case t.stats.In <- newAggregableSpan(s, t.obfuscator):
 		// ok
 	default:
 		log.Error("Stats channel full, disregarding span.")
 	}
 }
 
-func (t *tracer) SubmitAbandonedSpan(s DDSpan, finished bool) {
-	sp, ok := s.(*Span)
-	if !ok {
-		return
-	}
+func (t *tracer) SubmitAbandonedSpan(s *Span, finished bool) {
+	// sp, ok := s.(*Span)
+	// if !ok {
+	// 	return
+	// }
 	select {
-	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(sp, finished):
+	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, finished):
 		// ok
 	default:
 		log.Error("Abandoned spans channel full, disregarding span.")

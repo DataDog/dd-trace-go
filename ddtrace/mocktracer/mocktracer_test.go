@@ -11,7 +11,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
@@ -19,14 +18,14 @@ import (
 
 func TestStart(t *testing.T) {
 	trc := Start()
-	if tt, ok := internal.GetGlobalTracer().(Tracer); !ok || tt != trc {
+	if tt, ok := tracer.GetGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
 }
 
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
-	if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
+	if _, ok := tracer.GetGlobalTracer().(*tracer.NoopTracer); !ok {
 		t.Fail()
 	}
 }

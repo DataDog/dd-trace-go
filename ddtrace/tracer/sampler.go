@@ -11,7 +11,6 @@ import (
 	"math"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -21,7 +20,7 @@ import (
 // RateSampler implementations should be safe for concurrent use.
 type RateSampler interface {
 	// Sample returns true if the given span should be sampled.
-	Sample(span DDSpan) bool
+	Sample(span *Span) bool
 
 	// Rate returns the current sample rate.
 	Rate() float64
@@ -68,15 +67,18 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn ddtrace.DDSpan) bool {
+func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
 		return true
 	}
-	s, ok := spn.(*Span)
-	if !ok {
+	if s == nil {
 		return false
 	}
+	//s, ok := spn.(*Span)
+	//if !ok {
+	//	return false
+	//}
 	r.RLock()
 	defer r.RUnlock()
 	return sampledByRate(s.TraceID, r.rate)
