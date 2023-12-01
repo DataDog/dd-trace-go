@@ -121,7 +121,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -195,7 +195,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -268,7 +268,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -341,7 +341,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -435,7 +435,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -505,7 +505,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -577,7 +577,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -647,7 +647,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -717,7 +717,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
@@ -897,7 +897,7 @@ func TestHTTPCredentials(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -923,14 +923,14 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		assert.Equal(t, "EC2.request", spans[0].OperationName())
 		assert.Equal(t, "S3.request", spans[1].OperationName())
 		assert.Equal(t, "SQS.request", spans[2].OperationName())
 		assert.Equal(t, "SNS.request", spans[3].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
 		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
@@ -948,7 +948,7 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -984,7 +984,7 @@ func TestMessagingNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)
 		assert.Equal(t, "SQS.request", spans[0].OperationName())
 		assert.Equal(t, "SQS.request", spans[1].OperationName())
@@ -992,7 +992,7 @@ func TestMessagingNamingSchema(t *testing.T) {
 		assert.Equal(t, "SNS.request", spans[3].OperationName())
 		assert.Equal(t, "SNS.request", spans[4].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)
 		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
 		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
@@ -1073,7 +1073,7 @@ func TestWithErrorCheck(t *testing.T) {
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, 1)
 			s := spans[0]
-			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
+			assert.Equal(t, tt.errExist, s.Tag(ext.ErrorMsg) != nil)
 		})
 	}
 }

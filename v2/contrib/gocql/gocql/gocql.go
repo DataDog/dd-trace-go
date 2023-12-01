@@ -141,7 +141,7 @@ func (tq *Query) PageState(state []byte) *Query {
 }
 
 // NewChildSpan creates a new span from the params and the context.
-func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
+func (tq *Query) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tq.params
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
@@ -166,7 +166,7 @@ func (tq *Query) newChildSpan(ctx context.Context) ddtrace.Span {
 	return span
 }
 
-func (tq *Query) finishSpan(span ddtrace.Span, err error) {
+func (tq *Query) finishSpan(span *tracer.Span, err error) {
 	if err != nil && tq.params.config.shouldIgnoreError(err) {
 		err = nil
 	}
@@ -209,7 +209,7 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // Iter inherits from gocql.Iter and contains a span.
 type Iter struct {
 	*gocql.Iter
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // Iter starts a new span at query.Iter call.
@@ -245,7 +245,7 @@ func (tIter *Iter) Close() error {
 // Scanner inherits from a gocql.Scanner derived from an Iter
 type Scanner struct {
 	gocql.Scanner
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // Scanner returns a row Scanner which provides an interface to scan rows in a
@@ -315,7 +315,7 @@ func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
 }
 
 // newChildSpan creates a new span from the params and the context.
-func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
+func (tb *Batch) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tb.params
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
@@ -340,7 +340,7 @@ func (tb *Batch) newChildSpan(ctx context.Context) ddtrace.Span {
 	return span
 }
 
-func (tb *Batch) finishSpan(span ddtrace.Span, err error) {
+func (tb *Batch) finishSpan(span *tracer.Span, err error) {
 	if err != nil && tb.params.config.shouldIgnoreError(err) {
 		err = nil
 	}

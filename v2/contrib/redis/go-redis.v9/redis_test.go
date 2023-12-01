@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestSkipRaw(t *testing.T) {
-	runCmds := func(t *testing.T, opts ...ClientOption) []mocktracer.Span {
+	runCmds := func(t *testing.T, opts ...ClientOption) []*mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		ctx := context.Background()
@@ -51,7 +51,7 @@ func TestSkipRaw(t *testing.T) {
 		pipeline.Exec(ctx)
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 3) // dial + set + redis.pipeline
-		var setSpan, expireSpan mocktracer.Span
+		var setSpan, expireSpan *mocktracer.Span
 		for _, s := range spans {
 			// pick up the spans except dial
 			switch s.Tag(ext.ResourceName) {
@@ -63,7 +63,7 @@ func TestSkipRaw(t *testing.T) {
 		}
 		assert.NotNil(t, setSpan)
 		assert.NotNil(t, expireSpan)
-		return []mocktracer.Span{setSpan, expireSpan}
+		return []*mocktracer.Span{setSpan, expireSpan}
 	}
 
 	t.Run("true", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestClient(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2) // dial + command
-	var span mocktracer.Span
+	var span *mocktracer.Span
 	for _, s := range spans {
 		// pick up the redis.command span except dial
 		if s.OperationName() == "redis.command" {
@@ -210,7 +210,7 @@ func TestWrapClient(t *testing.T) {
 				assert.Len(spans, 2)
 			}
 
-			var span mocktracer.Span
+			var span *mocktracer.Span
 			for _, s := range spans {
 				// pick up the redis.command span except dial
 				if s.OperationName() == "redis.command" {
@@ -316,7 +316,7 @@ func TestPipeline(t *testing.T) {
 	pipeline.Exec(ctx)
 
 	spans := mt.FinishedSpans()
-	var span mocktracer.Span
+	var span *mocktracer.Span
 	for _, s := range spans {
 		// pick up the redis.command span except dial
 		if s.OperationName() == "redis.command" {
@@ -372,7 +372,7 @@ func TestChildSpan(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 3) // child + parent + dial
-	var child, parent, dial mocktracer.Span
+	var child, parent, dial *mocktracer.Span
 	for _, s := range spans {
 		// order of traces in buffer is not guaranteed
 		switch s.OperationName() {
@@ -436,7 +436,7 @@ func TestError(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 1+opts.MaxRetries+1) // 1 dial + dial MaxRetries + redis.command
-		var span mocktracer.Span
+		var span *mocktracer.Span
 		for _, s := range spans {
 			// pick up the redis.command span except dial
 			if s.OperationName() == "redis.command" {
@@ -445,7 +445,7 @@ func TestError(t *testing.T) {
 		}
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
@@ -465,7 +465,7 @@ func TestError(t *testing.T) {
 		_, err := client.Get(ctx, "non_existent_key").Result()
 
 		spans := mt.FinishedSpans()
-		var span mocktracer.Span
+		var span *mocktracer.Span
 		for _, s := range spans {
 			// pick up the redis.command span except dial
 			if s.OperationName() == "redis.command" {
@@ -499,7 +499,7 @@ func TestError(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1+opts.MaxRetries+1) // 1 dial + dial MaxRetries + redis.pipeline
-		var span mocktracer.Span
+		var span *mocktracer.Span
 		for _, s := range spans {
 			// pick up the redis.command span except dial
 			if s.OperationName() == "redis.command" {
@@ -508,7 +508,7 @@ func TestError(t *testing.T) {
 		}
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanTypeRedis, span.Tag(ext.SpanType))
 		assert.Equal("my-redis", span.Tag(ext.ServiceName))
 		assert.Equal("redis.pipeline", span.Tag(ext.ResourceName))
@@ -638,7 +638,7 @@ func TestWithContext(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 6) // 2 dial spans + span1, span2, setSpan, getSpan
-	var span1, span2, setSpan, getSpan mocktracer.Span
+	var span1, span2, setSpan, getSpan *mocktracer.Span
 	for _, s := range spans {
 		switch s.Tag(ext.ResourceName) {
 		case "span1.name":
@@ -672,7 +672,7 @@ func TestDial(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2) // dial + ping
-	var span mocktracer.Span
+	var span *mocktracer.Span
 	for _, s := range spans {
 		// pick up the dial span
 		if s.OperationName() == "redis.dial" {
@@ -690,7 +690,7 @@ func TestDial(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -703,7 +703,7 @@ func TestNamingSchema(t *testing.T) {
 		require.NoError(t, st.Err())
 
 		spans := mt.FinishedSpans()
-		var span mocktracer.Span
+		var span *mocktracer.Span
 		for _, s := range spans {
 			// pick up the redis.command span except dial
 			if s.OperationName() == "redis.command" {
@@ -711,7 +711,7 @@ func TestNamingSchema(t *testing.T) {
 			}
 		}
 		assert.NotNil(t, span)
-		return []mocktracer.Span{span}
+		return []*mocktracer.Span{span}
 	})
 
 	namingschematest.NewRedisTest(genSpans, "redis.client")(t)

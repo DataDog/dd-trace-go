@@ -91,7 +91,7 @@ func TestErrorWrapper(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(span.Tag(ext.Error).(error), err)
+	assert.Equal(span.Tag(ext.ErrorMsg), err.Error())
 	assert.Equal(span.OperationName(), "cassandra.query")
 	assert.Equal(span.Tag(ext.ResourceName), "CREATE KEYSPACE")
 	assert.Equal(span.Tag(ext.ServiceName), "ServiceName")
@@ -131,7 +131,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var childSpan, pSpan mocktracer.Span
+	var childSpan, pSpan *mocktracer.Span
 	if spans[0].ParentID() == spans[1].SpanID() {
 		childSpan = spans[0]
 		pSpan = spans[1]
@@ -185,7 +185,7 @@ func TestErrNotFound(t *testing.T) {
 		span := spans[0]
 		assert.Equal(span.OperationName(), "cassandra.query")
 		assert.Equal(span.Tag(ext.ResourceName), "SELECT name, age FROM trace.person WHERE name = 'This does not exist'")
-		assert.NotNil(span.Tag(ext.Error), "trace is marked as an error, default behavior")
+		assert.NotNil(span.Tag(ext.ErrorMsg), "trace is marked as an error, default behavior")
 	})
 
 	t.Run("WithErrorCheck", func(t *testing.T) {
@@ -312,7 +312,7 @@ func TestIterScanner(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var childSpan, pSpan mocktracer.Span
+	var childSpan, pSpan *mocktracer.Span
 	if spans[0].ParentID() == spans[1].SpanID() {
 		childSpan = spans[0]
 		pSpan = spans[1]
@@ -358,7 +358,7 @@ func TestBatch(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var childSpan, pSpan mocktracer.Span
+	var childSpan, pSpan *mocktracer.Span
 	if spans[0].ParentID() == spans[1].SpanID() {
 		childSpan = spans[0]
 		pSpan = spans[1]
@@ -507,7 +507,7 @@ func TestWithCustomTag(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []WrapOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -535,12 +535,12 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "cassandra.query", spans[0].OperationName())
 		assert.Equal(t, "cassandra.batch", spans[1].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "cassandra.query", spans[0].OperationName())
 		assert.Equal(t, "cassandra.query", spans[1].OperationName())

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 

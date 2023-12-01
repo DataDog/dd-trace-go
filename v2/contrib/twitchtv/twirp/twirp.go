@@ -201,7 +201,6 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, serverSpanName(ctx), opts...)
-
 		ctx = context.WithValue(ctx, twirpSpanKey{}, span)
 		return ctx, nil
 	}
@@ -214,7 +213,7 @@ func requestRoutedHook() func(context.Context) (context.Context, error) {
 			log.Error("contrib/twitchtv/twirp.requestRoutedHook: found no span in context")
 			return ctx, nil
 		}
-		span, ok := maybeSpan.(tracer.Span)
+		span, ok := maybeSpan.(*tracer.Span)
 		if !ok {
 			log.Error("contrib/twitchtv/twirp.requestRoutedHook: found invalid span type in context")
 			return ctx, nil
@@ -240,7 +239,7 @@ func responseSentHook() func(context.Context) {
 		if maybeSpan == nil {
 			return
 		}
-		span, ok := maybeSpan.(tracer.Span)
+		span, ok := maybeSpan.(*tracer.Span)
 		if !ok {
 			return
 		}

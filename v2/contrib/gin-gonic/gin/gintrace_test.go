@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -57,7 +58,7 @@ func TestTrace200(t *testing.T) {
 	router.GET("/user/:id", func(c *gin.Context) {
 		span, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 		id := c.Param("id")
 		c.Writer.Write([]byte(id))
 	})
@@ -206,7 +207,7 @@ func TestError(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// server errors set the ext.Error tag
-		assert.Equal("500: Internal Server Error", span.Tag(ext.Error).(error).Error())
+		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 	})
@@ -276,7 +277,7 @@ func TestHTML(t *testing.T) {
 		assert.Equal("gin-gonic/gin", s.Tag(ext.Component))
 	}
 
-	var tspan mocktracer.Span
+	var tspan *mocktracer.Span
 	for _, s := range spans {
 		// we need to pick up the span we're searching for, as the
 		// order is not garanteed within the buffer
@@ -317,14 +318,15 @@ func TestPropagation(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	pspan := tracer.StartSpan("test")
-	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
+	err := tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
+	require.NoError(t, err)
 
 	router := gin.New()
 	router.Use(Middleware("foobar"))
 	router.GET("/user/:id", func(c *gin.Context) {
 		span, ok := tracer.SpanFromContext(c.Request.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
 	})
 
 	router.ServeHTTP(w, r)
@@ -410,7 +412,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), "GET /test")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ResourceName), "GET /test")
 		})
 
 		r := httptest.NewRequest("GET", "/test", nil)
@@ -429,7 +431,7 @@ func TestResourceNamerSettings(t *testing.T) {
 		router.GET("/test", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ResourceName), staticName)
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ResourceName), staticName)
 		})
 
 		r := httptest.NewRequest("GET", "/test", nil)
@@ -565,7 +567,7 @@ func TestServiceName(t *testing.T) {
 		router.GET("/ping", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "gin.router")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "gin.router")
 			c.Status(200)
 		})
 
@@ -598,7 +600,7 @@ func TestServiceName(t *testing.T) {
 		router.GET("/ping", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "global-service")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "global-service")
 			c.Status(200)
 		})
 
@@ -628,7 +630,7 @@ func TestServiceName(t *testing.T) {
 		router.GET("/ping", func(c *gin.Context) {
 			span, ok := tracer.SpanFromContext(c.Request.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "my-service")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "my-service")
 			c.Status(200)
 		})
 
@@ -650,7 +652,7 @@ func TestServiceName(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 

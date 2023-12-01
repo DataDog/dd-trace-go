@@ -72,7 +72,7 @@ func (c *Client) KV() *KV {
 	return &KV{c.Client.KV(), c.config, c.ctx}
 }
 
-func (k *KV) startSpan(resourceName string, key string) ddtrace.Span {
+func (k *KV) startSpan(resourceName string, key string) *tracer.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.ServiceName(k.config.serviceName),

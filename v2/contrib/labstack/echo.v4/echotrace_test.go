@@ -58,12 +58,12 @@ func TestTrace200(t *testing.T) {
 	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(false)))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
-		var span tracer.Span
+		var span *tracer.Span
 		span, traced = tracer.SpanFromContext(c.Request().Context())
 
 		// we patch the span on the request context.
 		span.SetTag("test.echo", "echony")
-		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 		return c.NoContent(200)
 	})
 
@@ -107,12 +107,12 @@ func TestTraceAnalytics(t *testing.T) {
 	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(true)))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
-		var span tracer.Span
+		var span *tracer.Span
 		span, traced = tracer.SpanFromContext(c.Request().Context())
 
 		// we patch the span on the request context.
 		span.SetTag("test.echo", "echony")
-		assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+		assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 		return c.NoContent(200)
 	})
 
@@ -181,7 +181,7 @@ func TestError(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -221,7 +221,7 @@ func TestErrorHandling(t *testing.T) {
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal("foobar", span.Tag(ext.ServiceName))
 	assert.Equal("500", span.Tag(ext.HTTPCode))
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -323,12 +323,12 @@ func TestStatusError(t *testing.T) {
 			assert.Contains(span.Tag(ext.ResourceName), "/err")
 			assert.Equal(tt.code, span.Tag(ext.HTTPCode))
 			assert.Equal("GET", span.Tag(ext.HTTPMethod))
-			err := span.Tag(ext.Error)
+			err := span.Tag(ext.ErrorMsg)
 			if tt.err != nil {
 				if !assert.NotNil(err) {
 					return
 				}
-				assert.Equal(tt.err.Error(), err.(error).Error())
+				assert.Equal(tt.err.Error(), err)
 			} else {
 				assert.Nil(err)
 			}
@@ -388,8 +388,8 @@ func TestNoDebugStack(t *testing.T) {
 	require.Len(t, spans, 1)
 
 	span := spans[0]
-	assert.Equal(wantErr.Error(), span.Tag(ext.Error).(error).Error())
-	assert.Equal("<debug stack disabled>", span.Tag(ext.ErrorStack))
+	assert.Equal(wantErr.Error(), span.Tag(ext.ErrorMsg))
+	assert.Equal(nil, span.Tag(ext.ErrorStack))
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 }
@@ -477,7 +477,7 @@ func TestWithErrorTranslator(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

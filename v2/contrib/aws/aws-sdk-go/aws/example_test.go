@@ -10,13 +10,14 @@ import (
 	"log"
 	"os"
 
-	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+
+	awstrace "github.com/DataDog/dd-trace-go/v2/contrib/aws/aws-sdk-go/aws"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // To start tracing requests, wrap the AWS session.Session by invoking

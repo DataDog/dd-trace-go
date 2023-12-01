@@ -107,7 +107,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
@@ -196,7 +196,7 @@ func handler500(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []RouterOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

@@ -194,7 +194,7 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("500", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
@@ -249,8 +249,8 @@ func TestNoStack(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	s := spans[0]
-	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
-	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+	assert.Equal(spans[0].Tags()[ext.ErrorMsg], "500: Internal Server Error")
+	assert.Equal(nil, s.Tags()[ext.ErrorStack])
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
 }
@@ -457,7 +457,7 @@ func TestIgnoreRequestOption(t *testing.T) {
 }
 
 func TestServerNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

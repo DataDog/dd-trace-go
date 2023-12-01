@@ -84,7 +84,7 @@ func TestUnary(t *testing.T) {
 			spans := mt.FinishedSpans()
 			assert.Len(spans, 3)
 
-			var serverSpan, clientSpan, rootSpan mocktracer.Span
+			var serverSpan, clientSpan, rootSpan *mocktracer.Span
 
 			for _, s := range spans {
 				// order of traces in buffer is not garanteed
@@ -149,8 +149,8 @@ func TestStreaming(t *testing.T) {
 		stream.Recv()
 	}
 
-	checkSpans := func(t *testing.T, rig *rig, spans []mocktracer.Span) {
-		var rootSpan mocktracer.Span
+	checkSpans := func(t *testing.T, rig *rig, spans []*mocktracer.Span) {
+		var rootSpan *mocktracer.Span
 		for _, span := range spans {
 			if span.OperationName() == "a" {
 				rootSpan = span
@@ -185,14 +185,13 @@ func TestStreaming(t *testing.T) {
 					tagMethodKind, methodKindBidiStream, span.Tag(tagMethodKind))
 				fallthrough
 			case "grpc.message":
-				wantCode := codes.OK
-				if errTag := span.Tag("error"); errTag != nil {
-					if err, ok := errTag.(error); ok {
-						wantCode = status.Convert(err).Code()
-					}
+				if span.Tag(ext.ErrorMsg) == nil {
+					assert.Equal(t, codes.OK.String(), span.Tag(tagCode),
+						"expected grpc code to be set in span: %v", span)
+				} else {
+					assert.NotEqual(t, codes.OK.String(), span.Tag(tagCode),
+						"expected grpc code to be set in span: %v", span)
 				}
-				assert.Equal(t, wantCode.String(), span.Tag(tagCode),
-					"expected grpc code to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(ext.ResourceName),
 					"expected resource name to be set in span: %v", span)
 				assert.Equal(t, "/grpc.Fixture/StreamPing", span.Tag(tagMethodName),
@@ -297,7 +296,7 @@ func TestStreaming(t *testing.T) {
 }
 
 func TestSpanTree(t *testing.T) {
-	assertSpan := func(t *testing.T, span, parent mocktracer.Span, operationName, resourceName string) {
+	assertSpan := func(t *testing.T, span, parent *mocktracer.Span, operationName, resourceName string) {
 		require.NotNil(t, span)
 		assert.Nil(t, span.Tag(ext.Error))
 		assert.Equal(t, operationName, span.OperationName())
@@ -387,8 +386,8 @@ func TestSpanTree(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 7)
 
-		var rootSpan, clientStreamSpan, serverStreamSpan mocktracer.Span
-		var messageSpans []mocktracer.Span
+		var rootSpan, clientStreamSpan, serverStreamSpan *mocktracer.Span
+		var messageSpans []*mocktracer.Span
 		for _, s := range spans {
 			switch n := s.OperationName(); n {
 			case "root":
@@ -419,9 +418,8 @@ func TestSpanTree(t *testing.T) {
 				serverSpans++
 				if !reqMsgFound {
 					assert.Equal("{\"name\":\"break\"}", ms.Tag(tagRequest))
-					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key").([]string)
-					assert.Len(metadataTag, 1)
-					assert.Equal("custom_metadata_value", metadataTag[0])
+					metadataTag := ms.Tag(tagMetadataPrefix + "custom_metadata_key.0")
+					assert.Equal("custom_metadata_value", metadataTag)
 					reqMsgFound = true
 				}
 			}
@@ -489,7 +487,7 @@ func TestPreservesMetadata(t *testing.T) {
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-trace-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-parent-id")
 	assert.NotContains(t, s.Tags(), tagMetadataPrefix+"x-datadog-sampling-priority")
-	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key"), []string{"test-value"})
+	assert.Equal(t, s.Tag(tagMetadataPrefix+"test-key.0"), "test-value")
 }
 
 func TestStreamSendsErrorCode(t *testing.T) {
@@ -683,7 +681,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
 
-		var serverSpan, clientSpan mocktracer.Span
+		var serverSpan, clientSpan *mocktracer.Span
 
 		for _, s := range spans {
 			// order of traces in buffer is not garanteed
@@ -831,9 +829,9 @@ func TestIgnoredMetadata(t *testing.T) {
 		ignore []string
 		exp    int
 	}{
-		{ignore: []string{}, exp: 5},
-		{ignore: []string{"test-key"}, exp: 4},
-		{ignore: []string{"test-key", "test-key2"}, exp: 3},
+		{ignore: []string{}, exp: 8},
+		{ignore: []string{"test-key"}, exp: 7},
+		{ignore: []string{"test-key", "test-key2"}, exp: 6},
 	} {
 		rig, err := newRig(true, WithMetadataTags(), WithIgnoredMetadata(c.ignore...))
 		if err != nil {
@@ -847,7 +845,7 @@ func TestIgnoredMetadata(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 
-		var serverSpan mocktracer.Span
+		var serverSpan *mocktracer.Span
 		for _, s := range spans {
 			switch s.OperationName() {
 			case "grpc.server":
@@ -933,7 +931,7 @@ func TestCustomTag(t *testing.T) {
 		value interface{}
 	}{
 		{key: "foo", value: "bar"},
-		{key: "val", value: 123},
+		{key: "val", value: float64(123)},
 	} {
 		rig, err := newRig(true, WithCustomTag(c.key, c.value))
 		if err != nil {
@@ -946,7 +944,7 @@ func TestCustomTag(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 
-		var serverSpan mocktracer.Span
+		var serverSpan *mocktracer.Span
 		for _, s := range spans {
 			switch s.OperationName() {
 			case "grpc.server":
@@ -963,13 +961,13 @@ func TestCustomTag(t *testing.T) {
 
 func TestServerNamingSchema(t *testing.T) {
 	genSpans := getGenSpansFn(false, true)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.server", spans[i].OperationName())
 		}
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.server.request", spans[i].OperationName())
@@ -986,13 +984,13 @@ func TestServerNamingSchema(t *testing.T) {
 
 func TestClientNamingSchema(t *testing.T) {
 	genSpans := getGenSpansFn(true, false)
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.client", spans[i].OperationName())
 		}
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		for i := 0; i < 4; i++ {
 			assert.Equal(t, "grpc.client.request", spans[i].OperationName())
@@ -1008,7 +1006,7 @@ func TestClientNamingSchema(t *testing.T) {
 }
 
 func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
-	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	return func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

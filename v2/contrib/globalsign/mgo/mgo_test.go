@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mocktracer.Span {
+func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []*mocktracer.Span {
 	assert := assert.New(t)
 
 	mt := mocktracer.Start()
@@ -566,7 +566,7 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []DialOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

@@ -82,6 +82,19 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+  elasticsearch8:
+    image: elasticsearch:8.6.2
+    environment:
+      http.port: 9204-9300
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9204:9204"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   datadog-agent:
     image: datadog/docker-dd-agent
     environment:
@@ -97,9 +110,9 @@ services:
       TRACE_LANGUAGE: golang
       ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
       PORT: 9126
-      DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-      DD_POOL_TRACE_CHECK_FAILURES: true
-      DD_DISABLE_ERROR_RESPONSES: true
+      DD_SUPPRESS_TRACE_PARSE_ERRORS: "true"
+      DD_POOL_TRACE_CHECK_FAILURES: "true"
+      DD_DISABLE_ERROR_RESPONSES: "true"
     ports:
       - "127.0.0.1:9126:9126"
   mongodb:

@@ -8,8 +8,9 @@ package pg_test
 import (
 	"log"
 
-	pg2 "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
 	"github.com/go-pg/pg/v10"
+
+	pg2 "github.com/DataDog/dd-trace-go/v2/contrib/go-pg/pg.v10"
 )
 
 func Example() {

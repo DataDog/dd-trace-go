@@ -101,7 +101,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	}
 }
 
-func (tx *Tx) startSpan(name string) ddtrace.Span {
+func (tx *Tx) startSpan(name string) *tracer.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),

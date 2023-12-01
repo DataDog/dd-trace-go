@@ -23,7 +23,7 @@ import (
 // tests that use this package.
 // The provided serviceOverride string should be used to set the specific integration's WithServiceName option (if
 // available) when initializing and configuring the package.
-type GenSpansFn func(t *testing.T, serviceOverride string) []mocktracer.Span
+type GenSpansFn func(t *testing.T, serviceOverride string) []*mocktracer.Span
 
 // ServiceNameAssertions contains assertions for different test cases used inside the generated test
 // from NewServiceNameTest.
@@ -105,7 +105,7 @@ func NewServiceNameTest(genSpans GenSpansFn, wantV0 ServiceNameAssertions) func(
 	}
 }
 
-func assertServiceNames(t *testing.T, spans []mocktracer.Span, wantServiceNames []string) {
+func assertServiceNames(t *testing.T, spans []*mocktracer.Span, wantServiceNames []string) {
 	t.Helper()
 	require.Len(t, spans, len(wantServiceNames), "the number of spans and number of assertions should be the same")
 	for i := 0; i < len(spans); i++ {
@@ -133,7 +133,7 @@ func withDDService(ddService string) func() {
 }
 
 // AssertSpansFn allows to make assertions on the generated spans.
-type AssertSpansFn func(t *testing.T, spans []mocktracer.Span)
+type AssertSpansFn func(t *testing.T, spans []*mocktracer.Span)
 
 // NewSpanNameTest returns a new test that runs the provided assertion functions for each schema version.
 func NewSpanNameTest(genSpans GenSpansFn, assertV0 AssertSpansFn, assertV1 AssertSpansFn) func(t *testing.T) {

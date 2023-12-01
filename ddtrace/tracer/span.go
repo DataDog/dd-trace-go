@@ -101,17 +101,26 @@ func (s *Span) Context() ddtrace.SpanContext {
 // are propagated down to descendant spans and injected cross-process. Use with
 // care as it adds extra load onto your tracing layer.
 func (s *Span) SetBaggageItem(key, val string) {
+	if s == nil {
+		return
+	}
 	s.context.setBaggageItem(key, val)
 }
 
 // BaggageItem gets the value for a baggage item given its key. Returns the
 // empty string if the value isn't found in this Span.
 func (s *Span) BaggageItem(key string) string {
+	if s == nil {
+		return ""
+	}
 	return s.context.baggageItem(key)
 }
 
 // SetTag adds a set of key/value metadata to the span.
 func (s *Span) SetTag(key string, value interface{}) {
+	if s == nil {
+		return
+	}
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -191,6 +200,9 @@ func (s *Span) SetTag(key string, value interface{}) {
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
+	if s == nil {
+		return
+	}
 	s.Lock()
 	defer s.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
@@ -199,6 +211,9 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 // Root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
+	if s == nil {
+		return nil
+	}
 	return s.root()
 }
 
@@ -223,6 +238,9 @@ func (s *Span) root() *Span {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
+	if s == nil {
+		return
+	}
 	cfg := UserMonitoringConfig{
 		Metadata: make(map[string]string),
 	}
@@ -275,6 +293,9 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 
 // StartChild starts a new child span with the given operation name and options.
 func (s *Span) StartChild(operationName string, opts ...ddtrace.StartSpanOption) *Span {
+	if s == nil {
+		return nil
+	}
 	opts = append(opts, ChildOf(s.Context()))
 	return GetGlobalTracer().StartSpan(operationName, opts...)
 }
@@ -503,6 +524,9 @@ func (s *Span) Finish(opts ...ddtrace.FinishOption) {
 
 // SetOperationName sets or changes the operation name.
 func (s *Span) SetOperationName(operationName string) {
+	if s == nil {
+		return
+	}
 	s.Lock()
 	defer s.Unlock()
 	// We don't lock spans when flushing, so we could have a data race when
@@ -644,6 +668,9 @@ func shouldComputeStats(s *Span) bool {
 // String returns a human readable representation of the span. Not for
 // production, just debugging.
 func (s *Span) String() string {
+	if s == nil {
+		return "<nil>"
+	}
 	s.RLock()
 	defer s.RUnlock()
 	lines := []string{
@@ -671,6 +698,9 @@ func (s *Span) String() string {
 
 // Format implements fmt.Formatter.
 func (s *Span) Format(f fmt.State, c rune) {
+	if s == nil {
+		fmt.Fprintf(f, "<nil>")
+	}
 	switch c {
 	case 's':
 		fmt.Fprint(f, s.String())

@@ -140,7 +140,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodPost, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPost+" /v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
@@ -169,7 +169,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
@@ -205,7 +205,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
@@ -250,8 +250,8 @@ func TestReadError(t *testing.T) {
 	assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 	assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 	assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-	assert.Equal(404, span.Tag(ext.HTTPCode))
-	assert.Equal(true, span.Tag(ext.Error))
+	assert.Equal(float64(404), span.Tag(ext.HTTPCode))
+	assert.Equal("404: Not Found", span.Tag(ext.ErrorMsg))
 	assert.NotNil(span.Tag(ext.ErrorMsg))
 	assert.Nil(span.Tag("vault.namespace"))
 	assert.Equal("hashicorp/vault", span.Tag(ext.Component))
@@ -299,7 +299,7 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
@@ -333,7 +333,7 @@ func TestNamespace(t *testing.T) {
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
 		assert.Nil(span.Tag(ext.Error))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
@@ -349,54 +349,54 @@ func TestOption(t *testing.T) {
 
 	for ttName, tt := range map[string]struct {
 		opts []Option
-		test func(assert *assert.Assertions, span mocktracer.Span)
+		test func(assert *assert.Assertions, span *mocktracer.Span)
 	}{
 		"DefaultOptions": {
 			opts: []Option{},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(defaultServiceName, span.Tag(ext.ServiceName))
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
 		"CustomServiceName": {
 			opts: []Option{WithServiceName("someServiceName")},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
 			},
 		},
 		"WithAnalyticsTrue": {
 			opts: []Option{WithAnalytics(true)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsFalse": {
 			opts: []Option{WithAnalytics(false)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsLastOptionWins": {
 			opts: []Option{WithAnalyticsRate(0.7), WithAnalytics(true)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateMax": {
 			opts: []Option{WithAnalyticsRate(1.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateMin": {
 			opts: []Option{WithAnalyticsRate(0.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(0.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateLastOptionWins": {
 			opts: []Option{WithAnalytics(true), WithAnalyticsRate(0.7)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(0.7, span.Tag(ext.EventSampleRate))
 			},
 		},
@@ -432,7 +432,7 @@ func TestOption(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -461,11 +461,11 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "http.request", spans[0].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "vault.query", spans[0].OperationName())
 	}

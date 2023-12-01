@@ -8,9 +8,10 @@ package sharedsec
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
 // Test that internal functions used to set span tags use the correct types

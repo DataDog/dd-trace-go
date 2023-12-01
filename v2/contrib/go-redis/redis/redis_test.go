@@ -62,7 +62,7 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 // https://github.com/DataDog/dd-trace-go/issues/387
@@ -110,7 +110,7 @@ func TestClient(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("15", span.Tag("out.db"))
-	assert.Equal(15, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(15), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipeline(t *testing.T) {
@@ -141,7 +141,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -163,7 +163,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipelined(t *testing.T) {
@@ -194,7 +194,7 @@ func TestPipelined(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	_, err = client.Pipelined(func(p redis.Pipeliner) error {
@@ -217,7 +217,7 @@ func TestPipelined(t *testing.T) {
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -236,7 +236,7 @@ func TestChildSpan(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var child, parent mocktracer.Span
+	var child, parent *mocktracer.Span
 	for _, s := range spans {
 		// order of traces in buffer is not garanteed
 		switch s.OperationName() {
@@ -296,7 +296,7 @@ func TestError(t *testing.T) {
 
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
@@ -304,7 +304,7 @@ func TestError(t *testing.T) {
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
-		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+		assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -330,7 +330,7 @@ func TestError(t *testing.T) {
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
-		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+		assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {
@@ -418,7 +418,7 @@ func TestWithContext(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 4)
-	var span1, span2, setSpan, getSpan mocktracer.Span
+	var span1, span2, setSpan, getSpan *mocktracer.Span
 	for _, s := range spans {
 		switch s.Tag(ext.ResourceName) {
 		case "span1.name":
@@ -442,7 +442,7 @@ func TestWithContext(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

@@ -8,7 +8,7 @@ package grpc
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
@@ -26,7 +26,7 @@ import (
 )
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+func appsecUnaryHandlerMiddleware(span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(ctx context.Context, req interface{}) (interface{}, error) {
 		var err error
@@ -64,7 +64,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+func appsecStreamHandlerMiddleware(span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	trace.SetAppSecEnabledTags(span)
 	return func(srv interface{}, stream grpc.ServerStream) error {
 		var err error
@@ -127,7 +127,7 @@ func (ss appsecServerStream) Context() context.Context {
 	return ss.ctx
 }
 
-func setClientIP(ctx context.Context, span ddtrace.Span, md metadata.MD) netip.Addr {
+func setClientIP(ctx context.Context, span *tracer.Span, md metadata.MD) netip.Addr {
 	var remoteAddr string
 	if p, ok := peer.FromContext(ctx); ok {
 		remoteAddr = p.Addr.String()

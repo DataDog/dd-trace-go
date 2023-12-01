@@ -72,7 +72,7 @@ func TestCommandError(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(err, span.Tag(ext.Error).(error))
+	assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("redis.command", span.OperationName())
 	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("NOT_A_COMMAND", span.Tag(ext.ResourceName))
@@ -109,7 +109,7 @@ func TestInheritance(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var child, parent mocktracer.Span
+	var child, parent *mocktracer.Span
 	for _, s := range spans {
 		switch s.OperationName() {
 		case "redis.command":
@@ -415,7 +415,7 @@ func TestDoContext(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []interface{}
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))

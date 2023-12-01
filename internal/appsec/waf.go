@@ -9,12 +9,13 @@ import (
 	"errors"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	grpc "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
 	http "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
 const (

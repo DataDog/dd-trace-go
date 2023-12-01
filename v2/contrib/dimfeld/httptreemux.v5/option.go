@@ -9,9 +9,10 @@ package httptreemux
 import (
 	"net/http"
 
+	"github.com/dimfeld/httptreemux/v5"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/dimfeld/httptreemux/v5"
 )
 
 const defaultServiceName = "http.router"

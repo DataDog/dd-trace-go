@@ -10,6 +10,7 @@ import (
 	"log"
 
 	"cloud.google.com/go/pubsub"
+
 	pubsubtrace "github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsub.v1"
 )
 

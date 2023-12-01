@@ -4,7 +4,8 @@ go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212165552-729cf88f812c
-	github.com/aws/aws-sdk-go v1.48.6
+	//github.com/aws/aws-sdk-go v1.48.6
+	github.com/aws/aws-sdk-go v1.44.327
 	github.com/stretchr/testify v1.8.4
 )
 

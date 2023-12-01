@@ -144,12 +144,5 @@ func getRootSpan(ctx context.Context) *tracer.Span {
 		log.Error("appsec: could not find a span in the given Go context")
 		return nil
 	}
-	type rooter interface {
-		Root() *tracer.Span
-	}
-	if lrs, ok := span.(rooter); ok {
-		return lrs.Root()
-	}
-	log.Error("appsec: could not access the root span")
-	return nil
+	return span.Root()
 }

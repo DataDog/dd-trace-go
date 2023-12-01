@@ -8,9 +8,10 @@ package elastic_test
 import (
 	"context"
 
+	"gopkg.in/olivere/elastic.v5"
+
 	elastictrace "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"gopkg.in/olivere/elastic.v5"
 )
 
 // To start tracing elastic.v5 requests, create a new TracedHTTPClient that you will

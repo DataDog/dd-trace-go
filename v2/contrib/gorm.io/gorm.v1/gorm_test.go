@@ -441,7 +441,7 @@ func TestError(t *testing.T) {
 		// Get last span (gorm.db)
 		s := spans[len(spans)-1]
 
-		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+		assert.Equal(t, errExist, s.Tag(ext.ErrorMsg) != nil)
 	}
 
 	t.Run("defaults", func(t *testing.T) {

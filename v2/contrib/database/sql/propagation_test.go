@@ -289,7 +289,7 @@ func TestDBMTraceContextTagging(t *testing.T) {
 			for _, s := range sps {
 				tags := s.Tags()
 				if tc.traceContextInjectedTag {
-					assert.Equal(t, true, tags[keyDBMTraceInjected])
+					assert.Equal(t, "true", tags[keyDBMTraceInjected])
 				} else {
 					_, ok := tags[keyDBMTraceInjected]
 					assert.False(t, ok)
@@ -446,8 +446,8 @@ func TestDBMFullModeUnsupported(t *testing.T) {
 	}
 }
 
-func spansOfType(spans []mocktracer.Span, spanType string) (filtered []mocktracer.Span) {
-	filtered = make([]mocktracer.Span, 0)
+func spansOfType(spans []*mocktracer.Span, spanType string) (filtered []*mocktracer.Span) {
+	filtered = make([]*mocktracer.Span, 0)
 	for _, s := range spans {
 		if s.Tag("sql.query_type") == spanType {
 			filtered = append(filtered, s)

@@ -256,7 +256,7 @@ func (tr *Transaction) NewIterator(slice *util.Range, ro *opt.ReadOptions) itera
 // An Iterator wraps a leveldb.Iterator and traces until Release is called.
 type Iterator struct {
 	iterator.Iterator
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // WrapIterator wraps a leveldb.Iterator so that queries are traced.
@@ -274,7 +274,7 @@ func (it *Iterator) Release() {
 	it.span.Finish(tracer.WithError(err))
 }
 
-func startSpan(cfg *config, name string) ddtrace.Span {
+func startSpan(cfg *config, name string) *tracer.Span {
 	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),

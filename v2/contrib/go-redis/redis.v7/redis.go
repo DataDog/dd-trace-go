@@ -131,7 +131,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 }
 
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
-	var span tracer.Span
+	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
 	errRedis := cmd.Err()
@@ -168,7 +168,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 }
 
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
-	var span tracer.Span
+	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []ddtrace.FinishOption
 	for _, cmd := range cmds {

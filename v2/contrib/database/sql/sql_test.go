@@ -356,7 +356,7 @@ func TestRegister(_ *testing.T) {
 
 func TestNamingSchema(t *testing.T) {
 	newGenSpansFunc := func(t *testing.T, driverName string, registerOverride bool) namingschematest.GenSpansFn {
-		return func(t *testing.T, serviceOverride string) []mocktracer.Span {
+		return func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var registerOpts []Option
 			// serviceOverride has higher priority than the registerOverride parameter.
 			if serviceOverride != "" {
@@ -403,12 +403,12 @@ func TestNamingSchema(t *testing.T) {
 	}
 	t.Run("SQLServer", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "sqlserver", false)
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "sqlserver.query", spans[0].OperationName())
 			assert.Equal(t, "sqlserver.query", spans[1].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mssql.query", spans[0].OperationName())
 			assert.Equal(t, "mssql.query", spans[1].OperationName())
@@ -423,12 +423,12 @@ func TestNamingSchema(t *testing.T) {
 	})
 	t.Run("Postgres", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "postgres", false)
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
 			assert.Equal(t, "postgres.query", spans[1].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgresql.query", spans[0].OperationName())
 			assert.Equal(t, "postgresql.query", spans[1].OperationName())
@@ -443,12 +443,12 @@ func TestNamingSchema(t *testing.T) {
 	})
 	t.Run("PostgresWithRegisterOverride", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "postgres", true)
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgres.query", spans[0].OperationName())
 			assert.Equal(t, "postgres.query", spans[1].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "postgresql.query", spans[0].OperationName())
 			assert.Equal(t, "postgresql.query", spans[1].OperationName())
@@ -466,12 +466,12 @@ func TestNamingSchema(t *testing.T) {
 	})
 	t.Run("MySQL", func(t *testing.T) {
 		genSpans := newGenSpansFunc(t, "mysql", false)
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mysql.query", spans[0].OperationName())
 			assert.Equal(t, "mysql.query", spans[1].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "mysql.query", spans[0].OperationName())
 			assert.Equal(t, "mysql.query", spans[1].OperationName())

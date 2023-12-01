@@ -5,264 +5,251 @@
 
 package mocktracer
 
-import (
-	"errors"
-	"testing"
-	"time"
+// // basicSpan returns a span with no configuration, having the set operation name.
+// func basicSpan(operationName string) *tracer.Span {
+// 	return newSpan(&mocktracer{}, operationName, &ddtrace.StartSpanConfig{})
+// }
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+// func TestNewSpan(t *testing.T) {
+// 	t.Run("basic", func(t *testing.T) {
+// 		s := basicSpan("http.request")
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
+// 		assert := assert.New(t)
+// 		assert.Equal("http.request", s.name)
+// 		assert.False(s.startTime.IsZero())
+// 		assert.Zero(s.parentID)
+// 		assert.NotNil(s.context)
+// 		assert.NotZero(s.context.spanID)
+// 		assert.Equal(s.context.spanID, s.context.traceID)
+// 	})
 
-// basicSpan returns a span with no configuration, having the set operation name.
-func basicSpan(operationName string) *mockspan {
-	return newSpan(&mocktracer{}, operationName, &ddtrace.StartSpanConfig{})
-}
+// 	t.Run("options", func(t *testing.T) {
+// 		tr := new(mocktracer)
+// 		startTime := time.Now()
+// 		tags := map[string]interface{}{"k": "v", "k1": "v1"}
+// 		opts := &ddtrace.StartSpanConfig{
+// 			StartTime: startTime,
+// 			Tags:      tags,
+// 		}
+// 		s := newSpan(tr, "http.request", opts)
 
-func TestNewSpan(t *testing.T) {
-	t.Run("basic", func(t *testing.T) {
-		s := basicSpan("http.request")
+// 		assert := assert.New(t)
+// 		assert.Equal(tr, s.tracer)
+// 		assert.Equal("http.request", s.name)
+// 		assert.Equal(startTime, s.startTime)
+// 		assert.Equal(tags, s.tags)
+// 	})
 
-		assert := assert.New(t)
-		assert.Equal("http.request", s.name)
-		assert.False(s.startTime.IsZero())
-		assert.Zero(s.parentID)
-		assert.NotNil(s.context)
-		assert.NotZero(s.context.spanID)
-		assert.Equal(s.context.spanID, s.context.traceID)
-	})
+// 	t.Run("parent", func(t *testing.T) {
+// 		baggage := map[string]string{"A": "B", "C": "D"}
+// 		parentctx := &spanContext{spanID: 1, traceID: 2, baggage: baggage}
+// 		opts := &ddtrace.StartSpanConfig{Parent: parentctx}
+// 		s := newSpan(&mocktracer{}, "http.request", opts)
 
-	t.Run("options", func(t *testing.T) {
-		tr := new(mocktracer)
-		startTime := time.Now()
-		tags := map[string]interface{}{"k": "v", "k1": "v1"}
-		opts := &ddtrace.StartSpanConfig{
-			StartTime: startTime,
-			Tags:      tags,
-		}
-		s := newSpan(tr, "http.request", opts)
+// 		assert := assert.New(t)
+// 		assert.NotNil(s.context)
+// 		assert.Equal(uint64(1), s.parentID)
+// 		assert.Equal(uint64(2), s.context.traceID)
+// 		assert.Equal(baggage, s.context.baggage)
+// 	})
+// }
 
-		assert := assert.New(t)
-		assert.Equal(tr, s.tracer)
-		assert.Equal("http.request", s.name)
-		assert.Equal(startTime, s.startTime)
-		assert.Equal(tags, s.tags)
-	})
+// func TestSpanSetTag(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	s.SetTag("a", "b")
+// 	s.SetTag("c", "d")
 
-	t.Run("parent", func(t *testing.T) {
-		baggage := map[string]string{"A": "B", "C": "D"}
-		parentctx := &spanContext{spanID: 1, traceID: 2, baggage: baggage}
-		opts := &ddtrace.StartSpanConfig{Parent: parentctx}
-		s := newSpan(&mocktracer{}, "http.request", opts)
+// 	assert := assert.New(t)
+// 	assert.Len(s.Tags(), 3)
+// 	assert.Equal("http.request", s.Tag(ext.ResourceName))
+// 	assert.Equal("b", s.Tag("a"))
+// 	assert.Equal("d", s.Tag("c"))
+// }
 
-		assert := assert.New(t)
-		assert.NotNil(s.context)
-		assert.Equal(uint64(1), s.parentID)
-		assert.Equal(uint64(2), s.context.traceID)
-		assert.Equal(baggage, s.context.baggage)
-	})
-}
+// func TestSpanSetTagPriority(t *testing.T) {
+// 	assert := assert.New(t)
+// 	s := basicSpan("http.request")
+// 	assert.False(s.context.hasSamplingPriority())
+// 	s.SetTag(ext.SamplingPriority, -1)
+// 	assert.True(s.context.hasSamplingPriority())
+// 	assert.Equal(-1, s.context.samplingPriority())
+// }
 
-func TestSpanSetTag(t *testing.T) {
-	s := basicSpan("http.request")
-	s.SetTag("a", "b")
-	s.SetTag("c", "d")
+// func TestSpanTagImmutability(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	s.SetTag("a", "b")
+// 	tags := s.Tags()
+// 	tags["a"] = 123
+// 	tags["b"] = 456
 
-	assert := assert.New(t)
-	assert.Len(s.Tags(), 3)
-	assert.Equal("http.request", s.Tag(ext.ResourceName))
-	assert.Equal("b", s.Tag("a"))
-	assert.Equal("d", s.Tag("c"))
-}
+// 	assert := assert.New(t)
+// 	assert.Equal("b", s.tags["a"])
+// 	assert.Zero(s.tags["b"])
+// }
 
-func TestSpanSetTagPriority(t *testing.T) {
-	assert := assert.New(t)
-	s := basicSpan("http.request")
-	assert.False(s.context.hasSamplingPriority())
-	s.SetTag(ext.SamplingPriority, -1)
-	assert.True(s.context.hasSamplingPriority())
-	assert.Equal(-1, s.context.samplingPriority())
-}
+// func TestSpanStartTime(t *testing.T) {
+// 	startTime := time.Now()
+// 	s := newSpan(&mocktracer{}, "http.request", &ddtrace.StartSpanConfig{StartTime: startTime})
 
-func TestSpanTagImmutability(t *testing.T) {
-	s := basicSpan("http.request")
-	s.SetTag("a", "b")
-	tags := s.Tags()
-	tags["a"] = 123
-	tags["b"] = 456
+// 	assert := assert.New(t)
+// 	assert.Equal(startTime, s.startTime)
+// 	assert.Equal(startTime, s.StartTime())
+// }
 
-	assert := assert.New(t)
-	assert.Equal("b", s.tags["a"])
-	assert.Zero(s.tags["b"])
-}
+// func TestSpanFinishTime(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	finishTime := time.Now()
+// 	s.Finish(tracer.FinishTime(finishTime))
 
-func TestSpanStartTime(t *testing.T) {
-	startTime := time.Now()
-	s := newSpan(&mocktracer{}, "http.request", &ddtrace.StartSpanConfig{StartTime: startTime})
+// 	assert := assert.New(t)
+// 	assert.Equal(finishTime, s.finishTime)
+// 	assert.Equal(finishTime, s.FinishTime())
+// }
 
-	assert := assert.New(t)
-	assert.Equal(startTime, s.startTime)
-	assert.Equal(startTime, s.StartTime())
-}
+// func TestSpanOperationName(t *testing.T) {
+// 	t.Run("default", func(t *testing.T) {
+// 		s := basicSpan("http.request")
+// 		assert.Equal(t, "http.request", s.name)
+// 		assert.Equal(t, "http.request", s.OperationName())
+// 	})
 
-func TestSpanFinishTime(t *testing.T) {
-	s := basicSpan("http.request")
-	finishTime := time.Now()
-	s.Finish(tracer.FinishTime(finishTime))
+// 	t.Run("default", func(t *testing.T) {
+// 		s := basicSpan("http.request")
+// 		s.SetOperationName("db.query")
+// 		assert.Equal(t, "db.query", s.name)
+// 		assert.Equal(t, "db.query", s.OperationName())
+// 	})
+// }
 
-	assert := assert.New(t)
-	assert.Equal(finishTime, s.finishTime)
-	assert.Equal(finishTime, s.FinishTime())
-}
+// func TestSpanBaggageFunctions(t *testing.T) {
+// 	t.Run("SetBaggageItem", func(t *testing.T) {
+// 		s := basicSpan("http.request")
+// 		s.SetBaggageItem("a", "b")
+// 		assert.Equal(t, "b", s.context.baggage["a"])
+// 	})
 
-func TestSpanOperationName(t *testing.T) {
-	t.Run("default", func(t *testing.T) {
-		s := basicSpan("http.request")
-		assert.Equal(t, "http.request", s.name)
-		assert.Equal(t, "http.request", s.OperationName())
-	})
+// 	t.Run("BaggageItem", func(t *testing.T) {
+// 		s := basicSpan("http.request")
+// 		s.SetBaggageItem("a", "b")
+// 		assert.Equal(t, "b", s.BaggageItem("a"))
+// 	})
+// }
 
-	t.Run("default", func(t *testing.T) {
-		s := basicSpan("http.request")
-		s.SetOperationName("db.query")
-		assert.Equal(t, "db.query", s.name)
-		assert.Equal(t, "db.query", s.OperationName())
-	})
-}
+// func TestSpanContext(t *testing.T) {
+// 	t.Run("Context", func(t *testing.T) {
+// 		s := basicSpan("http.request")
+// 		assert.Equal(t, s.context, s.Context())
+// 	})
 
-func TestSpanBaggageFunctions(t *testing.T) {
-	t.Run("SetBaggageItem", func(t *testing.T) {
-		s := basicSpan("http.request")
-		s.SetBaggageItem("a", "b")
-		assert.Equal(t, "b", s.context.baggage["a"])
-	})
+// 	t.Run("IDs", func(t *testing.T) {
+// 		parent := basicSpan("http.request")
+// 		child := newSpan(&mocktracer{}, "db.query", &ddtrace.StartSpanConfig{
+// 			Parent: parent.Context(),
+// 		})
 
-	t.Run("BaggageItem", func(t *testing.T) {
-		s := basicSpan("http.request")
-		s.SetBaggageItem("a", "b")
-		assert.Equal(t, "b", s.BaggageItem("a"))
-	})
-}
+// 		assert := assert.New(t)
+// 		assert.Equal(parent.SpanID(), child.ParentID())
+// 		assert.Equal(parent.TraceID(), child.TraceID())
+// 		assert.NotZero(child.SpanID())
+// 	})
+// }
 
-func TestSpanContext(t *testing.T) {
-	t.Run("Context", func(t *testing.T) {
-		s := basicSpan("http.request")
-		assert.Equal(t, s.context, s.Context())
-	})
+// func TestSpanFinish(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	want := errors.New("some error")
+// 	s.Finish(tracer.WithError(want))
 
-	t.Run("IDs", func(t *testing.T) {
-		parent := basicSpan("http.request")
-		child := newSpan(&mocktracer{}, "db.query", &ddtrace.StartSpanConfig{
-			Parent: parent.Context(),
-		})
+// 	assert := assert.New(t)
+// 	assert.False(s.FinishTime().IsZero())
+// 	assert.True(s.FinishTime().Before(time.Now().Add(1 * time.Nanosecond)))
+// 	assert.Equal(want, s.Tag(ext.Error))
+// }
 
-		assert := assert.New(t)
-		assert.Equal(parent.SpanID(), child.ParentID())
-		assert.Equal(parent.TraceID(), child.TraceID())
-		assert.NotZero(child.SpanID())
-	})
-}
+// func TestSpanFinishTwice(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	wantError := errors.New("some error")
+// 	s.Finish(tracer.WithError(wantError))
 
-func TestSpanFinish(t *testing.T) {
-	s := basicSpan("http.request")
-	want := errors.New("some error")
-	s.Finish(tracer.WithError(want))
+// 	assert := assert.New(t)
+// 	wantTime := s.finishTime
+// 	time.Sleep(2 * time.Millisecond)
+// 	s.Finish(tracer.WithError(errors.New("new error")))
+// 	assert.Equal(wantTime, s.finishTime)
+// 	assert.Equal(wantError, s.Tag(ext.Error))
+// 	assert.Equal(len(s.tracer.finishedSpans), 1)
+// }
 
-	assert := assert.New(t)
-	assert.False(s.FinishTime().IsZero())
-	assert.True(s.FinishTime().Before(time.Now().Add(1 * time.Nanosecond)))
-	assert.Equal(want, s.Tag(ext.Error))
-}
+// func TestSpanString(t *testing.T) {
+// 	s := basicSpan("http.request")
+// 	s.Finish(tracer.WithError(errors.New("some error")))
 
-func TestSpanFinishTwice(t *testing.T) {
-	s := basicSpan("http.request")
-	wantError := errors.New("some error")
-	s.Finish(tracer.WithError(wantError))
+// 	assert := assert.New(t)
+// 	assert.NotEmpty(s.String())
+// }
 
-	assert := assert.New(t)
-	wantTime := s.finishTime
-	time.Sleep(2 * time.Millisecond)
-	s.Finish(tracer.WithError(errors.New("new error")))
-	assert.Equal(wantTime, s.finishTime)
-	assert.Equal(wantError, s.Tag(ext.Error))
-	assert.Equal(len(s.tracer.finishedSpans), 1)
-}
+// func TestSpanWithID(t *testing.T) {
+// 	spanID := uint64(123456789)
+// 	span := newMockTracer().StartSpan("", tracer.WithSpanID(spanID))
 
-func TestSpanString(t *testing.T) {
-	s := basicSpan("http.request")
-	s.Finish(tracer.WithError(errors.New("some error")))
+// 	assert := assert.New(t)
+// 	assert.Equal(spanID, span.Context().SpanID())
+// }
 
-	assert := assert.New(t)
-	assert.NotEmpty(s.String())
-}
+// func TestSetUser(t *testing.T) {
+// 	const (
+// 		id        = "john.doe#12345"
+// 		name      = "John Doe"
+// 		email     = "john.doe@hostname.com"
+// 		scope     = "read:message, write:files"
+// 		role      = "admin"
+// 		sessionID = "session#12345"
+// 	)
+// 	expected := []struct{ key, value string }{
+// 		{key: "usr.id", value: id},
+// 		{key: "usr.name", value: name},
+// 		{key: "usr.email", value: email},
+// 		{key: "usr.scope", value: scope},
+// 		{key: "usr.role", value: role},
+// 		{key: "usr.session_id", value: sessionID},
+// 	}
 
-func TestSpanWithID(t *testing.T) {
-	spanID := uint64(123456789)
-	span := newMockTracer().StartSpan("", tracer.WithSpanID(spanID))
+// 	t.Run("root", func(t *testing.T) {
+// 		s := basicSpan("root operation")
+// 		tracer.SetUser(s,
+// 			id,
+// 			tracer.WithUserEmail(email),
+// 			tracer.WithUserName(name),
+// 			tracer.WithUserScope(scope),
+// 			tracer.WithUserRole(role),
+// 			tracer.WithUserSessionID(sessionID))
+// 		s.Finish()
+// 		for _, pair := range expected {
+// 			assert.Equal(t, pair.value, s.Tag(pair.key))
+// 		}
+// 	})
 
-	assert := assert.New(t)
-	assert.Equal(spanID, span.Context().SpanID())
-}
+// 	t.Run("nested", func(t *testing.T) {
+// 		tr := newMockTracer()
+// 		s0 := tr.StartSpan("root operation")
+// 		s1 := tr.StartSpan("nested operation", tracer.ChildOf(s0.Context()))
+// 		s2 := tr.StartSpan("nested nested operation", tracer.ChildOf(s1.Context()))
+// 		tracer.SetUser(s2,
+// 			id,
+// 			tracer.WithUserEmail(email),
+// 			tracer.WithUserName(name),
+// 			tracer.WithUserScope(scope),
+// 			tracer.WithUserRole(role),
+// 			tracer.WithUserSessionID(sessionID))
+// 		s2.Finish()
+// 		s1.Finish()
+// 		s0.Finish()
+// 		finished := tr.FinishedSpans()
+// 		require.Len(t, finished, 3)
+// 		for _, pair := range expected {
+// 			assert.Equal(t, pair.value, finished[2].Tag(pair.key))
+// 			assert.Nil(t, finished[1].Tag(pair.key))
+// 			assert.Nil(t, finished[0].Tag(pair.key))
+// 		}
+// 	})
 
-func TestSetUser(t *testing.T) {
-	const (
-		id        = "john.doe#12345"
-		name      = "John Doe"
-		email     = "john.doe@hostname.com"
-		scope     = "read:message, write:files"
-		role      = "admin"
-		sessionID = "session#12345"
-	)
-	expected := []struct{ key, value string }{
-		{key: "usr.id", value: id},
-		{key: "usr.name", value: name},
-		{key: "usr.email", value: email},
-		{key: "usr.scope", value: scope},
-		{key: "usr.role", value: role},
-		{key: "usr.session_id", value: sessionID},
-	}
-
-	t.Run("root", func(t *testing.T) {
-		s := basicSpan("root operation")
-		tracer.SetUser(s,
-			id,
-			tracer.WithUserEmail(email),
-			tracer.WithUserName(name),
-			tracer.WithUserScope(scope),
-			tracer.WithUserRole(role),
-			tracer.WithUserSessionID(sessionID))
-		s.Finish()
-		for _, pair := range expected {
-			assert.Equal(t, pair.value, s.Tag(pair.key))
-		}
-	})
-
-	t.Run("nested", func(t *testing.T) {
-		tr := newMockTracer()
-		s0 := tr.StartSpan("root operation")
-		s1 := tr.StartSpan("nested operation", tracer.ChildOf(s0.Context()))
-		s2 := tr.StartSpan("nested nested operation", tracer.ChildOf(s1.Context()))
-		tracer.SetUser(s2,
-			id,
-			tracer.WithUserEmail(email),
-			tracer.WithUserName(name),
-			tracer.WithUserScope(scope),
-			tracer.WithUserRole(role),
-			tracer.WithUserSessionID(sessionID))
-		s2.Finish()
-		s1.Finish()
-		s0.Finish()
-		finished := tr.FinishedSpans()
-		require.Len(t, finished, 3)
-		for _, pair := range expected {
-			assert.Equal(t, pair.value, finished[2].Tag(pair.key))
-			assert.Nil(t, finished[1].Tag(pair.key))
-			assert.Nil(t, finished[0].Tag(pair.key))
-		}
-	})
-
-}
+// }

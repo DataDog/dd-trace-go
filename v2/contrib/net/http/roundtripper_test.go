@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -56,10 +55,10 @@ func TestRoundTripper(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -85,8 +84,8 @@ func TestRoundTripper(t *testing.T) {
 	assert.Equal(t, "200", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
-	assert.Equal(t, true, s1.Tag("CalledBefore"))
-	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, "true", s1.Tag("CalledBefore"))
+	assert.Equal(t, "true", s1.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 	assert.Equal(t, "127.0.0.1", s1.Tag(ext.NetworkDestinationName))
@@ -94,7 +93,7 @@ func TestRoundTripper(t *testing.T) {
 	wantPort, err := strconv.Atoi(strings.TrimPrefix(s.URL, "http://127.0.0.1:"))
 	require.NoError(t, err)
 	require.NotEmpty(t, wantPort)
-	assert.Equal(t, wantPort, s1.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(wantPort), s1.Tag(ext.NetworkDestinationPort))
 }
 
 func TestRoundTripperServerError(t *testing.T) {
@@ -115,10 +114,10 @@ func TestRoundTripperServerError(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -144,9 +143,9 @@ func TestRoundTripperServerError(t *testing.T) {
 	assert.Equal(t, "500", s1.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s1.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s1.Tag(ext.HTTPURL))
-	assert.Equal(t, fmt.Errorf("500: Internal Server Error"), s1.Tag(ext.Error))
-	assert.Equal(t, true, s1.Tag("CalledBefore"))
-	assert.Equal(t, true, s1.Tag("CalledAfter"))
+	assert.Equal(t, "500: Internal Server Error", s1.Tag(ext.ErrorMsg))
+	assert.Equal(t, "true", s1.Tag("CalledBefore"))
+	assert.Equal(t, "true", s1.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s1.Tag(ext.Component))
 }
@@ -165,10 +164,10 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	defer close(done)
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -189,15 +188,15 @@ func TestRoundTripperNetworkError(t *testing.T) {
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, s.URL+"/hello/world", s0.Tag(ext.HTTPURL))
-	assert.NotNil(t, s0.Tag(ext.Error))
-	assert.Equal(t, true, s0.Tag("CalledBefore"))
-	assert.Equal(t, true, s0.Tag("CalledAfter"))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
+	assert.Equal(t, "true", s0.Tag("CalledBefore"))
+	assert.Equal(t, "true", s0.Tag("CalledAfter"))
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 }
 
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
-	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) mocktracer.Span {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) *mocktracer.Span {
 		done := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
@@ -232,7 +231,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer mt.Stop()
 
 		span := failedRequest(t, mt, false)
-		assert.Nil(t, span.Tag(ext.Error))
+		assert.Nil(t, span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("error forwarded", func(t *testing.T) {
@@ -240,7 +239,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer mt.Stop()
 
 		span := failedRequest(t, mt, true)
-		assert.NotNil(t, span.Tag(ext.Error))
+		assert.NotNil(t, span.Tag(ext.ErrorMsg))
 	})
 }
 
@@ -261,10 +260,10 @@ func TestRoundTripperCredentials(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		WithBefore(func(req *http.Request, span ddtrace.Span) {
+		WithBefore(func(req *http.Request, span *tracer.Span) {
 			span.SetTag("CalledBefore", true)
 		}),
-		WithAfter(func(res *http.Response, span ddtrace.Span) {
+		WithAfter(func(res *http.Response, span *tracer.Span) {
 			span.SetTag("CalledAfter", true)
 		}))
 
@@ -441,7 +440,7 @@ func TestRoundTripperURLWithoutPort(t *testing.T) {
 	assert.Equal(t, nil, s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
 	assert.Equal(t, "http://localhost/hello/world", s0.Tag(ext.HTTPURL))
-	assert.NotNil(t, s0.Tag(ext.Error))
+	assert.NotNil(t, s0.Tag(ext.ErrorMsg))
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "net/http", s0.Tag(ext.Component))
 	assert.Equal(t, "localhost", s0.Tag(ext.NetworkDestinationName))
@@ -476,7 +475,7 @@ func TestServiceName(t *testing.T) {
 		serviceName := "testServer"
 		rt := WrapRoundTripper(http.DefaultTransport,
 			RTWithServiceName("wrongServiceName"),
-			WithBefore(func(_ *http.Request, span ddtrace.Span) {
+			WithBefore(func(_ *http.Request, span *tracer.Span) {
 				span.SetTag(ext.ServiceName, serviceName)
 			}),
 		)
@@ -583,7 +582,7 @@ func TestRoundTripperPropagation(t *testing.T) {
 }
 
 func TestClientNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []RoundTripperOption
 		if serviceOverride != "" {
 			opts = append(opts, RTWithServiceName(serviceOverride))
@@ -603,11 +602,11 @@ func TestClientNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "http.request", spans[0].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "http.client.request", spans[0].OperationName())
 	}

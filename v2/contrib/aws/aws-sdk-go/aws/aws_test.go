@@ -211,7 +211,7 @@ func TestRetries(t *testing.T) {
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), float64(3))
 }
 
 func TestHTTPCredentials(t *testing.T) {
@@ -293,7 +293,7 @@ func TestWithErrorCheck(t *testing.T) {
 
 			spans := mt.FinishedSpans()
 			assert.True(t, len(spans) > 0)
-			assert.Equal(t, errExist, spans[0].Tag(ext.Error) != nil)
+			assert.Equal(t, errExist, spans[0].Tag(ext.ErrorMsg) != nil)
 		}
 	}
 
@@ -508,7 +508,7 @@ func TestExtraTagsForService(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -533,14 +533,14 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		assert.Equal(t, "ec2.command", spans[0].OperationName())
 		assert.Equal(t, "s3.command", spans[1].OperationName())
 		assert.Equal(t, "sqs.command", spans[2].OperationName())
 		assert.Equal(t, "sns.command", spans[3].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 4)
 		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
 		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
@@ -558,7 +558,7 @@ func TestNamingSchema(t *testing.T) {
 }
 
 func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithServiceName(serviceOverride))
@@ -594,7 +594,7 @@ func TestMessagingNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)
 		assert.Equal(t, "sqs.command", spans[0].OperationName())
 		assert.Equal(t, "sqs.command", spans[1].OperationName())
@@ -602,7 +602,7 @@ func TestMessagingNamingSchema(t *testing.T) {
 		assert.Equal(t, "sns.command", spans[3].OperationName())
 		assert.Equal(t, "sns.command", spans[4].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)
 		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
 		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())

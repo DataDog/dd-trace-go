@@ -9,9 +9,10 @@ import (
 	"context"
 	"net"
 
+	"google.golang.org/grpc/stats"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"google.golang.org/grpc/stats"
 )
 
 // NewClientStatsHandler returns a gRPC client stats.Handler to trace RPC calls.

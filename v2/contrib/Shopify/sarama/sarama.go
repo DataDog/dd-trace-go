@@ -54,7 +54,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	}
 	go func() {
 		msgs := pc.Messages()
-		var prev ddtrace.Span
+		var prev *tracer.Span
 		for msg := range msgs {
 			// create the next span from the message
 			opts := []tracer.StartSpanOption{
@@ -144,7 +144,7 @@ func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32
 func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
-	spans := make([]ddtrace.Span, len(msgs))
+	spans := make([]*tracer.Span, len(msgs))
 	for i, msg := range msgs {
 		setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
@@ -228,7 +228,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		errors:        make(chan *sarama.ProducerError),
 	}
 	go func() {
-		spans := make(map[uint64]ddtrace.Span)
+		spans := make(map[uint64]*tracer.Span)
 		defer close(wrapped.input)
 		defer close(wrapped.successes)
 		defer close(wrapped.errors)
@@ -283,7 +283,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	return wrapped
 }
 
-func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) ddtrace.Span {
+func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) *tracer.Span {
 	carrier := NewProducerMessageCarrier(msg)
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.producerServiceName),
@@ -308,7 +308,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	return span
 }
 
-func finishProducerSpan(span ddtrace.Span, partition int32, offset int64, err error) {
+func finishProducerSpan(span *tracer.Span, partition int32, offset int64, err error) {
 	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))

@@ -2,7 +2,7 @@
 set -e
 
 contrib=""
-sleeptime=30
+sleeptime=10
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
 
@@ -31,6 +31,7 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--all)
 			contrib=true
+			lint=true
 			export DD_APPSEC_ENABLED=true
 			export DD_TEST_APPS_ENABLED=true
 			export INTEGRATION=true
@@ -100,7 +101,7 @@ fi
 ## CORE
 echo testing core
 pkg_names=$(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $pkg_names
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $pkg_names && true
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB

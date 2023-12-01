@@ -123,7 +123,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 		}
 		opts = append(opts, tracer.StartTime(octx.Stats.OperationStart))
 	}
-	var span ddtrace.Span
+	var span *tracer.Span
 	span, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(octx), opts...)
 	defer func() {
 		var errs []string
@@ -144,7 +144,7 @@ func (t *gqlTracer) InterceptResponse(ctx context.Context, next graphql.Response
 			childOpts = append(childOpts, tracer.StartTime(start))
 			childOpts = append(childOpts, tracer.ResourceName(name))
 			childOpts = append(childOpts, tracer.Tag(ext.Component, componentName))
-			var childSpan ddtrace.Span
+			var childSpan *tracer.Span
 			childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 			childSpan.Finish(tracer.FinishTime(finish))
 		}

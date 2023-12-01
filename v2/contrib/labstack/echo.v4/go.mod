@@ -1,7 +1,7 @@
 module github.com/DataDog/dd-trace-go/v2/contrib/labstack/echo.v4
 
 go 1.19
-
+	
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212165552-729cf88f812c
 	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231212165552-729cf88f812c

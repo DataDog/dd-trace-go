@@ -74,7 +74,7 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 type PublishResult struct {
 	*pubsub.PublishResult
 	once sync.Once
-	span tracer.Span
+	span *tracer.Span
 }
 
 // Get wraps (pubsub.PublishResult).Get(ctx). When this function returns the publish
@@ -118,6 +118,7 @@ func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
 		}
+
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
 			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)

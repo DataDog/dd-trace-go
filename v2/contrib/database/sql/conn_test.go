@@ -271,7 +271,7 @@ func TestWithErrorCheck(t *testing.T) {
 			assert.True(t, len(spans) > 0)
 
 			s := spans[len(spans)-1]
-			assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+			assert.Equal(t, errExist, s.Tag(ext.ErrorMsg) != nil)
 		}
 	}
 
@@ -310,7 +310,7 @@ func TestWithCustomTag(t *testing.T) {
 				opName: "mysql.query",
 				customTags: map[string]interface{}{
 					"foo": "bar",
-					"baz": 123,
+					"baz": float64(123),
 				},
 				dbSystem: ext.DBSystemMySQL,
 			},
@@ -330,7 +330,7 @@ func TestWithCustomTag(t *testing.T) {
 				opName: "postgres.query",
 				customTags: map[string]interface{}{
 					"foo": "bar",
-					"baz": 123,
+					"baz": float64(123),
 				},
 				dbSystem: "postgresql",
 			},
