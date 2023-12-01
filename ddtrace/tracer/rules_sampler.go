@@ -657,11 +657,14 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
-		Service      string   `json:"service"`
-		Name         string   `json:"name"`
-		Rate         float64  `json:"sample_rate"`
-		Type         string   `json:"type"`
-		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
+		Service      string            `json:"service"`
+		Name         string            `json:"name"`
+		Resource     string            `json:"resource,omitempty"`
+		Rate         float64           `json:"sample_rate"`
+		TargetSpan   string            `json:"target_span,omitempty"`
+		Tags         map[string]string `json:"tags,omitempty"`
+		Type         string            `json:"type"`
+		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
 	if sr.exactService != "" {
 		s.Service = sr.exactService
@@ -673,10 +676,26 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	} else if sr.Name != nil {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
-	s.Rate = sr.Rate
-	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
+	}
+	if sr.ruleType == SamplingRuleTrace {
+		if sr.TargetRoot {
+			s.TargetSpan = "root"
+		} else {
+			s.TargetSpan = "any"
+		}
+	}
+	if sr.Resource != nil {
+		s.Resource = sr.Resource.String()
+	}
+	s.Rate = sr.Rate
+	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
+	s.Tags = make(map[string]string, len(sr.Tags))
+	for k, v := range sr.Tags {
+		if v != nil {
+			s.Tags[k] = v.String()
+		}
 	}
 	return json.Marshal(&s)
 }
