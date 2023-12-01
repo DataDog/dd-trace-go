@@ -28,7 +28,7 @@ var (
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.DDSpan, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
@@ -63,7 +63,7 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 // FinishRequestSpan finishes the given HTTP request span and sets the expected response-related tags such as the status
 // code. Any further span finish option can be added with opts.
-func FinishRequestSpan(s tracer.Span, status int, opts ...tracer.FinishOption) {
+func FinishRequestSpan(s tracer.DDSpan, status int, opts ...tracer.FinishOption) {
 	var statusStr string
 	if status == 0 {
 		statusStr = "200"

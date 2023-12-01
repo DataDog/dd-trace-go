@@ -89,7 +89,7 @@ type spanContext struct {
 	// the below group should propagate only locally
 
 	trace  *trace // reference to the trace that this span belongs too
-	span   *span  // reference to the span that hosts this context
+	span   *Span  // reference to the span that hosts this context
 	errors int32  // number of spans with errors in this trace
 
 	// the below group should propagate cross-process
@@ -108,7 +108,7 @@ type spanContext struct {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
-func newSpanContext(span *span, parent *spanContext) *spanContext {
+func newSpanContext(span *Span, parent *spanContext) *spanContext {
 	context := &spanContext{
 		spanID: span.SpanID,
 		span:   span,
@@ -243,7 +243,7 @@ const (
 // trace, if these exist.
 type trace struct {
 	mu               sync.RWMutex      // guards below fields
-	spans            []*span           // all the spans that are part of this trace
+	spans            []*Span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
 	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
@@ -255,7 +255,7 @@ type trace struct {
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
-	root *span
+	root *Span
 }
 
 var (
@@ -275,7 +275,7 @@ var (
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
-	return &trace{spans: make([]*span, 0, traceStartSize)}
+	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
@@ -345,7 +345,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
-func (t *trace) push(sp *span) {
+func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -373,7 +373,7 @@ func (t *trace) push(sp *span) {
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *span) { //tr *tracer) {
+func (t *trace) setTraceTags(s *Span) { //tr *tracer) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -398,7 +398,7 @@ func (t *trace) setTraceTags(s *span) { //tr *tracer) {
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
-func (t *trace) finishedOne(s *span) {
+func (t *trace) finishedOne(s *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -455,8 +455,8 @@ func (t *trace) finishedOne(s *span) {
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", 1, []string{"reason:large_trace"}, true)
-	finishedSpans := make([]*span, 0, t.finished)
-	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+	finishedSpans := make([]*Span, 0, t.finished)
+	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
 		if s2.finished {
 			finishedSpans = append(finishedSpans, s2)
@@ -488,7 +488,7 @@ func (t *trace) finishChunk(tr ddtrace.Tracer, ch *chunk) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *span, t ddtrace.Tracer) {
+func setPeerService(s *Span, t ddtrace.Tracer) {
 	tc := t.TracerConf()
 	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
@@ -517,7 +517,7 @@ func setPeerService(s *span, t ddtrace.Tracer) {
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
-func setPeerServiceFromSource(s *span) string {
+func setPeerServiceFromSource(s *Span) string {
 	has := func(tag string) bool {
 		_, ok := s.Meta[tag]
 		return ok

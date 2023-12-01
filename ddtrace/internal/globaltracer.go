@@ -45,7 +45,7 @@ var _ ddtrace.Tracer = (*NoopTracer)(nil)
 type NoopTracer struct{}
 
 // StartSpan implements ddtrace.Tracer.
-func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
+func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	return NoopSpan{}
 }
 
@@ -69,12 +69,12 @@ func (NoopTracer) TracerConf() ddtrace.TracerConf {
 	return ddtrace.TracerConf{}
 }
 
-func (NoopTracer) SubmitStats(ddtrace.Span)               {}
-func (NoopTracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
-func (NoopTracer) SubmitChunk(any)                        {}
-func (NoopTracer) Flush()                                 {}
+func (NoopTracer) SubmitStats(ddtrace.DDSpan)               {}
+func (NoopTracer) SubmitAbandonedSpan(ddtrace.DDSpan, bool) {}
+func (NoopTracer) SubmitChunk(any)                          {}
+func (NoopTracer) Flush()                                   {}
 
-var _ ddtrace.Span = (*NoopSpan)(nil)
+var _ ddtrace.DDSpan = (*NoopSpan)(nil)
 
 // NoopSpan is an implementation of ddtrace.Span that is a no-op.
 type NoopSpan struct{}
@@ -101,7 +101,7 @@ func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracer{} }
 func (NoopSpan) Context() ddtrace.SpanContext { return NoopSpanContext{} }
 
 // StartSpan implements ddtrace.Span.
-func (NoopSpan) StartChild(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
+func (NoopSpan) StartChild(_ string, _ ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	return NoopSpan{}
 }
 

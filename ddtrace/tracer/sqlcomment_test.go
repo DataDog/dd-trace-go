@@ -110,7 +110,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			var traceID uint64
 			if tc.injectSpan {
 				traceID = uint64(10)
-				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*span)
+				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*Span)
 				root.SetTag(ext.SamplingPriority, tc.samplingPriority)
 				spanCtx = root.Context()
 			}
@@ -282,7 +282,7 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 
 func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
 	tracer, _ := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
-	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
+	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*Span)
 	root.SetTag(ext.SamplingPriority, 2)
 	spanCtx := root.Context()
 	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}

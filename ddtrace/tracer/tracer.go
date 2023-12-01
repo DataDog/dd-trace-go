@@ -169,14 +169,14 @@ func Stop() {
 	log.Flush()
 }
 
-// Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
-// ddtrace.Span. It is recommended and is considered more correct to refer to this type as
-// ddtrace.Span instead.
-type Span = ddtrace.Span
+// DDSpan is an alias for ddtrace.DDSpan. It is here to allow godoc to group methods returning
+// ddtrace.DDSpan. It is recommended and is considered more correct to refer to this type as
+// ddtrace.DDSpan instead.
+type DDSpan = ddtrace.DDSpan
 
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
-func StartSpan(operationName string, opts ...StartSpanOption) Span {
+func StartSpan(operationName string, opts ...StartSpanOption) DDSpan {
 	return internal.GetGlobalTracer().StartSpan(operationName, opts...)
 }
 
@@ -199,7 +199,7 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // bit of information gets monitored. In case of distributed traces,
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
-func SetUser(s Span, id string, opts ...UserMonitoringOption) {
+func SetUser(s DDSpan, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
@@ -397,7 +397,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
 type chunk struct {
-	spans    []*span
+	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
@@ -409,7 +409,7 @@ func (t *tracer) sampleChunk(c *chunk) {
 			return
 		}
 	}
-	var kept []*span
+	var kept []*Span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
 		for _, span := range c.spans {
@@ -454,7 +454,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -500,7 +500,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		id = generateSpanID(startTime)
 	}
 	// span defaults
-	span := &span{
+	span := &Span{
 		Name:         operationName,
 		Service:      t.config.serviceName,
 		Resource:     operationName,
@@ -607,7 +607,7 @@ func generateSpanID(startTime int64) uint64 {
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	var labels []string
 	if t.config.profilerHotspots {
 		// allocate the max-length slice to avoid growing it later
@@ -639,7 +639,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *span) {
 // spanResourcePIISafe returns true if s.Resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.Type == "") span resource names generally do not.
-func spanResourcePIISafe(s *span) bool {
+func spanResourcePIISafe(s *Span) bool {
 	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
 }
 
@@ -686,8 +686,8 @@ func (t *tracer) TracerConf() ddtrace.TracerConf {
 	}
 }
 
-func (t *tracer) SubmitStats(s Span) {
-	sp, ok := s.(*span)
+func (t *tracer) SubmitStats(s DDSpan) {
+	sp, ok := s.(*Span)
 	if !ok {
 		return
 	}
@@ -699,8 +699,8 @@ func (t *tracer) SubmitStats(s Span) {
 	}
 }
 
-func (t *tracer) SubmitAbandonedSpan(s Span, finished bool) {
-	sp, ok := s.(*span)
+func (t *tracer) SubmitAbandonedSpan(s DDSpan, finished bool) {
+	sp, ok := s.(*Span)
 	if !ok {
 		return
 	}
@@ -716,7 +716,7 @@ func (t *tracer) SubmitAbandonedSpan(s Span, finished bool) {
 const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
-func (t *tracer) sample(span *span) {
+func (t *tracer) sample(span *Span) {
 	if _, ok := span.context.SamplingPriority(); ok {
 		// sampling decision was already made
 		return
@@ -736,7 +736,7 @@ func (t *tracer) sample(span *span) {
 	t.prioritySampling.apply(span)
 }
 
-func startExecutionTracerTask(ctx gocontext.Context, span *span) (gocontext.Context, func()) {
+func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}

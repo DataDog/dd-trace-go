@@ -49,6 +49,6 @@ func (m *MockSpan) Context() ddtrace.SpanContext {
 	panic("unused")
 }
 
-func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	panic("unused")
 }

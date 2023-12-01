@@ -15,7 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-var _ ddtrace.Span = (*mockspan)(nil)
+var _ ddtrace.DDSpan = (*mockspan)(nil)
 var _ Span = (*mockspan)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
@@ -48,7 +48,7 @@ type Span interface {
 	Context() ddtrace.SpanContext
 
 	// StartChild starts a new child span with the given operation name and options.
-	StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span
+	StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.DDSpan
 
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
@@ -263,7 +263,7 @@ func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
 
 // Root walks the span up to the root parent span and returns it.
 // This method is required by some internal packages such as appsec.
-func (s *mockspan) Root() tracer.Span {
+func (s *mockspan) Root() tracer.DDSpan {
 	openSpans := s.tracer.openSpans
 	var current Span = s
 	for {
@@ -282,7 +282,7 @@ func (s *mockspan) Root() tracer.Span {
 }
 
 // StartChild starts a new child span with the given operation name and options.
-func (s *mockspan) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (s *mockspan) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	opts = append(opts, tracer.ChildOf(s.Context()))
 	return s.tracer.StartSpan(operationName, opts...)
 }

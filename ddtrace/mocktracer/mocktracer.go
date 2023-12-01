@@ -73,7 +73,7 @@ func (*mocktracer) Stop() {
 	internal.Testing = false
 }
 
-func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	var cfg ddtrace.StartSpanConfig
 	for _, fn := range opts {
 		fn(&cfg)
@@ -202,7 +202,7 @@ func (t *mocktracer) TracerConf() ddtrace.TracerConf {
 	return ddtrace.TracerConf{}
 }
 
-func (t *mocktracer) SubmitStats(ddtrace.Span)               {}
-func (t *mocktracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
-func (t *mocktracer) SubmitChunk(any)                        {}
-func (t *mocktracer) Flush()                                 {}
+func (t *mocktracer) SubmitStats(ddtrace.DDSpan)               {}
+func (t *mocktracer) SubmitAbandonedSpan(ddtrace.DDSpan, bool) {}
+func (t *mocktracer) SubmitChunk(any)                          {}
+func (t *mocktracer) Flush()                                   {}

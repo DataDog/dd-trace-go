@@ -13,13 +13,13 @@ import (
 )
 
 // SetSecurityEventsTags sets the AppSec events span tags.
-func SetSecurityEventsTags(span ddtrace.Span, events []any) {
+func SetSecurityEventsTags(span ddtrace.DDSpan, events []any) {
 	if err := setSecurityEventsTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
-func setSecurityEventsTags(span ddtrace.Span, events []any) error {
+func setSecurityEventsTags(span ddtrace.DDSpan, events []any) error {
 	if events == nil {
 		return nil
 	}

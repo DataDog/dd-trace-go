@@ -16,7 +16,7 @@ type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
+func (*raceTestTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.DDSpan {
 	return NoopSpan{}
 }
 func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
@@ -32,10 +32,10 @@ func (*raceTestTracer) TracerConf() ddtrace.TracerConf {
 	return ddtrace.TracerConf{}
 }
 
-func (*raceTestTracer) SubmitStats(ddtrace.Span)               {}
-func (*raceTestTracer) SubmitAbandonedSpan(ddtrace.Span, bool) {}
-func (*raceTestTracer) SubmitChunk(any)                        {}
-func (*raceTestTracer) Flush()                                 {}
+func (*raceTestTracer) SubmitStats(ddtrace.DDSpan)               {}
+func (*raceTestTracer) SubmitAbandonedSpan(ddtrace.DDSpan, bool) {}
+func (*raceTestTracer) SubmitChunk(any)                          {}
+func (*raceTestTracer) Flush()                                   {}
 
 func TestGlobalTracer(t *testing.T) {
 	// at module initialization, the tracer must be seet

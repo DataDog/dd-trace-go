@@ -37,7 +37,7 @@ type SpanContextW3C interface {
 // within the "tracer" package.
 type Tracer interface {
 	// StartSpan starts a span with the given operation name and options.
-	StartSpan(operationName string, opts ...StartSpanOption) Span
+	StartSpan(operationName string, opts ...StartSpanOption) DDSpan
 
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
@@ -54,8 +54,8 @@ type Tracer interface {
 	// here temporarily as we figure out a sensible API.
 	TracerConf() TracerConf
 
-	SubmitStats(Span)
-	SubmitAbandonedSpan(Span, bool)
+	SubmitStats(DDSpan)
+	SubmitAbandonedSpan(DDSpan, bool)
 	SubmitChunk(any) // This is a horrible signature. This will eventually become SubmitChunk(Chunk)
 	Flush()          // Synchronous flushing
 
@@ -77,10 +77,10 @@ type TracerConf struct {
 	ServiceTag           string
 }
 
-// Span represents a chunk of computation time. Spans have names, durations,
+// DDSpan represents a chunk of computation time. Spans have names, durations,
 // timestamps and other metadata. A Tracer is used to create hierarchies of
 // spans in a request, buffer and submit them to the server.
-type Span interface {
+type DDSpan interface {
 	// SetTag sets a key/value pair as metadata on the span.
 	SetTag(key string, value interface{})
 
@@ -102,7 +102,7 @@ type Span interface {
 	Context() SpanContext
 
 	// StartChild starts a new child span with the given operation name and options.
-	StartChild(operationName string, opts ...StartSpanOption) Span
+	StartChild(operationName string, opts ...StartSpanOption) DDSpan
 }
 
 // SpanContext represents a span state that can propagate to descendant spans

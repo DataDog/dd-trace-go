@@ -33,7 +33,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
 
@@ -45,7 +45,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.NotContains(t, keyRulesSamplerAppliedRate, s.Metrics)
 
@@ -70,7 +70,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
 
@@ -82,7 +82,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
 
@@ -261,7 +261,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.NotContains(t, "key0", s.Meta)
 		require.NotContains(t, "key1", s.Meta)
@@ -279,7 +279,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{"path": []byte(`{"lib_config": {}, "service_target": {"service": "my-service", "env": "my-env"}}`)}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request").(*Span)
 		s.Finish()
 		require.Equal(t, "val0", s.Meta["key0"])
 		require.Equal(t, "val1", s.Meta["key1"])

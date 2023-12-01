@@ -138,14 +138,14 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 
 // Return the root span from the span stored in the given Go context if it
 // implements the Root method. It returns nil otherwise.
-func getRootSpan(ctx context.Context) tracer.Span {
+func getRootSpan(ctx context.Context) tracer.DDSpan {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
 		log.Error("appsec: could not find a span in the given Go context")
 		return nil
 	}
 	type rooter interface {
-		Root() tracer.Span
+		Root() tracer.DDSpan
 	}
 	if lrs, ok := span.(rooter); ok {
 		return lrs.Root()
