@@ -12,14 +12,18 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+type Span interface {
+	SetTag(key string, value interface{})
+}
+
 // SetSecurityEventsTags sets the AppSec events span tags.
-func SetSecurityEventsTags(span ddtrace.Span, events []any) {
+func SetSecurityEventsTags(span Span, events []any) {
 	if err := setSecurityEventsTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
-func setSecurityEventsTags(span ddtrace.Span, events []any) error {
+func setSecurityEventsTags(span Span, events []any) error {
 	if events == nil {
 		return nil
 	}

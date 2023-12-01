@@ -14,7 +14,7 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
+func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
 	var zb0001 uint32
@@ -144,7 +144,7 @@ func (z *span) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 12
 	// write "name"
 	err = en.Append(0x8c, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
@@ -278,7 +278,7 @@ func (z *span) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z *span) Msgsize() (s int) {
+func (z *Span) Msgsize() (s int) {
 	s = 1 + 5 + msgp.StringPrefixSize + len(z.Name) + 8 + msgp.StringPrefixSize + len(z.Service) + 9 + msgp.StringPrefixSize + len(z.Resource) + 5 + msgp.StringPrefixSize + len(z.Type) + 6 + msgp.Int64Size + 9 + msgp.Int64Size + 5 + msgp.MapHeaderSize
 	if z.Meta != nil {
 		for za0001, za0002 := range z.Meta {
@@ -318,7 +318,7 @@ func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
 			(*z)[zb0001] = nil
 		} else {
 			if (*z)[zb0001] == nil {
-				(*z)[zb0001] = new(span)
+				(*z)[zb0001] = new(Span)
 			}
 			err = (*z)[zb0001].DecodeMsg(dc)
 			if err != nil {
@@ -396,7 +396,7 @@ func (z *spanLists) DecodeMsg(dc *msgp.Reader) (err error) {
 				(*z)[zb0001][zb0002] = nil
 			} else {
 				if (*z)[zb0001][zb0002] == nil {
-					(*z)[zb0001][zb0002] = new(span)
+					(*z)[zb0001][zb0002] = new(Span)
 				}
 				err = (*z)[zb0001][zb0002].DecodeMsg(dc)
 				if err != nil {

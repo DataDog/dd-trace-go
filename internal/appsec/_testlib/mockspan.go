@@ -8,6 +8,7 @@ package testlib
 import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -49,6 +50,6 @@ func (m *MockSpan) Context() ddtrace.SpanContext {
 	panic("unused")
 }
 
-func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) *tracer.Span {
 	panic("unused")
 }
