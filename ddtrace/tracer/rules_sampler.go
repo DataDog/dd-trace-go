@@ -79,10 +79,8 @@ type SamplingRule struct {
 	// TargetRoot specifies whether sampling should be applied to the root spans only.
 	TargetRoot bool
 
-	ruleType     SamplingRuleType
-	exactService string
-	exactName    string
-	limiter      *rateLimiter
+	ruleType SamplingRuleType
+	limiter  *rateLimiter
 }
 
 // match returns true when the span's details match all the expected values in the rule.
@@ -92,12 +90,8 @@ func (sr *SamplingRule) match(s *span) bool {
 	}
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
-	} else if sr.exactService != "" && sr.exactService != s.Service {
-		return false
 	}
 	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
-		return false
-	} else if sr.exactName != "" && sr.exactName != s.Name {
 		return false
 	}
 	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
@@ -146,8 +140,8 @@ func (sr SamplingRuleType) String() string {
 // to spans that match the service name provided.
 func ServiceRule(service string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactService: service,
-		Rate:         rate,
+		Service: globMatch(service),
+		Rate:    rate,
 	}
 }
 
@@ -155,8 +149,8 @@ func ServiceRule(service string, rate float64) SamplingRule {
 // to spans that match the operation name provided.
 func NameRule(name string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactName: name,
-		Rate:      rate,
+		Name: globMatch(name),
+		Rate: rate,
 	}
 }
 
@@ -164,9 +158,9 @@ func NameRule(name string, rate float64) SamplingRule {
 // to spans matching both the operation and service names provided.
 func NameServiceRule(name string, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactService: service,
-		exactName:    name,
-		Rate:         rate,
+		Service: globMatch(service),
+		Name:    globMatch(name),
+		Rate:    rate,
 	}
 }
 
@@ -209,12 +203,11 @@ func SpanTagsResourceRule(tags map[string]*regexp.Regexp, resource, name, servic
 // Operation and service fields must be valid glob patterns.
 func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		Service:   globMatch(service),
-		Name:      globMatch(name),
-		Rate:      rate,
-		ruleType:  SamplingRuleSpan,
-		exactName: name,
-		limiter:   newSingleSpanRateLimiter(0),
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		Rate:     rate,
+		ruleType: SamplingRuleSpan,
+		limiter:  newSingleSpanRateLimiter(0),
 	}
 }
 
@@ -229,7 +222,6 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 		MaxPerSecond: limit,
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
-		exactName:    name,
 		limiter:      newSingleSpanRateLimiter(limit),
 	}
 }
@@ -624,17 +616,6 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
 				continue
 			}
-			switch {
-			case v.Service != "" && v.Name != "":
-				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
-				continue
-			case v.Service != "":
-				rules = append(rules, ServiceRule(v.Service, rate))
-				continue
-			case v.Name != "":
-				rules = append(rules, NameRule(v.Name, rate))
-				continue
-			}
 			var targetRoot bool
 			switch strings.ToLower(v.TargetSpan) {
 			case "", "root":
@@ -645,7 +626,15 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				errs = append(errs, fmt.Sprintf(`at index %d: "target_span" value is not expected, must be in ["any", "root", ""]`, i))
 				continue
 			}
-			rules = append(rules, TagsResourceRule(tagGlobs, v.Resource, v.Name, v.Service, rate, targetRoot))
+			rules = append(rules, SamplingRule{
+				Service:    globMatch(v.Service),
+				Name:       globMatch(v.Name),
+				Rate:       rate,
+				Resource:   globMatch(v.Resource),
+				Tags:       tagGlobs,
+				TargetRoot: targetRoot,
+				ruleType:   SamplingRuleTrace,
+			})
 		}
 	}
 	if len(errs) != 0 {
@@ -666,14 +655,10 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		Type         string            `json:"type"`
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.exactService != "" {
-		s.Service = sr.exactService
-	} else if sr.Service != nil {
+	if sr.Service != nil {
 		s.Service = fmt.Sprintf("%s", sr.Service)
 	}
-	if sr.exactName != "" {
-		s.Name = sr.exactName
-	} else if sr.Name != nil {
+	if sr.Name != nil {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
 	if sr.MaxPerSecond != 0 {
