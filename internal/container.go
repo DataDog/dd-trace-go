@@ -144,7 +144,11 @@ func getCgroupV2Inode(mountsPath, cgroupPath string) string {
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("in-%d", fi.Sys().(*syscall.Stat_t).Ino)
+	stats, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("in-%d", stats.Ino)
 }
 
 // readEntityID attempts to return the cgroup v2 node inode or empty on failure.
