@@ -50,7 +50,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -107,7 +106,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 
 	span, ctx := t.createRootSpan(ctx, opCtx)
 
-	ctx, op := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
+	ctx, op := graphqlsec.StartQuery(ctx, span, graphqlsec.QueryArguments{
 		Variables:     opCtx.Variables,
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
@@ -120,16 +119,10 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			defer span.Finish(tracer.WithError(response.Errors))
 		}
 
-		ctxSpan := span
-		if ctxSpan == nil {
-			ctxSpan, _ = tracer.SpanFromContext(ctx)
-		}
-		if ctxSpan != nil {
-			trace.SetEventSpanTags(ctxSpan, op.Finish(graphqlsec.Result{
-				Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-				Error: response.Errors,
-			}))
-		}
+		op.Finish(graphqlsec.Result{
+			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
+			Error: response.Errors,
+		})
 
 		return response
 	}
@@ -150,18 +143,18 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
+	defer func() { span.Finish(tracer.WithError(err)) }()
 
-	ctx, op := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
+	ctx, op := graphqlsec.StartField(ctx, span, graphqlsec.FieldArguments{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
 		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
 	})
+	defer func() { op.Finish(graphqlsec.Result{Data: res, Error: err}) }()
 
 	res, err = next(ctx)
 
-	trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: res, Error: err}))
-	span.Finish(tracer.WithError(err))
 	return
 }
 

@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
@@ -43,11 +44,22 @@ func SupportsAddress(addr string) bool {
 // NewWAFEventListener returns the WAF event listener to register in order
 // to enable it.
 func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
+	var rulesMonitoringOnce sync.Once
+
 	return graphqlsec.OnQueryStart(func(query *graphqlsec.Query, args graphqlsec.QueryArguments) {
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			return
 		}
+
+		wafDiags := handle.Diagnostics()
+
+		// Add span tags notifying this trace is AppSec-enabled
+		trace.SetAppSecEnabledTags(query)
+		rulesMonitoringOnce.Do(func() {
+			listener.AddRulesMonitoringTags(query, &wafDiags)
+			query.SetTag(ext.ManualKeep, samplernames.AppSec)
+		})
 
 		var (
 			allResolvers   map[string][]map[string]any
@@ -78,7 +90,9 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 				allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
 			}
 
-			// field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {}))
+			field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {
+				trace.SetEventSpanTags(field, field.Events())
+			}))
 		}))
 
 		query.On(graphqlsec.OnQueryFinish(func(query *graphqlsec.Query, res graphqlsec.QueryResult) {
@@ -90,13 +104,10 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 				listener.AddSecurityEvents(query, limiter, wafResult.Events)
 			}
 
-			wafDiags := handle.Diagnostics()
 			overall, internal := wafCtx.TotalRuntime()
 			nbTimeouts := wafCtx.TotalTimeouts()
 			listener.AddWAFMonitoringTags(query, wafDiags.Version, overall, internal, nbTimeouts)
-
-			listener.AddRulesMonitoringTags(query, &wafDiags)
-			query.AddTag(ext.ManualKeep, samplernames.AppSec)
+			trace.SetEventSpanTags(query, query.Events())
 		}))
 	})
 }

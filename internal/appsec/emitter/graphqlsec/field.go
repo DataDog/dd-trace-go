@@ -16,7 +16,7 @@ import (
 
 type Field struct {
 	dyngo.Operation
-	trace.TagsHolder
+	trace.TagSetter
 	trace.SecurityEventsHolder
 }
 
@@ -34,13 +34,13 @@ type FieldArguments struct {
 
 // StartField starts a new GraphQL Field operation, along with the given arguments, and emits a
 // start event up in the operation stack.
-func StartField(ctx context.Context, args FieldArguments, listeners ...dyngo.DataListener) (context.Context, *Field) {
+func StartField(ctx context.Context, span trace.TagSetter, args FieldArguments, listeners ...dyngo.DataListener) (context.Context, *Field) {
 	// The parent will typically be the Query operation that previously fired...
 	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
 
 	op := &Field{
-		Operation:  dyngo.NewOperation(parent),
-		TagsHolder: trace.NewTagsHolder(),
+		Operation: dyngo.NewOperation(parent),
+		TagSetter: span,
 	}
 	for _, l := range listeners {
 		op.OnData(l)
@@ -53,9 +53,8 @@ func StartField(ctx context.Context, args FieldArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Field) Finish(res Result) []any {
+func (q *Field) Finish(res Result) {
 	dyngo.FinishOperation(q, FieldResult(res))
-	return q.Events()
 }
 
 type (

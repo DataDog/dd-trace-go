@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/graphql-go/graphql"
@@ -182,7 +181,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
 
-	ctx, op := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
+	ctx, op := graphqlsec.StartQuery(ctx, span, graphqlsec.QueryArguments{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
@@ -191,12 +190,10 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
 		defer func() {
+			defer data.serverSpan.Finish()
 			span.Finish(tracer.WithError(err))
-			data.serverSpan.Finish()
 		}()
-
-		trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Data: result.Data, Error: err}))
-		trace.SetTags(span, op.Tags())
+		op.Finish(graphqlsec.Result{Data: result.Data, Error: err})
 	}
 }
 
@@ -240,7 +237,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
 
-	ctx, op := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
+	ctx, op := graphqlsec.StartField(ctx, span, graphqlsec.FieldArguments{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),
@@ -248,8 +245,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
-		trace.SetEventSpanTags(span, op.Finish(graphqlsec.Result{Error: err, Data: result}))
-		trace.SetTags(span, op.Tags())
+		op.Finish(graphqlsec.Result{Error: err, Data: result})
 	}
 }
 

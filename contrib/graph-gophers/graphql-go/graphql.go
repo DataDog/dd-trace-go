@@ -20,7 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -54,12 +53,6 @@ var _ tracer.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
-	ctx, query := graphqlsec.StartQuery(ctx, graphqlsec.QueryArguments{
-		Query:         queryString,
-		OperationName: operationName,
-		Variables:     variables,
-	})
-
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlQuery, queryString),
@@ -77,6 +70,12 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
+	ctx, query := graphqlsec.StartQuery(ctx, span, graphqlsec.QueryArguments{
+		Query:         queryString,
+		OperationName: operationName,
+		Variables:     variables,
+	})
+
 	return ctx, func(errs []*errors.QueryError) {
 		var err error
 		switch n := len(errs); n {
@@ -89,24 +88,14 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 		}
 		defer span.Finish(ddtracer.WithError(err))
 
-		trace.SetEventSpanTags(span, query.Finish(graphqlsec.Result{Error: err}))
-		trace.SetTags(span, query.Tags())
+		query.Finish(graphqlsec.Result{Error: err})
 	}
 }
 
 // TraceField traces a GraphQL field access.
 func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, trivial bool, arguments map[string]interface{}) (context.Context, tracer.FieldFinishFunc) {
-	ctx, field := graphqlsec.StartField(ctx, graphqlsec.FieldArguments{
-		TypeName:  typeName,
-		FieldName: fieldName,
-		Arguments: arguments,
-		Trivial:   trivial,
-	})
-
 	if t.cfg.omitTrivial && trivial {
-		return ctx, func(queryError *errors.QueryError) {
-			field.Finish(graphqlsec.Result{Error: queryError})
-		}
+		return ctx, func(queryError *errors.QueryError) {}
 	}
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
@@ -125,9 +114,15 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.field", opts...)
 
+	ctx, field := graphqlsec.StartField(ctx, span, graphqlsec.FieldArguments{
+		TypeName:  typeName,
+		FieldName: fieldName,
+		Arguments: arguments,
+		Trivial:   trivial,
+	})
+
 	return ctx, func(err *errors.QueryError) {
-		trace.SetEventSpanTags(span, field.Finish(graphqlsec.Result{Error: err}))
-		trace.SetTags(span, field.Tags())
+		field.Finish(graphqlsec.Result{Error: err})
 
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {

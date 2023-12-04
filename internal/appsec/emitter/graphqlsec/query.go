@@ -20,7 +20,7 @@ import (
 
 type Query struct {
 	dyngo.Operation
-	trace.TagsHolder
+	trace.TagSetter
 	trace.SecurityEventsHolder
 }
 
@@ -36,10 +36,10 @@ type QueryArguments struct {
 
 // StartQuery starts a new GraphQL query operation, along with the given arguments, and emits a
 // start event up in the operation stack. The operation is linked to tge global root operation.
-func StartQuery(ctx context.Context, args QueryArguments, listeners ...dyngo.DataListener) (context.Context, *Query) {
+func StartQuery(ctx context.Context, span trace.TagSetter, args QueryArguments, listeners ...dyngo.DataListener) (context.Context, *Query) {
 	op := &Query{
-		Operation:  dyngo.NewOperation(nil),
-		TagsHolder: trace.NewTagsHolder(),
+		Operation: dyngo.NewOperation(nil),
+		TagSetter: span,
 	}
 	for _, l := range listeners {
 		op.OnData(l)
@@ -52,9 +52,8 @@ func StartQuery(ctx context.Context, args QueryArguments, listeners ...dyngo.Dat
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Query) Finish(res Result) []any {
+func (q *Query) Finish(res Result) {
 	dyngo.FinishOperation(q, QueryResult(res))
-	return q.Events()
 }
 
 type (

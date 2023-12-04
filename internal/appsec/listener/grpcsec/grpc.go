@@ -153,7 +153,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			// Log the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
 				listener.AddRulesMonitoringTags(op, &wafDiags)
-				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+				op.SetTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
 			listener.AddSecurityEvents(op, limiter, events)

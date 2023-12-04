@@ -11,23 +11,25 @@ import "sync"
 // used by composition in an Operation to allow said operation to handle tags
 // addition/retrieval.
 type TagsHolder struct {
-	tags map[string]interface{}
+	tags map[string]any
 	mu   sync.Mutex
 }
 
 // NewTagsHolder returns a new instance of a TagsHolder struct.
 func NewTagsHolder() TagsHolder {
-	return TagsHolder{tags: map[string]interface{}{}}
+	return TagsHolder{tags: make(map[string]any)}
 }
 
-// AddTag adds the key/value pair to the tags map
-func (m *TagsHolder) AddTag(k string, v interface{}) {
+// SetTag adds the key/value pair to the tags map
+func (m *TagsHolder) SetTag(k string, v any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.tags[k] = v
 }
 
 // Tags returns the tags map
-func (m *TagsHolder) Tags() map[string]interface{} {
+func (m *TagsHolder) Tags() map[string]any {
 	return m.tags
 }
+
+var _ TagSetter = (*TagsHolder)(nil) // *TagsHolder must implement TagSetter
