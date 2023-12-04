@@ -46,68 +46,73 @@ func SupportsAddress(addr string) bool {
 func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
 	var rulesMonitoringOnce sync.Once
 
-	return graphqlsec.OnQueryStart(func(query *graphqlsec.Query, args graphqlsec.QueryArguments) {
+	return graphqlsec.OnRequestStart(func(request *graphqlsec.Request, args graphqlsec.RequestArguments) {
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			return
 		}
-
 		wafDiags := handle.Diagnostics()
 
 		// Add span tags notifying this trace is AppSec-enabled
-		trace.SetAppSecEnabledTags(query)
+		trace.SetAppSecEnabledTags(request)
 		rulesMonitoringOnce.Do(func() {
-			listener.AddRulesMonitoringTags(query, &wafDiags)
-			query.SetTag(ext.ManualKeep, samplernames.AppSec)
+			listener.AddRulesMonitoringTags(request, &wafDiags)
+			request.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
-		var (
-			allResolvers   map[string][]map[string]any
-			allResolversMu sync.Mutex
-		)
+		request.On(graphqlsec.OnExecutionStart(func(query *graphqlsec.Execution, args graphqlsec.ExecutionArguments) {
+			var (
+				allResolvers   map[string][]map[string]any
+				allResolversMu sync.Mutex
+			)
 
-		query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
-			if _, found := addresses[graphQLServerResolverAddr]; found {
-				wafResult := listener.RunWAF(
-					wafCtx,
-					waf.RunAddressData{
-						Ephemeral: map[string]any{
-							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
+			query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
+				if _, found := addresses[graphQLServerResolverAddr]; found {
+					wafResult := listener.RunWAF(
+						wafCtx,
+						waf.RunAddressData{
+							Ephemeral: map[string]any{
+								graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
+							},
 						},
-					},
-					timeout,
-				)
-				listener.AddSecurityEvents(field, limiter, wafResult.Events)
-			}
-
-			if args.FieldName != "" {
-				// Register in all resolvers
-				allResolversMu.Lock()
-				defer allResolversMu.Unlock()
-				if allResolvers == nil {
-					allResolvers = make(map[string][]map[string]any)
+						timeout,
+					)
+					listener.AddSecurityEvents(field, limiter, wafResult.Events)
 				}
-				allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
-			}
 
-			field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {
-				trace.SetEventSpanTags(field, field.Events())
+				if args.FieldName != "" {
+					// Register in all resolvers
+					allResolversMu.Lock()
+					defer allResolversMu.Unlock()
+					if allResolvers == nil {
+						allResolvers = make(map[string][]map[string]any)
+					}
+					allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
+				}
+
+				field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {
+					trace.SetEventSpanTags(field, field.Events())
+				}))
+			}))
+
+			query.On(graphqlsec.OnExecutionFinish(func(query *graphqlsec.Execution, res graphqlsec.ExecutionResult) {
+				if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
+					// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
+					wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{graphQLServerAllResolversAddr: allResolvers}}, timeout)
+					listener.AddSecurityEvents(query, limiter, wafResult.Events)
+				}
+				trace.SetEventSpanTags(query, query.Events())
 			}))
 		}))
 
-		query.On(graphqlsec.OnQueryFinish(func(query *graphqlsec.Query, res graphqlsec.QueryResult) {
+		request.On(graphqlsec.OnRequestFinish(func(request *graphqlsec.Request, res graphqlsec.RequestResult) {
 			defer wafCtx.Close()
-
-			if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
-				// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
-				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{graphQLServerAllResolversAddr: allResolvers}}, timeout)
-				listener.AddSecurityEvents(query, limiter, wafResult.Events)
-			}
 
 			overall, internal := wafCtx.TotalRuntime()
 			nbTimeouts := wafCtx.TotalTimeouts()
-			listener.AddWAFMonitoringTags(query, wafDiags.Version, overall, internal, nbTimeouts)
-			trace.SetEventSpanTags(query, query.Events())
+			listener.AddWAFMonitoringTags(request, wafDiags.Version, overall, internal, nbTimeouts)
+
+			trace.SetEventSpanTags(request, request.Events())
 		}))
 	})
 }

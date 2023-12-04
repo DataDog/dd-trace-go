@@ -164,6 +164,9 @@ func TestAppSec(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
 
+				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
+				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
+
 				events := make(map[string]string)
 				type ddAppsecJSON struct {
 					Triggers []struct {

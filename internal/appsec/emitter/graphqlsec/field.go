@@ -10,7 +10,6 @@ import (
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
 
@@ -35,8 +34,8 @@ type FieldArguments struct {
 // StartField starts a new GraphQL Field operation, along with the given arguments, and emits a
 // start event up in the operation stack.
 func StartField(ctx context.Context, span trace.TagSetter, args FieldArguments, listeners ...dyngo.DataListener) (context.Context, *Field) {
-	// The parent will typically be the Query operation that previously fired...
-	parent, _ := ctx.Value(listener.ContextKey{}).(dyngo.Operation)
+	// The parent will typically be the Execution operation that previously fired...
+	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
 
 	op := &Field{
 		Operation: dyngo.NewOperation(parent),
@@ -45,7 +44,7 @@ func StartField(ctx context.Context, span trace.TagSetter, args FieldArguments, 
 	for _, l := range listeners {
 		op.OnData(l)
 	}
-	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
+	newCtx := context.WithValue(ctx, contextKey{}, op)
 	dyngo.StartOperation(op, args)
 
 	return newCtx, op

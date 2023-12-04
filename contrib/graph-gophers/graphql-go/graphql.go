@@ -70,7 +70,12 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
-	ctx, query := graphqlsec.StartQuery(ctx, span, graphqlsec.QueryArguments{
+	ctx, request := graphqlsec.StartRequest(ctx, span, graphqlsec.RequestArguments{
+		RawQuery:      queryString,
+		OperationName: operationName,
+		Variables:     variables,
+	})
+	ctx, query := graphqlsec.StartExecution(ctx, span, graphqlsec.ExecutionArguments{
 		Query:         queryString,
 		OperationName: operationName,
 		Variables:     variables,
@@ -87,7 +92,7 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
 		defer span.Finish(ddtracer.WithError(err))
-
+		defer request.Finish(graphqlsec.Result{Error: err})
 		query.Finish(graphqlsec.Result{Error: err})
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/graphql/language/ast"
+	"github.com/hashicorp/go-multierror"
 )
 
 const componentName = "graphql-go/graphql"
@@ -64,9 +65,16 @@ type datadogExtension struct{ config }
 type contextKey struct{}
 type contextData struct {
 	serverSpan    tracer.Span
+	requestOp     *graphqlsec.Request
 	variables     map[string]any
 	query         string
 	operationName string
+}
+
+// finish closes the top-level request operation, as well as the server span.
+func (c *contextData) finish(data any, err error) {
+	defer c.serverSpan.Finish(tracer.WithError(err))
+	c.requestOp.Finish(graphqlsec.Result{Data: data, Error: err})
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
@@ -92,8 +100,19 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	)
+	ctx, request := graphqlsec.StartRequest(ctx, span, graphqlsec.RequestArguments{
+		RawQuery:      params.RequestString,
+		Variables:     params.VariableValues,
+		OperationName: params.OperationName,
+	})
 
-	return context.WithValue(ctx, contextKey{}, contextData{query: params.RequestString, operationName: params.OperationName, variables: params.VariableValues, serverSpan: span})
+	return context.WithValue(ctx, contextKey{}, contextData{
+		query:         params.RequestString,
+		operationName: params.OperationName,
+		variables:     params.VariableValues,
+		serverSpan:    span,
+		requestOp:     request,
+	})
 }
 
 // Name returns the name of the extension (make sure it's custom)
@@ -124,7 +143,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 		span.Finish(tracer.WithError(err))
 		if err != nil {
 			// There were errors, so the query will not be executed, finish the graphql.server span now.
-			data.serverSpan.Finish()
+			data.finish(nil, err)
 		}
 	}
 }
@@ -151,8 +170,13 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 	return ctx, func(errs []gqlerrors.FormattedError) {
 		span.Finish(tracer.WithError(toError(errs)))
 		if len(errs) > 0 {
+			var err error = errs[0]
+			for _, e := range errs[1:] {
+				err = multierror.Append(err, e)
+			}
+
 			// There were errors, so the query will not be executed, finish the graphql.server span now.
-			data.serverSpan.Finish()
+			data.finish(nil, err)
 		}
 	}
 }
@@ -181,7 +205,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
 
-	ctx, op := graphqlsec.StartQuery(ctx, span, graphqlsec.QueryArguments{
+	ctx, op := graphqlsec.StartExecution(ctx, span, graphqlsec.ExecutionArguments{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
@@ -190,7 +214,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
 		defer func() {
-			defer data.serverSpan.Finish()
+			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
 		}()
 		op.Finish(graphqlsec.Result{Data: result.Data, Error: err})

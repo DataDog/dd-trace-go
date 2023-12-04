@@ -20,7 +20,15 @@ const BlockedRequestTag = "appsec.blocked"
 
 // TagSetter is the interface needed to set a span tag.
 type TagSetter interface {
-	SetTag(string, interface{})
+	SetTag(string, any)
+}
+
+// BlackHoleTagSetter is a TagSetter that does nothing. Useful when no tracer
+// Span is available, but a TagSetter is assumed.
+type BlackHoleTagSetter struct{}
+
+func (BlackHoleTagSetter) SetTag(string, any) {
+	// Do nothing
 }
 
 // SetAppSecEnabledTags sets the AppSec-specific span tags that are expected to

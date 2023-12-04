@@ -181,7 +181,7 @@ func Test(t *testing.T) {
 		)
 
 		assertSpanMatches(t, spans[1],
-			hasNoTag(ext.Error),
+			hasTag(ext.Error, resp.Errors[0].OriginalError()),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.server"),
 			hasTag(ext.ResourceName, "graphql.server"),
@@ -225,7 +225,7 @@ func Test(t *testing.T) {
 		)
 
 		assertSpanMatches(t, spans[2],
-			hasNoTag(ext.Error),
+			hasTag(ext.Error, resp.Errors[0]),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.server"),
 			hasTag(ext.ResourceName, "graphql.server"),
