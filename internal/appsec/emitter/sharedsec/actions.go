@@ -53,6 +53,9 @@ type (
 		blocking bool
 	}
 
+	// Actions represents a set of action bindings to an action name.
+	Actions map[string]*Action
+
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that takes metadata as input and returns a status code and an error
 	// TODO: rely on strongly typed actions (with the actual grpc types) by introducing WAF constructors
