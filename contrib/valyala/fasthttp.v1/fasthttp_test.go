@@ -54,9 +54,9 @@ func startServer(t *testing.T, opts ...Option) string {
 			return
 		}
 	}, opts...)
-    ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	
+
 	addr := ln.Addr()
 	server := &fasthttp.Server{
 		Handler: router,
