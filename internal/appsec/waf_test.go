@@ -426,3 +426,62 @@ func TestBlocking(t *testing.T) {
 		})
 	}
 }
+
+func TestAPISecurity(t *testing.T) {
+	// Start and trace an HTTP server
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "dd-test-scanner-log")
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
+		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
+		appsec.Start()
+		defer appsec.Stop()
+		if !appsec.Enabled() {
+			t.Skip("AppSec needs to be enabled for this test")
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are getting extracted as schemas
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
+		appsec.Start()
+		defer appsec.Stop()
+		if !appsec.Enabled() {
+			t.Skip("AppSec needs to be enabled for this test")
+		}
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are not getting extracted as schemas
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+	})
+}
