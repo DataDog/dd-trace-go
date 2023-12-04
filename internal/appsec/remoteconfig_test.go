@@ -34,8 +34,8 @@ func TestASMFeaturesCallback(t *testing.T) {
 	err = a.startRC()
 	require.NoError(t, err)
 
-	t.Setenv(enabledEnvVar, "")
-	os.Unsetenv(enabledEnvVar)
+	t.Setenv(envEnabled, "")
+	os.Unsetenv(envEnabled)
 
 	for _, tc := range []struct {
 		name   string
@@ -326,8 +326,8 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	}
 
 	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
-		t.Setenv(enabledEnvVar, "")
-		os.Unsetenv(enabledEnvVar)
+		t.Setenv(envEnabled, "")
+		os.Unsetenv(envEnabled)
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 
@@ -342,7 +342,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	})
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
-		t.Setenv(enabledEnvVar, "true")
+		t.Setenv(envEnabled, "true")
 		remoteconfig.Reset()
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
@@ -357,7 +357,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
-		t.Setenv(enabledEnvVar, "false")
+		t.Setenv(envEnabled, "false")
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 		require.Nil(t, activeAppSec)
@@ -377,7 +377,7 @@ func TestCapabilities(t *testing.T) {
 		},
 		{
 			name: "appsec-enabled/default-rulesManager",
-			env:  map[string]string{enabledEnvVar: "1"},
+			env:  map[string]string{envEnabled: "1"},
 			expected: []remoteconfig.Capability{
 				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
 				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
@@ -386,14 +386,14 @@ func TestCapabilities(t *testing.T) {
 		},
 		{
 			name:     "appsec-enabled/rulesManager-from-env",
-			env:      map[string]string{enabledEnvVar: "1", rulesEnvVar: "testdata/blocking.json"},
+			env:      map[string]string{envEnabled: "1", envRules: "testdata/blocking.json"},
 			expected: []remoteconfig.Capability{},
 		},
 	} {
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(enabledEnvVar, "")
-			os.Unsetenv(enabledEnvVar)
+			t.Setenv(envEnabled, "")
+			os.Unsetenv(envEnabled)
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
@@ -556,8 +556,8 @@ func TestOnRCUpdate(t *testing.T) {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
-		t.Setenv(enabledEnvVar, "")
-		os.Unsetenv(enabledEnvVar)
+		t.Setenv(envEnabled, "")
+		os.Unsetenv(envEnabled)
 		Start(WithRCConfig(remoteconfig.DefaultClientConfig()))
 		defer Stop()
 		require.False(t, Enabled())

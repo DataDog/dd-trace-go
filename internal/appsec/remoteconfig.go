@@ -17,6 +17,8 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
+const envRules = "DD_APPSEC_RULES"
+
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
 	status := rc.ApplyStatus{
 		State: rc.ApplyStateUnacknowledged,
@@ -352,7 +354,7 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
 	}
 
-	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
+	if _, isSet := os.LookupEnv(envRules); !isSet {
 		caps := []remoteconfig.Capability{
 			remoteconfig.ASMUserBlocking,
 			remoteconfig.ASMRequestBlocking,
