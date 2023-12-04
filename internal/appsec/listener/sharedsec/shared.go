@@ -82,6 +82,13 @@ func AddWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
 }
 
+// AddTags adds arbitrary tags to the provided tags holder
+func AddTags(th tagsHolder, tags map[string]any) {
+	for k, v := range tags {
+		th.AddTag(k, v)
+	}
+}
+
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
 func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {

@@ -7,9 +7,11 @@ package httpsec
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -57,7 +59,7 @@ func SupportsAddress(addr string) bool {
 }
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
-func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
+func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, apiSecCfg *internal.APISecConfig, limiter limiter.Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
 	wafDiags := handle.Diagnostics()
@@ -70,6 +72,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 			return
 		}
 
+		extractSchemas := canExtractSchemas(apiSecCfg)
 		if _, ok := addresses[UserIDAddr]; ok {
 			// OnUserIDOperationStart happens when appsec.SetUser() is called. We run the WAF and apply actions to
 			// see if the associated user should be blocked. Since we don't control the execution flow in this case
@@ -84,37 +87,46 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 			}))
 		}
 
-		values := make(map[string]any, 7)
+		runData := waf.RunAddressData{
+			Persistent: make(map[string]any, 8),
+		}
 		for addr := range addresses {
 			switch addr {
 			case HTTPClientIPAddr:
 				if args.ClientIP.IsValid() {
-					values[HTTPClientIPAddr] = args.ClientIP.String()
+					runData.Persistent[HTTPClientIPAddr] = args.ClientIP.String()
 				}
 			case ServerRequestMethodAddr:
-				values[ServerRequestMethodAddr] = args.Method
+				runData.Persistent[ServerRequestMethodAddr] = args.Method
 			case ServerRequestRawURIAddr:
-				values[ServerRequestRawURIAddr] = args.RequestURI
+				runData.Persistent[ServerRequestRawURIAddr] = args.RequestURI
 			case ServerRequestHeadersNoCookiesAddr:
 				if headers := args.Headers; headers != nil {
-					values[ServerRequestHeadersNoCookiesAddr] = headers
+					runData.Persistent[ServerRequestHeadersNoCookiesAddr] = headers
 				}
 			case ServerRequestCookiesAddr:
 				if cookies := args.Cookies; cookies != nil {
-					values[ServerRequestCookiesAddr] = cookies
+					runData.Persistent[ServerRequestCookiesAddr] = cookies
 				}
 			case ServerRequestQueryAddr:
 				if query := args.Query; query != nil {
-					values[ServerRequestQueryAddr] = query
+					runData.Persistent[ServerRequestQueryAddr] = query
 				}
 			case ServerRequestPathParamsAddr:
 				if pathParams := args.PathParams; pathParams != nil {
-					values[ServerRequestPathParamsAddr] = pathParams
+					runData.Persistent[ServerRequestPathParamsAddr] = pathParams
 				}
 			}
 		}
 
-		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+		if extractSchemas {
+			runData.Persistent["waf.context.processor"] = map[string]any{"extract-schema": true}
+		}
+
+		wafResult := listener.RunWAF(wafCtx, runData, timeout)
+		if wafResult.HasDerivatives() {
+			listener.AddTags(op, wafResult.Derivatives)
+		}
 		if wafResult.HasActions() || wafResult.HasEvents() {
 			interrupt := listener.ProcessActions(op, actions, wafResult.Actions)
 			listener.AddSecurityEvents(op, limiter, wafResult.Events)
@@ -139,19 +151,23 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
-			values := make(map[string]any, 2)
+			runData.Persistent = make(map[string]any, 3)
 			if _, ok := addresses[ServerResponseStatusAddr]; ok {
 				// serverResponseStatusAddr is a string address, so we must format the status code...
-				values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
+				runData.Persistent[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
 			}
 
 			if _, ok := addresses[ServerResponseHeadersNoCookiesAddr]; ok && res.Headers != nil {
-				values[ServerResponseHeadersNoCookiesAddr] = res.Headers
+				runData.Persistent[ServerResponseHeadersNoCookiesAddr] = res.Headers
+			}
+
+			if extractSchemas {
+				runData.Persistent["waf.context.processor"] = map[string]any{"extract-schema": true}
 			}
 
 			// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 			// response is not supported at the moment.
-			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+			wafResult := listener.RunWAF(wafCtx, runData, timeout)
 
 			// Add WAF metrics.
 			overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
@@ -168,6 +184,13 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 				log.Debug("appsec: attack detected by the waf")
 				listener.AddSecurityEvents(op, limiter, wafResult.Events)
 			}
+			if wafResult.HasDerivatives() {
+				listener.AddTags(op, wafResult.Derivatives)
+			}
 		}))
 	})
+}
+
+func canExtractSchemas(cfg *internal.APISecConfig) bool {
+	return cfg != nil && cfg.Enabled && cfg.SampleRate >= rand.Float64()
 }
