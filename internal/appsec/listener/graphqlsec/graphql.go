@@ -66,6 +66,11 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 				allResolversMu sync.Mutex
 			)
 
+			if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
+				// If `allResolvers` is supported, pre-allocate a small map to store data.
+				allResolvers = make(map[string][]map[string]any)
+			}
+
 			query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
 				if _, found := addresses[graphQLServerResolverAddr]; found {
 					wafResult := listener.RunWAF(
@@ -80,13 +85,10 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 					listener.AddSecurityEvents(field, limiter, wafResult.Events)
 				}
 
-				if args.FieldName != "" {
+				if allResolvers != nil && args.FieldName != "" {
 					// Register in all resolvers
 					allResolversMu.Lock()
 					defer allResolversMu.Unlock()
-					if allResolvers == nil {
-						allResolvers = make(map[string][]map[string]any)
-					}
 					allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
 				}
 
@@ -96,7 +98,8 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 			}))
 
 			query.On(graphqlsec.OnExecutionFinish(func(query *graphqlsec.Execution, res graphqlsec.ExecutionResult) {
-				if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
+				// Note: allResolvers is only populated if the address is indeed supported.
+				if len(allResolvers) > 0 {
 					// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
 					wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{graphQLServerAllResolversAddr: allResolvers}}, timeout)
 					listener.AddSecurityEvents(query, limiter, wafResult.Events)
