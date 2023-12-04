@@ -122,9 +122,9 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	}
 
 	// Check which addresses are supported by what listener
-	graphQLAddresses := make(map[string]struct{}, len(ruleAddresses))
-	grpcAddresses := make(map[string]struct{}, len(ruleAddresses))
-	httpAddresses := make(map[string]struct{}, len(ruleAddresses))
+	graphQLAddresses := make(map[string]struct{}, graphqlsec.SupportedAddressCount())
+	grpcAddresses := make(map[string]struct{}, grpcsec.SupportedAddressCount())
+	httpAddresses := make(map[string]struct{}, httpsec.SupportedAddressCount())
 	notSupported := make([]string, 0, len(ruleAddresses))
 	for _, address := range ruleAddresses {
 		supported := false
