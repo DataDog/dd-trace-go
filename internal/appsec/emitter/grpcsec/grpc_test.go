@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
 
 	"github.com/stretchr/testify/require"
 )

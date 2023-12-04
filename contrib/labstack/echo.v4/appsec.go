@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	httpsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 
 	"github.com/labstack/echo/v4"
 )
