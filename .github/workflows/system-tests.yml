@@ -93,27 +93,29 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
+      V2_BRANCH: false
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
         uses: actions/checkout@v3
+        if: ${{ env.V2_BRANCH != 'true' }}
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
+
+      # TODO(darccio): remove ref on v2 release
+      - name: Checkout system tests (v2)
+        uses: actions/checkout@v3
+        if: ${{ env.V2_BRANCH == 'true' }}
+        with:
+          repository: 'DataDog/system-tests'
+          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
-
-      - name: Patch dd-trace-go version
-        if: ${{ inputs.branch_ref == 'refs/heads/v2-dev' }}
-        run: |
-          cd utils/build/docker/golang/app
-          find -type f -name '*.go' -exec sed -i 's#gopkg.in/DataDog/dd-trace-go.v1#github.com/DataDog/dd-trace-go/v2#g' {} \;
-          echo "replace github.com/DataDog/dd-trace-go/v2 => /home/runner/work/dd-trace-go/dd-trace-go/binaries/dd-trace-go" >> go.mod
-          go mod tidy
 
       - name: Build weblog
         run: ./build.sh -i weblog
