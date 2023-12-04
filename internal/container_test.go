@@ -96,20 +96,33 @@ func TestPrioritizeContainerID(t *testing.T) {
 func TestParseCgroupMountPath(t *testing.T) {
 	// Test cases
 	cases := []struct {
-		name     string
-		content  string
-		expected string
+		name               string
+		content            string
+		expectedMountPath  string
+		expectedController string
 	}{
 		{
-			name: "cgroup2 and cgroup mounts found",
+			name: "cgroup2 only",
 			content: `
 none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
 sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
 cgroup2 /sys/fs/cgroup/cgroup2 cgroup2 rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
 tmpfs /sys/fs/cgroup tmpfs ro,nosuid,nodev,noexec,mode=755 0 0
-cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
 `,
-			expected: "/sys/fs/cgroup/cgroup2",
+			expectedMountPath:  "/sys/fs/cgroup/cgroup2",
+			expectedController: "",
+		},
+		{
+			name: "cgroup2 and cgroup memory mounts found",
+			content: `
+none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+cgroup2 /sys/fs/cgroup/cgroup2 cgroup2 rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+tmpfs /sys/fs/cgroup tmpfs ro,nosuid,nodev,noexec,mode=755 0 0
+cgroup /sys/fs/cgroup/memory cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+`,
+			expectedMountPath:  "/sys/fs/cgroup/memory",
+			expectedController: cgroupV1BaseController,
 		},
 		{
 			name: "only cgroup found",
@@ -117,9 +130,10 @@ cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct
 none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
 sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
 tmpfs /sys/fs/cgroup tmpfs ro,nosuid,nodev,noexec,mode=755 0 0
-cgroup /sys/fs/cgroup/cpu,cpuacct cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
+cgroup /sys/fs/cgroup/memory cgroup rw,nosuid,nodev,noexec,relatime,cpuacct,cpu 0 0
 `,
-			expected: "",
+			expectedMountPath:  "/sys/fs/cgroup/memory",
+			expectedController: cgroupV1BaseController,
 		},
 		{
 			name: "cgroup mount not found",
@@ -128,7 +142,8 @@ none /proc proc rw,nosuid,nodev,noexec,relatime 0 0
 sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
 tmpfs /dev tmpfs rw,nosuid,size=65536k,mode=755 0 0
 `,
-			expected: "",
+			expectedMountPath:  "",
+			expectedController: "",
 		},
 	}
 
@@ -136,41 +151,56 @@ tmpfs /dev tmpfs rw,nosuid,size=65536k,mode=755 0 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			reader := strings.NewReader(c.content)
-			result := parseCgroupV2MountPath(reader)
-			require.Equal(t, c.expected, result)
+			mountPath, controller := parseCgroupMountPathAndController(reader)
+			require.Equal(t, c.expectedMountPath, mountPath)
+			require.Equal(t, c.expectedController, controller)
 		})
 	}
 }
 
-func TestParseCgroupNodePath(t *testing.T) {
+func TestParsegroupControllerPath(t *testing.T) {
 	// Test cases
 	cases := []struct {
-		name     string
-		content  string
-		expected string
+		name       string
+		content    string
+		expected   string
+		controller string
 	}{
 		{
-			name:     "cgroup2 normal case",
-			content:  `0::/`,
-			expected: "/",
+			name:       "cgroup2 normal case",
+			content:    `0::/`,
+			expected:   "/",
+			controller: "",
 		},
 		{
-			name: "cgroup node path found",
+			name: "with other controllers",
 			content: `other_line
 12:pids:/docker/abc123
 11:hugetlb:/docker/abc123
 10:net_cls,net_prio:/docker/abc123
 0::/docker/abc123
 `,
-			expected: "/docker/abc123",
+			expected:   "/docker/abc123",
+			controller: "",
 		},
 		{
-			name: "cgroup node path not found",
+			name: "controller not found",
 			content: `12:pids:/docker/abc123
 11:hugetlb:/docker/abc123
 10:net_cls,net_prio:/docker/abc123
 `,
-			expected: "",
+			expected:   "",
+			controller: "",
+		},
+		{
+			name: "cgroupv1 memory controller",
+			content: `3:memory:/user.slice/user-1000.slice/session-8.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
+`,
+			expected:   "/user.slice/user-1000.slice/session-8.scope",
+			controller: cgroupV1BaseController,
 		},
 	}
 
@@ -178,7 +208,7 @@ func TestParseCgroupNodePath(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			reader := strings.NewReader(c.content)
-			result := parseCgroupV2NodePath(reader)
+			result := parseCgroupNodePath(reader, c.controller)
 			require.Equal(t, c.expected, result)
 		})
 	}
@@ -191,30 +221,43 @@ func TestGetCgroupInode(t *testing.T) {
 		cgroupNodeDir         string
 		procSelfCgroupContent string
 		expectedResult        string
+		controller            string // used to create a file in /tmp/sysfscgroup/<controller>
 	}{
 		{
-			description:           "default case - matching entry in /proc/self/cgroup and /proc/mounts",
+			description:           "matching entry in /proc/self/cgroup and /proc/mounts - cgroup2 only",
 			procMountsContent:     "cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
 			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
 			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
 			expectedResult:        "in-%d", // Will be formatted with inode number
 		},
 		{
-			description:           "should not match cgroup v1",
-			procMountsContent:     "cgroup %s cgroup rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
-			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
-			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
-			expectedResult:        "",
+			description:       "matching entry in /proc/self/cgroup and /proc/mounts - cgroup only",
+			controller:        cgroupV1BaseController,
+			procMountsContent: "cgroup %s cgroup rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0\n",
+			cgroupNodeDir:     "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: `
+3:memory:/system.slice/docker-abcdef0123456789abcdef0123456789.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
+`,
+			expectedResult: "in-%d",
 		},
 		{
-			description: "hybrid cgroup - should match only cgroup2",
+			description: "hybrid cgroup - should match only cgroup",
 			procMountsContent: `other_line
-cgroup /sys/fs/cgroup/memory cgroup foo,bar 0 0
-cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
+cgroup %s cgroup foo,bar 0 0
+cgroup2 /sys/fs/cgroup cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
+		`,
+			cgroupNodeDir: "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: `other_line
+3:memory:/system.slice/docker-abcdef0123456789abcdef0123456789.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
 `,
-			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
-			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
-			expectedResult:        "in-%d", // Will be formatted with inode number
+			expectedResult: "in-%d", // Will be formatted with inode number
+			controller:     cgroupV1BaseController,
 		},
 		{
 			description:           "Non-matching entry in /proc/self/cgroup",
@@ -224,7 +267,7 @@ cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
 			expectedResult:        "",
 		},
 		{
-			description:           "No cgroup2 entry in /proc/mounts",
+			description:           "No cgroup entry in /proc/mounts",
 			procMountsContent:     "tmpfs %s tmpfs rw,nosuid,nodev,noexec,relatime 0 0\n",
 			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
 			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
@@ -234,19 +277,14 @@ cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
 
 	for _, tc := range tests {
 		t.Run(tc.description, func(t *testing.T) {
-			// Setup
-			cgroupMountPath, err := os.MkdirTemp(os.TempDir(), "sysfscgroup")
+			groupControllerPath := path.Join(os.TempDir(), "sysfscgroup", tc.controller, tc.cgroupNodeDir)
+			t.Log(groupControllerPath)
+			err := os.MkdirAll(groupControllerPath, 0755)
 			require.NoError(t, err)
-			defer os.RemoveAll(cgroupMountPath)
+			defer os.RemoveAll(groupControllerPath)
 
-			cgroupNodePath := path.Join(cgroupMountPath, tc.cgroupNodeDir)
-			err = os.MkdirAll(cgroupNodePath, 0755)
+			stat, err := os.Stat(groupControllerPath)
 			require.NoError(t, err)
-			defer os.RemoveAll(cgroupNodePath)
-
-			stat, err := os.Stat(cgroupNodePath)
-			require.NoError(t, err)
-
 			expectedInode := ""
 			if tc.expectedResult != "" {
 				expectedInode = fmt.Sprintf(tc.expectedResult, stat.Sys().(*syscall.Stat_t).Ino)
@@ -255,7 +293,7 @@ cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
 			procMounts, err := os.CreateTemp("", "procmounts")
 			require.NoError(t, err)
 			defer os.Remove(procMounts.Name())
-			_, err = procMounts.WriteString(fmt.Sprintf(tc.procMountsContent, cgroupMountPath))
+			_, err = procMounts.WriteString(fmt.Sprintf(tc.procMountsContent, path.Join(os.TempDir(), "sysfscgroup", tc.controller)))
 			require.NoError(t, err)
 			err = procMounts.Close()
 			require.NoError(t, err)
@@ -269,7 +307,7 @@ cgroup2 %s cgroup2 rw,nosuid,nodev,noexec,relatime,cpu,cpuacct 0 0
 			require.NoError(t, err)
 
 			// Test
-			result := getCgroupV2Inode(procMounts.Name(), procSelfCgroup.Name())
+			result := getCgroupInode(procMounts.Name(), procSelfCgroup.Name())
 			require.Equal(t, expectedInode, result)
 		})
 	}

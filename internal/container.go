@@ -22,6 +22,12 @@ const (
 
 	// mountsPath is the path to the mounts file where we can find the cgroup v2 mount point.
 	mountsPath = "/proc/mounts"
+
+	// cgroupV2Key is the key used to store the cgroup v2 identify the cgroupv2 mount point in the cgroupMounts map.
+	cgroupV2Key = "cgroupv2"
+
+	// cgroupV1BaseController is the base controller used to identify the cgroup v1 mount point in the cgroupMounts map.
+	cgroupV1BaseController = "memory"
 )
 
 const (
@@ -83,49 +89,50 @@ func ContainerID() string {
 	return containerID
 }
 
-// parseCgroupV2MountPath parses the cgroup mount path from /proc/mounts
+// parseCgroupMountPath parses the cgroup controller mount path from /proc/mounts and returns the chosen controller.
+// It selects the cgroupv1 "memory" controller mount path if it exists, otherwise it selects the cgroupv2 mount point.
+// If cgroup mount points are not detected, it returns an empty string.
+func parseCgroupMountPathAndController(r io.Reader) (string, string) {
+	mountPoints, err := discoverCgroupMountPoints(r)
+	if err != nil {
+		return "", ""
+	}
+	if cgroupRoot, ok := mountPoints[cgroupV1BaseController]; ok {
+		return cgroupRoot, cgroupV1BaseController
+	}
+	return mountPoints[cgroupV2Key], ""
+}
+
+// parseCgroupNodePath parses the cgroup controller path from /proc/self/cgroup
 // It returns an empty string if cgroup v2 is not used
-func parseCgroupV2MountPath(r io.Reader) string {
+// In cgroupv2, only 0::<path> should exist. In cgroupv1, we should have 0::<path> and [1-9]:memory:<path>
+// Refer to https://man7.org/linux/man-pages/man7/cgroups.7.html#top_of_page
+func parseCgroupNodePath(r io.Reader, controller string) string {
 	scn := bufio.NewScanner(r)
 	for scn.Scan() {
 		line := scn.Text()
-		// a correct line line should be formatted as `cgroup2 <path> cgroup2 rw,nosuid,nodev,noexec,relatime,nsdelegate 0 0`
-		tokens := strings.Fields(line)
-		if len(tokens) >= 3 {
-			fsType := tokens[2]
-			if fsType == "cgroup2" {
-				return tokens[1]
-			}
+		tokens := strings.Split(line, ":")
+		if len(tokens) != 3 {
+			continue
 		}
+		if tokens[1] != controller {
+			continue
+		}
+		return tokens[2]
 	}
 	return ""
 }
 
-// parseCgroupV2NodePath parses the cgroup node path from /proc/self/cgroup
-// It returns an empty string if cgroup v2 is not used
-// With respect to https://man7.org/linux/man-pages/man7/cgroups.7.html#top_of_page, in cgroupv2, only 0::<path> should exist
-func parseCgroupV2NodePath(r io.Reader) string {
-	scn := bufio.NewScanner(r)
-	for scn.Scan() {
-		line := scn.Text()
-		// The cgroup node path is the last element of the line starting with "0::"
-		if strings.HasPrefix(line, "0::") {
-			return line[3:]
-		}
-	}
-	return ""
-}
-
-// getCgroupV2Inode returns the cgroup v2 node inode if it exists otherwise an empty string.
+// getCgroupInode returns the cgroup controller inode if it exists otherwise an empty string.
 // The inode is prefixed by "in-" and is used by the agent to retrieve the container ID.
-func getCgroupV2Inode(mountsPath, cgroupPath string) string {
+func getCgroupInode(mountsPath, cgroupPath string) string {
 	// Retrieve a cgroup mount point from /proc/mounts
 	f, err := os.Open(mountsPath)
 	if err != nil {
 		return ""
 	}
 	defer f.Close()
-	cgroupMountPath := parseCgroupV2MountPath(f)
+	cgroupMountPath, controller := parseCgroupMountPathAndController(f)
 	if cgroupMountPath == "" {
 		return ""
 	}
@@ -135,7 +142,7 @@ func getCgroupV2Inode(mountsPath, cgroupPath string) string {
 		return ""
 	}
 	defer f.Close()
-	cgroupNodePath := parseCgroupV2NodePath(f)
+	cgroupNodePath := parseCgroupNodePath(f, controller)
 	if cgroupNodePath == "" {
 		return ""
 	}
@@ -151,12 +158,54 @@ func getCgroupV2Inode(mountsPath, cgroupPath string) string {
 	return fmt.Sprintf("in-%d", stats.Ino)
 }
 
+// discoverCgroupMountPoints returns a map of cgroup controllers to their mount points.
+// ported from https://github.com/DataDog/datadog-agent/blob/38b4788d6f19b3660cb7310ff33c4d352a4993a9/pkg/util/cgroups/reader_detector.go#L22
+func discoverCgroupMountPoints(r io.Reader) (map[string]string, error) {
+	mountPointsv1 := make(map[string]string)
+	var mountPointsv2 string
+
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := s.Text()
+
+		tokens := strings.Fields(line)
+		if len(tokens) >= 3 {
+			// Check if the filesystem type is 'cgroup' or 'cgroup2'
+			fsType := tokens[2]
+			if !strings.HasPrefix(fsType, "cgroup") {
+				continue
+			}
+
+			cgroupPath := tokens[1]
+			if fsType == "cgroup" {
+				// Target can be comma-separate values like cpu,cpuacct
+				tsp := strings.Split(path.Base(cgroupPath), ",")
+				for _, target := range tsp {
+					// In case multiple paths are mounted for a single controller, take the shortest one
+					previousPath := mountPointsv1[target]
+					if previousPath == "" || len(cgroupPath) < len(previousPath) {
+						mountPointsv1[target] = cgroupPath
+					}
+				}
+			} else if tokens[2] == "cgroup2" {
+				mountPointsv2 = cgroupPath
+			}
+		}
+	}
+
+	if len(mountPointsv1) == 0 && mountPointsv2 != "" {
+		return map[string]string{cgroupV2Key: mountPointsv2}, nil
+	}
+
+	return mountPointsv1, nil
+}
+
 // readEntityID attempts to return the cgroup v2 node inode or empty on failure.
 func readEntityID() string {
 	if containerID != "" {
 		return "cid-" + containerID
 	}
-	return getCgroupV2Inode(mountsPath, cgroupPath)
+	return getCgroupInode(mountsPath, cgroupPath)
 }
 
 // EntityID attempts to return the container ID or the cgroup v2 node inode if the container ID is not available.
