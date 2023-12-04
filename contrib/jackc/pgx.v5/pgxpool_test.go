@@ -36,5 +36,5 @@ func TestPool(t *testing.T) {
 	assert.Equal(t, 2, x)
 
 	assert.Len(t, mt.OpenSpans(), 0)
-	assert.Len(t, mt.FinishedSpans(), 2)
+	assert.Len(t, mt.FinishedSpans(), 5)
 }
