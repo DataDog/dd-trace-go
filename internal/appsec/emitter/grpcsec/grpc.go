@@ -14,7 +14,8 @@ import (
 	"reflect"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo/instrumentation"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 
 	"github.com/DataDog/appsec-internal-go/netip"
 )
@@ -39,8 +40,8 @@ type (
 	// to the operation using its AddSecurityEvent() method.
 	HandlerOperation struct {
 		dyngo.Operation
-		instrumentation.TagsHolder
-		instrumentation.SecurityEventsHolder
+		trace.TagsHolder
+		trace.SecurityEventsHolder
 		Error error
 	}
 	// HandlerOperationArgs is the grpc handler arguments.
@@ -104,12 +105,12 @@ func (e *MonitoringError) Error() string {
 func StartHandlerOperation(ctx context.Context, args HandlerOperationArgs, parent dyngo.Operation, listeners ...dyngo.DataListener) (context.Context, *HandlerOperation) {
 	op := &HandlerOperation{
 		Operation:  dyngo.NewOperation(parent),
-		TagsHolder: instrumentation.NewTagsHolder(),
+		TagsHolder: trace.NewTagsHolder(),
 	}
 	for _, l := range listeners {
 		op.OnData(l)
 	}
-	newCtx := context.WithValue(ctx, instrumentation.ContextKey{}, op)
+	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
