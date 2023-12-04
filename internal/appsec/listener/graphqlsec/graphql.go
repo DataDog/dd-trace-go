@@ -66,7 +66,7 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 				allResolversMu sync.Mutex
 			)
 
-			if _, found := addresses[graphQLServerAllResolversAddr]; found && len(allResolvers) > 0 {
+			if _, found := addresses[graphQLServerAllResolversAddr]; found {
 				// If `allResolvers` is supported, pre-allocate a small map to store data.
 				allResolvers = make(map[string][]map[string]any)
 			}
@@ -85,11 +85,13 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 					listener.AddSecurityEvents(field, limiter, wafResult.Events)
 				}
 
-				if allResolvers != nil && args.FieldName != "" {
+				if allResolvers != nil {
 					// Register in all resolvers
-					allResolversMu.Lock()
-					defer allResolversMu.Unlock()
-					allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
+					func() {
+						allResolversMu.Lock()
+						defer allResolversMu.Unlock()
+						allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
+					}()
 				}
 
 				field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {
