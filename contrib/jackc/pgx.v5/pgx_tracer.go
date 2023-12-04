@@ -143,7 +143,10 @@ func (t *pgxTracer) TraceConnectStart(ctx context.Context, _ pgx.TraceConnectSta
 	if !t.cfg.traceConnect {
 		return ctx
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.connect", t.spanOptions()...)
+	opts := t.spanOptions(
+		tracer.Tag(ext.ResourceName, "connect"),
+	)
+	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
 	return ctx
 }
 
