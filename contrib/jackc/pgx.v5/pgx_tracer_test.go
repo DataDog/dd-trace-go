@@ -68,48 +68,89 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func assertCommonTags(t *testing.T, s mocktracer.Span, qType string) {
-
-}
-
 func TestTraceQuery(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	opts := []Option{
 		WithTraceQuery(true),
-		WithTraceConnect(true),
-		WithTracePrepare(true),
-		WithTraceBatch(true),
-		WithTraceCopyFrom(true),
+		WithTraceConnect(false),
+		WithTracePrepare(false),
 	}
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	conn, err := Connect(ctx, postgresDSN, opts...)
 	require.NoError(t, err)
 
 	query := fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", tableName)
-	_, err = conn.Query(ctx, query)
+	rows, err := conn.Query(ctx, query)
+	require.NoError(t, err)
+	require.NoError(t, rows.Err())
+	rows.Close()
+	span.Finish()
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	s0 := spans[0]
+	assert.Equal(t, "pgx.query", s0.OperationName())
+	assert.Equal(t, query, s0.Tag(ext.ResourceName))
+	checkDefaultTags(t, s0)
+
+	s1 := spans[1]
+	assert.Equal(t, "parent", s1.OperationName())
+	assert.Equal(t, "parent", s1.Tag(ext.ResourceName))
+}
+
+func TestTraceBatch(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := []Option{
+		WithTraceQuery(true),
+		WithTraceConnect(false),
+		WithTracePrepare(true),
+		WithTraceBatch(true),
+	}
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	conn, err := Connect(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+
+	batch := &pgx.Batch{}
+	batch.Queue(`SELECT 1`)
+	batch.Queue(`SELECT 2`)
+	batch.Queue(`SELECT 3`)
+	br := conn.SendBatch(ctx, batch)
+
+	var rows pgx.Rows
+	var qErr error
+	for qErr != nil {
+		rows, qErr = br.Query()
+		require.NoError(t, qErr)
+		rows.Close()
+	}
+
+	err = br.Close()
 	require.NoError(t, err)
 
 	span.Finish()
 	spans := mt.FinishedSpans()
-	require.Len(t, spans, 3)
+	expectedSpans := batch.Len() + 2
+	require.Len(t, spans, expectedSpans)
+	require.Len(t, mt.OpenSpans(), 0)
 
-	s0 := spans[0]
-	assert.Equal(t, "pgx.connect", s0.OperationName())
-	assert.Equal(t, "Connect", s0.Tag(ext.ResourceName))
+	for i, s := range spans[0 : expectedSpans-2] {
+		assert.Equal(t, "pgx.batch.query", s.OperationName())
+		assert.Equal(t, fmt.Sprintf("SELECT %d", i+1), s.Tag(ext.ResourceName))
+		checkDefaultTags(t, s)
+	}
 
-	s1 := spans[1]
-	assert.Equal(t, "pgx.query", s1.OperationName())
-	assert.Equal(t, query, s1.Tag(ext.ResourceName))
+	s0 := spans[expectedSpans-2]
+	assert.Equal(t, "pgx.batch", s0.OperationName())
+	assert.Equal(t, "pgx.batch", s0.Tag(ext.ResourceName))
+	checkDefaultTags(t, s0)
 
-	s2 := spans[2]
-	assert.Equal(t, "parent", s2.OperationName())
-	assert.Equal(t, "parent", s2.Tag(ext.ResourceName))
-}
-
-func TestTraceBatch(t *testing.T) {
-
+	s1 := spans[expectedSpans-1]
+	assert.Equal(t, "parent", s1.OperationName())
+	assert.Equal(t, "parent", s1.Tag(ext.ResourceName))
 }
 
 func Test_Tracer(t *testing.T) {
@@ -119,7 +160,17 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, os.Getenv(postgresDSN))
+		parent, ctx := tracer.StartSpanFromContext(ctx, "parent")
+
+		opts := []Option{
+			WithTraceQuery(true),
+			WithTraceConnect(true),
+			WithTracePrepare(true),
+			WithTraceBatch(true),
+			WithTraceCopyFrom(true),
+			WithServiceName(defaultServiceName),
+		}
+		conn, err := Connect(ctx, postgresDSN, opts...)
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -158,8 +209,71 @@ func Test_Tracer(t *testing.T) {
 		_, err = conn.CopyFrom(ctx, []string{"numbers"}, []string{"number"}, copyFromSource)
 		require.NoError(t, err)
 
+		expectedFinishedSpans := 10
+
+		assert.Len(t, mt.OpenSpans(), 1)
+		assert.Len(t, mt.FinishedSpans(), expectedFinishedSpans)
+
+		parent.Finish()
 		assert.Len(t, mt.OpenSpans(), 0)
-		assert.Len(t, mt.FinishedSpans(), 3)
+		assert.Len(t, mt.FinishedSpans(), expectedFinishedSpans+1)
+
+		spans := mt.FinishedSpans()
+		s0 := spans[0]
+		assert.Equal(t, "pgx.connect", s0.OperationName())
+		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
+		checkDefaultTags(t, s0)
+
+		s1 := spans[1]
+		assert.Equal(t, "pgx.prepare", s1.OperationName())
+		assert.Equal(t, `SELECT 1`, s1.Tag(ext.ResourceName))
+		checkDefaultTags(t, s1)
+
+		s2 := spans[2]
+		assert.Equal(t, "pgx.query", s2.OperationName())
+		assert.Equal(t, `SELECT 1`, s2.Tag(ext.ResourceName))
+		checkDefaultTags(t, s2)
+
+		s3 := spans[3]
+		assert.Equal(t, "pgx.prepare", s3.OperationName())
+		assert.Equal(t, `SELECT 2`, s3.Tag(ext.ResourceName))
+		checkDefaultTags(t, s3)
+
+		s4 := spans[4]
+		assert.Equal(t, "pgx.query", s4.OperationName())
+		assert.Equal(t, `SELECT 2`, s4.Tag(ext.ResourceName))
+		checkDefaultTags(t, s4)
+
+		s5 := spans[5]
+		assert.Equal(t, "pgx.batch.query", s5.OperationName())
+		assert.Equal(t, `SELECT 1`, s5.Tag(ext.ResourceName))
+		checkDefaultTags(t, s5)
+
+		s6 := spans[6]
+		assert.Equal(t, "pgx.batch", s6.OperationName())
+		assert.Equal(t, "pgx.batch", s6.Tag(ext.ResourceName))
+		checkDefaultTags(t, s6)
+
+		s7 := spans[7]
+		assert.Equal(t, "pgx.query", s7.OperationName())
+		assert.Equal(t, `CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)`, s7.Tag(ext.ResourceName))
+		checkDefaultTags(t, s7)
+
+		s8 := spans[8]
+		assert.Equal(t, "pgx.prepare", s8.OperationName())
+		assert.Equal(t, `select "number" from "numbers"`, s8.Tag(ext.ResourceName))
+		checkDefaultTags(t, s8)
+
+		s9 := spans[9]
+		assert.Equal(t, "pgx.copyfrom", s9.OperationName())
+		assert.Equal(t, "pgx.copyfrom", s9.Tag(ext.ResourceName))
+		assert.Equal(t, pgx.Identifier([]string{"numbers"}), s9.Tag("tables"))
+		assert.Equal(t, []string{"number"}, s9.Tag("columns"))
+		checkDefaultTags(t, s9)
+
+		s10 := spans[10]
+		assert.Equal(t, "parent", s10.OperationName())
+		assert.Equal(t, "parent", s10.Tag(ext.ResourceName))
 	})
 	t.Run("Test_BatchTracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -201,7 +315,33 @@ func Test_Tracer(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Len(t, mt.OpenSpans(), 0)
-		assert.Len(t, mt.FinishedSpans(), 4)
+		assert.Len(t, mt.FinishedSpans(), 5)
+
+		spans := mt.FinishedSpans()
+		s0 := spans[0]
+		assert.Equal(t, "pgx.connect", s0.OperationName())
+		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
+		checkDefaultTags(t, s0)
+
+		s1 := spans[1]
+		assert.Equal(t, "pgx.batch.query", s1.OperationName())
+		assert.Equal(t, `SELECT 1`, s1.Tag(ext.ResourceName))
+		checkDefaultTags(t, s1)
+
+		s2 := spans[2]
+		assert.Equal(t, "pgx.batch.query", s2.OperationName())
+		assert.Equal(t, `SELECT 2`, s2.Tag(ext.ResourceName))
+		checkDefaultTags(t, s2)
+
+		s3 := spans[3]
+		assert.Equal(t, "pgx.batch.query", s3.OperationName())
+		assert.Equal(t, `SELECT 3`, s3.Tag(ext.ResourceName))
+		checkDefaultTags(t, s3)
+
+		s4 := spans[4]
+		assert.Equal(t, "pgx.batch", s4.OperationName())
+		assert.Equal(t, "pgx.batch", s4.Tag(ext.ResourceName))
+		checkDefaultTags(t, s4)
 	})
 	t.Run("Test_CopyFromTracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -209,7 +349,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, postgresDSN)
+		conn, err := Connect(ctx, postgresDSN, WithTraceCopyFrom(true))
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -226,7 +366,32 @@ func Test_Tracer(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Len(t, mt.OpenSpans(), 0)
-		assert.Len(t, mt.FinishedSpans(), 2)
+		assert.Len(t, mt.FinishedSpans(), 4)
+
+		spans := mt.FinishedSpans()
+		s0 := spans[0]
+		assert.Equal(t, "pgx.connect", s0.OperationName())
+		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
+		checkDefaultTags(t, s0)
+
+		s1 := spans[1]
+		assert.Equal(t, "pgx.query", s1.OperationName())
+		assert.Equal(t, `CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)`, s1.Tag(ext.ResourceName))
+		checkDefaultTags(t, s1)
+
+		s2 := spans[2]
+
+		assert.Equal(t, "pgx.prepare", s2.OperationName())
+		assert.Equal(t, `select "number" from "numbers"`, s2.Tag(ext.ResourceName))
+		checkDefaultTags(t, s2)
+
+		s3 := spans[3]
+		assert.Equal(t, "pgx.copyfrom", s3.OperationName())
+		assert.Equal(t, "pgx.copyfrom", s3.Tag(ext.ResourceName))
+		checkDefaultTags(t, s3)
+		assert.Equal(t, pgx.Identifier([]string{"numbers"}), s3.Tag("tables"))
+		assert.Equal(t, []string{"number"}, s3.Tag("columns"))
+
 	})
 	t.Run("Test_PrepareTracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -234,7 +399,7 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, postgresDSN)
+		conn, err := Connect(ctx, postgresDSN, WithTracePrepare(true))
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
@@ -242,7 +407,18 @@ func Test_Tracer(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Len(t, mt.OpenSpans(), 0)
-		assert.Len(t, mt.FinishedSpans(), 1)
+		assert.Len(t, mt.FinishedSpans(), 2)
+
+		spans := mt.FinishedSpans()
+		s0 := spans[0]
+		assert.Equal(t, "pgx.connect", s0.OperationName())
+		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
+		checkDefaultTags(t, s0)
+
+		s1 := spans[1]
+		assert.Equal(t, "pgx.prepare", s1.OperationName())
+		assert.Equal(t, `SELECT 1`, s1.Tag(ext.ResourceName))
+		checkDefaultTags(t, s1)
 	})
 	t.Run("Test_ConnectTracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -250,11 +426,26 @@ func Test_Tracer(t *testing.T) {
 
 		ctx := context.Background()
 
-		conn, err := Connect(ctx, postgresDSN)
+		conn, err := Connect(ctx, postgresDSN, WithTraceConnect(true))
 		require.NoError(t, err)
 		defer conn.Close(ctx)
 
 		assert.Len(t, mt.OpenSpans(), 0)
 		assert.Len(t, mt.FinishedSpans(), 1)
+
+		spans := mt.FinishedSpans()
+		s0 := spans[0]
+		assert.Equal(t, "pgx.connect", s0.OperationName())
+		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
+		checkDefaultTags(t, s0)
+
 	})
+}
+
+func checkDefaultTags(t *testing.T, s mocktracer.Span) {
+	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
+	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
+	assert.Equal(t, ext.DBSystemPostgreSQL, s.Tag(ext.DBSystem))
+	assert.Equal(t, componentName, s.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 }
