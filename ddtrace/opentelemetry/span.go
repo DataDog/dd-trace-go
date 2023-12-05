@@ -46,13 +46,17 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	s.finished = true
-	for k, v := range s.attributes {
-		//	if we find operation.name,
-		if k == "operation.name" || k == ext.SpanName {
-			//	set it and keep track that it was set to ignore everything else
-			if name, ok := v.(string); ok {
-				s.attributes[ext.SpanName] = strings.ToLower(name)
-			}
+
+	// If there's an operation.name OR a span.name use that
+	if v, ok := s.attributes["operation.name"]; ok {
+		//	set it and keep track that it was set to ignore everything else
+		if name, ok := v.(string); ok {
+			s.attributes[ext.SpanName] = strings.ToLower(name)
+		}
+	}
+	if v, ok := s.attributes[ext.SpanName]; ok {
+		if name, ok := v.(string); ok {
+			s.attributes[ext.SpanName] = strings.ToLower(name)
 		}
 	}
 
