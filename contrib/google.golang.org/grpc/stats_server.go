@@ -53,14 +53,8 @@ func (h *serverStatsHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
 	if !ok {
 		return
 	}
-	val := ctx.Value(fullMethodNameKey{})
-	if val == nil {
-		return
-	}
-	fullMethod, ok := val.(string)
-	if !ok {
-		return
-	}
+
+	fullMethod, _ := ctx.Value(fullMethodNameKey{}).(string)
 	if v, ok := rs.(*stats.End); ok {
 		finishWithError(span, v.Error, fullMethod, h.cfg)
 	}
