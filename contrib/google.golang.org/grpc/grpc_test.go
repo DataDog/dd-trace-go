@@ -720,15 +720,11 @@ func TestWithErrorCheck(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 
-				var (
-					rig *rig
-					err error
-				)
-				if tt.nonErrorFunc == nil {
-					rig, err = newRig(true)
-				} else {
-					rig, err = newRig(true, NonErrorFunc(tt.nonErrorFunc))
+				var ops []Option
+				if tt.errCheck != nil {
+					ops = append(ops, WithErrorCheck(tt.errCheck))
 				}
+				rig, err := newRig(true, ops...)
 				if err != nil {
 					t.Fatalf("error setting up rig: %s", err)
 				}
@@ -823,15 +819,11 @@ func TestWithErrorCheck(t *testing.T) {
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
-				var (
-					rig *rig
-					err error
-				)
-				if tt.nonErrorFunc == nil {
-					rig, err = newRig(true)
-				} else {
-					rig, err = newRig(true, NonErrorFunc(tt.nonErrorFunc))
+				var opts []Option
+				if tt.errCheck != nil {
+					opts = append(opts, WithErrorCheck(tt.errCheck))
 				}
+				rig, err := newRig(true, opts...)
 				if err != nil {
 					t.Fatalf("error setting up rig: %s", err)
 				}
