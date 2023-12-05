@@ -765,8 +765,6 @@ func TestWithErrorCheck(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
 		for name, tt := range map[string]struct {
 			errCheck    func(method string, err error) bool
 			message     string
@@ -819,6 +817,8 @@ func TestWithErrorCheck(t *testing.T) {
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
 				var opts []Option
 				if tt.errCheck != nil {
 					opts = append(opts, WithErrorCheck(tt.errCheck))
