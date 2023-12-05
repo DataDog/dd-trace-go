@@ -850,18 +850,10 @@ func TestWithErrorCheck(t *testing.T) {
 				spans := mt.FinishedSpans()
 				assert.Len(t, spans, 5)
 
-				noError := true
 				for _, s := range spans {
-					if s.Tag(ext.Error) != nil {
-						noError = false
-						break
+					if s.Tag(ext.Error) != nil && !tt.withError {
+						assert.FailNow(t, "expected no error tag on the span")
 					}
-				}
-
-				if tt.withError {
-					assert.False(t, noError)
-				} else {
-					assert.True(t, noError)
 				}
 
 				mt.Reset()
