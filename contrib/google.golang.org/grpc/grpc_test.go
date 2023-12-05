@@ -663,18 +663,18 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 	}
 }
 
-func TestNonErrorFunc(t *testing.T) {
+func TestWithErrorCheck(t *testing.T) {
 	t.Run("unary", func(t *testing.T) {
 		for name, tt := range map[string]struct {
-			nonErrorFunc func(method string, err error) bool
-			message      string
-			withError    bool
-			wantCode     string
-			wantMessage  string
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
 		}{
 			"Invalid_with_no_error": {
 				message: "invalid",
-				nonErrorFunc: func(method string, err error) bool {
+				errCheck: func(method string, err error) bool {
 					if err == nil {
 						return true
 					}
@@ -692,7 +692,7 @@ func TestNonErrorFunc(t *testing.T) {
 			},
 			"Invalid_with_error": {
 				message: "invalid",
-				nonErrorFunc: func(method string, err error) bool {
+				errCheck: func(method string, err error) bool {
 					if err == nil {
 						return true
 					}
@@ -708,12 +708,12 @@ func TestNonErrorFunc(t *testing.T) {
 				wantCode:    codes.InvalidArgument.String(),
 				wantMessage: "invalid",
 			},
-			"Invalid_with_error_without_nonErrorFunc": {
-				message:      "invalid",
-				nonErrorFunc: nil,
-				withError:    true,
-				wantCode:     codes.InvalidArgument.String(),
-				wantMessage:  "invalid",
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
@@ -772,15 +772,15 @@ func TestNonErrorFunc(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		for name, tt := range map[string]struct {
-			nonErrorFunc func(method string, err error) bool
-			message      string
-			withError    bool
-			wantCode     string
-			wantMessage  string
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
 		}{
 			"Invalid_with_no_error": {
 				message: "invalid",
-				nonErrorFunc: func(method string, err error) bool {
+				errCheck: func(method string, err error) bool {
 					if err == nil {
 						return true
 					}
@@ -798,7 +798,7 @@ func TestNonErrorFunc(t *testing.T) {
 			},
 			"Invalid_with_error": {
 				message: "invalid",
-				nonErrorFunc: func(method string, err error) bool {
+				errCheck: func(method string, err error) bool {
 					if err == nil {
 						return true
 					}
@@ -814,12 +814,12 @@ func TestNonErrorFunc(t *testing.T) {
 				wantCode:    codes.InvalidArgument.String(),
 				wantMessage: "invalid",
 			},
-			"Invalid_with_error_without_nonErrorFunc": {
-				message:      "invalid",
-				nonErrorFunc: nil,
-				withError:    true,
-				wantCode:     codes.InvalidArgument.String(),
-				wantMessage:  "invalid",
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
 			},
 		} {
 			t.Run(name, func(t *testing.T) {
