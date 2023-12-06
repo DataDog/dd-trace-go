@@ -124,9 +124,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 		}
 
 		wafResult := listener.RunWAF(wafCtx, runData, timeout)
-		if wafResult.HasDerivatives() {
-			listener.AddTags(op, wafResult.Derivatives)
-		}
+		listener.AddAPISecurityTags(op, wafResult.Derivatives)
 		if wafResult.HasActions() || wafResult.HasEvents() {
 			interrupt := listener.ProcessActions(op, actions, wafResult.Actions)
 			listener.AddSecurityEvents(op, limiter, wafResult.Events)
@@ -139,7 +137,13 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 
 		if _, ok := addresses[ServerRequestBodyAddr]; ok {
 			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
+				runData.Persistent = make(map[string]any, 2)
+				runData.Persistent[ServerRequestBodyAddr] = args.Body
+				if extractSchemas {
+					runData.Persistent["waf.context.processor"] = map[string]any{"extract-schema": true}
+				}
 				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, timeout)
+				listener.AddAPISecurityTags(op, wafResult.Derivatives)
 				if wafResult.HasActions() || wafResult.HasEvents() {
 					listener.ProcessHTTPSDKAction(sdkBodyOp, actions, wafResult.Actions)
 					listener.AddSecurityEvents(op, limiter, wafResult.Events)
@@ -184,13 +188,13 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 				log.Debug("appsec: attack detected by the waf")
 				listener.AddSecurityEvents(op, limiter, wafResult.Events)
 			}
-			if wafResult.HasDerivatives() {
-				listener.AddTags(op, wafResult.Derivatives)
-			}
+			listener.AddAPISecurityTags(op, wafResult.Derivatives)
 		}))
 	})
 }
 
+// canExtractSchemas checks that API Security is enabled and that sampling rate
+// allows extracting schemas
 func canExtractSchemas(cfg *internal.APISecConfig) bool {
 	return cfg != nil && cfg.Enabled && cfg.SampleRate >= rand.Float64()
 }

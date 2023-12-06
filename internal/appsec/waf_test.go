@@ -438,7 +438,6 @@ func TestAPISecurity(t *testing.T) {
 
 	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
 	require.NoError(t, err)
-	req.Header.Set("User-Agent", "dd-test-scanner-log")
 
 	t.Run("enabled", func(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")

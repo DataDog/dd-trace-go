@@ -82,10 +82,15 @@ func AddWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
 }
 
-// AddTags adds arbitrary tags to the provided tags holder
-func AddTags(th tagsHolder, tags map[string]any) {
-	for k, v := range tags {
-		th.AddTag(k, v)
+// AddAPISecurityTags serializes the WAF derivatives and adds them to the tags
+func AddAPISecurityTags(th tagsHolder, derivatives map[string]any) {
+	for k, v := range derivatives {
+		schema, err := json.Marshal(v)
+		if err != nil {
+			log.Debug("appsec: could not serialize API Security schema for %s", k)
+			continue
+		}
+		th.AddTag(k, string(schema))
 	}
 }
 
