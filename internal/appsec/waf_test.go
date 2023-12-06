@@ -427,10 +427,12 @@ func TestBlocking(t *testing.T) {
 	}
 }
 
+// Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
@@ -460,6 +462,7 @@ func TestAPISecurity(t *testing.T) {
 		// Make sure the addresses that are present are getting extracted as schemas
 		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
 		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
@@ -482,5 +485,6 @@ func TestAPISecurity(t *testing.T) {
 		// Make sure the addresses that are present are not getting extracted as schemas
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
 	})
 }
