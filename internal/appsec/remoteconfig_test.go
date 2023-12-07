@@ -17,6 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/require"
@@ -386,7 +387,7 @@ func TestCapabilities(t *testing.T) {
 		},
 		{
 			name:     "appsec-enabled/rulesManager-from-env",
-			env:      map[string]string{envEnabled: "1", envRules: "testdata/blocking.json"},
+			env:      map[string]string{envEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
 			expected: []remoteconfig.Capability{},
 		},
 	} {
