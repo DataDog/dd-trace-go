@@ -8,6 +8,7 @@ package negroni
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"net/http"
 
@@ -33,7 +34,9 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := append(
+	opts := make([]ddtrace.StartSpanOption, len(m.cfg.spanOpts), len(m.cfg.spanOpts)+2)
+	copy(opts, m.cfg.spanOpts)
+	opts = append(
 		m.cfg.spanOpts,
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),

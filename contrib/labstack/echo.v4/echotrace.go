@@ -61,7 +61,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			opts := append(spanOpts, tracer.ResourceName(resource), tracer.Tag(ext.HTTPRoute, route))
+			opts := make([]ddtrace.StartSpanOption, len(spanOpts), len(spanOpts)+3)
+			copy(opts, spanOpts)
+			opts = append(spanOpts, tracer.ResourceName(resource), tracer.Tag(ext.HTTPRoute, route))
 
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

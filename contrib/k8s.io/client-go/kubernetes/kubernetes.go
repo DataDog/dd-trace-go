@@ -48,7 +48,9 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 }
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
-	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	newOpts := make([]httptrace.RoundTripperOption, len(opts), len(opts)+1)
+	copy(newOpts, opts)
+	newOpts = append(newOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
@@ -62,7 +64,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		span.SetTag("kubernetes.audit_id", kubeAuditID)
 	}))
 	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
-	return httptrace.WrapRoundTripper(rt, opts...)
+	return httptrace.WrapRoundTripper(rt, newOpts...)
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.

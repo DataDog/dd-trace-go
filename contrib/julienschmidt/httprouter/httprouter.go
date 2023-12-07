@@ -7,6 +7,7 @@
 package httprouter // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"net/http"
 	"strings"
@@ -61,12 +62,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	spanOpts := append(r.config.spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+	opts := make([]ddtrace.StartSpanOption, len(r.config.spanOpts), len(r.config.spanOpts)+1)
+	copy(opts, r.config.spanOpts)
+	opts = append(opts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
-		SpanOpts: spanOpts,
+		SpanOpts: opts,
 		Route:    route,
 	})
 }

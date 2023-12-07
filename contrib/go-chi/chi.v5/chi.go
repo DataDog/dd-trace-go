@@ -8,6 +8,7 @@ package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi.v5"
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"net/http"
 
@@ -46,10 +47,13 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := spanOpts
+			opts := make([]ddtrace.StartSpanOption, len(spanOpts), len(spanOpts)+2)
+			copy(opts, cfg.spanOpts)
+
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
+
 			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)

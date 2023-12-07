@@ -44,7 +44,10 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		opts := append(spanOpts, tracer.ResourceName(cfg.resourceNamer(c)))
+
+		opts := make([]tracer.StartSpanOption, len(spanOpts), len(spanOpts)+4)
+		copy(opts, spanOpts)
+		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
