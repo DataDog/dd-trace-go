@@ -87,7 +87,7 @@ func AddAPISecurityTags(th tagsHolder, derivatives map[string]any) {
 	for k, v := range derivatives {
 		schema, err := json.Marshal(v)
 		if err != nil {
-			log.Debug("appsec: could not serialize API Security schema for %s", k)
+			log.Debug("appsec: could not serialize API Security schema for %s: %v", k, err)
 			continue
 		}
 		th.AddTag(k, string(schema))
