@@ -38,15 +38,20 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
+
 	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
-	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
-	for k, v := range cfg.tags {
-		spanOpts = append(spanOpts, tracer.Tag(k, v))
-	}
 	spanOpts = append(spanOpts,
+		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
+	for k, v := range cfg.tags {
+		spanOpts = append(spanOpts, tracer.Tag(k, v))
+	}
+	if !math.IsNaN(cfg.analyticsRate) {
+		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
@@ -61,14 +66,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			opts := make([]ddtrace.StartSpanOption, len(spanOpts), len(spanOpts)+3)
-			copy(opts, spanOpts)
-			opts = append(spanOpts, tracer.ResourceName(resource), tracer.Tag(ext.HTTPRoute, route))
+			// Make sure opts is a copy of the span options, scoped to this request,
+			// to avoid races and leaks to spanOpts
+			opts := append([]ddtrace.StartSpanOption{
+				tracer.ResourceName(resource),
+				tracer.Tag(ext.HTTPRoute, route),
+				httptrace.HeaderTagsFromRequest(request, cfg.headerTags),
+			}, spanOpts...)
 
-			if !math.IsNaN(cfg.analyticsRate) {
-				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-			}
-			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}

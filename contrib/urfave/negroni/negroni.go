@@ -8,9 +8,10 @@ package negroni
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"net/http"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -34,14 +35,13 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := make([]ddtrace.StartSpanOption, len(m.cfg.spanOpts), len(m.cfg.spanOpts)+2)
-	copy(opts, m.cfg.spanOpts)
-	opts = append(
-		m.cfg.spanOpts,
+	// Make sure opts is a copy of the span options, scoped to this request,
+	// to avoid races and leaks to m.cfg.spanOpts
+	opts := append([]ddtrace.StartSpanOption{
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),
 		httptrace.HeaderTagsFromRequest(r, m.cfg.headerTags),
-	)
+	}, m.cfg.spanOpts...)
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
