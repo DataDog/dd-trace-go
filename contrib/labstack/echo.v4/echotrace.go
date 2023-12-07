@@ -40,14 +40,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 
 	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
+	for k, v := range cfg.tags {
+		spanOpts = append(spanOpts, tracer.Tag(k, v))
+	}
 	spanOpts = append(spanOpts,
 		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
-	for k, v := range cfg.tags {
-		spanOpts = append(spanOpts, tracer.Tag(k, v))
-	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
