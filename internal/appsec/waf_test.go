@@ -433,7 +433,7 @@ func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
 	t.Setenv("DD_APPSEC_ENABLED", "true")
 	if wafOK, err := waf.Health(); !wafOK {
-		t.Skipf("WAF must be usabled for this test to run correctly: %v", err)
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
