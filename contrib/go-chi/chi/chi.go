@@ -8,11 +8,11 @@ package chi // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-chi/chi"
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"math"
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -38,23 +38,30 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
-	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
+
+	spanOpts := append([]ddtrace.StartSpanOption{
+		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+	}, cfg.spanOpts...) // copy cfg.spanOpts and avoid modifying it (append doesn't always copy)
+
+	if !math.IsNaN(cfg.analyticsRate) {
+		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
-			opts := make([]ddtrace.StartSpanOption, len(spanOpts), len(spanOpts)+2)
-			copy(opts, cfg.spanOpts)
 
-			if !math.IsNaN(cfg.analyticsRate) {
-				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-			}
+			// Make sure opts is a copy of the span options, scoped to this request,
+			// to avoid races and leaks to spanOpts or cfg.spanOpts
+			opts := append([]ddtrace.StartSpanOption{
+				httptrace.HeaderTagsFromRequest(r, cfg.headerTags),
+			}, spanOpts...)
 
-			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {
