@@ -13,6 +13,7 @@ import (
 
 	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -41,12 +42,15 @@ func New(opts ...RouterOption) *Router {
 	for _, fn := range opts {
 		fn(cfg)
 	}
+
+	cfg.spanOpts = append(cfg.spanOpts, []ddtrace.StartSpanOption{
+		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+	}...) // copy cfg.spanOpts and avoid modifying it (append doesn't always copy)
+
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 
 	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
@@ -61,12 +65,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
-	spanOpts := append(r.config.spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+
+	// Make sure opts is a copy of the span options, scoped to this request,
+	// to avoid races and leaks to r.config.spanOpts
+	opts := append([]ddtrace.StartSpanOption{
+		httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags),
+	}, r.config.spanOpts...)
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
-		SpanOpts: spanOpts,
+		SpanOpts: opts,
 		Route:    route,
 	})
 }
