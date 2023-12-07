@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	waf "github.com/DataDog/go-libddwaf/v2"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
@@ -430,6 +431,10 @@ func TestBlocking(t *testing.T) {
 // Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	if wafOK, err := waf.Health(); !wafOK {
+		t.Skipf("WAF must be usabled for this test to run correctly: %v", err)
+	}
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
@@ -445,10 +450,8 @@ func TestAPISecurity(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
 		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
 		appsec.Start()
+		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
-		if !appsec.Enabled() {
-			t.Skip("AppSec needs to be enabled for this test")
-		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -468,10 +471,8 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
 		appsec.Start()
+		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
-		if !appsec.Enabled() {
-			t.Skip("AppSec needs to be enabled for this test")
-		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
