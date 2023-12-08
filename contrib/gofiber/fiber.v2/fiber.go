@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -37,13 +37,13 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	}
 	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
-		opts := []ddtrace.StartSpanOption{
+		opts := options.Copy(cfg.spanOpts...)
+		opts = append(opts,
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Tag(ext.HTTPMethod, c.Method()),
 			tracer.Tag(ext.HTTPURL, string(c.Request().URI().PathOriginal())),
-			tracer.Measured(),
-		}
+			tracer.Measured())
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
@@ -60,7 +60,6 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
-		opts = append(opts, cfg.spanOpts...)
 		opts = append(opts,
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),

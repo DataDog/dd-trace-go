@@ -231,8 +231,10 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 			return nil, err
 		}
 		// since we're not using the dsnConnector, we need to register the dsn manually in the config
-		opts = append(opts, WithDSN(dataSourceName))
-		return OpenDB(connector, opts...), nil
+		var optsCopy []Option
+		copy(optsCopy, opts) // make a copy of opts to avoid side effects of changing opts parameter after return
+		optsCopy = append(optsCopy, WithDSN(dataSourceName))
+		return OpenDB(connector, optsCopy...), nil
 	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
 }
