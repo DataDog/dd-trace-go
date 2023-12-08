@@ -34,9 +34,11 @@ type Router struct {
 
 // New returns a new router augmented with tracing.
 func New(opts ...RouterOption) *Router {
+	localOpts := make([]RouterOption, len(opts))
+	copy(localOpts, opts) // make a copy to avoid changes to opts having side effects to the returned router
 	cfg := new(routerConfig)
 	defaults(cfg)
-	for _, fn := range opts {
+	for _, fn := range localOpts {
 		fn(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
@@ -69,9 +71,11 @@ type ContextRouter struct {
 // to work with context objects. The matched route and parameters are added to
 // the context.
 func NewWithContext(opts ...RouterOption) *ContextRouter {
+	localOpts := make([]RouterOption, len(opts))
+	copy(localOpts, opts) // make a copy to avoid changes to opts having side effects to the returned router
 	cfg := new(routerConfig)
 	defaults(cfg)
-	for _, fn := range opts {
+	for _, fn := range localOpts {
 		fn(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
