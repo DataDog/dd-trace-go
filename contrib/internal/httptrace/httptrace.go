@@ -26,15 +26,6 @@ var (
 	cfg = newConfig()
 )
 
-// OptionsCopy should be used any time existing options are copied into
-// a new locally scoped set of options. This is to avoid data races and
-// accidental leaking of options when clients share the same server/router.
-func OptionsCopy(opts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
-	dup := make([]ddtrace.StartSpanOption, len(opts))
-	copy(dup, opts)
-	return dup
-}
-
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.Span, context.Context) {

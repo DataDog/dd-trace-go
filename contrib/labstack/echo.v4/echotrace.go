@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -65,7 +66,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			opts := httptrace.OptionsCopy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			opts := options.OptionsCopy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			opts = append(opts,
 				tracer.ResourceName(resource),
 				tracer.Tag(ext.HTTPRoute, route),
