@@ -12,7 +12,7 @@ import (
 	"os"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -31,15 +31,15 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
-	opts := options.Copy(rt.cfg.spanOpts...)
-	opts = append(opts,
+	opts := []ddtrace.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.NetworkDestinationName, url.Hostname()))
+		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
+	}
 	if !math.IsNaN(rt.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, rt.cfg.analyticsRate))
 	}
@@ -48,6 +48,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 	if port, err := strconv.Atoi(url.Port()); err == nil {
 		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))
+	}
+	if len(rt.cfg.spanOpts) > 0 {
+		opts = append(opts, rt.cfg.spanOpts...)
 	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), spanName, opts...)
 	defer func() {
