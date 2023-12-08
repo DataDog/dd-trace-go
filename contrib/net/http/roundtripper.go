@@ -32,7 +32,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	url := *req.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
 	opts := options.Copy(rt.cfg.spanOpts...)
-	opts = append(opts, 
+	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
