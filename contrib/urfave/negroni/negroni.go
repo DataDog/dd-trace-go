@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -33,7 +34,7 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := httptrace.OptionsCopy(m.cfg.spanOpts...) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
+	opts := options.Copy(m.cfg.spanOpts...) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
 	opts = append(opts,
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),

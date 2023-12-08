@@ -7,10 +7,10 @@ package options
 
 import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
-// OptionsCopy should be used any time existing options are copied into
+// Copy should be used any time existing options are copied into
 // a new locally scoped set of options. This is to avoid data races and
 // accidental leaking of options when clients share the same server/router.
-func OptionsCopy(opts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
+func Copy(opts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
 	dup := make([]ddtrace.StartSpanOption, len(opts))
 	copy(dup, opts)
 	return dup

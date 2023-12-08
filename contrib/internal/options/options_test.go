@@ -16,7 +16,7 @@ import (
 func TestStringSliceModify(t *testing.T) {
 	t.Run("modify-original", func(t *testing.T) {
 		opts := []ddtrace.StartSpanOption{tracer.Tag("mytag", "myvalue")}
-		optsCopy := OptionsCopy(opts...)
+		optsCopy := Copy(opts...)
 		opts[0] = tracer.ResourceName("somethingelse")
 		cfg := new(ddtrace.StartSpanConfig)
 		for _, fn := range optsCopy {
@@ -26,7 +26,7 @@ func TestStringSliceModify(t *testing.T) {
 	})
 	t.Run("modify-copy", func(t *testing.T) {
 		opts := []ddtrace.StartSpanOption{tracer.Tag("mytag", "myvalue")}
-		optsCopy := OptionsCopy(opts...)
+		optsCopy := Copy(opts...)
 		optsCopy[0] = tracer.ResourceName("somethingelse")
 		cfg := new(ddtrace.StartSpanConfig)
 		for _, fn := range opts {
