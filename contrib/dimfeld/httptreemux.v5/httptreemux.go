@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -34,13 +35,12 @@ type Router struct {
 
 // New returns a new router augmented with tracing.
 func New(opts ...RouterOption) *Router {
-	localOpts := make([]RouterOption, len(opts))
-	copy(localOpts, opts) // make a copy to avoid changes to opts having side effects to the returned router
 	cfg := new(routerConfig)
 	defaults(cfg)
-	for _, fn := range localOpts {
+	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.spanOpts = options.Copy(cfg.spanOpts...)
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
@@ -71,13 +71,12 @@ type ContextRouter struct {
 // to work with context objects. The matched route and parameters are added to
 // the context.
 func NewWithContext(opts ...RouterOption) *ContextRouter {
-	localOpts := make([]RouterOption, len(opts))
-	copy(localOpts, opts) // make a copy to avoid changes to opts having side effects to the returned router
 	cfg := new(routerConfig)
 	defaults(cfg)
-	for _, fn := range localOpts {
+	for _, fn := range opts {
 		fn(cfg)
 	}
+	cfg.spanOpts = options.Copy(cfg.spanOpts...)
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
