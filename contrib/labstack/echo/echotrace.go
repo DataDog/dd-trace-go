@@ -41,7 +41,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	log.Debug("contrib/labstack/echo: Configuring Middleware: %#v", cfg)
-
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
@@ -50,17 +49,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	if !math.IsNaN(cfg.analyticsRate) {
 		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
-			// Make sure opts is a copy of the span options, scoped to this request,
-			// to avoid races and leaks to spanOpts
-			opts := append([]ddtrace.StartSpanOption{
+			opts := httptrace.OptionsCopy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			opts = append(opts,
 				tracer.ResourceName(resource),
-				httptrace.HeaderTagsFromRequest(request, cfg.headerTags),
-			}, spanOpts...)
+				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+			// TODO: Should this also have an `http.route` tag like the v4 library does?
 
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {

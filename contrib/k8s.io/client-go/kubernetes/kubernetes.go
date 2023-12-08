@@ -48,24 +48,23 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 }
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
-	// Make sure opts is a copy of the span options, scoped to this request,
-	// to avoid races and leaks.
-	opts = append([]httptrace.RoundTripperOption{
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
-			span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
-			span.SetTag(ext.Component, componentName)
-			span.SetTag(ext.SpanKind, ext.SpanKindClient)
-			traceID := span.Context().TraceID()
-			if traceID == 0 {
-				// tracer is not running
-				return
-			}
-			kubeAuditID := strconv.FormatUint(traceID, 10)
-			req.Header.Set("Audit-Id", kubeAuditID)
-			span.SetTag("kubernetes.audit_id", kubeAuditID)
-		})}, opts...)
+	var localOpts []httptrace.RoundTripperOption
+	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
+	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
+		span.SetTag(ext.Component, componentName)
+		span.SetTag(ext.SpanKind, ext.SpanKindClient)
+		traceID := span.Context().TraceID()
+		if traceID == 0 {
+			// tracer is not running
+			return
+		}
+		kubeAuditID := strconv.FormatUint(traceID, 10)
+		req.Header.Set("Audit-Id", kubeAuditID)
+		span.SetTag("kubernetes.audit_id", kubeAuditID)
+	}))
 	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
-	return httptrace.WrapRoundTripper(rt, opts...)
+	return httptrace.WrapRoundTripper(rt, localOpts...)
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.

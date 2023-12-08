@@ -38,7 +38,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn(cfg)
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
-
 	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
 	for k, v := range cfg.tags {
 		spanOpts = append(spanOpts, tracer.Tag(k, v))
@@ -66,13 +65,11 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			// Make sure opts is a copy of the span options, scoped to this request,
-			// to avoid races and leaks to spanOpts
-			opts := append([]ddtrace.StartSpanOption{
+			opts := httptrace.OptionsCopy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			opts = append(opts,
 				tracer.ResourceName(resource),
 				tracer.Tag(ext.HTTPRoute, route),
-				httptrace.HeaderTagsFromRequest(request, cfg.headerTags),
-			}, spanOpts...)
+				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
 
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
