@@ -46,7 +46,6 @@ func New(opts ...RouterOption) *Router {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
 
-	// TODO: IS THIS A PROBLEM?
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 

@@ -38,7 +38,6 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		fn(cfg)
 	}
 	log.Debug("contrib/go-chi/chi.v5: Configuring Middleware: %#v", cfg)
-
 	spanOpts := options.Copy(cfg.spanOpts...) // spanOpts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
 	spanOpts = append(spanOpts,
 		tracer.ServiceName(cfg.serviceName),
@@ -47,21 +46,14 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	if !math.IsNaN(cfg.analyticsRate) {
 		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-
-	if !math.IsNaN(cfg.analyticsRate) {
-		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
-
 			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			opts = append(opts, httptrace.HeaderTagsFromRequest(r, cfg.headerTags))
-
 			span, ctx := httptrace.StartRequestSpan(r, opts...)
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			defer func() {

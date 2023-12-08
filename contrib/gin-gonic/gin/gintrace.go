@@ -45,10 +45,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-
 		opts := options.Copy(spanOpts...) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
 		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
-
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
