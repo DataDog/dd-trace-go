@@ -31,7 +31,7 @@ All test scenarios are run nightly in CI.
 
 ```
 export DD_API_KEY=<API KEY>
-docker-compose run --build scenario memory-leak/heap
+docker-compose run --build scenario memory-leak/heap$
 ```
 
 Note:
