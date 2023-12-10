@@ -83,7 +83,7 @@ jobs:
   job-0-0:
     name: unit-of-work/v1 (prod)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: unit-of-work/v1''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: unit-of-work/v1''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -109,7 +109,7 @@ jobs:
   job-0-1:
     name: unit-of-work/v1 (staging)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: unit-of-work/v1''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: unit-of-work/v1''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -135,7 +135,7 @@ jobs:
   job-1-0:
     name: unit-of-work/v2 (prod)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: unit-of-work/v2''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: unit-of-work/v2''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -161,7 +161,7 @@ jobs:
   job-1-1:
     name: unit-of-work/v2 (staging)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: unit-of-work/v2''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: unit-of-work/v2''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -187,7 +187,7 @@ jobs:
   job-2-0:
     name: memory-leak/goroutine (prod)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/goroutine''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/goroutine''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -213,7 +213,7 @@ jobs:
   job-2-1:
     name: memory-leak/goroutine (staging)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/goroutine''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/goroutine''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -239,7 +239,7 @@ jobs:
   job-3-0:
     name: memory-leak/heap (prod)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/heap''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/heap''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -265,7 +265,7 @@ jobs:
   job-3-1:
     name: memory-leak/heap (staging)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/heap''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/heap''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -291,7 +291,7 @@ jobs:
   job-4-0:
     name: memory-leak/stack (prod)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/stack''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/stack''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -317,7 +317,7 @@ jobs:
   job-4-1:
     name: memory-leak/stack (staging)
     runs-on: ubuntu-latest
-    if: '(inputs[''scenario: memory-leak/stack''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/stack''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3

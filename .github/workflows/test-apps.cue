@@ -127,7 +127,7 @@ jobs: {
                 name: "\(scenario.name) (\(env.name))",
                 "runs-on": "ubuntu-latest",
 
-                #if_scenario: "(inputs['scenario: \(scenario.name)']",
+                #if_scenario: "inputs['scenario: \(scenario.name)']",
                 #if_env: "inputs['env: \(env.name)']",
                 
                 if: "\(#if_scenario) && \(#if_env) && \(#if_not_fork)"
