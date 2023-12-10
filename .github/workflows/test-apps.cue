@@ -161,7 +161,7 @@ jobs: {
                                 "\(arg.env)": "${{ inputs['arg: \(name)'] || '\(arg.pr_default)' }}",
                             }
                         },
-                        run: "cd ./internal/apps && ./run-scenario.bash '\(scenario.name)$'"
+                        run: "cd ./internal/apps && ./run-scenario.bash '\(scenario.name)'"
                     },
                 ]
             }

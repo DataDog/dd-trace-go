@@ -7,4 +7,4 @@ go mod tidy
 
 # Run the selected test scenario. Timeout is 2h as test apps are not expected to
 # run for more than 1h under normal circumstances.
-go test -timeout 2h -v -run "TestScenario/${1}"
+go test -timeout 2h -v -run "TestScenario/${1}"'$'
