@@ -67,18 +67,8 @@ func TestScenario(t *testing.T) {
 }
 
 func newWorkloadConfig(t *testing.T) (wc workloadConfig) {
-	var err error
-	wc.RPS = 5
-	if s := os.Getenv("DD_TEST_APPS_REQUESTS_PER_SECOND"); s != "" {
-		_, err = fmt.Sscan(s, &wc.RPS)
-		require.NoError(t, err)
-	}
-
-	wc.TotalDuration = 60 * time.Second
-	if s := os.Getenv("DD_TEST_APPS_TOTAL_DURATION"); s != "" {
-		wc.TotalDuration, err = time.ParseDuration(s)
-		require.NoError(t, err)
-	}
+	parseEnv(t, "DD_TEST_APPS_REQUESTS_PER_SECOND", &wc.RPS, 5)
+	parseEnv(t, "DD_TEST_APPS_TOTAL_DURATION", &wc.TotalDuration, 60*time.Second)
 	return
 }
 
@@ -129,15 +119,8 @@ type workloadConfig struct {
 func newLaunchConfig(t *testing.T) (lc launchConfig) {
 	lc.App = appName(t)
 	lc.Service = serviceName(t)
-
-	var err error
-	lc.ProfilePeriod = 10 * time.Second // enough for 3 profiles per version
-	if s := os.Getenv("DD_TEST_APPS_PROFILE_PERIOD"); s != "" {
-		lc.ProfilePeriod, err = time.ParseDuration(s)
-		require.NoError(t, err)
-	}
-
 	lc.Version = "v1"
+	parseEnv(t, "DD_TEST_APPS_PROFILE_PERIOD", &lc.ProfilePeriod, 10*time.Second)
 	lc.Tags = strings.TrimSpace(fmt.Sprintf("%s run_id:%d", os.Getenv("DD_TAGS"), rand.Uint64()))
 	return
 }
@@ -237,4 +220,25 @@ func (ti *process) Stop(t *testing.T) {
 	// Shutdown app
 	ti.proc.Process.Signal(os.Interrupt)
 	require.NoError(t, <-ti.wait)
+}
+
+func parseEnv[T any](t *testing.T, name string, dst *T, fallback T) {
+	s := os.Getenv(name)
+	if s == "" {
+		t.Logf("%s: %v (default)", name, fallback)
+		*dst = any(fallback).(T)
+		return
+	}
+
+	var err error
+	switch any(dst).(type) {
+	case *time.Duration:
+		var val time.Duration
+		val, err = time.ParseDuration(s)
+		*dst = any(val).(T)
+	case *int:
+		_, err = fmt.Sscan(s, dst)
+	}
+	require.NoError(t, err)
+	t.Logf("%s: %v (from env)", name, *dst)
 }
