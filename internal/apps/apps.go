@@ -14,17 +14,16 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-type App struct {
-	Name string
+// Config is the configuration for a test app used by RunHTTP.
+type Config struct {
+	// Right now all apps use the same config.
 }
 
-func (a *App) RunHTTP(handlerFn func() http.Handler) {
-	// Parse flags
+func (c Config) RunHTTP(handler http.Handler) {
+	// Parse common test app flags
 	var (
-		httpF    = flag.String("http", "localhost:8080", "HTTP addr to listen on.")
-		serviceF = flag.String("service", "dd-trace-go/"+a.Name, "Datadog service name")
-		versionF = flag.String("version", "v1", "Datadog service version")
-		periodF  = flag.Duration("period", 60*time.Second, "Profiling period.")
+		httpF   = flag.String("http", "localhost:8080", "HTTP addr to listen on.")
+		periodF = flag.Duration("period", 60*time.Second, "Profiling period.")
 	)
 	flag.Parse()
 
@@ -33,17 +32,11 @@ func (a *App) RunHTTP(handlerFn func() http.Handler) {
 	defer stop()
 
 	// Start tracer
-	tracer.Start(
-		tracer.WithService(*serviceF),
-		tracer.WithServiceVersion(*versionF),
-		tracer.WithRuntimeMetrics(),
-	)
+	tracer.Start(tracer.WithRuntimeMetrics())
 	defer tracer.Stop()
 
-	// Start profiler
+	// Start the profiler
 	if err := profiler.Start(
-		profiler.WithService(*serviceF),
-		profiler.WithVersion(*versionF),
 		profiler.WithPeriod(*periodF),
 		profiler.WithProfileTypes(
 			profiler.CPUProfile,
@@ -64,10 +57,7 @@ func (a *App) RunHTTP(handlerFn func() http.Handler) {
 	}
 	defer l.Close()
 	log.Printf("Listening on: http://%s", *httpF)
-	// Note: handlerFn is a function that returns a http.Handler because if we
-	// create httptrace.NewServeMux() before the tracer is started, we end up
-	// with the wrong service name (http.router) :/.
-	server := http.Server{Handler: handlerFn()}
+	server := http.Server{Handler: handler}
 	go server.Serve(l)
 
 	// Wait until SIGINT is received, then shut down

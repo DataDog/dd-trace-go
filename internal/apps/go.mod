@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/internal/apps
+module internal/apps
 
 go 1.21
 
