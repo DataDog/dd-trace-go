@@ -37,15 +37,15 @@
         env: "DD_TEST_APPS_TOTAL_DURATION",
         type: "number",
         description: "Scenario duration (s)",
-        default: 10*60,
-        pr_default: 60,
+        default: "\(10*60)s",
+        pr_default: "60s",
     },
     profile_period: {
         env: "DD_TEST_APPS_PROFILE_PERIOD",
         type: "number",
         description: "Profile period (s)",
-        default: 60,
-        pr_default: 10,
+        default: "60s",
+        pr_default: "10s",
     },
 }
 
@@ -158,7 +158,7 @@ jobs: {
                         name: "Run Scenario"
                         env: {
                             for name, arg in #args {
-                                "\(arg.env)": "${{ inputs['arg: \(name)'] || \(arg.pr_default) }}",
+                                "\(arg.env)": "${{ inputs['arg: \(name)'] || '\(arg.pr_default)' }}",
                             }
                         },
                         run: "cd ./internal/apps && ./run-scenario.bash '\(scenario.name)'"
