@@ -16,7 +16,10 @@ import (
 
 // Config is the configuration for a test app used by RunHTTP.
 type Config struct {
-	// Right now all apps use the same config.
+	// DisableExecutionTracing disables execution tracing for the test app. By
+	// default we configure non-stop execution tracing for the test apps unless
+	// a DD_PROFILING_EXECUTION_TRACE_PERIOD env is set or this option is true.
+	DisableExecutionTracing bool
 }
 
 func (c Config) RunHTTP(handler http.Handler) {
@@ -26,6 +29,11 @@ func (c Config) RunHTTP(handler http.Handler) {
 		periodF = flag.Duration("period", 60*time.Second, "Profiling period.")
 	)
 	flag.Parse()
+
+	// Configure non-stop execution tracing by default
+	if v := os.Getenv("DD_PROFILING_EXECUTION_TRACE_PERIOD"); v == "" && !c.DisableExecutionTracing {
+		os.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
+	}
 
 	// Setup context that gets canceled on receiving SIGINT
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

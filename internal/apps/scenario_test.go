@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -25,7 +24,7 @@ import (
 // IMPORTANT: If you add a new test here, you should also add it to
 // /.github/workflows/test-apps.yml to make sure it's executed on a nightly
 // basis.
-func TestApps(t *testing.T) {
+func TestScenario(t *testing.T) {
 	wc := newWorkloadConfig(t)
 	t.Run("memory-leak", func(t *testing.T) {
 		scenarios := []struct {
@@ -41,6 +40,7 @@ func TestApps(t *testing.T) {
 			t.Run(s.name, func(t *testing.T) {
 				lc := newLaunchConfig(t)
 				process := lc.Launch(t)
+				defer process.Stop(t)
 				wc.HitEndpoints(t, process, s.endpoints...)
 			})
 		}
@@ -59,6 +59,7 @@ func TestApps(t *testing.T) {
 				lc := newLaunchConfig(t)
 				lc.Version = s.version
 				process := lc.Launch(t)
+				defer process.Stop(t)
 				wc.HitEndpoints(t, process, s.endpoints...)
 			})
 		}
@@ -82,7 +83,7 @@ func newWorkloadConfig(t *testing.T) (wc workloadConfig) {
 }
 
 func (wc *workloadConfig) HitEndpoints(t *testing.T, p process, endpoints ...string) {
-	log.Printf("Hitting endpoints with %d req/sec: %v", wc.RPS, endpoints)
+	t.Logf("Hitting endpoints with %d req/sec: %v", wc.RPS, endpoints)
 
 	ctx, cancel := context.WithTimeout(context.Background(), wc.TotalDuration)
 	defer cancel()
@@ -126,7 +127,8 @@ type workloadConfig struct {
 }
 
 func newLaunchConfig(t *testing.T) (lc launchConfig) {
-	lc.App = testAppName(t)
+	lc.App = appName(t)
+	lc.Service = serviceName(t)
 
 	var err error
 	lc.ProfilePeriod = 10 * time.Second // enough for 3 profiles per version
@@ -157,10 +159,12 @@ type launchConfig struct {
 	ProfilePeriod time.Duration
 }
 
-// testAppName extracts the name of the test app from t.Name(). It assumes the
-// name to look like "*/app/*"
-func testAppName(t *testing.T) string {
+func appName(t *testing.T) string {
 	return strings.Split(t.Name(), "/")[1]
+}
+
+func serviceName(t *testing.T) string {
+	return "dd-trace-go/" + strings.Join(strings.Split(t.Name(), "/")[1:], "/")
 }
 
 func (a *launchConfig) Launch(t *testing.T) (p process) {
@@ -183,7 +187,7 @@ func (a *launchConfig) Launch(t *testing.T) (p process) {
 		strings.Join(a.Args, " "),
 	)
 	proc := exec.Command("bash", "-c", cmd)
-	env := []string{"DD_TAGS=" + a.Tags}
+	env := []string{"DD_TAGS=" + a.Tags, "DD_SERVICE=" + a.Service, "DD_VERSION=" + a.Version}
 	proc.Env = append(os.Environ(), env...)
 	r, w := io.Pipe()
 	proc.Stdout = io.MultiWriter(w, os.Stdout)

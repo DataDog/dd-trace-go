@@ -3,4 +3,4 @@ COPY . /dd-trace-go
 WORKDIR /dd-trace-go/internal/apps
 # -t will download all dependencies, including test dependencies
 RUN go get -t ./...
-CMD ./run.bash
+ENTRYPOINT [ "./run-scenario.bash" ]
