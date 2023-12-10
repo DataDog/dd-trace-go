@@ -38,7 +38,7 @@ name: Test Apps
       'scenario: memory-leak/heap':
         type: boolean
         default: true
-      'scenario: memory-leak/stack':
+      'scenario: memory-leak/goroutine-heap':
         type: boolean
         default: true
   workflow_dispatch:
@@ -73,7 +73,7 @@ name: Test Apps
       'scenario: memory-leak/heap':
         type: boolean
         default: false
-      'scenario: memory-leak/stack':
+      'scenario: memory-leak/goroutine-heap':
         type: boolean
         default: false
 env:
@@ -289,9 +289,9 @@ jobs:
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-4-0:
-    name: memory-leak/stack (prod)
+    name: memory-leak/goroutine-heap (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/stack''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/goroutine-heap''] && inputs[''env: prod''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -313,11 +313,11 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
-        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/stack'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
   job-4-1:
-    name: memory-leak/stack (staging)
+    name: memory-leak/goroutine-heap (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/stack''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
+    if: 'inputs[''scenario: memory-leak/goroutine-heap''] && inputs[''env: staging''] && (github.event_name != ''pull_request'' || github.event.pull_request.head.repo.full_name == ''DataDog/dd-trace-go'')'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -339,4 +339,4 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
-        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/stack'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'

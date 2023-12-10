@@ -21,7 +21,7 @@
         name: "memory-leak/heap",
     },
     {
-        name: "memory-leak/stack"
+        name: "memory-leak/goroutine-heap"
     },
 ]
 
