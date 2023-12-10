@@ -105,7 +105,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'unit-of-work/v1'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-0-1:
     name: unit-of-work/v1 (staging)
     runs-on: ubuntu-latest
@@ -131,7 +131,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'unit-of-work/v1'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-1-0:
     name: unit-of-work/v2 (prod)
     runs-on: ubuntu-latest
@@ -157,7 +157,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'unit-of-work/v2'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-1-1:
     name: unit-of-work/v2 (staging)
     runs-on: ubuntu-latest
@@ -183,7 +183,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'unit-of-work/v2'
+        run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-2-0:
     name: memory-leak/goroutine (prod)
     runs-on: ubuntu-latest
@@ -209,7 +209,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/goroutine'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-2-1:
     name: memory-leak/goroutine (staging)
     runs-on: ubuntu-latest
@@ -235,7 +235,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/goroutine'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-3-0:
     name: memory-leak/heap (prod)
     runs-on: ubuntu-latest
@@ -261,7 +261,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/heap'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-3-1:
     name: memory-leak/heap (staging)
     runs-on: ubuntu-latest
@@ -287,7 +287,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/heap'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-4-0:
     name: memory-leak/stack (prod)
     runs-on: ubuntu-latest
@@ -313,7 +313,7 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/stack'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/stack'
   job-4-1:
     name: memory-leak/stack (staging)
     runs-on: ubuntu-latest
@@ -339,4 +339,4 @@ jobs:
           DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || 5 }}'
           DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || 60 }}'
           DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || 10 }}'
-        run: cd ./internal/apps && ./scenario.bash 'memory-leak/stack'
+        run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/stack'
