@@ -3,17 +3,17 @@ module github.com/DataDog/dd-trace-go/v2/contrib/gofiber/fiber.v2
 go 1.19
 
 require (
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/gofiber/fiber/v2 v2.50.0
 	github.com/stretchr/testify v1.8.4
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
+	github.com/DataDog/appsec-internal-go v1.1.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
-	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.2.2 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
@@ -38,7 +38,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.50.0 // indirect
+	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
@@ -52,3 +52,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../../..

@@ -3,20 +3,19 @@ module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go
 go 1.19
 
 require (
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231128131651-e2b2d5a6bd2e
 	github.com/stretchr/testify v1.8.4
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
 )
 
-require github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231128131651-e2b2d5a6bd2e
-
 require (
-	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
+	github.com/DataDog/appsec-internal-go v1.1.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
-	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.2.2 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
@@ -71,3 +70,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+
+replace github.com/DataDog/dd-trace-go/v2/contrib/net/http => ../../../contrib/net/http
