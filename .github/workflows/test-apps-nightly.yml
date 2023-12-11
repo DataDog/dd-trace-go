@@ -1,3 +1,4 @@
+name: "Test Apps Nightly"
 on:
   workflow_dispatch: # manually (just for testing the cron)
   schedule:
