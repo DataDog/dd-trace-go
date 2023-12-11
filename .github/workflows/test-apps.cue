@@ -92,7 +92,7 @@ on: {
             [=~ "scenario:"]: {default: true},
             ref: {
                 description: "The branch to run the workflow on",
-                required: true,
+                required: false,
                 type: "string",
             },
         } 

@@ -5,7 +5,7 @@ name: Test Apps
     inputs:
       ref:
         description: The branch to run the workflow on
-        required: true
+        required: false
         type: string
       'env: prod':
         type: boolean
