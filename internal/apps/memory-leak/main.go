@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"sync"
 
-	"internal/apps"
+	"github.com/DataDog/dd-trace-go/internal/apps"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )

@@ -20,12 +20,12 @@ name: Test Apps
         description: Requests per second
       'arg: scenario_duration':
         type: number
-        default: 600s
-        description: Scenario duration (s)
+        default: 10m
+        description: Scenario duration
       'arg: profile_period':
         type: number
         default: 60s
-        description: Profile period (s)
+        description: Profile period
       'scenario: unit-of-work/v1':
         type: boolean
         default: true
@@ -55,12 +55,12 @@ name: Test Apps
         description: Requests per second
       'arg: scenario_duration':
         type: number
-        default: 600s
-        description: Scenario duration (s)
+        default: 10m
+        description: Scenario duration
       'arg: profile_period':
         type: number
         default: 60s
-        description: Profile period (s)
+        description: Profile period
       'scenario: unit-of-work/v1':
         type: boolean
         default: false
