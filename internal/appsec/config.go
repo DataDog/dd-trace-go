@@ -15,7 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
-const envEnabled = "DD_APPSEC_ENABLED"
+const EnvEnabled = "DD_APPSEC_ENABLED"
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
 type StartOption func(c *Config)
@@ -48,11 +48,11 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 // DD_APPSEC_ENABLED is set to true.
 // It also returns whether the env var is actually set in the env or not.
 func isEnabled() (enabled bool, set bool, err error) {
-	enabledStr, set := os.LookupEnv(envEnabled)
+	enabledStr, set := os.LookupEnv(EnvEnabled)
 	if enabledStr == "" {
 		return false, set, nil
 	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", envEnabled, enabledStr)
+		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", EnvEnabled, enabledStr)
 	}
 
 	return enabled, set, nil

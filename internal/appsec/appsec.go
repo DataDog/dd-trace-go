@@ -77,7 +77,7 @@ func Start(opts ...StartOption) {
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
-		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", envEnabled)
+		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)

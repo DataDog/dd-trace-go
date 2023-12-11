@@ -431,7 +431,7 @@ func TestBlocking(t *testing.T) {
 // Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
-	t.Setenv("DD_APPSEC_ENABLED", "true")
+	t.Setenv(appsec.EnvEnabled, "true")
 	if wafOK, err := waf.Health(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
