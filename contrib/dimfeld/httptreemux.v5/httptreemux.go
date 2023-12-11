@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -40,7 +39,6 @@ func New(opts ...RouterOption) *Router {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.spanOpts = options.Copy(cfg.spanOpts...)
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
@@ -76,7 +74,6 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	for _, fn := range opts {
 		fn(cfg)
 	}
-	cfg.spanOpts = options.Copy(cfg.spanOpts...)
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
