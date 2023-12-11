@@ -393,9 +393,9 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 			properr = "encoding_error"
 			return true
 		}
-		if sb.Len()+len(k)+len(v) > p.cfg.MaxTagsHeaderLen {
+		if tagLen := sb.Len() + len(k) + len(v); tagLen > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
-			log.Warn("Won't propagate tag: maximum trace tags header len (%d) reached.", p.cfg.MaxTagsHeaderLen)
+			log.Warn("Won't propagate tag: length is (%d) which exceeds the maximum len of (%d).", tagLen, p.cfg.MaxTagsHeaderLen)
 			properr = "inject_max_size"
 			return false
 		}

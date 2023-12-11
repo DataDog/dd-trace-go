@@ -14,7 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )

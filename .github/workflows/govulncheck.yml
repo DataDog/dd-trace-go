@@ -42,6 +42,6 @@ jobs:
       - name: Run govulncheck-contribs (v2)
         if: ${{ env.V2_BRANCH == 'true' }}
         run: |
-          go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
+          find ./v2/contrib -mindepth 2 -type f -name go.mod -exec dirname {} \; | while read dir ; do
             govulncheck -C $dir .
           done
