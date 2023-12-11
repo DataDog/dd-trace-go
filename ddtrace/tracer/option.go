@@ -739,6 +739,9 @@ func WithFeatureFlags(feats ...string) StartOption {
 }
 
 // WithLogger sets logger as the tracer's error printer.
+// Diagnostic and startup tracer logs are prefixed to simplify the search within logs.
+// If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
+// function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
 func WithLogger(logger ddtrace.Logger) StartOption {
 	return func(c *config) {
 		c.logger = logger

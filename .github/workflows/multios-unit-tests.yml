@@ -27,7 +27,7 @@ on:
         type: string
 
 env:
-  V2_BRANCH: ${{ inputs.ref == 'refs/heads/v2-dev' }}
+  V2_BRANCH: false
 
 jobs:
   test-multi-os:
