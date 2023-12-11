@@ -1,5 +1,8 @@
 SHELL:=/usr/bin/env bash
 
+.PHONY: all
+all: test-apps.yml
+
 .PHONY: clean
 clean:
 	rm -rf test-apps.yml

@@ -1,6 +1,5 @@
-// IMPORTANT: Keep this is sync with scenario_test.go.
-//
-// Also see ./test-apps-cron.yml for a note on cost.
+// See /internal/apps/README.md for more information.
+
 #scenarios: [
     {
         name: "unit-of-work/v1",

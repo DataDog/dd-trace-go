@@ -24,11 +24,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// TestApps defines the scenarios that are run against the test apps.
-//
-// IMPORTANT: If you add a new test here, you should also add it to
-// /.github/workflows/test-apps.yml to make sure it's executed on a nightly
-// basis.
+// TestApps defines the scenarios that are run against the test apps. See
+// ./README.md for more details.
 func TestScenario(t *testing.T) {
 	wc := newWorkloadConfig(t)
 	t.Run("memory-leak", func(t *testing.T) {

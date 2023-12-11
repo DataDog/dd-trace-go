@@ -1,9 +1,4 @@
-# Given the schedule below, the cost per scenario per month is:
-#
-# envs * nightly_minutes * cost_per_minute * 30 + envs * weekly_minutes * cost_per_minute * 4
-# 2 * 10 * 0.008 * 30 + 2 * 60 * 0.008 * 4 = $8.64
-#
-# [1] https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#per-minute-rates
+# See /internal/apps/README.md for more information.
 name: "Test Apps Schedule"
 on:
   workflow_dispatch: # manually (just for testing the cron)
