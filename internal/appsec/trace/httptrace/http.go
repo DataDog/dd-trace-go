@@ -9,7 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2//internal/appsec/trace"
+	"github.com/DataDog/appsec-internal-go/httpsec"
+	"github.com/DataDog/appsec-internal-go/netip"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
