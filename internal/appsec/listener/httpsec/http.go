@@ -116,6 +116,8 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 			}
 		}
 		if canExtractSchemas(apiSecCfg) {
+			// This address will be passed as persistent. The WAF will keep it in store and trigger schema extraction
+			// for each run.
 			values["waf.context.processor"] = map[string]any{"extract-schema": true}
 		}
 
