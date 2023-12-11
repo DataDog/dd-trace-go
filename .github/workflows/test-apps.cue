@@ -28,14 +28,14 @@
     },
     scenario_duration: {
         env: "DD_TEST_APPS_TOTAL_DURATION",
-        type: "number",
+        type: "string",
         description: "Scenario duration",
         default: "10m",
         pr_default: "60s",
     },
     profile_period: {
         env: "DD_TEST_APPS_PROFILE_PERIOD",
-        type: "number",
+        type: "string",
         description: "Profile period",
         default: "60s",
         pr_default: "10s",

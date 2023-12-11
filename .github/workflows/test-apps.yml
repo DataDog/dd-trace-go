@@ -18,11 +18,11 @@ name: Test Apps
         default: 5
         description: Requests per second
       'arg: scenario_duration':
-        type: number
+        type: string
         default: 10m
         description: Scenario duration
       'arg: profile_period':
-        type: number
+        type: string
         default: 60s
         description: Profile period
       'scenario: unit-of-work/v1':
@@ -53,11 +53,11 @@ name: Test Apps
         default: 5
         description: Requests per second
       'arg: scenario_duration':
-        type: number
+        type: string
         default: 10m
         description: Scenario duration
       'arg: profile_period':
-        type: number
+        type: string
         default: 60s
         description: Profile period
       'scenario: unit-of-work/v1':
