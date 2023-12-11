@@ -12,7 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/grpcsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/grpctrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"

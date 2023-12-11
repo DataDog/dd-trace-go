@@ -6,8 +6,8 @@
 package httpsec
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
 )
 
 // setRequestHeadersTags sets the AppSec-specific request headers span tags.

@@ -5,7 +5,7 @@
 
 // Package listener provides functions and types used to listen to AppSec
 // instrumentation events produced by code usintrumented using the functions and
-// types found in gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter.
+// types found in github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter.
 package listener
 
 // ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)

@@ -15,7 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/internal/apps"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 )
 
 var rawJSONData []byte

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	testlib "github.com/DataDog/dd-trace-go/v2/internal/appsec/_testlib"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 
 	"github.com/stretchr/testify/require"
 )
