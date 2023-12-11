@@ -40,18 +40,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
+	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
 	for k, v := range cfg.tags {
 		spanOpts = append(spanOpts, tracer.Tag(k, v))
 	}
 	spanOpts = append(spanOpts,
-		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	)
-	if !math.IsNaN(cfg.analyticsRate) {
-		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
@@ -67,6 +63,9 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			route := c.Path()
 			resource := request.Method + " " + route
 			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			if !math.IsNaN(cfg.analyticsRate) {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			}
 			opts = append(opts,
 				tracer.ResourceName(resource),
 				tracer.Tag(ext.HTTPRoute, route),

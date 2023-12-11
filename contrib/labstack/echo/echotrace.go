@@ -47,14 +47,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}
-	if !math.IsNaN(cfg.analyticsRate) {
-		spanOpts = append(spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			request := c.Request()
 			resource := request.Method + " " + c.Path()
 			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
+			if !math.IsNaN(cfg.analyticsRate) {
+				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			}
 			opts = append(opts,
 				tracer.ResourceName(resource),
 				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
