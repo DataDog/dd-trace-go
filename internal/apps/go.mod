@@ -1,6 +1,6 @@
-module github.com/DataDog/dd-trace-go/internal/apps/unit-of-work
+module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.19
+go 1.21
 
 require (
 	golang.org/x/sync v0.3.0
@@ -8,10 +8,16 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
-	github.com/DataDog/go-libddwaf v1.5.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.1.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.49.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.49.0 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.2.0 // indirect
+	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.5.0 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -19,6 +25,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/tools v0.12.1-0.20230815132531-74c255bcf846 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -51,4 +58,4 @@ require (
 )
 
 // use local version of dd-trace-go
-replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
+replace gopkg.in/DataDog/dd-trace-go.v1 => ../..
