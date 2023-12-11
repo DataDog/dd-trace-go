@@ -48,7 +48,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 }
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
-	var localOpts []httptrace.RoundTripperOption
+	localOpts := make([]httptrace.RoundTripperOption, len(opts))
 	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
 	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
