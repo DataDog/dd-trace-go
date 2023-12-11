@@ -182,8 +182,10 @@ func doClientRequest(
 	if methodKind != "" {
 		span.SetTag(tagMethodKind, methodKind)
 	}
-	if host, _, err := net.SplitHostPort(cc.Target()); err == nil {
-		span.SetTag(ext.PeerHostname, host)
+	if cc != nil {
+		if host, _, err := net.SplitHostPort(cc.Target()); err == nil {
+			span.SetTag(ext.PeerHostname, host)
+		}
 	}
 	// fill in the peer so we can add it to the tags
 	var p peer.Peer
