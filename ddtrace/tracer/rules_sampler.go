@@ -656,10 +656,10 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
 	if sr.Service != nil {
-		s.Service = fmt.Sprintf("%s", sr.Service)
+		s.Service = sr.Service.String()
 	}
 	if sr.Name != nil {
-		s.Name = fmt.Sprintf("%s", sr.Name)
+		s.Name = sr.Name.String()
 	}
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
