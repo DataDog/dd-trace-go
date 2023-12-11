@@ -1,12 +1,6 @@
 // IMPORTANT: Keep this is sync with scenario_test.go.
 //
-// Note on cost: We currently run each scenario every night for ~10min against
-// staging and prod using the default runners with 2 CPU cores. This means we
-// pay ~$5/scenario/month [1]. In the future the config below could be extended
-// to allow different runners and durations for different scenarios. It might
-// also make sense to add a weekly run with a longer duration.
-//
-// [1] https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#per-minute-rates
+// Also see ./test-apps-cron.yml for a note on cost.
 #scenarios: [
     {
         name: "unit-of-work/v1",
