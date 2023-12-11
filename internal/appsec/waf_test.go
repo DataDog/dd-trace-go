@@ -16,7 +16,7 @@ import (
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo/instrumentation/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
 	"github.com/stretchr/testify/require"
 )
