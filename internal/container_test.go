@@ -85,13 +85,40 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 	assert.Equal(t, cid, actualCID)
 }
 
-func TestPrioritizeContainerID(t *testing.T) {
+func TestReadEntityIDPrioritizeCID(t *testing.T) {
 	// reset cid after test
 	defer func(cid string) { containerID = cid }(containerID)
 
 	containerID = "fakeContainerID"
-	eid := readEntityID()
+	eid := readEntityID("", "")
 	assert.Equal(t, "cid-fakeContainerID", eid)
+}
+
+func TestReadEntityIDFallbackOnInode(t *testing.T) {
+	// reset cid after test
+	defer func(cid string) { containerID = cid }(containerID)
+	containerID = ""
+
+	sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
+	groupControllerPath := path.Join(sysFsCgroupPath, "mynode")
+	err := os.MkdirAll(groupControllerPath, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(groupControllerPath)
+
+	stat, err := os.Stat(groupControllerPath)
+	require.NoError(t, err)
+	expectedInode := fmt.Sprintf("in-%d", stat.Sys().(*syscall.Stat_t).Ino)
+
+	procSelfCgroup, err := ioutil.TempFile("", "procselfcgroup")
+	require.NoError(t, err)
+	defer os.Remove(procSelfCgroup.Name())
+	_, err = procSelfCgroup.WriteString("0::/mynode")
+	require.NoError(t, err)
+	err = procSelfCgroup.Close()
+	require.NoError(t, err)
+
+	eid := readEntityID(sysFsCgroupPath, procSelfCgroup.Name())
+	assert.Equal(t, expectedInode, eid)
 }
 
 func TestParsegroupControllerPath(t *testing.T) {
@@ -206,7 +233,6 @@ func TestGetCgroupInode(t *testing.T) {
 		t.Run(tc.description, func(t *testing.T) {
 			sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
 			groupControllerPath := path.Join(sysFsCgroupPath, tc.controller, tc.cgroupNodeDir)
-			t.Log(groupControllerPath)
 			err := os.MkdirAll(groupControllerPath, 0755)
 			require.NoError(t, err)
 			defer os.RemoveAll(groupControllerPath)

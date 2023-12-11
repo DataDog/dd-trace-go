@@ -58,7 +58,7 @@ var (
 
 func init() {
 	containerID = readContainerID(cgroupPath)
-	entityID = readEntityID()
+	entityID = readEntityID(defaultCgroupMountPath, cgroupPath)
 }
 
 // parseContainerID finds the first container ID reading from r and returns it.
@@ -121,7 +121,7 @@ func getCgroupInode(cgroupMountPath, procSelfCgroupPath string) string {
 	defer f.Close()
 	cgroupControllersPaths := parseCgroupNodePath(f)
 
-	// Retrieve the cgroup inode from /sys/fs/cgroup+cgroupNodePath
+	// Retrieve the cgroup inode from /sys/fs/cgroup + controller + cgroupNodePath
 	for _, controller := range []string{cgroupV1BaseController, ""} {
 		cgroupNodePath, ok := cgroupControllersPaths[controller]
 		if !ok {
@@ -149,11 +149,11 @@ func inodeForPath(path string) string {
 }
 
 // readEntityID attempts to return the cgroup v2 node inode or empty on failure.
-func readEntityID() string {
+func readEntityID(mountPath, cgroupPath string) string {
 	if containerID != "" {
 		return "cid-" + containerID
 	}
-	return getCgroupInode(mountsPath, cgroupPath)
+	return getCgroupInode(mountPath, cgroupPath)
 }
 
 // EntityID attempts to return the container ID or the cgroup v2 node inode if the container ID is not available.
