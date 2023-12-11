@@ -26,9 +26,6 @@ require (
 	golang.org/x/tools v0.12.1-0.20230815132531-74c255bcf846 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
@@ -58,3 +55,5 @@ require (
 
 // use local version of dd-trace-go
 replace github.com/DataDog/dd-trace-go/v2 => ../..
+
+replace github.com/DataDog/dd-trace-go/v2/contrib/net/http => ../../v2/contrib/net/http
