@@ -27,7 +27,7 @@ type Config struct {
 	DisableExecutionTracing bool
 }
 
-func (c Config) RunHTTP(handler http.Handler) {
+func (c Config) RunHTTP(handler func() http.Handler) {
 	// Parse common test app flags
 	var (
 		httpF   = flag.String("http", "localhost:8080", "HTTP addr to listen on.")
@@ -70,7 +70,9 @@ func (c Config) RunHTTP(handler http.Handler) {
 	}
 	defer l.Close()
 	log.Printf("Listening on: http://%s", *httpF)
-	server := http.Server{Handler: handler}
+	// handler is a func, because if we create a traced handler before starting
+	// the tracer, the service name will default to http.router.
+	server := http.Server{Handler: handler()}
 	go server.Serve(l)
 
 	// Wait until SIGINT is received, then shut down

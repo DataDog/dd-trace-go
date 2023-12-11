@@ -34,20 +34,21 @@ func init() {
 }
 
 func main() {
-	// Setup http routes
-	mux := httptrace.NewServeMux()
-	// Endpoint and handler names are chosen so we don't give away what they do.
-	// The profiling product should make it easy to figure out what the problem
-	// is.
-	mux.HandleFunc("/lorem", LoremHandler) // Don't leak anything
-	mux.HandleFunc("/ipsum", IpsumHandler) // Leak a goroutine stack via a goroutine.
-	mux.HandleFunc("/dolor", DolorHandler) // Leak a heap pointer via a global variable.
-	mux.HandleFunc("/sit", SitHandler)     // Leak a goroutine stack and a heap pointer via a goroutine.
-	// TODO: file leak, cgo heap leak, cgo thread leak, etc.
-
 	// Start app
 	app := apps.Config{}
-	app.RunHTTP(mux)
+	app.RunHTTP(func() http.Handler {
+		// Setup http routes
+		mux := httptrace.NewServeMux()
+		// Endpoint and handler names are chosen so we don't give away what they
+		// do. The profiling product should make it easy to figure out what the
+		// problem is.
+		mux.HandleFunc("/lorem", LoremHandler) // Don't leak anything
+		mux.HandleFunc("/ipsum", IpsumHandler) // Leak a goroutine stack via a goroutine.
+		mux.HandleFunc("/dolor", DolorHandler) // Leak a heap pointer via a global variable.
+		mux.HandleFunc("/sit", SitHandler)     // Leak a goroutine stack and a heap pointer via a goroutine.
+		// TODO: file leak, cgo heap leak, cgo thread leak, etc.
+		return mux
+	})
 }
 
 func LoremHandler(w http.ResponseWriter, _ *http.Request) {

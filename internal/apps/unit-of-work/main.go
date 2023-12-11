@@ -28,14 +28,15 @@ func main() {
 	// Enable unit of work
 	os.Setenv("DD_PROFILING_ENDPOINT_COUNT_ENABLED", "true")
 
-	// Setup http routes
-	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/foo", FooHandler)
-	mux.HandleFunc("/bar", BarHandler)
-
 	// Start app
 	app := apps.Config{}
-	app.RunHTTP(mux)
+	app.RunHTTP(func() http.Handler {
+		// Setup http routes
+		mux := httptrace.NewServeMux()
+		mux.HandleFunc("/foo", FooHandler)
+		mux.HandleFunc("/bar", BarHandler)
+		return mux
+	})
 }
 
 // FooHandler does twice the amount of cpu work per request as BarHandler.
