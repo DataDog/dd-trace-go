@@ -93,8 +93,6 @@
 
 name: "Test Apps"
 on: {
-    pull_request: {}
-
     // used by nightly cron schedule triggers
     workflow_call: #inputs & {
         inputs: {
@@ -118,8 +116,6 @@ env: {
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}",
 }
 
-#if_not_fork: "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')"
-
 jobs: {
     for i, scenario in #scenarios {
         for j, env in #envs {
@@ -130,7 +126,7 @@ jobs: {
                 #if_scenario: "inputs['scenario: \(scenario.name)']",
                 #if_env: "inputs['env: \(env.name)']",
                 
-                if: "\(#if_scenario) && \(#if_env) && \(#if_not_fork)"
+                if: "\(#if_scenario) && \(#if_env)"
                 steps: [
                     {
                         name: "Checkout Code",

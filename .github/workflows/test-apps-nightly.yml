@@ -1,0 +1,11 @@
+on:
+  workflow_dispatch: # manually (just for testing the cron)
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  test-apps:
+    uses: ./.github/workflows/test-apps.yml
+    secrets: inherit
+    with:
+      "arg: scenario_duration": "1h"
