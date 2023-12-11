@@ -251,6 +251,10 @@ func parseEnv[T any](t *testing.T, name string, dst *T, fallback T) {
 		*dst = any(val).(T)
 	case *int:
 		_, err = fmt.Sscan(s, dst)
+	case *string:
+		*dst = any(s).(T)
+	default:
+		t.Fatalf("unsupported type: %T", dst)
 	}
 	require.NoError(t, err)
 	t.Logf("%s: %v (from env)", name, *dst)
