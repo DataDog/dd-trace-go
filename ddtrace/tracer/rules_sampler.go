@@ -505,7 +505,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
 	if pattern == "" {
-		return regexp.MustCompile("^.*$")
+		return nil
 	}
 	// escaping regex characters
 	pattern = regexp.QuoteMeta(pattern)

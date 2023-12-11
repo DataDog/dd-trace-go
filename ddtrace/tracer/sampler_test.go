@@ -372,37 +372,37 @@ func TestRuleEnvVars(t *testing.T) {
 		}{
 			{
 				rules:     `[{"name": "abcd?", "sample_rate": 1.0}]`,
-				srvRegex:  "^.*$",
+				srvRegex:  "",
 				nameRegex: "^abcd.$",
 				rate:      1.0,
 			},
 			{
 				rules:     `[{"sample_rate": 0.5}]`,
-				srvRegex:  "^.*$",
-				nameRegex: "^.*$",
+				srvRegex:  "",
+				nameRegex: "",
 				rate:      0.5,
 			},
 			{
 				rules:     `[{"max_per_second":100}]`,
-				srvRegex:  "^.*$",
-				nameRegex: "^.*$",
+				srvRegex:  "",
+				nameRegex: "",
 				rate:      1,
 			},
 			{
 				rules:     `[{"name": "abcd?"}]`,
-				srvRegex:  "^.*$",
+				srvRegex:  "",
 				nameRegex: "^abcd.$",
 				rate:      1.0,
 			},
 			{
 				rules:     `[{"service": "*abcd", "sample_rate":0.5}]`,
-				nameRegex: "^.*$",
+				nameRegex: "",
 				srvRegex:  "^.*abcd$",
 				rate:      0.5,
 			},
 			{
 				rules:     `[{"service": "*abcd", "sample_rate": 0.5}]`,
-				nameRegex: "^.*$",
+				nameRegex: "",
 				srvRegex:  "^.*abcd$",
 				rate:      0.5,
 			},
@@ -410,14 +410,14 @@ func TestRuleEnvVars(t *testing.T) {
 				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "root", "tags": {"host":"h-1234*"}}]`,
 				resourceRegex: "^root$",
 				tagsRegex:     map[string]string{"host": "^h-1234.*$"},
-				nameRegex:     "^.*$",
+				nameRegex:     "",
 				srvRegex:      "^.*abcd$",
 				rate:          0.5,
 			},
 			{
 				rules:         `[{"service": "*abcd", "sample_rate": 0.5,"resource": "rsc-[0-9]+" }]`,
 				resourceRegex: "^rsc-\\[0-9\\]\\+$",
-				nameRegex:     "^.*$",
+				nameRegex:     "",
 				srvRegex:      "^.*abcd$",
 				rate:          0.5,
 			},
@@ -426,8 +426,16 @@ func TestRuleEnvVars(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
 				_, rules, err := samplingRulesFromEnv()
 				assert.NoError(err)
-				assert.Equal(tt.srvRegex, rules[0].Service.String())
-				assert.Equal(tt.nameRegex, rules[0].Name.String())
+				if tt.srvRegex == "" {
+					assert.Nil(rules[0].Service)
+				} else {
+					assert.Equal(tt.srvRegex, rules[0].Service.String())
+				}
+				if tt.nameRegex == "" {
+					assert.Nil(rules[0].Name)
+				} else {
+					assert.Equal(tt.nameRegex, rules[0].Name.String())
+				}
 				if tt.resourceRegex != "" {
 					assert.Equal(tt.resourceRegex, rules[0].Resource.String())
 				}
