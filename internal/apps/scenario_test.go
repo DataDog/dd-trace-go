@@ -120,6 +120,7 @@ func newLaunchConfig(t *testing.T) (lc launchConfig) {
 	lc.App = appName(t)
 	lc.Service = serviceName(t)
 	lc.Version = "v1"
+	parseEnv(t, "DD_ENV", &lc.Env, "dev")
 	parseEnv(t, "DD_TEST_APPS_PROFILE_PERIOD", &lc.ProfilePeriod, 10*time.Second)
 	lc.Tags = strings.TrimSpace(fmt.Sprintf("%s run_id:%d", os.Getenv("DD_TAGS"), rand.Uint64()))
 	return
@@ -136,6 +137,8 @@ type launchConfig struct {
 	Service string
 	// Version is passed as DD_VERSION to the test app.
 	Version string
+	// Env is passed as DD_ENV to the test app.
+	Env string
 	// Tags is passed as DD_TAGS to the test app.
 	Tags string
 	// ProfilePeriod is passed to the test app via a flag.
@@ -170,7 +173,12 @@ func (a *launchConfig) Launch(t *testing.T) (p process) {
 		strings.Join(a.Args, " "),
 	)
 	proc := exec.Command("bash", "-c", cmd)
-	env := []string{"DD_TAGS=" + a.Tags, "DD_SERVICE=" + a.Service, "DD_VERSION=" + a.Version}
+	env := []string{
+		"DD_TAGS=" + a.Tags,
+		"DD_SERVICE=" + a.Service,
+		"DD_VERSION=" + a.Version,
+		"DD_ENV=" + a.Env,
+	}
 	proc.Env = append(os.Environ(), env...)
 	r, w := io.Pipe()
 	proc.Stdout = io.MultiWriter(w, os.Stdout)
