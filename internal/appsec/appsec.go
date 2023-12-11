@@ -6,7 +6,6 @@
 package appsec
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
@@ -186,9 +185,9 @@ func init() {
 		Info:  log.Info,
 		Warn:  log.Warn,
 		Errorf: func(s string, a ...any) error {
-			err := fmt.Sprintf(s, a...)
-			log.Error(err)
-			return errors.New(err)
+			err := fmt.Errorf(s, a...)
+			log.Error(err.Error())
+			return err
 		},
 	})
 }
