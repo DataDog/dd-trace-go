@@ -469,7 +469,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil, nil, globalSampleRate())
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.SampleTrace(span)
+		result := rs.SampleTrace(span, false)
 		assert.False(result)
 	})
 
@@ -536,7 +536,7 @@ func TestRulesSampler(t *testing.T) {
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.True(result)
 			})
 		}
@@ -565,7 +565,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
@@ -595,7 +595,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.False(result)
 			})
 		}
@@ -662,8 +662,8 @@ func TestRulesSampler(t *testing.T) {
 					rt = tt.rules
 				}
 				rs := newRulesSampler(rt, nil, globalSampleRate())
-				assert.Equal(t, tt.sampleParent, rs.SampleTrace(parent.(*span)))
-				assert.Equal(t, tt.sampleChild, rs.SampleTrace(child.(*span)))
+				assert.Equal(t, tt.sampleParent, rs.SampleTrace(parent.(*span), false))
+				assert.Equal(t, tt.sampleChild, rs.SampleTrace(child.(*span), false))
 			})
 		}
 	})
@@ -918,7 +918,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.SampleTrace(span)
+					result := rs.SampleTrace(span, false)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
 					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
@@ -927,6 +927,26 @@ func TestRulesSampler(t *testing.T) {
 				})
 			}
 		}
+	})
+
+	// this test actually starts the span to verify that tag sampling works regardless of how
+	// the tags where set (during the Start func, or via s.SetTag())
+	// previously, sampling was ran once during creation, so this test would fail.
+	t.Run("rules-with-start-span", func(t *testing.T) {
+		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`)
+		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		tr, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "web.request",
+			ServiceName("webserver"), ResourceName("/bar"))
+		s.SetTag("tag1", "val1")
+		s.SetTag("tag2", "val2")
+		tr.sample(s.(*span))
+		s.Finish()
+
+		assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], 2)
+		assert.EqualValues(t, s.(*span).Metrics[keyRulesSamplerAppliedRate], 1)
 	})
 }
 

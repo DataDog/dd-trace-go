@@ -479,6 +479,15 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		// there's nothign we can show.
 		s.SetTag("go_execution_traced", "partial")
 	}
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		// we have an active tracer
+		if p, ok := s.context.SamplingPriority(); ok && p < 1 {
+			if t.rulesSampling.traces.enabled() {
+				t.rulesSampling.SampleTrace(s, true)
+			}
+		}
+	}
+
 	s.finish(t)
 
 	if s.pprofCtxRestore != nil {
