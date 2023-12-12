@@ -38,9 +38,7 @@ func Middleware(opts ...Option) func(*web.C, http.Handler) http.Handler {
 		warnonce sync.Once
 	)
 	defaults(&cfg)
-	localOpts := make([]Option, len(opts))
-	copy(localOpts, opts) // make a copy to avoid changes to opts having side effects to the returned router
-	for _, fn := range localOpts {
+	for _, fn := range opts {
 		fn(&cfg)
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
