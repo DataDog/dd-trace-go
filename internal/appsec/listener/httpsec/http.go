@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
