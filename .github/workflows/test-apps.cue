@@ -1,4 +1,5 @@
 // See /internal/apps/README.md for more information.
+import "encoding/json"
 
 #scenarios: [
     {
@@ -24,21 +25,24 @@
         type: "number",
         description: "Requests per second",
         default: 5,
-        pr_default: default,
     },
     scenario_duration: {
         env: "DD_TEST_APPS_TOTAL_DURATION",
         type: "string",
         description: "Scenario duration",
         default: "10m",
-        pr_default: "60s",
     },
     profile_period: {
         env: "DD_TEST_APPS_PROFILE_PERIOD",
         type: "string",
         description: "Profile period",
         default: "60s",
-        pr_default: "10s",
+    },
+    tags: {
+        env: false,
+        type: "string",
+        description: "Extra DD_TAGS",
+        default: "trigger:manual",
     },
 }
 
@@ -74,13 +78,15 @@
             },
         }
 
-        for scenario in #scenarios {
-            "scenario: \(scenario.name)": {
-                type: "boolean",
-                default: true | false,
-            }
-        }
-
+        scenarios: {
+            type: "string",
+            default: json.Marshal([
+                for scenario in #scenarios {
+                    scenario.name
+                }
+            ]),
+            description: "Scenarios to run"
+        },
     }
 }
 
@@ -106,7 +112,7 @@ on: {
 
 env: {
   DD_ENV: "github",
-  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}",
+  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
 
 jobs: {
@@ -116,7 +122,7 @@ jobs: {
                 name: "\(scenario.name) (\(env.name))",
                 "runs-on": "ubuntu-latest",
 
-                #if_scenario: "inputs['scenario: \(scenario.name)']",
+                #if_scenario: "contains(fromJSON(inputs['scenarios']), '\(scenario.name)')",
                 #if_env: "inputs['env: \(env.name)']",
                 
                 if: "\(#if_scenario) && \(#if_env)"
@@ -146,8 +152,9 @@ jobs: {
                     {
                         name: "Run Scenario"
                         env: {
-                            for name, arg in #args {
-                                "\(arg.env)": "${{ inputs['arg: \(name)'] || '\(arg.pr_default)' }}",
+                            // args.env is (string|false), so we use null coalescing to type cast to string
+                            for name, arg in #args if (*(arg.env&string) | "") != "" {
+                                "\(arg.env)": "${{ inputs['arg: \(name)'] }}",
                             }
                         },
                         run: "cd ./internal/apps && ./run-scenario.bash '\(scenario.name)'"
