@@ -123,9 +123,7 @@ func Register(driverName string, driver driver.Driver, opts ...RegisterOption) {
 
 	cfg := new(config)
 	defaults(cfg, driverName, nil)
-	for _, fn := range opts {
-		fn(cfg)
-	}
+	processOptions(cfg, driverName, driver, "", opts...)
 	log.Debug("contrib/database/sql: Registering driver: %s %#v", driverName, cfg)
 	registeredDrivers.add(driverName, driver, cfg)
 }
@@ -144,14 +142,19 @@ type tracedConnector struct {
 }
 
 func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	dsn := t.cfg.dsn
+	if dc, ok := t.connector.(*dsnConnector); ok {
+		dsn = dc.dsn
+	}
+	// check DBM propagation again, now that the DSN could be available.
+	t.cfg.checkDBMPropagation(t.driverName, t.connector.Driver(), dsn)
+
 	tp := &traceParams{
 		driverName: t.driverName,
 		cfg:        t.cfg,
 	}
-	if dc, ok := t.connector.(*dsnConnector); ok {
-		tp.meta, _ = internal.ParseDSN(t.driverName, dc.dsn)
-	} else if t.cfg.dsn != "" {
-		tp.meta, _ = internal.ParseDSN(t.driverName, t.cfg.dsn)
+	if dsn != "" {
+		tp.meta, _ = internal.ParseDSN(t.driverName, dsn)
 	}
 	start := time.Now()
 	ctx, end := startTraceTask(ctx, string(QueryTypeConnect))
@@ -196,9 +199,11 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		driverName = reflect.TypeOf(c.Driver()).String()
 		defaults(cfg, driverName, nil)
 	}
-	for _, fn := range opts {
-		fn(cfg)
+	dsn := ""
+	if dc, ok := c.(*dsnConnector); ok {
+		dsn = dc.dsn
 	}
+	processOptions(cfg, driverName, c.Driver(), dsn, opts...)
 	tc := &tracedConnector{
 		connector:  c,
 		driverName: driverName,
@@ -235,4 +240,11 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 		return OpenDB(connector, opts...), nil
 	}
 	return OpenDB(&dsnConnector{dsn: dataSourceName, driver: d}, opts...), nil
+}
+
+func processOptions(cfg *config, driverName string, driver driver.Driver, dsn string, opts ...Option) {
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	cfg.checkDBMPropagation(driverName, driver, dsn)
 }
