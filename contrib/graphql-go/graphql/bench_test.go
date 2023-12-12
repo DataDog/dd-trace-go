@@ -17,7 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
-func Benchmark(b *testing.B) {
+func BenchmarkGraphQL(b *testing.B) {
 	type objectType struct {
 		id string
 	}
