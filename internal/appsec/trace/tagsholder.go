@@ -40,7 +40,7 @@ func (m *TagsHolder) AddTag(k string, v any) {
 	m.tags[k] = v
 }
 
-// AddSerializableTag adds the key/value pair to the tags map. Value is serialized
+// AddSerializableTag adds the key/value pair to the tags map. Value is serialized as JSON.
 func (m *TagsHolder) AddSerializableTag(k string, v any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
