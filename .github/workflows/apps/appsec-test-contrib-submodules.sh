@@ -22,7 +22,15 @@ function gotestsum_runner() {
 function docker_runner() {
   # ignore the first argument, which is the JUnit report
   shift
-  docker run --platform=$PLATFORM -v $PWD:$PWD -w $PWD -eCGO_ENABLED=$CGO_ENABLED -eDD_APPSEC_ENABLED=$DD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v "$@"
+  # capture the working directory for the test run
+  WD=$(realpath "$1"); shift
+  docker run \
+    --platform="$PLATFORM" \
+    -v "$PWD":"$PWD" -w "$WD" \
+    -eCGO_ENABLED="$CGO_ENABLED" \
+    -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
+    -eDD_APPSEC_WAF_TIMEOUT="$DD_APPSEC_WAF_TIMEOUT" \
+    golang go test -v "$@"
 }
 
 runner="gotestsum_runner"
@@ -32,16 +40,14 @@ if [[ "$1" == "docker" ]]; then
   [[ -z "$PLATFORM" ]] && PLATFORM="linux/arm64"
 fi
 
-$runner "$JUNIT_REPORT.xml" ./appsec/... ./internal/appsec/...
+$runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
 
 SCOPES=("gin-gonic/gin" "google.golang.org/grpc" "net/http" "gorilla/mux" "go-chi/chi" "go-chi/chi.v5" "labstack/echo.v4")
 for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
   if [[ "$V2_BRANCH" == "true" ]]; then
-    cd "./v2/contrib/$SCOPE"
-    $runner "$JUNIT_REPORT.$contrib.xml" .
-    cd -
+    $runner "$JUNIT_REPORT.$contrib.xml" "./v2/contrib/$SCOPE" "."
   else
-    $runner "$JUNIT_REPORT.$contrib.xml" "./contrib/$SCOPE/..."
+    $runner "$JUNIT_REPORT.$contrib.xml" "." "./contrib/$SCOPE/..."
   fi
 done
