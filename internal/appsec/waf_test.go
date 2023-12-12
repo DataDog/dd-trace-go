@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	waf "github.com/DataDog/go-libddwaf/v2"
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	waf "github.com/DataDog/go-libddwaf/v2"
 
 	"github.com/stretchr/testify/require"
 )

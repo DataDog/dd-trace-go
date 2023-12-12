@@ -33,6 +33,7 @@ require (
 require (
 	github.com/DataDog/datadog-agent/pkg/util/log v0.49.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.49.0 // indirect
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231212150643-c11ff15232be // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
