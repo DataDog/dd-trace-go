@@ -3,12 +3,14 @@ module github.com/DataDog/dd-trace-go/internal/apps
 go 1.21
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231128131651-e2b2d5a6bd2e
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231212150643-c11ff15232be
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212165552-729cf88f812c
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231212165552-729cf88f812c
 	golang.org/x/sync v0.3.0
 )
 
 require (
+	github.com/google/go-cmp v0.5.9 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect

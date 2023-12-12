@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/dimfeld/httptreemux.v5
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212091735-59c3040c7e34
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212165552-729cf88f812c
 	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231212150643-c11ff15232be
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/stretchr/testify v1.8.4
@@ -35,6 +35,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
+	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
