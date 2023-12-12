@@ -8,6 +8,13 @@ require (
 )
 
 require (
+	github.com/DataDog/datadog-agent/pkg/util/log v0.49.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.49.0 // indirect
+	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+)
+
+require (
 	github.com/DataDog/appsec-internal-go v1.1.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
