@@ -89,7 +89,7 @@ func TestUserRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
