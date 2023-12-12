@@ -49,7 +49,7 @@ jobs:
         if: ${{ env.V2_BRANCH != 'true' }}
         run: |
           cd utils/build/docker/golang/parametric/
-          echo "replace github.com/DataDog/dd-trace-go/v2 => ./dd-trace-go" >> go.mod
+          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
           go mod tidy
 
       - name: Patch dd-trace-go version (v2)
