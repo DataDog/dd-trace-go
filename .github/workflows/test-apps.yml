@@ -101,9 +101,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-0-1:
     name: unit-of-work/v1 (staging)
@@ -127,9 +127,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-1-0:
     name: unit-of-work/v2 (prod)
@@ -153,9 +153,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-1-1:
     name: unit-of-work/v2 (staging)
@@ -179,9 +179,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-2-0:
     name: memory-leak/goroutine (prod)
@@ -205,9 +205,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-2-1:
     name: memory-leak/goroutine (staging)
@@ -231,9 +231,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-3-0:
     name: memory-leak/heap (prod)
@@ -257,9 +257,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-3-1:
     name: memory-leak/heap (staging)
@@ -283,9 +283,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-4-0:
     name: memory-leak/goroutine-heap (prod)
@@ -309,9 +309,9 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
   job-4-1:
     name: memory-leak/goroutine-heap (staging)
@@ -335,7 +335,7 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'

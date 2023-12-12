@@ -24,21 +24,18 @@
         type: "number",
         description: "Requests per second",
         default: 5,
-        pr_default: default,
     },
     scenario_duration: {
         env: "DD_TEST_APPS_TOTAL_DURATION",
         type: "string",
         description: "Scenario duration",
         default: "10m",
-        pr_default: "60s",
     },
     profile_period: {
         env: "DD_TEST_APPS_PROFILE_PERIOD",
         type: "string",
         description: "Profile period",
         default: "60s",
-        pr_default: "10s",
     },
 }
 
@@ -147,7 +144,7 @@ jobs: {
                         name: "Run Scenario"
                         env: {
                             for name, arg in #args {
-                                "\(arg.env)": "${{ inputs['arg: \(name)'] || '\(arg.pr_default)' }}",
+                                "\(arg.env)": "${{ inputs['arg: \(name)'] }}",
                             }
                         },
                         run: "cd ./internal/apps && ./run-scenario.bash '\(scenario.name)'"
