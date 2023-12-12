@@ -37,6 +37,12 @@
         description: "Profile period",
         default: "60s",
     },
+    tags: {
+        env: false,
+        type: "string",
+        description: "Extra DD_TAGS",
+        default: "trigger:manual",
+    },
 }
 
 #envs: [
@@ -103,7 +109,7 @@ on: {
 
 env: {
   DD_ENV: "github",
-  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}",
+  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} $${{ inputs['arg: tags'] }}",
 }
 
 jobs: {
@@ -143,7 +149,8 @@ jobs: {
                     {
                         name: "Run Scenario"
                         env: {
-                            for name, arg in #args {
+                            // args.env is (string|false), so we use null coalescing to type cast to string
+                            for name, arg in #args if (*(arg.env&string) | "") != "" {
                                 "\(arg.env)": "${{ inputs['arg: \(name)'] }}",
                             }
                         },

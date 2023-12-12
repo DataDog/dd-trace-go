@@ -25,6 +25,10 @@ name: Test Apps
         type: string
         default: 60s
         description: Profile period
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
       'scenario: unit-of-work/v1':
         type: boolean
         default: true
@@ -60,6 +64,10 @@ name: Test Apps
         type: string
         default: 60s
         description: Profile period
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
       'scenario: unit-of-work/v1':
         type: boolean
         default: false
@@ -77,7 +85,7 @@ name: Test Apps
         default: false
 env:
   DD_ENV: github
-  DD_TAGS: github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}
+  DD_TAGS: 'github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} $${{ inputs[''arg: tags''] }}'
 jobs:
   job-0-0:
     name: unit-of-work/v1 (prod)
