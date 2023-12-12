@@ -1,4 +1,5 @@
 // See /internal/apps/README.md for more information.
+import "encoding/json"
 
 #scenarios: [
     {
@@ -77,13 +78,15 @@
             },
         }
 
-        for scenario in #scenarios {
-            "scenario: \(scenario.name)": {
-                type: "boolean",
-                default: true | false,
-            }
-        }
-
+        scenarios: {
+            type: "string",
+            default: json.Marshal([
+                for scenario in #scenarios {
+                    scenario.name
+                }
+            ]),
+            description: "Scenarios to run"
+        },
     }
 }
 
@@ -109,7 +112,7 @@ on: {
 
 env: {
   DD_ENV: "github",
-  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} $${{ inputs['arg: tags'] }}",
+  DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
 
 jobs: {
@@ -119,7 +122,7 @@ jobs: {
                 name: "\(scenario.name) (\(env.name))",
                 "runs-on": "ubuntu-latest",
 
-                #if_scenario: "inputs['scenario: \(scenario.name)']",
+                #if_scenario: "contains(fromJSON(inputs['scenarios']), '\(scenario.name)')",
                 #if_env: "inputs['env: \(env.name)']",
                 
                 if: "\(#if_scenario) && \(#if_env)"
