@@ -933,20 +933,44 @@ func TestRulesSampler(t *testing.T) {
 	// the tags where set (during the Start func, or via s.SetTag())
 	// previously, sampling was ran once during creation, so this test would fail.
 	t.Run("rules-with-start-span", func(t *testing.T) {
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`)
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
-		tr, _, _, stop := startTestTracer(t)
-		defer stop()
+		testEnvs := []struct {
+			rules            string
+			generalRate      string
+			samplingPriority float64
+			appliedRate      float64
+		}{
+			{
+				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`,
+				generalRate:      "0",
+				samplingPriority: 2,
+				appliedRate:      1,
+			},
+			{
+				rules:            `[ {"tags": {"tag1": "val1"}, "sample_rate": 0}]`,
+				generalRate:      "1",
+				samplingPriority: -1,
+				appliedRate:      0,
+			},
+		}
 
-		s, _ := StartSpanFromContext(context.Background(), "web.request",
-			ServiceName("webserver"), ResourceName("/bar"))
-		s.SetTag("tag1", "val1")
-		s.SetTag("tag2", "val2")
-		tr.sample(s.(*span))
-		s.Finish()
+		for _, test := range testEnvs {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_TRACE_SAMPLING_RULES", test.rules)
+				os.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
+				_, _, _, stop := startTestTracer(t)
+				defer stop()
 
-		assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], 2)
-		assert.EqualValues(t, s.(*span).Metrics[keyRulesSamplerAppliedRate], 1)
+				s, _ := StartSpanFromContext(context.Background(), "web.request",
+					ServiceName("webserver"), ResourceName("/bar"))
+				s.SetTag("tag1", "val1")
+				s.SetTag("tag2", "val2")
+				s.Finish()
+
+				assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], test.samplingPriority)
+				assert.EqualValues(t, s.(*span).Metrics[keyRulesSamplerAppliedRate], test.appliedRate)
+			})
+		}
+
 	})
 }
 

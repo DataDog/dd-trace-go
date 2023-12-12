@@ -481,10 +481,9 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		// we have an active tracer
-		if p, ok := s.context.SamplingPriority(); ok && p < 1 {
-			if t.rulesSampling.traces.enabled() {
-				t.rulesSampling.SampleTrace(s, true)
-			}
+		if t.rulesSampling.traces.enabled() {
+			t.rulesSampling.SampleTrace(s, true)
+
 		}
 	}
 
