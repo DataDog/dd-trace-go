@@ -10,9 +10,10 @@ import (
 	"sync"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
+	appsecLog "github.com/DataDog/appsec-internal-go/log"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -76,7 +77,7 @@ func Start(opts ...StartOption) {
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
-		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", enabledEnvVar)
+		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)
@@ -176,4 +177,17 @@ func (a *appsec) stop() {
 	// TODO: block until no more requests are using dyngo operations
 
 	a.limiter.Stop()
+}
+
+func init() {
+	appsecLog.SetBackend(appsecLog.Backend{
+		Debug: log.Debug,
+		Info:  log.Info,
+		Warn:  log.Warn,
+		Errorf: func(s string, a ...any) error {
+			err := fmt.Errorf(s, a...)
+			log.Error(err.Error())
+			return err
+		},
+	})
 }

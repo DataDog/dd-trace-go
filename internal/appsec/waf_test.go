@@ -13,35 +13,14 @@ import (
 	"strings"
 	"testing"
 
+	waf "github.com/DataDog/go-libddwaf/v2"
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
+
 	"github.com/stretchr/testify/require"
 )
-
-type mockServeMux struct {
-	*http.ServeMux
-}
-
-func (mux *mockServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	span, ctx := httptrace.StartRequestSpan(r)
-	defer func() {
-		httptrace.FinishRequestSpan(span, http.StatusOK)
-	}()
-	h := http.Handler(mux.ServeMux)
-	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, make(map[string]string))
-	}
-	h.ServeHTTP(w, r.WithContext(ctx))
-}
-
-func newMockServeMux() *mockServeMux {
-	return &mockServeMux{
-		http.NewServeMux(),
-	}
-}
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
@@ -53,7 +32,7 @@ func TestCustomRules(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -176,7 +155,7 @@ func TestWAF(t *testing.T) {
 	}
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -332,7 +311,7 @@ func TestBlocking(t *testing.T) {
 	)
 
 	// Start and trace an HTTP server
-	mux := newMockServeMux()
+	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})
@@ -446,4 +425,66 @@ func TestBlocking(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test that API Security schemas get collected when API security is enabled
+func TestAPISecurity(t *testing.T) {
+	// Start and trace an HTTP server
+	t.Setenv(appsec.EnvEnabled, "true")
+	if wafOK, err := waf.Health(); !wafOK {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
+		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are getting extracted as schemas
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are not getting extracted as schemas
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
 }

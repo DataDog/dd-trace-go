@@ -9,12 +9,12 @@ import (
 	"errors"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	grpc "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
 	http "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
 const (
@@ -146,7 +146,7 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	// Register the WAF event listeners
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, http.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, http.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
 	}
 
 	if len(grpcAddresses) > 0 {
