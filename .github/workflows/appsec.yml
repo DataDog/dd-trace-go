@@ -27,6 +27,7 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: /tmp/gotestsum-report
   TO_TEST: ./appsec/... ./internal/appsec/...
+  V2_BRANCH: true
 jobs:
   native:
     strategy:
@@ -257,7 +258,7 @@ jobs:
         with:
           platforms: arm64
       - run: |
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+          env V2_BRANCH=$V2_BRANCH CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   # TODO(darccio): revert to use main on merge into main
   smoke-tests:
