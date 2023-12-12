@@ -13,7 +13,6 @@ import (
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 
 	"github.com/stretchr/testify/require"
@@ -177,7 +176,9 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			tagsHolder := trace.NewTagsHolder()
-			sharedsec.AddAPISecurityTags(&tagsHolder, wafRes.Derivatives)
+			for k, v := range wafRes.Derivatives {
+				tagsHolder.AddSerializableTag(k, v)
+			}
 
 			for tag, val := range tagsHolder.Tags() {
 				require.Equal(t, tc.tags[tag], val)

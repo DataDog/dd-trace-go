@@ -82,18 +82,6 @@ func AddWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, 
 	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
 }
 
-// AddAPISecurityTags serializes the WAF derivatives and adds them to the tags
-func AddAPISecurityTags(th tagsHolder, derivatives map[string]any) {
-	for k, v := range derivatives {
-		schema, err := json.Marshal(v)
-		if err != nil {
-			log.Debug("appsec: could not serialize API Security schema for %s: %v", k, err)
-			continue
-		}
-		th.AddTag(k, string(schema))
-	}
-}
-
 // ProcessActions sends the relevant actions to the operation's data listener.
 // It returns true if at least one of those actions require interrupting the request handler
 func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {
