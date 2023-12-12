@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/DataDog/appsec-internal-go/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
 	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
@@ -119,7 +119,7 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg       *Config
-	limiter   *TokenTicker
+	limiter   *limiter.TokenTicker
 	wafHandle *wafHandle
 	started   bool
 }
@@ -144,7 +144,7 @@ func (a *appsec) start() error {
 		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
 	}
 
-	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
+	a.limiter = limiter.NewTokenTicker(a.cfg.traceRateLimit, a.cfg.traceRateLimit)
 	a.limiter.Start()
 	// Register the WAF operation event listener
 	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {

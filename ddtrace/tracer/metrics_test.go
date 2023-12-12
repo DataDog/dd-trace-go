@@ -288,7 +288,7 @@ func TestReportHealthMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(3, 1*time.Second)
+	tg.Wait(3, 10*time.Second)
 
 	counts := tg.Counts()
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])

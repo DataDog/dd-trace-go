@@ -186,7 +186,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git
+        run: apk add gcc musl-dev libc6-compat git bash
 
       - name: Go modules cache
         uses: actions/cache@v3
@@ -256,7 +256,8 @@ jobs:
         uses: docker/setup-qemu-action@v2
         with:
           platforms: arm64
-      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v $TO_TEST
+      - run: |
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   # TODO(darccio): revert to use main on merge into main
   smoke-tests:

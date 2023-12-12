@@ -97,8 +97,8 @@ func (h *agentTraceWriter) flush() {
 			p.clear()
 
 			<-h.climit
-			h.wg.Done()
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
+			h.wg.Done()
 		}(time.Now())
 
 		var count, size int
