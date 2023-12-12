@@ -16,7 +16,7 @@ type serializableTag struct {
 	tag any
 }
 
-func (t *serializableTag) MarshalJSON() ([]byte, error) {
+func (t serializableTag) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.tag)
 }
 
@@ -44,7 +44,7 @@ func (m *TagsHolder) AddTag(k string, v any) {
 func (m *TagsHolder) AddSerializableTag(k string, v any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.tags[k] = &serializableTag{tag: v}
+	m.tags[k] = serializableTag{tag: v}
 }
 
 // Tags returns a copy of the aggregated tags map (normal and serialized)
@@ -54,7 +54,7 @@ func (m *TagsHolder) Tags() map[string]any {
 	defer m.mu.RUnlock()
 	for k, v := range m.tags {
 		tags[k] = v
-		marshaler, ok := v.(json.Marshaler)
+		marshaler, ok := v.(serializableTag)
 		if !ok {
 			continue
 		}
