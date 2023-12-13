@@ -103,7 +103,6 @@ func BenchmarkGraphQL(b *testing.B) {
 			events: map[string]string{
 				"test-rule-001": "graphql.resolve(topLevel)",
 				"test-rule-002": "graphql.resolve(nested)",
-				"test-rule-003": "graphql.execute",
 			},
 		},
 		"with-default-parameter": {
@@ -115,7 +114,6 @@ func BenchmarkGraphQL(b *testing.B) {
 			events: map[string]string{
 				"test-rule-001": "graphql.resolve(topLevel)",
 				"test-rule-002": "graphql.resolve(nested)",
-				"test-rule-003": "graphql.execute",
 			},
 		},
 		"embedded-variable": {
@@ -131,7 +129,6 @@ func BenchmarkGraphQL(b *testing.B) {
 			events: map[string]string{
 				"test-rule-001": "graphql.resolve(topLevelMapped)",
 				"test-rule-002": "graphql.resolve(nested)",
-				"test-rule-003": "graphql.execute",
 			},
 		},
 	}

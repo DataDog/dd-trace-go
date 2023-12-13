@@ -22,14 +22,12 @@ import (
 
 // GraphQL rule addresses currently supported by the WAF
 const (
-	graphQLServerAllResolversAddr = "graphql.server.all_resolvers"
-	graphQLServerResolverAddr     = "graphql.server.resolver"
+	graphQLServerResolverAddr = "graphql.server.resolver"
 )
 
 // List of GraphQL rule addresses currently supported by the WAF
 var supportedAddresses = map[string]struct{}{
-	graphQLServerAllResolversAddr: {},
-	graphQLServerResolverAddr:     {},
+	graphQLServerResolverAddr: {},
 }
 
 func SupportedAddressCount() int {
@@ -61,16 +59,6 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 		})
 
 		request.On(graphqlsec.OnExecutionOperationStart(func(query *graphqlsec.ExecutionOperation, args graphqlsec.ExecutionOperationArgs) {
-			var (
-				allResolvers   map[string][]map[string]any
-				allResolversMu sync.Mutex
-			)
-
-			if _, found := addresses[graphQLServerAllResolversAddr]; found {
-				// If `allResolvers` is supported, pre-allocate a small map to store data.
-				allResolvers = make(map[string][]map[string]any)
-			}
-
 			query.On(graphqlsec.OnResolveOperationStart(func(field *graphqlsec.ResolveOperation, args graphqlsec.ResolveOperationArgs) {
 				if _, found := addresses[graphQLServerResolverAddr]; found {
 					wafResult := listener.RunWAF(
@@ -85,27 +73,12 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 					listener.AddSecurityEvents(field, limiter, wafResult.Events)
 				}
 
-				if allResolvers != nil {
-					// Register in all resolvers
-					func() {
-						allResolversMu.Lock()
-						defer allResolversMu.Unlock()
-						allResolvers[args.FieldName] = append(allResolvers[args.FieldName], args.Arguments)
-					}()
-				}
-
 				field.On(graphqlsec.OnResolveOperationFinish(func(field *graphqlsec.ResolveOperation, res graphqlsec.ResolveOperationRes) {
 					trace.SetEventSpanTags(field, field.Events())
 				}))
 			}))
 
 			query.On(graphqlsec.OnExecutionOperationFinish(func(query *graphqlsec.ExecutionOperation, res graphqlsec.ExecutionOperationRes) {
-				// Note: allResolvers is only populated if the address is indeed supported.
-				if len(allResolvers) > 0 {
-					// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
-					wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{graphQLServerAllResolversAddr: allResolvers}}, timeout)
-					listener.AddSecurityEvents(query, limiter, wafResult.Events)
-				}
 				trace.SetEventSpanTags(query, query.Events())
 			}))
 		}))

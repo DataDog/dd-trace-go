@@ -62,7 +62,6 @@ func TestAppSec(t *testing.T) {
 				events: map[string]string{
 					"test-rule-001": "graphql.resolve(topLevel)",
 					"test-rule-002": "graphql.resolve(nested)",
-					"test-rule-003": "graphql.execute",
 				},
 			},
 			"with-default-parameter": {
@@ -74,7 +73,6 @@ func TestAppSec(t *testing.T) {
 				events: map[string]string{
 					"test-rule-001": "graphql.resolve(topLevel)",
 					"test-rule-002": "graphql.resolve(nested)",
-					"test-rule-003": "graphql.execute",
 				},
 			},
 			"embedded-variable": {
@@ -90,7 +88,6 @@ func TestAppSec(t *testing.T) {
 				events: map[string]string{
 					"test-rule-001": "graphql.resolve(topLevelMapped)",
 					"test-rule-002": "graphql.resolve(nested)",
-					"test-rule-003": "graphql.execute",
 				},
 			},
 		}
