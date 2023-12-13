@@ -43,13 +43,13 @@ func SupportsAddress(addr string) bool {
 // to enable it.
 func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
 	var rulesMonitoringOnce sync.Once
+	wafDiags := handle.Diagnostics()
 
 	return graphqlsec.OnRequestOperationStart(func(request *graphqlsec.RequestOperation, args graphqlsec.RequestOperationArgs) {
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			return
 		}
-		wafDiags := handle.Diagnostics()
 
 		// Add span tags notifying this trace is AppSec-enabled
 		trace.SetAppSecEnabledTags(request)
