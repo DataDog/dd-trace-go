@@ -58,15 +58,20 @@ func StartExecutionOperation(ctx context.Context, parent *RequestOperation, span
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *ExecutionOperation) Finish(res Result) {
-	dyngo.FinishOperation(q, ExecutionOperationRes(res))
+func (q *ExecutionOperation) Finish(res ExecutionOperationRes) {
+	dyngo.FinishOperation(q, res)
 }
 
 type (
 	OnExecutionOperationStart  func(*ExecutionOperation, ExecutionOperationArgs)
 	OnExecutionOperationFinish func(*ExecutionOperation, ExecutionOperationRes)
 
-	ExecutionOperationRes Result
+	ExecutionOperationRes struct {
+		// Data is the data returned from processing the GraphQL operation.
+		Data any
+		// Error is the error returned by processing the GraphQL Operation, if any.
+		Error error
+	}
 )
 
 var (

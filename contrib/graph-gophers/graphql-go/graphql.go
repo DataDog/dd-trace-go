@@ -92,8 +92,8 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 			err = fmt.Errorf("%s (and %d more errors)", errs[0], n-1)
 		}
 		defer span.Finish(ddtracer.WithError(err))
-		defer request.Finish(graphqlsec.Result{Error: err})
-		query.Finish(graphqlsec.Result{Error: err})
+		defer request.Finish(graphqlsec.RequestOperationRes{Error: err})
+		query.Finish(graphqlsec.ExecutionOperationRes{Error: err})
 	}
 }
 
@@ -127,7 +127,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	})
 
 	return ctx, func(err *errors.QueryError) {
-		field.Finish(graphqlsec.Result{Error: err})
+		field.Finish(graphqlsec.ResolveOperationRes{Error: err})
 
 		// must explicitly check for nil, see issue golang/go#22729
 		if err != nil {

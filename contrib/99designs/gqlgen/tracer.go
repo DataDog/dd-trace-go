@@ -121,15 +121,21 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 	return func(ctx context.Context) *graphql.Response {
 		response := responseHandler(ctx)
 		if span != nil {
-			defer span.Finish(tracer.WithError(response.Errors))
+			var err error
+			if len(response.Errors) > 0 {
+				err = response.Errors
+			}
+			defer span.Finish(tracer.WithError(err))
 		}
 
-		result := graphqlsec.Result{
+		query.Finish(graphqlsec.ExecutionOperationRes{
 			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 			Error: response.Errors,
-		}
-		query.Finish(result)
-		req.Finish(result)
+		})
+		req.Finish(graphqlsec.RequestOperationRes{
+			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
+			Error: response.Errors,
+		})
 
 		return response
 	}
@@ -158,7 +164,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 		FieldName: fieldCtx.Field.Name,
 		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
 	})
-	defer func() { op.Finish(graphqlsec.Result{Data: res, Error: err}) }()
+	defer func() { op.Finish(graphqlsec.ResolveOperationRes{Data: res, Error: err}) }()
 
 	res, err = next(ctx)
 

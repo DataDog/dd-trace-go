@@ -74,7 +74,7 @@ type contextData struct {
 // finish closes the top-level request operation, as well as the server span.
 func (c *contextData) finish(data any, err error) {
 	defer c.serverSpan.Finish(tracer.WithError(err))
-	c.requestOp.Finish(graphqlsec.Result{Data: data, Error: err})
+	c.requestOp.Finish(graphqlsec.RequestOperationRes{Data: data, Error: err})
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
@@ -217,7 +217,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
 		}()
-		op.Finish(graphqlsec.Result{Data: result.Data, Error: err})
+		op.Finish(graphqlsec.ExecutionOperationRes{Data: result.Data, Error: err})
 	}
 }
 
@@ -269,7 +269,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
-		op.Finish(graphqlsec.Result{Error: err, Data: result})
+		op.Finish(graphqlsec.ResolveOperationRes{Error: err, Data: result})
 	}
 }
 

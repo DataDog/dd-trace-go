@@ -47,15 +47,20 @@ func StartResolveOperation(ctx context.Context, parent *ExecutionOperation, span
 
 // Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *ResolveOperation) Finish(res Result) {
-	dyngo.FinishOperation(q, ResolveOperationRes(res))
+func (q *ResolveOperation) Finish(res ResolveOperationRes) {
+	dyngo.FinishOperation(q, res)
 }
 
 type (
 	OnResolveOperationStart  func(*ResolveOperation, ResolveOperationArgs)
 	OnResolveOperationFinish func(*ResolveOperation, ResolveOperationRes)
 
-	ResolveOperationRes Result
+	ResolveOperationRes struct {
+		// Data is the data returned from processing the GraphQL operation.
+		Data any
+		// Error is the error returned by processing the GraphQL Operation, if any.
+		Error error
+	}
 )
 
 var (
