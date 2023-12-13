@@ -153,6 +153,9 @@ func (a *appsec) start() error {
 		return err
 	}
 	a.enableRCBlocking()
+	if a.cfg.APISec.Enabled {
+		a.enableAPISecurity()
+	}
 	a.started = true
 	log.Info("appsec: up and running")
 	// TODO: log the config like the APM tracer does but we first need to define
@@ -168,6 +171,7 @@ func (a *appsec) stop() {
 	a.started = false
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
+	a.disableAPISecurity()
 
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)

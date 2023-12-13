@@ -24,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestASMFeaturesCallback(t *testing.T) {
+func TestRemoteActivationCallback(t *testing.T) {
 	if supported, _ := waf.Health(); !supported {
 		t.Skip("WAF cannot be used")
 	}
@@ -89,7 +89,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 				a.start()
 			}
 			require.Equal(t, tc.startBefore, a.started)
-			a.handleASMFeatures(tc.update)
+			a.onRemoteActivation(tc.update)
 			require.Equal(t, tc.startedAfter, a.started)
 		})
 	}
@@ -98,18 +98,18 @@ func TestASMFeaturesCallback(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": enabledPayload}
 		require.False(t, a.started)
-		a.handleASMFeatures(update)
+		a.onRemoteActivation(update)
 		require.True(t, a.started)
-		a.handleASMFeatures(update)
+		a.onRemoteActivation(update)
 		require.True(t, a.started)
 	})
 	t.Run("disabled-twice", func(t *testing.T) {
 		defer a.stop()
 		update := remoteconfig.ProductUpdate{"some/path": disabledPayload}
 		require.False(t, a.started)
-		a.handleASMFeatures(update)
+		a.onRemoteActivation(update)
 		require.False(t, a.started)
-		a.handleASMFeatures(update)
+		a.onRemoteActivation(update)
 		require.False(t, a.started)
 	})
 }
@@ -562,16 +562,14 @@ func TestOnRCUpdate(t *testing.T) {
 
 		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 		// Activate appsec
-		updates := map[string]remoteconfig.ProductUpdate{rc.ProductASMFeatures: map[string][]byte{"features/config": enabledPayload}}
-		activeAppSec.onRemoteActivation(updates)
+		activeAppSec.onRemoteActivation(map[string][]byte{"features/config": enabledPayload})
 		require.True(t, Enabled())
 
 		// Deactivate and try to update the rules. The rules update should not happen
-		updates = map[string]remoteconfig.ProductUpdate{
-			rc.ProductASMFeatures: map[string][]byte{"features/config": nil},
-			rc.ProductASM:         map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
+		updates := map[string]remoteconfig.ProductUpdate{
+			rc.ProductASM: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
 		}
-		activeAppSec.onRemoteActivation(updates)
+		activeAppSec.onRemoteActivation(map[string][]byte{"features/config": nil})
 		require.False(t, Enabled())
 		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
 		RulesManager := activeAppSec.cfg.RulesManager

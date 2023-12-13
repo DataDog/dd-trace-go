@@ -113,7 +113,7 @@ updateLoop:
 				r.AddEdit(path, f)
 			}
 		default:
-			log.Debug("appsec: Remote config: ignoring unsubscribed product %s", p)
+			log.Debug("appsec: Remote config: ignoring product %s when combining security rules updates", p)
 		}
 	}
 
@@ -125,16 +125,6 @@ updateLoop:
 	}
 
 	return statuses, err
-
-}
-
-// onRemoteActivation is the RC callback called when an update is received for ASM_FEATURES
-func (a *appsec) onRemoteActivation(updates map[string]remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-	statuses := map[string]rc.ApplyStatus{}
-	if u, ok := updates[rc.ProductASMFeatures]; ok {
-		statuses = a.handleASMFeatures(u)
-	}
-	return statuses
 
 }
 
@@ -172,45 +162,53 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	return statuses
 }
 
-// handleASMFeatures deserializes an ASM_FEATURES configuration received through remote config
-// and starts/stops appsec accordingly.
-func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-	statuses := statusesFromUpdate(u, false, nil)
-	if l := len(u); l > 1 {
-		log.Error("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
-		return statuses
-	}
-	for path, raw := range u {
-		var data rc.ASMFeaturesData
-		status := rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
-		var err error
-		log.Debug("appsec: Remote config: processing %s", path)
-
-		// A nil config means ASM was disabled, and we stopped receiving the config file
-		// Don't ack the config in this case and return early
-		if raw == nil {
-			log.Debug("appsec: Remote config: Stopping AppSec")
-			a.stop()
-			return statuses
-		}
-		if err = json.Unmarshal(raw, &data); err != nil {
-			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
-		} else if data.ASM.Enabled && !a.started {
-			log.Debug("appsec: Remote config: Starting AppSec")
-			if err = a.start(); err != nil {
-				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
-			}
-		} else if !data.ASM.Enabled && a.started {
-			log.Debug("appsec: Remote config: Stopping AppSec")
-			a.stop()
-		}
-		if err != nil {
-			status = genApplyStatus(false, err)
-		}
-		statuses[path] = status
+// onRemoteActivation is the RC callback called when an update for ASM_FEATURES is received and API security is enabled
+func (a *appsec) onAPISecConfigUpdate(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	cfg, err := asmFeaturesDataCfgFromUpdate(u)
+	if cfg.removed {
+		return statusesFromUpdate(u, false, nil)
+	} else if err != nil {
+		return statusesFromUpdate(u, false, err)
 	}
 
-	return statuses
+	log.Debug("appsec: Remote config: processing %s", cfg.path)
+	// TODO: mutex
+	a.cfg.APISec.SampleRate = cfg.APISecurity.RequestSampleRate
+	if cfg.APISecurity.RequestSampleRate > 0 && !a.cfg.APISec.Enabled {
+		a.cfg.APISec.Enabled = true
+		log.Debug("appsec: Remote config: enabling API Security. Sample rate: %f", cfg.APISecurity.RequestSampleRate)
+	} else if cfg.APISecurity.RequestSampleRate == 0 && a.cfg.APISec.Enabled {
+		a.cfg.APISec.Enabled = false
+		log.Debug("appsec: Remote config: disabling API Security")
+	}
+
+	return statusesFromUpdate(u, true, nil)
+}
+
+// onRemoteActivation is the RC callback called when an update for ASM_FEATURES is received and remote activation is enabled
+func (a *appsec) onRemoteActivation(u remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	cfg, err := asmFeaturesDataCfgFromUpdate(u)
+	if cfg.removed {
+		log.Debug("appsec: Remote config: Stopping AppSec")
+		a.stop()
+		return statusesFromUpdate(u, false, nil)
+	} else if err != nil {
+		return statusesFromUpdate(u, false, err)
+	}
+
+	log.Debug("appsec: Remote config: processing %s", cfg.path)
+	if cfg.ASM.Enabled && !a.started {
+		log.Debug("appsec: Remote config: Starting AppSec")
+		if err = a.start(); err != nil {
+			log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", cfg.path, err)
+			return statusesFromUpdate(u, false, err)
+		}
+	} else if !cfg.ASM.Enabled && a.started {
+		log.Debug("appsec: Remote config: Stopping AppSec")
+		a.stop()
+	}
+
+	return statusesFromUpdate(u, true, nil)
 }
 
 func mergeRulesData(u remoteconfig.ProductUpdate) ([]config.RuleDataEntry, map[string]rc.ApplyStatus) {
@@ -325,15 +323,21 @@ func (a *appsec) enableRemoteActivation() error {
 	if a.cfg.RC == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
-	err := a.registerRCProduct(rc.ProductASMFeatures)
-	if err != nil {
-		return err
+	return remoteconfig.Subscribe(rc.ProductASMFeatures, a.onRemoteActivation, remoteconfig.ASMActivation)
+}
+
+func (a *appsec) enableAPISecurity() error {
+	if a.cfg.RC == nil {
+		return fmt.Errorf("no valid remote configuration client")
 	}
-	err = a.registerRCCapability(remoteconfig.ASMActivation)
-	if err != nil {
-		return err
+	return remoteconfig.Subscribe(rc.ProductASMFeatures, a.onAPISecConfigUpdate, remoteconfig.ASMApiSecuritySampleRate)
+}
+
+func (a *appsec) disableAPISecurity() {
+	if a.cfg.RC == nil {
+		return
 	}
-	return remoteconfig.RegisterCallback(a.onRemoteActivation)
+	// TODO: add unsubsribe mechanics in RC client
 }
 
 var blockingCapabilities = [...]remoteconfig.Capability{
@@ -385,4 +389,35 @@ func (a *appsec) disableRCBlocking() {
 	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {
 		log.Debug("appsec: Remote config: couldn't unregister callback: %v", err)
 	}
+}
+
+// asmFeaturesDataCfg is a convenience wrapper to extract an ASM Features config
+// and store whether such configuration was removed from the rc client or not
+type asmFeaturesDataCfg struct {
+	rc.ASMFeaturesData
+	removed bool
+	path    string
+}
+
+// asmFeaturesDataCfgFromUpdate extracts and returns the ASM Features config from an update
+func asmFeaturesDataCfgFromUpdate(u remoteconfig.ProductUpdate) (cfg asmFeaturesDataCfg, err error) {
+	if l := len(u); l > 1 {
+		return cfg, fmt.Errorf("appsec: Remote config: %d configs received for ASM_FEATURES. Expected one at most, returning early", l)
+	}
+
+	var raw []byte
+	for cfg.path, raw = range u { // Retrieve the config file name
+		break
+	}
+
+	// A nil config means that it was removed from the client
+	if raw == nil {
+		cfg.removed = true
+		return cfg, nil
+	}
+	if err = json.Unmarshal(raw, &cfg.ASMFeaturesData); err != nil {
+		return cfg, fmt.Errorf("appsec: remote config: error while unmarshalling %s: %v. Configuration won't be applied", cfg.path, err)
+	}
+
+	return cfg, nil
 }
