@@ -33,7 +33,7 @@ const (
 )
 
 // WrapRoundTripperFunc creates a new WrapTransport function using the given set of
-// RountripperOption. It is useful when desiring to enable Trace Analytics or setting
+// RoundTripperOption. It is useful when desiring to enable Trace Analytics or setting
 // up a RoundTripperAfterFunc.
 func WrapRoundTripperFunc(opts ...httptrace.RoundTripperOption) func(http.RoundTripper) http.RoundTripper {
 	return func(rt http.RoundTripper) http.RoundTripper {
@@ -48,7 +48,9 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 }
 
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
-	opts = append(opts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	localOpts := make([]httptrace.RoundTripperOption, len(opts))
+	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
+	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
@@ -62,7 +64,7 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		span.SetTag("kubernetes.audit_id", kubeAuditID)
 	}))
 	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
-	return httptrace.WrapRoundTripper(rt, opts...)
+	return httptrace.WrapRoundTripper(rt, localOpts...)
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
