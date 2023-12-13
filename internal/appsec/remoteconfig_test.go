@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"sort"
@@ -24,9 +25,163 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// This test makes sure all callbacks related to ASM_FEATURES
+// behave correctly independently of the order they are called in
+func TestASMFeaturesProductUpdate(t *testing.T) {
+	if supported, err := waf.Health(); !supported {
+		t.Skipf("WAF cannot be used: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		payload []byte
+		// Should appsec be started before beginning the test
+		startBefore bool
+		// Is appsec expected to be started at the end of the test
+		startedAfter bool
+		// The expected configuration at the end of the RC updates round
+		env           map[string]string
+		apiSecEnabled bool
+		sampleRate    float64
+	}{
+		{
+			name:          "all-enabled",
+			payload:       []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
+			startBefore:   true,
+			startedAfter:  true,
+			sampleRate:    0.7,
+			apiSecEnabled: true,
+		},
+		{
+			name:         "apisec-disabled",
+			payload:      []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.0}}`),
+			startBefore:  true,
+			startedAfter: true,
+		},
+		{
+			name:          "start-after",
+			payload:       []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
+			startedAfter:  true,
+			sampleRate:    0.7,
+			apiSecEnabled: true,
+		},
+		{
+			name:          "stop-appsec",
+			payload:       []byte(`{"asm":{"enabled":false},"api_security":{"request_sample_rate": 0.5}}`),
+			startBefore:   true,
+			sampleRate:    0.5,
+			apiSecEnabled: true,
+		},
+		{
+			name:        "stop-appsec-and-apisec",
+			payload:     []byte(`{"asm":{"enabled":false},"api_security":{"request_sample_rate": 0.0}}`),
+			startBefore: true,
+		},
+		{
+			name:          "config-removed",
+			payload:       nil,
+			startBefore:   true,
+			sampleRate:    internal.DefaultAPISecSampleRate,
+			apiSecEnabled: true,
+		},
+	} {
+		t.Setenv(config.EnvEnabled, "true")
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.NewConfig()
+			require.NoError(t, err)
+			a := newAppSec(cfg)
+			defer a.stop()
+			require.NotNil(t, a)
+			require.NoError(t, a.startRC())
+
+			if tc.startBefore {
+				require.NoError(t, a.start())
+			}
+			require.Equal(t, tc.startBefore, a.started)
+
+			a.onRemoteActivation(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
+			a.onAPISecConfigUpdate(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
+
+			require.Equal(t, tc.startedAfter, a.started)
+			require.Equal(t, tc.apiSecEnabled, a.cfg.APISec.Enabled)
+			require.Equal(t, tc.sampleRate, a.cfg.APISec.SampleRate)
+
+		})
+
+		t.Run(tc.name+"-reverse", func(t *testing.T) {
+			cfg, err := config.NewConfig()
+			require.NoError(t, err)
+			a := newAppSec(cfg)
+			defer a.stop()
+			require.NotNil(t, a)
+			require.NoError(t, a.startRC())
+
+			if tc.startBefore {
+				require.NoError(t, a.start())
+			}
+			require.Equal(t, tc.startBefore, a.started)
+
+			a.onAPISecConfigUpdate(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
+			a.onRemoteActivation(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
+
+			require.Equal(t, tc.startedAfter, a.started)
+			require.Equal(t, tc.apiSecEnabled, a.cfg.APISec.Enabled)
+			require.Equal(t, tc.sampleRate, a.cfg.APISec.SampleRate)
+
+		})
+	}
+}
+
+func TestAPISecurityCallback(t *testing.T) {
+	if supported, err := waf.Health(); !supported {
+		t.Skipf("WAF cannot be used: %v", err)
+	}
+
+	t.Setenv(internal.EnvAPISecEnabled, "true")
+	t.Setenv(config.EnvEnabled, "true")
+
+	for _, tc := range []struct {
+		name       string
+		sampleRate float64
+		enabled    bool
+	}{
+		{
+			name: "disabled",
+		},
+		{
+			name:       "enabled",
+			sampleRate: 0.5,
+			enabled:    true,
+		},
+		{
+			name:       "enabled",
+			sampleRate: 0.7,
+			enabled:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.NewConfig()
+			require.NoError(t, err)
+			a := newAppSec(cfg)
+			require.NoError(t, a.start())
+			require.NotNil(t, a)
+			defer a.stop()
+			require.NoError(t, a.startRC())
+			require.True(t, a.cfg.APISec.Enabled)
+			require.Equal(t, internal.DefaultAPISecSampleRate, a.cfg.APISec.SampleRate)
+			payload := []byte(fmt.Sprintf(`{"api_security":{"request_sample_rate": %f}}`, tc.sampleRate))
+			a.onAPISecConfigUpdate(remoteconfig.ProductUpdate{"features/config.json": payload})
+			require.Equal(t, tc.enabled, a.cfg.APISec.Enabled)
+			require.Equal(t, tc.enabled, a.cfg.APISec.SampleRate > 0)
+		})
+	}
+}
+
 func TestRemoteActivationCallback(t *testing.T) {
-	if supported, _ := waf.Health(); !supported {
-		t.Skip("WAF cannot be used")
+	if supported, err := waf.Health(); !supported {
+		t.Skipf("WAF cannot be used: %v", err)
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
@@ -384,6 +539,20 @@ func TestCapabilities(t *testing.T) {
 		},
 		{
 			name:     "appsec-enabled/RulesManager-from-env",
+			env:      map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
+			expected: []remoteconfig.Capability{},
+		},
+		{
+			name: "appsec-enabled/API security",
+			env:  map[string]string{config.EnvEnabled: "1", internal.EnvAPISecEnabled: "1"},
+			expected: []remoteconfig.Capability{
+				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
+				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
+				remoteconfig.ASMCustomBlockingResponse, remoteconfig.ASMApiSecuritySampleRate,
+			},
+		},
+		{
+			name:     "appsec-enabled/rulesManager-from-env",
 			env:      map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
 			expected: []remoteconfig.Capability{},
 		},
