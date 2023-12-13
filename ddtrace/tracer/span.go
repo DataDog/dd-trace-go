@@ -483,7 +483,6 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		// we have an active tracer
 		if t.rulesSampling.traces.enabled() {
 			t.rulesSampling.SampleTrace(s, true)
-
 		}
 	}
 

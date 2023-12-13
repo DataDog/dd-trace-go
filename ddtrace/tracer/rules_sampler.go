@@ -328,9 +328,9 @@ func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
 		// TODO: technically, span.name/ service tags could change the span and cause other tag-less rules
 		//  to evaluate to true. However, previously this was disregarded. Should we keep the behaviour as it was before
 		//  or re-evaluate all the rules?
-		if atFinish && len(rule.Tags) == 0 {
-			continue
-		}
+		//if atFinish && len(rule.Tags) == 0 {
+		//	continue
+		//}
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
