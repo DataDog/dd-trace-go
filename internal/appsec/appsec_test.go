@@ -19,7 +19,7 @@ import (
 )
 
 func TestEnabled(t *testing.T) {
-	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
+	enabledConfig, _ := strconv.ParseBool(os.Getenv(appsec.EnvEnabled))
 	wafSupported, _ := waf.Health()
 	canBeEnabled := enabledConfig && wafSupported
 
@@ -33,8 +33,8 @@ func TestEnabled(t *testing.T) {
 // Test that everything goes well when simply starting and stopping appsec
 func TestStartStop(t *testing.T) {
 	// Use t.Setenv() to automatically restore the initial env var value, if set
-	t.Setenv("DD_APPSEC_ENABLED", "")
-	os.Unsetenv("DD_APPSEC_ENABLED")
+	t.Setenv(appsec.EnvEnabled, "")
+	os.Unsetenv(appsec.EnvEnabled)
 	appsec.Start()
 	appsec.Stop()
 }
