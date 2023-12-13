@@ -337,6 +337,9 @@ func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
 			break
 		}
 	}
+	if atFinish && !matched {
+		return false
+	}
 	if !matched && math.IsNaN(rate) {
 		// no matching rule or global rate, so we want to fall back
 		// to priority sampling
