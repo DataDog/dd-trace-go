@@ -32,11 +32,9 @@ type RequestOperationArgs struct {
 
 // StartRequestOperation starts a new GraphQL request operation, along with the given arguments, and
 // emits a start event up in the operation stack. The operation is usually linked to tge global root
-// operation.
-func StartRequestOperation(ctx context.Context, span trace.TagSetter, args RequestOperationArgs) (context.Context, *RequestOperation) {
-	// The parent will typically be nil (the root operation will be used)
-	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
-
+// operation. The operation is tracked on the returned context, and can be extracted later on using
+// FromContext.
+func StartRequestOperation(ctx context.Context, parent dyngo.Operation, span trace.TagSetter, args RequestOperationArgs) (context.Context, *RequestOperation) {
 	if span == nil {
 		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
 		span = trace.NoopTagSetter{}
@@ -46,7 +44,7 @@ func StartRequestOperation(ctx context.Context, span trace.TagSetter, args Reque
 		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := contextWithValue(ctx, op)
 	dyngo.StartOperation(op, args)
 
 	return newCtx, op

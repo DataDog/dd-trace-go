@@ -70,12 +70,12 @@ func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName stri
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, t.cfg.querySpanName, opts...)
 
-	ctx, request := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, nil, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      queryString,
 		OperationName: operationName,
 		Variables:     variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, span, graphqlsec.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, request, span, graphqlsec.ExecutionOperationArgs{
 		Query:         queryString,
 		OperationName: operationName,
 		Variables:     variables,
@@ -119,7 +119,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	}
 	span, ctx := ddtracer.StartSpanFromContext(ctx, "graphql.field", opts...)
 
-	ctx, field := graphqlsec.StartResolveOperation(ctx, span, graphqlsec.ResolveOperationArgs{
+	ctx, field := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*graphqlsec.ExecutionOperation](ctx), span, graphqlsec.ResolveOperationArgs{
 		TypeName:  typeName,
 		FieldName: fieldName,
 		Arguments: arguments,

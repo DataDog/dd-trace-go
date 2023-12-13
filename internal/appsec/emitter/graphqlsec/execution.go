@@ -34,13 +34,12 @@ type ExecutionOperationArgs struct {
 }
 
 // StartExecutionOperation starts a new GraphQL query operation, along with the given arguments, and
-// emits a start event up in the operation stack.
-func StartExecutionOperation(ctx context.Context, span trace.TagSetter, args ExecutionOperationArgs, listeners ...dyngo.DataListener) (context.Context, *ExecutionOperation) {
-	// The parent will typically be the Request operation that previously fired...
-	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
-
+// emits a start event up in the operation stack. The operation is tracked on the returned context,
+// and can be extracted later on using FromContext.
+func StartExecutionOperation(ctx context.Context, parent *RequestOperation, span trace.TagSetter, args ExecutionOperationArgs, listeners ...dyngo.DataListener) (context.Context, *ExecutionOperation) {
 	if span == nil {
-		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
+		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs). Child
+		// operations might have spans however... and these should be used then.
 		span = trace.NoopTagSetter{}
 	}
 
@@ -51,7 +50,7 @@ func StartExecutionOperation(ctx context.Context, span trace.TagSetter, args Exe
 	for _, l := range listeners {
 		op.OnData(l)
 	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := contextWithValue(ctx, op)
 	dyngo.StartOperation(op, args)
 
 	return newCtx, op

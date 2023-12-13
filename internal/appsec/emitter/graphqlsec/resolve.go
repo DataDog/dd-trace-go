@@ -32,19 +32,14 @@ type ResolveOperationArgs struct {
 }
 
 // StartResolveOperation starts a new GraphQL Resolve operation, along with the given arguments, and
-// emits a start event up in the operation stack.
-func StartResolveOperation(ctx context.Context, span trace.TagSetter, args ResolveOperationArgs, listeners ...dyngo.DataListener) (context.Context, *ResolveOperation) {
-	// The parent will typically be the Execution operation that previously fired...
-	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
-
+// emits a start event up in the operation stack. The operation is tracked on the returned context,
+// and can be extracted later on using FromContext.
+func StartResolveOperation(ctx context.Context, parent *ExecutionOperation, span trace.TagSetter, args ResolveOperationArgs) (context.Context, *ResolveOperation) {
 	op := &ResolveOperation{
 		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}
-	for _, l := range listeners {
-		op.OnData(l)
-	}
-	newCtx := context.WithValue(ctx, contextKey{}, op)
+	newCtx := contextWithValue(ctx, op)
 	dyngo.StartOperation(op, args)
 
 	return newCtx, op
