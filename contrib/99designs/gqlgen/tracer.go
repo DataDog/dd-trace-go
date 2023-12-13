@@ -106,12 +106,12 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 
 	span, ctx := t.createRootSpan(ctx, opCtx)
 
-	ctx, op := graphqlsec.StartRequest(ctx, span, graphqlsec.RequestArguments{
+	ctx, op := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlsec.StartExecution(ctx, span, graphqlsec.ExecutionArguments{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, span, graphqlsec.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -152,7 +152,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
 
-	ctx, op := graphqlsec.StartField(ctx, span, graphqlsec.FieldArguments{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, span, graphqlsec.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,

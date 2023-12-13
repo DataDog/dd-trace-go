@@ -46,7 +46,7 @@ func SupportsAddress(addr string) bool {
 func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
 	var rulesMonitoringOnce sync.Once
 
-	return graphqlsec.OnRequestStart(func(request *graphqlsec.Request, args graphqlsec.RequestArguments) {
+	return graphqlsec.OnRequestOperationStart(func(request *graphqlsec.RequestOperation, args graphqlsec.RequestOperationArgs) {
 		wafCtx := waf.NewContext(handle)
 		if wafCtx == nil {
 			return
@@ -60,7 +60,7 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 			request.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
-		request.On(graphqlsec.OnExecutionStart(func(query *graphqlsec.Execution, args graphqlsec.ExecutionArguments) {
+		request.On(graphqlsec.OnExecutionOperationStart(func(query *graphqlsec.ExecutionOperation, args graphqlsec.ExecutionOperationArgs) {
 			var (
 				allResolvers   map[string][]map[string]any
 				allResolversMu sync.Mutex
@@ -71,7 +71,7 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 				allResolvers = make(map[string][]map[string]any)
 			}
 
-			query.On(graphqlsec.OnFieldStart(func(field *graphqlsec.Field, args graphqlsec.FieldArguments) {
+			query.On(graphqlsec.OnResolveOperationStart(func(field *graphqlsec.ResolveOperation, args graphqlsec.ResolveOperationArgs) {
 				if _, found := addresses[graphQLServerResolverAddr]; found {
 					wafResult := listener.RunWAF(
 						wafCtx,
@@ -94,12 +94,12 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 					}()
 				}
 
-				field.On(graphqlsec.OnFieldFinish(func(field *graphqlsec.Field, res graphqlsec.FieldResult) {
+				field.On(graphqlsec.OnResolveOperationFinish(func(field *graphqlsec.ResolveOperation, res graphqlsec.ResolveOperationRes) {
 					trace.SetEventSpanTags(field, field.Events())
 				}))
 			}))
 
-			query.On(graphqlsec.OnExecutionFinish(func(query *graphqlsec.Execution, res graphqlsec.ExecutionResult) {
+			query.On(graphqlsec.OnExecutionOperationFinish(func(query *graphqlsec.ExecutionOperation, res graphqlsec.ExecutionOperationRes) {
 				// Note: allResolvers is only populated if the address is indeed supported.
 				if len(allResolvers) > 0 {
 					// TODO: this is currently happening AFTER the resolvers have all run, which is... too late to block side-effects.
@@ -110,7 +110,7 @@ func NewWAFEventListener(handle *waf.Handle, _ sharedsec.Actions, addresses map[
 			}))
 		}))
 
-		request.On(graphqlsec.OnRequestFinish(func(request *graphqlsec.Request, res graphqlsec.RequestResult) {
+		request.On(graphqlsec.OnRequestOperationFinish(func(request *graphqlsec.RequestOperation, res graphqlsec.RequestOperationRes) {
 			defer wafCtx.Close()
 
 			overall, internal := wafCtx.TotalRuntime()

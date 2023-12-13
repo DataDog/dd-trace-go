@@ -17,23 +17,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
 
-type Request struct {
+type RequestOperation struct {
 	dyngo.Operation
 	trace.TagSetter
 	trace.SecurityEventsHolder
 }
 
-// RequestArguments describes arguments passed to a GraphQL request.
-type RequestArguments struct {
+// RequestOperationArgs describes arguments passed to a GraphQL request.
+type RequestOperationArgs struct {
 	RawQuery      string         // The raw, not-yet-parsed GraphQL query
 	OperationName string         // The user-provided operation name for the query
 	Variables     map[string]any // The user-provided variables object for this request
 }
 
-// StartRequest starts a new GraphQL request operation, along with the given arguments, and emits a
-// start event up in the operation stack. The operation is usually linked to tge global root
+// StartRequestOperation starts a new GraphQL request operation, along with the given arguments, and
+// emits a start event up in the operation stack. The operation is usually linked to tge global root
 // operation.
-func StartRequest(ctx context.Context, span trace.TagSetter, args RequestArguments) (context.Context, *Request) {
+func StartRequestOperation(ctx context.Context, span trace.TagSetter, args RequestOperationArgs) (context.Context, *RequestOperation) {
 	// The parent will typically be nil (the root operation will be used)
 	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
 
@@ -42,7 +42,7 @@ func StartRequest(ctx context.Context, span trace.TagSetter, args RequestArgumen
 		span = trace.NoopTagSetter{}
 	}
 
-	op := &Request{
+	op := &RequestOperation{
 		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}
@@ -54,28 +54,28 @@ func StartRequest(ctx context.Context, span trace.TagSetter, args RequestArgumen
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Request) Finish(res Result) {
-	dyngo.FinishOperation(q, RequestResult(res))
+func (q *RequestOperation) Finish(res Result) {
+	dyngo.FinishOperation(q, RequestOperationRes(res))
 }
 
 type (
-	OnRequestStart  func(*Request, RequestArguments)
-	OnRequestFinish func(*Request, RequestResult)
+	OnRequestOperationStart  func(*RequestOperation, RequestOperationArgs)
+	OnRequestOperationFinish func(*RequestOperation, RequestOperationRes)
 
-	RequestResult Result
+	RequestOperationRes Result
 )
 
 var (
-	requestStartArgsType = reflect.TypeOf((*RequestArguments)(nil)).Elem()
-	requestFinishResType = reflect.TypeOf((*RequestResult)(nil)).Elem()
+	requestOperationStartArgsType = reflect.TypeOf((*RequestOperationArgs)(nil)).Elem()
+	requestOperationFinishResType = reflect.TypeOf((*RequestOperationRes)(nil)).Elem()
 )
 
-func (OnRequestStart) ListenedType() reflect.Type { return requestStartArgsType }
-func (f OnRequestStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Request), v.(RequestArguments))
+func (OnRequestOperationStart) ListenedType() reflect.Type { return requestOperationStartArgsType }
+func (f OnRequestOperationStart) Call(op dyngo.Operation, v interface{}) {
+	f(op.(*RequestOperation), v.(RequestOperationArgs))
 }
 
-func (OnRequestFinish) ListenedType() reflect.Type { return requestFinishResType }
-func (f OnRequestFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Request), v.(RequestResult))
+func (OnRequestOperationFinish) ListenedType() reflect.Type { return requestOperationFinishResType }
+func (f OnRequestOperationFinish) Call(op dyngo.Operation, v interface{}) {
+	f(op.(*RequestOperation), v.(RequestOperationRes))
 }

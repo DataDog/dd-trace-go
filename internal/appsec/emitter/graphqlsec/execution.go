@@ -17,14 +17,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 )
 
-type Execution struct {
+type ExecutionOperation struct {
 	dyngo.Operation
 	trace.TagSetter
 	trace.SecurityEventsHolder
 }
 
-// ExecutionArguments describes arguments passed to a GraphQL query operation.
-type ExecutionArguments struct {
+// ExecutionOperationArgs describes arguments passed to a GraphQL query operation.
+type ExecutionOperationArgs struct {
 	// Variables is the user-provided variables object for the query.
 	Variables map[string]any
 	// Query is the query that is being executed.
@@ -33,9 +33,9 @@ type ExecutionArguments struct {
 	OperationName string
 }
 
-// StartExecution starts a new GraphQL query operation, along with the given arguments, and emits a
-// start event up in the operation stack.
-func StartExecution(ctx context.Context, span trace.TagSetter, args ExecutionArguments, listeners ...dyngo.DataListener) (context.Context, *Execution) {
+// StartExecutionOperation starts a new GraphQL query operation, along with the given arguments, and
+// emits a start event up in the operation stack.
+func StartExecutionOperation(ctx context.Context, span trace.TagSetter, args ExecutionOperationArgs, listeners ...dyngo.DataListener) (context.Context, *ExecutionOperation) {
 	// The parent will typically be the Request operation that previously fired...
 	parent, _ := ctx.Value(contextKey{}).(dyngo.Operation)
 
@@ -44,7 +44,7 @@ func StartExecution(ctx context.Context, span trace.TagSetter, args ExecutionArg
 		span = trace.NoopTagSetter{}
 	}
 
-	op := &Execution{
+	op := &ExecutionOperation{
 		Operation: dyngo.NewOperation(parent),
 		TagSetter: span,
 	}
@@ -59,28 +59,28 @@ func StartExecution(ctx context.Context, span trace.TagSetter, args ExecutionArg
 
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
-func (q *Execution) Finish(res Result) {
-	dyngo.FinishOperation(q, ExecutionResult(res))
+func (q *ExecutionOperation) Finish(res Result) {
+	dyngo.FinishOperation(q, ExecutionOperationRes(res))
 }
 
 type (
-	OnExecutionStart  func(*Execution, ExecutionArguments)
-	OnExecutionFinish func(*Execution, ExecutionResult)
+	OnExecutionOperationStart  func(*ExecutionOperation, ExecutionOperationArgs)
+	OnExecutionOperationFinish func(*ExecutionOperation, ExecutionOperationRes)
 
-	ExecutionResult Result
+	ExecutionOperationRes Result
 )
 
 var (
-	executionStartArgsType = reflect.TypeOf((*ExecutionArguments)(nil)).Elem()
-	executionFinishResType = reflect.TypeOf((*ExecutionResult)(nil)).Elem()
+	executionOperationStartArgsType = reflect.TypeOf((*ExecutionOperationArgs)(nil)).Elem()
+	executionOperationFinishResType = reflect.TypeOf((*ExecutionOperationRes)(nil)).Elem()
 )
 
-func (OnExecutionStart) ListenedType() reflect.Type { return executionStartArgsType }
-func (f OnExecutionStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Execution), v.(ExecutionArguments))
+func (OnExecutionOperationStart) ListenedType() reflect.Type { return executionOperationStartArgsType }
+func (f OnExecutionOperationStart) Call(op dyngo.Operation, v interface{}) {
+	f(op.(*ExecutionOperation), v.(ExecutionOperationArgs))
 }
 
-func (OnExecutionFinish) ListenedType() reflect.Type { return executionFinishResType }
-func (f OnExecutionFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Execution), v.(ExecutionResult))
+func (OnExecutionOperationFinish) ListenedType() reflect.Type { return executionOperationFinishResType }
+func (f OnExecutionOperationFinish) Call(op dyngo.Operation, v interface{}) {
+	f(op.(*ExecutionOperation), v.(ExecutionOperationRes))
 }

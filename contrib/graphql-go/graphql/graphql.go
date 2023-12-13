@@ -65,7 +65,7 @@ type datadogExtension struct{ config }
 type contextKey struct{}
 type contextData struct {
 	serverSpan    tracer.Span
-	requestOp     *graphqlsec.Request
+	requestOp     *graphqlsec.RequestOperation
 	variables     map[string]any
 	query         string
 	operationName string
@@ -100,7 +100,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	)
-	ctx, request := graphqlsec.StartRequest(ctx, span, graphqlsec.RequestArguments{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      params.RequestString,
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,
@@ -205,7 +205,7 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
 
-	ctx, op := graphqlsec.StartExecution(ctx, span, graphqlsec.ExecutionArguments{
+	ctx, op := graphqlsec.StartExecutionOperation(ctx, span, graphqlsec.ExecutionOperationArgs{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
@@ -261,7 +261,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
 
-	ctx, op := graphqlsec.StartField(ctx, span, graphqlsec.FieldArguments{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, span, graphqlsec.ResolveOperationArgs{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),
