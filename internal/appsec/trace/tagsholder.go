@@ -5,14 +5,27 @@
 
 package trace
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+)
+
+type serializableTag struct {
+	tag any
+}
+
+func (t serializableTag) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.tag)
+}
 
 // TagsHolder wraps a map holding tags. The purpose of this struct is to be
 // used by composition in an Operation to allow said operation to handle tags
 // addition/retrieval.
 type TagsHolder struct {
 	tags map[string]any
-	mu   sync.Mutex
+	mu   sync.RWMutex
 }
 
 // NewTagsHolder returns a new instance of a TagsHolder struct.
@@ -27,9 +40,31 @@ func (m *TagsHolder) SetTag(k string, v any) {
 	m.tags[k] = v
 }
 
-// Tags returns the tags map
+// AddSerializableTag adds the key/value pair to the tags map. Value is serialized as JSON.
+func (m *TagsHolder) AddSerializableTag(k string, v any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tags[k] = serializableTag{tag: v}
+}
+
+// Tags returns a copy of the aggregated tags map (normal and serialized)
 func (m *TagsHolder) Tags() map[string]any {
-	return m.tags
+	tags := make(map[string]any, len(m.tags))
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for k, v := range m.tags {
+		tags[k] = v
+		marshaler, ok := v.(serializableTag)
+		if !ok {
+			continue
+		}
+		if marshaled, err := marshaler.MarshalJSON(); err == nil {
+			tags[k] = string(marshaled)
+		} else {
+			log.Debug("appsec: could not marshal serializable tag %s: %v", k, err)
+		}
+	}
+	return tags
 }
 
 var _ TagSetter = (*TagsHolder)(nil) // *TagsHolder must implement TagSetter

@@ -162,7 +162,7 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
 	}
 
 	return listeners, nil

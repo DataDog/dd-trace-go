@@ -7,9 +7,11 @@ package httpsec
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -61,7 +63,7 @@ func SupportsAddress(addr string) bool {
 }
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
-func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, limiter limiter.Limiter) dyngo.EventListener {
+func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, apiSecCfg *internal.APISecConfig, limiter limiter.Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
 	wafDiags := handle.Diagnostics()
@@ -88,7 +90,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 			}))
 		}
 
-		values := make(map[string]any, 7)
+		values := make(map[string]any, 8)
 		for addr := range addresses {
 			switch addr {
 			case HTTPClientIPAddr:
@@ -117,8 +119,16 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 				}
 			}
 		}
+		if canExtractSchemas(apiSecCfg) {
+			// This address will be passed as persistent. The WAF will keep it in store and trigger schema extraction
+			// for each run.
+			values["waf.context.processor"] = map[string]any{"extract-schema": true}
+		}
 
 		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, timeout)
+		for tag, value := range wafResult.Derivatives {
+			op.AddSerializableTag(tag, value)
+		}
 		if wafResult.HasActions() || wafResult.HasEvents() {
 			interrupt := listener.ProcessActions(op, actions, wafResult.Actions)
 			listener.AddSecurityEvents(op, limiter, wafResult.Events)
@@ -132,6 +142,9 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 		if _, ok := addresses[ServerRequestBodyAddr]; ok {
 			op.On(httpsec.OnSDKBodyOperationStart(func(sdkBodyOp *httpsec.SDKBodyOperation, args httpsec.SDKBodyOperationArgs) {
 				wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, timeout)
+				for tag, value := range wafResult.Derivatives {
+					op.AddSerializableTag(tag, value)
+				}
 				if wafResult.HasActions() || wafResult.HasEvents() {
 					listener.ProcessHTTPSDKAction(sdkBodyOp, actions, wafResult.Actions)
 					listener.AddSecurityEvents(op, limiter, wafResult.Events)
@@ -143,7 +156,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 		op.On(httpsec.OnHandlerOperationFinish(func(op *httpsec.Operation, res httpsec.HandlerOperationRes) {
 			defer wafCtx.Close()
 
-			values := make(map[string]any, 2)
+			values = make(map[string]any, 2)
 			if _, ok := addresses[ServerResponseStatusAddr]; ok {
 				// serverResponseStatusAddr is a string address, so we must format the status code...
 				values[ServerResponseStatusAddr] = fmt.Sprintf("%d", res.Status)
@@ -172,6 +185,15 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 				log.Debug("appsec: attack detected by the waf")
 				listener.AddSecurityEvents(op, limiter, wafResult.Events)
 			}
+			for tag, value := range wafResult.Derivatives {
+				op.AddSerializableTag(tag, value)
+			}
 		}))
 	})
+}
+
+// canExtractSchemas checks that API Security is enabled and that sampling rate
+// allows extracting schemas
+func canExtractSchemas(cfg *internal.APISecConfig) bool {
+	return cfg != nil && cfg.Enabled && cfg.SampleRate >= rand.Float64()
 }
