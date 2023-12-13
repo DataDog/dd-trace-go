@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	pappsec "github.com/DataDog/dd-trace-go/v2/appsec"
@@ -608,4 +609,57 @@ func TestUnknownResourceName(t *testing.T) {
 	require.Equal(t, "", spans[0].Tag(ext.HTTPRoute))
 	require.Equal(t, "service-name", spans[0].Tag(ext.ServiceName))
 	require.Equal(t, "GET unknown", spans[0].Tag(ext.ResourceName))
+}
+
+// Highly concurrent test running many goroutines to try to uncover concurrency
+// issues such as deadlocks, data races, etc.
+func TestConcurrency(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	expectedCap := 10
+	opts := make([]Option, 0, expectedCap)
+	opts = append(opts, []Option{
+		WithServiceName("foobar"),
+		WithSpanOptions(tracer.Tag("tag1", "value1")),
+	}...)
+	expectedLen := 2
+
+	router := chi.NewRouter()
+	require.Len(t, opts, expectedLen)
+	require.True(t, cap(opts) == expectedCap)
+
+	router.Use(Middleware(opts...))
+	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
+		_, ok := tracer.SpanFromContext(r.Context())
+		require.True(t, ok)
+	})
+
+	// Create a bunch of goroutines that will all try to use the same router using our middleware
+	nbReqGoroutines := 1000
+	var startBarrier, finishBarrier sync.WaitGroup
+	startBarrier.Add(1)
+	finishBarrier.Add(nbReqGoroutines)
+
+	for n := 0; n < nbReqGoroutines; n++ {
+		go func() {
+			startBarrier.Wait()
+			defer finishBarrier.Done()
+
+			for i := 0; i < 100; i++ {
+				r := httptest.NewRequest("GET", "/user/123", nil)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, r)
+			}
+		}()
+	}
+
+	startBarrier.Done()
+	finishBarrier.Wait()
+
+	// Side effects on opts is not the main purpose of this test, but it's worth checking just in case.
+	require.Len(t, opts, expectedLen)
+	require.True(t, cap(opts) == expectedCap)
+	// All the others config data are internal to the closures in Middleware and cannot be tested.
+	// Running this test with -race is the best chance to find a concurrency issue.
 }

@@ -11,6 +11,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -285,7 +286,8 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		return
 	}
 	dbSystem, _ := normalizeDBSystem(tp.driverName)
-	opts := append(spanOpts,
+	opts := options.Copy(spanOpts...)
+	opts = append(opts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),

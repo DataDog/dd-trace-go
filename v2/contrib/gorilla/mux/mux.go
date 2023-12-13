@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	httptraceinternal "github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
@@ -96,10 +97,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	var (
-		match    mux.RouteMatch
-		spanopts []ddtrace.StartSpanOption
-		route    string
+		match mux.RouteMatch
+		route string
 	)
+	spanopts := options.Copy(r.config.spanOpts...)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
@@ -107,7 +108,6 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		route, _ = match.Route.GetPathTemplate()
 	}
-	spanopts = append(spanopts, r.config.spanOpts...)
 	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
