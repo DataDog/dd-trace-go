@@ -23,11 +23,11 @@ type TagSetter interface {
 	SetTag(string, any)
 }
 
-// BlackHoleTagSetter is a TagSetter that does nothing. Useful when no tracer
+// NoopTagSetter is a TagSetter that does nothing. Useful when no tracer
 // Span is available, but a TagSetter is assumed.
-type BlackHoleTagSetter struct{}
+type NoopTagSetter struct{}
 
-func (BlackHoleTagSetter) SetTag(string, any) {
+func (NoopTagSetter) SetTag(string, any) {
 	// Do nothing
 }
 

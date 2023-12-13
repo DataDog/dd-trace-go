@@ -41,7 +41,7 @@ func StartExecution(ctx context.Context, span trace.TagSetter, args ExecutionArg
 
 	if span == nil {
 		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
-		span = trace.BlackHoleTagSetter{}
+		span = trace.NoopTagSetter{}
 	}
 
 	op := &Execution{

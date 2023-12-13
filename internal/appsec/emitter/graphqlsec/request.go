@@ -39,7 +39,7 @@ func StartRequest(ctx context.Context, span trace.TagSetter, args RequestArgumen
 
 	if span == nil {
 		// The span may be nil (e.g: in case of GraphQL subscriptions with certian contribs)
-		span = trace.BlackHoleTagSetter{}
+		span = trace.NoopTagSetter{}
 	}
 
 	op := &Request{
