@@ -469,7 +469,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil, nil, globalSampleRate())
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.SampleTrace(span, false)
+		result := rs.SampleTrace(span)
 		assert.False(result)
 	})
 
@@ -536,7 +536,7 @@ func TestRulesSampler(t *testing.T) {
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.True(result)
 			})
 		}
@@ -565,7 +565,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
@@ -595,7 +595,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.False(result)
 			})
 		}
@@ -662,8 +662,8 @@ func TestRulesSampler(t *testing.T) {
 					rt = tt.rules
 				}
 				rs := newRulesSampler(rt, nil, globalSampleRate())
-				assert.Equal(t, tt.sampleParent, rs.SampleTrace(parent.(*span), false))
-				assert.Equal(t, tt.sampleChild, rs.SampleTrace(child.(*span), false))
+				assert.Equal(t, tt.sampleParent, rs.SampleTrace(parent.(*span)))
+				assert.Equal(t, tt.sampleChild, rs.SampleTrace(child.(*span)))
 			})
 		}
 	})
@@ -918,7 +918,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.SampleTrace(span, false)
+					result := rs.SampleTrace(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
 					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {

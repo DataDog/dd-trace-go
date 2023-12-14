@@ -44,7 +44,7 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *span, atFinish bool) bool { return r.traces.apply(s, atFinish) }
+func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.apply(s) }
 
 func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
 
@@ -308,7 +308,7 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 // provided span. If the rules don't match, and a default rate hasn't been
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
+func (rs *traceRulesSampler) apply(span *span) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -319,26 +319,13 @@ func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
 	rate := rs.globalRate
 	rs.m.RUnlock()
 	for _, rule := range rs.rules {
-		// trace rules are evaluated at the beginning of the span lifecycle.
-		// however during that span tags might be changed / added.
-		// Thus, we have to conduct sampling at the end of span's cycle, accounting for the tags
-		// in such case, atFinish variable allows to reduce the execution time
-		// by only accounting for the rules that had tags, while other rules are not executed.
-
-		// TODO: technically, span.name/ service tags could change the span and cause other tag-less rules
-		//  to evaluate to true. However, previously this was disregarded. Should we keep the behaviour as it was before
-		//  or re-evaluate all the rules?
-		//if atFinish && len(rule.Tags) == 0 {
-		//	continue
-		//}
+		// trace rules are evaluated at the end of the span lifecycle.
+		// since during that span tags might be changed / added.
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
 			break
 		}
-	}
-	if atFinish && !matched {
-		return false
 	}
 	if !matched && math.IsNaN(rate) {
 		// no matching rule or global rate, so we want to fall back
