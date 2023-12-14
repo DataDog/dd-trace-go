@@ -15,7 +15,7 @@ echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
 
 function gotestsum_runner() {
-  report=$1; shift
+  report=$1; shift; shift
   gotestsum --junitfile "$report" -- -v "$@"
 }
 
