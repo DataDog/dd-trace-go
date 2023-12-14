@@ -21,7 +21,6 @@ func BenchmarkGraphQL(b *testing.B) {
 	type objectType struct {
 		id string
 	}
-
 	topLevelType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "TopLevel",
 		Fields: graphql.Fields{
@@ -68,27 +67,20 @@ func BenchmarkGraphQL(b *testing.B) {
 				},
 				Resolve: func(p graphql.ResolveParams) (any, error) {
 					obj := p.Args["map"].(map[string]any)
-
 					key := p.Args["key"].(string)
 					ids := obj[key].([]any)
-
 					index := p.Args["index"].(int)
 					id := ids[index].(string)
-
 					return &objectType{id}, nil
 				},
 			},
 		},
 	})
-
-	restore := enableAppSecBench(b)
-	defer restore()
-
+	defer enableAppSecBench(b)()
 	const (
 		topLevelAttack = "he protec"
 		nestedAttack   = "he attac, but most importantly: he Tupac"
 	)
-
 	testCases := map[string]struct {
 		query     string
 		variables map[string]any
@@ -136,13 +128,10 @@ func BenchmarkGraphQL(b *testing.B) {
 	b.Run("version=baseline", func(b *testing.B) {
 		for name, tc := range testCases {
 			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
-
 				b.StopTimer()
 				b.ReportAllocs()
-
 				schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: rootQuery})
 				require.NoError(b, err)
-
 				for i := 0; i < b.N; i++ {
 					b.StartTimer()
 					resp := graphql.Do(graphql.Params{
@@ -163,7 +152,6 @@ func BenchmarkGraphQL(b *testing.B) {
 			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
-
 				opts := []Option{WithServiceName("test-graphql-service")}
 				schema, err := NewSchema(
 					graphql.SchemaConfig{
@@ -171,10 +159,8 @@ func BenchmarkGraphQL(b *testing.B) {
 					}, opts...,
 				)
 				require.NoError(b, err)
-
 				mt := mocktracer.Start()
 				defer mt.Stop()
-
 				for i := 0; i < b.N; i++ {
 					b.StartTimer()
 					resp := graphql.Do(graphql.Params{
@@ -185,7 +171,6 @@ func BenchmarkGraphQL(b *testing.B) {
 					})
 					b.StopTimer()
 					require.Empty(b, resp.Errors)
-
 					spans := mt.FinishedSpans()
 					require.Len(b, spans, 6)
 					mt.Reset()
@@ -257,26 +242,21 @@ func enableAppSecBench(b *testing.B) func() {
 			}
 		]
 	}`
-
 	tmpDir, err := os.MkdirTemp("", "dd-trace-go.graphql-go.graphql.appsec_test.rules-*")
 	require.NoError(b, err)
 	rulesFile := path.Join(tmpDir, "rules.json")
 	err = os.WriteFile(rulesFile, []byte(rules), 0644)
 	require.NoError(b, err)
-
 	b.Setenv("DD_APPSEC_ENABLED", "1")
 	b.Setenv("DD_APPSEC_RULES", rulesFile)
 	appsec.Start()
-
 	restore := func() {
 		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-
 	if !appsec.Enabled() {
 		restore()
 		b.Skip("could not enable appsec: this platform is likely not supported")
 	}
-
 	return restore
 }

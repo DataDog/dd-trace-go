@@ -35,7 +35,6 @@ func Test(t *testing.T) {
 			},
 		},
 	})
-
 	opts := []Option{WithServiceName("test-graphql-service")}
 	schema, err := NewSchema(
 		graphql.SchemaConfig{
@@ -47,22 +46,18 @@ func Test(t *testing.T) {
 	t.Run("single", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		resp := graphql.Do(graphql.Params{
 			Schema:        schema,
 			RequestString: `query TestQuery { hello, helloNonTrivial }`,
 			OperationName: "TestQuery",
 		})
 		require.Empty(t, resp.Errors)
-
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 6)
-
 		traceID := spans[0].TraceID()
 		for i := 1; i < len(spans); i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
 		}
-
 		assertSpanMatches(t, spans[0],
 			hasNoTag(ext.Error),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -72,7 +67,6 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[1],
 			hasNoTag(ext.Error),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -82,11 +76,9 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.validate"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		// Fields may be resolved in any order, so span ordering below is not deterministic
 		expectedFields := []string{"hello", "helloNonTrivial"}
 		var foundField string
-
 		assertSpanMatches(t, spans[2],
 			hasTagFrom(tagGraphqlField, &expectedFields, &foundField),
 			hasNoTag(ext.Error),
@@ -96,7 +88,6 @@ func Test(t *testing.T) {
 			hasTagf(ext.ResourceName, "Query.%s", &foundField),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[3],
 			hasTagFrom(tagGraphqlField, &expectedFields, &foundField),
 			hasNoTag(ext.Error),
@@ -106,7 +97,6 @@ func Test(t *testing.T) {
 			hasTagf(ext.ResourceName, "Query.%s", &foundField),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[4],
 			hasNoTag(ext.Error),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -116,7 +106,6 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.execute"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[5],
 			hasNoTag(ext.Error),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -129,7 +118,6 @@ func Test(t *testing.T) {
 	t.Run("multiple", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		for i := 0; i < 2; i++ {
 			resp := graphql.Do(graphql.Params{
 				Schema:        schema,
@@ -138,16 +126,13 @@ func Test(t *testing.T) {
 			})
 			require.Empty(t, resp.Errors)
 		}
-
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 12)
-
 		// First trace
 		traceID := spans[0].TraceID()
 		for i := 1; i < 6; i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
 		}
-
 		// Second trace
 		traceID = spans[6].TraceID()
 		for i := 7; i < len(spans); i++ {
@@ -158,7 +143,6 @@ func Test(t *testing.T) {
 	t.Run("request fails parsing", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		resp := graphql.Do(graphql.Params{
 			Schema:        schema,
 			RequestString: `query is invalid`,
@@ -166,10 +150,8 @@ func Test(t *testing.T) {
 		})
 		// There is a single error (the query is invalid)
 		require.Len(t, resp.Errors, 1)
-
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 2)
-
 		assertSpanMatches(t, spans[0],
 			hasTag(ext.Error, resp.Errors[0].OriginalError()),
 			hasTag(tagGraphqlOperationName, "Båd"),
@@ -179,7 +161,6 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[1],
 			hasTag(ext.Error, resp.Errors[0].OriginalError()),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -192,7 +173,6 @@ func Test(t *testing.T) {
 	t.Run("request fails validation", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
 		resp := graphql.Do(graphql.Params{
 			Schema:        schema,
 			RequestString: `query TestQuery { hello, helloNonTrivial, invalidField }`,
@@ -200,10 +180,8 @@ func Test(t *testing.T) {
 		})
 		// There is a single error (the query is invalid)
 		require.Len(t, resp.Errors, 1)
-
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 3)
-
 		assertSpanMatches(t, spans[0],
 			hasNoTag(ext.Error),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -213,7 +191,6 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[1],
 			hasTag(ext.Error, resp.Errors[0]),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
@@ -223,7 +200,6 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.validate"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-
 		assertSpanMatches(t, spans[2],
 			hasTag(ext.Error, resp.Errors[0]),
 			hasTag(ext.ServiceName, "test-graphql-service"),

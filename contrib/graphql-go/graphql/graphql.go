@@ -54,9 +54,7 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 	for _, opt := range options {
 		opt(&extension.config)
 	}
-
 	config.Extensions = append(config.Extensions, extension)
-
 	return graphql.NewSchema(config)
 }
 
@@ -90,7 +88,6 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 			ctx = context.TODO()
 		}
 	}
-
 	// This span allows us to regroup parse, validate & resolvers under a single service entry span. It is finished once
 	// the execution is done (or after parse or validate have failed).
 	span, ctx := tracer.StartSpanFromContext(ctx, spanServer,
@@ -105,7 +102,6 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,
 	})
-
 	return context.WithValue(ctx, contextKey{}, contextData{
 		query:         params.RequestString,
 		operationName: params.OperationName,
@@ -138,7 +134,6 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanParse, opts...)
-
 	return ctx, func(err error) {
 		span.Finish(tracer.WithError(err))
 		if err != nil {
@@ -166,7 +161,6 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanValidate, opts...)
-
 	return ctx, func(errs []gqlerrors.FormattedError) {
 		span.Finish(tracer.WithError(toError(errs)))
 		if len(errs) > 0 {
@@ -174,7 +168,6 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 			for _, e := range errs[1:] {
 				err = multierror.Append(err, e)
 			}
-
 			// There were errors, so the query will not be executed, finish the graphql.server span now.
 			data.finish(nil, err)
 		}
@@ -199,13 +192,11 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
-
 	ctx, op := graphqlsec.StartExecutionOperation(ctx, graphqlsec.FromContext[*graphqlsec.RequestOperation](ctx), span, graphqlsec.ExecutionOperationArgs{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
 	})
-
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
 		defer func() {
@@ -231,7 +222,6 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	default:
 		operationName = info.FieldName
 	}
-
 	opts := []ddtrace.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
@@ -248,15 +238,12 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
-
 	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*graphqlsec.ExecutionOperation](ctx), span, graphqlsec.ResolveOperationArgs{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),
 	})
-
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
 		op.Finish(graphqlsec.ResolveOperationRes{Error: err, Data: result})

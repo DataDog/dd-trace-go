@@ -23,7 +23,6 @@ func TestAppSec(t *testing.T) {
 	type objectType struct {
 		id string
 	}
-
 	topLevelType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "TopLevel",
 		Fields: graphql.Fields{
@@ -70,23 +69,18 @@ func TestAppSec(t *testing.T) {
 				},
 				Resolve: func(p graphql.ResolveParams) (any, error) {
 					obj := p.Args["map"].(map[string]any)
-
 					key := p.Args["key"].(string)
 					ids := obj[key].([]any)
-
 					index := p.Args["index"].(int)
 					id := ids[index].(string)
-
 					return &objectType{id}, nil
 				},
 			},
 		},
 	})
-
 	opts := []Option{WithServiceName("test-graphql-service")}
 	schema, err := NewSchema(graphql.SchemaConfig{Query: rootQuery}, opts...)
 	require.NoError(t, err)
-
 	restore := enableAppSec(t)
 	defer restore()
 
@@ -95,7 +89,6 @@ func TestAppSec(t *testing.T) {
 			topLevelAttack = "he protec"
 			nestedAttack   = "he attac, but most importantly: he Tupac"
 		)
-
 		testCases := map[string]struct {
 			query     string
 			variables map[string]any
@@ -144,7 +137,6 @@ func TestAppSec(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
-
 				resp := graphql.Do(graphql.Params{
 					Schema:         schema,
 					RequestString:  tc.query,
@@ -152,18 +144,14 @@ func TestAppSec(t *testing.T) {
 					VariableValues: tc.variables,
 					Context:        context.Background(),
 				})
-
 				// Ensure the query produced the expected results...
 				require.Empty(t, resp.Errors)
 				require.Equal(t, map[string]any{"topLevel": map[string]any{"nested": fmt.Sprintf("%s/%s", topLevelAttack, nestedAttack)}}, resp.Data)
-
 				// Ensure the query produced the expected appsec events
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
-
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
 				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
-
 				events := make(map[string]string)
 				type ddAppsecJSON struct {
 					Triggers []struct {
@@ -172,7 +160,6 @@ func TestAppSec(t *testing.T) {
 						} `json:"rule"`
 					} `json:"triggers"`
 				}
-
 				// Search for AppSec events in the set of spans
 				for _, span := range spans {
 					jsonText, ok := span.Tag("_dd.appsec.json").(string)
@@ -199,7 +186,6 @@ func TestAppSec(t *testing.T) {
 					}
 					events[ruleID] = origin
 				}
-
 				// Ensure they match the expected outcome
 				require.Equal(t, tc.events, events)
 			})
@@ -269,29 +255,24 @@ func enableAppSec(t *testing.T) func() {
 			}
 		]
 	}`
-
 	tmpDir, err := os.MkdirTemp("", "dd-trace-go.graphql-go.graphql.appsec_test.rules-*")
 	require.NoError(t, err)
 	rulesFile := path.Join(tmpDir, "rules.json")
 	err = os.WriteFile(rulesFile, []byte(rules), 0644)
 	require.NoError(t, err)
-
 	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
 	appsec.Start()
-
 	restore := func() {
 		appsec.Stop()
 		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
 		_ = os.RemoveAll(tmpDir)
 	}
-
 	if !appsec.Enabled() {
 		restore()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
-
 	return restore
 }
 

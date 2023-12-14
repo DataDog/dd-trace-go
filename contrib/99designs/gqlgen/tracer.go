@@ -65,12 +65,11 @@ func init() {
 }
 
 const (
-	readOp       = "graphql.read"
-	parsingOp    = "graphql.parse"
-	validationOp = "graphql.validate"
-	executeOp    = "graphql.execute"
-	fieldOp      = "graphql.field"
-
+	readOp                  = "graphql.read"
+	parsingOp               = "graphql.parse"
+	validationOp            = "graphql.validate"
+	executeOp               = "graphql.execute"
+	fieldOp                 = "graphql.field"
 	tagGraphqlSource        = "graphql.source"
 	tagGraphqlField         = "graphql.field"
 	tagGraphqlOperationType = "graphql.operation.type"
@@ -103,9 +102,7 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
-
 	span, ctx := t.createRootSpan(ctx, opCtx)
-
 	ctx, req := graphqlsec.StartRequestOperation(ctx, nil /* root */, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
@@ -116,7 +113,6 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-
 	responseHandler := next(ctx)
 	return func(ctx context.Context) *graphql.Response {
 		response := responseHandler(ctx)
@@ -127,7 +123,6 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			}
 			defer span.Finish(tracer.WithError(err))
 		}
-
 		query.Finish(graphqlsec.ExecutionOperationRes{
 			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 			Error: response.Errors,
@@ -136,7 +131,6 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 			Error: response.Errors,
 		})
-
 		return response
 	}
 }
@@ -144,7 +138,6 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
 	fieldCtx := graphql.GetFieldContext(ctx)
-
 	opts := []tracer.StartSpanOption{
 		tracer.Tag(tagGraphqlField, fieldCtx.Field.Name),
 		tracer.Tag(tagGraphqlOperationType, opCtx.Operation.Operation),
@@ -157,7 +150,6 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-
 	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*graphqlsec.ExecutionOperation](ctx), span, graphqlsec.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
@@ -165,9 +157,7 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
 	})
 	defer func() { op.Finish(graphqlsec.ResolveOperationRes{Data: res, Error: err}) }()
-
 	res, err = next(ctx)
-
 	return
 }
 
@@ -192,14 +182,12 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-
 	var rootSpan ddtrace.Span
 	if opCtx.Operation.Operation != ast.Subscription {
 		// Subscriptions are long running queries which may remain open indefinitely
 		// until the subscription ends. We do not create the root span for these.
 		rootSpan, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(opCtx), opts...)
 	}
-
 	createChildSpan := func(name string, start, finish time.Time) {
 		childOpts := []ddtrace.StartSpanOption{
 			tracer.StartTime(start),
@@ -217,7 +205,6 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 	createChildSpan(readOp, opCtx.Stats.Read.Start, opCtx.Stats.Read.End)
 	createChildSpan(parsingOp, opCtx.Stats.Parsing.Start, opCtx.Stats.Parsing.End)
 	createChildSpan(validationOp, opCtx.Stats.Validation.Start, opCtx.Stats.Validation.End)
-
 	return rootSpan, ctx
 }
 

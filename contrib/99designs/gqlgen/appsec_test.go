@@ -34,7 +34,6 @@ func TestAppSec(t *testing.T) {
 			topLevelAttack = "he protec"
 			nestedAttack   = "he attac, but most importantly: he Tupac"
 		)
-
 		schema := gqlparser.MustLoadSchema(&ast.Source{Input: `type Query {
 			topLevel(id: String!): TopLevel!
 			topLevelMapped(map: MapInput!, key: String!, index: Int!): TopLevel!
@@ -49,7 +48,6 @@ func TestAppSec(t *testing.T) {
 			bool: Boolean!
 			float: Float!
 		}`})
-
 		server := handler.New(&graphql.ExecutableSchemaMock{
 			ExecFunc:   execFunc,
 			SchemaFunc: func() *ast.Schema { return schema },
@@ -57,7 +55,6 @@ func TestAppSec(t *testing.T) {
 		server.Use(NewTracer())
 		server.AddTransport(transport.POST{})
 		c := client.New(server)
-
 		testCases := map[string]struct {
 			query     string
 			variables map[string]any
@@ -101,7 +98,6 @@ func TestAppSec(t *testing.T) {
 				},
 			},
 		}
-
 		for name, tc := range testCases {
 			t.Run(name, func(t *testing.T) {
 				mt := mocktracer.Start()
@@ -159,7 +155,6 @@ func TestAppSec(t *testing.T) {
 					}
 					events[ruleID] = origin
 				}
-
 				// Ensure they match the expected outcome
 				require.Equal(t, tc.events, events)
 			})
@@ -258,49 +253,30 @@ func enableAppSec(t *testing.T) func() {
 			}
 		]
 	}`
-
 	tmpDir, err := os.MkdirTemp("", "dd-trace-go.graphql-go.graphql.appsec_test.rules-*")
 	require.NoError(t, err)
 	rulesFile := path.Join(tmpDir, "rules.json")
 	err = os.WriteFile(rulesFile, []byte(rules), 0644)
 	require.NoError(t, err)
-
-	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
-	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
+	t.Setenv("DD_APPSEC_ENABLED", "1")
+	t.Setenv("DD_APPSEC_RULES", rulesFile)
 	appsec.Start()
-
-	restore := func() {
+	cleanup := func() {
 		appsec.Stop()
-		restoreDdAppsecEnabled()
-		restoreDdAppsecRules()
 		_ = os.RemoveAll(tmpDir)
 	}
-
 	if !appsec.Enabled() {
-		restore()
+		cleanup()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
-
-	return restore
-}
-
-// setEnv sets an the environment variable named `name` to `value` and returns
-// a function that restores the variable to it's original value.
-func setEnv(name string, value string) func() {
-	oldVal := os.Getenv(name)
-	os.Setenv(name, value)
-	return func() {
-		os.Setenv(name, oldVal)
-	}
+	return cleanup
 }
 
 func execFunc(ctx context.Context) graphql.ResponseHandler {
 	type topLevel struct {
 		id string
 	}
-
 	op := graphql.GetOperationContext(ctx)
-
 	switch op.Operation.Operation {
 	case ast.Query:
 		return func(ctx context.Context) *graphql.Response {
@@ -340,7 +316,6 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 						return nil, fmt.Errorf("unknown field: %s", field.Name)
 					}
 				})
-
 				if err != nil {
 					errors = append(errors, gqlerror.Errorf("%v", err))
 				} else {
@@ -370,7 +345,6 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 					val[field.Alias] = redux
 				}
 			}
-
 			data, err := json.Marshal(val)
 			if err != nil {
 				errors = append(errors, gqlerror.Errorf("%v", err))
@@ -380,7 +354,6 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 				Errors: errors,
 			}
 		}
-
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
 	}
