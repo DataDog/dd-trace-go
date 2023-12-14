@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -48,10 +49,10 @@ type agentTraceWriter struct {
 	prioritySampling *prioritySampler
 
 	// statsd is used to send metrics
-	statsd statsdClient
+	statsd globalinternal.StatsdClient
 }
 
-func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient statsdClient) *agentTraceWriter {
+func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
 	return &agentTraceWriter{
 		config:           c,
 		payload:          newPayload(),
@@ -96,8 +97,8 @@ func (h *agentTraceWriter) flush() {
 			p.clear()
 
 			<-h.climit
-			h.wg.Done()
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
+			h.wg.Done()
 		}(time.Now())
 
 		var count, size int
@@ -135,10 +136,10 @@ type logTraceWriter struct {
 	buf       bytes.Buffer
 	hasTraces bool
 	w         io.Writer
-	statsd    statsdClient
+	statsd    globalinternal.StatsdClient
 }
 
-func newLogTraceWriter(c *config, statsdClient statsdClient) *logTraceWriter {
+func newLogTraceWriter(c *config, statsdClient globalinternal.StatsdClient) *logTraceWriter {
 	w := &logTraceWriter{
 		config: c,
 		w:      logWriter,

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -30,6 +31,7 @@ const componentName = "google.golang.org/grpc.v12"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("google.golang.org/grpc/v12")
 }
 
 // UnaryServerInterceptor will trace requests to the given grpc server.
@@ -71,8 +73,7 @@ func startServerSpanFromContext(ctx context.Context, method string, cfg *interce
 	}
 	// copy opts in case the caller reuses the slice in parallel
 	// we will add the items in extraOpts
-	optsLocal := make([]tracer.StartSpanOption, len(cfg.spanOpts), len(cfg.spanOpts)+len(extraOpts))
-	copy(optsLocal, cfg.spanOpts)
+	optsLocal := options.Copy(cfg.spanOpts...)
 	optsLocal = append(optsLocal, extraOpts...)
 	md, _ := metadata.FromContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {

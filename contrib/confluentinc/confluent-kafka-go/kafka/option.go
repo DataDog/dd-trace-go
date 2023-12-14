@@ -27,7 +27,9 @@ type config struct {
 	producerSpanName    string
 	analyticsRate       float64
 	bootstrapServers    string
+	groupID             string
 	tagFns              map[string]func(msg *kafka.Message) interface{}
+	dataStreamsEnabled  bool
 }
 
 // An Option customizes the config.
@@ -39,6 +41,7 @@ func newConfig(opts ...Option) *config {
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: math.NaN(),
 	}
+	cfg.dataStreamsEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 	if internal.BoolEnv("DD_TRACE_KAFKA_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	}
@@ -111,6 +114,9 @@ func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Optio
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(cg *kafka.ConfigMap) Option {
 	return func(cfg *config) {
+		if groupID, err := cg.Get("group.id", ""); err == nil {
+			cfg.groupID = groupID.(string)
+		}
 		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
 			for _, addr := range strings.Split(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
@@ -120,5 +126,12 @@ func WithConfig(cg *kafka.ConfigMap) Option {
 				}
 			}
 		}
+	}
+}
+
+// WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
+func WithDataStreams() Option {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
 	}
 }

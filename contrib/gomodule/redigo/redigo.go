@@ -29,6 +29,7 @@ const componentName = "gomodule/redigo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/gomodule/redigo")
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing

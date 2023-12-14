@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
+	rules "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
@@ -35,6 +36,8 @@ type (
 		RulesData   []ruleDataEntry `json:"rules_data,omitempty"`
 		Actions     []actionEntry   `json:"actions,omitempty"`
 		CustomRules []interface{}   `json:"custom_rules,omitempty"`
+		Processors  []interface{}   `json:"processors,omitempty"`
+		Scanners    []interface{}   `json:"scanners,omitempty"`
 	}
 
 	ruleDataEntry rc.ASMDataRuleData
@@ -57,7 +60,7 @@ type (
 // defaultRulesFragment returns a rulesFragment created using the default static recommended rules
 func defaultRulesFragment() rulesFragment {
 	var f rulesFragment
-	if err := json.Unmarshal([]byte(staticRecommendedRules), &f); err != nil {
+	if err := json.Unmarshal([]byte(rules.StaticRecommendedRules), &f); err != nil {
 		log.Debug("appsec: error unmarshalling default rules: %v", err)
 	}
 	return f
@@ -71,6 +74,8 @@ func (r_ *rulesFragment) clone() rulesFragment {
 	f.Exclusions = append(f.Exclusions, r_.Exclusions...)
 	f.RulesData = append(f.RulesData, r_.RulesData...)
 	f.CustomRules = append(f.CustomRules, r_.CustomRules...)
+	f.Processors = append(f.Processors, r_.Processors...)
+	f.Scanners = append(f.Scanners, r_.Scanners...)
 	// TODO (Francois Mazeau): copy more fields once we handle them
 	return f
 }
@@ -132,6 +137,8 @@ func (r *rulesManager) compile() {
 		r.latest.Actions = append(r.latest.Actions, v.Actions...)
 		r.latest.RulesData = append(r.latest.RulesData, v.RulesData...)
 		r.latest.CustomRules = append(r.latest.CustomRules, v.CustomRules...)
+		r.latest.Processors = append(r.latest.Processors, v.Processors...)
+		r.latest.Scanners = append(r.latest.Scanners, v.Scanners...)
 	}
 }
 

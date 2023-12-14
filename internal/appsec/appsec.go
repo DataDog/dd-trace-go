@@ -3,20 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
 	"fmt"
 	"sync"
 
+	"github.com/DataDog/appsec-internal-go/limiter"
+	appsecLog "github.com/DataDog/appsec-internal-go/log"
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
-	"github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -47,9 +44,17 @@ func Start(opts ...StartOption) {
 		return
 	}
 
-	// Check whether libddwaf - required for Threats Detection - is supported or not
-	if supported, err := waf.SupportsTarget(); !supported {
-		log.Error("appsec: threats detection is not supported: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	// Check whether libddwaf - required for Threats Detection - is ok or not
+	if ok, err := waf.Health(); !ok {
+		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
+		if set {
+			// DD_APPSEC_ENABLED is explicitly set so we log an error
+			log.Error("appsec: threats detection cannot be enabled for the following reasons: %vappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		} else {
+			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
+			// debug message instead to avoid showing an error to APM-tracing-only users.
+			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+		}
 		return
 	}
 
@@ -66,11 +71,13 @@ func Start(opts ...StartOption) {
 
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
-	appsec.startRC()
+	if err := appsec.startRC(); err != nil {
+		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
+	}
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
-		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", enabledEnvVar)
+		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)
@@ -113,24 +120,14 @@ func setActiveAppSec(a *appsec) {
 
 type appsec struct {
 	cfg       *Config
-	limiter   *TokenTicker
-	rc        *remoteconfig.Client
+	limiter   *limiter.TokenTicker
 	wafHandle *wafHandle
 	started   bool
 }
 
 func newAppSec(cfg *Config) *appsec {
-	var client *remoteconfig.Client
-	var err error
-	if cfg.rc != nil {
-		client, err = remoteconfig.NewClient(*cfg.rc)
-	}
-	if err != nil {
-		log.Error("appsec: Remote config: disabled due to a client creation error: %v", err)
-	}
 	return &appsec{
 		cfg: cfg,
-		rc:  client,
 	}
 }
 
@@ -148,7 +145,7 @@ func (a *appsec) start() error {
 		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
 	}
 
-	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
+	a.limiter = limiter.NewTokenTicker(a.cfg.traceRateLimit, a.cfg.traceRateLimit)
 	a.limiter.Start()
 	// Register the WAF operation event listener
 	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
@@ -180,4 +177,17 @@ func (a *appsec) stop() {
 	// TODO: block until no more requests are using dyngo operations
 
 	a.limiter.Stop()
+}
+
+func init() {
+	appsecLog.SetBackend(appsecLog.Backend{
+		Debug: log.Debug,
+		Info:  log.Info,
+		Warn:  log.Warn,
+		Errorf: func(s string, a ...any) error {
+			err := fmt.Errorf(s, a...)
+			log.Error(err.Error())
+			return err
+		},
+	})
 }

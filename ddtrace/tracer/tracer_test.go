@@ -33,6 +33,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -212,7 +213,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		internal.GetGlobalTracer().(*tracer).pushTrace(&finishedTrace{spans: []*span{}})
+		internal.GetGlobalTracer().(*tracer).pushChunk(&chunk{spans: []*span{}})
 
 		Stop()
 		Stop()
@@ -223,7 +224,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("deadlock/direct", func(t *testing.T) {
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
-		tr.pushTrace(&finishedTrace{spans: []*span{}}) // blocks until worker is started
+		tr.pushChunk(&chunk{spans: []*span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -413,6 +414,9 @@ func TestSamplingDecision(t *testing.T) {
 		span := tracer.StartSpan("name_1").(*span)
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
+		p, ok := span.context.SamplingPriority()
+		require.True(t, ok)
+		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.Metrics[keySamplingPriority])
@@ -706,9 +710,13 @@ func TestTracerStartSpanOptions(t *testing.T) {
 
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer := newTracer()
+	internal.SetGlobalTracer(tracer)
 	defer tracer.Stop()
-	assert := assert.New(t)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
+		assert := assert.New(t)
+		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -723,8 +731,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
-		// Enable 128 bit trace ids
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		assert := assert.New(t)
+		// 128-bit trace ids are enabled by default.
 		opts128 := []StartSpanOption{
 			WithSpanID(987654),
 			StartTime(time.Unix(123456, 0)),
@@ -1037,13 +1045,15 @@ func TestNewSpanChild(t *testing.T) {
 
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
-		if is128 {
-			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		if !is128 {
+			os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+			defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 		}
 		assert := assert.New(t)
 
 		// the tracer must create child spans
 		tracer := newTracer(withTransport(newDefaultTransport()))
+		internal.SetGlobalTracer(tracer)
 		defer tracer.Stop()
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", parent)
@@ -1135,7 +1145,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.Equal(1., s.Metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.Metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
-	p, ok := s.context.samplingPriority()
+	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.Metrics[keySamplingPriority])
 	s.Finish()
@@ -1177,7 +1187,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
-		p, ok := s.context.samplingPriority()
+		p, ok := s.context.SamplingPriority()
 		assert.True(ok)
 		assert.EqualValues(p, prio)
 
@@ -1524,11 +1534,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushTrace(&finishedTrace{[]*span{s}, true})
+	tracer.pushChunk(&chunk{[]*span{s}, true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushTrace(&finishedTrace{[]*span{s}, true})
+	tracer.pushChunk(&chunk{[]*span{s}, true})
 	flush(2)
 }
 
@@ -1551,16 +1561,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushTrace(&finishedTrace{spans: trace})
+	tracer.pushChunk(&chunk{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(&finishedTrace{spans: trace}, t0)
+	assert.Equal(&chunk{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushTrace(&finishedTrace{spans: make([]*span, i)})
+		tracer.pushChunk(&chunk{spans: make([]*span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
@@ -1805,10 +1815,26 @@ func TestGitMetadata(t *testing.T) {
 		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
 	})
 
+	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCD", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo", sp.Meta[maininternal.TraceTagRepositoryURL])
+		assert.Equal("somepath", sp.Meta[maininternal.TraceTagGoPath])
+	})
+
 	t.Run("git-metadata-from-env", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 
-		// git metadata env has priority under DD_TAGS
+		// git metadata env has priority over DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
 
@@ -1822,6 +1848,22 @@ func TestGitMetadata(t *testing.T) {
 
 		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
+	})
+
+	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
+		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
+		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
+
+		tracer, _, _, stop := startTestTracer(t)
+		defer stop()
+		defer maininternal.ResetGitMetadataTags()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request").(*span)
+		sp.context.finish()
+
+		assert.Equal("123456789ABCDE", sp.Meta[maininternal.TraceTagCommitSha])
+		assert.Equal("https://github.com/user/repo_new", sp.Meta[maininternal.TraceTagRepositoryURL])
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
@@ -1885,6 +1927,72 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	}
 }
 
+// BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
+// while partial flushing is enabled.
+func BenchmarkPartialFlushing(b *testing.B) {
+	b.Run("Enabled", func(b *testing.B) {
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
+		genBigTraces(b)
+	})
+	b.Run("Disabled", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+// BenchmarkBigTraces tests the performance of creating a lot of spans in a single thread
+func BenchmarkBigTraces(b *testing.B) {
+	b.Run("Big traces", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+func genBigTraces(b *testing.B) {
+	tracer, transport, flush, stop := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+	defer stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	m := runtime.MemStats{}
+	sumHeapUsageMB := float64(0)
+	heapCounts := 0
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				runtime.ReadMemStats(&m)
+				heapCounts++
+				sumHeapUsageMB += float64(m.HeapInuse) / 1_000_000
+			}
+		}
+	}()
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i := 0; i < 10; i++ {
+			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
+			for i := 0; i < 10_000; i++ {
+				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
+				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
+				sp.Finish()
+			}
+			parent.Finish()
+			go flush(-1)         // act like a ticker
+			go transport.Reset() // pretend we sent any payloads
+		}
+	}
+	b.StopTimer()
+	cancel()
+	wg.Wait()
+	b.ReportMetric(sumHeapUsageMB/float64(heapCounts), "avgHeapInUse(Mb)")
+}
+
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
@@ -1915,10 +2023,7 @@ func BenchmarkStartSpan(b *testing.B) {
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
-func startTestTracer(t interface {
-	// support both *testing.T and *testing.B
-	Fatalf(format string, args ...interface{})
-}, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
+func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport *dummyTransport, flush func(n int), stop func()) {
 	transport = newDummyTransport()
 	tick := make(chan time.Time)
 	o := append([]StartOption{
@@ -1951,6 +2056,8 @@ func startTestTracer(t interface {
 	return tracer, transport, flushFunc, func() {
 		internal.SetGlobalTracer(&internal.NoopTracer{})
 		tracer.Stop()
+		// clear any service name that was set: we want the state to be the same as startup
+		globalconfig.SetServiceName("")
 	}
 }
 
@@ -2208,6 +2315,8 @@ func TestUserMonitoring(t *testing.T) {
 	}
 	tr := newTracer()
 	defer tr.Stop()
+	internal.SetGlobalTracer(tr)
+	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
@@ -2256,19 +2365,26 @@ func TestUserMonitoring(t *testing.T) {
 	// This tests data races for trace.propagatingTags reads/writes through public API.
 	// The Go data race detector should not complain when running the test with '-race'.
 	t.Run("data-race", func(t *testing.T) {
+		wg := &sync.WaitGroup{}
+		wg.Add(2)
+
 		root := tr.newRootSpan("root", "test", "test")
 
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				SetUser(root, "test")
 			}
 		}()
 		go func() {
+			defer wg.Done()
 			for i := 0; i < 10000; i++ {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
+
 		root.Finish()
+		wg.Wait()
 	})
 }
 

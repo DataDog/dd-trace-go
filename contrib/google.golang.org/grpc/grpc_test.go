@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,11 +38,6 @@ import (
 
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
-
-	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
-	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
-	client := rig.client
 
 	for name, tt := range map[string]struct {
 		message     string
@@ -67,6 +62,11 @@ func TestUnary(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+			require.NoError(t, err, "error setting up rig")
+			defer rig.Close()
+			client := rig.client
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -102,7 +102,9 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(clientSpan)
 			assert.NotNil(rootSpan)
 
+			// this tag always contains the resolved address
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.PeerHostname), "localhost")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
@@ -173,6 +175,7 @@ func TestStreaming(t *testing.T) {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
 					"expected target host tag to be set in span: %v", span)
+				assert.Equal(t, "localhost", span.Tag(ext.PeerHostname))
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
@@ -535,6 +538,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
+	UnimplementedFixtureServer
 	lastRequestMetadata atomic.Value
 }
 
@@ -616,7 +620,7 @@ func newRigWithInterceptors(
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
+	conn, err := grpc.Dial("localhost:"+port, clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}

@@ -21,6 +21,7 @@ var (
 
 // This example shows how a span context can be passed from a producer to a consumer.
 func Example() {
+
 	tracer.Start()
 	defer tracer.Stop()
 
@@ -31,6 +32,7 @@ func Example() {
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
 	})
+
 	err = c.Subscribe(testTopic, nil)
 	if err != nil {
 		panic(err)
@@ -56,6 +58,7 @@ func Example() {
 		tracer.Inject(parentSpan.Context(), carrier)
 
 		c.Consumer.Events() <- msg
+
 	}()
 
 	msg := (<-c.Events()).(*kafka.Message)
@@ -66,6 +69,7 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
+
 	parentContext := parentSpan.Context()
 
 	// Validate that the context passed is the context sent via the message

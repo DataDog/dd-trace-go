@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -47,7 +49,7 @@ type testStatsdCall struct {
 	rate     float64
 }
 
-func withStatsdClient(s statsdClient) StartOption {
+func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 	return func(c *config) {
 		c.statsdClient = s
 	}
@@ -284,7 +286,7 @@ func TestReportHealthMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(3, 1*time.Second)
+	tg.Wait(3, 10*time.Second)
 
 	counts := tg.Counts()
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
