@@ -22,6 +22,8 @@ const (
 	envQueryStringRegexp = "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP"
 	// envTraceClientIPEnabled is the name of the env var used to specify whether or not to collect client ip in span tags
 	envTraceClientIPEnabled = "DD_TRACE_CLIENT_IP_ENABLED"
+	// envSetHTTPErrorDisabled is the name of the env var used to disabled to set HTTP 5xx error to span tags
+	envSetHTTPErrorDisabled = "DD_TRACE_SET_HTTP_ERROR_DISABLED"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if `envQueryStringRegexp` is empty.
@@ -31,6 +33,7 @@ type config struct {
 	queryStringRegexp *regexp.Regexp // specifies the regexp to use for query string obfuscation.
 	queryString       bool           // reports whether the query string should be included in the URL span tag.
 	traceClientIP     bool
+	setHTTPError      bool
 }
 
 func newConfig() config {
@@ -38,6 +41,7 @@ func newConfig() config {
 		queryString:       !internal.BoolEnv(envQueryStringDisabled, false),
 		queryStringRegexp: defaultQueryStringRegexp,
 		traceClientIP:     internal.BoolEnv(envTraceClientIPEnabled, false),
+		setHTTPError:      !internal.BoolEnv(envSetHTTPErrorDisabled, false),
 	}
 	if s, ok := os.LookupEnv(envQueryStringRegexp); !ok {
 		return c

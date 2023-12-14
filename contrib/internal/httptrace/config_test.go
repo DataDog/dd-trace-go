@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +15,8 @@ func TestConfig(t *testing.T) {
 	defaultCfg := config{
 		queryString:       true,
 		queryStringRegexp: defaultQueryStringRegexp,
+		traceClientIP:     false,
+		setHTTPError:      true,
 	}
 	for _, tc := range []struct {
 		name string
@@ -38,40 +39,44 @@ func TestConfig(t *testing.T) {
 			name: "disable-query",
 			env:  map[string]string{envQueryStringDisabled: "true"},
 			cfg: config{
+				queryString:       false,
 				queryStringRegexp: defaultQueryStringRegexp,
+				traceClientIP:     false,
+				setHTTPError:      true,
 			},
 		},
 		{
 			name: "disable-query-obf",
 			env:  map[string]string{envQueryStringRegexp: ""},
 			cfg: config{
-				queryString: true,
+				queryString:       true,
+				queryStringRegexp: nil,
+				traceClientIP:     false,
+				setHTTPError:      true,
 			},
+		},
+		{
+			name: "disable-set-http-error",
+			env:  map[string]string{envSetHTTPErrorDisabled: "true"},
+			cfg: config{
+				queryString:       true,
+				queryStringRegexp: defaultQueryStringRegexp,
+				traceClientIP:     false,
+				setHTTPError:      false,
+			},
+		},
+		{
+			name: "disable-set-http-error-obf",
+			env:  map[string]string{envSetHTTPErrorDisabled: ""},
+			cfg:  defaultCfg,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer cleanEnv()()
 			for k, v := range tc.env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 			c := newConfig()
-			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
-			require.Equal(t, tc.cfg.queryString, c.queryString)
+			require.Equal(t, tc.cfg, c)
 		})
-	}
-}
-
-func cleanEnv() func() {
-	env := map[string]string{
-		envQueryStringDisabled: os.Getenv(envQueryStringDisabled),
-		envQueryStringRegexp:   os.Getenv(envQueryStringRegexp),
-	}
-	for k := range env {
-		os.Unsetenv(k)
-	}
-	return func() {
-		for k, v := range env {
-			os.Setenv(k, v)
-		}
 	}
 }

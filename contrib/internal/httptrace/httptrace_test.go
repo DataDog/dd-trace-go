@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
 
 	"github.com/DataDog/appsec-internal-go/netip"
@@ -144,6 +145,62 @@ func TestTraceClientIPFlag(t *testing.T) {
 			mt.Reset()
 		})
 	}
+}
+
+func TestSetHTTPErrorFlag(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	type testCase struct {
+		name               string
+		setHTTPErrorEnvVal string
+		expectSetHTTPError bool
+	}
+
+	for _, tc := range []testCase{
+		{
+			name:               "Set HTTP Error Disabled Env set to true",
+			setHTTPErrorEnvVal: "true",
+			expectSetHTTPError: false,
+		},
+		{
+			name:               "Set HTTP Error Disabled Env set to false",
+			setHTTPErrorEnvVal: "false",
+			expectSetHTTPError: true,
+		},
+		{
+			name:               "Set HTTP Error Disabled Env unset",
+			setHTTPErrorEnvVal: "",
+			expectSetHTTPError: true,
+		},
+		{
+			name:               "Set HTTP Error Disabled Env set to non-boolean value",
+			setHTTPErrorEnvVal: "asdadsasd",
+			expectSetHTTPError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envSetHTTPErrorDisabled, tc.setHTTPErrorEnvVal)
+
+			// reset config based on new DD_TRACE_SET_HTTP_ERROR_DISABLED value
+			cfg = newConfig()
+
+			s := tracer.StartSpan(namingschema.NewHTTPServerOp().GetName(), nil)
+			FinishRequestSpan(s, http.StatusServiceUnavailable, nil)
+
+			spans := mt.FinishedSpans()
+			targetSpan := spans[0]
+
+			assert.Equal(t, "503", targetSpan.Tag(ext.HTTPCode))
+			if tc.expectSetHTTPError {
+				assert.Equal(t, "503: Service Unavailable", targetSpan.Tag(ext.Error).(error).Error())
+			} else {
+				assert.NotContains(t, targetSpan.Tags(), ext.Error)
+			}
+			mt.Reset()
+		})
+	}
+
 }
 
 func TestURLTag(t *testing.T) {
