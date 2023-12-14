@@ -171,6 +171,10 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	return
 }
 
+func (*gqlTracer) InterceptResponse(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
+	return next(ctx)
+}
+
 // createRootSpan creates a graphql server root span starting at the beginning
 // of the operation context. If the operation is a subscription, a nil span is
 // returned as those may run indefinitely and would be problematic. This function
@@ -232,4 +236,5 @@ var _ interface {
 	graphql.HandlerExtension
 	graphql.OperationInterceptor
 	graphql.FieldInterceptor
+	graphql.ResponseInterceptor
 } = &gqlTracer{}

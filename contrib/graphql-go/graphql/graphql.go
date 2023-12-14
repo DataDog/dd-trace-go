@@ -192,11 +192,6 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		tracer.Tag(ext.Component, componentName),
 		tracer.Measured(),
 	}
-	if i.config.traceVariables {
-		for key, value := range data.variables {
-			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
-		}
-	}
 	if data.operationName != "" {
 		opts = append(opts, tracer.Tag(tagGraphqlOperationName, data.operationName))
 	}
@@ -246,11 +241,6 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", info.ParentType.Name(), info.FieldName)),
 		tracer.Measured(),
-	}
-	if i.config.traceVariables {
-		for key, value := range info.VariableValues {
-			opts = append(opts, tracer.Tag(fmt.Sprintf("%s.%s", tagGraphqlVariables, key), value))
-		}
 	}
 	if operationName != "" {
 		opts = append(opts, tracer.Tag(tagGraphqlOperationName, operationName))
