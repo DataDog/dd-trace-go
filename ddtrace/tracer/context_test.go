@@ -116,7 +116,7 @@ func Test128(t *testing.T) {
 	_, _, _, stop := startTestTracer(t)
 	defer stop()
 
-	os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
 	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
