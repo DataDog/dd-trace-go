@@ -119,31 +119,32 @@ func logStartup(c *config) {
 		enabledProfiles = append(enabledProfiles, t.String())
 	}
 	info := map[string]any{
-		"date":                       time.Now().Format(time.RFC3339),
-		"os_name":                    osinfo.OSName(),
-		"os_version":                 osinfo.OSVersion(),
-		"version":                    version.Tag,
-		"lang":                       "Go",
-		"lang_version":               runtime.Version(),
-		"hostname":                   c.hostname,
-		"delta_profiles":             c.deltaProfiles,
-		"service":                    c.service,
-		"env":                        c.env,
-		"target_url":                 c.targetURL,
-		"agentless":                  c.agentless,
-		"tags":                       c.tags.Slice(),
-		"profile_period":             c.period.String(),
-		"enabled_profiles":           enabledProfiles,
-		"cpu_duration":               c.cpuDuration.String(),
-		"cpu_profile_rate":           c.cpuProfileRate,
-		"block_profile_rate":         c.blockRate,
-		"mutex_profile_fraction":     c.mutexFraction,
-		"max_goroutines_wait":        c.maxGoroutinesWait,
-		"upload_timeout":             c.uploadTimeout.String(),
-		"execution_trace_enabled":    c.traceConfig.Enabled,
-		"execution_trace_period":     c.traceConfig.Period.String(),
-		"execution_trace_size_limit": c.traceConfig.Limit,
-		"endpoint_count_enabled":     c.endpointCountEnabled,
+		"date":                            time.Now().Format(time.RFC3339),
+		"os_name":                         osinfo.OSName(),
+		"os_version":                      osinfo.OSVersion(),
+		"version":                         version.Tag,
+		"lang":                            "Go",
+		"lang_version":                    runtime.Version(),
+		"hostname":                        c.hostname,
+		"delta_profiles":                  c.deltaProfiles,
+		"service":                         c.service,
+		"env":                             c.env,
+		"target_url":                      c.targetURL,
+		"agentless":                       c.agentless,
+		"tags":                            c.tags.Slice(),
+		"profile_period":                  c.period.String(),
+		"enabled_profiles":                enabledProfiles,
+		"cpu_duration":                    c.cpuDuration.String(),
+		"cpu_profile_rate":                c.cpuProfileRate,
+		"block_profile_rate":              c.blockRate,
+		"mutex_profile_fraction":          c.mutexFraction,
+		"max_goroutines_wait":             c.maxGoroutinesWait,
+		"upload_timeout":                  c.uploadTimeout.String(),
+		"execution_trace_enabled":         c.traceConfig.Enabled,
+		"execution_trace_period":          c.traceConfig.Period.String(),
+		"execution_trace_size_limit":      c.traceConfig.Limit,
+		"execution_trace_trigger_enabled": c.traceConfig.userTriger != nil,
+		"endpoint_count_enabled":          c.endpointCountEnabled,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -199,6 +200,7 @@ func defaultConfig() (*config, error) {
 	for _, t := range defaultProfileTypes {
 		c.addProfileType(t)
 	}
+	c.traceConfig.InitFromEnv()
 
 	agentHost, agentPort := defaultAgentHost, defaultAgentPort
 	if v := os.Getenv("DD_AGENT_HOST"); v != "" {
@@ -280,9 +282,6 @@ func defaultConfig() (*config, error) {
 		}
 		c.maxGoroutinesWait = n
 	}
-
-	// Experimental feature: Go execution trace (runtime/trace) recording.
-	c.traceConfig.Refresh()
 	return &c, nil
 }
 
@@ -525,10 +524,13 @@ type executionTraceConfig struct {
 	// of events recorded) than duration, so we use that to decide when to
 	// stop tracing.
 	Limit int
-
-	// warned is checked to prevent spamming a log every minute if the trace
-	// config is invalid
-	warned bool
+	// tagSource indicates whether we should tag traces with the source
+	// of recording (whether they were randomly collected, or user triggered,
+	// or both)
+	tagSource bool
+	// userTrigger is a user-provided function to decide whether a trace
+	// should be recorded on a given profiling cycle
+	userTriger func() bool
 }
 
 // executionTraceEnabledDefault depends on the Go version and CPU architecture,
@@ -537,23 +539,40 @@ type executionTraceConfig struct {
 // [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
 var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
 
-// Refresh updates the execution trace configuration to reflect any run-time
-// changes to the configuration environment variables, applying defaults as
-// needed.
-func (e *executionTraceConfig) Refresh() {
+// executionTraceUserTriggeredBurstSize controls the number of traces which can
+// be collected consecutively when a user triggers the collection, limited to
+// an interval of this many execution trace periods.
+const executionTraceUserTriggeredBurstSize = 5
+
+// InitFromEnv initializes the execution trace configuration from the environment
+func (e *executionTraceConfig) InitFromEnv() {
 	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault)
 	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
 	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
+	// for internal use only (for now)
+	e.tagSource = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_TAG_SOURCE", false)
 
 	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
-		if !e.warned {
-			e.warned = true
-			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
-		}
+		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
 		e.Enabled = false
-		return
 	}
-	// If the config is valid, reset e.warned so we'll print another warning
-	// if it's udpated to be invalid
-	e.warned = false
+}
+
+// WithExecutionTraceTrigger supplies a function which will be called every
+// trace period to determine whether an execution trace should be collected.
+//
+// This function will not be called unless execution tracing is explicitly
+// enabled. This function should return quickly -- it will block profile
+// collection until it returns. Execution traces will still be collected
+// randomly as well, even if this function is provided.
+//
+// Execution trace collection is rate-limited on the client side due to the
+// significant amount of data the execution tracer produces. By default the
+// limit is five user-triggered traces every 75 minutes. This gives an average
+// of one trace per 15 minutes, which matches the default for normal collection,
+// but allows for temporarily collecting traces back-to-back.
+func WithExecutionTraceTrigger(f func() bool) Option {
+	return func(c *config) {
+		c.traceConfig.userTriger = f
+	}
 }

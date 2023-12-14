@@ -590,6 +590,96 @@ func TestExecutionTraceRandom(t *testing.T) {
 	}
 }
 
+func TestExecutionTraceUserTrigger(t *testing.T) {
+	const (
+		profilePeriod   = 10 * time.Millisecond
+		numTracePeriods = 5
+		tracePeriod     = profilePeriod * numTracePeriods
+	)
+	var everyOther bool
+	testCases := []struct {
+		desc    string
+		trigger func() bool
+		minimum int
+	}{
+		{desc: "always", trigger: func() bool { return true }, minimum: 5},
+		{desc: "never", trigger: func() bool { return false }},
+		{desc: "nil", trigger: nil},
+		{
+			desc: "every-other",
+			trigger: func() bool {
+				everyOther = !everyOther
+				return everyOther
+			},
+			minimum: 3, // first, third, and fifth profiling cycle
+		},
+		{
+			desc: "random",
+			trigger: func() bool {
+				return rand.Int()%2 == 0
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
+			t.Setenv("DD_PROFILING_EXECUTION_TRACE_TAG_SOURCE", "true")
+			profiles := startTestProfiler(t, 1,
+				WithProfileTypes(),
+				WithPeriod(profilePeriod),
+				WithExecutionTraceTrigger(tc.trigger),
+			)
+			var (
+				// seen counts the number of traces seen since the first user-triggered trace,
+				// after rate limiting should have taken effect
+				seen        int
+				start       = time.Now()
+				firstUpload = true
+			)
+			for time.Since(start) < numTracePeriods*tracePeriod {
+				p := <-profiles
+				hasTrace := sliceContains(p.event.Attachments, "go.trace")
+				userTriggered := sliceContains(p.tags, "_dd.profiler.user_triggered_trace:true")
+				randomTrace := sliceContains(p.tags, "_dd.profiler.random_trace:true")
+				if hasTrace && !firstUpload && ((userTriggered && !randomTrace) || seen > 0) {
+					// We count traces after rate limiting takes effect,
+					// which should happen once the first exlusively user-triggered
+					// trace is seen (i.e. a trace which is not during the first profile
+					// cycle and would not have otherwise been collected randomly)
+					seen++
+				}
+				firstUpload = false
+			}
+			elapsed := time.Since(start)
+			if seen < tc.minimum {
+				t.Errorf("saw %d traces, less than minimum expected %d", seen, tc.minimum)
+			}
+
+			// We expect no more than ~1 trace per trace period once limiting begins
+			// We run the profiler for 5 trace periods, but we check against the
+			// number of actual trace periods elapsed since things can be slower in
+			// reality (profile periods are a lower bound, CI machines are slow, etc)
+			traceLimit := (float64(elapsed) / float64(tracePeriod))
+			if seen > int(traceLimit) {
+				t.Errorf("saw %d traces, exceeding maximum expected %f", seen, traceLimit)
+			}
+		})
+	}
+}
+
+func TestNoUserTriggeredTracesIfNoTracing(t *testing.T) {
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "false")
+	var called bool
+	profile := doOneShortProfileUpload(t, WithExecutionTraceTrigger(func() bool {
+		called = true
+		return true
+	}))
+	assert.NotContains(t, profile.attachments, "go.trace")
+	assert.False(t, called)
+}
+
 // TestEndpointCounts verfies that the unit of work feature works end to end.
 func TestEndpointCounts(t *testing.T) {
 	for _, enabled := range []bool{true, false} {

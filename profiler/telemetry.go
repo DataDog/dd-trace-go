@@ -51,6 +51,7 @@ func startTelemetry(c *config) {
 			{Name: "execution_trace_enabled", Value: c.traceConfig.Enabled},
 			{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
+			{Name: "execution_trace_trigger_enabled", Value: c.traceConfig.userTriger != nil},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
 		},
 	)

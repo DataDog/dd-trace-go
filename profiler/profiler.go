@@ -86,6 +86,8 @@ type profiler struct {
 
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
+
+	traceRateLimiter *rateLimiter
 }
 
 // testHooks are functions that are replaced during testing which would normally
@@ -225,6 +227,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		}
 	}
 	p.uploadFunc = p.upload
+	p.traceRateLimiter = newRateLimiter(
+		executionTraceUserTriggeredBurstSize,
+		executionTraceUserTriggeredBurstSize*cfg.traceConfig.Period,
+	)
 	return &p, nil
 }
 
@@ -303,21 +309,44 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 
 		profileTypes := p.enabledProfileTypes()
 
-		// Decide whether we should record an execution trace
-		p.cfg.traceConfig.Refresh()
-		// Randomly record a trace with probability (profile period) / (trace period).
-		// Note that if the trace period is equal to or less than the profile period,
-		// we will always record a trace
-		// We do multiplication here instead of division to defensively guard against
-		// division by 0
-		shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
-		// As a special case, we want to trace during the first
-		// profiling cycle since startup activity is generally much
-		// different than regular operation
-		firstCycle := bat.seq == 0
-		shouldTrace := p.cfg.traceConfig.Enabled && (shouldTraceRandomly || firstCycle)
-		if shouldTrace {
-			profileTypes = append(profileTypes, executionTrace)
+		if p.cfg.traceConfig.Enabled {
+			// Randomly record a trace with probability (profile period) / (trace period).
+			// Note that if the trace period is equal to or less than the profile period,
+			// we will always record a trace
+			// We do multiplication here instead of division to defensively guard against
+			// division by 0
+			shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
+			// As a special case, we want to trace during the first
+			// profiling cycle since startup activity is generally much
+			// different than regular operation
+			firstCycle := bat.seq == 0
+			shouldTraceRandomly = (shouldTraceRandomly || firstCycle)
+
+			shouldTraceUserTriggered := p.cfg.traceConfig.userTriger != nil && p.cfg.traceConfig.userTriger()
+			if shouldTraceUserTriggered && !shouldTraceRandomly {
+				// We activate the rate limiter when the user requests a trace,
+				// so that the normal random collection (which already follows
+				// our desired average data rate) doesn't have its distrubition
+				// unneccessarily skewed in the default case.
+				// The rate limiter will stay active for ~5 trace periods,
+				// and then won't activiate again until the user request another trace.
+				p.traceRateLimiter.activate()
+			}
+
+			shouldTrace := shouldTraceUserTriggered || shouldTraceRandomly
+			if shouldTrace && p.traceRateLimiter.allow() {
+				if p.cfg.traceConfig.tagSource {
+					// TODO: This is for testing for now. If we want to expose
+					// this to users we need to decide whether we want these tags,
+					// other tag values, or something else like additional info in the
+					// upload event JSON object.
+					bat.extraTags = append(bat.extraTags,
+						fmt.Sprintf("_dd.profiler.user_triggered_trace:%v", shouldTraceUserTriggered),
+						fmt.Sprintf("_dd.profiler.random_trace:%v", shouldTraceRandomly),
+					)
+				}
+				profileTypes = append(profileTypes, executionTrace)
+			}
 		}
 
 		for _, t := range profileTypes {
