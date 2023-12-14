@@ -341,6 +341,33 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// startTestProfiler starts up a profiler wired up to an in-memory mock backend
+// using the given profiler options, and returns a channel with the provided
+// buffer size to which profiles will be sent. The profiler and mock backend
+// will be stopped when the calling test case completes
+func startTestProfiler(t *testing.T, size int, options ...Option) <-chan profileMeta {
+	profiles := make(chan profileMeta, size)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: profiles})
+	t.Cleanup(func() { server.Close() })
+
+	options = append(options, WithHTTPClient(client))
+	if err := Start(options...); err != nil {
+		t.Fatalf("starting test profiler: %s", err)
+	}
+	t.Cleanup(Stop)
+	return profiles
+}
+
+// doOneShortProfileUpload is a test helper which starts a profiler with a short
+// period and no profile types enabled, intended to write quick tests which
+// check that various metadata makes it through the profiler
+func doOneShortProfileUpload(t *testing.T, opts ...Option) profileMeta {
+	opts = append(opts,
+		WithProfileTypes(), WithPeriod(10*time.Millisecond),
+	)
+	return <-startTestProfiler(t, 1, opts...)
+}
+
 func TestAllUploaded(t *testing.T) {
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
@@ -348,21 +375,11 @@ func TestAllUploaded(t *testing.T) {
 	//
 	// TODO: Further check that the uploaded profiles are all valid
 
-	// received indicates that the server has received a profile upload.
-	// This is used similarly to a sync.WaitGroup but avoids a potential
-	// panic if too many requests are received before profiling is stopped
-	// and the WaitGroup count goes negative.
-	//
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan profileMeta, 2)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
-	defer server.Close()
-
-	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+	profiles := startTestProfiler(t, 2,
 		WithProfileTypes(
 			BlockProfile,
 			CPUProfile,
@@ -373,7 +390,6 @@ func TestAllUploaded(t *testing.T) {
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(1*time.Millisecond),
 	)
-	defer Stop()
 
 	validateProfile := func(profile profileMeta, seq uint64) {
 		expected := []string{
@@ -392,27 +408,19 @@ func TestAllUploaded(t *testing.T) {
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
 
-	validateProfile(<-received, 0)
-	validateProfile(<-received, 1)
+	validateProfile(<-profiles, 0)
+	validateProfile(<-profiles, 1)
 }
 
 func TestCorrectTags(t *testing.T) {
-	got := make(chan profileMeta)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(
-			HeapProfile,
-		),
+	profiles := startTestProfiler(t, 1,
+		WithProfileTypes(HeapProfile),
 		WithPeriod(10*time.Millisecond),
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),
 		WithHostname("example"),
 	)
-	defer Stop()
 	expected := []string{
 		"baz:bonk",
 		"env:testing",
@@ -426,7 +434,7 @@ func TestCorrectTags(t *testing.T) {
 		// are clobbered due to a bug caused by the same
 		// profiler-internal tag slice being appended to from different
 		// goroutines concurrently.
-		p := <-got
+		p := <-profiles
 		for _, tag := range expected {
 			require.Contains(t, p.tags, tag)
 		}
@@ -434,22 +442,7 @@ func TestCorrectTags(t *testing.T) {
 }
 
 func TestImmediateProfile(t *testing.T) {
-	received := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case received <- struct{}{}:
-		default:
-		}
-	}))
-	defer server.Close()
-
-	err := Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(HeapProfile),
-		WithPeriod(3*time.Second),
-	)
-	require.NoError(t, err)
-	defer Stop()
+	profiles := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(3*time.Second))
 
 	// Wait a little less than 2 profile periods. We should start profiling
 	// immediately. If it takes significantly longer than 1 profile period to get
@@ -458,15 +451,11 @@ func TestImmediateProfile(t *testing.T) {
 	select {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
-	case <-received:
+	case <-profiles:
 	}
 }
 
 func TestExecutionTrace(t *testing.T) {
-	got := make(chan profileMeta)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
 	// reduce. In theory we could use the entire int64 space, but when we do
@@ -478,14 +467,11 @@ func TestExecutionTrace(t *testing.T) {
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	err := Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+	profiles := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile),
 		WithPeriod(1*time.Second),
 		CPUProfileRate(int(cpuProfileRate)),
 	)
-	require.NoError(t, err)
-	defer Stop()
 
 	contains := func(haystack []string, needle string) bool {
 		for _, s := range haystack {
@@ -497,7 +483,7 @@ func TestExecutionTrace(t *testing.T) {
 	}
 	seenTraces := 0
 	for i := 0; i < 4; i++ {
-		m := <-got
+		m := <-profiles
 		t.Log(m.event.Attachments, m.tags)
 		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
 			seenTraces++
@@ -524,11 +510,6 @@ func TestEndpointCounts(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		t.Run(name, func(t *testing.T) {
-			// Spin up mock backend
-			got := make(chan profileMeta, 1)
-			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-			defer server.Close()
-
 			// Configure endpoint counting
 			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
 
@@ -536,20 +517,15 @@ func TestEndpointCounts(t *testing.T) {
 			tracer.Start()
 			defer tracer.Stop()
 
-			// Start profiler
-			err := Start(
-				WithAgentAddr(server.Listener.Addr().String()),
+			profiles := startTestProfiler(t, 1,
 				WithProfileTypes(CPUProfile),
 				WithPeriod(100*time.Millisecond),
 			)
-			require.NoError(t, err)
-			defer Stop()
-
 			// Create spans until the first profile is finished
 			var m profileMeta
 			for m.attachments == nil {
 				select {
-				case m = <-got:
+				case m = <-profiles:
 				default:
 					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
 					span.Finish()
@@ -568,10 +544,6 @@ func TestEndpointCounts(t *testing.T) {
 }
 
 func TestExecutionTraceSizeLimit(t *testing.T) {
-	got := make(chan profileMeta)
-	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
 	done := make(chan struct{})
 	// bigMessage just forces a bunch of data to be written to the trace buffer.
 	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
@@ -594,17 +566,14 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
-	err := Start(
-		WithHTTPClient(client),
+	profiles := startTestProfiler(t, 1,
 		WithProfileTypes(), // just want the execution trace
 		WithPeriod(2*time.Second),
 	)
-	require.NoError(t, err)
-	defer Stop()
 
 	const expectedSize = 300 * 1024
 	for i := 0; i < 5; i++ {
-		m := <-got
+		m := <-profiles
 		if p, ok := m.attachments["go.trace"]; ok {
 			if len(p) > expectedSize {
 				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
@@ -612,27 +581,18 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 			return
 		}
 	}
-	t.Errorf("did not see an execution trace")
 }
 
 func TestExecutionTraceEnabledFlag(t *testing.T) {
 	for _, status := range []string{"true", "false"} {
 		t.Run(status, func(t *testing.T) {
-			got := make(chan profileMeta)
-			server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
-			defer server.Close()
-
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
-			err := Start(
-				WithHTTPClient(client),
+			profiles := startTestProfiler(t, 1,
 				WithProfileTypes(),
-				WithPeriod(1*time.Second),
+				WithPeriod(10*time.Millisecond),
 			)
-			require.NoError(t, err)
-			defer Stop()
-
-			m := <-got
+			m := <-profiles
 			t.Log(m.event.Attachments, m.tags)
 			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
@@ -640,22 +600,8 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 }
 
 func TestVersionResolution(t *testing.T) {
-	doOneProfileUpload := func(opts ...Option) profileMeta {
-		received := make(chan profileMeta)
-		server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: received})
-		defer server.Close()
-
-		opts = append(opts,
-			WithHTTPClient(client), WithProfileTypes(), WithPeriod(10*time.Millisecond),
-		)
-		err := Start(opts...)
-		require.NoError(t, err)
-		defer Stop()
-		return <-received
-	}
-
 	t.Run("tags only", func(t *testing.T) {
-		data := doOneProfileUpload(WithTags("version:4.5.6", "version:7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6", "version:7.8.9"))
 		assert.Contains(t, data.tags, "version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
@@ -663,7 +609,7 @@ func TestVersionResolution(t *testing.T) {
 	t.Run("env", func(t *testing.T) {
 		// Environment variable gets priority over tags
 		t.Setenv("DD_VERSION", "1.2.3")
-		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"))
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:1.2.3")
 	})
@@ -671,14 +617,14 @@ func TestVersionResolution(t *testing.T) {
 	t.Run("WithVersion", func(t *testing.T) {
 		// WithVersion gets the highest priority
 		t.Setenv("DD_VERSION", "1.2.3")
-		data := doOneProfileUpload(WithTags("version:4.5.6"), WithVersion("7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"), WithVersion("7.8.9"))
 		assert.NotContains(t, data.tags, "version:1.2.3")
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:7.8.9")
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		data := doOneProfileUpload(WithTags("Version:4.5.6", "version:7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("Version:4.5.6", "version:7.8.9"))
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
