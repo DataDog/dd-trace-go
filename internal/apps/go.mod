@@ -1,6 +1,6 @@
-module github.com/DataDog/dd-trace-go/internal/apps/unit-of-work
+module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.19
+go 1.21
 
 require (
 	golang.org/x/sync v0.3.0
@@ -8,10 +8,13 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.0.2 // indirect
-	github.com/DataDog/go-libddwaf v1.5.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
+	github.com/DataDog/go-libddwaf/v2 v2.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.5.0 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -42,7 +45,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
-	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
@@ -51,4 +54,4 @@ require (
 )
 
 // use local version of dd-trace-go
-replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
+replace gopkg.in/DataDog/dd-trace-go.v1 => ../..
