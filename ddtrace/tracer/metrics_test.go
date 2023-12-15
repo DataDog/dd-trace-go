@@ -231,7 +231,7 @@ func (tg *testStatsdClient) Wait(asserts *assert.Assertions, n int, d time.Durat
 
 		return tg.n >= n
 	}
-	if !asserts.Eventually(c, d, 10*time.Millisecond) {
+	if !asserts.Eventually(c, d, 50*time.Millisecond) {
 		return fmt.Errorf("timed out after waiting %s for gauge events", d)
 	}
 
