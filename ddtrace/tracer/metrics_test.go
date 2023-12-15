@@ -225,7 +225,13 @@ func (tg *testStatsdClient) Reset() {
 // Wait blocks until n metrics have been reported using the testStatsdClient or until duration d passes.
 // If d passes, or a wait is already active, an error is returned.
 func (tg *testStatsdClient) Wait(asserts *assert.Assertions, n int, d time.Duration) error {
-	if !asserts.Eventually(func() bool { return tg.n >= n }, d, 10*time.Millisecond) {
+	c := func() bool {
+		tg.mu.RLock()
+		defer tg.mu.RUnlock()
+
+		return tg.n >= n
+	}
+	if !asserts.Eventually(c, d, 10*time.Millisecond) {
 		return fmt.Errorf("timed out after waiting %s for gauge events", d)
 	}
 
