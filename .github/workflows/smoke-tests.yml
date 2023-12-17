@@ -42,3 +42,41 @@ jobs:
         run: go build $PACKAGES
       - name: Test dd-trace-go
         run: go test $PACKAGES
+
+  setup-requirements:
+    name: 'Compilation and deployment requirements follow Go standards'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: [ "1.21", "1.20", "1.19" ]
+        build-env: [ latest, bookworm, bullseye ]
+        buildmode: [ base, go-mod-vendor ]
+        build-with-cgo: [ 0, 1 ]
+        deployment-env: [ alpine, debian-bullseye, debian-bookworm ]
+        include:
+          # alpine as build env is only compatible with alpine deployment envs
+          # they indeed name their libc libmusl.so instead of libc.so
+          - build-env: alpine
+            deployment-env: alpine
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: DataDog/appsec-go-test-app
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./internal/apps/setup-smoke-test/Dockerfile
+          push: false
+          load: true
+          tags: smoke-test
+          target: ${{ matrix.distrib }}
+          build-args: |
+            build-env=${{ matrix.build-env }}
+            build-mode=${{ matrix.build-mode }}
+            build-with-cgo=${{ inputs.build-with-cgo }}
+            deployment-env=${{ inputs.deployment-env }}
+      - name: Test
+        run: |
+          docker run -p7777:7777 --rm smoke-test
