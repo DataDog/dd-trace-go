@@ -57,15 +57,9 @@ jobs:
         build-with-vendoring: [ y, n ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian, redhat, busybox ]
-        include:
-          # Building with CGO enabled and deploying to alpine requires
-          # installing libc6-compat
-          - build-with-cgo: 1
-            deployment-env: alpine
-            deployment-alpine-with-libc6-compat: y
         exclude:
           # Exclude incompatible cases:
-          # 1. Building wih CGO enabled on alpine but deploying to a non-alpine
+          # 1. Building with CGO enabled on alpine but deploying to a non-alpine
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
@@ -96,6 +90,5 @@ jobs:
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
-            deployment_alpine_with_libc6compat=${{ matrix.deployment-alpine-with-libc6-compat }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test

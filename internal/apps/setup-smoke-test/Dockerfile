@@ -1,5 +1,7 @@
 ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG build_with_cgo="0" # 0 or 1
+ARG build_with_vendoring="" # y or empty
 ARG debian_version="12" # debian docker image versio in `debian:{debianversion}-slim`
 ARG deployment_env="debian"
 
@@ -9,9 +11,15 @@ WORKDIR /src
 COPY . .
 WORKDIR /src/internal/apps/setup-smoke-test
 
-ARG build_with_cgo="0"
+ARG build_with_cgo
 RUN go env -w CGO_ENABLED=$build_with_cgo
-ARG build_with_vendoring="" # y or empty
+
+ARG build_env
+RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then \
+      apk update && apk add gcc; \
+    fi
+
+ARG build_with_vendoring
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       go mod vendor; \
     fi
@@ -30,8 +38,8 @@ CMD /usr/local/bin/smoke-test
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
 FROM alpine AS alpine
-ARG deployment_alpine_with_libc6compat="" # y or empty
-RUN set -ex; if [ "$deployment_alpine_with_libc6compat" = "y" ]; then \
+ARG build_with_cgo
+RUN set -ex; if [ "$build_with_cgo" = "1" ]; then \
       apk update && apk add libc6-compat; \
     fi
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
