@@ -30,6 +30,10 @@ CMD /usr/local/bin/smoke-test
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
 FROM alpine AS alpine
+ARG deployment_alpine_with_libc6compat="" # y or empty
+RUN set -ex; if [ "$deployment_alpine_with_libc6compat" = "y" ]; then \
+      apk update && apk add libc6-compat; \
+    fi
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
