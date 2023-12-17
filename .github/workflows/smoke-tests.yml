@@ -52,7 +52,7 @@ jobs:
     strategy:
       matrix:
         go: [ "1.21", "1.20", "1.19" ]
-        build-env: [ latest, bookworm, bullseye ]
+        build-env: [ bookworm, bullseye ]
         build-with-vendoring: [ y, n ]
         build-with-cgo: [ 0 ]
         deployment-env: [ alpine, debian, redhat, busybox ]
@@ -75,11 +75,11 @@ jobs:
           push: false
           load: true
           tags: smoke-test
-          target: ${{ matrix.deployment-env }}
           build-args: |
             go=${{ matrix.go }}
             build_env=${{ matrix.build-env }}
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
+            deployment_env=${{ matrix.deployment-env }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test

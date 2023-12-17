@@ -1,6 +1,7 @@
 ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG debian_version="12" # debian docker image versio in `debian:{debianversion}-slim`
+ARG deployment_env="debian"
 
 FROM golang:$go-$build_env AS build-env
 
@@ -8,7 +9,7 @@ WORKDIR /src
 COPY . .
 WORKDIR /src/internal/apps/setup-smoke-test
 
-ARG build_with_cgo="0" # base or go-mod-vendor
+ARG build_with_cgo="0"
 RUN go env -w CGO_ENABLED=$build_with_cgo
 ARG build_with_vendoring="" # y or empty
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
@@ -56,3 +57,6 @@ CMD /usr/local/bin/smoke-test
 FROM scratch AS scratch
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /
 CMD /smoke-test
+
+# Final deployment environment - helper target to end up a single one
+FROM $deployment_env AS deployment-env
