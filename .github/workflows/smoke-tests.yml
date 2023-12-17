@@ -55,13 +55,13 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ bookworm, bullseye ]
         build-with-vendoring: [ y, n ]
-        build-with-cgo: [ 0 ]
+        build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian, redhat, busybox ]
         include:
           # alpine as build env is only compatible with alpine deployment envs
           # they indeed name their libc libmusl.so instead of libc.so
-          - build-env: alpine
-            deployment-env: alpine
+          # - build-env: alpine
+          #  deployment-env: alpine
 
     steps:
       - uses: actions/checkout@v4
