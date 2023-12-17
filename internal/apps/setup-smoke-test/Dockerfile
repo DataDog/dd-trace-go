@@ -1,34 +1,26 @@
-# FROM golang:{go}-{buildenv}
-ARG go="1.21"
-ARG buildenv="alpine"
+ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG debian_version="12" # debian docker image versio in `debian:{debianversion}-slim`
 
-ARG buildmode="base" # base or go-mod-vendor
-ARG debianversion="12" # FROM debian:{debianversion}-slim
-
-FROM golang:$go-$buildenv AS base-build-env
+FROM golang:$go-$build_env AS build-env
 
 WORKDIR /src
 COPY . .
 WORKDIR /src/internal/apps/setup-smoke-test
 
-ARG build-with-cgo="0"
-ENV CGO_ENABLED=$build-with-cgo
-
-# Aternative base-build-env with vendoring (selected with ARG build-mode)
-FROM base-build-env AS go-mod-vendor-build-env
-RUN go mod vendor
-
-# $build-mode defaults to base and allows to be changed into go-mod-vendor to
-# test this alternative
-FROM $buildmode-build-env AS build-env
-RUN go build -v -o smoke-test .
-RUN pwd && ls -l
+ARG build_with_cgo="0" # base or go-mod-vendor
+RUN go env -w CGO_ENABLED=$build_with_cgo
+ARG build_with_vendoring="" # y or empty
+RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
+      go mod vendor; \
+    fi
+RUN go env && go build -v -o smoke-test .
 
 # debian deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM debian:$debianversion-slim AS debian
+FROM debian:$debian_version-slim AS debian
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
@@ -39,3 +31,28 @@ CMD /usr/local/bin/smoke-test
 FROM alpine AS alpine
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
+
+# redhat target
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM redhat/ubi8 AS redhat
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# busybox target
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM busybox AS busybox
+RUN mkdir -p /usr/local/bin
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# scratch target - meant to be used with CGO_ENABLED=0
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM scratch AS scratch
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /
+CMD /smoke-test

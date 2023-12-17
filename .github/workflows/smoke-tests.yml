@@ -53,9 +53,9 @@ jobs:
       matrix:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ latest, bookworm, bullseye ]
-        buildmode: [ base, go-mod-vendor ]
-        build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian-bullseye, debian-bookworm ]
+        build-with-vendoring: [ y, n ]
+        build-with-cgo: [ 0 ]
+        deployment-env: [ alpine, debian, redhat, busybox ]
         include:
           # alpine as build env is only compatible with alpine deployment envs
           # they indeed name their libc libmusl.so instead of libc.so
@@ -67,19 +67,19 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v5
+      - name: Build
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: ./internal/apps/setup-smoke-test/Dockerfile
           push: false
           load: true
           tags: smoke-test
-          target: ${{ matrix.distrib }}
+          target: ${{ matrix.deployment-env }}
           build-args: |
-            build-env=${{ matrix.build-env }}
-            build-mode=${{ matrix.build-mode }}
-            build-with-cgo=${{ inputs.build-with-cgo }}
-            deployment-env=${{ inputs.deployment-env }}
+            go=${{ matrix.go }}
+            build_env=${{ matrix.build-env }}
+            build_with_vendoring=${{ matrix.build-with-vendoring }}
+            build_with_cgo=${{ matrix.build-with-cgo }}
       - name: Test
-        run: |
-          docker run -p7777:7777 --rm smoke-test
+        run: docker run -p7777:7777 --rm smoke-test
