@@ -16,7 +16,7 @@ RUN go env -w CGO_ENABLED=$build_with_cgo
 
 ARG build_env
 RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then \
-      apk update && apk add gcc; \
+      apk update && apk add gcc libc-dev; \ # needed for cgo and the compilation of runtime/cgo
     fi
 
 ARG build_with_vendoring

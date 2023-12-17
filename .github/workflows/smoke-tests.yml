@@ -70,6 +70,9 @@ jobs:
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: busybox
+            # 2. Too old glibc on the deployment environment than on the build env
+          - build-env: bookworm
+            deployment-env: redhat
 
     steps:
       - uses: actions/checkout@v4
