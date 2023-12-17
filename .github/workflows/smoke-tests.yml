@@ -15,7 +15,7 @@ on:
       - '**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  workflow_dispatch: {} #manually
+  workflow_dispatch: {} # manually
 
 jobs:
   go-get-u:
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: DataDog/appsec-go-test-app
+          ref: ${{ inputs.ref || github.ref }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v5
         with:
