@@ -25,7 +25,7 @@ jobs:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
     #  latest minor version and see if dd-trace-go still compiles.
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
-    name: 'dd-trace-go still works after go get -u'
+    name: 'go get -u smoke test'
     runs-on: ubuntu-latest
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
@@ -47,7 +47,13 @@ jobs:
         run: go test $PACKAGES
 
   setup-requirements-linux:
-    name: 'Compilation and deployment requirements follow Go standards'
+    # Build and deployment setup smoke test of linux containers built from the
+    # golang docker image to test that dd-trace-go doesn't need more than the
+    # "out-of-the-box" images. It is expected require a few more tools when CGO
+    # is enabled, but nothing more than gcc and the C library, but nothing more.
+    # Anything more than this "standard Go build and deployment requirements"
+    # must be considered breaking changes.
+    name: 'Build and deployment requirements smoke tests'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -95,6 +101,8 @@ jobs:
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
+          - build-env: bookworm
+            deployment-debian-version: 11
           # 3. Build with CGO enabled and deploying to a scratch docker image
           #    requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
