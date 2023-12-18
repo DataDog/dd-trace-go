@@ -21,6 +21,7 @@
 #      can systematically use --build-arg for all of the parameters.
 ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG build_tags=""
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
 ARG deployment_debian_env_version="12" # debian docker image version in `debian:{debianversion}-slim`
@@ -48,7 +49,7 @@ ARG build_with_vendoring
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       go mod vendor; \
     fi
-RUN go env && go build -v -tags datadog.no_waf -o smoke-test .
+RUN go env && go build -v -tags=$build_tags -o smoke-test .
 
 # debian deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
