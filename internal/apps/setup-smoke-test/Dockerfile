@@ -12,8 +12,6 @@
 #    - build_with_vendoring: whether to vendor the Go dependencies with
 #      `go mod vendor` or not (y or empty).
 # - deployment environment, made of the following docker build args:
-#    - deployment_debian_env_version: the debian version to use, following their
-#      docker image tagging convention `debian:{debianversion}-slim`.
 #    - deployment_env: the deployment environment to use. Since multiple targets
 #      are possible in this multi-stage dockerfile, this parameter allows to
 #      select one by default, but also allows to provide a --build-arg option
@@ -23,7 +21,6 @@ ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
-ARG deployment_debian_env_version="12" # debian docker image version in `debian:{debianversion}-slim`
 ARG deployment_env="debian"
 
 # Build stage compiling the test app in the golang image, along with sub-options
@@ -50,11 +47,19 @@ RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
     fi
 RUN go env && go build -v -tags datadog.no_waf -o smoke-test .
 
-# debian deployment environment
+# debian11 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM debian:$deployment_debian_env_version-slim AS debian
+FROM debian:11 AS debian11
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# debian12 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM debian:12 AS debian11
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 

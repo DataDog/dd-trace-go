@@ -64,7 +64,7 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian, al2, al2023, busybox, scratch ]
+        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -78,11 +78,6 @@ jobs:
             build-with-vendoring: y
             build-with-cgo: 0 # cgo's build tag can impact the vendored files
             deployment-env: alpine
-        # 2. Test on all the stable debian versions
-          - deployment-env: debian
-            deployment-debian-version: 11
-          - deployment-env: debian
-            deployment-debian-version: 12
 
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
@@ -90,7 +85,10 @@ jobs:
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian
+            deployment-env: debian11
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: debian12
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: al2
@@ -107,7 +105,7 @@ jobs:
           - build-env: bookworm
             deployment-env: al2
           - build-env: bookworm
-            deployment-debian-version: 11
+            deployment-env: debian11
           # 3. Build with CGO enabled and deploying to a scratch docker image
           #    requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
@@ -133,6 +131,5 @@ jobs:
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
-            deployment_debian_env_version=${{ matrix.deployment-debian-version }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
