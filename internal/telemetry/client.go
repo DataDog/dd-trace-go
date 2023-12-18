@@ -178,6 +178,12 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	c.debug = internal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_DEBUG", false)
 
 	productInfo := Products{
+		AppSec: ProductDetails{
+			Version: version.Tag,
+			// if the appsec is the one starting the telemetry client,
+			// then profiling is enabled
+			Enabled: namespace == NamespaceAppSec,
+		},
 		Profiler: ProductDetails{
 			Version: version.Tag,
 			// if the profiler is the one starting the telemetry client,
