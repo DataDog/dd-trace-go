@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-// Each gotraceui does not handle next Go versions execution tracer changes,
+// Each gotraceui release does not handle next Go versions execution tracer changes,
 // so we need to skip this test for future versions. We still have coverage for
 // older Go versions due to our support policy, and Go 1.22 shouldn't fundamentally
 // change the behavior this test is covering. Update this build constraint
