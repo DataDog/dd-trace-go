@@ -85,6 +85,9 @@ jobs:
           - deployment-env: busybox
             build-with-cgo: 1
             build-tags: "datadog.no_waf"
+          - build-with-cgo: 0
+            build-tags: ""
+            deployment-env: busybox
 
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
@@ -118,9 +121,6 @@ jobs:
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
             deployment-env: scratch
-          - build-with-cgo: 1
-            build-tags: ""
-            deployment-env: busybox
 
     steps:
       - uses: actions/checkout@v4
