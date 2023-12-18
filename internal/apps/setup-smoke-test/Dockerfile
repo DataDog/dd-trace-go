@@ -70,11 +70,19 @@ RUN set -ex; if [ "$build_with_cgo" = "1" ]; then \
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
-# redhat deployment environment
+# amazonlinux:2 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM redhat/ubi8 AS redhat-ubi8
+FROM amazonlinux:2 AS al2
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# amazonlinux:2023 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM amazonlinux:2023 AS al2023
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 

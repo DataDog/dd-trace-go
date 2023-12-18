@@ -46,18 +46,32 @@ jobs:
       - name: Test dd-trace-go
         run: go test $PACKAGES
 
-  setup-requirements:
+  setup-requirements-linux:
     name: 'Compilation and deployment requirements follow Go standards'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        # TODO: cross-compilation
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
-        build-with-vendoring: [ y, n ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian, redhat-ubi8, busybox, scratch ]
-        deployment-debian-version: [ 11, 12 ]
+        deployment-env: [ alpine, debian, al2, al2023, busybox, scratch ]
+        deployment-debian-version: [ 12 ]
+        include:
+          # GitHub limits the number of matrix jobs to 256, so we need to reduce
+          # it a bit, and we can reduce redundant tests.
+          # 1. Building with `go mod vendoring` is not worth it on all the
+          #    possible build and deployment envs.
+          - build-env: alpine
+            build-with-vendoring: y
+            build-with-cgo: 1 # cgo's build tag can impact the vendored files
+            deployment-env: alpine
+          - build-env: alpine
+            build-with-vendoring: y
+            build-with-cgo: 0 # cgo's build tag can impact the vendored files
+            deployment-env: alpine
+
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
           # 1. Building with CGO enabled on alpine but deploying to a non-alpine
@@ -79,7 +93,6 @@ jobs:
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
             deployment-env: scratch
-
 
     steps:
       - uses: actions/checkout@v4
