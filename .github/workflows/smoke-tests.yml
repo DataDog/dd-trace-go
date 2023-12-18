@@ -56,7 +56,7 @@ jobs:
         build-env: [ alpine, bookworm, bullseye ]
         build-with-vendoring: [ y, n ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian, redhat, busybox, scratch ]
+        deployment-env: [ alpine, debian, redhat-ubi8, busybox, scratch ]
         deployment-debian-version: [ 11, 12 ]
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
@@ -67,13 +67,13 @@ jobs:
             deployment-env: debian
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: redhat
+            deployment-env: redhat-ubi8
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: busybox
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
-            deployment-env: redhat
+            deployment-env: redhat-ubi8
           # 3. Build with CGO enabled and deploying to a scratch docker image
           #    requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
