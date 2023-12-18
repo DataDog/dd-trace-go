@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -376,6 +377,7 @@ func TestAllUploaded(t *testing.T) {
 	// TODO: Further check that the uploaded profiles are all valid
 
 	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
@@ -400,7 +402,7 @@ func TestAllUploaded(t *testing.T) {
 			"goroutines.pprof",
 			"goroutineswait.pprof",
 		}
-		if executionTraceEnabledDefault && seq == 0 {
+		if executionTraceEnabledDefault {
 			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
@@ -455,10 +457,10 @@ func TestImmediateProfile(t *testing.T) {
 	}
 }
 
-func TestExecutionTrace(t *testing.T) {
+func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
-	// reduce. In theory we could use the entire int64 space, but when we do
+	// reason. In theory we could use the entire int64 space, but when we do
 	// this the runtime can crash with the error shown below.
 	//
 	// runtime: kevent on fd 3 failed with 60
@@ -466,36 +468,13 @@ func TestExecutionTrace(t *testing.T) {
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	profiles := startTestProfiler(t, 1,
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
+	profile := <-startTestProfiler(t, 1,
+		WithPeriod(10*time.Millisecond),
 		WithProfileTypes(CPUProfile),
-		WithPeriod(1*time.Second),
 		CPUProfileRate(int(cpuProfileRate)),
 	)
-
-	contains := func(haystack []string, needle string) bool {
-		for _, s := range haystack {
-			if s == needle {
-				return true
-			}
-		}
-		return false
-	}
-	seenTraces := 0
-	for i := 0; i < 4; i++ {
-		m := <-profiles
-		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
-			seenTraces++
-			assertContainsCPUProfileRateLog(t, m.attachments["go.trace"], cpuProfileRate)
-		}
-	}
-	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 4 profile collections: one at
-	// the start, and one 3 seconds later.
-	if seenTraces != 2 {
-		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
-	}
+	assertContainsCPUProfileRateLog(t, profile.attachments["go.trace"], cpuProfileRate)
 }
 
 // assertContainsCPUProfileRateLog checks for the presence of the log written by
@@ -503,6 +482,112 @@ func TestExecutionTrace(t *testing.T) {
 func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
 	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
 	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
+}
+
+func sliceContains[T comparable](haystack []T, needle T) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestExecutionTraceMisconfiguration(t *testing.T) {
+	rl := new(log.RecordLogger)
+	defer log.UseLogger(rl)()
+	// Test the profiler with an execution trace period of 0.
+	// This is considered misconfiguration and tracing shouldn't be enabled.
+	//
+	// This test is partly defensive in nature: when doing randomized traces,
+	// recording with probability (period / execution trace period),
+	// depending on how it's implemented we may divide by 0. The Go
+	// spec says that implementations _will_ panic for integer division by
+	// 0, and _may_ choose to panic for floating point division by 0.
+	// See go.dev/ref/spec#Arithmetic_operators, and go.dev/issue/43577
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "0ms")
+	profile := doOneShortProfileUpload(t,
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
+	)
+	assert.NotContains(t, profile.event.Attachments, "go.trace")
+	log.Flush()
+	for _, m := range rl.Logs() {
+		if strings.Contains(m, "Invalid execution trace config") {
+			return
+		}
+	}
+	t.Log(rl.Logs())
+	t.Error("did not warn on invalid trace config")
+}
+
+func TestExecutionTraceRandom(t *testing.T) {
+	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
+		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
+		profiles := startTestProfiler(t, 10,
+			WithProfileTypes(),
+			WithPeriod(profilePeriod),
+		)
+
+		seenTraces := 0
+		for i := 0; i < count; i++ {
+			profile := <-profiles
+			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
+				seenTraces++
+			} else if i == 0 {
+				t.Error("did not see a trace in the first upload")
+			}
+		}
+		return seenTraces
+	}
+
+	doTrial := func(t *testing.T, rate, tolerance float64) bool {
+		profileDurationMs := 10.0
+		traceDurationMs := profileDurationMs / rate
+		const count = 100
+		seen := collectTraces(t,
+			time.Duration(profileDurationMs)*time.Millisecond,
+			time.Duration(traceDurationMs)*time.Millisecond,
+			count,
+		)
+		// We're simulating Bernoulli trials with the given rate, which
+		// should follow a binomial distribution. Assert that we're
+		// within the given number of standard deviations of the
+		// expected mean
+		stdDev := math.Sqrt(count * rate * (1 - rate))
+		mean := count * rate
+		lower, upper := int(mean-tolerance*stdDev), int(mean+tolerance*stdDev)
+		if seen >= lower && seen <= upper {
+			return true
+		}
+		t.Logf("observed %d traces, outside the desired bound of [%d, %d]", seen, lower, upper)
+		return false
+	}
+
+	sampleRates := []float64{
+		1.0 / 15.0, // our default rate
+		0.5,        // higher to catch failures from under-sampling
+		1.0,        // record all the time
+	}
+	for _, rate := range sampleRates {
+		name := fmt.Sprintf("rate-%f", rate)
+		t.Run(name, func(t *testing.T) {
+			// We should be within 2 standard deviations ~95% of the time
+			// with a correct implementation. If we do this twice, then
+			// we have a ~99.999% chance of succeeding with a correct
+			// implementation. We keep a reasonably tight tolerance
+			// to ensure that an incorrect implementation is more likely
+			// to fail both times
+			for i := 0; i < 2; i++ {
+				if doTrial(t, rate, 2.0) {
+					return
+				}
+			}
+			t.Error("failed after retry")
+		})
+	}
 }
 
 // TestEndpointCounts verfies that the unit of work feature works end to end.
