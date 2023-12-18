@@ -135,6 +135,7 @@ jobs:
           build-args: |
             go=${{ matrix.go }}
             build_env=${{ matrix.build-env }}
+            build_tags=${{ matrix.build-tags }}
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
