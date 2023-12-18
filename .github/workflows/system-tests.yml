@@ -40,12 +40,14 @@ jobs:
           - echo
           - chi
           - gin
+          - uds-echo
         scenario:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
+          - APPSEC_API_SECURITY
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL

@@ -186,9 +186,6 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "execution-trace",
 		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
-			if !p.shouldTrace() {
-				return nil, errors.New("started tracing erroneously, indicating a bug in the profiler")
-			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
 			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))

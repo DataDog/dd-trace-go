@@ -3,6 +3,10 @@ name: Test Apps
 "on":
   workflow_call:
     inputs:
+      scenarios:
+        type: string
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        description: Scenarios to run
       ref:
         description: The branch to run the workflow on
         required: false
@@ -25,23 +29,16 @@ name: Test Apps
         type: string
         default: 60s
         description: Profile period
-      'scenario: unit-of-work/v1':
-        type: boolean
-        default: true
-      'scenario: unit-of-work/v2':
-        type: boolean
-        default: true
-      'scenario: memory-leak/goroutine':
-        type: boolean
-        default: true
-      'scenario: memory-leak/heap':
-        type: boolean
-        default: true
-      'scenario: memory-leak/goroutine-heap':
-        type: boolean
-        default: true
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
   workflow_dispatch:
     inputs:
+      scenarios:
+        type: string
+        default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
+        description: Scenarios to run
       'env: prod':
         type: boolean
         default: true
@@ -60,29 +57,18 @@ name: Test Apps
         type: string
         default: 60s
         description: Profile period
-      'scenario: unit-of-work/v1':
-        type: boolean
-        default: false
-      'scenario: unit-of-work/v2':
-        type: boolean
-        default: false
-      'scenario: memory-leak/goroutine':
-        type: boolean
-        default: false
-      'scenario: memory-leak/heap':
-        type: boolean
-        default: false
-      'scenario: memory-leak/goroutine-heap':
-        type: boolean
-        default: false
+      'arg: tags':
+        type: string
+        default: trigger:manual
+        description: Extra DD_TAGS
 env:
   DD_ENV: github
-  DD_TAGS: github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }}
+  DD_TAGS: 'github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs[''arg: tags''] }}'
 jobs:
   job-0-0:
     name: unit-of-work/v1 (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: unit-of-work/v1''] && inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -101,14 +87,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-0-1:
     name: unit-of-work/v1 (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: unit-of-work/v1''] && inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -127,14 +113,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v1'
   job-1-0:
     name: unit-of-work/v2 (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: unit-of-work/v2''] && inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -153,14 +139,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-1-1:
     name: unit-of-work/v2 (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: unit-of-work/v2''] && inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -179,14 +165,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'unit-of-work/v2'
   job-2-0:
     name: memory-leak/goroutine (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/goroutine''] && inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -205,14 +191,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-2-1:
     name: memory-leak/goroutine (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/goroutine''] && inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -231,14 +217,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine'
   job-3-0:
     name: memory-leak/heap (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/heap''] && inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -257,14 +243,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-3-1:
     name: memory-leak/heap (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/heap''] && inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -283,14 +269,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/heap'
   job-4-0:
     name: memory-leak/goroutine-heap (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/goroutine-heap''] && inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -309,14 +295,14 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
   job-4-1:
     name: memory-leak/goroutine-heap (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''scenario: memory-leak/goroutine-heap''] && inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -335,7 +321,7 @@ jobs:
           cache: true
       - name: Run Scenario
         env:
-          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] || ''5'' }}'
-          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] || ''60s'' }}'
-          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] || ''10s'' }}'
+          DD_TEST_APPS_REQUESTS_PER_SECOND: '${{ inputs[''arg: rps''] }}'
+          DD_TEST_APPS_TOTAL_DURATION: '${{ inputs[''arg: scenario_duration''] }}'
+          DD_TEST_APPS_PROFILE_PERIOD: '${{ inputs[''arg: profile_period''] }}'
         run: cd ./internal/apps && ./run-scenario.bash 'memory-leak/goroutine-heap'
