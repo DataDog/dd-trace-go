@@ -81,10 +81,16 @@ jobs:
             deployment-env: debian
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: redhat-ubi8
+            deployment-env: al2
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: al2023
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: busybox
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: scratch
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: redhat-ubi8
