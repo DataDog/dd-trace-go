@@ -65,7 +65,6 @@ jobs:
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian, al2, al2023, busybox, scratch ]
-        deployment-debian-version: [ 11, 12 ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -79,6 +78,11 @@ jobs:
             build-with-vendoring: y
             build-with-cgo: 0 # cgo's build tag can impact the vendored files
             deployment-env: alpine
+        # 2. Test on all the stable debian versions
+          - deployment-env: debian
+            deployment-debian-version: 11
+          - deployment-env: debian
+            deployment-debian-version: 12
 
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
