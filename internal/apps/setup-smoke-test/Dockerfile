@@ -21,7 +21,6 @@
 #      can systematically use --build-arg for all of the parameters.
 ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
-ARG build_tags=""
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
 ARG deployment_debian_env_version="12" # debian docker image version in `debian:{debianversion}-slim`

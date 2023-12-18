@@ -63,7 +63,6 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
-        build-tags: [ "" ]
         deployment-env: [ alpine, debian, al2, al2023, busybox, scratch ]
         deployment-debian-version: [ 11, 12 ]
         include:
@@ -109,9 +108,6 @@ jobs:
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
             deployment-env: scratch
-          # 4. Having CGO enabled and appsec build tag is repetitive
-          - build-with-cgo: 1
-            build-tags: "appsec"
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +125,6 @@ jobs:
           build-args: |
             go=${{ matrix.go }}
             build_env=${{ matrix.build-env }}
-            build_tags=${{ matrix.build-tags }}
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
