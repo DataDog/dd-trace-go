@@ -93,7 +93,7 @@ jobs:
             deployment-env: scratch
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
-            deployment-env: redhat-ubi8
+            deployment-env: al2
           # 3. Build with CGO enabled and deploying to a scratch docker image
           #    requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
