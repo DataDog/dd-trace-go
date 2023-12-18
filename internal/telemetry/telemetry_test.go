@@ -23,7 +23,7 @@ import (
 func TestProductEnabled(t *testing.T) {
 	client := new(client)
 	client.start(nil, NamespaceTracers)
-	client.productEnabled(NamespaceProfilers)
+	client.productChange(NamespaceProfilers, true)
 	// should just contain app-product-change
 	require.Len(t, client.requests, 1)
 	body := client.requests[0].Body
@@ -84,7 +84,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, genTelemetr
 			genTelemetry()
 			select {
 			case <-ctx.Done():
-				t.Fatal("TestProductStart timed out")
+				t.Fatal("TestProductChange timed out")
 			case <-done:
 			}
 			return messages
@@ -94,7 +94,7 @@ func mockServer(ctx context.Context, t *testing.T, expectedHits int, genTelemetr
 		}
 }
 
-func TestProductStart(t *testing.T) {
+func TestProductChange(t *testing.T) {
 	// this test is meant to ensure that a given sequence of ProductStart/ProductStop calls
 	// emits the expected telemetry events.
 	t.Setenv("DD_TELEMETRY_HEARTBEAT_INTERVAL", "1")
@@ -108,16 +108,16 @@ func TestProductStart(t *testing.T) {
 			name:           "tracer start, profiler start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange, RequestTypeAppProductChange},
 			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceTracers, nil)
-				GlobalClient.ProductStart(NamespaceProfilers, []Configuration{{Name: "key", Value: "value"}})
+				GlobalClient.ProductChange(NamespaceTracers, true, nil)
+				GlobalClient.ProductChange(NamespaceProfilers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
 		{
 			name:           "profiler start, tracer start",
 			wantedMessages: []RequestType{RequestTypeAppStarted, RequestTypeDependenciesLoaded, RequestTypeAppClientConfigurationChange},
 			genTelemetry: func() {
-				GlobalClient.ProductStart(NamespaceProfilers, nil)
-				GlobalClient.ProductStart(NamespaceTracers, []Configuration{{Name: "key", Value: "value"}})
+				GlobalClient.ProductChange(NamespaceProfilers, true, nil)
+				GlobalClient.ProductChange(NamespaceTracers, true, []Configuration{{Name: "key", Value: "value"}})
 			},
 		},
 	}

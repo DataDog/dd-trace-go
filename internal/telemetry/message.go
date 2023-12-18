@@ -70,8 +70,8 @@ const (
 	NamespaceTracers Namespace = "tracers"
 	// NamespaceProfilers is for continuous profiling
 	NamespaceProfilers Namespace = "profilers"
-	// NamespaceASM is for application security monitoring
-	NamespaceASM Namespace = "appsec" // This was defined before the appsec -> ASM change
+	// NamespaceAppSec is for application security management
+	NamespaceAppSec Namespace = "appsec"
 )
 
 // Application is identifying information about the app itself

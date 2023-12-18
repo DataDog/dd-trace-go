@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	waf "github.com/DataDog/go-libddwaf/v2"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
@@ -147,15 +148,22 @@ func (a *appsec) start() error {
 
 	a.limiter = limiter.NewTokenTicker(a.cfg.traceRateLimit, a.cfg.traceRateLimit)
 	a.limiter.Start()
+
 	// Register the WAF operation event listener
 	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
 		return err
 	}
+
 	a.enableRCBlocking()
+
 	a.started = true
 	log.Info("appsec: up and running")
+
 	// TODO: log the config like the APM tracer does but we first need to define
 	//   an user-friendly string representation of our config and its sources
+
+	startTelemetry()
+
 	return nil
 }
 
