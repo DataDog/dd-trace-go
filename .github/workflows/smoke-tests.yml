@@ -73,10 +73,12 @@ jobs:
           # 1. Building with `go mod vendoring` is not worth it on all the
           #    possible build and deployment envs.
           - build-env: alpine
+            go: 1.21
             build-with-vendoring: y
             build-with-cgo: 1 # cgo's build tag can impact the vendored files
             deployment-env: alpine
           - build-env: alpine
+            go: 1.21
             build-with-vendoring: y
             build-with-cgo: 0 # cgo's build tag can impact the vendored files
             deployment-env: alpine
