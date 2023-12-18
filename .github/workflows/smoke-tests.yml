@@ -64,6 +64,8 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
+        build-tags: [ "" ]
+        build-with-vendoring: [ n ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
@@ -78,6 +80,10 @@ jobs:
             build-with-vendoring: y
             build-with-cgo: 0 # cgo's build tag can impact the vendored files
             deployment-env: alpine
+          # 2. <Describe me>
+          - deployment-env: busybox
+            build-with-cgo: 1
+            build-tags: "datadog.no_waf"
 
         exclude:
           # Exclude "out of the box" cases requiring extra setup:
@@ -106,11 +112,14 @@ jobs:
             deployment-env: al2
           - build-env: bookworm
             deployment-env: debian11
-          # 3. Build with CGO enabled and deploying to a scratch docker image
-          #    requires copying the dynamic lib dependencies (full example
+          # 3. Build with CGO enabled and deploying to a scratch/busybox docker
+          #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
             deployment-env: scratch
+          - build-with-cgo: 1
+            build-tags: ""
+            deployment-env: busybox
 
     steps:
       - uses: actions/checkout@v4
