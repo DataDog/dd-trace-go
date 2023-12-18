@@ -15,8 +15,10 @@ ARG build_with_cgo
 RUN go env -w CGO_ENABLED=$build_with_cgo
 
 ARG build_env
+# GCC and the C library headers are needed for compilation of runtime/cgo with
+# CGO_ENABLED=1 - but the golang:alpine image doesn't provide them out of the box.
 RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then \
-      apk update && apk add gcc libc-dev; \ # needed for cgo and the compilation of runtime/cgo
+      apk update && apk add gcc libc-dev; \
     fi
 
 ARG build_with_vendoring
