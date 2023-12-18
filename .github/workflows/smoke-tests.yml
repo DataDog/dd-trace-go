@@ -30,7 +30,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
@@ -56,9 +56,10 @@ jobs:
         build-env: [ alpine, bookworm, bullseye ]
         build-with-vendoring: [ y, n ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian, redhat, busybox ]
+        deployment-env: [ alpine, debian, redhat, busybox, scratch ]
+        deployment-debian-version: [ 11, 12 ]
         exclude:
-          # Exclude incompatible cases:
+          # Exclude "out of the box" cases requiring extra setup:
           # 1. Building with CGO enabled on alpine but deploying to a non-alpine
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
@@ -70,9 +71,15 @@ jobs:
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: busybox
-            # 2. Too old glibc on the deployment environment than on the build env
+          # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: redhat
+          # 3. Build with CGO enabled and deploying to a scratch docker image
+          #    requires copying the dynamic lib dependencies (full example
+          #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
+          - build-with-cgo: 1
+            deployment-env: scratch
+
 
     steps:
       - uses: actions/checkout@v4
@@ -93,5 +100,6 @@ jobs:
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
+            deployment_debian_env_version=${{ matrix.deployment-debian-version }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test

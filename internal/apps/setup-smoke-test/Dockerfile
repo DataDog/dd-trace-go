@@ -1,8 +1,29 @@
+# This Dockerfile is used to showcase the onboarding experience of our users
+# who leverage docker for their build and deployments.
+# It covers both the build requirements and deployment requirements, and it is
+# parametrized to allow to covering all the possible combinations we are aware
+# of that our users do, with:
+# - build environment, made of the following docker build args:
+#    - go: the Go version to use, , following their docker image tagging
+#      convention `golang:{go}-{buildenv}`.
+#    - build_env: the golang build image "environment" to use, following their
+#      docker image tagging convention `golang:{go}-{buildenv}`.
+#    - build_with_cgo: whether to enable CGO or not (0 or 1).
+#    - build_with_vendoring: whether to vendor the Go dependencies with
+#      `go mod vendor` or not (y or empty).
+# - deployment environment, made of the following docker build args:
+#    - deployment_debian_env_version: the debian version to use, following their
+#      docker image tagging convention `debian:{debianversion}-slim`.
+#    - deployment_env: the deployment environment to use. Since multiple targets
+#      are possible in this multi-stage dockerfile, this parameter allows to
+#      select one by default, but also allows to provide a --build-arg option
+#      too instead of relying on the --target option. This way, the CI matrix
+#      can systematically use --build-arg for all of the parameters.
 ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
-ARG debian_version="12" # debian docker image versio in `debian:{debianversion}-slim`
+ARG deployment_debian_env_version="12" # debian docker image version in `debian:{debianversion}-slim`
 ARG deployment_env="debian"
 
 FROM golang:$go-$build_env AS build-env
@@ -31,7 +52,7 @@ RUN go env && go build -v -tags datadog.no_waf -o smoke-test .
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM debian:$debian_version-slim AS debian
+FROM debian:$deployment_debian_env_version-slim AS debian
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
@@ -70,7 +91,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM scratch AS scratch
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /
-CMD /smoke-test
+ENTRYPOINT [ "/smoke-test" ]
 
 # Final deployment environment - helper target to end up a single one
 FROM $deployment_env AS deployment-env
