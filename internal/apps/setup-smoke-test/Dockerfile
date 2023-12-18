@@ -46,7 +46,8 @@ ARG build_with_vendoring
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       go mod vendor; \
     fi
-RUN go env && go build -v -o smoke-test .
+ARG build_tags
+RUN go env && go build -v -tags "$build_tags" -o smoke-test .
 RUN ldd smoke-test || true
 
 # debian11 deployment environment
