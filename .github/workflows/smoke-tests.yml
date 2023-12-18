@@ -52,12 +52,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: cross-compilation
+        # TODO: cross-compilation from/to different hardware architectures once
+        #       github provides native ARM runners.
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian, al2, al2023, busybox, scratch ]
-        deployment-debian-version: [ 12 ]
+        deployment-debian-version: [ 11, 12 ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
