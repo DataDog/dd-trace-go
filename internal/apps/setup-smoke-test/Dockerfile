@@ -46,7 +46,7 @@ RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       go mod vendor; \
     fi
 RUN go env && go build -v -o smoke-test .
-RUN ldd smoke-test
+RUN ldd smoke-test || true
 
 # debian11 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
