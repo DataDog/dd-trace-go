@@ -21,7 +21,7 @@ ARG go="1.21" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
-ARG deployment_env="debian"
+ARG deployment_env="debian12"
 
 # Build stage compiling the test app in the golang image, along with sub-options
 # to possibly enable CGO and vendoring.
