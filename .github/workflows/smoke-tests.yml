@@ -46,6 +46,7 @@ jobs:
       - name: Test dd-trace-go
         run: go test $PACKAGES
 
+  # TODO: macos setup requirements (xcode tools installation, etc.)
   setup-requirements-linux:
     # Build and deployment setup smoke test of linux containers built from the
     # golang docker image to test that dd-trace-go doesn't need more than the
