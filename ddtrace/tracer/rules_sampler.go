@@ -87,6 +87,9 @@ type SamplingRule struct {
 
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *span) bool {
+	if sr.TargetRoot && s.root().SpanID != s.SpanID {
+		return false
+	}
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
 	} else if sr.exactService != "" && sr.exactService != s.Service {
@@ -96,6 +99,17 @@ func (sr *SamplingRule) match(s *span) bool {
 		return false
 	} else if sr.exactName != "" && sr.exactName != s.Name {
 		return false
+	}
+	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
+		return false
+	}
+	if sr.Tags != nil {
+		for k, regex := range sr.Tags {
+			v, ok := s.Meta[k]
+			if !ok || !regex.MatchString(v) {
+				return false
+			}
+		}
 	}
 	return true
 }
@@ -653,11 +667,14 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
-		Service      string   `json:"service"`
-		Name         string   `json:"name"`
-		Rate         float64  `json:"sample_rate"`
-		Type         string   `json:"type"`
-		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
+		Service      string            `json:"service"`
+		Name         string            `json:"name"`
+		Resource     string            `json:"resource,omitempty"`
+		Rate         float64           `json:"sample_rate"`
+		TargetSpan   string            `json:"target_span,omitempty"`
+		Tags         map[string]string `json:"tags,omitempty"`
+		Type         string            `json:"type"`
+		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
 	if sr.exactService != "" {
 		s.Service = sr.exactService
@@ -669,10 +686,26 @@ func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	} else if sr.Name != nil {
 		s.Name = fmt.Sprintf("%s", sr.Name)
 	}
-	s.Rate = sr.Rate
-	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
 	if sr.MaxPerSecond != 0 {
 		s.MaxPerSecond = &sr.MaxPerSecond
+	}
+	if sr.ruleType == SamplingRuleTrace {
+		if sr.TargetRoot {
+			s.TargetSpan = "root"
+		} else {
+			s.TargetSpan = "any"
+		}
+	}
+	if sr.Resource != nil {
+		s.Resource = sr.Resource.String()
+	}
+	s.Rate = sr.Rate
+	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
+	s.Tags = make(map[string]string, len(sr.Tags))
+	for k, v := range sr.Tags {
+		if v != nil {
+			s.Tags[k] = v.String()
+		}
 	}
 	return json.Marshal(&s)
 }
