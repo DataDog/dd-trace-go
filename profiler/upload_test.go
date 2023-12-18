@@ -159,20 +159,7 @@ func TestContainerIDHeader(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 	containerID = "fakeContainerID"
 
-	profiles := make(chan profileMeta, 1)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-	defer server.Close()
-	p, err := unstartedProfiler(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithService("my-service"),
-		WithEnv("my-env"),
-		WithTags("tag1:1", "tag2:2"),
-	)
-	require.NoError(t, err)
-	err = p.doRequest(testBatch)
-	require.NoError(t, err)
-
-	profile := <-profiles
+	profile := doOneShortProfileUpload(t)
 	assert.Equal(t, containerID, profile.headers.Get("Datadog-Container-Id"))
 }
 
@@ -213,17 +200,7 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-
-		profiles := make(chan profileMeta, 1)
-		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-		defer server.Close()
-		p, err := unstartedProfiler(
-			WithAgentAddr(server.Listener.Addr().String()),
-		)
-		require.NoError(t, err)
-		err = p.doRequest(testBatch)
-		require.NoError(t, err)
-		profile := <-profiles
+		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
@@ -233,17 +210,7 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:http://u@github.com/user/repo go_path:somepath")
-
-		profiles := make(chan profileMeta, 1)
-		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-		defer server.Close()
-		p, err := unstartedProfiler(
-			WithAgentAddr(server.Listener.Addr().String()),
-		)
-		require.NoError(t, err)
-		err = p.doRequest(testBatch)
-		require.NoError(t, err)
-		profile := <-profiles
+		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCD")
@@ -257,17 +224,7 @@ func TestGitMetadata(t *testing.T) {
 		// git metadata env has priority under DD_TAGS
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-
-		profiles := make(chan profileMeta, 1)
-		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-		defer server.Close()
-		p, err := unstartedProfiler(
-			WithAgentAddr(server.Listener.Addr().String()),
-		)
-		require.NoError(t, err)
-		err = p.doRequest(testBatch)
-		require.NoError(t, err)
-		profile := <-profiles
+		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
@@ -277,17 +234,7 @@ func TestGitMetadata(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u@github.com/user/repo_new")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-
-		profiles := make(chan profileMeta, 1)
-		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-		defer server.Close()
-		p, err := unstartedProfiler(
-			WithAgentAddr(server.Listener.Addr().String()),
-		)
-		require.NoError(t, err)
-		err = p.doRequest(testBatch)
-		require.NoError(t, err)
-		profile := <-profiles
+		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
 		assert.Contains(profile.tags, "git.commit.sha:123456789ABCDE")
@@ -297,21 +244,10 @@ func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-disabled", func(t *testing.T) {
 		maininternal.ResetGitMetadataTags()
 		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
-
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
 		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
 		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCD")
-
-		profiles := make(chan profileMeta, 1)
-		server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
-		defer server.Close()
-		p, err := unstartedProfiler(
-			WithAgentAddr(server.Listener.Addr().String()),
-		)
-		require.NoError(t, err)
-		err = p.doRequest(testBatch)
-		require.NoError(t, err)
-		profile := <-profiles
+		profile := doOneShortProfileUpload(t)
 
 		assert := assert.New(t)
 		assert.NotContains(profile.tags, "git.commit.sha:123456789ABCD")
