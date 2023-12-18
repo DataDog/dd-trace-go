@@ -64,8 +64,6 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
-        build-tags: [ "" ]
-        build-with-vendoring: [ n ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
@@ -73,12 +71,10 @@ jobs:
           # 1. Building with `go mod vendoring` is not worth it on all the
           #    possible build and deployment envs.
           - build-env: alpine
-            go: 1.21
             build-with-vendoring: y
             build-with-cgo: 1 # cgo's build tag can impact the vendored files
             deployment-env: alpine
           - build-env: alpine
-            go: 1.21
             build-with-vendoring: y
             build-with-cgo: 0 # cgo's build tag can impact the vendored files
             deployment-env: alpine
