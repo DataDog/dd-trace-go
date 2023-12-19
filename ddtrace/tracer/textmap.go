@@ -237,6 +237,9 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		case "b3":
 			list = append(list, &propagatorB3SingleHeader{})
 			listNames = append(listNames, v)
+		case "b3 single header":
+			log.Warn("Propagator value \"b3 single header\" is deprecated, and has no effect. " +
+				"Use `b3` instead for B3 single-header propagation, or `b3multi` for B3 multi-header propagation.")
 		case "none":
 			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
 				"To disable the propagator, set to `none`")
