@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build linux
+
 package internal
 
 import (
@@ -20,20 +22,20 @@ const (
 	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
 	cgroupPath = "/proc/self/cgroup"
 
-	// cgroupV2Key is the key used to store the cgroup v2 identify the cgroupv2 mount point in the cgroupMounts map.
-	cgroupV2Key = "cgroupv2"
-
 	// cgroupV1BaseController is the base controller used to identify the cgroup v1 mount point in the cgroupMounts map.
 	cgroupV1BaseController = "memory"
 
 	// defaultCgroupMountPath is the path to the cgroup mount point.
 	defaultCgroupMountPath = "/sys/fs/cgroup"
-)
 
-const (
 	uuidSource      = "[0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{8}(?:-[0-9a-f]{4}){4}$"
 	containerSource = "[0-9a-f]{64}"
 	taskSource      = "[0-9a-f]{32}-\\d+"
+
+	// From https://github.com/torvalds/linux/blob/5859a2b1991101d6b978f3feb5325dad39421f29/include/linux/proc_ns.h#L41-L49
+	// Currently, host namespace inode number are hardcoded, which can be used to detect
+	// if we're running in host namespace or not (does not work when running in DinD)
+	hostCgroupNamespaceInode = 0xEFFFFFFB
 )
 
 var (
@@ -150,6 +152,9 @@ func readEntityID(mountPath, cgroupPath string) string {
 	if containerID != "" {
 		return "cid-" + containerID
 	}
+	if !isHostCgroupNamespace() {
+		return ""
+	}
 	return getCgroupInode(mountPath, cgroupPath)
 }
 
@@ -157,4 +162,19 @@ func readEntityID(mountPath, cgroupPath string) string {
 // The cid is prefixed with `cid-` and the inode with `in-`.
 func EntityID() string {
 	return entityID
+}
+
+// isHostCgroupNamespace checks if the agent is running in the host cgroup namespace.
+func isHostCgroupNamespace() bool {
+	fi, err := os.Stat("/proc/self/ns/cgroup")
+	if err != nil {
+		return false
+	}
+
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if ok {
+		return stat.Ino == hostCgroupNamespaceInode
+	}
+
+	return false
 }
