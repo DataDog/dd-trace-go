@@ -43,9 +43,10 @@ var testBatch = batch{
 }
 
 func TestTryUpload(t *testing.T) {
-	// Force an empty containerid on this test.
-	defer func(cid string) { containerID = cid }(containerID)
+	// Force an empty containerid and entityID on this test.
+	defer func(cid, eid string) { containerID = cid; entityID = eid }(containerID, entityID)
 	containerID = ""
+	entityID = ""
 
 	profiles := make(chan profileMeta, 1)
 	server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
@@ -63,6 +64,7 @@ func TestTryUpload(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Empty(profile.headers.Get("Datadog-Container-ID"))
+	assert.Empty(profile.headers.Get("Datadog-Entity-ID"))
 	assert.Subset(profile.tags, []string{
 		"host:my-host",
 		"runtime:go",
@@ -161,6 +163,28 @@ func TestContainerIDHeader(t *testing.T) {
 
 	profile := doOneShortProfileUpload(t)
 	assert.Equal(t, containerID, profile.headers.Get("Datadog-Container-Id"))
+}
+
+func TestEntityIDHeader(t *testing.T) {
+	// Force a non-empty entityID on this test.
+	defer func(eid string) { entityID = eid }(entityID)
+	entityID = "fakeEntityID"
+
+	profiles := make(chan profileMeta, 1)
+	server := httptest.NewServer(&mockBackend{t: t, profiles: profiles})
+	defer server.Close()
+	p, err := unstartedProfiler(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithService("my-service"),
+		WithEnv("my-env"),
+		WithTags("tag1:1", "tag2:2"),
+	)
+	require.NoError(t, err)
+	err = p.doRequest(testBatch)
+	require.NoError(t, err)
+
+	profile := <-profiles
+	assert.Equal(t, entityID, profile.headers.Get("Datadog-Entity-Id"))
 }
 
 func BenchmarkDoRequest(b *testing.B) {
