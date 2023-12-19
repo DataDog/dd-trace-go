@@ -20,9 +20,6 @@ const (
 	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
 	cgroupPath = "/proc/self/cgroup"
 
-	// mountsPath is the path to the mounts file where we can find the cgroup v2 mount point.
-	mountsPath = "/proc/mounts"
-
 	// cgroupV2Key is the key used to store the cgroup v2 identify the cgroupv2 mount point in the cgroupMounts map.
 	cgroupV2Key = "cgroupv2"
 
