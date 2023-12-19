@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
@@ -122,7 +121,7 @@ type Span interface {
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span *tracer.Span, pathParams map[string]string, onBlock ...func()) http.Handler {
+func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, onBlock ...func()) http.Handler {
 	trace.SetAppSecEnabledTags(span)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ipTags, clientIP := httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
