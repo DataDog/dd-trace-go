@@ -92,7 +92,7 @@ func TestReadEntityIDPrioritizeCID(t *testing.T) {
 	defer func(cid string) { containerID = cid }(containerID)
 
 	containerID = "fakeContainerID"
-	eid := readEntityID("", "")
+	eid := readEntityID("", "", true)
 	assert.Equal(t, "cid-fakeContainerID", eid)
 }
 
@@ -119,8 +119,11 @@ func TestReadEntityIDFallbackOnInode(t *testing.T) {
 	err = procSelfCgroup.Close()
 	require.NoError(t, err)
 
-	eid := readEntityID(sysFsCgroupPath, procSelfCgroup.Name())
+	eid := readEntityID(sysFsCgroupPath, procSelfCgroup.Name(), false)
 	assert.Equal(t, expectedInode, eid)
+
+	emptyEid := readEntityID(sysFsCgroupPath, procSelfCgroup.Name(), true)
+	assert.Equal(t, "", emptyEid)
 }
 
 func TestParsegroupControllerPath(t *testing.T) {

@@ -56,7 +56,7 @@ var (
 
 func init() {
 	containerID = readContainerID(cgroupPath)
-	entityID = readEntityID(defaultCgroupMountPath, cgroupPath)
+	entityID = readEntityID(defaultCgroupMountPath, cgroupPath, isHostCgroupNamespace())
 }
 
 // parseContainerID finds the first container ID reading from r and returns it.
@@ -147,14 +147,14 @@ func inodeForPath(path string) string {
 }
 
 // readEntityID attempts to return the cgroup node inode or empty on failure.
-func readEntityID(mountPath, cgroupPath string) string {
+func readEntityID(mountPath, cgroupPath string, isHostCgroupNamespace bool) string {
 	// First try to emit the containerID if available. It will be retrieved if the container is
 	// running in the host cgroup namespace, independently of the cgroup version.
 	if containerID != "" {
 		return "cid-" + containerID
 	}
 	// Rely on the inode if we're not running in the host cgroup namespace.
-	if isHostCgroupNamespace() {
+	if isHostCgroupNamespace {
 		return ""
 	}
 	return getCgroupInode(mountPath, cgroupPath)
