@@ -228,13 +228,13 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		case "tracecontext":
 			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
-		case "b3", "b3multi":
+		case "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
 				list = append(list, &propagatorB3{})
 				listNames = append(listNames, v)
 			}
-		case "b3 single header":
+		case "b3":
 			list = append(list, &propagatorB3SingleHeader{})
 			listNames = append(listNames, v)
 		case "none":
