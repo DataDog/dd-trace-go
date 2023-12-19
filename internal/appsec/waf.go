@@ -12,8 +12,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/graphqlsec"
-	grpc "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
-	http "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	waf "github.com/DataDog/go-libddwaf/v2"
 )
