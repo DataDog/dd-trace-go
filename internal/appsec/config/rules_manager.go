@@ -40,11 +40,14 @@ type (
 		Scanners    []interface{}   `json:"scanners,omitempty"`
 	}
 
+	// RuleDataEntry represents an entry in the "rules_data" top level field of a rules file
 	RuleDataEntry rc.ASMDataRuleData
-	RulesData     struct {
+	// RulesData is a slice of RulesDataEntry
+	RulesData struct {
 		RulesData []RuleDataEntry `json:"rules_data"`
 	}
 
+	// ActionEntry represents an entry in the "actions" top level field of a rules file
 	ActionEntry struct {
 		ID         string `json:"id"`
 		Type       string `json:"type"`
@@ -99,6 +102,7 @@ func NewRulesManeger(rules []byte) (*RulesManager, error) {
 	}, nil
 }
 
+// Clone returns a duplicate of the current rules manager object
 func (r *RulesManager) Clone() *RulesManager {
 	var clone RulesManager
 	clone.Edits = make(map[string]RulesFragment, len(r.Edits))
@@ -110,14 +114,17 @@ func (r *RulesManager) Clone() *RulesManager {
 	return &clone
 }
 
+// AddEdit appends the configuration to the map of edits in the rules manager
 func (r *RulesManager) AddEdit(cfgPath string, f RulesFragment) {
 	r.Edits[cfgPath] = f
 }
 
+// RemoveEdit deletes the configuration associated to `cfgPath` in the edits slice
 func (r *RulesManager) RemoveEdit(cfgPath string) {
 	delete(r.Edits, cfgPath)
 }
 
+// ChangeBase sets a new rules fragment base for the rules manager
 func (r *RulesManager) ChangeBase(f RulesFragment, basePath string) {
 	r.Base = f
 	r.BasePath = basePath

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
+// EnvEnabled is the env var used to enable/disable appsec
 const EnvEnabled = "DD_APPSEC_ENABLED"
 
 // StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
@@ -58,6 +59,7 @@ func IsEnabled() (enabled bool, set bool, err error) {
 	return enabled, set, nil
 }
 
+// NewConfig returns a fresh appsec configuration read from the env
 func NewConfig() (*Config, error) {
 	rules, err := internal.RulesFromEnv()
 	if err != nil {
