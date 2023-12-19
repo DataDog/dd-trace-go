@@ -32,15 +32,19 @@ const (
 )
 
 // List of gRPC rule addresses currently supported by the WAF
-var supportedpAddresses = map[string]struct{}{
+var supportedAddresses = map[string]struct{}{
 	GRPCServerRequestMessage:  {},
 	GRPCServerRequestMetadata: {},
 	HTTPClientIPAddr:          {},
 	UserIDAddr:                {},
 }
 
+func SupportedAddressCount() int {
+	return len(supportedAddresses)
+}
+
 func SupportsAddress(addr string) bool {
-	_, ok := supportedpAddresses[addr]
+	_, ok := supportedAddresses[addr]
 	return ok
 }
 
@@ -149,7 +153,7 @@ func NewWAFEventListener(handle *waf.Handle, actions sharedsec.Actions, addresse
 			// Log the following metrics once per instantiation of a WAF handle
 			monitorRulesOnce.Do(func() {
 				listener.AddRulesMonitoringTags(op, &wafDiags)
-				op.AddTag(ext.ManualKeep, samplernames.AppSec)
+				op.SetTag(ext.ManualKeep, samplernames.AppSec)
 			})
 
 			listener.AddSecurityEvents(op, limiter, events)
