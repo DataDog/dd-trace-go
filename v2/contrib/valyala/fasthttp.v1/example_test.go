@@ -8,8 +8,8 @@ package fasthttp_test
 import (
 	"fmt"
 
+	fasthttptrace "github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp.v1"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	fasthttp2 "github.com/DataDog/dd-trace-go/v2/v2/contrib/valyala/fasthttp.v1"
 
 	"github.com/valyala/fasthttp"
 )
@@ -24,7 +24,7 @@ func Example() {
 	defer tracer.Stop()
 
 	// Start fasthttp server
-	fasthttp.ListenAndServe(":8081", fasthttp2.WrapHandler(fastHTTPHandler))
+	fasthttp.ListenAndServe(":8081", fasthttptrace.WrapHandler(fastHTTPHandler))
 }
 
 func Example_withServiceName() {
@@ -33,5 +33,5 @@ func Example_withServiceName() {
 	defer tracer.Stop()
 
 	// Start fasthttp server
-	fasthttp.ListenAndServe(":8081", fasthttp2.WrapHandler(fastHTTPHandler, fasthttp2.WithServiceName("fasthttp-server")))
+	fasthttp.ListenAndServe(":8081", fasthttptrace.WrapHandler(fastHTTPHandler, fasthttptrace.WithServiceName("fasthttp-server")))
 }

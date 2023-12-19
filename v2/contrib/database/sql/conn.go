@@ -11,10 +11,10 @@ import (
 	"math"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/internal/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
