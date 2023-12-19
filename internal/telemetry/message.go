@@ -128,7 +128,7 @@ type Integration struct {
 // ConfigurationChange corresponds to the `AppClientConfigurationChange` event
 // that contains information about configuration changes since the app-started event
 type ConfigurationChange struct {
-	Configuration []Configuration `json:"configuration"`
+	Configuration []Configuration `json:"conf_key_values"`
 	RemoteConfig  *RemoteConfig   `json:"remote_config,omitempty"`
 }
 
