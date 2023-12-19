@@ -11,18 +11,18 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// FastHTTPHeadersCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
+// HTTPHeadersCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
 // of fasthttp's RequestHeader object, allowing it to be used as a span context carrier for
 // distributed tracing.
-type FastHTTPHeadersCarrier struct {
+type HTTPHeadersCarrier struct {
 	ReqHeader *fasthttp.RequestHeader
 }
 
-var _ tracer.TextMapWriter = (*FastHTTPHeadersCarrier)(nil)
-var _ tracer.TextMapReader = (*FastHTTPHeadersCarrier)(nil)
+var _ tracer.TextMapWriter = (*HTTPHeadersCarrier)(nil)
+var _ tracer.TextMapReader = (*HTTPHeadersCarrier)(nil)
 
 // ForeachKey iterates over fasthttp request header keys and values
-func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
+func (f *HTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	keys := f.ReqHeader.PeekKeys()
 	for _, key := range keys {
 		sKey := string(key)
@@ -36,6 +36,6 @@ func (f *FastHTTPHeadersCarrier) ForeachKey(handler func(key, val string) error)
 
 // Set adds the given value to request header for key. Key will be lowercased to match
 // the metadata implementation.
-func (f *FastHTTPHeadersCarrier) Set(key, val string) {
+func (f *HTTPHeadersCarrier) Set(key, val string) {
 	f.ReqHeader.Set(key, val)
 }

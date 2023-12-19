@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	waf "github.com/DataDog/go-libddwaf/v2"
 )
@@ -38,10 +39,6 @@ func AddSecurityEvents(op securityEventsAdder, limiter limiter.Limiter, matches 
 	}
 }
 
-type tagsHolder interface {
-	AddTag(string, any)
-}
-
 const (
 	eventRulesVersionTag = "_dd.appsec.event_rules.version"
 	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
@@ -54,7 +51,7 @@ const (
 )
 
 // Add the tags related to security rules monitoring
-func AddRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
+func AddRulesMonitoringTags(th trace.TagSetter, wafDiags *waf.Diagnostics) {
 	rInfo := wafDiags.Rules
 	if rInfo == nil {
 		return
@@ -67,19 +64,19 @@ func AddRulesMonitoringTags(th tagsHolder, wafDiags *waf.Diagnostics) {
 	if err != nil {
 		log.Error("appsec: could not marshal the waf ruleset info errors to json")
 	}
-	th.AddTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
-	th.AddTag(eventRulesLoadedTag, float64(len(rInfo.Loaded)))
-	th.AddTag(eventRulesFailedTag, float64(len(rInfo.Failed)))
-	th.AddTag(wafVersionTag, waf.Version())
+	th.SetTag(eventRulesErrorsTag, string(rulesetErrors)) // avoid the tracer's call to fmt.Sprintf on the value
+	th.SetTag(eventRulesLoadedTag, len(rInfo.Loaded))
+	th.SetTag(eventRulesFailedTag, len(rInfo.Failed))
+	th.SetTag(wafVersionTag, waf.Version())
 }
 
 // Add the tags related to the monitoring of the WAF
-func AddWAFMonitoringTags(th tagsHolder, rulesVersion string, overallRuntimeNs, internalRuntimeNs, timeouts uint64) {
+func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, overallRuntimeNs, internalRuntimeNs, timeouts uint64) {
 	// Rules version is set for every request to help the backend associate WAF duration metrics with rule version
-	th.AddTag(eventRulesVersionTag, rulesVersion)
-	th.AddTag(wafTimeoutTag, float64(timeouts))
-	th.AddTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
-	th.AddTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
+	th.SetTag(eventRulesVersionTag, rulesVersion)
+	th.SetTag(wafTimeoutTag, timeouts)
+	th.SetTag(wafDurationTag, float64(internalRuntimeNs)/1e3)   // ns to us
+	th.SetTag(wafDurationExtTag, float64(overallRuntimeNs)/1e3) // ns to us
 }
 
 // ProcessActions sends the relevant actions to the operation's data listener.

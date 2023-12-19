@@ -110,6 +110,9 @@ func (p *profiler) doRequest(bat batch) error {
 	if containerID != "" {
 		req.Header.Set("Datadog-Container-ID", containerID)
 	}
+	if entityID != "" {
+		req.Header.Set("Datadog-Entity-ID", entityID)
+	}
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := p.cfg.httpClient.Do(req)

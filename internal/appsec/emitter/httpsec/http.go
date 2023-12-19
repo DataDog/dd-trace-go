@@ -140,7 +140,7 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 			// Execute the onBlock functions to make sure blocking works properly
 			// in case we are instrumenting the Gin framework
 			if blocking {
-				op.AddTag(trace.BlockedRequestTag, true)
+				op.SetTag(trace.BlockedRequestTag, true)
 				for _, f := range onBlock {
 					f()
 				}
