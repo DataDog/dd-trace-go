@@ -40,12 +40,14 @@ jobs:
           - echo
           - chi
           - gin
+          - uds-echo
         scenario:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
+          - APPSEC_API_SECURITY
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
@@ -93,7 +95,7 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-      V2_BRANCH: ${{ inputs.branch_ref == 'refs/heads/v2-dev' }}
+      V2_BRANCH: false
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
@@ -103,6 +105,7 @@ jobs:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
+      # TODO(darccio): remove ref on v2 release
       - name: Checkout system tests (v2)
         uses: actions/checkout@v3
         if: ${{ env.V2_BRANCH == 'true' }}

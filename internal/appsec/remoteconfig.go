@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
@@ -352,7 +353,7 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
 	}
 
-	if _, isSet := os.LookupEnv(rulesEnvVar); !isSet {
+	if _, isSet := os.LookupEnv(internal.EnvRules); !isSet {
 		caps := []remoteconfig.Capability{
 			remoteconfig.ASMUserBlocking,
 			remoteconfig.ASMRequestBlocking,
