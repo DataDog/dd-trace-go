@@ -13,8 +13,8 @@ import (
 	"context"
 	"reflect"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 )
 
 type ExecutionOperation struct {

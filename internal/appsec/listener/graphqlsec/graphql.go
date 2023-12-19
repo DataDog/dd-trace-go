@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
+	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/sharedsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	waf "github.com/DataDog/go-libddwaf/v2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
 // GraphQL rule addresses currently supported by the WAF
