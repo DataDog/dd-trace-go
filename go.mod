@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.4.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.51.0-devel.0.20231207091214-c1dd16b339ab
 	github.com/DataDog/datadog-go/v5 v5.3.0
 	github.com/DataDog/go-libddwaf/v2 v2.2.3
 	github.com/DataDog/gostackparse v0.7.0
