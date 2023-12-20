@@ -54,7 +54,7 @@ jobs:
     # is enabled, but nothing more than gcc and the C library, but nothing more.
     # Anything more than this "standard Go build and deployment requirements"
     # must be considered breaking changes.
-    name: Linux Setup Smoke Tests (build-end=${{ matrix.build-env }} go=${{ matrix.go }} build-with-cgo=${{ matrix.build-with-cgo }} build-with-cgo-statically=${{ matrix.build-with-cgo-statically }} build-tags=${{ matrix.go-tags }} build-with-vendoring=${{ matrix.build-with-vendoring }} deployment-env=${{ matrix.deployment-env }})
+    name: Linux Setup Smoke Tests (${{ toJson(matrix) }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

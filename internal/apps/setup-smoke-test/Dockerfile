@@ -57,7 +57,7 @@ RUN set -ex;  \
     if [ "$build_with_cgo_statically" = "y" ]; then \
       opts="-ldflags \"-linkmode 'external' -extldflags '-static'\""; \
     fi; \
-    go build -v -tags "$build_tags" -o smoke-test .
+    go build -v -tags "$build_tags" $opts -o smoke-test .
 
 RUN go version -m ./smoke-test
 RUN ldd smoke-test || true
