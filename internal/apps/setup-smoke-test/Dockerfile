@@ -55,7 +55,7 @@ ARG build_with_cgo_statically
 RUN set -ex;  \
     opts=""; \
     if [ "$build_with_cgo_statically" = "y" ]; then \
-      opts="-ldflags=\"-extldflags='-static'\""; \
+      opts=-ldflags=\"-extldflags='-static'\"; \
     fi; \
     go build -v -tags "$build_tags" $opts -o smoke-test .
 
