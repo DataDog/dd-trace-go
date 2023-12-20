@@ -20,7 +20,7 @@ const (
 // if reader is too slow, there is no guarantee in which order values will be dropped.
 type fastQueue struct {
 	elements [queueSize]atomic.Pointer[processorInput]
-	writePos int64
+	writePos atomic.Int64
 	readPos  int64
 }
 
@@ -29,13 +29,13 @@ func newFastQueue() *fastQueue {
 }
 
 func (q *fastQueue) push(p *processorInput) {
-	ind := atomic.AddInt64(&q.writePos, 1)
+	ind := q.writePos.Add(1)
 	p.queuePos = ind - 1
 	q.elements[(ind-1)%queueSize].Store(p)
 }
 
 func (q *fastQueue) pop() *processorInput {
-	writePos := atomic.LoadInt64(&q.writePos)
+	writePos := q.writePos.Load()
 	if writePos <= q.readPos {
 		return nil
 	}
