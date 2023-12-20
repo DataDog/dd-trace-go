@@ -3,15 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-// Each gotraceui release does not handle next Go versions execution tracer changes,
-// so we need to skip this test for future versions. We still have coverage for
-// older Go versions due to our support policy, and Go 1.22 shouldn't fundamentally
-// change the behavior this test is covering. Update this build constraint
-// once gotraceui supports next Go version supported in our support policy.
+// TODO: gotraceui does not currently handle Go 1.21 execution tracer changes,
+// so we need to skip this test for that version. We still have coverage for
+// older Go versions due to our support policy, and Go 1.21 shouldn't fundamentally
+// change the behavior this test is covering. Remove this build constraint
+// once gotraceui supports Go 1.21
 //
 //go:build !go1.21
 
-package sql_test
+package sql
 
 import (
 	"bytes"
@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -54,12 +53,12 @@ func TestExecutionTraceAnnotations(t *testing.T) {
 	// jitter, etc., but we know that they should be at least this long.
 	const sleepDuration = 10 * time.Millisecond
 
-	sqltrace.Register("mock", &internal.MockDriver{
+	Register("mock", &internal.MockDriver{
 		Hook: func() {
 			time.Sleep(sleepDuration)
 		},
 	})
-	db, err := sqltrace.Open("mock", "")
+	db, err := Open("mock", "")
 	require.NoError(t, err, "opening mock db")
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
