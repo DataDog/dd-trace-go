@@ -12,7 +12,6 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -84,26 +83,9 @@ func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, overallRuntim
 func ProcessActions(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) (interrupt bool) {
 	for _, id := range actionIds {
 		if a, ok := actions[id]; ok {
-			op.EmitData(actions[id])
+			dyngo.EmitData(op, actions[id])
 			interrupt = interrupt || a.Blocking()
 		}
 	}
 	return interrupt
-}
-
-// ProcessHTTPSDKAction does two things:
-//   - send actions to the parent operation's data listener, for their handlers to be executed after the user handler
-//   - send an error to the current operation's data listener (created by an SDK call), to signal users to interrupt
-//     their handler.
-func ProcessHTTPSDKAction(op dyngo.Operation, actions sharedsec.Actions, actionIds []string) {
-	for _, id := range actionIds {
-		if action, ok := actions[id]; ok {
-			if op.Parent() != nil {
-				op.Parent().EmitData(action) // Send the action so that the handler gets executed
-			}
-			if action.Blocking() { // Send the error to be returned by the SDK
-				op.EmitData(httpsec.NewMonitoringError("Request blocked")) // Send error
-			}
-		}
-	}
 }

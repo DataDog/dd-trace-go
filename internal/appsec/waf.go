@@ -6,27 +6,14 @@
 package appsec
 
 import (
-	"errors"
+	"time"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-)
-
-const (
-	eventRulesVersionTag = "_dd.appsec.event_rules.version"
-	eventRulesErrorsTag  = "_dd.appsec.event_rules.errors"
-	eventRulesLoadedTag  = "_dd.appsec.event_rules.loaded"
-	eventRulesFailedTag  = "_dd.appsec.event_rules.error_count"
-	wafDurationTag       = "_dd.appsec.waf.duration"
-	wafDurationExtTag    = "_dd.appsec.waf.duration_ext"
-	wafTimeoutTag        = "_dd.appsec.waf.timeouts"
-	wafVersionTag        = "_dd.appsec.waf.version"
 )
 
 type wafHandle struct {
@@ -49,15 +36,9 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 		}
 	}()
 
-	listeners, err := newWAFEventListeners(newHandle, a.cfg, a.limiter)
-	if err != nil {
-		return err
-	}
-
-	// Register the event listeners now that we know that the new handle is valid
 	newRoot := dyngo.NewRootOperation()
-	for _, l := range listeners {
-		newRoot.On(l)
+	for _, fn := range wafEventListeners {
+		fn(newHandle.Handle, newHandle.actions, a.cfg.wafTimeout, &a.cfg.apiSec, a.limiter, newRoot)
 	}
 
 	// Hot-swap dyngo's root operation
@@ -114,56 +95,10 @@ func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	}, err
 }
 
-func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (listeners []dyngo.EventListener, err error) {
-	// Check if there are addresses in the rule
-	ruleAddresses := waf.Addresses()
-	if len(ruleAddresses) == 0 {
-		return nil, errors.New("no addresses found in the rule")
-	}
+type wafEventListener func(*waf.Handle, sharedsec.Actions, time.Duration, *internal.APISecConfig, limiter.Limiter, dyngo.Operation)
 
-	// Check which addresses are supported by what listener
-	graphQLAddresses := make(map[string]struct{}, graphqlsec.SupportedAddressCount())
-	grpcAddresses := make(map[string]struct{}, grpcsec.SupportedAddressCount())
-	httpAddresses := make(map[string]struct{}, httpsec.SupportedAddressCount())
-	notSupported := make([]string, 0, len(ruleAddresses))
-	for _, address := range ruleAddresses {
-		supported := false
-		if graphqlsec.SupportsAddress(address) {
-			graphQLAddresses[address] = struct{}{}
-			supported = true
-		}
-		if grpcsec.SupportsAddress(address) {
-			grpcAddresses[address] = struct{}{}
-			supported = true
-		}
-		if httpsec.SupportsAddress(address) {
-			httpAddresses[address] = struct{}{}
-			supported = true
-		}
-		if !supported {
-			notSupported = append(notSupported, address)
-		}
-	}
+var wafEventListeners []wafEventListener
 
-	if len(notSupported) > 0 {
-		log.Debug("appsec: the addresses present in the rules are partially supported: not supported=%v", notSupported)
-	}
-
-	// Register the WAF event listeners
-	if len(graphQLAddresses) > 0 {
-		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
-		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
-	}
-
-	if len(grpcAddresses) > 0 {
-		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
-	}
-
-	if len(httpAddresses) > 0 {
-		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
-	}
-
-	return listeners, nil
+func AddWAFEventListener(fn wafEventListener) {
+	wafEventListeners = append(wafEventListeners, fn)
 }

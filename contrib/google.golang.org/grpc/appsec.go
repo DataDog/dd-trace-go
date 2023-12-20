@@ -11,6 +11,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace/grpctrace"
@@ -33,14 +34,15 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		var blocked bool
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
-		args := grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
-		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+		args := types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil)
+		dyngo.OnData(op, func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			blocked = a.Blocking()
 			err = status.Error(codes.Code(code), e.Error())
-		}))
+		})
 		defer func() {
-			events := op.Finish(grpcsec.HandlerOperationRes{})
+			events := op.Finish(types.HandlerOperationRes{})
 			if blocked {
 				op.SetTag(trace.BlockedRequestTag, true)
 			}
@@ -54,9 +56,9 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		if err != nil {
 			return nil, err
 		}
-		defer grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, op).Finish(grpcsec.ReceiveOperationRes{Message: req})
+		defer grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, op).Finish(types.ReceiveOperationRes{Message: req})
 		rv, err := handler(ctx, req)
-		if e, ok := err.(*grpcsec.MonitoringError); ok {
+		if e, ok := err.(*types.MonitoringError); ok {
 			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
 		}
 		return rv, err
@@ -74,18 +76,19 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		clientIP := setClientIP(ctx, span, md)
 		grpctrace.SetRequestMetadataTags(span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, grpcsec.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, dyngo.NewDataListener(func(a *sharedsec.Action) {
+		ctx, op := grpcsec.StartHandlerOperation(ctx, types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
+		dyngo.OnData(op, func(a *sharedsec.Action) {
 			code, e := a.GRPC()(md)
 			blocked = a.Blocking()
 			err = status.Error(codes.Code(code), e.Error())
-		}))
+		})
 		stream = appsecServerStream{
 			ServerStream:     stream,
 			handlerOperation: op,
 			ctx:              ctx,
 		}
 		defer func() {
-			events := op.Finish(grpcsec.HandlerOperationRes{})
+			events := op.Finish(types.HandlerOperationRes{})
 			if blocked {
 				op.SetTag(trace.BlockedRequestTag, true)
 			}
@@ -100,7 +103,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		}
 
 		err = handler(srv, stream)
-		if e, ok := err.(*grpcsec.MonitoringError); ok {
+		if e, ok := err.(*types.MonitoringError); ok {
 			err = status.Error(codes.Code(e.GRPCStatus()), e.Error())
 		}
 		return err
@@ -109,16 +112,16 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 
 type appsecServerStream struct {
 	grpc.ServerStream
-	handlerOperation *grpcsec.HandlerOperation
+	handlerOperation *types.HandlerOperation
 	ctx              context.Context
 }
 
 // RecvMsg implements grpc.ServerStream interface method to monitor its
 // execution with AppSec.
 func (ss appsecServerStream) RecvMsg(m interface{}) error {
-	op := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, ss.handlerOperation)
+	op := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, ss.handlerOperation)
 	defer func() {
-		op.Finish(grpcsec.ReceiveOperationRes{Message: m})
+		op.Finish(types.ReceiveOperationRes{Message: m})
 	}()
 	return ss.ServerStream.RecvMsg(m)
 }
