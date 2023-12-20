@@ -423,7 +423,7 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
 	}
-	p.in.push(&processorInput{typ: pointTypeStats, point: statsPoint{
+	dropped := p.in.push(&processorInput{typ: pointTypeStats, point: statsPoint{
 		edgeTags:       edgeTags,
 		parentHash:     parentHash,
 		hash:           child.hash,
@@ -432,27 +432,36 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		edgeLatency:    now.Sub(edgeStart).Nanoseconds(),
 		payloadSize:    params.PayloadSize,
 	}})
+	if dropped {
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
 	return ContextWithPathway(ctx, child)
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
-	p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
+	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		group:      group,
 		topic:      topic,
 		partition:  partition,
 		offsetType: commitOffset,
 		timestamp:  p.time().UnixNano()}})
+	if dropped {
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
 }
 
 func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
-	p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
+	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: produceOffset,
 		timestamp:  p.time().UnixNano(),
 	}})
+	if dropped {
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
 }
 
 func (p *Processor) runLoadAgentFeatures(tick <-chan time.Time) {
