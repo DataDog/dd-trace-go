@@ -9,7 +9,7 @@
 // change the behavior this test is covering. Update this build constraint
 // once gotraceui supports next Go version supported in our support policy.
 //
-//go:build !go1.22
+//go:build !go1.21
 
 package sql_test
 
