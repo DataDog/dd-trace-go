@@ -66,6 +66,22 @@ FROM debian:12 AS debian12
 COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
+# ubuntu20 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM ubuntu:20.04 AS ubuntu20
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# ubuntu22 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM ubuntu:22.04 AS ubuntu22
+COPY --from=build-env /src/internal/apps/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
 # alpine deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running

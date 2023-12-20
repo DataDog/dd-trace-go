@@ -64,7 +64,7 @@ jobs:
         go: [ "1.21", "1.20", "1.19" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
+        deployment-env: [ alpine, debian11, debian12, ubuntu20, ubuntu22, al2, al2023, busybox, scratch ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -108,6 +108,12 @@ jobs:
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: scratch
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: ubuntu20
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: ubuntu22
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
