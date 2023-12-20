@@ -72,10 +72,11 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args)
-		dyngo.OnData(op, func(a *sharedsec.Action) {
-			bypassHandler = a.HTTP()
-			blocking = a.Blocking()
+		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
+			dyngo.OnData(op, func(a *sharedsec.Action) {
+				bypassHandler = a.HTTP()
+				blocking = a.Blocking()
+			})
 		})
 		r = r.WithContext(ctx)
 
@@ -171,12 +172,15 @@ func makeCookies(r *http.Request) map[string][]string {
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args types.HandlerOperationArgs) (context.Context, *types.Operation) {
+func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
 	op := &types.Operation{
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: trace.NewTagsHolder(),
 	}
 	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
+	for _, cb := range setup {
+		cb(op)
+	}
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }

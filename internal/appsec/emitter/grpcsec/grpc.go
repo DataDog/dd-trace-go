@@ -22,12 +22,15 @@ import (
 // given arguments and parent operation, and emits a start event up in the
 // operation stack. When parent is nil, the operation is linked to the global
 // root operation.
-func StartHandlerOperation(ctx context.Context, args types.HandlerOperationArgs, parent dyngo.Operation) (context.Context, *types.HandlerOperation) {
+func StartHandlerOperation(ctx context.Context, args types.HandlerOperationArgs, parent dyngo.Operation, setup ...func(*types.HandlerOperation)) (context.Context, *types.HandlerOperation) {
 	op := &types.HandlerOperation{
 		Operation:  dyngo.NewOperation(parent),
 		TagsHolder: trace.NewTagsHolder(),
 	}
 	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
+	for _, cb := range setup {
+		cb(op)
+	}
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }

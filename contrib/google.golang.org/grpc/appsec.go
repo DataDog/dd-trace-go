@@ -35,11 +35,12 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		md, _ := metadata.FromIncomingContext(ctx)
 		clientIP := setClientIP(ctx, span, md)
 		args := types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}
-		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil)
-		dyngo.OnData(op, func(a *sharedsec.Action) {
-			code, e := a.GRPC()(md)
-			blocked = a.Blocking()
-			err = status.Error(codes.Code(code), e.Error())
+		ctx, op := grpcsec.StartHandlerOperation(ctx, args, nil, func(op *types.HandlerOperation) {
+			dyngo.OnData(op, func(a *sharedsec.Action) {
+				code, e := a.GRPC()(md)
+				blocked = a.Blocking()
+				err = status.Error(codes.Code(code), e.Error())
+			})
 		})
 		defer func() {
 			events := op.Finish(types.HandlerOperationRes{})
@@ -76,11 +77,12 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		clientIP := setClientIP(ctx, span, md)
 		grpctrace.SetRequestMetadataTags(span, md)
 
-		ctx, op := grpcsec.StartHandlerOperation(ctx, types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil)
-		dyngo.OnData(op, func(a *sharedsec.Action) {
-			code, e := a.GRPC()(md)
-			blocked = a.Blocking()
-			err = status.Error(codes.Code(code), e.Error())
+		ctx, op := grpcsec.StartHandlerOperation(ctx, types.HandlerOperationArgs{Metadata: md, ClientIP: clientIP}, nil, func(op *types.HandlerOperation) {
+			dyngo.OnData(op, func(a *sharedsec.Action) {
+				code, e := a.GRPC()(md)
+				blocked = a.Blocking()
+				err = status.Error(codes.Code(code), e.Error())
+			})
 		})
 		stream = appsecServerStream{
 			ServerStream:     stream,
