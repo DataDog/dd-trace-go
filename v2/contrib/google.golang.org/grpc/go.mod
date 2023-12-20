@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231212165552-729cf88f812c
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
 	google.golang.org/grpc v1.57.1
@@ -35,12 +35,12 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
-	golang.org/x/mod v0.12.0 // indirect
+	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	golang.org/x/tools v0.12.1-0.20230815132531-74c255bcf846 // indirect
+	golang.org/x/tools v0.13.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
