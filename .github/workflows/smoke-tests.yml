@@ -114,11 +114,13 @@ jobs:
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: ubuntu22
-          # 2. Too old glibc on the deployment environment than on the build env
+          # 2. glibc older on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
           - build-env: bookworm
             deployment-env: debian11
+          - build-env: bookworm
+            deployment-env: ubuntu20
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
