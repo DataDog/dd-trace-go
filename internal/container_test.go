@@ -6,12 +6,17 @@
 package internal
 
 import (
+	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
+	"path"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadContainerID(t *testing.T) {
@@ -78,4 +83,177 @@ func TestReadContainerIDFromCgroup(t *testing.T) {
 
 	actualCID := readContainerID(tmpFile.Name())
 	assert.Equal(t, cid, actualCID)
+}
+
+func TestReadEntityIDPrioritizeCID(t *testing.T) {
+	// reset cid after test
+	defer func(cid string) { containerID = cid }(containerID)
+
+	containerID = "fakeContainerID"
+	eid := readEntityID("", "")
+	assert.Equal(t, "cid-fakeContainerID", eid)
+}
+
+func TestReadEntityIDFallbackOnInode(t *testing.T) {
+	// reset cid after test
+	defer func(cid string) { containerID = cid }(containerID)
+	containerID = ""
+
+	sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
+	groupControllerPath := path.Join(sysFsCgroupPath, "mynode")
+	err := os.MkdirAll(groupControllerPath, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(groupControllerPath)
+
+	stat, err := os.Stat(groupControllerPath)
+	require.NoError(t, err)
+	expectedInode := fmt.Sprintf("in-%d", stat.Sys().(*syscall.Stat_t).Ino)
+
+	procSelfCgroup, err := ioutil.TempFile("", "procselfcgroup")
+	require.NoError(t, err)
+	defer os.Remove(procSelfCgroup.Name())
+	_, err = procSelfCgroup.WriteString("0::/mynode")
+	require.NoError(t, err)
+	err = procSelfCgroup.Close()
+	require.NoError(t, err)
+
+	eid := readEntityID(sysFsCgroupPath, procSelfCgroup.Name())
+	assert.Equal(t, expectedInode, eid)
+}
+
+func TestParsegroupControllerPath(t *testing.T) {
+	// Test cases
+	cases := []struct {
+		name     string
+		content  string
+		expected map[string]string
+	}{
+		{
+			name:     "cgroup2 normal case",
+			content:  `0::/`,
+			expected: map[string]string{"": "/"},
+		},
+		{
+			name: "hybrid",
+			content: `other_line
+0::/
+1:memory:/docker/abc123`,
+			expected: map[string]string{
+				"":       "/",
+				"memory": "/docker/abc123",
+			},
+		},
+		{
+			name: "with other controllers",
+			content: `other_line
+12:pids:/docker/abc123
+11:hugetlb:/docker/abc123
+10:net_cls,net_prio:/docker/abc123
+0::/docker/abc123
+`,
+			expected: map[string]string{
+				"": "/docker/abc123",
+			},
+		},
+		{
+			name:     "no controller",
+			content:  "empty",
+			expected: map[string]string{},
+		},
+	}
+
+	// Run test cases
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			reader := strings.NewReader(c.content)
+			result := parseCgroupNodePath(reader)
+			require.Equal(t, c.expected, result)
+		})
+	}
+}
+
+func TestGetCgroupInode(t *testing.T) {
+	tests := []struct {
+		description           string
+		cgroupNodeDir         string
+		procSelfCgroupContent string
+		expectedResult        string
+		controller            string
+	}{
+		{
+			description:           "matching entry in /proc/self/cgroup and /proc/mounts - cgroup2 only",
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "0::/system.slice/docker-abcdef0123456789abcdef0123456789.scope\n",
+			expectedResult:        "in-%d", // Will be formatted with inode number
+		},
+		{
+			description:   "matching entry in /proc/self/cgroup and /proc/mounts - cgroup/hybrid only",
+			cgroupNodeDir: "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: `
+3:memory:/system.slice/docker-abcdef0123456789abcdef0123456789.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
+`,
+			expectedResult: "in-%d",
+			controller:     cgroupV1BaseController,
+		},
+		{
+			description:   "non memory or empty controller",
+			cgroupNodeDir: "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: `
+3:cpu:/system.slice/docker-abcdef0123456789abcdef0123456789.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
+`,
+			expectedResult: "",
+			controller:     "cpu",
+		},
+		{
+			description:   "path does not exist",
+			cgroupNodeDir: "dummy.scope",
+			procSelfCgroupContent: `
+3:memory:/system.slice/docker-abcdef0123456789abcdef0123456789.scope
+2:net_cls,net_prio:c
+1:name=systemd:b
+0::a
+`,
+			expectedResult: "",
+		},
+		{
+			description:           "no entry in /proc/self/cgroup",
+			cgroupNodeDir:         "system.slice/docker-abcdef0123456789abcdef0123456789.scope",
+			procSelfCgroupContent: "nothing",
+			expectedResult:        "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			sysFsCgroupPath := path.Join(os.TempDir(), "sysfscgroup")
+			groupControllerPath := path.Join(sysFsCgroupPath, tc.controller, tc.cgroupNodeDir)
+			err := os.MkdirAll(groupControllerPath, 0755)
+			require.NoError(t, err)
+			defer os.RemoveAll(groupControllerPath)
+
+			stat, err := os.Stat(groupControllerPath)
+			require.NoError(t, err)
+			expectedInode := ""
+			if tc.expectedResult != "" {
+				expectedInode = fmt.Sprintf(tc.expectedResult, stat.Sys().(*syscall.Stat_t).Ino)
+			}
+
+			procSelfCgroup, err := ioutil.TempFile("", "procselfcgroup")
+			require.NoError(t, err)
+			defer os.Remove(procSelfCgroup.Name())
+			_, err = procSelfCgroup.WriteString(tc.procSelfCgroupContent)
+			require.NoError(t, err)
+			err = procSelfCgroup.Close()
+			require.NoError(t, err)
+
+			result := getCgroupInode(sysFsCgroupPath, procSelfCgroup.Name())
+			require.Equal(t, expectedInode, result)
+		})
+	}
 }

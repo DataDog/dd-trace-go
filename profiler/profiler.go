@@ -31,6 +31,7 @@ var (
 	mu             sync.Mutex
 	activeProfiler *profiler
 	containerID    = internal.ContainerID() // replaced in tests
+	entityID       = internal.EntityID()    // replaced in tests
 )
 
 // Start starts the profiler. If the profiler is already running, it will be
