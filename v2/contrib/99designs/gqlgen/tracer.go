@@ -170,7 +170,7 @@ func (*gqlTracer) InterceptResponse(ctx context.Context, next graphql.ResponseHa
 // returned as those may run indefinitely and would be problematic. This function
 // also creates child spans (orphans in the case of a subscription) for the
 // read, parsing and validation phases of the operation.
-func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (ddtrace.Span, context.Context) {
+func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (*tracer.Span, context.Context) {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
@@ -182,7 +182,7 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	var rootSpan ddtrace.Span
+	var rootSpan *tracer.Span
 	if opCtx.Operation.Operation != ast.Subscription {
 		// Subscriptions are long running queries which may remain open indefinitely
 		// until the subscription ends. We do not create the root span for these.
@@ -198,7 +198,7 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 			// If there is no root span, decorate the orphan spans with more information
 			childOpts = append(childOpts, opts...)
 		}
-		var childSpan ddtrace.Span
+		var childSpan *tracer.Span
 		childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 		childSpan.Finish(tracer.FinishTime(finish))
 	}

@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/yosida95/uritemplate/v3"
 	"io"
 	"log"
 	"net/http"
@@ -24,6 +23,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/yosida95/uritemplate/v3"
 )
 
 const (

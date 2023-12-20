@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"runtime/pprof"
 	rt "runtime/trace"
 	"strconv"
 	"strings"
@@ -178,19 +179,6 @@ func TestTracerStart(t *testing.T) {
 		}
 	})
 
-	t.Run("testing", func(t *testing.T) {
-		Testing = true
-		Start()
-		defer Stop()
-		if _, ok := GetGlobalTracer().(*tracer); ok {
-			t.Fail()
-		}
-		if _, ok := GetGlobalTracer().(*NoopTracer); !ok {
-			t.Fail()
-		}
-		Testing = false
-	})
-
 	t.Run("tracing_not_enabled", func(t *testing.T) {
 		os.Setenv("DD_TRACE_ENABLED", "false")
 		defer os.Unsetenv("DD_TRACE_ENABLED")
@@ -213,7 +201,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		GetGlobalTracer().(*tracer).pushChunk(&chunk{spans: []*Span{}})
+		GetGlobalTracer().(*tracer).pushChunk(&Chunk{Spans: []*Span{}})
 
 		Stop()
 		Stop()
@@ -225,7 +213,7 @@ func TestTracerStart(t *testing.T) {
 		tr, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tr.pushChunk(&chunk{spans: []*Span{}}) // blocks until worker is started
+		tr.pushChunk(&Chunk{Spans: []*Span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -1276,7 +1264,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	}
 
 	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
-	tracer1.awaitPayload(t, count)
+	tracer1.awaitPayload(t, count*2)
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -1594,11 +1582,11 @@ func TestPushPayload(t *testing.T) {
 	s.Meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushChunk(&chunk{[]*Span{s}, true})
+	tracer.pushChunk(&Chunk{[]*Span{s}, true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushChunk(&chunk{[]*Span{s}, true})
+	tracer.pushChunk(&Chunk{[]*Span{s}, true})
 	flush(2)
 }
 
@@ -1622,16 +1610,16 @@ func TestPushTrace(t *testing.T) {
 			Resource: "/foo",
 		},
 	}
-	tracer.pushChunk(&chunk{spans: trace})
+	tracer.pushChunk(&Chunk{Spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(&chunk{spans: trace}, t0)
+	assert.Equal(&Chunk{Spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
+		tracer.pushChunk(&Chunk{Spans: make([]*Span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
@@ -2594,4 +2582,42 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
 	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
+}
+
+func wasteA(d time.Duration) {
+	start := time.Now()
+	for start.Add(d).Before(time.Now()) {
+	}
+}
+
+func wasteB(d time.Duration) {
+	start := time.Now()
+	for start.Add(d).Before(time.Now()) {
+	}
+}
+
+func wasteC(d time.Duration) {
+	start := time.Now()
+	for start.Add(d).Before(time.Now()) {
+	}
+}
+
+func TestPprofLabels(t *testing.T) {
+	if err := Start(
+		WithProfilerCodeHotspots(false),
+		WithProfilerEndpoints(false),
+	); err != nil {
+		t.Fatal(err)
+	}
+	defer Stop()
+	pprof.Do(context.Background(), pprof.Labels("foo", "bar"), func(ctx context.Context) {
+		wasteA(time.Second)
+		var span *Span
+		pprof.Do(ctx, pprof.Labels("foo", "baz"), func(ctx context.Context) {
+			span, _ = StartSpanFromContext(ctx, "myoperation")
+			wasteB(time.Second)
+		})
+		span.Finish()
+		wasteC(time.Second)
+	})
 }

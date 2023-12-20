@@ -135,7 +135,7 @@ func TestClientErrorCutoff(t *testing.T) {
 	assert.Error(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.NotEmpty(span.Tag(ext.ErrorMsg))
 }
 
 func TestClientFailure(t *testing.T) {
@@ -163,8 +163,7 @@ func TestClientFailure(t *testing.T) {
 	spans := mt.FinishedSpans()
 	checkPUTTrace(assert, mt, "127.0.0.1")
 
-	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.NotEmpty(spans[0].Tag(ext.ErrorMsg))
 }
 
 func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
@@ -197,8 +196,7 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /not-real-index/_all/?", span.Tag(ext.ResourceName))
 	assert.Equal("/not-real-index/_all/1", span.Tag("elasticsearch.url"))
-	assert.NotEmpty(span.Tag(ext.Error))
-	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.NotEmpty(span.Tag(ext.ErrorMsg))
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
@@ -430,7 +428,7 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))
@@ -457,11 +455,11 @@ func TestNamingSchema(t *testing.T) {
 		require.Len(t, spans, 1)
 		return spans
 	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
 	}

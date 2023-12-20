@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -117,7 +118,7 @@ type tracer struct {
 	traceWriter traceWriter
 
 	// out receives chunk with spans to be added to the payload.
-	out chan *chunk
+	out chan *Chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -185,9 +186,6 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
-	if Testing {
-		return nil // mock tracer active
-	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t, err := newTracer(opts...)
 	if err != nil {
@@ -265,12 +263,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 	if s == nil {
 		return
 	}
-	//sp, ok := s.(interface {
-	//	SetUser(string, ...UserMonitoringOption)
-	//})
-	//if !ok {
-	//	return
-	//}
 	s.SetUser(id, opts...)
 }
 
@@ -318,7 +310,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
+		out:              make(chan *Chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
@@ -418,9 +410,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleChunk(trace)
-			if len(trace.spans) != 0 {
-				t.traceWriter.add(trace.spans)
-			}
+			t.traceWriter.add(trace.Spans)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -443,9 +433,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				select {
 				case trace := <-t.out:
 					t.sampleChunk(trace)
-					if len(trace.spans) != 0 {
-						t.traceWriter.add(trace.spans)
-					}
+					t.traceWriter.add(trace.Spans)
 				default:
 					break loop
 				}
@@ -455,18 +443,19 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// chunk holds information about a trace chunk to be flushed, including its spans.
-// The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
+// Chunk holds information about a trace Chunk to be flushed, including its spans.
+// The Chunk may be a fully finished local trace Chunk, or only a portion of the local trace Chunk in the case of
 // partial flushing.
-type chunk struct {
-	spans    []*Span
+type Chunk struct {
+	// TODO:(kjn v2) Should probably not be public, or be a different type.
+	Spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleChunk(c *chunk) {
-	if len(c.spans) > 0 {
-		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
+func (t *tracer) sampleChunk(c *Chunk) {
+	if len(c.Spans) > 0 {
+		if p, ok := c.Spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -474,12 +463,12 @@ func (t *tracer) sampleChunk(c *chunk) {
 	var kept []*Span
 	if t.rulesSampling.HasSpanRules() {
 		// Apply sampling rules to individual spans in the trace.
-		for _, span := range c.spans {
+		for _, span := range c.Spans {
 			if t.rulesSampling.SampleSpan(span) {
 				kept = append(kept, span)
 			}
 		}
-		if len(kept) > 0 && len(kept) < len(c.spans) {
+		if len(kept) > 0 && len(kept) < len(c.Spans) {
 			// Some spans in the trace were kept, so a partial trace will be sent.
 			tracerstats.Signal(tracerstats.PartialTraces, 1)
 		}
@@ -487,9 +476,9 @@ func (t *tracer) sampleChunk(c *chunk) {
 	if len(kept) == 0 {
 		tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
 	}
-	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.spans)-len(kept)))
+	tracerstats.Signal(tracerstats.DroppedP0Spans, uint32(len(c.Spans)-len(kept)))
 	if !c.willSend {
-		c.spans = kept
+		c.Spans = kept
 	}
 }
 
@@ -497,12 +486,12 @@ func (t *tracer) SubmitChunk(c any) {
 	// TODO(kjn v2): This will be unified with pushChunk, and only one function will exist.
 	// This is here right now because of the lack of appropriate exported types.
 
-	ch := c.(*chunk) // TODO(kjn v2): This can panic. Once the appropriate types are moved, this assertion will be removed.
+	ch := c.(*Chunk) // TODO(kjn v2): This can panic. Once the appropriate types are moved, this assertion will be removed.
 	t.pushChunk(ch)
 }
 
-func (t *tracer) pushChunk(trace *chunk) {
-	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
+func (t *tracer) pushChunk(trace *Chunk) {
+	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.Spans)))
 	select {
 	case <-t.stop:
 		return
@@ -511,12 +500,11 @@ func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case t.out <- trace:
 	default:
-		log.Error("payload queue full, dropping %d traces", len(trace.spans))
+		log.Error("payload queue full, dropping %d traces", len(trace.Spans))
 	}
 }
 
-// StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *Span {
+func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -563,16 +551,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	// span defaults
 	span := &Span{
-		Name:         operationName,
-		Service:      t.config.serviceName,
-		Resource:     operationName,
-		SpanID:       id,
-		TraceID:      id,
-		Start:        startTime,
-		noDebugStack: t.config.noDebugStack,
-	}
-	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+		Name:     operationName,
+		Service:  "",
+		Resource: operationName,
+		SpanID:   id,
+		TraceID:  id,
+		Start:    startTime,
 	}
 	if context != nil {
 		// this is a child span
@@ -595,13 +579,36 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		}
 	}
 	span.context = newSpanContext(span, context)
-	span.setMetric(ext.Pid, float64(t.pid))
 	span.setMeta("language", "go")
-
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
 	}
+	isRootSpan := context == nil || context.span == nil
+	if isRootSpan {
+		traceprof.SetProfilerRootTags(span)
+	}
+	if isRootSpan || context.span.Service != span.Service {
+		span.setMetric(keyTopLevel, 1)
+		// all top level spans are measured. So the measured tag is redundant.
+		delete(span.Metrics, keyMeasured)
+	}
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
+	span.pprofCtxRestore = pprofContext
+	return span
+}
+
+// StartSpan creates, starts, and returns a new Span with the given `operationName`.
+func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *Span {
+	span := SpanStart(operationName, options...)
+	if span.Service == "" {
+		span.Service = t.config.serviceName
+	}
+	span.noDebugStack = t.config.noDebugStack
+	if t.config.hostname != "" {
+		span.setMeta(keyHostname, t.config.hostname)
+	}
+
 	// add global tags
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
@@ -610,16 +617,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
 		}
-	}
-	isRootSpan := context == nil || context.span == nil
-	if isRootSpan {
-		traceprof.SetProfilerRootTags(span)
-		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
-	}
-	if isRootSpan || context.span.Service != span.Service {
-		span.setMetric(keyTopLevel, 1)
-		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.Metrics, keyMeasured)
 	}
 	if t.config.version != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
@@ -633,10 +630,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
-	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
-		t.applyPPROFLabels(pprofContext, span)
-	}
 	if t.config.serviceMappings != nil {
 		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
 			span.Service = newSvc
@@ -647,6 +640,11 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
 			span, span.Name, span.Resource, span.Meta, span.Metrics)
 	}
+	if t.config.profilerHotspots || t.config.profilerEndpoints {
+		t.applyPPROFLabels(span.pprofCtxRestore, span)
+	} else {
+		span.pprofCtxRestore = nil
+	}
 	if t.config.debugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
@@ -655,6 +653,13 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
+	if span.ParentID == 0 {
+		// TODO(kjn v2): This is incorrect. It needs to be applied when the span
+		// is the local root, not the global root. Need to investigate injecting
+		// this data into TracerConfig, not doing it like this.
+		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+	}
+	span.setMetric(ext.Pid, float64(t.pid))
 	return span
 }
 
@@ -677,7 +682,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
-	if localRootSpan := span.root(); localRootSpan != nil {
+	if localRootSpan := span.Root(); localRootSpan != nil {
 		if t.config.profilerHotspots {
 			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
 		}
@@ -711,6 +716,7 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
+	globalconfig.SetServiceName("")
 	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()
 	t.wg.Wait()

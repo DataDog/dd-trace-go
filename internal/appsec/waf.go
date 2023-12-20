@@ -10,13 +10,14 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	waf "github.com/DataDog/go-libddwaf/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/sharedsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/graphqlsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/grpcsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	waf "github.com/DataDog/go-libddwaf/v2"
 )
 
 const (

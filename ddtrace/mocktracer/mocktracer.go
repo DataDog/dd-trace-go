@@ -15,8 +15,6 @@ package mocktracer
 import (
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
@@ -31,11 +29,13 @@ var _ Tracer = (*mocktracer)(nil)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
+	tracer.Tracer
+
 	// OpenSpans returns the set of started spans that have not been finished yet.
-	OpenSpans() []*tracer.Span
+	OpenSpans() []*Span
 
 	// FinishedSpans returns the set of finished spans.
-	FinishedSpans() []*tracer.Span
+	FinishedSpans() []*Span
 
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
@@ -54,26 +54,29 @@ type Tracer interface {
 func Start() Tracer {
 	t := newMockTracer()
 	tracer.SetGlobalTracer(t)
-	tracer.Testing = true
 	return t
 }
 
 type mocktracer struct {
 	sync.RWMutex  // guards below spans
-	finishedSpans []*tracer.Span
-	openSpans     map[uint64]*tracer.Span
+	finishedSpans []*Span
+	openSpans     map[uint64]*Span
 }
 
 func newMockTracer() *mocktracer {
 	var t mocktracer
-	t.openSpans = make(map[uint64]*tracer.Span)
+	t.openSpans = make(map[uint64]*Span)
 	return &t
+}
+
+// This is called by the spans when they finish
+func (t *mocktracer) FinishSpan(s *tracer.Span) {
+	t.addFinishedSpan(s)
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (*mocktracer) Stop() {
-	tracer.SetGlobalTracer(&tracer.NoopTracer{})
-	tracer.Testing = false
+	tracer.StopTestTracer()
 }
 
 func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) *tracer.Span {
@@ -81,10 +84,10 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	for _, fn := range opts {
 		fn(&cfg)
 	}
-	span := newSpan(t, operationName, &cfg)
+	span := newSpan(operationName, &cfg)
 
 	t.Lock()
-	t.openSpans[span.Context().SpanID()] = span
+	t.openSpans[span.Context().SpanID()] = MockSpan(span)
 	t.Unlock()
 
 	return span
@@ -113,17 +116,25 @@ func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
 	return datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
 }
 
-func (t *mocktracer) OpenSpans() []*tracer.Span {
+func UnwrapSlice(ss []*Span) []*tracer.Span {
+	ret := make([]*tracer.Span, len(ss))
+	for i, sp := range ss {
+		ret[i] = sp.Unwrap()
+	}
+	return ret
+}
+
+func (t *mocktracer) OpenSpans() []*Span {
 	t.RLock()
 	defer t.RUnlock()
-	spans := make([]*tracer.Span, 0, len(t.openSpans))
+	spans := make([]*Span, 0, len(t.openSpans))
 	for _, s := range t.openSpans {
 		spans = append(spans, s)
 	}
 	return spans
 }
 
-func (t *mocktracer) FinishedSpans() []*tracer.Span {
+func (t *mocktracer) FinishedSpans() []*Span {
 	t.RLock()
 	defer t.RUnlock()
 	return t.finishedSpans
@@ -143,9 +154,9 @@ func (t *mocktracer) addFinishedSpan(s *tracer.Span) {
 	defer t.Unlock()
 	delete(t.openSpans, s.Context().SpanID())
 	if t.finishedSpans == nil {
-		t.finishedSpans = make([]*tracer.Span, 0, 1)
+		t.finishedSpans = make([]*Span, 0, 1)
 	}
-	t.finishedSpans = append(t.finishedSpans, s)
+	t.finishedSpans = append(t.finishedSpans, MockSpan(s))
 }
 
 const (
@@ -156,68 +167,15 @@ const (
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (tracer.SpanContext, error) {
-	reader, ok := carrier.(tracer.TextMapReader)
-	if !ok {
-		return nil, tracer.ErrInvalidCarrier
-	}
-	var sc spanContext
-	err := reader.ForeachKey(func(key, v string) error {
-		k := strings.ToLower(key)
-		if k == traceHeader {
-			id, err := strconv.ParseUint(v, 10, 64)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.traceID = id
-		}
-		if k == spanHeader {
-			id, err := strconv.ParseUint(v, 10, 64)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.spanID = id
-		}
-		if k == priorityHeader {
-			p, err := strconv.Atoi(v)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.priority = p
-			sc.hasPriority = true
-		}
-		if strings.HasPrefix(k, baggagePrefix) {
-			sc.setBaggageItem(strings.TrimPrefix(k, baggagePrefix), v)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if sc.traceID == 0 || sc.spanID == 0 {
-		return nil, tracer.ErrSpanContextNotFound
-	}
-	return &sc, err
+	return tracer.NewPropagator(&tracer.PropagatorConfig{
+		MaxTagsHeaderLen: 512,
+	}).Extract(carrier)
 }
 
 func (t *mocktracer) Inject(context tracer.SpanContext, carrier interface{}) error {
-	writer, ok := carrier.(tracer.TextMapWriter)
-	if !ok {
-		return tracer.ErrInvalidCarrier
-	}
-	ctx, ok := context.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return tracer.ErrInvalidSpanContext
-	}
-	writer.Set(traceHeader, strconv.FormatUint(ctx.traceID, 10))
-	writer.Set(spanHeader, strconv.FormatUint(ctx.spanID, 10))
-	if ctx.hasSamplingPriority() {
-		writer.Set(priorityHeader, strconv.Itoa(ctx.priority))
-	}
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		writer.Set(baggagePrefix+k, v)
-		return true
-	})
-	return nil
+	return tracer.NewPropagator(&tracer.PropagatorConfig{
+		MaxTagsHeaderLen: 512,
+	}).Inject(context, carrier)
 }
 
 func (t *mocktracer) TracerConf() tracer.TracerConf {
@@ -226,5 +184,5 @@ func (t *mocktracer) TracerConf() tracer.TracerConf {
 
 func (t *mocktracer) SubmitStats(*tracer.Span)               {}
 func (t *mocktracer) SubmitAbandonedSpan(*tracer.Span, bool) {}
-func (t *mocktracer) SubmitChunk(any)                        {}
+func (t *mocktracer) SubmitChunk(_ any)                      {}
 func (t *mocktracer) Flush()                                 {}

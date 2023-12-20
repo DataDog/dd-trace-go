@@ -111,7 +111,7 @@ func TestHttpTracer(t *testing.T) {
 			}
 
 			if ht.wantErr != "" {
-				assert.Equal(ht.wantErr, s.Tag(ext.Error).(error).Error())
+				assert.Equal(ht.wantErr, s.Tag(ext.ErrorMsg))
 			}
 		})
 	}
@@ -241,7 +241,7 @@ func TestSpanOptions(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
-	assert.Equal(2, spans[0].Tag(ext.SamplingPriority))
+	assert.Equal(float64(2), spans[0].Tag("_sampling_priority_v1"))
 }
 
 func TestNoDebugStack(t *testing.T) {
@@ -257,8 +257,8 @@ func TestNoDebugStack(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	s := spans[0]
-	assert.EqualError(s.Tags()[ext.Error].(error), "500: Internal Server Error")
-	assert.Equal("<debug stack disabled>", spans[0].Tags()[ext.ErrorStack])
+	assert.Equal(s.Tags()[ext.ErrorMsg], "500: Internal Server Error")
+	assert.Empty(spans[0].Tags()[ext.ErrorStack])
 }
 
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods
@@ -537,7 +537,7 @@ func TestAppSec(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []RouterOption
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))

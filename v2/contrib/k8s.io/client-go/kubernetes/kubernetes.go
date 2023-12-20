@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -50,7 +49,7 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
 	localOpts := make([]httptrace.RoundTripperOption, len(opts))
 	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
-	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)

@@ -124,7 +124,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 		assert.Nil(err)
 
 		spans := cfg.mockTracer.FinishedSpans()
-		var querySpan mocktracer.Span
+		var querySpan *mocktracer.Span
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared queries so there are 3 spans
 			//connect, prepare, and query
@@ -270,7 +270,7 @@ func testExec(cfg *Config) func(*testing.T) {
 			assert.Len(spans, 5)
 		}
 
-		var span mocktracer.Span
+		var span *mocktracer.Span
 		for _, s := range spans {
 			if s.OperationName() == cfg.ExpectName && s.Tag(ext.ResourceName) == query {
 				span = s
@@ -294,7 +294,7 @@ func testExec(cfg *Config) func(*testing.T) {
 	}
 }
 
-func verifyConnectSpan(span mocktracer.Span, assert *assert.Assertions, cfg *Config) {
+func verifyConnectSpan(span *mocktracer.Span, assert *assert.Assertions, cfg *Config) {
 	assert.Equal(cfg.ExpectName, span.OperationName())
 	cfg.ExpectTags["sql.query_type"] = "Connect"
 	for k, v := range cfg.ExpectTags {

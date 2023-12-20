@@ -17,11 +17,11 @@ import (
 // NewMongoDBTest creates a new test for MongoDB naming schema.
 func NewMongoDBTest(genSpans GenSpansFn, defaultServiceName string) func(t *testing.T) {
 	return func(t *testing.T) {
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "mongodb.query", spans[0].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "mongodb.query", spans[0].OperationName())
 		}

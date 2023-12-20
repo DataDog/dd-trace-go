@@ -51,7 +51,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
 		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
-		assert.Equal("503: Service Unavailable", span.Tag(ext.Error).(error).Error())
+		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("query-params", func(t *testing.T) {
@@ -189,7 +189,7 @@ func TestTraceAndServe(t *testing.T) {
 			Resource: "resource",
 		})
 
-		var p, c mocktracer.Span
+		var p, c *mocktracer.Span
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 2)
 		if spans[0].OperationName() == "parent" {
@@ -224,7 +224,7 @@ func TestTraceAndServe(t *testing.T) {
 			Resource: "resource",
 		})
 
-		var p, c mocktracer.Span
+		var p, c *mocktracer.Span
 		spans := mt.FinishedSpans()
 		assert.Len(spans, 2)
 		if spans[0].OperationName() == "parent" {
@@ -310,7 +310,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.True(called)
 		assert.Len(spans, 1)
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-		assert.Nil(span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
+		assert.Equal("", span.Tag(ext.ServiceName)) // This is nil since mocktracer does not behave like the actual tracer, which will set a default.
 		assert.Equal("http.request", span.Tag(ext.ResourceName))
 		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))

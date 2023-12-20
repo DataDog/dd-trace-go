@@ -44,6 +44,8 @@ jobs:
         run: |
           go get -u -t $PACKAGES
           go mod tidy
+          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
+          go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
       - name: Test contribs (v2)

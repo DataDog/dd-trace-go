@@ -10,8 +10,9 @@ import (
 	"log"
 	"net/http"
 
-	vaulttrace "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
 	"github.com/hashicorp/vault/api"
+
+	vaulttrace "github.com/DataDog/dd-trace-go/v2/contrib/hashicorp/vault"
 )
 
 // This is the most basic way to enable tracing with Vault.

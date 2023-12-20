@@ -110,10 +110,6 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) 
 	return err
 }
 
-type Span interface {
-	SetTag(key string, value interface{})
-}
-
 // WrapHandler wraps the given HTTP handler with the abstract HTTP operation defined by HandlerOperationArgs and
 // HandlerOperationRes.
 // The onBlock params are used to cleanup the context when needed.

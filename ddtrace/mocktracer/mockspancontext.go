@@ -23,8 +23,7 @@ type spanContext struct {
 
 	spanID  uint64
 	traceID uint64
-	//span    *mockspan // context owner
-	span *tracer.Span
+	span    *tracer.Span
 }
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }

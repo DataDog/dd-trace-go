@@ -86,7 +86,7 @@ func TestTrace200(t *testing.T) {
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 			id := chi.URLParam(r, "id")
 			_, err := w.Write([]byte(id))
 			assert.NoError(err)
@@ -104,7 +104,7 @@ func TestTrace200(t *testing.T) {
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 		})
 		assertDoRequest(assert, mt, router)
 	})
@@ -138,7 +138,7 @@ func TestWithModifyResourceName(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	assertSpan := func(assert *assert.Assertions, spans []mocktracer.Span, code int) {
+	assertSpan := func(assert *assert.Assertions, spans []*mocktracer.Span, code int) {
 		assert.Len(spans, 1)
 		if len(spans) < 1 {
 			t.Fatalf("no spans")
@@ -150,7 +150,7 @@ func TestError(t *testing.T) {
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
 
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -243,7 +243,7 @@ func TestPropagation(t *testing.T) {
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
 	})
 
 	router.ServeHTTP(w, r)
@@ -543,7 +543,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 }
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))

@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc/internal/grpcutil"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -57,7 +56,7 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 
 func startSpanFromContext(
 	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
-) (ddtrace.Span, context.Context) {
+) (*tracer.Span, context.Context) {
 	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
 		tracer.ServiceName(serviceFn()),
@@ -76,7 +75,7 @@ func startSpanFromContext(
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error, cfg *config) {
+func finishWithError(span *tracer.Span, err error, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}

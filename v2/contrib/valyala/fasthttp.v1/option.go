@@ -6,9 +6,10 @@
 package fasthttp
 
 import (
+	"github.com/valyala/fasthttp"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/valyala/fasthttp"
 )
 
 const defaultServiceName = "fasthttp"

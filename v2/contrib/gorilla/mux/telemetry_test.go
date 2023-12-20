@@ -8,9 +8,10 @@ package mux
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // TestIntegrationInfo verifies that an integration leveraging instrumentation telemetry

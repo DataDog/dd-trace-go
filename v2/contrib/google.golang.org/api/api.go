@@ -23,7 +23,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/api/internal/tree"
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -88,7 +87,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	cfg := newConfig(options...)
 	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+		httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 			if !cfg.endpointMetadataDisabled {
 				setTagsWithEndpointMetadata(req, span)
 			} else {
@@ -107,7 +106,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 	return httptrace.WrapRoundTripper(transport, rtOpts...)
 }
 
-func setTagsWithEndpointMetadata(req *http.Request, span ddtrace.Span) {
+func setTagsWithEndpointMetadata(req *http.Request, span *tracer.Span) {
 	e, ok := apiEndpointsTree.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 	if ok {
 		span.SetTag(ext.ServiceName, e.ServiceName)
@@ -117,7 +116,7 @@ func setTagsWithEndpointMetadata(req *http.Request, span ddtrace.Span) {
 	}
 }
 
-func setTagsWithoutEndpointMetadata(req *http.Request, span ddtrace.Span) {
+func setTagsWithoutEndpointMetadata(req *http.Request, span *tracer.Span) {
 	span.SetTag(ext.ServiceName, "google")
 	span.SetTag(ext.ResourceName, req.Method+" "+req.URL.Hostname())
 }

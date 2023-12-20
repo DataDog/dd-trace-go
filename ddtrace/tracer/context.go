@@ -13,6 +13,12 @@ import (
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
+	if s == nil {
+		return ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return context.WithValue(ctx, internal.ActiveSpanKey, s)
 }
 
@@ -21,14 +27,12 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 // span is returned.
 func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
-		//return &traceinternal.NoopSpan{}, false
 		return nil, false
 	}
 	v := ctx.Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		return s, true
 	}
-	//return &traceinternal.NoopSpan{}, false
 	return nil, false
 }
 
@@ -50,12 +54,11 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
 	//TODO(kjn v2): Check this when separating packages.
-	ctx = s.pprofCtxActive
-	//if span, ok := s.(*Span); ok && span.pprofCtxActive != nil {
-	//	// If pprof labels were applied for this span, use the derived ctx that
-	//	// includes them. Otherwise a child of this span wouldn't be able to
-	//	// correctly restore the labels of its parent when it finishes.
-	//	ctx = span.pprofCtxActive
-	//}
+	if s == nil {
+		return nil, ctx
+	}
+	if s.pprofCtxActive != nil {
+		ctx = s.pprofCtxActive
+	}
 	return s, ContextWithSpan(ctx, s)
 }

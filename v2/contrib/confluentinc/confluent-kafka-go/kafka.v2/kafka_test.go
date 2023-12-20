@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ var (
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]mocktracer.Span, *kafka.Message) {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -143,9 +144,9 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic gotest", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
-		assert.Equal(t, kafka.Offset(i+1), s.Tag("offset"))
+		assert.Equal(t, strconv.Itoa(i+1), s.Tag("offset"))
 		assert.Equal(t, componentName, s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -216,7 +217,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, componentName, s0.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
@@ -228,7 +229,7 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, componentName, s1.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
@@ -260,7 +261,7 @@ func TestCustomTags(t *testing.T) {
 	}, WithCustomTag("foo", func(msg *kafka.Message) interface{} {
 		return "bar"
 	}), WithCustomTag("key", func(msg *kafka.Message) interface{} {
-		return msg.Key
+		return string(msg.Key)
 	}))
 	assert.NoError(t, err)
 
@@ -290,11 +291,11 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.Equal(t, []byte("key1"), s.Tag("key"))
+	assert.Equal(t, "key1", s.Tag("key"))
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))

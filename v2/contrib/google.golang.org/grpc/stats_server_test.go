@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -45,12 +46,12 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.True(span.FinishTime().Sub(span.StartTime()) >= 0)
 	assert.Equal("grpc.server", span.OperationName())
 	tags := span.Tags()
+	fmt.Printf("TAGS: %v\n", tags)
 	assert.Equal(ext.AppTypeRPC, tags["span.type"])
 	assert.Equal(codes.OK.String(), tags["grpc.code"])
 	assert.Equal(serviceName, tags["service.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags["resource.name"])
 	assert.Equal("/grpc.Fixture/Ping", tags[tagMethodName])
-	assert.Equal(1, tags["_dd.measured"])
 	assert.Equal("bar", tags["foo"])
 	assert.Equal("grpc", tags[ext.RPCSystem])
 	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])

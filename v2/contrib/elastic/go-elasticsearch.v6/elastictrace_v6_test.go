@@ -7,7 +7,6 @@ package elastic
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -34,8 +33,7 @@ func checkErrTraceV6(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
 	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
-	assert.NotEmpty(span.Tag(ext.Error))
-	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.NotEmpty(span.Tag(ext.ErrorMsg))
 	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
 }
 
@@ -106,7 +104,7 @@ func TestClientErrorCutoffV6(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.Equal(`{"error":{`, span.Tag(ext.ErrorMsg))
 }
 
 func TestClientV6Failure(t *testing.T) {
@@ -131,8 +129,7 @@ func TestClientV6Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.NotEmpty(spans[0].Tag(ext.ErrorMsg))
 }
 
 func TestResourceNamerSettingsV6(t *testing.T) {

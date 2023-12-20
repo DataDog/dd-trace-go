@@ -8,9 +8,10 @@ package options
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestStringSliceModify(t *testing.T) {

@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/valyala/fasthttp"
+
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/valyala/fasthttp"
 )
 
 const errMsg = "This is an error!"
@@ -142,7 +143,7 @@ func TestStatusError(t *testing.T) {
 	span := spans[0]
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 }
 
 // Test that users can customize which HTTP status codes are considered an error
@@ -165,9 +166,9 @@ func TestWithStatusCheck(t *testing.T) {
 		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal("600", span.Tag(ext.HTTPCode))
-		require.Contains(t, span.Tags(), ext.Error)
+		require.Contains(t, span.Tags(), ext.ErrorMsg)
 		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 	t.Run("notError", func(t *testing.T) {
 		addr := startServer(t, WithStatusCheck(customErrChecker))
@@ -184,7 +185,7 @@ func TestWithStatusCheck(t *testing.T) {
 		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.NotContains(span.Tags(), ext.Error)
+		assert.NotContains(span.Tags(), ext.ErrorMsg)
 	})
 }
 

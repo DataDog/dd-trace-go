@@ -75,10 +75,6 @@ func (r *rateSampler) Sample(s *Span) bool {
 	if s == nil {
 		return false
 	}
-	//s, ok := spn.(*Span)
-	//if !ok {
-	//	return false
-	//}
 	r.RLock()
 	defer r.RUnlock()
 	return sampledByRate(s.TraceID, r.rate)

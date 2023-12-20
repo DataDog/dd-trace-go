@@ -29,10 +29,10 @@ func TestOptions(t *testing.T) {
 	query := `{ name }`
 	for name, tt := range map[string]struct {
 		tracerOpts []Option
-		test       func(assert *assert.Assertions, root mocktracer.Span)
+		test       func(assert *assert.Assertions, root *mocktracer.Span)
 	}{
 		"default": {
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Equal("graphql.query", root.OperationName())
 				assert.Equal(query, root.Tag(ext.ResourceName))
 				assert.Equal(defaultServiceName, root.Tag(ext.ServiceName))
@@ -49,19 +49,19 @@ func TestOptions(t *testing.T) {
 		},
 		"WithAnalytics/true": {
 			tracerOpts: []Option{WithAnalytics(true)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Equal(1.0, root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalytics/false": {
 			tracerOpts: []Option{WithAnalytics(false)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRate": {
 			tracerOpts: []Option{WithAnalyticsRate(0.5)},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Equal(0.5, root.Tag(ext.EventSampleRate))
 			},
 		},
@@ -72,7 +72,7 @@ func TestOptions(t *testing.T) {
 			defer mt.Stop()
 			c := newTestClient(t, testserver.New(), NewTracer(tt.tracerOpts...))
 			c.MustPost(query, &testServerResponse{})
-			var root mocktracer.Span
+			var root *mocktracer.Span
 			for _, span := range mt.FinishedSpans() {
 				if span.ParentID() == 0 {
 					root = span
@@ -92,14 +92,14 @@ func TestError(t *testing.T) {
 	c := newTestClient(t, testserver.NewError(), NewTracer())
 	err := c.Post(`{ name }`, &testServerResponse{})
 	assert.NotNil(err)
-	var root mocktracer.Span
+	var root *mocktracer.Span
 	for _, span := range mt.FinishedSpans() {
 		if span.ParentID() == 0 {
 			root = span
 		}
 	}
 	assert.NotNil(root)
-	assert.NotNil(root.Tag(ext.Error))
+	assert.NotNil(root.Tag(ext.ErrorMsg))
 }
 
 func TestObfuscation(t *testing.T) {
@@ -131,7 +131,7 @@ func TestChildSpans(t *testing.T) {
 	c := newTestClient(t, testserver.New(), NewTracer())
 	err := c.Post(`{ name }`, &testServerResponse{})
 	assert.Nil(err)
-	var root mocktracer.Span
+	var root *mocktracer.Span
 	allSpans := mt.FinishedSpans()
 	var resNames []string
 	var opNames []string
@@ -150,7 +150,7 @@ func TestChildSpans(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))
@@ -167,7 +167,7 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())
@@ -179,7 +179,7 @@ func TestNamingSchema(t *testing.T) {
 		assert.Equal(t, "graphql.validate", spans[7].OperationName())
 		assert.Equal(t, "graphql.mutation", spans[8].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())
 		assert.Equal(t, "graphql.parse", spans[1].OperationName())

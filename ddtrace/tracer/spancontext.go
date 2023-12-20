@@ -439,9 +439,15 @@ func (t *trace) finishedOne(s *Span) {
 		t.setTraceTags(s)
 	}
 
+	// This is here to support the mocktracer. It would be nice to be able to not do this.
+	// We need to track when any single span is finished.
+	if mtr, ok := tr.(interface{ FinishSpan(*Span) }); ok {
+		mtr.FinishSpan(s)
+	}
+
 	if len(t.spans) == t.finished { // perform a full flush of all spans
-		t.finishChunk(tr, &chunk{
-			spans:    t.spans,
+		t.finishChunk(tr, &Chunk{
+			Spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
 		t.spans = nil
@@ -471,14 +477,14 @@ func (t *trace) finishedOne(s *Span) {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0])
 	}
-	t.finishChunk(tr, &chunk{
-		spans:    finishedSpans,
+	t.finishChunk(tr, &Chunk{
+		Spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr Tracer, ch *chunk) {
+func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
 	//atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
 	//tr.pushChunk(ch)
 	tr.SubmitChunk(ch)

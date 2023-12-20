@@ -8,7 +8,6 @@ package grpc
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -90,7 +89,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 		// if we've enabled call tracing, create a span
 		_, um := cfg.untracedMethods[info.FullMethod]
 		if cfg.traceStreamCalls && !um {
-			var span ddtrace.Span
+			var span *tracer.Span
 			span, ctx = startSpanFromContext(
 				ctx,
 				info.FullMethod,
@@ -159,7 +158,7 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 	}
 }
 
-func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
+func withMetadataTags(ctx context.Context, cfg *config, span *tracer.Span) {
 	if cfg.withMetadataTags {
 		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 		for k, v := range md {
@@ -170,7 +169,7 @@ func withMetadataTags(ctx context.Context, cfg *config, span ddtrace.Span) {
 	}
 }
 
-func withRequestTags(cfg *config, req interface{}, span ddtrace.Span) {
+func withRequestTags(cfg *config, req interface{}, span *tracer.Span) {
 	if cfg.withRequestTags {
 		if p, ok := req.(proto.Message); ok {
 			if b, err := protojson.Marshal(p); err == nil {

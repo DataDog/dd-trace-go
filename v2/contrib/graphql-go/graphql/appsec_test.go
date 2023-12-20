@@ -13,10 +13,11 @@ import (
 	"path"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/graphql-go/graphql"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 func TestAppSec(t *testing.T) {
@@ -151,7 +152,7 @@ func TestAppSec(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
-				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
+				require.Equal(t, float64(1), spans[len(spans)-1].Tag("_dd.appsec.enabled"))
 				events := make(map[string]string)
 				type ddAppsecJSON struct {
 					Triggers []struct {

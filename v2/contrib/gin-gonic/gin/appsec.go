@@ -16,7 +16,7 @@ import (
 
 // useAppSec executes the AppSec logic related to the operation start and
 // returns the  function to be executed upon finishing the operation
-func useAppSec(c *gin.Context, span tracer.Span) {
+func useAppSec(c *gin.Context, span *tracer.Span) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)
