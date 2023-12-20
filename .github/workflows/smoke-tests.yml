@@ -54,7 +54,7 @@ jobs:
     # is enabled, but nothing more than gcc and the C library, but nothing more.
     # Anything more than this "standard Go build and deployment requirements"
     # must be considered breaking changes.
-    name: 'Build and deployment requirements smoke tests'
+    name: Linux Setup Smoke Tests (build-end=${{ matrix.build-env }} go=${{ matrix.go }} build-with-cgo=${{ matrix.build-with-cgo }} build-with-cgo-statically=${{ matrix.build-with-cgo-statically }} build-tags=${{ matrix.go-tags }} build-with-vendoring=${{ matrix.build-with-vendoring }} deployment-env=${{ matrix.deployment-env }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -130,6 +130,15 @@ jobs:
             deployment-env: scratch
 
     steps:
+      - name: Dump Matrix Variables
+        run: |
+          echo "go=${{ matrix.go }}"
+          echo "build-env=${{ matrix.build-env }}"
+          echo "build-with-cgo=${{ matrix.build-with-cgo }}"
+          echo "build-with-cgo-statically=${{ matrix.build-with-cgo-statically }}"
+          echo "build-tags=${{ matrix.build-tags }}"
+          echo "build-with-vendoring=${{ matrix.build-with-vendoring }}"
+          echo "deployment-env=${{ matrix.deployment-env }}"
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
@@ -148,7 +157,7 @@ jobs:
             build_tags=${{ matrix.build-tags }}
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
-            build_with_cgo_statically=${{ matrix.build-with-statically }}
+            build_with_cgo_statically=${{ matrix.build-with-cgo-statically }}
             deployment_env=${{ matrix.deployment-env }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
