@@ -11,6 +11,7 @@ import (
 	"math"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -44,7 +45,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		opts := append(spanOpts, tracer.ResourceName(cfg.resourceNamer(c)))
+		opts := options.Copy(spanOpts...) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
+		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}

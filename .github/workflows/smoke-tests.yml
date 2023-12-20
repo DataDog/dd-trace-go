@@ -15,19 +15,22 @@ on:
       - '**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  workflow_dispatch: {} #manually
+  workflow_dispatch: {} # manually
+  pull_request:
+    branches:
+      - '**'
 
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
     #  latest minor version and see if dd-trace-go still compiles.
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
-    name: 'dd-trace-go still works after go get -u'
+    name: 'go get -u smoke test'
     runs-on: ubuntu-latest
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
@@ -42,3 +45,99 @@ jobs:
         run: go build $PACKAGES
       - name: Test dd-trace-go
         run: go test $PACKAGES
+
+  # TODO: macos setup requirements (xcode tools installation, etc.)
+  setup-requirements-linux:
+    # Build and deployment setup smoke test of linux containers built from the
+    # golang docker image to test that dd-trace-go doesn't need more than the
+    # "out-of-the-box" images. It is expected require a few more tools when CGO
+    # is enabled, but nothing more than gcc and the C library, but nothing more.
+    # Anything more than this "standard Go build and deployment requirements"
+    # must be considered breaking changes.
+    name: 'Build and deployment requirements smoke tests'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO: cross-compilation from/to different hardware architectures once
+        #       github provides native ARM runners.
+        go: [ "1.21", "1.20", "1.19" ]
+        build-env: [ alpine, bookworm, bullseye ]
+        build-with-cgo: [ 0, 1 ]
+        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
+        include:
+          # GitHub limits the number of matrix jobs to 256, so we need to reduce
+          # it a bit, and we can reduce redundant tests.
+          # 1. Building with `go mod vendoring` is not worth it on all the
+          #    possible build and deployment envs.
+          - build-env: alpine
+            build-with-vendoring: y
+            build-with-cgo: 1 # cgo's build tag can impact the vendored files
+            deployment-env: alpine
+          - build-env: alpine
+            build-with-vendoring: y
+            build-with-cgo: 0 # cgo's build tag can impact the vendored files
+            deployment-env: alpine
+          # 2. Given the low blast radius of the busybox deployment environment
+          #    this is the only one where we accept the libdl.so.2 requirement.
+          #    For this reason, we add the datadog.no_waf build tag in this only
+          #    case to avoid the libdl.so.2 dependency.
+          - deployment-env: busybox
+            build-with-cgo: 1
+            build-tags: "datadog.no_waf"
+
+        exclude:
+          # Exclude "out of the box" cases requiring extra setup:
+          # 1. Building with CGO enabled on alpine but deploying to a non-alpine
+          #    environment: the C library isn't located at the same place.
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: debian11
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: debian12
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: al2
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: al2023
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: busybox
+          - build-env: alpine
+            build-with-cgo: 1
+            deployment-env: scratch
+          # 2. Too old glibc on the deployment environment than on the build env
+          - build-env: bookworm
+            deployment-env: al2
+          - build-env: bookworm
+            deployment-env: debian11
+          # 3. Build with CGO enabled and deploying to a scratch/busybox docker
+          #    image requires copying the dynamic lib dependencies (full example
+          #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
+          - build-with-cgo: 1
+            deployment-env: scratch
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./internal/apps/setup-smoke-test/Dockerfile
+          push: false
+          load: true
+          tags: smoke-test
+          build-args: |
+            go=${{ matrix.go }}
+            build_env=${{ matrix.build-env }}
+            build_tags=${{ matrix.build-tags }}
+            build_with_vendoring=${{ matrix.build-with-vendoring }}
+            build_with_cgo=${{ matrix.build-with-cgo }}
+            deployment_env=${{ matrix.deployment-env }}
+      - name: Test
+        run: docker run -p7777:7777 --rm smoke-test

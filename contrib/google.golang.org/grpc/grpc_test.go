@@ -102,7 +102,9 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(clientSpan)
 			assert.NotNil(rootSpan)
 
+			// this tag always contains the resolved address
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.PeerHostname), "localhost")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
@@ -173,6 +175,7 @@ func TestStreaming(t *testing.T) {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
 					"expected target host tag to be set in span: %v", span)
+				assert.Equal(t, "localhost", span.Tag(ext.PeerHostname))
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
@@ -621,7 +624,7 @@ func newRigWithInterceptors(
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
+	conn, err := grpc.Dial("localhost:"+port, clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}

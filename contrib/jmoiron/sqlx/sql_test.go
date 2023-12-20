@@ -29,8 +29,10 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	defer sqltest.Prepare(tableName)()
-	os.Exit(m.Run())
+	cleanup := sqltest.Prepare(tableName)
+	testResult := m.Run()
+	cleanup()
+	os.Exit(testResult)
 }
 
 func TestMySQL(t *testing.T) {
