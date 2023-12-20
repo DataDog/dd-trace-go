@@ -116,6 +116,20 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 	return exported
 }
 
+type pointType int
+
+const (
+	pointTypeStats pointType = iota
+	pointTypeKafkaOffset
+)
+
+type processorInput struct {
+	point       statsPoint
+	kafkaOffset kafkaOffset
+	typ         pointType
+	queuePos    int64
+}
+
 type processorStats struct {
 	payloadsIn      int64
 	flushedPayloads int64
@@ -152,7 +166,8 @@ type kafkaOffset struct {
 }
 
 type Processor struct {
-	in                   chan statsPoint
+	in                   *fastQueue
+	hashCache            *hashCache
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[int64]bucket
 	tsTypeOriginBuckets  map[int64]bucket
@@ -187,8 +202,8 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 	p := &Processor{
 		tsTypeCurrentBuckets:        make(map[int64]bucket),
 		tsTypeOriginBuckets:         make(map[int64]bucket),
-		in:                          make(chan statsPoint, 10000),
-		inKafka:                     make(chan kafkaOffset, 10000),
+		hashCache:                   newHashCache(),
+		in:                          newFastQueue(),
 		stopped:                     1,
 		statsd:                      statsd,
 		env:                         env,
@@ -267,11 +282,6 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
-		case s := <-p.in:
-			atomic.AddInt64(&p.stats.payloadsIn, 1)
-			p.add(s)
-		case o := <-p.inKafka:
-			p.addKafkaOffset(o)
 		case now := <-tick:
 			p.sendToAgent(p.flush(now))
 		case done := <-p.flushRequest:
@@ -281,6 +291,18 @@ func (p *Processor) run(tick <-chan time.Time) {
 			// drop in flight payloads on the input channel
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			return
+		default:
+			s := p.in.pop()
+			if s == nil {
+				time.Sleep(time.Millisecond * 10)
+				continue
+			}
+			atomic.AddInt64(&p.stats.payloadsIn, 1)
+			if s.typ == pointTypeStats {
+				p.add(s.point)
+			} else if s.typ == pointTypeKafkaOffset {
+				p.addKafkaOffset(s.kafkaOffset)
+			}
 		}
 	}
 }
@@ -397,12 +419,11 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		parentHash = parent.GetHash()
 	}
 	child := Pathway{
-		hash:         pathwayHash(nodeHash(p.service, p.env, edgeTags), parentHash),
+		hash:         p.hashCache.get(p.service, p.env, edgeTags, parentHash),
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
 	}
-	select {
-	case p.in <- statsPoint{
+	p.in.push(&processorInput{typ: pointTypeStats, point: statsPoint{
 		edgeTags:       edgeTags,
 		parentHash:     parentHash,
 		hash:           child.hash,
@@ -410,40 +431,28 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		pathwayLatency: now.Sub(pathwayStart).Nanoseconds(),
 		edgeLatency:    now.Sub(edgeStart).Nanoseconds(),
 		payloadSize:    params.PayloadSize,
-	}:
-	default:
-		atomic.AddInt64(&p.stats.dropped, 1)
-	}
+	}})
 	return ContextWithPathway(ctx, child)
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
-	select {
-	case p.inKafka <- kafkaOffset{
+	p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		group:      group,
 		topic:      topic,
 		partition:  partition,
 		offsetType: commitOffset,
-		timestamp:  p.time().UnixNano(),
-	}:
-	default:
-		atomic.AddInt64(&p.stats.dropped, 1)
-	}
+		timestamp:  p.time().UnixNano()}})
 }
 
 func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
-	select {
-	case p.inKafka <- kafkaOffset{
+	p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: produceOffset,
 		timestamp:  p.time().UnixNano(),
-	}:
-	default:
-		atomic.AddInt64(&p.stats.dropped, 1)
-	}
+	}})
 }
 
 func (p *Processor) runLoadAgentFeatures(tick <-chan time.Time) {
