@@ -33,14 +33,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review

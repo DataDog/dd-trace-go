@@ -35,6 +35,7 @@ jobs:
         if: ${{ env.V2_BRANCH != 'true' }}
         with:
           repository: 'DataDog/system-tests'
+          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
 
       - name: Checkout system tests (v2)
         uses: actions/checkout@v3

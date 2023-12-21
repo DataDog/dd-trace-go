@@ -45,6 +45,7 @@ $runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
 SCOPES=("gin-gonic/gin" "google.golang.org/grpc" "net/http" "gorilla/mux" "go-chi/chi" "go-chi/chi.v5" "labstack/echo.v4")
 for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
+  echo "Running appsec tests for contrib/$SCOPE"
   if [[ "$V2_BRANCH" == "true" ]]; then
     $runner "$JUNIT_REPORT.$contrib.xml" "./v2/contrib/$SCOPE" "."
   else
