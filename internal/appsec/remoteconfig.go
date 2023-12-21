@@ -48,13 +48,13 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 }
 
 // combineRCRulesUpdates updates the state of the given rulesManager with the combination of all the provided rules updates
-func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.ProductUpdate) (map[string]rc.ApplyStatus, error) {
-	statuses := map[string]rc.ApplyStatus{}
+func (r *rulesManager) combineRCRulesUpdates(updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
+	statuses = make(map[string]rc.ApplyStatus, len(updates))
 	// Set the default statuses for all updates to unacknowledged
 	for _, u := range updates {
 		statuses = mergeMaps(statuses, statusesFromUpdate(u, false, nil))
 	}
-	var err error
+
 updateLoop:
 	// Process rules related updates
 	for p, u := range updates {
@@ -72,7 +72,7 @@ updateLoop:
 			// If the config was removed, switch back to the static recommended rules
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				err = errors.New("More than one config received for ASM_DD")
+				err = errors.New("more than one config received for ASM_DD")
 				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
 				break updateLoop
 			}
@@ -145,7 +145,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 
 	// Create a new local rulesManager
 	r := a.cfg.rulesManager.clone()
-	statuses, err := combineRCRulesUpdates(r, updates)
+	statuses, err := r.combineRCRulesUpdates(updates)
 	if err != nil {
 		log.Debug("appsec: Remote config: not applying any updates because of error: %v", err)
 		return statuses
@@ -263,7 +263,11 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
 // only keeping the longest expiration values for similar entries.
 func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
-	mergeMap := map[string]int64{}
+	cap := len(entries1)
+	if cap2 := len(entries2); cap2 > cap {
+		cap = cap2
+	}
+	mergeMap := make(map[string]int64, cap)
 
 	for _, entry := range entries1 {
 		mergeMap[entry.Value] = entry.Expiration
@@ -278,10 +282,7 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 	// Create the final slice and return it
 	entries := make([]rc.ASMDataRuleDataEntry, 0, len(mergeMap))
 	for val, exp := range mergeMap {
-		entries = append(entries, rc.ASMDataRuleDataEntry{
-			Value:      val,
-			Expiration: exp,
-		})
+		entries = append(entries, rc.ASMDataRuleDataEntry{Value: val, Expiration: exp})
 	}
 	return entries
 }
@@ -336,6 +337,17 @@ func (a *appsec) enableRemoteActivation() error {
 	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
+var blockingCapabilities = [...]remoteconfig.Capability{
+	remoteconfig.ASMUserBlocking,
+	remoteconfig.ASMRequestBlocking,
+	remoteconfig.ASMIPBlocking,
+	remoteconfig.ASMDDRules,
+	remoteconfig.ASMExclusions,
+	remoteconfig.ASMCustomRules,
+	remoteconfig.ASMCustomBlockingResponse,
+	remoteconfig.ASMTrustedIPs,
+}
+
 func (a *appsec) enableRCBlocking() {
 	if a.cfg.rc == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
@@ -354,16 +366,7 @@ func (a *appsec) enableRCBlocking() {
 	}
 
 	if _, isSet := os.LookupEnv(internal.EnvRules); !isSet {
-		caps := []remoteconfig.Capability{
-			remoteconfig.ASMUserBlocking,
-			remoteconfig.ASMRequestBlocking,
-			remoteconfig.ASMIPBlocking,
-			remoteconfig.ASMDDRules,
-			remoteconfig.ASMExclusions,
-			remoteconfig.ASMCustomRules,
-			remoteconfig.ASMCustomBlockingResponse,
-		}
-		for _, c := range caps {
+		for _, c := range blockingCapabilities {
 			if err := a.registerRCCapability(c); err != nil {
 				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
 			}
@@ -375,15 +378,7 @@ func (a *appsec) disableRCBlocking() {
 	if a.cfg.rc == nil {
 		return
 	}
-	caps := []remoteconfig.Capability{
-		remoteconfig.ASMDDRules,
-		remoteconfig.ASMExclusions,
-		remoteconfig.ASMIPBlocking,
-		remoteconfig.ASMRequestBlocking,
-		remoteconfig.ASMUserBlocking,
-		remoteconfig.ASMCustomRules,
-	}
-	for _, c := range caps {
+	for _, c := range blockingCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
 		}
