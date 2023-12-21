@@ -47,7 +47,7 @@ jobs:
             # govulncheck doesn't support modules with only a go.mod in the root
             cd $dir
             go_files=$(ls -la | grep -c ".*\.go$")
-            if [ $go_files -eq 0 ]; then
+            if [[ $go_files -eq 0 ]]; then
               dir=$(realpath $(ls -d */ | head))
             fi
             cd -
