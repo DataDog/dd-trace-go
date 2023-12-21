@@ -704,7 +704,7 @@ func TestWafRCUpdate(t *testing.T) {
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
-		statuses, err := cfg.rulesManager.combineRCRulesUpdates(craftRCUpdates(map[string]rulesFragment{"override": override}))
+		statuses, err := combineRCRulesUpdates(cfg.rulesManager, craftRCUpdates(map[string]rulesFragment{"override": override}))
 		require.NoError(t, err)
 		for _, status := range statuses {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)

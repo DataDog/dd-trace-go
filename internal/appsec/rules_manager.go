@@ -99,7 +99,7 @@ func newRulesManager(rules []byte) (*rulesManager, error) {
 	}, nil
 }
 
-func (r *rulesManager) clone() *rulesManager {
+func (r *rulesManager) clone() rulesManager {
 	var clone rulesManager
 	clone.edits = make(map[string]rulesFragment, len(r.edits))
 	for k, v := range r.edits {
@@ -107,7 +107,7 @@ func (r *rulesManager) clone() *rulesManager {
 	}
 	clone.base = r.base.clone()
 	clone.latest = r.latest.clone()
-	return &clone
+	return clone
 }
 
 func (r *rulesManager) addEdit(cfgPath string, f rulesFragment) {

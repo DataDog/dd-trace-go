@@ -48,7 +48,8 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 }
 
 // combineRCRulesUpdates updates the state of the given rulesManager with the combination of all the provided rules updates
-func (r *rulesManager) combineRCRulesUpdates(updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
+func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
+	// Spare some re-allocations (but there may still be some because 1 update may contain N configs)
 	statuses = make(map[string]rc.ApplyStatus, len(updates))
 	// Set the default statuses for all updates to unacknowledged
 	for _, u := range updates {
@@ -145,7 +146,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 
 	// Create a new local rulesManager
 	r := a.cfg.rulesManager.clone()
-	statuses, err := r.combineRCRulesUpdates(updates)
+	statuses, err := combineRCRulesUpdates(&r, updates)
 	if err != nil {
 		log.Debug("appsec: Remote config: not applying any updates because of error: %v", err)
 		return statuses
@@ -153,7 +154,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 
 	// Compile the final rules once all updates have been processed and no error occurred
 	r.compile()
-	log.Debug("appsec: Remote config: final compiled rules: %s", r)
+	log.Debug("appsec: Remote config: final compiled rules: %s", r.String())
 
 	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
@@ -165,7 +166,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return statuses
 	}
 	// Replace the rulesManager with the new one holding the new state
-	a.cfg.rulesManager = r
+	a.cfg.rulesManager = &r
 
 	return statuses
 }
@@ -263,11 +264,8 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
 // only keeping the longest expiration values for similar entries.
 func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
-	count := len(entries1)
-	if count2 := len(entries2); count2 > count {
-		count = count2
-	}
-	mergeMap := make(map[string]int64, count)
+	// There will be at most len(entries1) + len(entries2)  entries in the merge map
+	mergeMap := make(map[string]int64, len(entries1)+len(entries2))
 
 	for _, entry := range entries1 {
 		mergeMap[entry.Value] = entry.Expiration
