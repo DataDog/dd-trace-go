@@ -83,6 +83,7 @@ func (f *RulesFragment) clone() (clone RulesFragment) {
 }
 
 func cloneSlice[T any](slice []T) []T {
+	// TODO: use slices.Clone once go1.21 is the min supported go runtime.
 	clone := make([]T, len(slice), cap(slice))
 	copy(clone, slice)
 	return clone
