@@ -43,6 +43,7 @@ jobs:
         if: ${{ env.V2_BRANCH == 'true' }}
         run: |
           find ./v2/contrib -mindepth 2 -type f -name go.mod -exec dirname {} \; | while read dir ; do
+            echo "Checking $dir"
             # govulncheck doesn't support modules with only a go.mod in the root
             cd $dir
             go_files=$(ls -la | grep -c ".*\.go$")
@@ -50,6 +51,6 @@ jobs:
               dir=$(realpath $(ls -d */ | head))
             fi
             cd -
-          
+
             govulncheck -C $dir .
           done
