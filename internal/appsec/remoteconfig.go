@@ -263,11 +263,11 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
 // only keeping the longest expiration values for similar entries.
 func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
-	cap := len(entries1)
-	if cap2 := len(entries2); cap2 > cap {
-		cap = cap2
+	count := len(entries1)
+	if count2 := len(entries2); count2 > count {
+		count = count2
 	}
-	mergeMap := make(map[string]int64, cap)
+	mergeMap := make(map[string]int64, count)
 
 	for _, entry := range entries1 {
 		mergeMap[entry.Value] = entry.Expiration
