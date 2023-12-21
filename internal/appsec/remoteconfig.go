@@ -145,7 +145,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return map[string]rc.ApplyStatus{}
 	}
 
-	// Create a new local rulesManager
+	// Create a new local RulesManager
 	r := a.cfg.RulesManager.Clone()
 	statuses, err := combineRCRulesUpdates(&r, updates)
 	if err != nil {
