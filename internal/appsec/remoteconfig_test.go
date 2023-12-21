@@ -378,13 +378,9 @@ func TestCapabilities(t *testing.T) {
 			expected: []remoteconfig.Capability{remoteconfig.ASMActivation},
 		},
 		{
-			name: "appsec-enabled/default-RulesManager",
-			env:  map[string]string{config.EnvEnabled: "1"},
-			expected: []remoteconfig.Capability{
-				remoteconfig.ASMRequestBlocking, remoteconfig.ASMUserBlocking, remoteconfig.ASMExclusions,
-				remoteconfig.ASMDDRules, remoteconfig.ASMIPBlocking, remoteconfig.ASMCustomRules,
-				remoteconfig.ASMCustomBlockingResponse,
-			},
+			name:     "appsec-enabled/default-RulesManager",
+			env:      map[string]string{config.EnvEnabled: "1"},
+			expected: blockingCapabilities[:],
 		},
 		{
 			name:     "appsec-enabled/RulesManager-from-env",
@@ -710,6 +706,7 @@ func TestWafRCUpdate(t *testing.T) {
 		require.Empty(t, result.Actions)
 		// Simulate an RC update that disables the rule
 		statuses, err := combineRCRulesUpdates(cfg.RulesManager, craftRCUpdates(map[string]config.RulesFragment{"override": override}))
+		require.NoError(t, err)
 		for _, status := range statuses {
 			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
 		}

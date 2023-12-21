@@ -69,18 +69,24 @@ func DefaultRulesFragment() RulesFragment {
 	return f
 }
 
-func (r_ *RulesFragment) clone() RulesFragment {
-	var f RulesFragment
-	f.Version = r_.Version
-	f.Metadata = r_.Metadata
-	f.Overrides = append(f.Overrides, r_.Overrides...)
-	f.Exclusions = append(f.Exclusions, r_.Exclusions...)
-	f.RulesData = append(f.RulesData, r_.RulesData...)
-	f.CustomRules = append(f.CustomRules, r_.CustomRules...)
-	f.Processors = append(f.Processors, r_.Processors...)
-	f.Scanners = append(f.Scanners, r_.Scanners...)
+func (f *RulesFragment) clone() (clone RulesFragment) {
+	clone.Version = f.Version
+	clone.Metadata = f.Metadata
+	clone.Overrides = cloneSlice(f.Overrides)
+	clone.Exclusions = cloneSlice(f.Exclusions)
+	clone.RulesData = cloneSlice(f.RulesData)
+	clone.CustomRules = cloneSlice(f.CustomRules)
+	clone.Processors = cloneSlice(f.Processors)
+	clone.Scanners = cloneSlice(f.Scanners)
 	// TODO (Francois Mazeau): copy more fields once we handle them
-	return f
+	return
+}
+
+func cloneSlice[T any](slice []T) []T {
+	// TODO: use slices.Clone once go1.21 is the min supported go runtime.
+	clone := make([]T, len(slice), cap(slice))
+	copy(clone, slice)
+	return clone
 }
 
 // NewRulesManeger initializes and returns a new RulesManager using the provided rules.
@@ -103,15 +109,14 @@ func NewRulesManeger(rules []byte) (*RulesManager, error) {
 }
 
 // Clone returns a duplicate of the current rules manager object
-func (r *RulesManager) Clone() *RulesManager {
-	var clone RulesManager
+func (r *RulesManager) Clone() (clone RulesManager) {
 	clone.Edits = make(map[string]RulesFragment, len(r.Edits))
 	for k, v := range r.Edits {
 		clone.Edits[k] = v
 	}
 	clone.Base = r.Base.clone()
 	clone.Latest = r.Latest.clone()
-	return &clone
+	return
 }
 
 // AddEdit appends the configuration to the map of edits in the rules manager
