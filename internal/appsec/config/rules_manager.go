@@ -69,15 +69,15 @@ func DefaultRulesFragment() RulesFragment {
 	return f
 }
 
-func (r_ *RulesFragment) clone() (clone RulesFragment) {
-	clone.Version = r_.Version
-	clone.Metadata = r_.Metadata
-	clone.Overrides = cloneSlice(r_.Overrides)
-	clone.Exclusions = cloneSlice(r_.Exclusions)
-	clone.RulesData = cloneSlice(r_.RulesData)
-	clone.CustomRules = cloneSlice(r_.CustomRules)
-	clone.Processors = cloneSlice(r_.Processors)
-	clone.Scanners = cloneSlice(r_.Scanners)
+func (f *RulesFragment) clone() (clone RulesFragment) {
+	clone.Version = f.Version
+	clone.Metadata = f.Metadata
+	clone.Overrides = cloneSlice(f.Overrides)
+	clone.Exclusions = cloneSlice(f.Exclusions)
+	clone.RulesData = cloneSlice(f.RulesData)
+	clone.CustomRules = cloneSlice(f.CustomRules)
+	clone.Processors = cloneSlice(f.Processors)
+	clone.Scanners = cloneSlice(f.Scanners)
 	// TODO (Francois Mazeau): copy more fields once we handle them
 	return
 }
