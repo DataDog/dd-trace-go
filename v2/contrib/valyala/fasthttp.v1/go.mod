@@ -3,10 +3,10 @@ module github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp.v1
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231220194510-f0d293776f63
 	github.com/stretchr/testify v1.8.4
-	github.com/valyala/fasthttp v1.51.0
+	github.com/valyala/fasthttp v1.50.0
 )
 
 require (
@@ -18,22 +18,22 @@ require (
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/andybalholm/brotli v1.0.5 // indirect
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.5.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.5.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/klauspost/compress v1.17.0 // indirect
+	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
-	github.com/tinylib/msgp v1.1.9 // indirect
+	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect

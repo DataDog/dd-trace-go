@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20231220194510-f0d293776f63
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/stretchr/testify v1.8.4
@@ -17,7 +17,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231219162229-0985abbd2e11 // indirect
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231220194510-f0d293776f63 // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.2.3 // indirect
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect

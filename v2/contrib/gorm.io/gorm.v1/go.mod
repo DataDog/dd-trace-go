@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/gorm.io/gorm.v1
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/database/sql v0.0.0-20231220194510-f0d293776f63
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/jackc/pgx/v5 v5.3.1
 	github.com/lib/pq v1.10.9
@@ -32,7 +32,7 @@ require (
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.1 // indirect
+	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -44,7 +44,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
-	github.com/tinylib/msgp v1.1.8 // indirect
+	github.com/tinylib/msgp v1.1.9 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
@@ -55,7 +55,7 @@ require (
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.16.1 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 )

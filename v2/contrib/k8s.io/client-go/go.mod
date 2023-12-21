@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231220194510-f0d293776f63
 	github.com/stretchr/testify v1.8.4
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17
@@ -14,7 +14,7 @@ require (
 	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1 // indirect
-	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
+	github.com/DataDog/datadog-go/v5 v5.3.0 // indirect
 	github.com/DataDog/go-libddwaf/v2 v2.2.3 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
@@ -28,7 +28,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/uuid v1.5.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -56,7 +56,7 @@ require (
 	golang.org/x/tools v0.16.1 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
