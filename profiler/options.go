@@ -92,6 +92,7 @@ type config struct {
 	apiURL               string // apiURL is the Datadog intake API URL
 	agentURL             string // agentURL is the Datadog agent profiling URL
 	service, env         string
+	version              string
 	hostname             string
 	statsd               StatsdClient
 	httpClient           *http.Client
@@ -419,7 +420,9 @@ func WithEnv(env string) Option {
 
 // WithVersion specifies the service version tag to attach to profiles
 func WithVersion(version string) Option {
-	return WithTags("version:" + version)
+	return func(cfg *config) {
+		cfg.version = version
+	}
 }
 
 // WithTags specifies a set of tags to be attached to the profiler. These may help

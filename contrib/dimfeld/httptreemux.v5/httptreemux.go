@@ -112,6 +112,20 @@ func getRoute(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Requ
 	if !found {
 		return "", false
 	}
+
+	// Check for redirecting route due to trailing slash for parameters.
+	// The redirecting behaviour originates from httptreemux router.
+	if lr.StatusCode == http.StatusMovedPermanently && strings.HasSuffix(route, "/") {
+		rReq := req.Clone(req.Context())
+		rReq.RequestURI = strings.TrimSuffix(rReq.RequestURI, "/")
+		rReq.URL.Path = strings.TrimSuffix(rReq.URL.Path, "/")
+
+		lr, found = router.Lookup(w, rReq)
+		if !found {
+			return "", false
+		}
+	}
+
 	for k, v := range lr.Params {
 		// replace parameter surrounded by a set of "/", i.e. ".../:param/..."
 		oldP := "/" + v + "/"

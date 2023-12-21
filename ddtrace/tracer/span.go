@@ -161,6 +161,25 @@ func (s *span) SetTag(key string, value interface{}) {
 		s.setMeta(key, v.String())
 		return
 	}
+	if value != nil {
+		// Arrays will be translated to dot notation. e.g.
+		// {"myarr.0": "foo", "myarr.1": "bar"}
+		// which will be displayed as an array in the UI.
+		switch reflect.TypeOf(value).Kind() {
+		case reflect.Slice:
+			slice := reflect.ValueOf(value)
+			for i := 0; i < slice.Len(); i++ {
+				key := fmt.Sprintf("%s.%d", key, i)
+				v := slice.Index(i)
+				if num, ok := toFloat64(v.Interface()); ok {
+					s.setMetric(key, num)
+				} else {
+					s.setMeta(key, fmt.Sprintf("%v", v))
+				}
+			}
+			return
+		}
+	}
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
 	s.setMeta(key, fmt.Sprint(value))
 }
@@ -592,7 +611,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
 func shouldKeep(s *span) bool {
-	if p, ok := s.context.samplingPriority(); ok && p > 0 {
+	if p, ok := s.context.SamplingPriority(); ok && p > 0 {
 		// positive sampling priorities stay
 		return true
 	}
