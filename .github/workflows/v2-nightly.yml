@@ -5,49 +5,49 @@ on:
 
 jobs:
   appsec-v2:
-    uses: ./.github/workflows/appsec.yml
+    uses: DataDog/dd-trace-go/.github/workflows/appsec.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   codeql-v2:
-    uses: ./.github/workflows/codeql-analysis.yml
+    uses: DataDog/dd-trace-go/.github/workflows/codeql-analysis.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   govulncheck-v2:
-    uses: ./.github/workflows/govulncheck.yml
+    uses: DataDog/dd-trace-go/.github/workflows/govulncheck.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   main-branch-tests-v2:
-    uses: ./.github/workflows/main-branch-tests.yml
+    uses: DataDog/dd-trace-go/.github/workflows/main-branch-tests.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   parametric-v2:
-    uses: ./.github/workflows/parametric-tests.yml
+    uses: DataDog/dd-trace-go/.github/workflows/parametric-tests.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   smoke-v2:
-    uses: ./.github/workflows/smoke-tests.yml
+    uses: DataDog/dd-trace-go/.github/workflows/smoke-tests.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
 
   system-v2:
-    uses: ./.github/workflows/system-tests.yml
+    uses: DataDog/dd-trace-go/.github/workflows/system-tests.yml@v2-dev
     secrets: inherit
     with:
       branch_ref: refs/heads/v2-dev
 
   test-apps-v2:
-    uses: ./.github/workflows/test-apps.yml
+    uses: DataDog/dd-trace-go/.github/workflows/test-apps.yml@v2-dev
     secrets: inherit
     with:
       ref: refs/heads/v2-dev
