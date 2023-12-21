@@ -20,6 +20,10 @@ on:
     branches:
       - '**'
 
+env:
+  TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  V2_BRANCH: true
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -39,10 +43,17 @@ jobs:
           cache: true
       - name: go get -u
         run: |
-          go get -u $PACKAGES
+          go get -u -t $PACKAGES
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
+      - name: Test contribs (v2)
+        if: ${{ env.V2_BRANCH == 'true' }}
+        # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        run: |
+          go install gotest.tools/gotestsum@latest
+          mkdir -p $TEST_RESULTS
+          ./.github/workflows/apps/test-contrib-submodules.sh smoke
       - name: Test dd-trace-go
         run: go test $PACKAGES
 

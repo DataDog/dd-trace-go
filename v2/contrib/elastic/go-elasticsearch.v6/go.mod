@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/elastic/go-elasticsearch.v6
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
 	github.com/elastic/go-elasticsearch/v6 v6.8.10
 	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/elastic/go-elasticsearch/v8 v8.11.0

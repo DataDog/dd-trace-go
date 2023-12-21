@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/v2/internal/contrib/validationtest
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20231219162229-0985abbd2e11
-	github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20231219162229-0985abbd2e11
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20231220194510-f0d293776f63
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/miekg/dns v1.1.57
 	github.com/stretchr/testify v1.8.4

@@ -72,6 +72,7 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 	}
 	body, err := exec.Command("go", "list", "-json", "./...").Output()
 	if err != nil {
+		t.Log(string(body))
 		return err
 	}
 	var packages []contribPkg
