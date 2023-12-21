@@ -12,8 +12,9 @@ import (
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
-	grpc "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
-	http "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -121,17 +122,22 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	}
 
 	// Check which addresses are supported by what listener
-	httpAddresses := make(map[string]struct{}, len(ruleAddresses))
-	grpcAddresses := make(map[string]struct{}, len(ruleAddresses))
+	graphQLAddresses := make(map[string]struct{}, graphqlsec.SupportedAddressCount())
+	grpcAddresses := make(map[string]struct{}, grpcsec.SupportedAddressCount())
+	httpAddresses := make(map[string]struct{}, httpsec.SupportedAddressCount())
 	notSupported := make([]string, 0, len(ruleAddresses))
 	for _, address := range ruleAddresses {
 		supported := false
-		if http.SupportsAddress(address) {
-			httpAddresses[address] = struct{}{}
+		if graphqlsec.SupportsAddress(address) {
+			graphQLAddresses[address] = struct{}{}
 			supported = true
 		}
-		if grpc.SupportsAddress(address) {
+		if grpcsec.SupportsAddress(address) {
 			grpcAddresses[address] = struct{}{}
+			supported = true
+		}
+		if httpsec.SupportsAddress(address) {
+			httpAddresses[address] = struct{}{}
 			supported = true
 		}
 		if !supported {
@@ -144,14 +150,19 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	}
 
 	// Register the WAF event listeners
-	if len(httpAddresses) > 0 {
-		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, http.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
+	if len(graphQLAddresses) > 0 {
+		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
+		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
 	}
 
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, grpc.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
+	}
+
+	if len(httpAddresses) > 0 {
+		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
+		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
 	}
 
 	return listeners, nil
