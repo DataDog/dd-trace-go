@@ -26,7 +26,6 @@ on:
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: /tmp/gotestsum-report
-  V2_BRANCH: false
 jobs:
   native:
     strategy:
@@ -194,17 +193,9 @@ jobs:
         with:
           platforms: arm64
       - run: |
-          env V2_BRANCH=$V2_BRANCH CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
-    if: inputs.ref != 'refs/heads/v2-dev'
-    with:
-      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-  smoke-tests-v2:
-    # TODO(darccio): change to main branch on v2 release
-    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@dario.castane/AIT-3705/dd-trace-go.v2
-    if: inputs.ref == 'refs/heads/v2-dev'
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

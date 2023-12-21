@@ -7,7 +7,6 @@ set -e
 # .github/workflows/appsec.yml.
 
 echo "Running appsec tests for:"
-echo "  V2_BRANCH=$V2_BRANCH"
 echo "  GODEBUG=$GODEBUG"
 echo "  GOEXPERIMENT=$GOEXPERIMENT"
 echo "  CGO_ENABLED=$CGO_ENABLED"
@@ -46,9 +45,5 @@ SCOPES=("gin-gonic/gin" "google.golang.org/grpc" "net/http" "gorilla/mux" "go-ch
 for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
   echo "Running appsec tests for contrib/$SCOPE"
-  if [[ "$V2_BRANCH" == "true" ]]; then
-    $runner "$JUNIT_REPORT.$contrib.xml" "./v2/contrib/$SCOPE" "."
-  else
-    $runner "$JUNIT_REPORT.$contrib.xml" "." "./contrib/$SCOPE/..."
-  fi
+  $runner "$JUNIT_REPORT.$contrib.xml" "." "./contrib/$SCOPE/..."
 done
