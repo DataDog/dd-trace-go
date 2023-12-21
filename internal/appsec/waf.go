@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/graphqlsec"
@@ -35,7 +36,7 @@ type wafHandle struct {
 	actions sharedsec.Actions
 }
 
-func (a *appsec) swapWAF(rules rulesFragment) (err error) {
+func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
 	newHandle, err := newWAFHandle(rules, a.cfg)
 	if err != nil {
@@ -79,7 +80,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	return nil
 }
 
-func actionFromEntry(e *actionEntry) *sharedsec.Action {
+func actionFromEntry(e *config.ActionEntry) *sharedsec.Action {
 	switch e.Type {
 	case "block_request":
 		grpcCode := 10 // use the grpc.Codes value for "Aborted" by default
@@ -95,8 +96,8 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	}
 }
 
-func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
-	handle, err := waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, error) {
+	handle, err := waf.NewHandle(rules, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 	actions := sharedsec.Actions{
 		// Default built-in block action
 		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
@@ -114,7 +115,7 @@ func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	}, err
 }
 
-func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (listeners []dyngo.EventListener, err error) {
+func newWAFEventListeners(waf *wafHandle, cfg *config.Config, l limiter.Limiter) (listeners []dyngo.EventListener, err error) {
 	// Check if there are addresses in the rule
 	ruleAddresses := waf.Addresses()
 	if len(ruleAddresses) == 0 {
@@ -152,17 +153,17 @@ func newWAFEventListeners(waf *wafHandle, cfg *Config, l limiter.Limiter) (liste
 	// Register the WAF event listeners
 	if len(graphQLAddresses) > 0 {
 		log.Debug("appsec: creating the GraphQL waf event listener of the rules addresses %v", graphQLAddresses)
-		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, graphqlsec.NewWAFEventListener(waf.Handle, waf.actions, graphQLAddresses, cfg.WAFTimeout, l))
 	}
 
 	if len(grpcAddresses) > 0 {
 		log.Debug("appsec: creating the grpc waf event listener of the rules addresses %v", grpcAddresses)
-		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.wafTimeout, l))
+		listeners = append(listeners, grpcsec.NewWAFEventListener(waf.Handle, waf.actions, grpcAddresses, cfg.WAFTimeout, l))
 	}
 
 	if len(httpAddresses) > 0 {
 		log.Debug("appsec: creating http waf event listener of the rules addresses %v", httpAddresses)
-		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.wafTimeout, &cfg.apiSec, l))
+		listeners = append(listeners, httpsec.NewWAFEventListener(waf.Handle, waf.actions, httpAddresses, cfg.WAFTimeout, &cfg.APISec, l))
 	}
 
 	return listeners, nil
