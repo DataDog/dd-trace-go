@@ -479,6 +479,16 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		// there's nothign we can show.
 		s.SetTag("go_execution_traced", "partial")
 	}
+
+	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		s.context.trace.mu.RLock()
+		locked := s.context.trace.locked
+		s.context.trace.mu.RUnlock()
+		if !locked {
+			tr.rulesSampling.SampleTrace(s, true)
+		}
+	}
+
 	s.finish(t)
 
 	if s.pprofCtxRestore != nil {

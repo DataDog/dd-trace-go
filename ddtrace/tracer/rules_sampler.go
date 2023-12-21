@@ -44,7 +44,7 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.apply(s) }
+func (r *rulesSampler) SampleTrace(s *span, atFinish bool) bool { return r.traces.apply(s, atFinish) }
 
 func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
 
@@ -91,18 +91,12 @@ func (sr *SamplingRule) match(s *span) bool {
 	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
 		return false
 	}
-	if sr.Tags != nil {
-		for k, regex := range sr.Tags {
-			v, ok := s.Meta[k]
-			if !ok || !regex.MatchString(v) {
-				return false
-			}
-		}
-	}
 	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
 		return false
 	}
-	if sr.Tags != nil {
+	s.Lock()
+	defer s.Unlock()
+	if sr.Tags != nil && s.Meta != nil {
 		for k, regex := range sr.Tags {
 			v, ok := s.Meta[k]
 			if !ok || !regex.MatchString(v) {
@@ -312,7 +306,7 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 // provided span. If the rules don't match, and a default rate hasn't been
 // set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *span) bool {
+func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -322,17 +316,19 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 	rs.m.RLock()
 	rate := rs.globalRate
 	rs.m.RUnlock()
-	for _, rule := range rs.rules {
-		if rule.match(span) {
-			matched = true
-			rate = rule.Rate
-			break
+	if atFinish {
+		for _, rule := range rs.rules {
+			if rule.match(span) {
+				matched = true
+				rate = rule.Rate
+				break
+			}
 		}
-	}
-	if !matched && math.IsNaN(rate) {
-		// no matching rule or global rate, so we want to fall back
-		// to priority sampling
-		return false
+		if !matched && math.IsNaN(rate) {
+			// no matching rule or global rate, so we want to fall back
+			// to priority sampling
+			return false
+		}
 	}
 
 	rs.applyRule(span, rate, time.Now())

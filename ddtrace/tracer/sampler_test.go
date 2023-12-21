@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -462,7 +463,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil, nil, globalSampleRate())
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.SampleTrace(span)
+		result := rs.SampleTrace(span, false)
 		assert.False(result)
 	})
 
@@ -529,7 +530,7 @@ func TestRulesSampler(t *testing.T) {
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.True(result)
 			})
 		}
@@ -558,7 +559,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
@@ -588,7 +589,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span)
+				result := rs.SampleTrace(span, false)
 				assert.False(result)
 			})
 		}
@@ -854,7 +855,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.SampleTrace(span)
+					result := rs.SampleTrace(span, false)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
 					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
@@ -863,6 +864,91 @@ func TestRulesSampler(t *testing.T) {
 				})
 			}
 		}
+	})
+
+	// this test actually starts the span to verify that tag sampling works regardless of how
+	// the tags where set (during the Start func, or via s.SetTag())
+	// previously, sampling was ran once during creation, so this test would fail.
+	t.Run("rules-with-start-span", func(t *testing.T) {
+		testEnvs := []struct {
+			rules            string
+			generalRate      string
+			samplingPriority float64
+			appliedRate      float64
+		}{
+			{
+				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`,
+				generalRate:      "0",
+				samplingPriority: 2,
+				appliedRate:      1,
+			},
+			{
+				rules:            `[ {"tags": {"tag1": "val1"}, "sample_rate": 0}]`,
+				generalRate:      "1",
+				samplingPriority: -1,
+				appliedRate:      0,
+			},
+			{
+				rules:            `  [{"service": "webserver", "name": "web.request", "sample_rate": 0}]`,
+				generalRate:      "1",
+				samplingPriority: -1,
+				appliedRate:      0,
+			},
+		}
+
+		for _, test := range testEnvs {
+			t.Run("", func(t *testing.T) {
+				os.Setenv("DD_TRACE_SAMPLING_RULES", test.rules)
+				os.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
+				_, _, _, stop := startTestTracer(t)
+				defer stop()
+
+				s, _ := StartSpanFromContext(context.Background(), "web.request",
+					ServiceName("webserver"), ResourceName("/bar"))
+				s.SetTag("tag1", "val1")
+				s.SetTag("tag2", "val2")
+				s.Finish()
+
+				assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], test.samplingPriority)
+				assert.EqualValues(t, s.(*span).Metrics[keyRulesSamplerAppliedRate], test.appliedRate)
+			})
+		}
+	})
+
+	t.Run("locked-sampling-before-propagating-context", func(t *testing.T) {
+		os.Setenv("DD_TRACE_SAMPLING_RULES",
+			`[{"tags": {"tag2": "val2"}, "sample_rate": 0},{"tags": {"tag1": "val1"}, "sample_rate": 1},{"tags": {"tag0": "val*"}, "sample_rate": 0}]`)
+		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		tr, _, _, stop := startTestTracer(t)
+		defer stop()
+
+		originSpan, _ := StartSpanFromContext(context.Background(), "web.request",
+			ServiceName("webserver"), ResourceName("/bar"), Tag("tag0", "val0"))
+		originSpan.SetTag("tag1", "val1")
+		// based on the  Tag("tag0", "val0") start span option, span sampling would be 'drop',
+		// and setting the second pair of tags doesn't invoke sampling func
+		assert.EqualValues(t, -1, originSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 0, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		headers := TextMapCarrier(map[string]string{})
+
+		// inject invokes resampling, since span satisfies rule #2, sampling will be 'keep'
+		tr.Inject(originSpan.Context(), headers)
+		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+
+		// context already injected / propagated, thus sampling decision will not be changed from now on
+		originSpan.SetTag("tag2", "val2")
+		originSpan.Finish()
+		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+
+		w3cCtx, err := tr.Extract(headers)
+		assert.Nil(t, err)
+
+		w3cSpan, _ := StartSpanFromContext(context.Background(), "web.request", ChildOf(w3cCtx))
+		w3cSpan.Finish()
+
+		assert.EqualValues(t, 2, w3cSpan.(*span).Metrics[keySamplingPriority])
 	})
 }
 
