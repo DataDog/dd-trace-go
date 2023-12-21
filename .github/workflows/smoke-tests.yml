@@ -20,6 +20,9 @@ on:
     branches:
       - '**'
 
+env:
+  V2_BRANCH: true
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -43,6 +46,10 @@ jobs:
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
+      - name: Test contribs (v2)
+        if: ${{ env.V2_BRANCH == 'true' }}
+        # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        run: ./.github/workflows/apps/test-contrib-submodules.sh smoke
       - name: Test dd-trace-go
         run: go test $PACKAGES
 

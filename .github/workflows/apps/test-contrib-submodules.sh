@@ -14,6 +14,7 @@ for contrib in $CONTRIBS; do
   echo "Testing contrib module: $contrib"
   contrib_id=$(echo $contrib | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd $contrib
+  [[ "$1" = "smoke" ]] && go get -u ./...
   gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-$contrib_id.xml -- ./... -v -race -coverprofile=coverage-$contrib_id.txt -covermode=atomic
   cd -
 done
