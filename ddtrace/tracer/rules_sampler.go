@@ -304,7 +304,6 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	return true
 }
 
-// todo: update comment
 // sampleGlobalRate applies the global trace sampling rate to the span. If the rate is Nan,
 // the function return false, then it returns false and the span is not
 // modified.

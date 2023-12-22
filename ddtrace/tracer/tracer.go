@@ -660,7 +660,7 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	if sctx == nil || !ok {
 		return
 	}
-	//TODO: without this some test that mock spans fail
+	// without this some test that mock spans fail
 	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
 		return
 	}
