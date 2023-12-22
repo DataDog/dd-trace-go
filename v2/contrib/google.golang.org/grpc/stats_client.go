@@ -19,7 +19,7 @@ func NewClientStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
 	clientDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &clientStatsHandler{
 		cfg: cfg,

@@ -21,9 +21,22 @@ const (
 	defaultServerServiceName = "grpc.server"
 )
 
-// Option specifies a configuration option for the grpc package. Not all options apply
-// to all instrumented structures.
-type Option func(*config)
+// Option describes options for the gRPC integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to StreamClientInterceptor, UnaryClientInterceptor, StreamServerInterceptor,
+// UnaryServerInterceptor, NewClientStatsHandler and NewServerStatsHandler.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
+
+func (fn OptionFn) applyStream(cfg *config) {
+	fn(cfg)
+}
 
 type config struct {
 	serviceName         func() string
@@ -82,7 +95,7 @@ func serverDefaults(cfg *config) {
 }
 
 // WithServiceName sets the given service name for the intercepted client.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = func() string { return name }
 	}
@@ -90,7 +103,7 @@ func WithServiceName(name string) Option {
 
 // WithStreamCalls enables or disables tracing of streaming calls. This option does not apply to the
 // stats handler.
-func WithStreamCalls(enabled bool) Option {
+func WithStreamCalls(enabled bool) OptionFn {
 	return func(cfg *config) {
 		cfg.traceStreamCalls = enabled
 	}
@@ -98,23 +111,23 @@ func WithStreamCalls(enabled bool) Option {
 
 // WithStreamMessages enables or disables tracing of streaming messages. This option does not apply
 // to the stats handler.
-func WithStreamMessages(enabled bool) Option {
+func WithStreamMessages(enabled bool) OptionFn {
 	return func(cfg *config) {
 		cfg.traceStreamMessages = enabled
 	}
 }
 
 // NoDebugStack disables debug stacks for traces with errors. This is useful in situations
-// where errors are frequent and the overhead of calling debug.Stack may affect performance.
-func NoDebugStack() Option {
+// where errors are frequent, and the overhead of calling debug.Stack may affect performance.
+func NoDebugStack() OptionFn {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
 	}
 }
 
-// NonErrorCodes determines the list of codes which will not be considered errors in instrumentation.
+// NonErrorCodes determines the list of codes that will not be considered errors in instrumentation.
 // This call overrides the default handling of codes.Canceled as a non-error.
-func NonErrorCodes(cs ...codes.Code) Option {
+func NonErrorCodes(cs ...codes.Code) OptionFn {
 	return func(cfg *config) {
 		cfg.nonErrorCodes = make(map[codes.Code]bool, len(cs))
 		for _, c := range cs {
@@ -124,7 +137,7 @@ func NonErrorCodes(cs ...codes.Code) Option {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			WithSpanOptions(tracer.AnalyticsRate(1.0))(cfg)
@@ -134,7 +147,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			WithSpanOptions(tracer.AnalyticsRate(rate))(cfg)
@@ -144,7 +157,7 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithUntracedMethods specifies full methods to be ignored by the server side and client
 // side interceptors. When a request's full method is in ms, no spans will be created.
-func WithUntracedMethods(ms ...string) Option {
+func WithUntracedMethods(ms ...string) OptionFn {
 	ums := make(map[string]struct{}, len(ms))
 	for _, e := range ms {
 		ums[e] = struct{}{}
@@ -155,7 +168,7 @@ func WithUntracedMethods(ms ...string) Option {
 }
 
 // WithMetadataTags specifies whether gRPC metadata should be added to spans as tags.
-func WithMetadataTags() Option {
+func WithMetadataTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withMetadataTags = true
 	}
@@ -163,7 +176,7 @@ func WithMetadataTags() Option {
 
 // WithIgnoredMetadata specifies keys to be ignored while tracing the metadata. Must be used
 // in conjunction with WithMetadataTags.
-func WithIgnoredMetadata(ms ...string) Option {
+func WithIgnoredMetadata(ms ...string) OptionFn {
 	return func(cfg *config) {
 		for _, e := range ms {
 			cfg.ignoredMetadata[e] = struct{}{}
@@ -172,14 +185,14 @@ func WithIgnoredMetadata(ms ...string) Option {
 }
 
 // WithRequestTags specifies whether gRPC requests should be added to spans as tags.
-func WithRequestTags() Option {
+func WithRequestTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withRequestTags = true
 	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.
-func WithCustomTag(key string, value interface{}) Option {
+func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})
@@ -190,7 +203,7 @@ func WithCustomTag(key string, value interface{}) Option {
 
 // WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
 // to spans started by the integration.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}
