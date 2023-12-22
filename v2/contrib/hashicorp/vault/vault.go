@@ -56,7 +56,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	var conf config
 	defaults(&conf)
 	for _, o := range opts {
-		o(&conf)
+		o.apply(&conf)
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
 		httptrace.WithAnalyticsRate(conf.analyticsRate),
