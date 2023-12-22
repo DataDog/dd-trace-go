@@ -22,7 +22,6 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-  V2_BRANCH: true
 
 jobs:
   go-get-u:
@@ -48,7 +47,6 @@ jobs:
       - name: Compile dd-trace-go
         run: go build $PACKAGES
       - name: Test contribs (v2)
-        if: ${{ env.V2_BRANCH == 'true' }}
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         run: |
           go install gotest.tools/gotestsum@latest

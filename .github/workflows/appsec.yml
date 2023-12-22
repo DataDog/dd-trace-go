@@ -26,8 +26,6 @@ on:
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: /tmp/gotestsum-report
-  TO_TEST: ./appsec/... ./internal/appsec/...
-  V2_BRANCH: true
 jobs:
   native:
     strategy:
@@ -67,28 +65,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
-          cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
-          cd -
-          cd ./v2/contrib/google.golang.org/grpc
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.grpc.xml -- -v .
-          cd -
-          cd ./v2/contrib/net/http
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.http.xml -- -v .
-          cd -
-          cd ./v2/contrib/gorilla/mux
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi.v5
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/labstack/echo.v4
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
-          cd -
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -131,28 +108,7 @@ jobs:
         run: |
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
-          cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
-          cd -
-          cd ./v2/contrib/google.golang.org/grpc
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.grpc.xml -- -v .
-          cd -
-          cd ./v2/contrib/net/http
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.http.xml -- -v .
-          cd -
-          cd ./v2/contrib/gorilla/mux
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi.v5
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/labstack/echo.v4
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
-          cd -
+          env ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
@@ -203,28 +159,7 @@ jobs:
           # Install gotestsum to get the results in a junit file
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.xml -- -v $TO_TEST
-          cd ./v2/contrib/gin-gonic/gin
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gin.xml -- -v .
-          cd -
-          cd ./v2/contrib/google.golang.org/grpc
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.grpc.xml -- -v .
-          cd -
-          cd ./v2/contrib/net/http
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.http.xml -- -v .
-          cd -
-          cd ./v2/contrib/gorilla/mux
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.gorilla.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/go-chi/chi.v5
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.chi.xml -- -v .
-          cd -
-          cd ./v2/contrib/labstack/echo.v4
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} gotestsum --junitfile $JUNIT_REPORT.echo.xml -- -v .
-          cd -
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
@@ -260,9 +195,9 @@ jobs:
         with:
           platforms: arm64
       - run: |
-          env V2_BRANCH=$V2_BRANCH CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
-  # TODO(darccio): revert to use main on merge into main
+  # TODO(darccio): revert to use main on release
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@dario.castane/AIT-3705/dd-trace-go.v2
     with:
