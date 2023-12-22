@@ -24,8 +24,17 @@ type config struct {
 	analyticsRate float64
 }
 
-// Option represents an option that can be passed to Dial.
-type Option func(*config)
+// Option describes options for the Twirp integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewServerHooks, WrapClient and WrapServer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
 	if internal.BoolEnv("DD_TRACE_TWIRP_ANALYTICS_ENABLED", false) {
@@ -50,14 +59,14 @@ func serverDefaults(cfg *config) {
 // WithServiceName sets the given service name for the dialled connection.
 // When the service name is not explicitly set, it will be inferred based on the
 // request to the twirp service.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	if on {
 		return WithAnalyticsRate(1.0)
 	}
@@ -66,7 +75,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
