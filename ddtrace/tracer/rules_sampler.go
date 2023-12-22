@@ -44,7 +44,9 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *span, atFinish bool) bool { return r.traces.apply(s, atFinish) }
+func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.sampleRules(s) }
+
+func (r *rulesSampler) SampleTraceGlobalRate(s *span) bool { return r.traces.sampleGlobalRate(s) }
 
 func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
 
@@ -302,11 +304,32 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	return true
 }
 
-// apply uses the sampling rules to determine the sampling rate for the
-// provided span. If the rules don't match, and a default rate hasn't been
-// set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
+// todo: update comment
+// sampleGlobalRate applies the global trace sampling rate to the span. If the rate is Nan,
+// the function return false, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
+func (rs *traceRulesSampler) sampleGlobalRate(span *span) bool {
+	if !rs.enabled() {
+		// short path when disabled
+		return false
+	}
+
+	rs.m.RLock()
+	rate := rs.globalRate
+	rs.m.RUnlock()
+
+	if math.IsNaN(rate) {
+		return false
+	}
+
+	rs.applyRate(span, rate, time.Now())
+	return true
+}
+
+// sampleRules uses the sampling rules to determine the sampling rate for the
+// provided span. If the rules don't match, then it returns false and the span is not
+// modified.
+func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -316,26 +339,24 @@ func (rs *traceRulesSampler) apply(span *span, atFinish bool) bool {
 	rs.m.RLock()
 	rate := rs.globalRate
 	rs.m.RUnlock()
-	if atFinish {
-		for _, rule := range rs.rules {
-			if rule.match(span) {
-				matched = true
-				rate = rule.Rate
-				break
-			}
-		}
-		if !matched && math.IsNaN(rate) {
-			// no matching rule or global rate, so we want to fall back
-			// to priority sampling
-			return false
+	for _, rule := range rs.rules {
+		if rule.match(span) {
+			matched = true
+			rate = rule.Rate
+			break
 		}
 	}
+	if !matched {
+		// no matching rule or global rate, so we want to fall back
+		// to priority sampling
+		return false
+	}
 
-	rs.applyRule(span, rate, time.Now())
+	rs.applyRate(span, rate, time.Now())
 	return true
 }
 
-func (rs *traceRulesSampler) applyRule(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)

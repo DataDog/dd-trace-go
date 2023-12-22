@@ -463,7 +463,7 @@ func TestRulesSampler(t *testing.T) {
 		rs := newRulesSampler(nil, nil, globalSampleRate())
 
 		span := makeSpan("http.request", "test-service")
-		result := rs.SampleTrace(span, false)
+		result := rs.SampleTrace(span)
 		assert.False(result)
 	})
 
@@ -530,7 +530,7 @@ func TestRulesSampler(t *testing.T) {
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.spanRsc, tt.spanTags)
 
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.True(result)
 			})
 		}
@@ -559,7 +559,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.True(result)
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
@@ -589,7 +589,7 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(v, nil, globalSampleRate())
 
 				span := makeSpan("http.request", "test-service")
-				result := rs.SampleTrace(span, false)
+				result := rs.SampleTrace(span)
 				assert.False(result)
 			})
 		}
@@ -855,7 +855,7 @@ func TestRulesSampler(t *testing.T) {
 					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
-					result := rs.SampleTrace(span, false)
+					result := rs.SampleTrace(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
 					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
@@ -939,8 +939,8 @@ func TestRulesSampler(t *testing.T) {
 		// context already injected / propagated, thus sampling decision will not be changed from now on
 		originSpan.SetTag("tag2", "val2")
 		originSpan.Finish()
-		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
-		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.EqualValues(t, -1, originSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 0, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
 
 		w3cCtx, err := tr.Extract(headers)
 		assert.Nil(t, err)
@@ -985,7 +985,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRule(span, 0.0, now)
+		rs.traces.applyRate(span, 0.0, now)
 		assert.Equal(0.0, span.Metrics[keyRulesSamplerAppliedRate])
 		_, ok := span.Metrics[keyRulesSamplerLimiterRate]
 		assert.False(ok)
@@ -1001,7 +1001,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRule(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 	})
@@ -1017,12 +1017,12 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 2
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRule(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
-		rs.traces.applyRule(span, 1.0, now)
+		rs.traces.applyRate(span, 1.0, now)
 		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
 		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(0.75, span.Metrics[keyRulesSamplerLimiterRate])

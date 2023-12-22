@@ -664,15 +664,7 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
 		return
 	}
-	sctx.trace.mu.Lock()
-	defer sctx.trace.mu.Unlock()
-	// context already locked, re-sampling isn't necessary
-	if sctx.trace.locked {
-		return
-	}
-
-	t.rulesSampling.SampleTrace(sctx.trace.root, true)
-	sctx.trace.locked = true
+	t.rulesSampling.SampleTrace(sctx.trace.root)
 }
 
 // Extract uses the configured or default TextMap Propagator.
@@ -698,7 +690,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.SampleTrace(span, false) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
