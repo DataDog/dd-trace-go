@@ -20,14 +20,18 @@ import (
 
 const defaultServiceName = "http.router"
 
-type config struct {
-	serviceName   string
+type commonConfig struct {
 	analyticsRate float64
-	spanOpts      []ddtrace.StartSpanOption
-	finishOpts    []ddtrace.FinishOption
 	ignoreRequest func(*http.Request) bool
+	serviceName   string
 	resourceNamer func(*http.Request) string
-	headerTags    *internal.LockMap
+	spanOpts      []ddtrace.StartSpanOption
+}
+
+type config struct {
+	commonConfig
+	finishOpts []ddtrace.FinishOption
+	headerTags *internal.LockMap
 }
 
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
@@ -133,16 +137,12 @@ type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
 type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
 
 type roundTripperConfig struct {
-	before        RoundTripperBeforeFunc
-	after         RoundTripperAfterFunc
-	analyticsRate float64
-	serviceName   string
-	resourceNamer func(req *http.Request) string
-	spanNamer     func(req *http.Request) string
-	ignoreRequest func(*http.Request) bool
-	spanOpts      []ddtrace.StartSpanOption
-	propagation   bool
-	errCheck      func(err error) bool
+	commonConfig
+	before      RoundTripperBeforeFunc
+	after       RoundTripperAfterFunc
+	spanNamer   func(req *http.Request) string
+	propagation bool
+	errCheck    func(err error) bool
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
@@ -153,16 +153,19 @@ func newRoundTripperConfig() *roundTripperConfig {
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
 	}
-	return &roundTripperConfig{
+	sharedCfg := commonConfig{
 		serviceName: namingschema.NewDefaultServiceName(
 			"",
 			namingschema.WithOverrideV0(""),
 		).GetName(),
 		analyticsRate: globalconfig.AnalyticsRate(),
 		resourceNamer: defaultResourceNamer,
-		propagation:   true,
-		spanNamer:     defaultSpanNamer,
 		ignoreRequest: func(_ *http.Request) bool { return false },
+	}
+	return &roundTripperConfig{
+		commonConfig: sharedCfg,
+		propagation:  true,
+		spanNamer:    defaultSpanNamer,
 	}
 }
 
