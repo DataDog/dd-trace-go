@@ -42,7 +42,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/IBM/sarama: Wrapping Partition Consumer: %#v", cfg)
 	wrapped := &partitionConsumer{
@@ -153,7 +153,7 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/IBM/sarama: Wrapping Sync Producer: %#v", cfg)
 	if saramaConfig == nil {
@@ -197,7 +197,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/IBM/sarama: Wrapping Async Producer: %#v", cfg)
 	if saramaConfig == nil {

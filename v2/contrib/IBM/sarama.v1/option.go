@@ -40,11 +40,20 @@ func defaults(cfg *config) {
 	}
 }
 
-// An Option is used to customize the config for the sarama tracer.
-type Option func(cfg *config)
+// Option describes options for the Sarama integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to WrapConsumer, WrapPartitionConsumer, WrapAsyncProducer and WrapSyncProducer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithServiceName sets the given service name for the intercepted client.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
@@ -52,7 +61,7 @@ func WithServiceName(name string) Option {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -64,7 +73,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
