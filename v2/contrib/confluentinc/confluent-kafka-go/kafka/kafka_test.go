@@ -297,7 +297,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
 			return c.ReadMessage(3000 * time.Millisecond)

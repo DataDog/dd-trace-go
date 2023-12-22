@@ -16,7 +16,7 @@ import (
 // To start tracing elastic.v5 requests, create a new TracedHTTPClient that you will
 // use when initializing the elastic.Client.
 func Example() {
-	tc := elastictrace.NewHTTPClient(elastictrace.WithServiceName("my-es-service"))
+	tc := elastictrace.NewHTTPClient(elastictrace.WithService("my-es-service"))
 	client, _ := elastic.NewClient(
 		elastic.SetURL("http://127.0.0.1:9200"),
 		elastic.SetHttpClient(tc),

@@ -41,8 +41,8 @@ func TestOptions(t *testing.T) {
 				assert.Nil(root.Tag(ext.EventSampleRate))
 			},
 		},
-		"WithServiceName": {
-			tracerOpts: []Option{WithServiceName("TestServer")},
+		"WithService": {
+			tracerOpts: []Option{WithService("TestServer")},
 			test: func(assert *assert.Assertions, root mocktracer.Span) {
 				assert.Equal("TestServer", root.Tag(ext.ServiceName))
 			},
@@ -153,7 +153,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

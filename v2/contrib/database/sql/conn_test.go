@@ -64,7 +64,7 @@ func TestWithSpanTags(t *testing.T) {
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
 				opts: []Option{
-					WithServiceName("postgres-test"),
+					WithService("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
 			},
@@ -221,7 +221,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 				driver: &pq.Driver{},
 				opts: []Option{
 					WithChildSpansOnly(),
-					WithServiceName("postgres-test"),
+					WithService("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
 			},

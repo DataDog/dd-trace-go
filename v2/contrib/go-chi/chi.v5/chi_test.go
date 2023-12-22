@@ -35,7 +35,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
@@ -82,7 +82,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
@@ -100,7 +100,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
@@ -160,7 +160,7 @@ func TestError(t *testing.T) {
 
 		// setup
 		router := chi.NewRouter()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		code := 500
 
 		// a handler with an error and make the requests
@@ -187,7 +187,7 @@ func TestError(t *testing.T) {
 		// setup
 		router := chi.NewRouter()
 		router.Use(Middleware(
-			WithServiceName("foobar"),
+			WithService("foobar"),
 			WithStatusCheck(func(statusCode int) bool {
 				return statusCode >= 400
 			}),
@@ -239,7 +239,7 @@ func TestPropagation(t *testing.T) {
 	tracer.Inject(pspan.Context(), tracer.HTTPHeadersCarrier(r.Header))
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
@@ -546,7 +546,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -571,7 +571,7 @@ func TestCustomResourceName(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("service-name"), WithResourceNamer(func(r *http.Request) string {
+	router.Use(Middleware(WithService("service-name"), WithResourceNamer(func(r *http.Request) string {
 		return "custom-resource-name"
 	})))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -595,7 +595,7 @@ func TestUnknownResourceName(t *testing.T) {
 	defer mt.Stop()
 
 	router := chi.NewRouter()
-	router.Use(Middleware(WithServiceName("service-name")))
+	router.Use(Middleware(WithService("service-name")))
 	router.Get("/user/{id}", func(w http.ResponseWriter, r *http.Request) {
 		_, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
@@ -620,7 +620,7 @@ func TestConcurrency(t *testing.T) {
 	expectedCap := 10
 	opts := make([]Option, 0, expectedCap)
 	opts = append(opts, []Option{
-		WithServiceName("foobar"),
+		WithService("foobar"),
 		WithSpanOptions(tracer.Tag("tag1", "value1")),
 	}...)
 	expectedLen := 2

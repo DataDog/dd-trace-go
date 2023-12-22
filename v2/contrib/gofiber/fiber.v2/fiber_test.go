@@ -28,7 +28,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/user/:id", func(c *fiber.Ctx) error {
 		return c.SendString(c.Params("id"))
 	})
@@ -79,7 +79,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := fiber.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/:id", func(c *fiber.Ctx) error {
 			return c.SendString(c.Params("id"))
 		})
@@ -93,7 +93,7 @@ func TestTrace200(t *testing.T) {
 		defer mt.Stop()
 
 		router := fiber.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.Get("/user/:id", func(c *fiber.Ctx) error {
 			return c.SendString(c.Params("id"))
 		})
@@ -108,7 +108,7 @@ func TestStatusError(t *testing.T) {
 
 	// setup
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	code := 500
 	wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
 
@@ -143,7 +143,7 @@ func TestCustomError(t *testing.T) {
 	defer mt.Stop()
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 
 	router.Get("/err", func(c *fiber.Ctx) error {
 		c.SendStatus(400)
@@ -178,7 +178,7 @@ func TestUserContext(t *testing.T) {
 
 	// setup
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 
 	router.Get("/", func(c *fiber.Ctx) error {
 		// check if not default empty context
@@ -225,7 +225,7 @@ func TestPropagation(t *testing.T) {
 	requestWithoutSpan := httptest.NewRequest("GET", "/span/exists/false", nil)
 
 	router := fiber.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.Get("/span/exists/true", func(c *fiber.Ctx) error {
 		s, _ := tracer.SpanFromContext(c.UserContext())
 		assert.Equal(s.Context().TraceID() == pspan.Context().TraceID(), true)
@@ -313,7 +313,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

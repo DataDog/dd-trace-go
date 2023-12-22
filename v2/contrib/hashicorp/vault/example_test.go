@@ -31,7 +31,7 @@ func ExampleNewHTTPClient() {
 func ExampleNewHTTPClient_withOptions() {
 	c, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.NewHTTPClient(
-			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithService("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
 		Address: "http://vault.mydomain.com:8200",
@@ -81,7 +81,7 @@ func ExampleWrapHTTPClient_withOptions() {
 	client, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.WrapHTTPClient(
 			c,
-			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithService("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
 		Address: "http://vault.mydomain.com:8200",

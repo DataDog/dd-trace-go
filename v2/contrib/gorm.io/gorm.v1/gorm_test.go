@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMySQL(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
 	sqlDb, err := sqltrace.Open("mysql", mysqlConnString)
 	if err != nil {
 		log.Fatal(err)

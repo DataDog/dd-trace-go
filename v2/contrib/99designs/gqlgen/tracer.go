@@ -31,7 +31,7 @@
 //
 //		t := gqlgentrace.NewTracer(
 //			gqlgentrace.WithAnalytics(true),
-//			gqlgentrace.WithServiceName("todo.server"),
+//			gqlgentrace.WithService("todo.server"),
 //		)
 //		h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
 //		h.Use(t)

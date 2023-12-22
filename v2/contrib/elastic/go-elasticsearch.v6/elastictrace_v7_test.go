@@ -45,7 +45,7 @@ func TestClientV7(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV7URL,
 		},
@@ -91,7 +91,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	bodyCutoff = 10
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV7URL,
 		},
@@ -115,7 +115,7 @@ func TestClientV7Failure(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},

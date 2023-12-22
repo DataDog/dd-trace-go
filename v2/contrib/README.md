@@ -2,7 +2,7 @@
 
 The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the 
 community in a "plug-and-play" manner. This means that by simply importing the appropriate path, functions are exposed having
- the same signature as the original package. These functions return structures which embed the original return value, allowing 
+ the same signature as the original package. These functions return structures that embed the original return value, allowing 
 them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
@@ -20,12 +20,16 @@ First, find the library which you'd like to integrate with. The naming conventio
 * The package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`
 
 Second, there are a few tags that should be found in all integration spans:
+
 * The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../../ddtrace/ext/span_kind.go) found in the repository.
 If the value is determined to be `internal`, then omit the tag as that is the assumed default value. Otherwise, explicitly set it with a value from above.
 * The `component` tag should be set in all spans with the value equivalent to full naming convention of the integration package explained in the previous step.
 
-Each integration comes with thorough documentation and usage examples. A good overview can be seen on our 
-[godoc](https://godoc.org/github.com/DataDog/dd-trace-go/v2/contrib) page.
+Third, some guidelines to follow on naming functions:
+
+* Use `WithService` instead of `WithServiceName` when setting the service name.
+
+Each integration comes with a thorough documentation and usage examples. A good overview can be seen on our [godoc](https://godoc.org/github.com/DataDog/dd-trace-go/v2/contrib) page.
 
 ### Instrumentation telemetry
 

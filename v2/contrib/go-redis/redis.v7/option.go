@@ -48,8 +48,8 @@ func defaults(cfg *clientConfig) {
 	cfg.errCheck = func(error) bool { return true }
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) ClientOptionFn {
+// WithService sets the given service name for the client.
+func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 	}

@@ -50,8 +50,8 @@ func (fn DialOptionFn) apply(cfg *mongoConfig) {
 	fn(cfg)
 }
 
-// WithServiceName sets the service name for a given MongoDB context.
-func WithServiceName(name string) DialOptionFn {
+// WithService sets the service name for a given MongoDB context.
+func WithService(name string) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		cfg.serviceName = name
 	}

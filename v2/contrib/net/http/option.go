@@ -81,8 +81,8 @@ func WithIgnoreRequest(f func(*http.Request) bool) OptionFn {
 	}
 }
 
-// WithServiceName sets the given service name for the returned ServeMux.
-func WithServiceName(name string) OptionFn {
+// WithService sets the given service name for the returned ServeMux.
+func WithService(name string) OptionFn {
 	return func(cfg *commonConfig) {
 		cfg.serviceName = name
 	}

@@ -47,7 +47,7 @@ func Example_withServiceName() {
 	n := negroni.New()
 
 	// Use the tracer middleware with your desired service name.
-	n.Use(negronitrace.Middleware(negronitrace.WithServiceName("negroni-server")))
+	n.Use(negronitrace.Middleware(negronitrace.WithService("negroni-server")))
 
 	// Set up some endpoints.
 	mux := http.NewServeMux()

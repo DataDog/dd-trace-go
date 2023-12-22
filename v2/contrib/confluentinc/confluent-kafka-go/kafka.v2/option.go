@@ -69,8 +69,8 @@ func newConfig(opts ...Option) *config {
 	return cfg
 }
 
-// WithServiceName sets the config service name to serviceName.
-func WithServiceName(serviceName string) OptionFn {
+// WithService sets the config service name to serviceName.
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = serviceName
 		cfg.producerServiceName = serviceName

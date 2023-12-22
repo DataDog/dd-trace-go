@@ -356,7 +356,7 @@ func TestUserBlocking(t *testing.T) {
 }
 
 func newAppsecRig(traceClient bool, interceptorOpts ...Option) (*appsecRig, error) {
-	interceptorOpts = append([]Option{WithServiceName("grpc")}, interceptorOpts...)
+	interceptorOpts = append([]Option{WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(UnaryServerInterceptor(interceptorOpts...)),

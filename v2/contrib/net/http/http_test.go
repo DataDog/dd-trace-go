@@ -460,7 +460,7 @@ func TestServerNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -478,7 +478,7 @@ func TestServerNamingSchema(t *testing.T) {
 
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("foo", "bar")),
 	}
 	mux := NewServeMux(append(defaultOpts, muxOpts...)...)

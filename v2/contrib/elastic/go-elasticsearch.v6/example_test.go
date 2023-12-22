@@ -18,7 +18,7 @@ import (
 
 func Example_v8() {
 	cfg := elasticsearch.Config{
-		Transport: elastictrace.NewRoundTripper(elastictrace.WithServiceName("my-es-service")),
+		Transport: elastictrace.NewRoundTripper(elastictrace.WithService("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9200",
 		},

@@ -19,7 +19,7 @@ func ExampleOpen() {
 	// Register informs the sqlxtrace package of the driver that we will be using in our program.
 	// It uses a default service name, in the below case "postgres.db". To use a custom service
 	// name use RegisterWithServiceName.
-	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithService("my-service"))
 	db, err := sqlxtrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

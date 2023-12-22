@@ -48,6 +48,6 @@ func (i *Memcache) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *Memcache) WithServiceName(name string) {
-	i.opts = append(i.opts, memcachetrace.WithServiceName(name))
+func (i *Memcache) WithService(name string) {
+	i.opts = append(i.opts, memcachetrace.WithService(name))
 }

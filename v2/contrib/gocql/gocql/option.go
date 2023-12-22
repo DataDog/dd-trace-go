@@ -55,8 +55,8 @@ func defaultConfig() *queryConfig {
 	return cfg
 }
 
-// WithServiceName sets the given service name for the returned query.
-func WithServiceName(name string) WrapOptionFn {
+// WithService sets the given service name for the returned query.
+func WithService(name string) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		cfg.serviceName = name
 	}

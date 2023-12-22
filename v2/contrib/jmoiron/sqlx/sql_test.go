@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMySQL(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
 	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	if err != nil {
 		log.Fatal(err)
@@ -111,8 +111,8 @@ func TestSQLServer(t *testing.T) {
 }
 
 func TestOpenWithOptions(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
-	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", sqltrace.WithServiceName("other-service"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
+	dbx, err := Open("mysql", "test:test@tcp(127.0.0.1:3306)/test", sqltrace.WithService("other-service"))
 	if err != nil {
 		log.Fatal(err)
 	}

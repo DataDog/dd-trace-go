@@ -45,7 +45,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 		tracer.ResourceName("insert-test"),
 	)
 
-	session, err := Dial("localhost:27017", WithServiceName("unit-tests"), WithContext(ctx))
+	session, err := Dial("localhost:27017", WithService("unit-tests"), WithContext(ctx))
 	require.NoError(t, err)
 
 	defer session.Close()
@@ -569,7 +569,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []DialOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

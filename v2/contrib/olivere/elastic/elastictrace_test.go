@@ -45,7 +45,7 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	tc := NewHTTPClient(WithService("my-es-service"))
 	client, err := elastic.NewClient(
 		elastic.SetURL(elasticURL),
 		elastic.SetHttpClient(tc),
@@ -80,7 +80,7 @@ func TestClientGzip(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	tc := NewHTTPClient(WithService("my-es-service"))
 	client, err := elastic.NewClient(
 		elastic.SetURL(elasticURL),
 		elastic.SetHttpClient(tc),
@@ -121,7 +121,7 @@ func TestClientErrorCutoff(t *testing.T) {
 	}()
 	bodyCutoff = 10
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	tc := NewHTTPClient(WithService("my-es-service"))
 	client, err := elastic.NewClient(
 		elastic.SetURL(elasticURL),
 		elastic.SetHttpClient(tc),
@@ -143,7 +143,7 @@ func TestClientFailure(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	tc := NewHTTPClient(WithServiceName("my-es-service"))
+	tc := NewHTTPClient(WithService("my-es-service"))
 	client, err := elastic.NewClient(
 		// inexistent service, it must fail
 		elastic.SetURL(elasticFakeURL),
@@ -433,7 +433,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

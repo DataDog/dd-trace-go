@@ -72,7 +72,7 @@ func (i *DNS) NumSpans() int {
 	return i.numSpans
 }
 
-func (i *DNS) WithServiceName(_ string) {
+func (i *DNS) WithService(_ string) {
 	return
 }
 

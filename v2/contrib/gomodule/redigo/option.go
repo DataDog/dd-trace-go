@@ -56,8 +56,8 @@ func defaults(cfg *dialConfig) {
 	cfg.connectionType = connectionTypeWithTimeout
 }
 
-// WithServiceName sets the given service name for the dialled connection.
-func WithServiceName(name string) DialOptionFn {
+// WithService sets the given service name for the dialled connection.
+func WithService(name string) DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.serviceName = name
 	}

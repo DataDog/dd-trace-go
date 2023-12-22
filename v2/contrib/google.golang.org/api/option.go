@@ -64,9 +64,9 @@ func WithScopes(scopes ...string) OptionFn {
 	}
 }
 
-// WithServiceName sets the service name in the config. The default service
+// WithService sets the service name in the config. The default service
 // name is inferred from the API definitions based on the http request route.
-func WithServiceName(serviceName string) OptionFn {
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}

@@ -41,7 +41,7 @@ func Example_withServiceName() {
 	router := fiber.New()
 
 	// Use the tracer middleware with your desired service name.
-	router.Use(fibertrace.Middleware(fibertrace.WithServiceName("fiber")))
+	router.Use(fibertrace.Middleware(fibertrace.WithService("fiber")))
 
 	// Set up some endpoints.
 	router.Get("/", func(c *fiber.Ctx) error {

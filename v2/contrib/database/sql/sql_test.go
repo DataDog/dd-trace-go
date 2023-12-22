@@ -100,7 +100,7 @@ func TestMySQL(t *testing.T) {
 
 func TestPostgres(t *testing.T) {
 	driverName := "postgres"
-	Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+	Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))
 	defer unregister(driverName)
 	db, err := Open(driverName, "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	require.NoError(t, err)
@@ -130,9 +130,9 @@ func TestOpenOptions(t *testing.T) {
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 
 	t.Run("Open", func(t *testing.T) {
-		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))
 		defer unregister(driverName)
-		db, err := Open(driverName, dsn, WithServiceName("override-test"), WithAnalytics(true))
+		db, err := Open(driverName, dsn, WithService("override-test"), WithAnalytics(true))
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -156,7 +156,7 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("OpenDB", func(t *testing.T) {
-		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))
 		defer unregister(driverName)
 		c, err := pq.NewConnector(dsn)
 		require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestOpenOptions(t *testing.T) {
 	})
 
 	t.Run("WithDSN", func(t *testing.T) {
-		Register(driverName, &pq.Driver{}, WithServiceName("postgres-test"), WithAnalyticsRate(0.2))
+		Register(driverName, &pq.Driver{}, WithService("postgres-test"), WithAnalyticsRate(0.2))
 		defer unregister(driverName)
 		c, err := pq.NewConnector(dsn)
 		require.NoError(t, err)
@@ -247,7 +247,7 @@ func TestOpenOptions(t *testing.T) {
 
 	t.Run("RegisterOptionsAsDefault", func(t *testing.T) {
 		registerOpts := []Option{
-			WithServiceName("register-override"),
+			WithService("register-override"),
 			WithIgnoreQueryTypes(QueryTypeConnect),
 		}
 		Register(driverName, &pq.Driver{}, registerOpts...)
@@ -360,13 +360,13 @@ func TestNamingSchema(t *testing.T) {
 			var registerOpts []Option
 			// serviceOverride has higher priority than the registerOverride parameter.
 			if serviceOverride != "" {
-				registerOpts = append(registerOpts, WithServiceName(serviceOverride))
+				registerOpts = append(registerOpts, WithService(serviceOverride))
 			} else if registerOverride {
-				registerOpts = append(registerOpts, WithServiceName("register-override"))
+				registerOpts = append(registerOpts, WithService("register-override"))
 			}
 			var openOpts []Option
 			if serviceOverride != "" {
-				openOpts = append(openOpts, WithServiceName(serviceOverride))
+				openOpts = append(openOpts, WithService(serviceOverride))
 			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
@@ -454,7 +454,7 @@ func TestNamingSchema(t *testing.T) {
 			assert.Equal(t, "postgresql.query", spans[1].OperationName())
 		}
 		wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-			// when the WithServiceName option is set during Register and not providing a service name when opening
+			// when the WithService option is set during Register and not providing a service name when opening
 			// the DB connection, that value is used as default instead of postgres.db.
 			WithDefaults: []string{"register-override", "register-override"},
 			// in v0, DD_SERVICE is ignored for this integration.

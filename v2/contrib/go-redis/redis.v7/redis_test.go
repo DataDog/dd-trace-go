@@ -45,7 +45,7 @@ func TestClientEvalSha(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 
 	sha1 := client.ScriptLoad("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
 	mt.Reset()
@@ -75,7 +75,7 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	client.Set("test_key", "test_value", 0)
 
 	spans := mt.FinishedSpans()
@@ -139,7 +139,7 @@ func TestWrapClient(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			WrapClient(tc.client, WithServiceName("my-redis"))
+			WrapClient(tc.client, WithService("my-redis"))
 			tc.client.Set("test_key", "test_value", 0)
 
 			spans := mt.FinishedSpans()
@@ -225,7 +225,7 @@ func TestPipeline(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	pipeline := client.Pipeline()
 	pipeline.Expire("pipeline_counter", time.Hour)
 
@@ -279,7 +279,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	// Parent span
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.span")
 	client = client.WithContext(ctx)
 	client.Set("test_key", "test_value", 0)
@@ -311,7 +311,7 @@ func TestMultipleCommands(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	client.Set("test_key", "test_value", 0)
 	client.Get("test_key")
 	client.Incr("int_key")
@@ -338,7 +338,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := NewClient(opts, WithServiceName("my-redis"))
+		client := NewClient(opts, WithService("my-redis"))
 		_, err := client.Get("key").Result()
 
 		spans := mt.FinishedSpans()
@@ -364,7 +364,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := NewClient(opts, WithServiceName("my-redis"))
+		client := NewClient(opts, WithService("my-redis"))
 		_, err := client.Get("non_existent_key").Result()
 
 		spans := mt.FinishedSpans()
@@ -396,7 +396,7 @@ func TestError(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		client := NewClient(opts, WithServiceName("my-redis"), WithErrorCheck(errCheckFn))
+		client := NewClient(opts, WithService("my-redis"), WithErrorCheck(errCheckFn))
 		client = client.WithContext(ctx)
 
 		_, err := client.Get("test_key").Result()
@@ -491,11 +491,11 @@ func TestWithContext(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client1 := NewClient(opts, WithServiceName("my-redis"))
+	client1 := NewClient(opts, WithService("my-redis"))
 	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "span1.name")
 	client1 = client1.WithContext(ctx1)
 	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
-	client2 := NewClient(opts, WithServiceName("my-redis"))
+	client2 := NewClient(opts, WithService("my-redis"))
 	client2 = client2.WithContext(ctx2)
 	client1.Set("test_key", "test_value", 0)
 	client2.Get("test_key")
@@ -529,7 +529,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

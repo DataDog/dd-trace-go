@@ -56,10 +56,10 @@ func serverDefaults(cfg *config) {
 	defaults(cfg)
 }
 
-// WithServiceName sets the given service name for the dialled connection.
+// WithService sets the given service name for the dialled connection.
 // When the service name is not explicitly set, it will be inferred based on the
 // request to the twirp service.
-func WithServiceName(name string) OptionFn {
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}

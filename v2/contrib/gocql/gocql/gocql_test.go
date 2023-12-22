@@ -84,7 +84,7 @@ func TestErrorWrapper(t *testing.T) {
 	session, err := cluster.CreateSession()
 	assert.Nil(err)
 	q := session.Query("CREATE KEYSPACE trace WITH REPLICATION = { 'class' : 'NetworkTopologyStrategy', 'datacenter1' : 1 };")
-	iter := wrapQuery(q, nil, WithServiceName("ServiceName"), WithResourceName("CREATE KEYSPACE")).Iter()
+	iter := wrapQuery(q, nil, WithService("ServiceName"), WithResourceName("CREATE KEYSPACE")).Iter()
 	err = iter.Close()
 
 	spans := mt.FinishedSpans()
@@ -123,7 +123,7 @@ func TestChildWrapperSpan(t *testing.T) {
 	// Call WithContext before WrapQuery to prove WrapQuery needs to use the query.Context()
 	// instead of context.Background()
 	q := session.Query("SELECT * FROM trace.person").WithContext(ctx)
-	tq := wrapQuery(q, nil, WithServiceName("TestServiceName"))
+	tq := wrapQuery(q, nil, WithService("TestServiceName"))
 	iter := tq.Iter()
 	iter.Close()
 	parentSpan.Finish()
@@ -171,7 +171,7 @@ func TestErrNotFound(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		tq := wrapQuery(q, nil,
-			WithServiceName("TestServiceName"),
+			WithService("TestServiceName"),
 			// By default, not using WithErrorCheck, any error is an error from tracing POV
 		)
 		err = tq.Scan(&name, &age)
@@ -190,7 +190,7 @@ func TestErrNotFound(t *testing.T) {
 
 	t.Run("WithErrorCheck", func(t *testing.T) {
 		tq := wrapQuery(q, nil,
-			WithServiceName("TestServiceName"),
+			WithService("TestServiceName"),
 			// Typical use of WithErrorCheck -> do not return errors when the error is
 			// gocql.ErrNotFound, most of the time this is fine, there is just zero rows
 			// of data, but this can be perfectly acceptable. The gocql API returns this
@@ -298,7 +298,7 @@ func TestIterScanner(t *testing.T) {
 	assert.NoError(err)
 
 	q := session.Query("SELECT * from trace.person")
-	tq := wrapQuery(q, nil, WithServiceName("TestServiceName"))
+	tq := wrapQuery(q, nil, WithService("TestServiceName"))
 	iter := tq.WithContext(ctx).Iter()
 	sc := iter.Scanner()
 	for sc.Next() {
@@ -345,7 +345,7 @@ func TestBatch(t *testing.T) {
 	assert.NoError(err)
 
 	b := session.NewBatch(gocql.UnloggedBatch)
-	tb := wrapBatch(b, nil, WithServiceName("TestServiceName"), WithResourceName("BatchInsert"))
+	tb := wrapBatch(b, nil, WithService("TestServiceName"), WithResourceName("BatchInsert"))
 
 	stmt := "INSERT INTO trace.person (name, age, description) VALUES (?, ?, ?)"
 	tb.Query(stmt, "Kate", 80, "Cassandra's sister running in kubernetes")
@@ -421,7 +421,7 @@ func TestWithWrapOptions(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	cluster := newTracedCassandraCluster(WithServiceName("test-service"), WithResourceName("cluster-resource"))
+	cluster := newTracedCassandraCluster(WithService("test-service"), WithResourceName("cluster-resource"))
 
 	session, err := cluster.CreateSession()
 	require.NoError(t, err)
@@ -510,7 +510,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []WrapOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

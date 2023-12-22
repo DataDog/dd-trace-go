@@ -129,7 +129,7 @@ func TestTrace200(t *testing.T) {
 	defer mt.Stop()
 
 	ws := new(restful.WebService)
-	ws.Filter(FilterFunc(WithServiceName("my-service")))
+	ws.Filter(FilterFunc(WithService("my-service")))
 	ws.Route(ws.GET("/user/{id}").Param(restful.PathParameter("id", "user ID")).
 		To(func(request *restful.Request, response *restful.Response) {
 			_, ok := tracer.SpanFromContext(request.Request.Context())
@@ -291,7 +291,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
