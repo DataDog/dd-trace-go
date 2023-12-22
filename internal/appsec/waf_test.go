@@ -14,10 +14,11 @@ import (
 	"testing"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
 	"github.com/stretchr/testify/require"
