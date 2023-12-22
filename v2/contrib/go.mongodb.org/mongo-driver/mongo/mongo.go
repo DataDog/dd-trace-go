@@ -104,7 +104,7 @@ func NewMonitor(opts ...Option) *event.CommandMonitor {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/go.mongodb.org/mongo-driver/mongo: Creating Monitor: %#v", cfg)
 	m := &monitor{

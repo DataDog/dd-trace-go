@@ -20,8 +20,17 @@ type config struct {
 	analyticsRate float64
 }
 
-// Option represents an option that can be passed to Dial.
-type Option func(*config)
+// Option describes options for the Mongo integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewMonitor.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(
@@ -40,14 +49,14 @@ func defaults(cfg *config) {
 // WithServiceName sets the given service name for the dialled connection.
 // When the service name is not explicitly set it will be inferred based on the
 // request to AWS.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -59,7 +68,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
