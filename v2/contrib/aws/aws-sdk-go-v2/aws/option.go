@@ -22,7 +22,7 @@ type Option interface {
 	apply(*config)
 }
 
-// OptionFn represents an option that can be passed to AppendMiddleware.
+// OptionFn represents options applicable to AppendMiddleware.
 type OptionFn func(*config)
 
 func (fn OptionFn) apply(cfg *config) {
