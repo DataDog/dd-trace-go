@@ -92,7 +92,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
 	return &Tx{
