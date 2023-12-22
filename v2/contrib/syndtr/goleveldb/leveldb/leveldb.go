@@ -104,9 +104,7 @@ func (db *DB) GetSnapshot() (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapSnapshot(snap, func(cfg *config) {
-		*cfg = *db.cfg
-	}), nil
+	return WrapSnapshot(snap, withConfig(db.cfg)), nil
 }
 
 // Has calls DB.Has and traces the result.
@@ -119,9 +117,7 @@ func (db *DB) Has(key []byte, ro *opt.ReadOptions) (ret bool, err error) {
 
 // NewIterator calls DB.NewIterator and returns a wrapped Iterator.
 func (db *DB) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(db.DB.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *db.cfg
-	})
+	return WrapIterator(db.DB.NewIterator(slice, ro), withConfig(db.cfg))
 }
 
 // OpenTransaction calls DB.OpenTransaction and returns a wrapped Transaction.
@@ -130,9 +126,7 @@ func (db *DB) OpenTransaction() (*Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapTransaction(tr, func(cfg *config) {
-		*cfg = *db.cfg
-	}), nil
+	return WrapTransaction(tr, withConfig(db.cfg)), nil
 }
 
 // Put calls DB.Put and traces the result.
@@ -193,9 +187,7 @@ func (snap *Snapshot) Has(key []byte, ro *opt.ReadOptions) (ret bool, err error)
 
 // NewIterator calls Snapshot.NewIterator and returns a wrapped Iterator.
 func (snap *Snapshot) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(snap.Snapshot.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *snap.cfg
-	})
+	return WrapIterator(snap.Snapshot.NewIterator(slice, ro), withConfig(snap.cfg))
 }
 
 // A Transaction wraps a leveldb.Transaction and traces all queries.
@@ -248,9 +240,7 @@ func (tr *Transaction) Has(key []byte, ro *opt.ReadOptions) (bool, error) {
 
 // NewIterator calls Transaction.NewIterator and returns a wrapped Iterator.
 func (tr *Transaction) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(tr.Transaction.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *tr.cfg
-	})
+	return WrapIterator(tr.Transaction.NewIterator(slice, ro), withConfig(tr.cfg))
 }
 
 // An Iterator wraps a leveldb.Iterator and traces until Release is called.
