@@ -37,7 +37,7 @@ func NewHTTPClient(opts ...ClientOption) *http.Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/olivere/elastic: Configuring HTTP Client: %#v", cfg)
 	return &http.Client{Transport: &httpTransport{config: cfg}}
