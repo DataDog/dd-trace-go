@@ -24,8 +24,17 @@ type routerConfig struct {
 	headerTags    *internal.LockMap
 }
 
-// RouterOption represents an option that can be passed to New.
-type RouterOption func(*routerConfig)
+// RouterOption describes options for the HTTPRouter integration.
+type RouterOption interface {
+	apply(*routerConfig)
+}
+
+// RouterOptionFn represents options applicable to New.
+type RouterOptionFn func(*routerConfig)
+
+func (fn RouterOptionFn) apply(cfg *routerConfig) {
+	fn(cfg)
+}
 
 func defaults(cfg *routerConfig) {
 	if internal.BoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
@@ -38,21 +47,21 @@ func defaults(cfg *routerConfig) {
 }
 
 // WithServiceName sets the given service name for the returned router.
-func WithServiceName(name string) RouterOption {
+func WithServiceName(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) RouterOption {
+func WithAnalytics(on bool) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -64,7 +73,7 @@ func WithAnalytics(on bool) RouterOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) RouterOption {
+func WithAnalyticsRate(rate float64) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -78,7 +87,7 @@ func WithAnalyticsRate(rate float64) RouterOption {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) RouterOption {
+func WithHeaderTags(headers []string) RouterOptionFn {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *routerConfig) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
