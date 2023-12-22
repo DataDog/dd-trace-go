@@ -14,8 +14,11 @@ echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
 
 function gotestsum_runner() {
-  report=$1; shift; shift
+  report=$1; shift
+  wd=$1; shift
+  cd "$wd"
   gotestsum --junitfile "$report" -- -v "$@"
+  cd -
 }
 
 function docker_runner() {
