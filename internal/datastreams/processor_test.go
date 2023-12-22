@@ -7,13 +7,14 @@ package datastreams
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
