@@ -19,7 +19,17 @@ type config struct {
 	analyticsRate float64
 }
 
-type Option func(*config)
+// Option describes options for the GraphQL integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewSchema.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
@@ -31,7 +41,7 @@ func defaults(cfg *config) {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -43,7 +53,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -54,7 +64,7 @@ func WithAnalyticsRate(rate float64) Option {
 }
 
 // WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
