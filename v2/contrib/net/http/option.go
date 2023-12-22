@@ -34,6 +34,12 @@ type config struct {
 	headerTags *internal.LockMap
 }
 
+// Option describes options for http.ServeMux.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewServeMux and WrapHandler.
 type OptionFn func(*commonConfig)
 
 func (o OptionFn) apply(cfg *config) {
@@ -44,15 +50,11 @@ func (o OptionFn) applyRoundTripper(cfg *roundTripperConfig) {
 	o(&cfg.commonConfig)
 }
 
+// HandlerOptionFn represents options applicable to NewServeMux and WrapHandler.
 type HandlerOptionFn func(*config)
 
 func (o HandlerOptionFn) apply(cfg *config) {
 	o(cfg)
-}
-
-// Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option interface {
-	apply(*config)
 }
 
 func defaults(cfg *config) {
@@ -163,14 +165,16 @@ type roundTripperConfig struct {
 	errCheck    func(err error) bool
 }
 
+// RoundTripperOption describes options for http.RoundTripper.
+type RoundTripperOption interface {
+	applyRoundTripper(*roundTripperConfig)
+}
+
+// RoundTripperOptionFn represents options applicable to WrapClient and WrapRoundTripper.
 type RoundTripperOptionFn func(*roundTripperConfig)
 
 func (o RoundTripperOptionFn) applyRoundTripper(cfg *roundTripperConfig) {
 	o(cfg)
-}
-
-type RoundTripperOption interface {
-	applyRoundTripper(*roundTripperConfig)
 }
 
 func newRoundTripperConfig() *roundTripperConfig {
