@@ -87,7 +87,7 @@ func NewTracer(opts ...Option) graphql.HandlerExtension {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &gqlTracer{cfg: cfg}
 }
