@@ -7,14 +7,13 @@ package grpcsec
 
 import (
 	"sync"
-	"time"
 
 	"go.uber.org/atomic"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -40,24 +39,24 @@ var supportedAddresses = map[string]struct{}{
 	UserIDAddr:                {},
 }
 
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, timeout time.Duration, _ *internal.APISecConfig, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, timeout, lim); listener != nil {
+func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
 		log.Debug("[appsec] registering the gRPC WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
 }
 
 type wafEventListener struct {
-	wafDiags  waf.Diagnostics
 	limiter   limiter.Limiter
 	wafHandle *waf.Handle
+	config    *config.Config
 	actions   sharedsec.Actions
 	addresses map[string]struct{}
-	timeout   time.Duration
+	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, timeout time.Duration, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("[appsec] no WAF Handle available, the gRPC WAF Event Listener will not be registered")
 		return nil
@@ -81,7 +80,7 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, timeo
 		wafHandle: wafHandle,
 		wafDiags:  wafDiags,
 		actions:   actions,
-		timeout:   timeout,
+		config:    cfg,
 		limiter:   limiter,
 		addresses: addresses,
 	}
@@ -117,7 +116,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 				values[UserIDAddr] = args.UserID
 			}
 		}
-		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.timeout)
+		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 		if wafResult.HasActions() || wafResult.HasEvents() {
 			for _, id := range wafResult.Actions {
 				if a, ok := l.actions[id]; ok && a.Blocking() {
@@ -138,7 +137,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 	}
 
-	wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.timeout)
+	wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	if wafResult.HasActions() || wafResult.HasEvents() {
 		interrupt := listener.ProcessActions(op, l.actions, wafResult.Actions)
 		listener.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -169,7 +168,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := listener.RunWAF(wafCtx, values, l.timeout)
+		wafResult := listener.RunWAF(wafCtx, values, l.config.WAFTimeout)
 
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")

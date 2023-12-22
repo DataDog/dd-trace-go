@@ -6,11 +6,9 @@
 package appsec
 
 import (
-	"time"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -22,7 +20,7 @@ type wafHandle struct {
 	actions sharedsec.Actions
 }
 
-func (a *appsec) swapWAF(rules rulesFragment) (err error) {
+func (a *appsec) swapWAF(rules config.RulesFragment) (err error) {
 	// Instantiate a new WAF handle and verify its state
 	newHandle, err := newWAFHandle(rules, a.cfg)
 	if err != nil {
@@ -38,7 +36,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 
 	newRoot := dyngo.NewRootOperation()
 	for _, fn := range wafEventListeners {
-		fn(newHandle.Handle, newHandle.actions, a.cfg.wafTimeout, &a.cfg.apiSec, a.limiter, newRoot)
+		fn(newHandle.Handle, newHandle.actions, a.cfg, a.limiter, newRoot)
 	}
 
 	// Hot-swap dyngo's root operation
@@ -60,7 +58,7 @@ func (a *appsec) swapWAF(rules rulesFragment) (err error) {
 	return nil
 }
 
-func actionFromEntry(e *actionEntry) *sharedsec.Action {
+func actionFromEntry(e *config.ActionEntry) *sharedsec.Action {
 	switch e.Type {
 	case "block_request":
 		grpcCode := 10 // use the grpc.Codes value for "Aborted" by default
@@ -76,8 +74,8 @@ func actionFromEntry(e *actionEntry) *sharedsec.Action {
 	}
 }
 
-func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
-	handle, err := waf.NewHandle(rules, cfg.obfuscator.KeyRegex, cfg.obfuscator.ValueRegex)
+func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, error) {
+	handle, err := waf.NewHandle(rules, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
 	actions := sharedsec.Actions{
 		// Default built-in block action
 		"block": sharedsec.NewBlockRequestAction(403, 10, "auto"),
@@ -95,7 +93,7 @@ func newWAFHandle(rules rulesFragment, cfg *Config) (*wafHandle, error) {
 	}, err
 }
 
-type wafEventListener func(*waf.Handle, sharedsec.Actions, time.Duration, *internal.APISecConfig, limiter.Limiter, dyngo.Operation)
+type wafEventListener func(*waf.Handle, sharedsec.Actions, *config.Config, limiter.Limiter, dyngo.Operation)
 
 var wafEventListeners []wafEventListener
 

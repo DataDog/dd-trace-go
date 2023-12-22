@@ -7,12 +7,11 @@ package graphqlsec
 
 import (
 	"sync"
-	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -32,8 +31,8 @@ var supportedAddresses = map[string]struct{}{
 	graphQLServerResolverAddr: {},
 }
 
-func Install(wafHandle *waf.Handle, _ sharedsec.Actions, timeout time.Duration, _ *internal.APISecConfig, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, timeout, lim); listener != nil {
+func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("[appsec] registering the GraphQL WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
@@ -42,13 +41,13 @@ func Install(wafHandle *waf.Handle, _ sharedsec.Actions, timeout time.Duration, 
 type wafEventListener struct {
 	limiter   limiter.Limiter
 	wafHandle *waf.Handle
-	wafDiags  waf.Diagnostics
+	config    *config.Config
 	addresses map[string]struct{}
-	timeout   time.Duration
+	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, timeout time.Duration, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("[appsec] no WAF Handle available, the GraphQL WAF Event Listener will not be registered")
 		return nil
@@ -70,7 +69,7 @@ func newWafEventListener(wafHandle *waf.Handle, timeout time.Duration, limiter l
 	return &wafEventListener{
 		wafHandle: wafHandle,
 		wafDiags:  wafDiags,
-		timeout:   timeout,
+		config:    cfg,
 		limiter:   limiter,
 		addresses: addresses,
 	}
@@ -101,7 +100,7 @@ func (l *wafEventListener) onEvent(request *types.RequestOperation, _ types.Requ
 							graphQLServerResolverAddr: map[string]any{args.FieldName: args.Arguments},
 						},
 					},
-					l.timeout,
+					l.config.WAFTimeout,
 				)
 				listener.AddSecurityEvents(field, l.limiter, wafResult.Events)
 			}

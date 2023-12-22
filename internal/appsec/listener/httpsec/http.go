@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -54,25 +53,24 @@ var supportedAddresses = map[string]struct{}{
 	UserIDAddr:                         {},
 }
 
-func Install(wafHandle *waf.Handle, actions sharedsec.Actions, timeout time.Duration, apiSecCfg *internal.APISecConfig, lim limiter.Limiter, root dyngo.Operation) {
-	if listener := newWafEventListener(wafHandle, actions, timeout, apiSecCfg, lim); listener != nil {
+func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
+	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
 		log.Debug("[appsec] registering the HTTP WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
 }
 
 type wafEventListener struct {
-	wafDiags  waf.Diagnostics
 	limiter   limiter.Limiter
 	wafHandle *waf.Handle
+	config    *config.Config
 	actions   sharedsec.Actions
 	addresses map[string]struct{}
-	timeout   time.Duration
-	apiSecCfg *internal.APISecConfig
+	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
 
-func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, timeout time.Duration, apiSecCfg *internal.APISecConfig, limiter limiter.Limiter) *wafEventListener {
+func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
 		log.Debug("[appsec] no WAF Handle available, the HTTP WAF Event Listener will not be registered")
 		return nil
@@ -96,8 +94,7 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, timeo
 		wafHandle: wafHandle,
 		wafDiags:  wafDiags,
 		actions:   actions,
-		timeout:   timeout,
-		apiSecCfg: apiSecCfg,
+		config:    cfg,
 		limiter:   limiter,
 		addresses: addresses,
 	}
@@ -116,7 +113,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		// see if the associated user should be blocked. Since we don't control the execution flow in this case
 		// (SetUser is SDK), we delegate the responsibility of interrupting the handler to the user.
 		dyngo.On(op, func(operation *emitter.UserIDOperation, args emitter.UserIDOperationArgs) {
-			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.timeout)
+			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{UserIDAddr: args.UserID}}, l.config.WAFTimeout)
 			if wafResult.HasActions() || wafResult.HasEvents() {
 				processHTTPSDKAction(operation, l.actions, wafResult.Actions)
 				listener.AddSecurityEvents(op, l.limiter, wafResult.Events)
@@ -160,7 +157,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 		values["waf.context.processor"] = map[string]any{"extract-schema": true}
 	}
 
-	wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.timeout)
+	wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	for tag, value := range wafResult.Derivatives {
 		op.AddSerializableTag(tag, value)
 	}
@@ -176,7 +173,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 	if _, ok := l.addresses[ServerRequestBodyAddr]; ok {
 		dyngo.On(op, func(sdkBodyOp *types.SDKBodyOperation, args types.SDKBodyOperationArgs) {
-			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, l.timeout)
+			wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: map[string]any{ServerRequestBodyAddr: args.Body}}, l.config.WAFTimeout)
 			for tag, value := range wafResult.Derivatives {
 				op.AddSerializableTag(tag, value)
 			}
@@ -203,7 +200,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.timeout)
+		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 
 		// Add WAF metrics.
 		overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
@@ -229,7 +226,7 @@ func (l *wafEventListener) onEvent(op *types.Operation, args types.HandlerOperat
 // canExtractSchemas checks that API Security is enabled and that sampling rate
 // allows extracting schemas
 func (l *wafEventListener) canExtractSchemas() bool {
-	return l.apiSecCfg != nil && l.apiSecCfg.Enabled && l.apiSecCfg.SampleRate >= rand.Float64()
+	return l.config.APISec.Enabled && l.config.APISec.SampleRate >= rand.Float64()
 }
 
 // processHTTPSDKAction does two things:
