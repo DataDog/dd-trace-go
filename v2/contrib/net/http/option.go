@@ -34,6 +34,22 @@ type config struct {
 	headerTags *internal.LockMap
 }
 
+type OptionFn func(*commonConfig)
+
+func (o OptionFn) apply(cfg *config) {
+	o(&cfg.commonConfig)
+}
+
+func (o OptionFn) applyRoundTripper(cfg *roundTripperConfig) {
+	o(&cfg.commonConfig)
+}
+
+type HandlerOptionFn func(*config)
+
+func (o HandlerOptionFn) apply(cfg *config) {
+	o(cfg)
+}
+
 // Option represents an option that can be passed to NewServeMux or WrapHandler.
 type Option func(*config)
 
@@ -145,6 +161,11 @@ type roundTripperConfig struct {
 	errCheck    func(err error) bool
 }
 
+type RoundTripperOptionFn func(*roundTripperConfig)
+
+func (o RoundTripperOptionFn) applyRoundTripper(cfg *roundTripperConfig) {
+	o(cfg)
+}
 func newRoundTripperConfig() *roundTripperConfig {
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
