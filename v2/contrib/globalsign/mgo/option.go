@@ -39,25 +39,33 @@ func newConfig() *mongoConfig {
 	}
 }
 
-// DialOption represents an option that can be passed to Dial
-type DialOption func(*mongoConfig)
+type DialOption interface {
+	apply(*mongoConfig)
+}
+
+// DialOptionFn represents an option that can be passed to Dial
+type DialOptionFn func(*mongoConfig)
+
+func (fn DialOptionFn) apply(cfg *mongoConfig) {
+	fn(cfg)
+}
 
 // WithServiceName sets the service name for a given MongoDB context.
-func WithServiceName(name string) DialOption {
+func WithServiceName(name string) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithContext sets the context.
-func WithContext(ctx context.Context) DialOption {
+func WithContext(ctx context.Context) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		cfg.ctx = ctx
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) DialOption {
+func WithAnalytics(on bool) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -69,7 +77,7 @@ func WithAnalytics(on bool) DialOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) DialOption {
+func WithAnalyticsRate(rate float64) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
