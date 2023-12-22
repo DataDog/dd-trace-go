@@ -28,18 +28,27 @@ func defaultConfig() *config {
 	}
 }
 
-// A Option is used to customize spans started by WrapReceiveHandler or Publish.
-type Option func(cfg *config)
+// Option describes options for the pubsub integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn is used to customize spans started by WrapReceiveHandler or Publish.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithServiceName sets the service name tag for traces started by WrapReceiveHandler or Publish.
-func WithServiceName(serviceName string) Option {
+func WithServiceName(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}
 }
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
-func WithMeasured() Option {
+func WithMeasured() OptionFn {
 	return func(cfg *config) {
 		cfg.measured = true
 	}
