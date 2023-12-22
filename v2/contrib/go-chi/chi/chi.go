@@ -35,7 +35,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/go-chi/chi: Configuring Middleware: %#v", cfg)
 	spanOpts := append(cfg.spanOpts, tracer.ServiceName(cfg.serviceName),
