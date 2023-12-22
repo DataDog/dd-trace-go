@@ -23,8 +23,17 @@ type queryConfig struct {
 	customTags                   map[string]interface{}
 }
 
-// WrapOption represents an option that can be passed to WrapQuery.
-type WrapOption func(*queryConfig)
+// WrapOption describes options for the Cassandra integration.
+type WrapOption interface {
+	apply(config *queryConfig)
+}
+
+// WrapOptionFn represents options applicable to NewCluster, Query.WithWrapOptions and Batch.WithWrapOptions.
+type WrapOptionFn func(config *queryConfig)
+
+func (fn WrapOptionFn) apply(cfg *queryConfig) {
+	fn(cfg)
+}
 
 func defaultConfig() *queryConfig {
 	cfg := &queryConfig{}
@@ -47,7 +56,7 @@ func defaultConfig() *queryConfig {
 }
 
 // WithServiceName sets the given service name for the returned query.
-func WithServiceName(name string) WrapOption {
+func WithServiceName(name string) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		cfg.serviceName = name
 	}
@@ -59,14 +68,14 @@ func WithServiceName(name string) WrapOption {
 // environments. The gocql library returns the query statement using an fmt.Sprintf
 // call, which can be costly when called repeatedly. Using WithResourceName will
 // avoid that call. Under normal circumstances, it is safe to rely on the default.
-func WithResourceName(name string) WrapOption {
+func WithResourceName(name string) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		cfg.resourceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) WrapOption {
+func WithAnalytics(on bool) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -78,7 +87,7 @@ func WithAnalytics(on bool) WrapOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) WrapOption {
+func WithAnalyticsRate(rate float64) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -91,7 +100,7 @@ func WithAnalyticsRate(rate float64) WrapOption {
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
-func NoDebugStack() WrapOption {
+func NoDebugStack() WrapOptionFn {
 	return func(cfg *queryConfig) {
 		cfg.noDebugStack = true
 	}
@@ -104,7 +113,7 @@ func (c *queryConfig) shouldIgnoreError(err error) bool {
 // WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever a CQL request
 // finishes with an error.
-func WithErrorCheck(fn func(err error) bool) WrapOption {
+func WithErrorCheck(fn func(err error) bool) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		// When the error is explicitly marked as not-an-error, that is
 		// when this errCheck function returns false, the APM code will
@@ -120,7 +129,7 @@ func WithErrorCheck(fn func(err error) bool) WrapOption {
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.
-func WithCustomTag(key string, value interface{}) WrapOption {
+func WithCustomTag(key string, value interface{}) WrapOptionFn {
 	return func(cfg *queryConfig) {
 		if cfg.customTags == nil {
 			cfg.customTags = make(map[string]interface{})

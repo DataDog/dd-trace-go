@@ -102,7 +102,7 @@ type params struct {
 func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 	cfg := defaultConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	if cfg.resourceName == "" {
 		if parts := strings.SplitN(q.String(), "\"", 3); len(parts) == 3 {
@@ -128,7 +128,7 @@ func (tq *Query) WithContext(ctx context.Context) *Query {
 // WithWrapOptions applies the given set of options to the query.
 func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
 	for _, fn := range opts {
-		fn(tq.params.config)
+		fn.apply(tq.params.config)
 	}
 	return tq
 }
@@ -271,7 +271,7 @@ func (s *Scanner) Err() error {
 func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
 	cfg := defaultConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	p := &params{config: cfg}
 	if len(hosts) > 0 {
@@ -292,7 +292,7 @@ func (tb *Batch) WithContext(ctx context.Context) *Batch {
 // WithWrapOptions applies the given set of options to the batch.
 func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
 	for _, fn := range opts {
-		fn(tb.params.config)
+		fn.apply(tb.params.config)
 	}
 	return tb
 }
