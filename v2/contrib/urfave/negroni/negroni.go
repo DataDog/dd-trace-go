@@ -67,7 +67,7 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
