@@ -246,7 +246,7 @@ func Open(driverName, dataSourceName string, opts ...Option) (*sql.DB, error) {
 
 func processOptions(cfg *config, driverName string, driver driver.Driver, dsn string, opts ...Option) {
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	cfg.checkDBMPropagation(driverName, driver, dsn)
 }
