@@ -19,7 +19,7 @@ func NewServerStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &serverStatsHandler{
 		cfg: cfg,

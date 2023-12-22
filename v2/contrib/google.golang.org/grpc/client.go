@@ -76,7 +76,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 	cfg := new(config)
 	clientDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring StreamClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
@@ -147,7 +147,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	cfg := new(config)
 	clientDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/google.golang.org/grpc: Configuring UnaryClientInterceptor: %#v", cfg)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
