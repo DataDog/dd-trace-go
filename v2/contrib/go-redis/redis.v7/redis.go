@@ -54,7 +54,7 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 
 	hookParams := &params{
