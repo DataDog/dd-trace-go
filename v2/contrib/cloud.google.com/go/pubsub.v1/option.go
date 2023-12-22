@@ -28,12 +28,12 @@ func defaultConfig() *config {
 	}
 }
 
-// Option describes options for the pubsub integration.
+// Option describes options for the Pub/Sub integration.
 type Option interface {
 	apply(*config)
 }
 
-// OptionFn is used to customize spans started by WrapReceiveHandler or Publish.
+// OptionFn represents options applicable to WrapReceiveHandler or Publish.
 type OptionFn func(*config)
 
 func (fn OptionFn) apply(cfg *config) {

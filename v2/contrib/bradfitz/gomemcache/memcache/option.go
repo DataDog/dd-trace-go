@@ -22,12 +22,12 @@ type clientConfig struct {
 	analyticsRate float64
 }
 
-// ClientOption describes options for instrumenting a memcache client.
+// ClientOption describes options for the Memcache integration.
 type ClientOption interface {
 	apply(*clientConfig)
 }
 
-// ClientOptionFn represents an option that can be passed to WrapClient.
+// ClientOptionFn represents options applicable to WrapClient.
 type ClientOptionFn func(*clientConfig)
 
 func (fn ClientOptionFn) apply(cfg *clientConfig) {

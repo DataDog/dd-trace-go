@@ -32,12 +32,12 @@ type config struct {
 	dataStreamsEnabled  bool
 }
 
-// Option describes an option for a kafka integration.
+// Option describes an option for the Kafka integration.
 type Option interface {
 	apply(*config)
 }
 
-// OptionFn represents an option that can be passed to NewConsumer/NewProducer and WrapConsumer/WrapProducer.
+// OptionFn represents options applicable to NewConsumer, NewProducer, WrapConsumer and WrapProducer.
 type OptionFn func(*config)
 
 func (fn OptionFn) apply(cfg *config) {
