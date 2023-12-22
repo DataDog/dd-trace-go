@@ -14,10 +14,10 @@ import (
 	"testing"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	waf "github.com/DataDog/go-libddwaf/v2"
 
 	"github.com/stretchr/testify/require"
@@ -453,7 +453,7 @@ func TestBlocking(t *testing.T) {
 // Test that API Security schemas get collected when API security is enabled
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
-	t.Setenv(appsec.EnvEnabled, "true")
+	t.Setenv(config.EnvEnabled, "true")
 	if wafOK, err := waf.Health(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}

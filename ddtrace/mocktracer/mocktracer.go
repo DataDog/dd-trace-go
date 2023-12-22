@@ -13,6 +13,8 @@
 package mocktracer
 
 import (
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +23,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+
+	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 var _ ddtrace.Tracer = (*mocktracer)(nil)
@@ -87,8 +91,27 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	return span
 }
 
+type noOpTransport struct{}
+
+// RoundTrip does nothing and returns a dummy response.
+func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// You can customize the dummy response if needed.
+	return &http.Response{
+		StatusCode:    200,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Request:       req,
+		ContentLength: -1,
+		Body:          http.NoBody,
+	}, nil
+}
+
 func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
-	return &datastreams.Processor{}
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	return datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
 }
 
 func (t *mocktracer) OpenSpans() []Span {

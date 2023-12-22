@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -155,7 +156,7 @@ func Start(opts ...StartOption) error {
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
 	}
-	appsec.Start(appsec.WithRCConfig(cfg))
+	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
