@@ -36,7 +36,7 @@ func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &roundTripper{config: *cfg}
 }
