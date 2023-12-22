@@ -344,6 +344,7 @@ var blockingCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMExclusions,
 	remoteconfig.ASMCustomRules,
 	remoteconfig.ASMCustomBlockingResponse,
+	remoteconfig.ASMTrustedIPs,
 }
 
 func (a *appsec) enableRCBlocking() {
