@@ -856,6 +856,8 @@ func TestRulesSampler(t *testing.T) {
 
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
+					assert.False(result)
+					result = rs.SampleTraceGlobalRate(span)
 					assert.True(result)
 					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
 					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
@@ -899,7 +901,9 @@ func TestRulesSampler(t *testing.T) {
 		for _, test := range testEnvs {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_TRACE_SAMPLING_RULES", test.rules)
+				defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 				os.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
+				defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 				_, _, _, stop := startTestTracer(t)
 				defer stop()
 
@@ -918,7 +922,9 @@ func TestRulesSampler(t *testing.T) {
 	t.Run("locked-sampling-before-propagating-context", func(t *testing.T) {
 		os.Setenv("DD_TRACE_SAMPLING_RULES",
 			`[{"tags": {"tag2": "val2"}, "sample_rate": 0},{"tags": {"tag1": "val1"}, "sample_rate": 1},{"tags": {"tag0": "val*"}, "sample_rate": 0}]`)
+		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
 
