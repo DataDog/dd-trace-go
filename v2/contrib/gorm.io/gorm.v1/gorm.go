@@ -47,7 +47,7 @@ func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("Registering Callbacks: %#v", cfg)
 
