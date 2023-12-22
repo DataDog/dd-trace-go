@@ -102,7 +102,7 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 		}),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
-		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
+		rtOpts = append(rtOpts, httptrace.WithAnalyticsRate(cfg.analyticsRate))
 	}
 	return httptrace.WrapRoundTripper(transport, rtOpts...)
 }
