@@ -8,5 +8,24 @@
 // types found in gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter.
 package listener
 
+import waf "github.com/DataDog/go-libddwaf/v2"
+
 // ContextKey is used as a key to store operations in the request's context (gRPC/HTTP)
 type ContextKey struct{}
+
+// AddressSet is a set of WAF addresses.
+type AddressSet map[string]struct{}
+
+// FilterAddressSet filters the supplied `supported` address set to only include
+// entries referenced by the supplied waf.Handle.
+func FilterAddressSet(supported AddressSet, handle *waf.Handle) AddressSet {
+	result := make(AddressSet, len(supported))
+
+	for _, addr := range handle.Addresses() {
+		if _, found := supported[addr]; found {
+			result[addr] = struct{}{}
+		}
+	}
+
+	return result
+}

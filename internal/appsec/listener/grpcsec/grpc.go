@@ -17,8 +17,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	listener "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
+	shared "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -32,7 +33,7 @@ const (
 )
 
 // List of gRPC rule addresses currently supported by the WAF
-var supportedAddresses = map[string]struct{}{
+var supportedAddresses = listener.AddressSet{
 	GRPCServerRequestMessage:  {},
 	GRPCServerRequestMetadata: {},
 	HTTPClientIPAddr:          {},
@@ -47,11 +48,11 @@ func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Confi
 }
 
 type wafEventListener struct {
-	limiter   limiter.Limiter
 	wafHandle *waf.Handle
 	config    *config.Config
 	actions   sharedsec.Actions
 	addresses map[string]struct{}
+	limiter   limiter.Limiter
 	wafDiags  waf.Diagnostics
 	once      sync.Once
 }
@@ -62,15 +63,7 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 		return nil
 	}
 
-	wafDiags := wafHandle.Diagnostics()
-
-	addresses := make(map[string]struct{}, len(supportedAddresses))
-	for _, addr := range wafDiags.Rules.Addresses.Required {
-		if _, found := supportedAddresses[addr]; found {
-			addresses[addr] = struct{}{}
-		}
-	}
-
+	addresses := listener.FilterAddressSet(supportedAddresses, wafHandle)
 	if len(addresses) == 0 {
 		log.Debug("[appsec] no supported gRPC address is used by currently loaded WAF rules, the gRPC WAF Event Listener will not be registered")
 		return nil
@@ -78,11 +71,11 @@ func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *
 
 	return &wafEventListener{
 		wafHandle: wafHandle,
-		wafDiags:  wafDiags,
-		actions:   actions,
 		config:    cfg,
-		limiter:   limiter,
+		actions:   actions,
 		addresses: addresses,
+		limiter:   limiter,
+		wafDiags:  wafHandle.Diagnostics(),
 	}
 }
 
@@ -116,7 +109,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 				values[UserIDAddr] = args.UserID
 			}
 		}
-		wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 		if wafResult.HasActions() || wafResult.HasEvents() {
 			for _, id := range wafResult.Actions {
 				if a, ok := l.actions[id]; ok && a.Blocking() {
@@ -124,7 +117,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 					dyngo.EmitData(userIDOp, types.NewMonitoringError(err.Error(), code))
 				}
 			}
-			listener.AddSecurityEvents(op, l.limiter, wafResult.Events)
+			shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 			log.Debug("appsec: WAF detected an authenticated user attack: %s", args.UserID)
 		}
 	})
@@ -137,10 +130,10 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 	}
 
-	wafResult := listener.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
+	wafResult := shared.RunWAF(wafCtx, waf.RunAddressData{Persistent: values}, l.config.WAFTimeout)
 	if wafResult.HasActions() || wafResult.HasEvents() {
-		interrupt := listener.ProcessActions(op, l.actions, wafResult.Actions)
-		listener.AddSecurityEvents(op, l.limiter, wafResult.Events)
+		interrupt := shared.ProcessActions(op, l.actions, wafResult.Actions)
+		shared.AddSecurityEvents(op, l.limiter, wafResult.Events)
 		log.Debug("appsec: WAF detected an attack before executing the request")
 		if interrupt {
 			wafCtx.Close()
@@ -168,7 +161,7 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 		}
 		// Run the WAF, ignoring the returned actions - if any - since blocking after the request handler's
 		// response is not supported at the moment.
-		wafResult := listener.RunWAF(wafCtx, values, l.config.WAFTimeout)
+		wafResult := shared.RunWAF(wafCtx, values, l.config.WAFTimeout)
 
 		if wafResult.HasEvents() {
 			log.Debug("appsec: attack detected by the grpc waf")
@@ -182,14 +175,14 @@ func (l *wafEventListener) onEvent(op *types.HandlerOperation, handlerArgs types
 	dyngo.OnFinish(op, func(op *types.HandlerOperation, _ types.HandlerOperationRes) {
 		defer wafCtx.Close()
 		overallRuntimeNs, internalRuntimeNs := wafCtx.TotalRuntime()
-		listener.AddWAFMonitoringTags(op, l.wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
+		shared.AddWAFMonitoringTags(op, l.wafDiags.Version, overallRuntimeNs, internalRuntimeNs, wafCtx.TotalTimeouts())
 
 		// Log the following metrics once per instantiation of a WAF handle
 		l.once.Do(func() {
-			listener.AddRulesMonitoringTags(op, &l.wafDiags)
+			shared.AddRulesMonitoringTags(op, &l.wafDiags)
 			op.SetTag(ext.ManualKeep, samplernames.AppSec)
 		})
 
-		listener.AddSecurityEvents(op, l.limiter, events)
+		shared.AddSecurityEvents(op, l.limiter, events)
 	})
 }
