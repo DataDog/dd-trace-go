@@ -30,8 +30,17 @@ type config struct {
 	tags              map[string]interface{}
 }
 
-// Option represents an option that can be passed to Middleware.
-type Option func(*config)
+// Option describes options for the Echo.v4 integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Middleware.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // IgnoreRequestFunc determines if tracing will be skipped for a request.
 type IgnoreRequestFunc func(c echo.Context) bool
@@ -52,14 +61,14 @@ func defaults(cfg *config) {
 }
 
 // WithServiceName sets the given service name for the system.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -71,7 +80,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -84,7 +93,7 @@ func WithAnalyticsRate(rate float64) Option {
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
-func NoDebugStack() Option {
+func NoDebugStack() OptionFn {
 	return func(cfg *config) {
 		cfg.noDebugStack = true
 	}
@@ -92,7 +101,7 @@ func NoDebugStack() Option {
 
 // WithIgnoreRequest sets a function which determines if tracing will be
 // skipped for a given request.
-func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
+func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequestFunc = ignoreRequestFunc
 	}
@@ -100,7 +109,7 @@ func WithIgnoreRequest(ignoreRequestFunc IgnoreRequestFunc) Option {
 
 // WithErrorTranslator sets a function to translate Go errors into echo Errors.
 // This is used for extracting the HTTP response status code.
-func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) Option {
+func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) OptionFn {
 	return func(cfg *config) {
 		cfg.translateError = fn
 	}
@@ -108,7 +117,7 @@ func WithErrorTranslator(fn func(err error) (*echo.HTTPError, bool)) Option {
 
 // WithStatusCheck specifies a function fn which reports whether the passed
 // statusCode should be considered an error.
-func WithStatusCheck(fn func(statusCode int) bool) Option {
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
@@ -122,7 +131,7 @@ func isServerError(statusCode int) bool {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
+func WithHeaderTags(headers []string) OptionFn {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
@@ -131,7 +140,7 @@ func WithHeaderTags(headers []string) Option {
 
 // WithCustomTag will attach the value to the span tagged by the key. Standard
 // span tags cannot be replaced.
-func WithCustomTag(key string, value interface{}) Option {
+func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})
