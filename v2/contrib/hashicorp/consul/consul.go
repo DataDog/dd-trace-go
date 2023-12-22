@@ -48,7 +48,7 @@ func WrapClient(c *consul.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/hashicorp/consul: Wrapping Client: %#v", cfg)
 	return &Client{c, cfg, context.Background()}
