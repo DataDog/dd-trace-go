@@ -22,7 +22,17 @@ type config struct {
 	ignoreRequest func(*fasthttp.RequestCtx) bool
 }
 
-type Option func(*config)
+// Option describes options for the FastHTTP integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to WrapHandler.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func newConfig() *config {
 	return &config{
@@ -35,7 +45,7 @@ func newConfig() *config {
 }
 
 // WithServiceName sets the given service name for the router.
-func WithServiceName(name string) Option {
+func WithServiceName(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
@@ -43,14 +53,14 @@ func WithServiceName(name string) Option {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = opts
 	}
 }
 
 // WithStatusCheck allows customization over which status code(s) to consider "error"
-func WithStatusCheck(fn func(statusCode int) bool) Option {
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.isStatusError = fn
 	}
@@ -58,7 +68,7 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 
 // WithResourceNamer specifies a function which will be used to
 // obtain the resource name for a given request
-func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) Option {
+func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = fn
 	}
@@ -66,7 +76,7 @@ func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) Option {
 
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(f func(fctx *fasthttp.RequestCtx) bool) Option {
+func WithIgnoreRequest(f func(fctx *fasthttp.RequestCtx) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
 	}

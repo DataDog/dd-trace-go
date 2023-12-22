@@ -30,7 +30,7 @@ func init() {
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	cfg := newConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/valyala/fasthttp.v1: Configuring Middleware: cfg: %#v", cfg)
 	spanOpts := []tracer.StartSpanOption{
