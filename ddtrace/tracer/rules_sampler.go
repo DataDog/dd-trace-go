@@ -241,14 +241,25 @@ func (rs *traceRulesSampler) enabled() bool {
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
-func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) {
+// setGlobalSampleRate sets the global sample rate to the given value.
+// Returns whether the value was changed or not.
+func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	if rate < 0.0 || rate > 1.0 {
 		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
-		return
+		return false
 	}
 	rs.m.Lock()
 	defer rs.m.Unlock()
+	if math.IsNaN(rs.globalRate) && math.IsNaN(rate) {
+		// NaN is not considered equal to any number, including itself.
+		// It should be compared with math.IsNaN
+		return false
+	}
+	if rs.globalRate == rate {
+		return false
+	}
 	rs.globalRate = rate
+	return true
 }
 
 // apply uses the sampling rules to determine the sampling rate for the

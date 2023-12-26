@@ -9,12 +9,20 @@ on:
       runs-on:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   workflow_call:
     inputs:
       go-version:
         required: true
         type: string
       runs-on:
+        required: true
+        type: string
+      ref:
+        description: 'The branch to run the workflow on'
         required: true
         type: string
 
@@ -27,7 +35,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          repository: 'DataDog/dd-trace-go'
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ inputs.go-version }}

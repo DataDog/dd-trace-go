@@ -21,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -161,7 +162,7 @@ func Start(opts ...StartOption) {
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
 	}
-	appsec.Start(appsec.WithRCConfig(cfg))
+	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
@@ -245,7 +246,7 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 	}
 	globalRate := globalSampleRate()
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig(globalRate, rulesSampler.traces.setGlobalSampleRate)
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	var dataStreamsProcessor *datastreams.Processor
 	if c.dataStreamsMonitoringEnabled {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
@@ -529,7 +530,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(k, v)
 	}
 	// add global tags
-	for k, v := range t.config.globalTags {
+	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
 	if t.config.serviceMappings != nil {

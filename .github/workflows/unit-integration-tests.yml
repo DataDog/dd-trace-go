@@ -6,6 +6,10 @@ on:
       go-version:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
 
 jobs:
   copyright:
@@ -13,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Copyright
         run: |
@@ -24,15 +30,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review
@@ -175,6 +179,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
@@ -193,7 +199,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
@@ -279,6 +285,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Go
         uses: ./.github/actions/setup-go

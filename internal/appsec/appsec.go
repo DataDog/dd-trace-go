@@ -3,19 +3,18 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec
 
 import (
 	"fmt"
 	"sync"
 
+	"github.com/DataDog/appsec-internal-go/limiter"
+	appsecLog "github.com/DataDog/appsec-internal-go/log"
+	waf "github.com/DataDog/go-libddwaf/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	waf "github.com/DataDog/go-libddwaf"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -28,13 +27,13 @@ func Enabled() bool {
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
-func Start(opts ...StartOption) {
+func Start(opts ...config.StartOption) {
 	// AppSec can start either:
 	// 1. Manually thanks to DD_APPSEC_ENABLED
 	// 2. Remotely when DD_APPSEC_ENABLED is undefined
 	// Note: DD_APPSEC_ENABLED=false takes precedence over remote configuration
 	// and enforces to have AppSec disabled.
-	enabled, set, err := isEnabled()
+	enabled, set, err := config.IsEnabled()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
@@ -46,14 +45,22 @@ func Start(opts ...StartOption) {
 		return
 	}
 
-	// Check whether libddwaf - required for Threats Detection - is supported or not
-	if supported, err := waf.SupportsTarget(); !supported {
-		log.Error("appsec: threats detection is not supported: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	// Check whether libddwaf - required for Threats Detection - is ok or not
+	if ok, err := waf.Health(); !ok {
+		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
+		if set {
+			// DD_APPSEC_ENABLED is explicitly set so we log an error
+			log.Error("appsec: threats detection cannot be enabled for the following reasons: %vappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+		} else {
+			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
+			// debug message instead to avoid showing an error to APM-tracing-only users.
+			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+		}
 		return
 	}
 
 	// From this point we know that AppSec is either enabled or can be enabled through remote config
-	cfg, err := newConfig()
+	cfg, err := config.NewConfig()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
@@ -71,7 +78,7 @@ func Start(opts ...StartOption) {
 
 	if !set {
 		// AppSec is not enforced by the env var and can be enabled through remote config
-		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", enabledEnvVar)
+		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", config.EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {
 			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)
@@ -113,13 +120,13 @@ func setActiveAppSec(a *appsec) {
 }
 
 type appsec struct {
-	cfg       *Config
-	limiter   *TokenTicker
+	cfg       *config.Config
+	limiter   *limiter.TokenTicker
 	wafHandle *wafHandle
 	started   bool
 }
 
-func newAppSec(cfg *Config) *appsec {
+func newAppSec(cfg *config.Config) *appsec {
 	return &appsec{
 		cfg: cfg,
 	}
@@ -139,10 +146,10 @@ func (a *appsec) start() error {
 		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
 	}
 
-	a.limiter = NewTokenTicker(int64(a.cfg.traceRateLimit), int64(a.cfg.traceRateLimit))
+	a.limiter = limiter.NewTokenTicker(a.cfg.TraceRateLimit, a.cfg.TraceRateLimit)
 	a.limiter.Start()
 	// Register the WAF operation event listener
-	if err := a.swapWAF(a.cfg.rulesManager.latest); err != nil {
+	if err := a.swapWAF(a.cfg.RulesManager.Latest); err != nil {
 		return err
 	}
 	a.enableRCBlocking()
@@ -171,4 +178,17 @@ func (a *appsec) stop() {
 	// TODO: block until no more requests are using dyngo operations
 
 	a.limiter.Stop()
+}
+
+func init() {
+	appsecLog.SetBackend(appsecLog.Backend{
+		Debug: log.Debug,
+		Info:  log.Info,
+		Warn:  log.Warn,
+		Errorf: func(s string, a ...any) error {
+			err := fmt.Errorf(s, a...)
+			log.Error(err.Error())
+			return err
+		},
+	})
 }

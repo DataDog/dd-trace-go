@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +31,7 @@ var (
 	mu             sync.Mutex
 	activeProfiler *profiler
 	containerID    = internal.ContainerID() // replaced in tests
+	entityID       = internal.EntityID()    // replaced in tests
 )
 
 // Start starts the profiler. If the profiler is already running, it will be
@@ -84,11 +86,6 @@ type profiler struct {
 
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
-}
-
-func (p *profiler) shouldTrace() bool {
-	p.cfg.traceConfig.Refresh()
-	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
 }
 
 // testHooks are functions that are replaced during testing which would normally
@@ -303,10 +300,26 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// finished (because p.pendingProfiles will have been
 		// incremented to count every non-CPU profile before CPU
 		// profiling starts)
+
 		profileTypes := p.enabledProfileTypes()
-		if p.shouldTrace() {
+
+		// Decide whether we should record an execution trace
+		p.cfg.traceConfig.Refresh()
+		// Randomly record a trace with probability (profile period) / (trace period).
+		// Note that if the trace period is equal to or less than the profile period,
+		// we will always record a trace
+		// We do multiplication here instead of division to defensively guard against
+		// division by 0
+		shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
+		// As a special case, we want to trace during the first
+		// profiling cycle since startup activity is generally much
+		// different than regular operation
+		firstCycle := bat.seq == 0
+		shouldTrace := p.cfg.traceConfig.Enabled && (shouldTraceRandomly || firstCycle)
+		if shouldTrace {
 			profileTypes = append(profileTypes, executionTrace)
 		}
+
 		for _, t := range profileTypes {
 			if t != CPUProfile {
 				p.pendingProfiles.Add(1)

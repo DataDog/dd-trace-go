@@ -1,6 +1,12 @@
 name: System Tests
 
 on:
+  workflow_call: # allows to reuse this workflow
+    inputs:
+      branch_ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   push:
     branches:
       - main
@@ -34,12 +40,14 @@ jobs:
           - echo
           - chi
           - gin
+          - uds-echo
         scenario:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
+          - APPSEC_API_SECURITY
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
@@ -98,6 +106,7 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
         with:
+          ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
       - name: Build weblog

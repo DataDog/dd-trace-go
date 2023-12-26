@@ -19,33 +19,56 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	tracer.Span
+	noop.Span  // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	DD         tracer.Span
 	finished   bool
+	attributes map[string]interface{}
+	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
 	statusInfo
 	*oteltracer
 }
 
-func (s *span) TracerProvider() oteltrace.TracerProvider        { return s.oteltracer.provider }
-func (s *span) AddEvent(_ string, _ ...oteltrace.EventOption)   { /*	no-op */ }
-func (s *span) RecordError(_ error, _ ...oteltrace.EventOption) { /*	no-op */ }
+func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
 
-func (s *span) SetName(name string) { s.SetOperationName(name) }
+func (s *span) SetName(name string) {
+	s.attributes[ext.SpanName] = strings.ToLower(name)
+}
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if s.finished {
 		return
 	}
 	s.finished = true
+	for k, v := range s.attributes {
+		//	if we find operation.name,
+		if k == "operation.name" || k == ext.SpanName {
+			//	set it and keep track that it was set to ignore everything else
+			if name, ok := v.(string); ok {
+				s.attributes[ext.SpanName] = strings.ToLower(name)
+			}
+		}
+	}
+
+	// if no operation name was explicitly set,
+	// operation name has to be calculated from the attributes
+	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
+		s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
+	}
+
+	for k, v := range s.attributes {
+		s.DD.SetTag(k, v)
+	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		s.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
 	if t := finishCfg.Timestamp(); !t.IsZero() {
@@ -54,7 +77,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
 	}
-	s.Finish(opts...)
+	s.DD.Finish(opts...)
 }
 
 // EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
@@ -68,7 +91,7 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	ctx := s.Span.Context()
+	ctx := s.DD.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
 	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); ok {
@@ -88,7 +111,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 
 func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	headers := tracer.TextMapCarrier{}
-	if err := tracer.Inject(s.Context(), headers); err != nil {
+	if err := tracer.Inject(s.DD.Context(), headers); err != nil {
 		return
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
@@ -141,27 +164,39 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
+// Some attribute keys are reserved and will be remapped to Datadog reserved tags.
+// The reserved tags list is as follows:
+//   - "operation.name" (remapped to "span.name")
+//   - "analytics.event" (remapped to "_dd1.sr.eausr")
+//   - "service.name"
+//   - "resource.name"
+//   - "span.type"
+//
+// The list of reserved tags might be extended in the future.
+// Any other non-reserved tags will be set as provided.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
-	for _, attr := range kv {
-		s.SetTag(toSpecialAttributes(string(attr.Key), attr.Value))
+	for _, kv := range kv {
+		if k, v := toReservedAttributes(string(kv.Key), kv.Value); k != "" {
+			s.attributes[k] = v
+		}
 	}
 }
 
-// toSpecialAttributes recognizes a set of span attributes that have a special meaning.
+// toReservedAttributes recognizes a set of span attributes that have a special meaning.
 // These tags should supersede other values.
-func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
+func toReservedAttributes(k string, v attribute.Value) (string, interface{}) {
 	switch k {
 	case "operation.name":
-		return ext.SpanName, v.AsString()
-	case "service.name":
-		return ext.ServiceName, v.AsString()
-	case "resource.name":
-		return ext.ResourceName, v.AsString()
-	case "span.type":
-		return ext.SpanType, v.AsString()
+		if ops := strings.ToLower(v.AsString()); ops != "" {
+			return ext.SpanName, strings.ToLower(v.AsString())
+		}
+		// ignoring non-string values
+		return "", nil
 	case "analytics.event":
 		var rate int
-		if v.AsBool() {
+		if b, err := strconv.ParseBool(v.AsString()); err == nil && b {
+			rate = 1
+		} else if v.AsBool() {
 			rate = 1
 		} else {
 			rate = 0
@@ -170,4 +205,112 @@ func toSpecialAttributes(k string, v attribute.Value) (string, interface{}) {
 	default:
 		return k, v.AsInterface()
 	}
+}
+
+func (s *span) createOperationName() string {
+	isClient := s.spanKind == oteltrace.SpanKindClient
+	isServer := s.spanKind == oteltrace.SpanKindServer
+
+	// http
+	if _, ok := s.attributes["http.request.method"]; ok {
+		switch s.spanKind {
+		case oteltrace.SpanKindServer:
+			return "http.server.request"
+		case oteltrace.SpanKindClient:
+			return "http.client.request"
+		}
+	}
+
+	// database
+	if v, ok := s.valueFromAttributes("db.system"); ok && isClient {
+		return v + ".query"
+	}
+
+	// messaging
+
+	system, systemOk := s.valueFromAttributes("messaging.system")
+	op, opOk := s.valueFromAttributes("messaging.operation")
+	if systemOk && opOk {
+		switch s.spanKind {
+		case oteltrace.SpanKindClient, oteltrace.SpanKindServer,
+			oteltrace.SpanKindConsumer, oteltrace.SpanKindProducer:
+			return system + "." + op
+		}
+	}
+
+	// RPC & AWS
+	rpcValue, isRPC := s.valueFromAttributes("rpc.system")
+	isAws := isRPC && (rpcValue == "aws-api")
+	// AWS client
+	if isAws && isClient {
+		if service, ok := s.valueFromAttributes("rpc.service"); ok {
+			return "aws." + service + ".request"
+		}
+		return "aws.client.request"
+	}
+	// RPC client
+	if isRPC && isClient {
+		return rpcValue + ".client.request"
+	}
+	// RPC server
+	if isRPC && isServer {
+		return rpcValue + ".server.request"
+	}
+
+	// FAAS client
+	provider, pOk := s.valueFromAttributes("faas.invoked_provider")
+	invokedName, inOk := s.valueFromAttributes("faas.invoked_name")
+	if pOk && inOk && isClient {
+		return provider + "." + invokedName + ".invoke"
+	}
+
+	//	FAAS server
+	trigger, tOk := s.valueFromAttributes("faas.trigger")
+	if tOk && isServer {
+		return trigger + ".invoke"
+	}
+
+	//	Graphql
+	if _, ok := s.valueFromAttributes("graphql.operation.type"); ok {
+		return "graphql.server.request"
+	}
+
+	// if nothing matches, checking for generic http server/client
+	protocol, pOk := s.valueFromAttributes("network.protocol.name")
+	if isServer {
+		if pOk {
+			return protocol + ".server.request"
+		}
+		return "server.request"
+	} else if isClient {
+		if pOk {
+			return protocol + ".client.request"
+		}
+		return "client.request"
+	}
+
+	if s.spanKind != 0 {
+		return s.spanKind.String()
+	}
+	// no span kind was set/detected, so span kind will be set to Internal explicitly.
+	s.attributes[ext.SpanKind] = oteltrace.SpanKindInternal
+	return oteltrace.SpanKindInternal.String()
+}
+
+func (s *span) valueFromAttributes(key string) (string, bool) {
+	v, ok := s.attributes[key]
+	if !ok {
+		return "", false
+	}
+	attr, ok := v.(attribute.Value)
+	if ok {
+		if s := strings.ToLower(attr.AsString()); s != "" {
+			return s, true
+		}
+		return "", false
+	}
+	if s := v.(string); s != "" {
+		return strings.ToLower(s), true
+	}
+	return "", false
 }

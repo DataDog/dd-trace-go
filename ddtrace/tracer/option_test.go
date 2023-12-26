@@ -254,7 +254,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, len(cfg.integrations), 54)
+		assert.Equal(t, len(cfg.integrations), 55)
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -559,8 +559,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "ddagent.consul.local:58126"}, c.agentURL)
-		assert.NotNil(c.globalTags)
-		assert.Equal("v", c.globalTags["k"])
+		assert.NotNil(c.globalTags.get())
+		assert.Equal("v", c.globalTags.get()["k"])
 		assert.Equal("testEnv", c.env)
 		assert.True(c.debug)
 	})
@@ -572,12 +572,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 
-		assert.Equal("test", c.globalTags["env"])
-		assert.Equal("aVal", c.globalTags["aKey"])
-		assert.Equal("bVal", c.globalTags["bKey"])
-		assert.Equal("", c.globalTags["cKey"])
+		globalTags := c.globalTags.get()
+		assert.Equal("test", globalTags["env"])
+		assert.Equal("aVal", globalTags["aKey"])
+		assert.Equal("bVal", globalTags["bKey"])
+		assert.Equal("", globalTags["cKey"])
 
-		dVal, ok := c.globalTags["dKey"]
+		dVal, ok := globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
@@ -995,8 +996,9 @@ func TestTagSeparators(t *testing.T) {
 			os.Setenv("DD_TAGS", tag.in)
 			defer os.Unsetenv("DD_TAGS")
 			c := newConfig()
+			globalTags := c.globalTags.get()
 			for key, expected := range tag.out {
-				got, ok := c.globalTags[key]
+				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
 				assert.Equal(expected, got)
 			}
