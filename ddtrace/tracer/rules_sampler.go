@@ -93,9 +93,6 @@ func (sr *SamplingRule) match(s *span) bool {
 	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
 		return false
 	}
-	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
-		return false
-	}
 	s.Lock()
 	defer s.Unlock()
 	if sr.Tags != nil && s.Meta != nil {

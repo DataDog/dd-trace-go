@@ -879,6 +879,12 @@ func TestRulesSampler(t *testing.T) {
 			appliedRate      float64
 		}{
 			{
+				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"resource": "/bar", "sample_rate": 1}]`,
+				generalRate:      "0",
+				samplingPriority: 2,
+				appliedRate:      1,
+			},
+			{
 				rules:            `[{"tags": {"tag1": "non-matching"}, "sample_rate": 0}, {"tags": {"tag1": "val1"}, "sample_rate": 1}]`,
 				generalRate:      "0",
 				samplingPriority: 2,
