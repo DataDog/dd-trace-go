@@ -155,7 +155,7 @@ func TestDBMPropagation(t *testing.T) {
 				tracer.WithService("test-service"),
 				tracer.WithEnv("test-env"),
 				tracer.WithServiceVersion("1.0.0"),
-				tracer.WithHTTPRoundTripper(&mockRoundTripper{}),
+				tracer.WithHTTPClient(&http.Client{Transport: &mockRoundTripper{}}),
 			)
 			defer tracer.Stop()
 
