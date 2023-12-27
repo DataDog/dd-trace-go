@@ -52,8 +52,8 @@ func (fn OptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-// WithServiceName sets the given service name for the intercepted client.
-func WithServiceName(name string) OptionFn {
+// WithService sets the given service name for the intercepted client.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name

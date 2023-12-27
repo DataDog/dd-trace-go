@@ -23,7 +23,7 @@ func Example() {
 
 	// create the Datadog filter
 	filter := restfultrace.FilterFunc(
-		restfultrace.WithServiceName("my-service"),
+		restfultrace.WithService("my-service"),
 	)
 
 	// use it
@@ -43,7 +43,7 @@ func Example() {
 func Example_spanFromContext() {
 	ws := new(restful.WebService)
 	ws.Filter(restfultrace.FilterFunc(
-		restfultrace.WithServiceName("my-service"),
+		restfultrace.WithService("my-service"),
 	))
 
 	ws.Route(ws.GET("/image/encode").To(

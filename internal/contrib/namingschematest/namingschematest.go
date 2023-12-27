@@ -21,7 +21,7 @@ import (
 
 // GenSpansFn is used across different functions from this package to generate spans. It should be implemented in the
 // tests that use this package.
-// The provided serviceOverride string should be used to set the specific integration's WithServiceName option (if
+// The provided serviceOverride string should be used to set the specific integration's WithService option (if
 // available) when initializing and configuring the package.
 type GenSpansFn func(t *testing.T, serviceOverride string) []mocktracer.Span
 
@@ -36,7 +36,7 @@ type ServiceNameAssertions struct {
 	// value to TestDDService from this package).
 	WithDDService []string
 	// WithDDServiceAndOverride is used for the test case where the global DD_SERVICE configuration is enabled and the
-	// contrib specific `WithServiceName` option is used (in this case, the test will set DD_SERVICE and serviceOverride
+	// contrib specific `WithService` option is used (in this case, the test will set DD_SERVICE and serviceOverride
 	// to the TestDDService and TestServiceOverride constants from this package, respectively).
 	WithDDServiceAndOverride []string
 }
@@ -45,7 +45,7 @@ const (
 	// TestDDService is a constant used in the test returned by NewServiceNameTest to set the value of DD_SERVICE.
 	TestDDService = "dd-service"
 	// TestServiceOverride is a constant used in the test returned by NewServiceNameTest to set the value of
-	// the integration's WithServiceName option.
+	// the integration's WithService option.
 	TestServiceOverride = "service-override"
 )
 

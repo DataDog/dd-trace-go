@@ -24,7 +24,7 @@ func TestContextMux200(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 
@@ -62,7 +62,7 @@ func TestContextMux404(t *testing.T) {
 	r := httptest.NewRequest("GET", url, nil)
 	w := httptest.NewRecorder()
 	NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	).ServeHTTP(w, r)
 	assert.Equal(404, w.Code)
@@ -88,7 +88,7 @@ func TestContextMux500(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 
@@ -217,7 +217,7 @@ func TestContextMuxResourceNamer(t *testing.T) {
 	defer mt.Stop()
 
 	router := NewWithContext(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 		WithResourceNamer(staticNamer),
 	)

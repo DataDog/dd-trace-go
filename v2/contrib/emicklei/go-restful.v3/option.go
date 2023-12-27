@@ -50,8 +50,8 @@ func (fn OptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-// WithServiceName sets the service name to by used by the filter.
-func WithServiceName(name string) OptionFn {
+// WithService sets the service name to by used by the filter.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}

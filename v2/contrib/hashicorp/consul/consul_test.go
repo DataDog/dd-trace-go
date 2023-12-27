@@ -111,7 +111,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 
 		mt := mocktracer.Start()

@@ -45,7 +45,7 @@ func newTestServer(opts ...Option) *httptest.Server {
 
 func Test(t *testing.T) {
 	makeRequest := func(opts ...Option) {
-		opts = append([]Option{WithServiceName("test-graphql-service")}, opts...)
+		opts = append([]Option{WithService("test-graphql-service")}, opts...)
 		srv := newTestServer(opts...)
 		defer srv.Close()
 		q := `{"query": "query TestQuery() { hello, helloNonTrivial }", "operationName": "TestQuery"}`
@@ -194,7 +194,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

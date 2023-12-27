@@ -26,7 +26,7 @@ type User struct {
 
 func ExampleOpen() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithService("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +43,7 @@ func ExampleOpen() {
 
 func ExampleContext() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithService("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

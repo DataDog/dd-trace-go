@@ -20,7 +20,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	mux := httptrace.NewServeMux(httptrace.WithServiceName("my-service"))
+	mux := httptrace.NewServeMux(httptrace.WithService("my-service"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!\n"))
 	})

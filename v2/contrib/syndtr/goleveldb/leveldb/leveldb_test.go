@@ -139,7 +139,7 @@ func testAction(t *testing.T, name string, f func(mt mocktracer.Tracer, db *DB))
 		defer mt.Stop()
 
 		db, err := Open(storage.NewMemStorage(), &opt.Options{},
-			WithServiceName("my-database"))
+			WithService("my-database"))
 		assert.NoError(t, err)
 		defer db.Close()
 
@@ -220,7 +220,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

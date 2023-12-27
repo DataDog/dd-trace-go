@@ -49,8 +49,8 @@ func defaults(cfg *clientConfig) {
 	}
 }
 
-// WithServiceName sets the given service name for the dialled connection.
-func WithServiceName(name string) ClientOptionFn {
+// WithService sets the given service name for the dialled connection.
+func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 	}

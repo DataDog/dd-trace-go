@@ -152,7 +152,7 @@ func BenchmarkGraphQL(b *testing.B) {
 			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
-				opts := []Option{WithServiceName("test-graphql-service")}
+				opts := []Option{WithService("test-graphql-service")}
 				schema, err := NewSchema(
 					graphql.SchemaConfig{
 						Query: rootQuery,

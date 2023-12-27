@@ -46,8 +46,8 @@ func defaults(cfg *routerConfig) {
 	cfg.headerTags = globalconfig.HeaderTagMap()
 }
 
-// WithServiceName sets the given service name for the returned router.
-func WithServiceName(name string) RouterOptionFn {
+// WithService sets the given service name for the returned router.
+func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
 	}

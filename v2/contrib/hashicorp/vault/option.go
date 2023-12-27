@@ -65,8 +65,8 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithServiceName sets the given service name for the http.Client.
-func WithServiceName(name string) OptionFn {
+// WithService sets the given service name for the http.Client.
+func WithService(name string) OptionFn {
 	return func(c *config) {
 		c.serviceName = name
 	}

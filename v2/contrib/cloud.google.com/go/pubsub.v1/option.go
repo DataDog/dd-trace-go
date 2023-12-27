@@ -40,8 +40,8 @@ func (fn OptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-// WithServiceName sets the service name tag for traces started by WrapReceiveHandler or Publish.
-func WithServiceName(serviceName string) OptionFn {
+// WithService sets the service name tag for traces started by WrapReceiveHandler or Publish.
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}

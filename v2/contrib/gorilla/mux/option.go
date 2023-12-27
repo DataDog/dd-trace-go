@@ -75,8 +75,8 @@ func WithIgnoreRequest(f func(*http.Request) bool) RouterOptionFn {
 	}
 }
 
-// WithServiceName sets the given service name for the router.
-func WithServiceName(name string) RouterOptionFn {
+// WithService sets the given service name for the router.
+func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
 	}

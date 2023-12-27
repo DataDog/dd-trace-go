@@ -37,7 +37,7 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	c, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+	c, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"))
 	assert.Nil(err)
 	c.Do("SET", 1, "truck")
 
@@ -63,7 +63,7 @@ func TestCommandError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	c, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+	c, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"))
 	assert.Nil(err)
 	_, err = c.Do("NOT_A_COMMAND", context.Background())
 	assert.NotNil(err)
@@ -89,7 +89,7 @@ func TestConnectionError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	_, err := Dial("tcp", "127.0.0.1:1000", WithServiceName("redis-service"))
+	_, err := Dial("tcp", "127.0.0.1:1000", WithService("redis-service"))
 
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "dial tcp 127.0.0.1:1000")
@@ -101,7 +101,7 @@ func TestInheritance(t *testing.T) {
 	defer mt.Stop()
 
 	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.span")
-	client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("redis-service"))
+	client, err := Dial("tcp", "127.0.0.1:6379", WithService("redis-service"))
 	assert.Nil(err)
 	client.Do("SET", "water", "bottle", ctx)
 	root.Finish()
@@ -139,7 +139,7 @@ func TestCommandsToSring(t *testing.T) {
 	defer mt.Stop()
 
 	str := stringifyTest{A: 57, B: 8}
-	c, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+	c, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"))
 	assert.Nil(err)
 	c.Do("SADD", "testSet", "a", int(0), int32(1), int64(2), str, context.Background())
 
@@ -169,7 +169,7 @@ func TestPool(t *testing.T) {
 		IdleTimeout: 23,
 		Wait:        true,
 		Dial: func() (redis.Conn, error) {
-			return Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+			return Dial("tcp", "127.0.0.1:6379", WithService("my-service"))
 		},
 	}
 
@@ -188,7 +188,7 @@ func TestTracingDialUrl(t *testing.T) {
 	defer mt.Stop()
 
 	url := "redis://127.0.0.1:6379"
-	client, err := DialURL(url, WithServiceName("redis-service"))
+	client, err := DialURL(url, WithService("redis-service"))
 	assert.Nil(err)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
@@ -202,7 +202,7 @@ func TestTracingDialContext(t *testing.T) {
 	defer mt.Stop()
 
 	ctx := context.Background()
-	client, err := DialContext(ctx, "tcp", "127.0.0.1:6379", WithServiceName("my-service"))
+	client, err := DialContext(ctx, "tcp", "127.0.0.1:6379", WithService("my-service"))
 	assert.Nil(err)
 
 	_, _ = client.Do("SET", "ONE", " TWO", ctx)
@@ -285,7 +285,7 @@ func TestDoWithTimeout(t *testing.T) {
 	defer mt.Stop()
 
 	url := "redis://127.0.0.1:6379"
-	client, err := DialURL(url, WithServiceName("redis-service"), WithTimeoutConnection())
+	client, err := DialURL(url, WithService("redis-service"), WithTimeoutConnection())
 	assert.Nil(err)
 	_, err = redis.DoWithTimeout(client, time.Second, "SET", "ONE", " TWO")
 	assert.NoError(err)
@@ -301,7 +301,7 @@ func TestDo(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		client, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"), WithContextConnection())
 		assert.Nil(err)
 		_, err = client.Do("SET", "ONE", " TWO")
 		assert.NoError(err)
@@ -314,7 +314,7 @@ func TestDo(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithDefaultConnection())
+		client, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"), WithDefaultConnection())
 		assert.Nil(err)
 		_, err = client.Do("SET", "ONE", " TWO")
 		assert.NoError(err)
@@ -331,7 +331,7 @@ func TestDoContext(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		client, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"), WithContextConnection())
 		assert.Nil(err)
 		_, err = redis.DoContext(client, context.Background(), "SET", "ONE", " TWO")
 		assert.NoError(err)
@@ -349,7 +349,7 @@ func TestDoContext(t *testing.T) {
 		span, ctx := tracer.StartSpanFromContext(context.Background(), "test", tracer.WithSpanID(parentSpanID))
 		defer span.Finish()
 
-		client, err := Dial("tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		client, err := Dial("tcp", "127.0.0.1:6379", WithService("my-service"), WithContextConnection())
 		assert.Nil(err)
 		_, err = redis.DoContext(client, ctx, "SET", "ONE", " TWO")
 		assert.NoError(err)
@@ -365,7 +365,7 @@ func TestDoContext(t *testing.T) {
 		defer mt.Stop()
 
 		url := "redis://127.0.0.1:6379"
-		client, err := DialURL(url, WithServiceName("redis-service"), WithContextConnection())
+		client, err := DialURL(url, WithService("redis-service"), WithContextConnection())
 		assert.Nil(err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -383,7 +383,7 @@ func TestDoContext(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithService("my-service"), WithContextConnection())
 		assert.Nil(err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
@@ -400,7 +400,7 @@ func TestDoContext(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithServiceName("my-service"), WithContextConnection())
+		client, err := DialContext(context.Background(), "tcp", "127.0.0.1:6379", WithService("my-service"), WithContextConnection())
 		assert.Nil(err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
@@ -418,7 +418,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []interface{}
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

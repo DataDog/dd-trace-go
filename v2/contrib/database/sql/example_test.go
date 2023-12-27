@@ -38,7 +38,7 @@ func Example() {
 
 func Example_context() {
 	// Register the driver that we will be using (in this case mysql) under a custom service name.
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("my-db"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("my-db"))
 
 	// Open a connection to the DB using the driver we've just registered with tracing.
 	db, err := sqltrace.Open("mysql", "user:password@/dbname")
@@ -64,7 +64,7 @@ func Example_context() {
 
 func Example_sqlite() {
 	// Register the driver that we will be using (in this case Sqlite) under a custom service name.
-	sqltrace.Register("sqlite", &sqlite.SQLiteDriver{}, sqltrace.WithServiceName("sqlite-example"))
+	sqltrace.Register("sqlite", &sqlite.SQLiteDriver{}, sqltrace.WithService("sqlite-example"))
 
 	// Open a connection to the DB using the driver we've just registered with tracing.
 	db, err := sqltrace.Open("sqlite", "./test.db")

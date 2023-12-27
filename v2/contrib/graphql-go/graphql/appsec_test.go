@@ -78,7 +78,7 @@ func TestAppSec(t *testing.T) {
 			},
 		},
 	})
-	opts := []Option{WithServiceName("test-graphql-service")}
+	opts := []Option{WithService("test-graphql-service")}
 	schema, err := NewSchema(graphql.SchemaConfig{Query: rootQuery}, opts...)
 	require.NoError(t, err)
 	restore := enableAppSec(t)

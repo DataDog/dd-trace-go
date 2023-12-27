@@ -121,7 +121,7 @@ func TestDomain(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	mux := NewRouter(WithServiceName("my-service"))
+	mux := NewRouter(WithService("my-service"))
 	mux.Handle("/200", okHandler()).Host("localhost")
 	r := httptest.NewRequest("GET", "http://localhost/200", nil)
 	w := httptest.NewRecorder()
@@ -384,7 +384,7 @@ func TestResourceNamer(t *testing.T) {
 }
 
 func router() http.Handler {
-	mux := NewRouter(WithServiceName("my-service"))
+	mux := NewRouter(WithService("my-service"))
 	mux.Handle("/200", okHandler())
 	mux.Handle("/500", errorHandler(http.StatusInternalServerError))
 	mux.Handle("/405", okHandler()).Methods("GET")
@@ -540,7 +540,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []RouterOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

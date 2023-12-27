@@ -173,9 +173,9 @@ func getSpanName(driverName string) string {
 	).GetName()
 }
 
-// WithServiceName sets the given service name when registering a driver,
+// WithService sets the given service name when registering a driver,
 // or opening a database connection.
-func WithServiceName(name string) OptionFn {
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}

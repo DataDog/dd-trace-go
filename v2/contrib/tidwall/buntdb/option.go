@@ -56,8 +56,8 @@ func WithContext(ctx context.Context) OptionFn {
 	}
 }
 
-// WithServiceName sets the given service name for the transaction.
-func WithServiceName(serviceName string) OptionFn {
+// WithService sets the given service name for the transaction.
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}

@@ -62,7 +62,7 @@ func TestUnary(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+			rig, err := newRig(true, WithService("grpc"), WithRequestTags())
 			require.NoError(t, err, "error setting up rig")
 			defer rig.Close()
 			client := rig.client
@@ -224,7 +224,7 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithServiceName("grpc"))
+		rig, err := newRig(true, WithService("grpc"))
 		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
@@ -249,7 +249,7 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithServiceName("grpc"), WithStreamMessages(false))
+		rig, err := newRig(true, WithService("grpc"), WithStreamMessages(false))
 		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
@@ -274,7 +274,7 @@ func TestStreaming(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithServiceName("grpc"), WithStreamCalls(false))
+		rig, err := newRig(true, WithService("grpc"), WithStreamCalls(false))
 		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
@@ -316,7 +316,7 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithServiceName("grpc"))
+		rig, err := newRig(true, WithService("grpc"))
 		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 
@@ -351,7 +351,7 @@ func TestSpanTree(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags(), WithMetadataTags())
+		rig, err := newRig(true, WithService("grpc"), WithRequestTags(), WithMetadataTags())
 		require.NoError(t, err, "error setting up rig")
 		defer rig.Close()
 		client := rig.client
@@ -436,7 +436,7 @@ func TestPass(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	rig, err := newRig(false, WithServiceName("grpc"))
+	rig, err := newRig(false, WithService("grpc"))
 	require.NoError(t, err, "error setting up rig")
 	defer rig.Close()
 	client := rig.client
@@ -1055,7 +1055,7 @@ func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {
 	return func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		// exclude the grpc.message spans as they are not affected by naming schema
 		opts = append(opts, WithStreamMessages(false))
