@@ -305,7 +305,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.1")
 		t.Setenv("DD_TRACE_HEADER_TAGS", "X-Test-Header:my-tag-from-env")
 		t.Setenv("DD_TAGS", "ddtag:from-env")
-		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		assert.Nil(t, err)
 		defer stop()
 
 		// Apply RC. Assert configuration is updated to the RC values.
