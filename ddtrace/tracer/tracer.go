@@ -655,12 +655,14 @@ func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
+// updateSampling runs trace sampling rules on the context, since properties like resource / tags
+// could change and impact the result of sampling. This must be done once before context is propagated.
 func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	sctx, ok := ctx.(*spanContext)
 	if sctx == nil || !ok {
 		return
 	}
-	// without this some test that mock spans fail
+	// without this check some mock spans tests fail
 	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
 		return
 	}
