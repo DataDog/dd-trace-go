@@ -193,7 +193,7 @@ func WithRequestTags() OptionFn {
 }
 
 // WithErrorDetailTags specifies whether gRPC responses details contain should be added to spans as tags.
-func WithErrorDetailTags() Option {
+func WithErrorDetailTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withErrorDetailTags = true
 	}
