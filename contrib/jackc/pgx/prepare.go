@@ -12,17 +12,15 @@ import (
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// TraceQueryStart marks the start of a query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+// TracePrepareStart marks the start of a pgx prepare operation, implementing pgx.PrepareTracer
+func (t *tracer) TracePrepareStart(ctx context.Context, _ *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.serviceName),
 		ddtracer.SpanType(ext.SpanTypeSQL),
 		ddtracer.StartTime(time.Now()),
-		ddtracer.Tag("sql.query_type", "Query"),
+		ddtracer.Tag("sql.query_type", "Prepare"),
+		ddtracer.Tag("pgx.prepared_statement_name", data.Name),
 		ddtracer.Tag(ext.ResourceName, data.SQL),
-	}
-	if t.traceArgs {
-		opts = append(opts, ddtracer.Tag("sql.args", data.Args))
 	}
 	for key, tag := range t.tags {
 		opts = append(opts, ddtracer.Tag(key, tag))
@@ -30,21 +28,19 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 	if !math.IsNaN(t.analyticsRate) {
 		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.analyticsRate))
 	}
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.query", opts...)
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
 
 	return ctx
 }
 
-// TraceQueryEnd traces the end of the query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+// TracePrepareEnd marks the end of a pgx prepare operation, implementing pgx.PrepareTracer
+func (t *tracer) TracePrepareEnd(ctx context.Context, _ *pgx.Conn, data pgx.TracePrepareEndData) {
 	span, exists := ddtracer.SpanFromContext(ctx)
 	if !exists {
 		return
 	}
 
-	if t.traceStatus {
-		span.SetTag("pgx.status", data.CommandTag.String())
-	}
+	span.SetTag("pgx.already_prepared", data.AlreadyPrepared)
 
 	if data.Err != nil {
 		span.SetTag(ext.Error, data.Err)

@@ -12,17 +12,16 @@ import (
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// TraceQueryStart marks the start of a query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+// TraceCopyFromStart marks the start of a CopyFrom query, implementing pgx.CopyFromTracer
+func (t *tracer) TraceCopyFromStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceCopyFromStartData) context.Context {
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.serviceName),
 		ddtracer.SpanType(ext.SpanTypeSQL),
 		ddtracer.StartTime(time.Now()),
 		ddtracer.Tag("sql.query_type", "Query"),
-		ddtracer.Tag(ext.ResourceName, data.SQL),
-	}
-	if t.traceArgs {
-		opts = append(opts, ddtracer.Tag("sql.args", data.Args))
+		ddtracer.Tag(ext.ResourceName, "pgx.copyfrom"),
+		ddtracer.Tag("pgx.table_name", data.TableName),
+		ddtracer.Tag("pgx.columns", data.ColumnNames),
 	}
 	for key, tag := range t.tags {
 		opts = append(opts, ddtracer.Tag(key, tag))
@@ -30,13 +29,14 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 	if !math.IsNaN(t.analyticsRate) {
 		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.analyticsRate))
 	}
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.query", opts...)
+
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.copyfrom", opts...)
 
 	return ctx
 }
 
-// TraceQueryEnd traces the end of the query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+// TraceCopyFromEnd marks the end of a CopyFrom query, implementing pgx.CopyFromTracer
+func (t *tracer) TraceCopyFromEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceCopyFromEndData) {
 	span, exists := ddtracer.SpanFromContext(ctx)
 	if !exists {
 		return

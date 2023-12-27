@@ -12,17 +12,13 @@ import (
 	ddtracer "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// TraceQueryStart marks the start of a query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+// TraceConnectStart marks the start of a pgx connect operation, implementing pgx.ConnectTracer
+func (t *tracer) TraceConnectStart(ctx context.Context, _ pgx.TraceConnectStartData) context.Context {
 	opts := []ddtrace.StartSpanOption{
 		ddtracer.ServiceName(t.serviceName),
 		ddtracer.SpanType(ext.SpanTypeSQL),
 		ddtracer.StartTime(time.Now()),
-		ddtracer.Tag("sql.query_type", "Query"),
-		ddtracer.Tag(ext.ResourceName, data.SQL),
-	}
-	if t.traceArgs {
-		opts = append(opts, ddtracer.Tag("sql.args", data.Args))
+		ddtracer.Tag("sql.query_type", "Connect"),
 	}
 	for key, tag := range t.tags {
 		opts = append(opts, ddtracer.Tag(key, tag))
@@ -30,20 +26,16 @@ func (t *tracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.Trac
 	if !math.IsNaN(t.analyticsRate) {
 		opts = append(opts, ddtracer.Tag(ext.EventSampleRate, t.analyticsRate))
 	}
-	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.query", opts...)
+	_, ctx = ddtracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
 
 	return ctx
 }
 
-// TraceQueryEnd traces the end of the query, implementing pgx.QueryTracer
-func (t *tracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+// TraceConnectEnd marks the end of a pgx connect operation, implementing pgx.ConnectTracer
+func (t *tracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {
 	span, exists := ddtracer.SpanFromContext(ctx)
 	if !exists {
 		return
-	}
-
-	if t.traceStatus {
-		span.SetTag("pgx.status", data.CommandTag.String())
 	}
 
 	if data.Err != nil {
