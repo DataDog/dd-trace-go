@@ -156,6 +156,9 @@ func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
+	if c == nil {
+		return ""
+	}
 	return c.traceID.HexEncoded()
 }
 

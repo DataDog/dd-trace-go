@@ -651,7 +651,22 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
+}
+
+// updateSampling runs trace sampling rules on the context, since properties like resource / tags
+// could change and impact the result of sampling. This must be done once before context is propagated.
+func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
+	sctx, ok := ctx.(*spanContext)
+	if sctx == nil || !ok {
+		return
+	}
+	// without this check some mock spans tests fail
+	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
+		return
+	}
+	t.rulesSampling.SampleTrace(sctx.trace.root)
 }
 
 // Extract uses the configured or default TextMap Propagator.
@@ -677,7 +692,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
