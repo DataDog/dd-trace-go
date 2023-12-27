@@ -35,7 +35,7 @@ func Test(t *testing.T) {
 			},
 		},
 	})
-	opts := []Option{WithServiceName("test-graphql-service")}
+	opts := []Option{WithService("test-graphql-service")}
 	schema, err := NewSchema(
 		graphql.SchemaConfig{
 			Query: rootQuery,

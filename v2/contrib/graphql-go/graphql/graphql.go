@@ -52,7 +52,7 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 	extension := datadogExtension{}
 	defaults(&extension.config)
 	for _, opt := range options {
-		opt(&extension.config)
+		opt.apply(&extension.config)
 	}
 	config.Extensions = append(config.Extensions, extension)
 	return graphql.NewSchema(config)

@@ -178,7 +178,7 @@ func mockServer(hooks *twirp.ServerHooks, assert *assert.Assertions, twerr twirp
 func TestServerHooks(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	hooks := NewServerHooks(WithServiceName("twirp-test"), WithAnalytics(true))
+	hooks := NewServerHooks(WithService("twirp-test"), WithAnalytics(true))
 
 	t.Run("success", func(t *testing.T) {
 		defer mt.Reset()
@@ -359,7 +359,7 @@ func TestServiceNameSettings(t *testing.T) {
 		defer globalconfig.SetServiceName(svc)
 		globalconfig.SetServiceName("service.global")
 
-		assertServiceName(t, mt, "service.local", WithServiceName("service.local"))
+		assertServiceName(t, mt, "service.local", WithService("service.local"))
 	})
 }
 
@@ -399,7 +399,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

@@ -45,7 +45,7 @@ func Example_withServiceName() {
 	router := chi.NewRouter()
 
 	// Use the tracer middleware with your desired service name.
-	router.Use(chitrace.Middleware(chitrace.WithServiceName("chi-server")))
+	router.Use(chitrace.Middleware(chitrace.WithService("chi-server")))
 
 	// Set up some endpoints.
 	router.Get("/", handler)

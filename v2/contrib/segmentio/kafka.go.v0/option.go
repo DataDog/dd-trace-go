@@ -22,8 +22,17 @@ type config struct {
 	analyticsRate       float64
 }
 
-// An Option customizes the config.
-type Option func(cfg *config)
+// Option describes options for the Kafka integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewReader, NewWriter, WrapReader and WrapWriter.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func newConfig(opts ...Option) *config {
 	cfg := &config{
@@ -43,13 +52,13 @@ func newConfig(opts ...Option) *config {
 	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
 
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	return cfg
 }
 
-// WithServiceName sets the config service name to serviceName.
-func WithServiceName(serviceName string) Option {
+// WithService sets the config service name to serviceName.
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = serviceName
 		cfg.producerServiceName = serviceName
@@ -57,7 +66,7 @@ func WithServiceName(serviceName string) Option {
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -69,7 +78,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate

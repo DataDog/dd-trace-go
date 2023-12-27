@@ -36,7 +36,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
 	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))

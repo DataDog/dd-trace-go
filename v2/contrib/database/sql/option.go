@@ -107,8 +107,17 @@ func dbmFullModeUnsupported(driverName string, driver driver.Driver, dsn string)
 	return "", false
 }
 
-// Option represents an option that can be passed to Register, Open or OpenDB.
-type Option func(*config)
+// Option describes options for the database/sql integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Register, Open or OpenDB.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 type registerConfig = config
 
@@ -164,16 +173,16 @@ func getSpanName(driverName string) string {
 	).GetName()
 }
 
-// WithServiceName sets the given service name when registering a driver,
+// WithService sets the given service name when registering a driver,
 // or opening a database connection.
-func WithServiceName(name string) Option {
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -185,7 +194,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -198,7 +207,7 @@ func WithAnalyticsRate(rate float64) Option {
 // WithDSN allows the data source name (DSN) to be provided when
 // using OpenDB and a driver.Connector.
 // The value is used to automatically set tags on spans.
-func WithDSN(name string) Option {
+func WithDSN(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.dsn = name
 	}
@@ -206,7 +215,7 @@ func WithDSN(name string) Option {
 
 // WithIgnoreQueryTypes specifies the query types for which spans should not be
 // created.
-func WithIgnoreQueryTypes(qtypes ...QueryType) Option {
+func WithIgnoreQueryTypes(qtypes ...QueryType) OptionFn {
 	return func(cfg *config) {
 		if cfg.ignoreQueryTypes == nil {
 			cfg.ignoreQueryTypes = make(map[QueryType]struct{})
@@ -219,7 +228,7 @@ func WithIgnoreQueryTypes(qtypes ...QueryType) Option {
 
 // WithChildSpansOnly causes spans to be created only when
 // there is an existing parent span in the Context.
-func WithChildSpansOnly() Option {
+func WithChildSpansOnly() OptionFn {
 	return func(cfg *config) {
 		cfg.childSpansOnly = true
 	}
@@ -228,14 +237,14 @@ func WithChildSpansOnly() Option {
 // WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever a database/sql operation
 // finishes with an error
-func WithErrorCheck(fn func(err error) bool) Option {
+func WithErrorCheck(fn func(err error) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.errCheck = fn
 	}
 }
 
 // WithCustomTag will attach the value to the span tagged by the key
-func WithCustomTag(key string, value interface{}) Option {
+func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]interface{})
@@ -251,7 +260,7 @@ func WithCustomTag(key string, value interface{}) Option {
 // Note that enabling sql comment propagation results in potentially confidential data (service names)
 // being stored in the databases which can then be accessed by other 3rd parties that have been granted
 // access to the database.
-func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
+func WithDBMPropagation(mode tracer.DBMPropagationMode) OptionFn {
 	return func(cfg *config) {
 		cfg.dbmPropagationMode = mode
 	}

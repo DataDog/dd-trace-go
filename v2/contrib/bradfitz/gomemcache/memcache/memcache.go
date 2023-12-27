@@ -37,7 +37,7 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
 	return &Client{

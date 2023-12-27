@@ -47,7 +47,7 @@ func TestClientV8(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch8.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV8URL,
 		},
@@ -91,7 +91,7 @@ func TestClientErrorCutoffV8(t *testing.T) {
 	bodyCutoff = 10
 
 	cfg := elasticsearch8.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV8URL,
 		},
@@ -115,7 +115,7 @@ func TestClientV8Failure(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch8.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},
@@ -260,7 +260,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

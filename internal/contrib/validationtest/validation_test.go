@@ -40,8 +40,8 @@ type Integration interface {
 	// NumSpans returns the number of spans that should have been generated during the test.
 	NumSpans() int
 
-	// WithServiceName configures the integration to use the given service name.
-	WithServiceName(name string)
+	// WithService configures the integration to use the given service name.
+	WithService(name string)
 }
 
 // tracerEnv gets the current tracer configuration variables needed for Test Agent testing and places
@@ -158,7 +158,7 @@ func TestIntegrations(t *testing.T) {
 				if tc.integrationServiceName != "" {
 					componentName := ig.Name()
 					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
-					ig.WithServiceName(tc.integrationServiceName)
+					ig.WithService(tc.integrationServiceName)
 				}
 
 				ig.Init(t)

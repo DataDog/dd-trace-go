@@ -35,7 +35,7 @@ func init() {
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
 	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	spanOpts := []ddtrace.StartSpanOption{
 		tracer.ResourceName(t.String()),
@@ -94,7 +94,7 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
 	cfg := defaultConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/cloud.google.com/go/pubsub.v1: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *pubsub.Message) {

@@ -21,8 +21,17 @@ type config struct {
 
 const defaultServiceName = "vault"
 
-// Option can be passed to NewHTTPClient and WrapHTTPClient to configure the integration.
-type Option func(*config)
+// Option describes options for the Vault integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewHTTPClient and WrapHTTPClient.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(
@@ -42,7 +51,7 @@ func defaults(cfg *config) {
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	if on {
 		return WithAnalyticsRate(1.0)
 	}
@@ -50,14 +59,14 @@ func WithAnalytics(on bool) Option {
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(c *config) {
 		c.analyticsRate = rate
 	}
 }
 
-// WithServiceName sets the given service name for the http.Client.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the http.Client.
+func WithService(name string) OptionFn {
 	return func(c *config) {
 		c.serviceName = name
 	}

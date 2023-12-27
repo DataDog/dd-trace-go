@@ -23,8 +23,17 @@ type clientConfig struct {
 	resourceNamer func(url, method string) string
 }
 
-// ClientOption represents an option that can be used when creating a client.
-type ClientOption func(*clientConfig)
+// ClientOption describes options for the Elastic integration.
+type ClientOption interface {
+	apply(config *clientConfig)
+}
+
+// ClientOptionFn represents options applicable to NewHTTPClient.
+type ClientOptionFn func(config *clientConfig)
+
+func (fn ClientOptionFn) apply(cfg *clientConfig) {
+	fn(cfg)
+}
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(
@@ -42,22 +51,22 @@ func defaults(cfg *clientConfig) {
 	}
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) ClientOption {
+// WithService sets the given service name for the client.
+func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.
-func WithTransport(t *http.Transport) ClientOption {
+func WithTransport(t *http.Transport) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.transport = t
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOption {
+func WithAnalytics(on bool) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -69,7 +78,7 @@ func WithAnalytics(on bool) ClientOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOption {
+func WithAnalyticsRate(rate float64) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -83,7 +92,7 @@ func WithAnalyticsRate(rate float64) ClientOption {
 // ElasticSearch request, using the request's URL and method. Note that the default quantizer obfuscates
 // IDs and indexes and by replacing it, sensitive data could possibly be exposed, unless the new quantizer
 // specifically takes care of that.
-func WithResourceNamer(namer func(url, method string) string) ClientOption {
+func WithResourceNamer(namer func(url, method string) string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.resourceNamer = namer
 	}

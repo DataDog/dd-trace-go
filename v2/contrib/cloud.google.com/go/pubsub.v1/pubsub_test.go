@@ -108,7 +108,7 @@ func TestPropagationWithServiceName(t *testing.T) {
 	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
 		msg.Ack()
 		cancel()
-	}, WithServiceName("example.service")))
+	}, WithService("example.service")))
 	assert.NoError(err)
 
 	spans := mt.FinishedSpans()
@@ -242,7 +242,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		ctx, cancel, mt, topic, sub := setup(t)
 

@@ -19,8 +19,17 @@ type config struct {
 	analyticsRate float64
 }
 
-// An Option configures the gqlgen integration.
-type Option func(t *config)
+// An Option describes options for the gqlgen integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents an option that can be passed to gqlgen tracer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(t *config) {
 	t.serviceName = namingschema.NewDefaultServiceName(
@@ -31,7 +40,7 @@ func defaults(t *config) {
 }
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	if on {
 		return WithAnalyticsRate(1.0)
 	}
@@ -39,14 +48,14 @@ func WithAnalytics(on bool) Option {
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(t *config) {
 		t.analyticsRate = rate
 	}
 }
 
-// WithServiceName sets the given service name for the gqlgen server.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the gqlgen server.
+func WithService(name string) OptionFn {
 	return func(t *config) {
 		t.serviceName = name
 	}

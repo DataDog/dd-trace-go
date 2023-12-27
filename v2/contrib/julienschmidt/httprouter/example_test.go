@@ -34,7 +34,7 @@ func Example() {
 }
 
 func Example_withServiceName() {
-	router := httptrace.New(httptrace.WithServiceName("http.router"))
+	router := httptrace.New(httptrace.WithService("http.router"))
 	router.GET("/", Index)
 	router.GET("/hello/:name", Hello)
 
@@ -43,7 +43,7 @@ func Example_withServiceName() {
 
 func Example_withSpanOpts() {
 	router := httptrace.New(
-		httptrace.WithServiceName("http.router"),
+		httptrace.WithService("http.router"),
 		httptrace.WithSpanOptions(
 			tracer.Tag(ext.SamplingPriority, ext.PriorityUserKeep),
 		),

@@ -27,8 +27,17 @@ const (
 	connectionTypeDefault
 )
 
-// DialOption represents an option that can be passed to Dial.
-type DialOption func(*dialConfig)
+// DialOption describes options for the Redis integration.
+type DialOption interface {
+	apply(*dialConfig)
+}
+
+// DialOptionFn represents options applicable to Dial, DialContext and DialURL.
+type DialOptionFn func(*dialConfig)
+
+func (fn DialOptionFn) apply(cfg *dialConfig) {
+	fn(cfg)
+}
 
 func defaults(cfg *dialConfig) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(
@@ -47,15 +56,15 @@ func defaults(cfg *dialConfig) {
 	cfg.connectionType = connectionTypeWithTimeout
 }
 
-// WithServiceName sets the given service name for the dialled connection.
-func WithServiceName(name string) DialOption {
+// WithService sets the given service name for the dialled connection.
+func WithService(name string) DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) DialOption {
+func WithAnalytics(on bool) DialOptionFn {
 	return func(cfg *dialConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -67,7 +76,7 @@ func WithAnalytics(on bool) DialOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) DialOption {
+func WithAnalyticsRate(rate float64) DialOptionFn {
 	return func(cfg *dialConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -78,21 +87,21 @@ func WithAnalyticsRate(rate float64) DialOption {
 }
 
 // WithTimeoutConnection wraps the connection with redis.ConnWithTimeout.
-func WithTimeoutConnection() DialOption {
+func WithTimeoutConnection() DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.connectionType = connectionTypeWithTimeout
 	}
 }
 
 // WithContextConnection wraps the connection with redis.ConnWithContext.
-func WithContextConnection() DialOption {
+func WithContextConnection() DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.connectionType = connectionTypeWithContext
 	}
 }
 
 // WithDefaultConnection overrides the default connectionType to not be connectionTypeWithTimeout.
-func WithDefaultConnection() DialOption {
+func WithDefaultConnection() DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.connectionType = connectionTypeDefault
 	}

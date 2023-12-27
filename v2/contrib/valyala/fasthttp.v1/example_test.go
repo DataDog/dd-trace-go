@@ -33,5 +33,5 @@ func Example_withServiceName() {
 	defer tracer.Stop()
 
 	// Start fasthttp server
-	fasthttp.ListenAndServe(":8081", fasthttptrace.WrapHandler(fastHTTPHandler, fasthttptrace.WithServiceName("fasthttp-server")))
+	fasthttp.ListenAndServe(":8081", fasthttptrace.WrapHandler(fastHTTPHandler, fasthttptrace.WithService("fasthttp-server")))
 }

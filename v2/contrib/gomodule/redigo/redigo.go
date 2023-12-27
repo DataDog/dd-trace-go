@@ -70,7 +70,7 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 		case redis.DialOption:
 			dialOpts = append(dialOpts, o)
 		case DialOption:
-			o(cfg)
+			o.apply(cfg)
 		}
 	}
 	return dialOpts, cfg

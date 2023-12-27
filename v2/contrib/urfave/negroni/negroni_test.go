@@ -178,7 +178,7 @@ func TestTrace200(t *testing.T) {
 		})
 
 		router := negroni.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.UseHandler(mux)
 		assertDoRequest(assert, mt, router, "")
 	})
@@ -197,7 +197,7 @@ func TestTrace200(t *testing.T) {
 		})
 
 		router := negroni.New()
-		router.Use(Middleware(WithServiceName("foobar")))
+		router.Use(Middleware(WithService("foobar")))
 		router.UseHandler(mux)
 		assertDoRequest(assert, mt, router, "")
 	})
@@ -215,7 +215,7 @@ func TestTrace200(t *testing.T) {
 		})
 
 		router := negroni.New()
-		router.Use(Middleware(WithServiceName("foobar"), WithResourceNamer(func(r *http.Request) string {
+		router.Use(Middleware(WithService("foobar"), WithResourceNamer(func(r *http.Request) string {
 			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 		})))
 		router.UseHandler(mux)
@@ -456,7 +456,7 @@ func TestServiceName(t *testing.T) {
 		defer mt.Stop()
 
 		router := negroni.New()
-		router.Use(Middleware(WithServiceName("my-service")))
+		router.Use(Middleware(WithService("my-service")))
 		assertServiceName(t, mt, router, "my-service")
 	})
 }
@@ -465,7 +465,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

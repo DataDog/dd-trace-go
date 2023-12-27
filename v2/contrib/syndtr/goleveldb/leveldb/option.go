@@ -37,30 +37,39 @@ func newConfig(opts ...Option) *config {
 		cfg.analyticsRate = 1.0
 	}
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	return cfg
 }
 
-// Option represents an option that can be used customize the db tracing config.
-type Option func(*config)
+// Option describes options for the LevelDB integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Open, OpenFile, WrapDB, WrapIterator, WrapSnapshot and WrapTransaction.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithContext sets the tracing context for the db.
-func WithContext(ctx context.Context) Option {
+func WithContext(ctx context.Context) OptionFn {
 	return func(cfg *config) {
 		cfg.ctx = ctx
 	}
 }
 
-// WithServiceName sets the given service name for the db.
-func WithServiceName(serviceName string) Option {
+// WithService sets the given service name for the db.
+func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -72,12 +81,18 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+func withConfig(cfg *config) OptionFn {
+	return func(c *config) {
+		*c = *cfg
 	}
 }

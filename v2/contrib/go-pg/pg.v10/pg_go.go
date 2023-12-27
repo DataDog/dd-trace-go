@@ -30,7 +30,7 @@ func Wrap(db *pg.DB, opts ...Option) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
 	db.AddQueryHook(&queryHook{cfg: cfg})

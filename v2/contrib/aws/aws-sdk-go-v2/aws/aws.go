@@ -50,7 +50,7 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
 
 	tm := traceMiddleware{cfg: cfg}

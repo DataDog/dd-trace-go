@@ -31,7 +31,7 @@
 //
 //		t := gqlgentrace.NewTracer(
 //			gqlgentrace.WithAnalytics(true),
-//			gqlgentrace.WithServiceName("todo.server"),
+//			gqlgentrace.WithService("todo.server"),
 //		)
 //		h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
 //		h.Use(t)
@@ -87,7 +87,7 @@ func NewTracer(opts ...Option) graphql.HandlerExtension {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &gqlTracer{cfg: cfg}
 }

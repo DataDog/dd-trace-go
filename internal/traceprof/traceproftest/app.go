@@ -118,8 +118,8 @@ func (a *App) start(t testing.TB) {
 	case GRPC:
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
-		si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
-		ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+		si := grpctrace.StreamServerInterceptor(grpctrace.WithService("my-grpc-client"))
+		ui := grpctrace.UnaryServerInterceptor(grpctrace.WithService("my-grpc-client"))
 		a.grpcServer = grpc.NewServer(grpc.StreamInterceptor(si), grpc.UnaryInterceptor(ui))
 		pb.RegisterTestAppServer(a.grpcServer, a)
 		go a.grpcServer.Serve(l)

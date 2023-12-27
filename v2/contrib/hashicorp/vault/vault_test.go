@@ -359,7 +359,7 @@ func TestOption(t *testing.T) {
 			},
 		},
 		"CustomServiceName": {
-			opts: []Option{WithServiceName("someServiceName")},
+			opts: []Option{WithService("someServiceName")},
 			test: func(assert *assert.Assertions, span mocktracer.Span) {
 				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
 			},
@@ -435,7 +435,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 
 		mt := mocktracer.Start()

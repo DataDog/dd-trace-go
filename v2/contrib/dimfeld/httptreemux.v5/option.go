@@ -22,23 +22,32 @@ type routerConfig struct {
 	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 }
 
-// RouterOption represents an option that can be passed to New.
-type RouterOption func(*routerConfig)
+// RouterOption describes options for the router.
+type RouterOption interface {
+	apply(*routerConfig)
+}
+
+// RouterOptionFn represents options applicable to New and NewWithContext.
+type RouterOptionFn func(*routerConfig)
+
+func (fn RouterOptionFn) apply(cfg *routerConfig) {
+	fn(cfg)
+}
 
 func defaults(cfg *routerConfig) {
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.resourceNamer = defaultResourceNamer
 }
 
-// WithServiceName sets the given service name for the returned router.
-func WithServiceName(name string) RouterOption {
+// WithService sets the given service name for the returned router.
+func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
+func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
 	}
@@ -46,7 +55,7 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 
 // WithResourceNamer specifies a function which will be used to obtain the
 // resource name for a given request.
-func WithResourceNamer(namer func(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string) RouterOption {
+func WithResourceNamer(namer func(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.resourceNamer = namer
 	}

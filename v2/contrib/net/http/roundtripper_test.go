@@ -197,7 +197,7 @@ func TestRoundTripperNetworkError(t *testing.T) {
 }
 
 func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
-	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...RoundTripperOption) mocktracer.Span {
+	failedRequest := func(t *testing.T, mt mocktracer.Tracer, forwardErr bool, opts ...Option) mocktracer.Span {
 		done := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
@@ -208,7 +208,7 @@ func TestRoundTripperNetworkErrorWithErrorCheck(t *testing.T) {
 		defer close(done)
 
 		rt := WrapRoundTripper(http.DefaultTransport,
-			RTWithErrorCheck(func(err error) bool {
+			WithErrorCheck(func(err error) bool {
 				return forwardErr
 			}))
 
@@ -342,14 +342,14 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, 1.0, RTWithAnalytics(true))
+		assertRate(t, mt, 1.0, WithAnalytics(true))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		assertRate(t, mt, nil, RTWithAnalytics(false))
+		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -360,7 +360,7 @@ func TestRoundTripperAnalyticsSettings(t *testing.T) {
 		defer globalconfig.SetAnalyticsRate(rate)
 		globalconfig.SetAnalyticsRate(0.4)
 
-		assertRate(t, mt, 0.23, RTWithAnalyticsRate(0.23))
+		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
 
@@ -399,7 +399,7 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 	}))
 	defer s.Close()
 
-	rt := WrapRoundTripper(http.DefaultTransport, RTWithIgnoreRequest(
+	rt := WrapRoundTripper(http.DefaultTransport, WithIgnoreRequest(
 		func(req *http.Request) bool {
 			return req.URL.Path == "/ignore"
 		},
@@ -458,7 +458,7 @@ func TestServiceName(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		serviceName := "testServer"
-		rt := WrapRoundTripper(http.DefaultTransport, RTWithServiceName(serviceName))
+		rt := WrapRoundTripper(http.DefaultTransport, WithService(serviceName))
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -475,7 +475,7 @@ func TestServiceName(t *testing.T) {
 		defer mt.Stop()
 		serviceName := "testServer"
 		rt := WrapRoundTripper(http.DefaultTransport,
-			RTWithServiceName("wrongServiceName"),
+			WithService("wrongServiceName"),
 			WithBefore(func(_ *http.Request, span ddtrace.Span) {
 				span.SetTag(ext.ServiceName, serviceName)
 			}),
@@ -519,7 +519,7 @@ func TestResourceNamer(t *testing.T) {
 		customNamer := func(req *http.Request) string {
 			return fmt.Sprintf("%s %s", req.Method, req.URL.Path)
 		}
-		rt := WrapRoundTripper(http.DefaultTransport, RTWithResourceNamer(customNamer))
+		rt := WrapRoundTripper(http.DefaultTransport, WithResourceNamer(customNamer))
 		client := &http.Client{
 			Transport: rt,
 		}
@@ -540,7 +540,7 @@ func TestSpanOptions(t *testing.T) {
 	tagValue := "bar"
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	rt := WrapRoundTripper(http.DefaultTransport, RTWithSpanOptions(tracer.Tag(tagKey, tagValue)))
+	rt := WrapRoundTripper(http.DefaultTransport, WithSpanOptions(tracer.Tag(tagKey, tagValue)))
 	client := &http.Client{Transport: rt}
 
 	resp, err := client.Get(s.URL)
@@ -572,7 +572,7 @@ func TestRoundTripperPropagation(t *testing.T) {
 	defer s.Close()
 
 	rt := WrapRoundTripper(http.DefaultTransport,
-		RTWithPropagation(false))
+		WithPropagation(false))
 	client := &http.Client{
 		Transport: rt,
 	}
@@ -586,7 +586,7 @@ func TestClientNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []RoundTripperOption
 		if serviceOverride != "" {
-			opts = append(opts, RTWithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()

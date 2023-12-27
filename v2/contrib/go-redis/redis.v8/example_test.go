@@ -45,7 +45,7 @@ func Example_pipeliner() {
 	ctx := context.Background()
 	// create a client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
-	c := redistrace.NewClient(opts, redistrace.WithServiceName("my-redis-service"))
+	c := redistrace.NewClient(opts, redistrace.WithService("my-redis-service"))
 
 	// open the pipeline
 	pipe := c.Pipeline()

@@ -60,7 +60,7 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 		tags:    tags,
 	}
 	for _, fn := range opts {
-		fn(s.cfg)
+		fn.apply(s.cfg)
 	}
 	log.Debug("contrib/globalsign/mgo: Dialing: %s, %#v", url, s.cfg)
 	return s, err

@@ -71,7 +71,7 @@ func WrapClient(c *redis.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	log.Debug("contrib/go-redis/redis: Wrapping Client: %#v", cfg)
 	opt := c.Options()

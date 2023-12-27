@@ -32,7 +32,7 @@ func TestChildSpan(t *testing.T) {
 	var called, traced bool
 
 	router := echo.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		_, traced = tracer.SpanFromContext(c.Request().Context())
@@ -55,7 +55,7 @@ func TestTrace200(t *testing.T) {
 	var called, traced bool
 
 	router := echo.New()
-	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(false)))
+	router.Use(Middleware(WithService("foobar"), WithAnalytics(false)))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		var span tracer.Span
@@ -104,7 +104,7 @@ func TestTraceAnalytics(t *testing.T) {
 	var called, traced bool
 
 	router := echo.New()
-	router.Use(Middleware(WithServiceName("foobar"), WithAnalytics(true)))
+	router.Use(Middleware(WithService("foobar"), WithAnalytics(true)))
 	router.GET("/user/:id", func(c echo.Context) error {
 		called = true
 		var span tracer.Span
@@ -154,7 +154,7 @@ func TestError(t *testing.T) {
 
 	// setup
 	router := echo.New()
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	wantErr := errors.New("oh no")
 
 	// a handler with an error and make the requests
@@ -197,7 +197,7 @@ func TestErrorHandling(t *testing.T) {
 	router.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		ctx.Response().WriteHeader(http.StatusInternalServerError)
 	}
-	router.Use(Middleware(WithServiceName("foobar")))
+	router.Use(Middleware(WithService("foobar")))
 	wantErr := errors.New("oh no")
 
 	// a handler with an error and make the requests
@@ -304,7 +304,7 @@ func TestStatusError(t *testing.T) {
 			defer mt.Stop()
 
 			router := echo.New()
-			opts := []Option{WithServiceName("foobar")}
+			opts := []Option{WithService("foobar")}
 			if tt.isStatusError != nil {
 				opts = append(opts, WithStatusCheck(tt.isStatusError))
 			}
@@ -480,7 +480,7 @@ func TestNamingSchema(t *testing.T) {
 	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
+			opts = append(opts, WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -598,7 +598,7 @@ func TestWithCustomTags(t *testing.T) {
 	// setup
 	router := echo.New()
 	router.Use(Middleware(
-		WithServiceName("foobar"),
+		WithService("foobar"),
 		WithCustomTag("customTag1", "customValue1"),
 		WithCustomTag("customTag2", "customValue2"),
 		WithCustomTag(ext.SpanKind, "replace me"),

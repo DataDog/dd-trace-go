@@ -164,7 +164,7 @@ func TestServiceName(t *testing.T) {
 			Database: "postgres",
 		})
 
-		Wrap(conn, WithServiceName("my-service-name"))
+		Wrap(conn, WithService("my-service-name"))
 
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
