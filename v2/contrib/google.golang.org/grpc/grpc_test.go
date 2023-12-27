@@ -581,6 +581,10 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 		return &FixtureReply{Message: "disabled"}, nil
 	case in.Name == "invalid":
 		return nil, status.Error(codes.InvalidArgument, "invalid")
+	case in.Name == "errorDetails":
+		s, _ := status.New(codes.Unknown, "unknown").
+			WithDetails(&FixtureReply{Message: "a"}, &FixtureReply{Message: "b"})
+		return nil, s.Err()
 	}
 	return &FixtureReply{Message: "passed"}, nil
 }
@@ -1005,6 +1009,46 @@ func TestClientNamingSchema(t *testing.T) {
 	}
 	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
 	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestWithErrorDetailTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		opts     []Option
+		details0 interface{}
+		details1 interface{}
+		details2 interface{}
+	}{
+		{opts: []Option{WithErrorDetailTags()}, details0: "message:\"a\"", details1: "message:\"b\"", details2: nil},
+		{opts: []Option{}, details0: nil, details1: nil, details2: nil},
+	} {
+		rig, err := newRig(true, c.opts...)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		ctx := context.Background()
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "errorDetails"})
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		assert.NotNil(t, serverSpan)
+		assert.Equal(t, c.details0, serverSpan.Tag("grpc.status_details._0"))
+		assert.Equal(t, c.details1, serverSpan.Tag("grpc.status_details._1"))
+		assert.Equal(t, c.details2, serverSpan.Tag("grpc.status_details._2"))
+		rig.Close()
+		mt.Reset()
+	}
 }
 
 func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {

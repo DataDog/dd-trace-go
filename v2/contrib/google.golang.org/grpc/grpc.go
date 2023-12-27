@@ -11,6 +11,7 @@ package grpc // import "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -83,6 +85,13 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
+	if e, ok := status.FromError(err); ok && cfg.withErrorDetailTags {
+		for i, d := range e.Details() {
+			if d, ok := d.(proto.Message); ok {
+				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), d.String())
+			}
+		}
+	}
 
 	// only allocate finishOptions if needed, and allocate the exact right size
 	var finishOptions []tracer.FinishOption

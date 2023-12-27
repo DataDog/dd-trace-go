@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,6 +93,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("RC header tags = X-Test-Header:my-tag-name is applied and can be reverted", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
@@ -123,6 +125,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_HEADER_TAGS=X-Test-Header:my-tag-name-from-env and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
@@ -157,6 +160,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("In code header tags = X-Test-Header:my-tag-name-in-code and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
@@ -292,6 +296,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: ""}})
 	})
+
+	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
 func TestStartRemoteConfig(t *testing.T) {

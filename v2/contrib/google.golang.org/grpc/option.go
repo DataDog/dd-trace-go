@@ -36,6 +36,7 @@ type config struct {
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
+	withErrorDetailTags bool
 	spanOpts            []ddtrace.StartSpanOption
 	tags                map[string]interface{}
 }
@@ -175,6 +176,13 @@ func WithIgnoredMetadata(ms ...string) Option {
 func WithRequestTags() Option {
 	return func(cfg *config) {
 		cfg.withRequestTags = true
+	}
+}
+
+// WithErrorDetailTags specifies whether gRPC responses details contain should be added to spans as tags.
+func WithErrorDetailTags() Option {
+	return func(cfg *config) {
+		cfg.withErrorDetailTags = true
 	}
 }
 
