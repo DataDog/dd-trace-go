@@ -16,22 +16,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
-// SQLCommentInjectionMode represents the mode of SQL comment injection.
-//
-// Deprecated: Use DBMPropagationMode instead.
-type SQLCommentInjectionMode DBMPropagationMode
-
-const (
-	// SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
-	SQLInjectionUndefined SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeUndefined)
-	// SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
-	SQLInjectionDisabled SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeDisabled)
-	// SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
-	SQLInjectionModeService SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeService)
-	// SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
-	SQLInjectionModeFull SQLCommentInjectionMode = SQLCommentInjectionMode(DBMPropagationModeFull)
-)
-
 // DBMPropagationMode represents the mode of dbm propagation.
 //
 // Note that enabling sql comment propagation results in potentially confidential data (service names)
