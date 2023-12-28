@@ -183,14 +183,20 @@ func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service st
 }
 
 // SpanTagsResourceRule returns a SamplingRule that applies the provided sampling rate to spans that match
-// resource, name, service and tags provided.
-func SpanTagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+// resource, name, service and tags provided. Values of the tags map are expected to be in glob format.
+func SpanTagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
+	globTags := make(map[string]*regexp.Regexp, len(tags))
+	for k, v := range tags {
+		if g := globMatch(v); g != nil {
+			globTags[k] = g
+		}
+	}
 	return SamplingRule{
 		Service:  globMatch(service),
 		Name:     globMatch(name),
 		Resource: globMatch(resource),
 		Rate:     rate,
-		Tags:     tags,
+		Tags:     globTags,
 		ruleType: SamplingRuleSpan,
 	}
 }
@@ -661,8 +667,8 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
-		Service      string            `json:"service"`
-		Name         string            `json:"name"`
+		Service      string            `json:"service,omitempty"`
+		Name         string            `json:"name,omitempty"`
 		Resource     string            `json:"resource,omitempty"`
 		Rate         float64           `json:"sample_rate"`
 		Tags         map[string]string `json:"tags,omitempty"`
