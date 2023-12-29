@@ -43,7 +43,7 @@ func TestOptions(t *testing.T) {
 		},
 		"WithService": {
 			tracerOpts: []Option{WithService("TestServer")},
-			test: func(assert *assert.Assertions, root mocktracer.Span) {
+			test: func(assert *assert.Assertions, root *mocktracer.Span) {
 				assert.Equal("TestServer", root.Tag(ext.ServiceName))
 			},
 		},
