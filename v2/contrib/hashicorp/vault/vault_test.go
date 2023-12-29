@@ -360,7 +360,7 @@ func TestOption(t *testing.T) {
 		},
 		"CustomServiceName": {
 			opts: []Option{WithService("someServiceName")},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
 			},
 		},

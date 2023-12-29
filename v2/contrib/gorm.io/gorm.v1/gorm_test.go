@@ -24,6 +24,7 @@ import (
 	_ "github.com/lib/pq"
 	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlserver"
@@ -348,7 +349,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 2)
+		require.Greater(t, len(spans), 2)
 		s := spans[len(spans)-2]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
