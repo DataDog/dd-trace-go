@@ -66,7 +66,6 @@ func (t *traceID) Empty() bool {
 }
 
 func (t *traceID) HasUpper() bool {
-	//TODO: in go 1.20 we can simplify this
 	for _, b := range t[:8] {
 		if b != 0 {
 			return true
