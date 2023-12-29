@@ -24,22 +24,22 @@ func main() {
 
 	// Start a root span.
 	span := tracer.StartSpan("get.data") // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.StartSpan`
-	defer span.Finish()                  // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Finish`
+	defer span.Finish()                  // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Span\).Finish`
 
 	// Create a child of it, computing the time needed to read a file.
 	child := tracer.StartSpan( // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.StartSpan`
 		"read.file",
 		tracer.ChildOf( // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.ChildOf`
-			span.Context(), // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Context`
+			span.Context(), // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Span\).Context`
 		),
 	)
-	child.SetTag(ext.ResourceName, "test.json") // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.SetTag`
+	child.SetTag(ext.ResourceName, "test.json") // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Span\).SetTag`
 
 	// If you are using 128 bit trace ids and want to generate the high
 	// order bits, cast the span's context to ddtrace.SpanContextW3C.
 	// See Issue #1677
-	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok { // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Context`
-		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128()) // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.TraceID128`
+	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok { // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Span\).Context`
+		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128()) // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.SpanContextW3C\).TraceID128`
 	}
 
 	// Perform an operation.
@@ -47,7 +47,7 @@ func main() {
 
 	// We may finish the child span using the returned error. If it's
 	// nil, it will be disregarded.
-	child.Finish( // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Finish`
+	child.Finish( // want `\(gopkg.in/DataDog/dd-trace-go.v1/ddtrace.Span\).Finish`
 		tracer.WithError(err), // want `gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.WithError`
 	)
 	if err != nil {
