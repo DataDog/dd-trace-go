@@ -395,16 +395,14 @@ func TestAnalyticsSettings(t *testing.T) {
 
 func TestResourceNamerSettings(t *testing.T) {
 	assert := assert.New(t)
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
 	staticName := "foo"
 	staticNamer := func(c *gin.Context) string {
 		return staticName
 	}
 
 	t.Run("default", func(t *testing.T) {
-		defer mt.Reset()
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
 		router := gin.New()
 		router.Use(Middleware("foobar"))
@@ -548,7 +546,6 @@ func TestIgnoreRequestSettings(t *testing.T) {
 		"/skipfoo": true,
 	} {
 		mt := mocktracer.Start()
-
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
