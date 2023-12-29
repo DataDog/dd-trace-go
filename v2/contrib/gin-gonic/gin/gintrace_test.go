@@ -548,11 +548,11 @@ func TestIgnoreRequestSettings(t *testing.T) {
 		"/skipfoo": true,
 	} {
 		mt := mocktracer.Start()
-		defer mt.Reset()
 
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
+		mt.Stop()
 	}
 }
 
