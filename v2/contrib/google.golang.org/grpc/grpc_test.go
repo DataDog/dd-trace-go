@@ -1032,7 +1032,7 @@ func TestWithErrorDetailTags(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 
-		var serverSpan mocktracer.Span
+		var serverSpan *mocktracer.Span
 		for _, s := range spans {
 			switch s.OperationName() {
 			case "grpc.server":
