@@ -25,6 +25,9 @@ type Span struct {
 }
 
 func MockSpan(s *tracer.Span) *Span {
+	if s == nil {
+		return nil
+	}
 	return &Span{Span: s}
 }
 
