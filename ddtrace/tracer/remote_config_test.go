@@ -315,7 +315,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		applyStatus := tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s := tracer.StartSpan("web.request").(*span)
+		s := tracer.StartSpan("web.request")
 		s.Finish()
 		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
 		require.Equal(t, "my-tag-from-rc", globalconfig.HeaderTag("X-Test-Header"))
@@ -333,7 +333,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{"path": nil}
 		applyStatus = tracer.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		s = tracer.StartSpan("web.request").(*span)
+		s = tracer.StartSpan("web.request")
 		s.Finish()
 		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
 		require.Equal(t, "my-tag-from-env", globalconfig.HeaderTag("X-Test-Header"))
