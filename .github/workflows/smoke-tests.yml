@@ -20,6 +20,9 @@ on:
     branches:
       - '**'
 
+env:
+  TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+
 jobs:
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -39,7 +42,7 @@ jobs:
           cache: true
       - name: go get -u
         run: |
-          go get -u $PACKAGES
+          go get -u -t $PACKAGES
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
