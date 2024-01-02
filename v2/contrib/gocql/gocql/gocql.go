@@ -99,6 +99,23 @@ type params struct {
 	clusterContactPoints string
 }
 
+// WrapQuery wraps a gocql.Query into a traced Query under the given service name.
+// Note that the returned Query structure embeds the original gocql.Query structure.
+// This means that any method returning the query for chaining that is not part
+// of this package's Query structure should be called before WrapQuery, otherwise
+// the tracing context could be lost.
+//
+// To be more specific: it is ok (and recommended) to use and chain the return value
+// of `WithContext` and `PageState` but not that of `Consistency`, `Trace`,
+// `Observer`, etc.
+//
+// This function is not recommended, as some tags will be missing from the spans.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
+func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
+	return wrapQuery(q, nil, opts...)
+}
+
 func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 	cfg := defaultConfig()
 	for _, fn := range opts {
@@ -266,6 +283,23 @@ func (s *Scanner) Err() error {
 	}
 	s.span.Finish()
 	return err
+}
+
+// WrapBatch wraps a gocql.Batch into a traced Batch under the given service name.
+// Note that the returned Batch structure embeds the original gocql.Batch structure.
+// This means that any method returning the batch for chaining that is not part
+// of this package's Batch structure should be called before WrapBatch, otherwise
+// the tracing context could be lost.
+//
+// To be more specific: it is ok (and recommended) to use and chain the return value
+// of `WithContext` and `WithTimestamp` but not that of `SerialConsistency`, `Trace`,
+// `Observer`, etc.
+//
+// This function is not recommended, as some tags will be missing from the spans.
+//
+// Deprecated: initialize your ClusterConfig with NewCluster instead.
+func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
+	return wrapBatch(b, nil, opts...)
 }
 
 func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
