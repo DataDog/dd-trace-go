@@ -29,7 +29,7 @@ const outChannelSize = 5
 
 // customProfileLabelLimit is the maximum number of pprof labels which can
 // be used as custom attributes in the profiler UI
-const customProfileLabelLimit = 20
+const customProfileLabelLimit = 10
 
 var (
 	mu             sync.Mutex

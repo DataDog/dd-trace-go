@@ -564,9 +564,9 @@ func (e *executionTraceConfig) Refresh() {
 // available as attributes for filtering frames for CPU and goroutine profile
 // flame graphs in the Datadog profiler UI.
 //
-// The profiler is limited to 20 label keys to show in the UI. Any label keys
-// after the first 20 will be ignored (but labels with ignored keys will still
-// be available in the raw profile data)
+// The profiler is limited to 10 label keys to show in the UI. Any label keys
+// after the first 10 will be ignored (but labels with ignored keys will still
+// be available in the raw profile data).
 //
 // [profiler label]: https://rakyll.org/profiler-labels/
 func WithCustomProfilerLabelKeys(keys ...string) Option {

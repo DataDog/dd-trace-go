@@ -52,7 +52,7 @@ func startTelemetry(c *config) {
 			{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
-			{Name: "custom_profiler_label_keys_enabled", Value: len(c.customProfilerLabels) > 0},
+			{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
 		},
 	)
 }
