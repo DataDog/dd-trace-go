@@ -53,6 +53,10 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	t := newMockTracer()
+	old := tracer.GetGlobalTracer()
+	if _, ok := old.(*mocktracer); ok {
+		tracer.StopTestTracer()
+	}
 	tracer.SetGlobalTracer(t)
 	return t
 }
