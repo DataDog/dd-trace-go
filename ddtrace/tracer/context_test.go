@@ -13,25 +13,23 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestContextWithSpan(t *testing.T) {
-	want := &span{SpanID: 123}
+	want := &Span{SpanID: 123}
 	ctx := ContextWithSpan(context.Background(), want)
-	got, ok := ctx.Value(internal.ActiveSpanKey).(*span)
+	got := ctx.Value(internal.ActiveSpanKey)
 	assert := assert.New(t)
-	assert.True(ok)
 	assert.Equal(got, want)
 }
 
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
-		want := &span{SpanID: 123}
+		want := &Span{SpanID: 123}
 		ctx := ContextWithSpan(context.Background(), want)
 		got, ok := SpanFromContext(ctx)
 		assert.True(ok)
@@ -41,12 +39,14 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
-		assert.True(ok)
+		//_, ok = span.(*traceinternal.NoopSpan)
+		assert.Nil(span)
+		//assert.True(ok)
 		span, ok = SpanFromContext(nil)
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
-		assert.True(ok)
+		//_, ok = span.(*traceinternal.NoopSpan)
+		assert.Nil(span)
+		//assert.True(ok)
 	})
 }
 
@@ -56,8 +56,8 @@ func TestStartSpanFromContext(t *testing.T) {
 
 	defer stop()
 
-	parent := &span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
-	parent2 := &span{context: &spanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
+	parent := &Span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
+	parent2 := &Span{context: &spanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
 	pctx := ContextWithSpan(context.Background(), parent)
 	child, ctx := StartSpanFromContext(
 		pctx,
@@ -68,13 +68,16 @@ func TestStartSpanFromContext(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	got, ok := child.(*span)
-	assert.True(ok)
+	//got, ok := child.(*Span)
+	//assert.True(ok)
+	got := child
+	assert.NotNil(child)
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*traceinternal.NoopSpan)
-	assert.False(ok)
+	//_, ok = gotctx.(*traceinternal.NoopSpan)
+	//assert.NotNil(gotctx)
+	//assert.False(ok)
 
 	assert.Equal(uint64(456), got.TraceID)
 	assert.Equal(uint64(123), got.ParentID)
@@ -161,8 +164,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	// ensure the returned context works
 	assert.Nil(ctx.Value("not_found_key"))
 
-	internalSpan, ok := child.(*span)
-	assert.True(ok)
+	internalSpan := child
 	assert.Equal("http.request", internalSpan.Name)
 
 	// the returned context includes the span

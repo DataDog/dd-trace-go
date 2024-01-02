@@ -17,12 +17,12 @@ import (
 // NewKafkaTest creates a new test for Kafka naming schema.
 func NewKafkaTest(genSpans GenSpansFn) func(t *testing.T) {
 	return func(t *testing.T) {
-		assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "kafka.produce", spans[0].OperationName())
 			assert.Equal(t, "kafka.consume", spans[1].OperationName())
 		}
-		assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+		assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "kafka.send", spans[0].OperationName())
 			assert.Equal(t, "kafka.process", spans[1].OperationName())

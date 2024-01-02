@@ -22,7 +22,6 @@ import (
 	"net/http"
 
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -63,7 +62,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 		httptrace.WithSpanNamer(func(_ *http.Request) string {
 			return conf.spanName
 		}),
-		httptrace.WithBefore(func(r *http.Request, s ddtrace.Span) {
+		httptrace.WithBefore(func(r *http.Request, s *tracer.Span) {
 			s.SetTag(ext.ServiceName, conf.serviceName)
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
@@ -79,7 +78,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 				s.SetTag("vault.namespace", ns)
 			}
 		}),
-		httptrace.WithAfter(func(res *http.Response, s ddtrace.Span) {
+		httptrace.WithAfter(func(res *http.Response, s *tracer.Span) {
 			if res == nil {
 				// An error occurred during the request.
 				return

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -22,7 +23,7 @@ type spanContext struct {
 
 	spanID  uint64
 	traceID uint64
-	span    *mockspan // context owner
+	span    *tracer.Span
 }
 
 func (sc *spanContext) TraceID() uint64 { return sc.traceID }

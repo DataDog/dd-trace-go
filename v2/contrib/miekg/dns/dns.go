@@ -11,7 +11,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -118,7 +117,7 @@ func (c *Client) ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (
 	return r, rtt, err
 }
 
-func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	return tracer.StartSpanFromContext(ctx, "dns.request",
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
@@ -126,13 +125,13 @@ func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) 
 		tracer.Tag(ext.Component, componentName))
 }
 
-func startClientSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startClientSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	span, ctx := startSpan(ctx, opcode)
 	span.SetTag(ext.SpanKind, ext.SpanKindClient)
 	return span, ctx
 }
 
-func startServerSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startServerSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	span, ctx := startSpan(ctx, opcode)
 	span.SetTag(ext.SpanKind, ext.SpanKindServer)
 	return span, ctx

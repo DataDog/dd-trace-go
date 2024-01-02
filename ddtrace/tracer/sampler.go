@@ -11,7 +11,6 @@ import (
 	"math"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -21,7 +20,7 @@ import (
 // RateSampler implementations should be safe for concurrent use.
 type RateSampler interface {
 	// Sample returns true if the given span should be sampled.
-	Sample(span Span) bool
+	Sample(span *Span) bool
 
 	// Rate returns the current sample rate.
 	Rate() float64
@@ -68,13 +67,12 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
-func (r *rateSampler) Sample(spn ddtrace.Span) bool {
+func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
 		return true
 	}
-	s, ok := spn.(*span)
-	if !ok {
+	if s == nil {
 		return false
 	}
 	r.RLock()
@@ -128,7 +126,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
-func (ps *prioritySampler) getRate(spn *span) float64 {
+func (ps *prioritySampler) getRate(spn *Span) float64 {
 	key := "service:" + spn.Service + ",env:" + spn.Meta[ext.Environment]
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -140,7 +138,7 @@ func (ps *prioritySampler) getRate(spn *span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
-func (ps *prioritySampler) apply(spn *span) {
+func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.TraceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)

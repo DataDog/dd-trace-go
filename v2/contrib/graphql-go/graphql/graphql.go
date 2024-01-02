@@ -62,7 +62,7 @@ type datadogExtension struct{ config }
 
 type contextKey struct{}
 type contextData struct {
-	serverSpan    tracer.Span
+	serverSpan    *tracer.Span
 	requestOp     *graphqlsec.RequestOperation
 	variables     map[string]any
 	query         string

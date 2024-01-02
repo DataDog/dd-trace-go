@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genTestSpans(t *testing.T, serviceOverride string) []mocktracer.Span {
+func genTestSpans(t *testing.T, serviceOverride string) []*mocktracer.Span {
 	var opts []Option
 	if serviceOverride != "" {
 		opts = append(opts, WithService(serviceOverride))
@@ -136,8 +136,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(0), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -153,8 +153,8 @@ func TestConsumer(t *testing.T) {
 		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
 			"span context should be injected into the consumer message headers")
 
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(1), s.Tag("offset"))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(1), s.Tag("offset"))
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic test-topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
@@ -209,8 +209,8 @@ func TestSyncProducer(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-		assert.Equal(t, int64(0), s.Tag("offset"))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(0), s.Tag("offset"))
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -264,7 +264,7 @@ func TestSyncProducerSendMessages(t *testing.T) {
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
 		assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 		assert.Equal(t, "kafka.produce", s.OperationName())
-		assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -306,8 +306,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s.Tag("offset"))
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
@@ -347,8 +347,8 @@ func TestAsyncProducer(t *testing.T) {
 			assert.Equal(t, "queue", s.Tag(ext.SpanType))
 			assert.Equal(t, "Produce Topic my_topic", s.Tag(ext.ResourceName))
 			assert.Equal(t, "kafka.produce", s.OperationName())
-			assert.Equal(t, int32(0), s.Tag(ext.MessagingKafkaPartition))
-			assert.Equal(t, int64(0), s.Tag("offset"))
+			assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s.Tag("offset"))
 			assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))

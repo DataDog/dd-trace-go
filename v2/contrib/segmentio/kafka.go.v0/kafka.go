@@ -10,7 +10,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -60,10 +59,10 @@ type Reader struct {
 	*kafka.Reader
 	kafkaConfig
 	cfg  *config
-	prev ddtrace.Span
+	prev *tracer.Span
 }
 
-func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
+func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(r.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.Topic),
@@ -153,7 +152,7 @@ type Writer struct {
 	cfg *config
 }
 
-func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span {
+func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(w.cfg.producerServiceName),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
@@ -178,7 +177,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) ddtrace.Span
 	return span
 }
 
-func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
+func finishSpan(span *tracer.Span, partition int, offset int64, err error) {
 	span.SetTag(ext.MessagingKafkaPartition, partition)
 	span.SetTag("offset", offset)
 	span.Finish(tracer.WithError(err))
@@ -188,7 +187,7 @@ func finishSpan(span ddtrace.Span, partition int, offset int64, err error) {
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
-	spans := make([]ddtrace.Span, len(msgs))
+	spans := make([]*tracer.Span, len(msgs))
 	for i := range msgs {
 		spans[i] = w.startSpan(ctx, &msgs[i])
 	}

@@ -20,7 +20,6 @@ import (
 
 	grpctrace "github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc"
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -233,7 +232,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// running. decoySpan is a child span that finishes before the cpuHog work
 	// begins to test that span's restore their parent span labels when
 	// finishing.
-	var cpuSpan, decoySpan ddtrace.Span
+	var cpuSpan, decoySpan *tracer.Span
 	if a.config.ChildOf {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
 		decoySpan = tracer.StartSpan("decoy", tracer.ChildOf(cpuSpan.Context()))

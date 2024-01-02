@@ -172,7 +172,7 @@ func TestTrace200(t *testing.T) {
 		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 			w.WriteHeader(200)
 			w.Write([]byte("hi!"))
 		})
@@ -192,7 +192,7 @@ func TestTrace200(t *testing.T) {
 		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 			w.WriteHeader(200)
 		})
 
@@ -210,7 +210,7 @@ func TestTrace200(t *testing.T) {
 		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), "foobar")
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), "foobar")
 			w.WriteHeader(200)
 		})
 
@@ -224,13 +224,13 @@ func TestTrace200(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	assertSpan := func(assert *assert.Assertions, spans []mocktracer.Span, code int) {
+	assertSpan := func(assert *assert.Assertions, spans []*mocktracer.Span, code int) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("http.request", span.OperationName())
 		assert.Equal(strconv.Itoa(code), span.Tag(ext.HTTPCode))
 		wantErr := fmt.Sprintf("%d: %s", code, http.StatusText(code))
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	}
 
 	t.Run("default", func(t *testing.T) {
@@ -329,7 +329,7 @@ func TestPropagation(t *testing.T) {
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 		span, ok := tracer.SpanFromContext(r.Context())
 		assert.True(ok)
-		assert.Equal(span.(mocktracer.Span).ParentID(), pspan.(mocktracer.Span).SpanID())
+		assert.Equal(mocktracer.MockSpan(span).ParentID(), mocktracer.MockSpan(pspan).SpanID())
 		w.WriteHeader(200)
 	})
 
@@ -408,7 +408,7 @@ func TestServiceName(t *testing.T) {
 		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
 			span, ok := tracer.SpanFromContext(r.Context())
 			assert.True(ok)
-			assert.Equal(span.(mocktracer.Span).Tag(ext.ServiceName), servicename)
+			assert.Equal(mocktracer.MockSpan(span).Tag(ext.ServiceName), servicename)
 			w.WriteHeader(200)
 		})
 
@@ -462,7 +462,7 @@ func TestServiceName(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))

@@ -45,7 +45,7 @@ func testMemcache(t *testing.T, addr string) {
 	client := getClient(addr, WithService("test-memcache"))
 	defer client.DeleteAll()
 
-	validateMemcacheSpan := func(t *testing.T, span mocktracer.Span, resourceName string) {
+	validateMemcacheSpan := func(t *testing.T, span *mocktracer.Span, resourceName string) {
 		assert.Equal(t, "test-memcache", span.Tag(ext.ServiceName),
 			"service name should be set to test-memcache")
 		assert.Equal(t, "memcached.query", span.OperationName(),
@@ -96,7 +96,7 @@ func testMemcache(t *testing.T, addr string) {
 		spans := mt.FinishedSpans()
 		assert.Len(t, spans, 2)
 		validateMemcacheSpan(t, spans[0], "Add")
-		assert.Equal(t, span, spans[1])
+		assert.Equal(t, span, spans[1].Unwrap())
 		assert.Equal(t, spans[1].TraceID(), spans[0].TraceID(),
 			"memcache span should be part of the parent trace")
 	})
@@ -183,7 +183,7 @@ func TestNamingSchema(t *testing.T) {
 	defer li.Close()
 	addr := li.Addr().String()
 
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))
@@ -200,11 +200,11 @@ func TestNamingSchema(t *testing.T) {
 		require.Len(t, spans, 1)
 		return spans
 	}
-	assertV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "memcached.query", spans[0].OperationName())
 	}
-	assertV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "memcached.command", spans[0].OperationName())
 	}

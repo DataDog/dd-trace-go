@@ -73,7 +73,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -104,7 +104,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -113,7 +113,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal(true, span.Tag(ext.Error).(bool))
+		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
@@ -136,7 +136,7 @@ func TestClient(t *testing.T) {
 		assert.Equal(context.DeadlineExceeded, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -144,7 +144,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("twirp.test", span.Tag("twirp.package"))
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
-		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
+		assert.Equal(context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
@@ -187,7 +187,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -209,7 +209,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(hooks, assert, twirp.InternalError("something bad or unexpected happened"))
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -218,7 +218,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -245,7 +245,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(twirp.ChainHooks(hooks, otherHooks), assert, twirp.InternalError("something bad or unexpected happened"))
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 2)
+		require.Len(t, spans, 2)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -254,7 +254,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -272,7 +272,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 		assert.Equal(rate, s.Tag(ext.EventSampleRate))
 	}
@@ -328,7 +328,7 @@ func TestServiceNameSettings(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 		assert.Equal(serviceName, s.Tag(ext.ServiceName))
 	}
@@ -396,7 +396,7 @@ func TestHaberdash(t *testing.T) {
 }
 
 func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []Option
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))
@@ -411,13 +411,13 @@ func TestNamingSchema(t *testing.T) {
 
 		return mt.FinishedSpans()
 	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 3)
 		assert.Equal(t, "twirp.Haberdasher", spans[0].OperationName())
 		assert.Equal(t, "twirp.handler", spans[1].OperationName())
 		assert.Equal(t, "twirp.request", spans[2].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 3)
 		assert.Equal(t, "twirp.server.request", spans[0].OperationName())
 		assert.Equal(t, "twirp.handler", spans[1].OperationName())

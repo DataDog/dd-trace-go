@@ -13,7 +13,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -59,7 +58,7 @@ type Consumer struct {
 	*kafka.Consumer
 	cfg    *config
 	events chan kafka.Event
-	prev   ddtrace.Span
+	prev   *tracer.Span
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
@@ -83,7 +82,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	go func() {
 		defer close(out)
 		for evt := range in {
-			var next ddtrace.Span
+			var next *tracer.Span
 
 			// only trace messages
 			if msg, ok := evt.(*kafka.Message); ok {
@@ -109,7 +108,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 	return out
 }
 
-func (c *Consumer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (c *Consumer) startSpan(msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + *msg.TopicPartition.Topic),
@@ -280,7 +279,7 @@ func (p *Producer) traceProduceChannel(out chan *kafka.Message) chan *kafka.Mess
 	return in
 }
 
-func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
+func (p *Producer) startSpan(msg *kafka.Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(p.cfg.producerServiceName),
 		tracer.ResourceName("Produce Topic " + *msg.TopicPartition.Topic),

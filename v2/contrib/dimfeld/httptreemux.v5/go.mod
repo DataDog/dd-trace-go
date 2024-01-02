@@ -47,3 +47,4 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+replace github.com/DataDog/dd-trace-go/v2/contrib/net/http => ../../net/http

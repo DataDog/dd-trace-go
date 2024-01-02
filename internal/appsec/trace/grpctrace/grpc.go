@@ -6,20 +6,19 @@
 package grpctrace
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/trace/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // SetSecurityEventsTags sets the AppSec events span tags.
-func SetSecurityEventsTags(span ddtrace.Span, events []any) {
+func SetSecurityEventsTags(span trace.TagSetter, events []any) {
 	if err := setSecurityEventsTags(span, events); err != nil {
 		log.Error("appsec: unexpected error while creating the appsec events tags: %v", err)
 	}
 }
 
-func setSecurityEventsTags(span ddtrace.Span, events []any) error {
+func setSecurityEventsTags(span trace.TagSetter, events []any) error {
 	if events == nil {
 		return nil
 	}
@@ -27,7 +26,7 @@ func setSecurityEventsTags(span ddtrace.Span, events []any) error {
 }
 
 // SetRequestMetadataTags sets the gRPC request metadata span tags.
-func SetRequestMetadataTags(span ddtrace.Span, md map[string][]string) {
+func SetRequestMetadataTags(span trace.TagSetter, md map[string][]string) {
 	for h, v := range httptrace.NormalizeHTTPHeaders(md) {
 		span.SetTag("grpc.metadata."+h, v)
 	}

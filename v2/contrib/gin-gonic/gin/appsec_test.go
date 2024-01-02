@@ -351,6 +351,7 @@ func TestControlFlow(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
+			defer mt.Stop()
 			// Create a Gin router
 			router := gin.New()
 			// Setup the middleware

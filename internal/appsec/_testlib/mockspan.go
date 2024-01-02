@@ -6,7 +6,6 @@
 package testlib
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -29,26 +28,26 @@ func (m *MockSpan) SetTag(key string, value interface{}) {
 	}
 }
 
-func (m *MockSpan) SetOperationName(_ string) {
-	panic("unused")
-}
+// func (m *MockSpan) SetOperationName(_ string) {
+// 	panic("unused")
+// }
 
-func (m *MockSpan) BaggageItem(_ string) string {
-	panic("unused")
-}
+// func (m *MockSpan) BaggageItem(_ string) string {
+// 	panic("unused")
+// }
 
-func (m *MockSpan) SetBaggageItem(_, _ string) {
-	panic("unused")
-}
+// func (m *MockSpan) SetBaggageItem(_, _ string) {
+// 	panic("unused")
+// }
 
-func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
-	m.Finished = true
-}
+// func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
+// 	m.Finished = true
+// }
 
-func (m *MockSpan) Context() ddtrace.SpanContext {
-	panic("unused")
-}
+// func (m *MockSpan) Context() ddtrace.SpanContext {
+// 	panic("unused")
+// }
 
-func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	panic("unused")
-}
+// func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) any {
+// 	panic("unused")
+// }

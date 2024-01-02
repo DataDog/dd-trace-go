@@ -181,7 +181,7 @@ func newTracedClient() *dnstrace.Client {
 	return &dnstrace.Client{Client: &dns.Client{Net: "udp"}}
 }
 
-func assertClientSpan(t *testing.T, s mocktracer.Span) {
+func assertClientSpan(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, "dns.request", s.OperationName())
 	assert.Equal(t, "dns", s.Tag(ext.SpanType))
 	assert.Equal(t, "dns", s.Tag(ext.ServiceName))

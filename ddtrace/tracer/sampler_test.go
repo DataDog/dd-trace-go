@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -25,8 +24,8 @@ import (
 
 func TestPrioritySampler(t *testing.T) {
 	// create a new span with given service/env
-	mkSpan := func(svc, env string) *span {
-		s := &span{Service: svc, Meta: map[string]string{}}
+	mkSpan := func(svc, env string) *Span {
+		s := &Span{Service: svc, Meta: map[string]string{}}
 		if env != "" {
 			s.Meta["env"] = env
 		}
@@ -174,7 +173,7 @@ func TestRateSampler(t *testing.T) {
 	assert.True(NewRateSampler(1).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
-	assert.False(NewRateSampler(0.99).Sample(internal.NoopSpan{}))
+	assert.False(NewRateSampler(0.99).Sample(nil))
 }
 
 func TestSamplerRates(t *testing.T) {
@@ -391,10 +390,10 @@ func TestRuleEnvVars(t *testing.T) {
 }
 
 func TestRulesSampler(t *testing.T) {
-	makeSpan := func(op string, svc string) *span {
+	makeSpan := func(op string, svc string) *Span {
 		return newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
 	}
-	makeFinishedSpan := func(op string, svc string) *span {
+	makeFinishedSpan := func(op string, svc string) *Span {
 		s := newSpan(op, svc, "", random.Uint64(), random.Uint64(), 0)
 		s.finished = true
 		return s
@@ -669,7 +668,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 }
 
 func TestRulesSamplerInternals(t *testing.T) {
-	makeSpanAt := func(op string, svc string, ts time.Time) *span {
+	makeSpanAt := func(op string, svc string, ts time.Time) *Span {
 		s := newSpan(op, svc, "", 0, 0, 0)
 		s.Start = ts.UnixNano()
 		return s
@@ -787,9 +786,9 @@ func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
 
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
-		internal.SetGlobalTracer(t)
+		SetGlobalTracer(t)
 		defer func() {
-			internal.SetGlobalTracer(&internal.NoopTracer{})
+			SetGlobalTracer(&NoopTracer{})
 		}()
 		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{
@@ -800,7 +799,7 @@ func BenchmarkRulesSampler(b *testing.B) {
                                 }`,
 		)),
 		)
-		spans := make([]Span, batchSize)
+		spans := make([]*Span, batchSize)
 		b.StopTimer()
 		b.ResetTimer()
 		for i := 0; i < b.N; i += batchSize {
@@ -968,7 +967,7 @@ func TestSamplingRuleMarshall(t *testing.T) {
 	}
 }
 func BenchmarkGlobMatchSpan(b *testing.B) {
-	var spans []*span
+	var spans []*Span
 	for i := 0; i < 1000; i++ {
 		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
 	}

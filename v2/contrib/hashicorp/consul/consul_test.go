@@ -108,7 +108,7 @@ func TestKV(t *testing.T) {
 	}
 }
 func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
+	genSpans := func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		var opts []ClientOption
 		if serviceOverride != "" {
 			opts = append(opts, WithService(serviceOverride))
@@ -128,11 +128,11 @@ func TestNamingSchema(t *testing.T) {
 		require.Len(t, spans, 1)
 		return spans
 	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV0 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "consul.command", spans[0].OperationName())
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
+	assertOpV1 := func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "consul.query", spans[0].OperationName())
 	}

@@ -11,10 +11,11 @@ import (
 	"path"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/graphql-go/graphql"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 func BenchmarkGraphQL(b *testing.B) {

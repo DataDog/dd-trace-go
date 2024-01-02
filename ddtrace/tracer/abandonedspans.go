@@ -79,7 +79,7 @@ type abandonedSpanCandidate struct {
 	Finished        bool
 }
 
-func newAbandonedSpanCandidate(s *span, finished bool) *abandonedSpanCandidate {
+func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
 	// finished is explicit instead of implicit as s.finished may be not set
 	// at the moment of calling this method.
 	// Also, locking is not required as it's called while the span is already locked or it's

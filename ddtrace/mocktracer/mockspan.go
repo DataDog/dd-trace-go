@@ -7,7 +7,6 @@ package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktrac
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
@@ -15,274 +14,159 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-var _ ddtrace.Span = (*mockspan)(nil)
-var _ Span = (*mockspan)(nil)
-
-// Span is an interface that allows querying a span returned by the mock tracer.
-type Span interface {
-	// SpanID returns the span's ID.
-	SpanID() uint64
-
-	// TraceID returns the span's trace ID.
-	TraceID() uint64
-
-	// ParentID returns the span's parent ID.
-	ParentID() uint64
-
-	// StartTime returns the time when the span has started.
-	StartTime() time.Time
-
-	// FinishTime returns the time when the span has finished.
-	FinishTime() time.Time
-
-	// OperationName returns the operation name held by this span.
-	OperationName() string
-
-	// Tag returns the value of the tag at key k.
-	Tag(k string) interface{}
-
-	// Tags returns a copy of all the tags in this span.
-	Tags() map[string]interface{}
-
-	// Context returns the span's SpanContext.
-	Context() ddtrace.SpanContext
-
-	// StartChild starts a new child span with the given operation name and options.
-	StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span
-
-	// Stringer allows pretty-printing the span's fields for debugging.
-	fmt.Stringer
+func newSpan(operationName string, cfg *ddtrace.StartSpanConfig) *tracer.Span {
+	return tracer.SpanStart(operationName, func(c *ddtrace.StartSpanConfig) {
+		*c = *cfg
+	})
 }
 
-func newSpan(t *mocktracer, operationName string, cfg *ddtrace.StartSpanConfig) *mockspan {
-	if cfg.Tags == nil {
-		cfg.Tags = make(map[string]interface{})
-	}
-	if cfg.Tags[ext.ResourceName] == nil {
-		cfg.Tags[ext.ResourceName] = operationName
-	}
-	s := &mockspan{
-		name:   operationName,
-		tracer: t,
-	}
-	if cfg.StartTime.IsZero() {
-		s.startTime = time.Now()
-	} else {
-		s.startTime = cfg.StartTime
-	}
-	id := cfg.SpanID
-	if id == 0 {
-		id = nextID()
-	}
-	s.context = &spanContext{spanID: id, traceID: id, span: s}
-	if ctx, ok := cfg.Parent.(*spanContext); ok {
-		if ctx.span != nil && s.tags[ext.ServiceName] == nil {
-			// if we have a local parent and no service, inherit the parent's
-			s.SetTag(ext.ServiceName, ctx.span.Tag(ext.ServiceName))
-		}
-		if ctx.hasSamplingPriority() {
-			s.SetTag(ext.SamplingPriority, ctx.samplingPriority())
-		}
-		s.parentID = ctx.spanID
-		s.context.priority = ctx.samplingPriority()
-		s.context.hasPriority = ctx.hasSamplingPriority()
-		s.context.traceID = ctx.traceID
-		s.context.baggage = make(map[string]string, len(ctx.baggage))
-		ctx.ForeachBaggageItem(func(k, v string) bool {
-			s.context.baggage[k] = v
-			return true
-		})
-	}
-	for k, v := range cfg.Tags {
-		s.SetTag(k, v)
-	}
-	return s
+type Span struct {
+	*tracer.Span
 }
 
-type mockspan struct {
-	sync.RWMutex // guards below fields
-	name         string
-	tags         map[string]interface{}
-	finishTime   time.Time
-	finished     bool
-
-	startTime time.Time
-	parentID  uint64
-	context   *spanContext
-	tracer    *mocktracer
+func MockSpan(s *tracer.Span) *Span {
+	if s == nil {
+		return nil
+	}
+	return &Span{Span: s}
 }
 
-// SetTag sets a given tag on the span.
-func (s *mockspan) SetTag(key string, value interface{}) {
-	s.Lock()
-	defer s.Unlock()
-	if s.finished {
-		return
+func (s *Span) OperationName() string {
+	if s == nil {
+		return ""
 	}
-	if s.tags == nil {
-		s.tags = make(map[string]interface{}, 1)
+	s.RLock()
+	defer s.RUnlock()
+	return s.Name
+}
+
+func (s *Span) Tag(k string) interface{} {
+	if s == nil {
+		return nil
 	}
-	if key == ext.SamplingPriority {
-		switch p := value.(type) {
-		case int:
-			s.context.setSamplingPriority(p)
-		case float64:
-			s.context.setSamplingPriority(int(p))
+	s.RLock()
+	defer s.RUnlock()
+	switch k {
+	case ext.SpanName:
+		return s.Name
+	case ext.ServiceName:
+		return s.Service
+	case ext.ResourceName:
+		return s.Resource
+	case ext.SpanType:
+		return s.Type
+	}
+	if s.Meta != nil {
+		if r, ok := s.Meta[k]; ok {
+			return r
 		}
 	}
-	s.tags[key] = value
+	if s.Metrics != nil {
+		if r, ok := s.Metrics[k]; ok {
+			return r
+		}
+	}
+	return nil
 }
 
-func (s *mockspan) FinishTime() time.Time {
+func (s *Span) Tags() map[string]interface{} {
+	if s == nil {
+		return make(map[string]interface{})
+	}
 	s.RLock()
 	defer s.RUnlock()
-	return s.finishTime
-}
-
-func (s *mockspan) StartTime() time.Time { return s.startTime }
-
-func (s *mockspan) Tag(k string) interface{} {
-	s.RLock()
-	defer s.RUnlock()
-	return s.tags[k]
-}
-
-func (s *mockspan) Tags() map[string]interface{} {
-	s.RLock()
-	defer s.RUnlock()
-	// copy
-	cp := make(map[string]interface{}, len(s.tags))
-	for k, v := range s.tags {
-		cp[k] = v
+	r := make(map[string]interface{}, len(s.Meta)+len(s.Metrics))
+	for k, v := range s.Meta {
+		r[k] = v
 	}
-	return cp
-}
-
-func (s *mockspan) TraceID() uint64 { return s.context.traceID }
-
-func (s *mockspan) SpanID() uint64 { return s.context.spanID }
-
-func (s *mockspan) ParentID() uint64 { return s.parentID }
-
-func (s *mockspan) OperationName() string {
-	s.RLock()
-	defer s.RUnlock()
-	return s.name
-}
-
-// SetOperationName resets the original operation name to the given one.
-func (s *mockspan) SetOperationName(operationName string) {
-	s.Lock()
-	defer s.Unlock()
-	s.name = operationName
-	return
-}
-
-// BaggageItem returns the baggage item with the given key.
-func (s *mockspan) BaggageItem(key string) string {
-	return s.context.baggageItem(key)
-}
-
-// SetBaggageItem sets a new baggage item at the given key. The baggage
-// item should propagate to all descendant spans, both in- and cross-process.
-func (s *mockspan) SetBaggageItem(key, val string) {
-	s.context.setBaggageItem(key, val)
-	return
-}
-
-// Finish finishes the current span with the given options.
-func (s *mockspan) Finish(opts ...ddtrace.FinishOption) {
-	var cfg ddtrace.FinishConfig
-	for _, fn := range opts {
-		fn(&cfg)
+	for k, v := range s.Metrics {
+		r[k] = v
 	}
-	var t time.Time
-	if cfg.FinishTime.IsZero() {
-		t = time.Now()
-	} else {
-		t = cfg.FinishTime
-	}
-	if cfg.Error != nil {
-		s.SetTag(ext.Error, cfg.Error)
-	}
-	if cfg.NoDebugStack {
-		s.SetTag(ext.ErrorStack, "<debug stack disabled>")
-	}
-	s.Lock()
-	defer s.Unlock()
-	if s.finished {
-		return
-	}
-	s.finished = true
-	s.finishTime = t
-	s.tracer.addFinishedSpan(s)
+	r[ext.SpanName] = s.Name
+	r[ext.ServiceName] = s.Service
+	r[ext.ResourceName] = s.Resource
+	r[ext.SpanType] = s.Type
+	return r
 }
 
-// String implements fmt.Stringer.
-func (s *mockspan) String() string {
-	s.RLock()
-	defer s.RUnlock()
-	sc := s.context
+func (s *Span) String() string {
+	if s == nil {
+		return ""
+	}
+	sc := s.Context()
+	baggage := make(map[string]string)
+	sc.ForeachBaggageItem(func(k, v string) bool {
+		baggage[k] = v
+		return true
+	})
+
 	return fmt.Sprintf(`
 name: %s
 tags: %#v
 start: %s
-finish: %s
+duration: %s
 id: %d
 parent: %d
 trace: %d
 baggage: %#v
-`, s.name, s.tags, s.startTime, s.finishTime, sc.spanID, s.parentID, sc.traceID, sc.baggage)
+`, s.Name, s.Tags(), s.StartTime(), s.Duration(), sc.SpanID(), s.ParentID(), sc.TraceID(), baggage)
 }
 
-// Context returns the SpanContext of this Span.
-func (s *mockspan) Context() ddtrace.SpanContext { return s.context }
-
-// SetUser associates user information to the current trace which the
-// provided span belongs to. The options can be used to tune which user
-// bit of information gets monitored. This mockup only sets the user
-// information as span tags of the root span of the current trace.
-func (s *mockspan) SetUser(id string, opts ...tracer.UserMonitoringOption) {
-	root := s.Root()
-	if root == nil {
-		return
+func (s *Span) ParentID() uint64 {
+	if s == nil {
+		return 0
 	}
-
-	var cfg tracer.UserMonitoringConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-
-	root.SetTag("usr.id", id)
-	root.SetTag("usr.email", cfg.Email)
-	root.SetTag("usr.name", cfg.Name)
-	root.SetTag("usr.role", cfg.Role)
-	root.SetTag("usr.scope", cfg.Scope)
-	root.SetTag("usr.session_id", cfg.SessionID)
+	s.RLock()
+	defer s.RUnlock()
+	return s.Span.ParentID
 }
 
-// Root walks the span up to the root parent span and returns it.
-// This method is required by some internal packages such as appsec.
-func (s *mockspan) Root() tracer.Span {
-	openSpans := s.tracer.openSpans
-	var current Span = s
-	for {
-		pid := current.ParentID()
-		if pid == 0 {
-			break
-		}
-		parent, ok := openSpans[pid]
-		if !ok {
-			break
-		}
-		current = parent
+func (s *Span) SpanID() uint64 {
+	if s == nil {
+		return 0
 	}
-	root, _ := current.(*mockspan)
-	return root
+	s.RLock()
+	defer s.RUnlock()
+	return s.Span.SpanID
 }
 
-// StartChild starts a new child span with the given operation name and options.
-func (s *mockspan) StartChild(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	opts = append(opts, tracer.ChildOf(s.Context()))
-	return s.tracer.StartSpan(operationName, opts...)
+func (s *Span) TraceID() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.RLock()
+	defer s.RUnlock()
+	return s.Span.TraceID
+}
+
+func (s *Span) StartTime() time.Time {
+	if s == nil {
+		return time.Unix(0, 0)
+	}
+	s.RLock()
+	defer s.RUnlock()
+	return time.Unix(0, s.Span.Start)
+}
+
+func (s *Span) Duration() time.Duration {
+	if s == nil {
+		return time.Duration(0)
+	}
+	s.RLock()
+	defer s.RUnlock()
+	return time.Duration(s.Span.Duration)
+}
+
+func (s *Span) FinishTime() time.Time {
+	if s == nil {
+		return time.Unix(0, 0)
+	}
+	return s.StartTime().Add(s.Duration())
+}
+
+func (s *Span) Unwrap() *tracer.Span {
+	if s == nil {
+		return nil
+	}
+	return s.Span
 }
