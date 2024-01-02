@@ -86,7 +86,6 @@ jobs:
               "issue_number": ${{ toJson(matrix.number) }},
               "issue_title": ${{ toJson(matrix.title) }},
               "issue_url": ${{ toJson(format('github.com/{0}/issues/{1}', github.repository, matrix.number)) }},
-              "issue_body": ${{ toJson(matrix.body) }},
               "created_at": ${{ toJson(matrix.createdAt) }}
             }
         env:
