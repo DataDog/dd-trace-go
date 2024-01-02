@@ -145,7 +145,7 @@ func logStartup(c *config) {
 		"execution_trace_period":     c.traceConfig.Period.String(),
 		"execution_trace_size_limit": c.traceConfig.Limit,
 		"endpoint_count_enabled":     c.endpointCountEnabled,
-		"custom_profiler_labels":     c.customProfilerLabels,
+		"custom_profiler_label_keys": c.customProfilerLabels,
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -560,7 +560,7 @@ func (e *executionTraceConfig) Refresh() {
 	e.warned = false
 }
 
-// WithCustomProfilerLabels specifies [profiler label] keys which should be
+// WithCustomProfilerLabelKeys specifies [profiler label] keys which should be
 // available as attributes for filtering frames for CPU and goroutine profile
 // flame graphs in the Datadog profiler UI.
 //
@@ -569,7 +569,7 @@ func (e *executionTraceConfig) Refresh() {
 // be available in the raw profile data)
 //
 // [profiler label]: https://rakyll.org/profiler-labels/
-func WithCustomProfilerLabels(keys ...string) Option {
+func WithCustomProfilerLabelKeys(keys ...string) Option {
 	return func(cfg *config) {
 		cfg.customProfilerLabels = append(cfg.customProfilerLabels, keys...)
 	}

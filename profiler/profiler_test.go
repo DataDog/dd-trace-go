@@ -397,7 +397,7 @@ func TestAllUploaded(t *testing.T) {
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(1*time.Millisecond),
-		WithCustomProfilerLabels(customLabelKeys...),
+		WithCustomProfilerLabelKeys(customLabelKeys...),
 	)
 
 	validateProfile := func(profile profileMeta, seq uint64) {
