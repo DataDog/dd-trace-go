@@ -288,6 +288,56 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: ""}})
 	})
 
+	t.Run("Deleted config", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.1")
+		t.Setenv("DD_TRACE_HEADER_TAGS", "X-Test-Header:my-tag-from-env")
+		t.Setenv("DD_TAGS", "ddtag:from-env")
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		// Apply RC. Assert configuration is updated to the RC values.
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.2,"tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "my-tag-from-rc"}],"tracing_tags": ["ddtag:from-rc"]}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		s := tracer.StartSpan("web.request").(*span)
+		s.Finish()
+		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, "my-tag-from-rc", globalconfig.HeaderTag("X-Test-Header"))
+		require.Equal(t, "from-rc", s.Meta["ddtag"])
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
+			{Name: "trace_sample_rate", Value: 0.2, Origin: "remote_config"},
+			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-rc", Origin: "remote_config"},
+			{Name: "trace_tags", Value: "ddtag:from-rc," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: "remote_config"},
+		})
+
+		// Remove RC. Assert configuration is reset to the original values.
+		input = remoteconfig.ProductUpdate{"path": nil}
+		applyStatus = tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		s = tracer.StartSpan("web.request").(*span)
+		s.Finish()
+		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, "my-tag-from-env", globalconfig.HeaderTag("X-Test-Header"))
+		require.Equal(t, "from-env", s.Meta["ddtag"])
+
+		// Telemetry
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
+		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{
+			{Name: "trace_sample_rate", Value: 0.1, Origin: ""},
+			{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-env", Origin: ""},
+			{Name: "trace_tags", Value: "ddtag:from-env," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: ""},
+		})
+	})
+
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
