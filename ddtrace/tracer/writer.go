@@ -195,20 +195,20 @@ func encodeFloat(p []byte, f float64) []byte {
 func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.TraceID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.traceID), 16))
 	h.buf.WriteString(`","span_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.SpanID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.spanID), 16))
 	h.buf.WriteString(`","parent_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.ParentID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.parentID), 16))
 	h.buf.WriteString(`","name":`)
-	h.marshalString(s.Name)
+	h.marshalString(s.name)
 	h.buf.WriteString(`,"resource":`)
-	h.marshalString(s.Resource)
+	h.marshalString(s.resource)
 	h.buf.WriteString(`,"error":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.Error), 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
-	for k, v := range s.Meta {
+	for k, v := range s.meta {
 		if first {
 			first = false
 		} else {
@@ -220,7 +220,7 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 	}
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
-	for k, v := range s.Metrics {
+	for k, v := range s.metrics {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			// The trace forwarder does not support infinity or nan, so we do not send metrics with those values.
 			continue
@@ -235,11 +235,11 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 		h.buf.Write(encodeFloat(scratch[:0], v))
 	}
 	h.buf.WriteString(`},"start":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], s.Start, 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], s.start, 10))
 	h.buf.WriteString(`,"duration":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], s.Duration, 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], s.duration, 10))
 	h.buf.WriteString(`,"service":`)
-	h.marshalString(s.Service)
+	h.marshalString(s.service)
 	h.buf.WriteString(`}`)
 }
 

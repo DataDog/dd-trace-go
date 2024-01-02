@@ -78,14 +78,14 @@ type SamplingRule struct {
 
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *Span) bool {
-	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
+	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
-	} else if sr.exactService != "" && sr.exactService != s.Service {
+	} else if sr.exactService != "" && sr.exactService != s.service {
 		return false
 	}
-	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
+	if sr.Name != nil && !sr.Name.MatchString(s.name) {
 		return false
-	} else if sr.exactName != "" && sr.exactName != s.Name {
+	} else if sr.exactName != "" && sr.exactName != s.name {
 		return false
 	}
 	return true
@@ -295,7 +295,7 @@ func (rs *traceRulesSampler) apply(span *Span) bool {
 
 func (rs *traceRulesSampler) applyRule(span *Span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
-	if !sampledByRate(span.TraceID, rate) {
+	if !sampledByRate(span.traceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
 		return
 	}
@@ -380,7 +380,7 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 		if rule.match(span) {
 			rate := rule.Rate
 			span.setMetric(keyRulesSamplerAppliedRate, rate)
-			if !sampledByRate(span.SpanID, rate) {
+			if !sampledByRate(span.spanID, rate) {
 				return false
 			}
 			var sampled bool
