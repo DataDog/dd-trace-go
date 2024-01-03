@@ -63,22 +63,18 @@ func (s *Span) AsMap() map[string]interface{} {
 	m[ext.ServiceName] = s.service
 	m[ext.ResourceName] = s.resource
 	m[ext.SpanType] = s.spanType
-	m["span_start"] = s.start
-	m["span_duration"] = s.duration
-	//meta := make(map[string]string)
+	m[ext.MapSpanStart] = s.start
+	m[ext.MapSpanDuration] = s.duration
 	for k, v := range s.meta {
-		//meta[k] = v
 		m[k] = v
 	}
-	//m["meta"] = meta
 	for k, v := range s.metrics {
 		m[k] = v
 	}
-	//Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	m["span_spanid"] = s.spanID
-	m["span_traceid"] = s.traceID
-	m["span_parentid"] = s.parentID
-	m["span_error"] = s.error
+	m[ext.MapSpanID] = s.spanID
+	m[ext.MapSpanTraceID] = s.traceID
+	m[ext.MapSpanParentID] = s.parentID
+	m[ext.MapSpanError] = s.error
 	return m
 }
 

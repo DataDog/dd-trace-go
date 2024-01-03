@@ -29,7 +29,6 @@ func MockSpan(s *tracer.Span) *Span {
 	if s == nil {
 		return nil
 	}
-	//return &Span{Span: s}
 	return &Span{sp: s, m: s.AsMap()}
 }
 
@@ -37,8 +36,6 @@ func (s *Span) OperationName() string {
 	if s == nil {
 		return ""
 	}
-	//s.RLock()
-	//defer s.RUnlock()
 	return s.m[ext.SpanName].(string)
 }
 
@@ -48,51 +45,32 @@ func (s *Span) Tag(k string) interface{} {
 	}
 
 	return s.m[k]
-
-	// s.RLock()
-	// defer s.RUnlock()
-	// switch k {
-	// case ext.SpanName:
-	// 	return s.Name
-	// case ext.ServiceName:
-	// 	return s.Service
-	// case ext.ResourceName:
-	// 	return s.Resource
-	// case ext.SpanType:
-	// 	return s.Type
-	// }
-	// if s.Meta != nil {
-	// 	if r, ok := s.Meta[k]; ok {
-	// 		return r
-	// 	}
-	// }
-	// if s.Metrics != nil {
-	// 	if r, ok := s.Metrics[k]; ok {
-	// 		return r
-	// 	}
-	// }
-	// return nil
 }
 
 func (s *Span) Tags() map[string]interface{} {
 	if s == nil {
 		return make(map[string]interface{})
 	}
-	return s.m
-	// s.RLock()
-	// defer s.RUnlock()
-	// r := make(map[string]interface{}, len(s.Meta)+len(s.Metrics))
-	// for k, v := range s.Meta {
-	// 	r[k] = v
-	// }
-	// for k, v := range s.Metrics {
-	// 	r[k] = v
-	// }
-	// r[ext.SpanName] = s.Name
-	// r[ext.ServiceName] = s.Service
-	// r[ext.ResourceName] = s.Resource
-	// r[ext.SpanType] = s.Type
-	// return r
+
+	m := make(map[string]interface{}, len(s.m))
+	for k, v := range s.m {
+		switch k {
+		case ext.MapSpanStart:
+			continue
+		case ext.MapSpanDuration:
+			continue
+		case ext.MapSpanID:
+			continue
+		case ext.MapSpanTraceID:
+			continue
+		case ext.MapSpanParentID:
+			continue
+		case ext.MapSpanError:
+			continue
+		}
+		m[k] = v
+	}
+	return m
 }
 
 func (s *Span) String() string {
@@ -122,35 +100,35 @@ func (s *Span) ParentID() uint64 {
 	if s == nil {
 		return 0
 	}
-	return s.m["span_parentid"].(uint64)
+	return s.m[ext.MapSpanParentID].(uint64)
 }
 
 func (s *Span) SpanID() uint64 {
 	if s == nil {
 		return 0
 	}
-	return s.m["span_spanid"].(uint64)
+	return s.m[ext.MapSpanID].(uint64)
 }
 
 func (s *Span) TraceID() uint64 {
 	if s == nil {
 		return 0
 	}
-	return s.m["span_traceid"].(uint64)
+	return s.m[ext.MapSpanTraceID].(uint64)
 }
 
 func (s *Span) StartTime() time.Time {
 	if s == nil {
 		return time.Unix(0, 0)
 	}
-	return time.Unix(0, s.m["span_start"].(int64))
+	return time.Unix(0, s.m[ext.MapSpanStart].(int64))
 }
 
 func (s *Span) Duration() time.Duration {
 	if s == nil {
 		return time.Duration(0)
 	}
-	return time.Duration(s.m["span_duration"].(int64))
+	return time.Duration(s.m[ext.MapSpanDuration].(int64))
 }
 
 func (s *Span) FinishTime() time.Time {
