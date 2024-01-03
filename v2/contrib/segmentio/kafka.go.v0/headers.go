@@ -6,7 +6,6 @@
 package kafka
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/segmentio/kafka-go"
@@ -49,6 +48,6 @@ func (c messageCarrier) Set(key, val string) {
 }
 
 // ExtractSpanContext retrieves the SpanContext from a kafka.Message
-func ExtractSpanContext(msg kafka.Message) (ddtrace.SpanContext, error) {
+func ExtractSpanContext(msg kafka.Message) (*tracer.SpanContext, error) {
 	return tracer.Extract(messageCarrier{&msg})
 }

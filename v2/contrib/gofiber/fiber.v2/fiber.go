@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -37,7 +36,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	}
 	log.Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
-		opts := []ddtrace.StartSpanOption{
+		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			tracer.ServiceName(cfg.serviceName),
 			tracer.Tag(ext.HTTPMethod, c.Method()),

@@ -9,7 +9,6 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -47,7 +46,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		query = []byte("unknown")
 	}
 
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),

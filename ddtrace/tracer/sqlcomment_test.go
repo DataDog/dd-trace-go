@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
@@ -106,7 +105,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 
-			var spanCtx ddtrace.SpanContext
+			var spanCtx *SpanContext
 			var traceID uint64
 			if tc.injectSpan {
 				traceID = uint64(10)
@@ -120,7 +119,6 @@ func TestSQLCommentCarrier(t *testing.T) {
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
 			assert.Equal(t, expected, carrier.Query)
-
 			if !tc.injectSpan {
 				traceID = carrier.SpanID
 			}
@@ -130,13 +128,13 @@ func TestSQLCommentCarrier(t *testing.T) {
 			assert.Equal(t, tc.expectedExtractErr, err)
 
 			if tc.expectedExtractErr == nil {
-				xctx, ok := sctx.(*spanContext)
-				require.True(t, ok)
+				//xctx, ok := sctx.(*SpanContext)
+				//require.True(t, ok)
 
-				assert.Equal(t, carrier.SpanID, xctx.spanID)
-				assert.Equal(t, traceID, xctx.traceID.Lower())
+				assert.Equal(t, carrier.SpanID, sctx.spanID)
+				assert.Equal(t, traceID, sctx.traceID.Lower())
 
-				p, ok := xctx.SamplingPriority()
+				p, ok := sctx.SamplingPriority()
 				assert.True(t, ok)
 				assert.Equal(t, tc.samplingPriority, p)
 			}
@@ -162,14 +160,14 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	carrier := SQLCommentCarrier{Query: q}
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
-	xctx, ok := sctx.(*spanContext)
-	assert.True(t, ok)
+	//xctx, ok := sctx.(*SpanContext)
+	//assert.True(t, ok)
 
-	assert.Equal(t, spanID, xctx.spanID)
-	assert.Equal(t, lower, xctx.traceID.Lower())
-	assert.Equal(t, upper, xctx.traceID.Upper())
+	assert.Equal(t, spanID, sctx.spanID)
+	assert.Equal(t, lower, sctx.traceID.Lower())
+	assert.Equal(t, upper, sctx.traceID.Upper())
 
-	p, ok := xctx.SamplingPriority()
+	p, ok := sctx.SamplingPriority()
 	assert.True(t, ok)
 	assert.Equal(t, priority, p)
 }
@@ -280,7 +278,7 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 	}
 }
 
-func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
+func setupBenchmark() (*tracer, *SpanContext, SQLCommentCarrier) {
 	tracer, _ := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 	root := tracer.StartSpan("service.calling.db", WithSpanID(10))
 	root.SetTag(ext.SamplingPriority, 2)

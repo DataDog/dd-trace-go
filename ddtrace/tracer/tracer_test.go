@@ -54,11 +54,7 @@ func (t *tracer) newChildSpan(name string, parent *Span) *Span {
 }
 
 func id128FromSpan(assert *assert.Assertions, ctx ddtrace.SpanContext) string {
-	var w3Cctx ddtrace.SpanContextW3C
-	var ok bool
-	w3Cctx, ok = ctx.(ddtrace.SpanContextW3C)
-	assert.True(ok)
-	id := w3Cctx.TraceID128()
+	id := ctx.TraceID()
 	assert.Len(id, 32)
 	return id
 }
@@ -742,7 +738,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		idBytes, err := hex.DecodeString(id)
 		assert.NoError(err)
 		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-		assert.Equal(s.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+		tid := s.Context().TraceIDBytes()
+		assert.Equal(tid[:], idBytes)
 	})
 	t.Run("128-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
@@ -811,7 +808,7 @@ func TestTracerBaggagePropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
-	context := child.Context().(*spanContext)
+	context := child.Context()
 
 	assert.Equal("value", context.baggage["key"])
 }
@@ -859,7 +856,7 @@ func TestPropagationDefaults(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	root.SetBaggageItem("x", "y")
 	root.SetTag(ext.SamplingPriority, -1)
-	ctx := root.Context().(*spanContext)
+	ctx := root.Context()
 	headers := http.Header{}
 
 	// inject the spanContext
@@ -878,7 +875,7 @@ func TestPropagationDefaults(t *testing.T) {
 	// retrieve the spanContext
 	propagated, err := tracer.Extract(carrier)
 	assert.Nil(err)
-	pctx := propagated.(*spanContext)
+	pctx := propagated
 
 	// compare if there is a Context match
 	assert.Equal(ctx.traceID, pctx.traceID)
@@ -916,8 +913,8 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 	root := newBasicSpan("web.request")
-	spanCtx := &spanContext{
-		traceID: traceIDFrom64Bits(root.context.TraceID()),
+	spanCtx := &SpanContext{
+		traceID: root.context.TraceIDBytes(),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -932,8 +929,8 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	defer tracer.Stop()
 	assert.Nil(err)
 	root := newBasicSpan("web.request")
-	spanCtx := &spanContext{
-		traceID: traceIDFrom64Bits(root.context.TraceID()),
+	spanCtx := &SpanContext{
+		traceID: root.context.TraceIDBytes(),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -953,8 +950,8 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	root.SetBaggageItem("key", "value")
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	child.SetBaggageItem("key", "changed!")
-	parentContext := root.Context().(*spanContext)
-	childContext := child.Context().(*spanContext)
+	parentContext := root.Context()
+	childContext := child.Context()
 	assert.Equal("value", parentContext.baggage["key"])
 	assert.Equal("changed!", childContext.baggage["key"])
 }

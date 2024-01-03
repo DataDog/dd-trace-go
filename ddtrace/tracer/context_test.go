@@ -12,7 +12,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -56,8 +55,8 @@ func TestStartSpanFromContext(t *testing.T) {
 
 	defer stop()
 
-	parent := &Span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
-	parent2 := &Span{context: &spanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
+	parent := &Span{context: &SpanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
+	parent2 := &Span{context: &SpanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
 	pctx := ContextWithSpan(context.Background(), parent)
 	child, ctx := StartSpanFromContext(
 		pctx,
@@ -96,8 +95,8 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	const contextKey = "key"
 	const numContexts = 100
 	options := make([]StartSpanOption, 0, 3)
-	outputValues := make(chan uint64, numContexts)
-	var expectedTraceIDs []uint64
+	outputValues := make(chan string, numContexts)
+	var expectedTraceIDs []string
 	for i := 0; i < numContexts; i++ {
 		parent, childCtx := StartSpanFromContext(context.Background(), "parent")
 		expectedTraceIDs = append(expectedTraceIDs, parent.Context().TraceID())
@@ -110,7 +109,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	}
 
 	// collect the outputs
-	var outputs []uint64
+	var outputs []string
 	for i := 0; i < numContexts; i++ {
 		outputs = append(outputs, <-outputValues)
 	}
@@ -126,32 +125,34 @@ func Test128(t *testing.T) {
 	os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
-	w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	}
-	id128 := w3cCtx.TraceID128()
+	w3cCtx := span.Context()
+	// if !ok {
+	// 	assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+	// }
+	id128 := w3cCtx.TraceID()
 	assert.Len(t, id128, 32) // ensure there are enough leading zeros
 	idBytes, err := hex.DecodeString(id128)
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-	assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+	tid := span.Context().TraceIDBytes()
+	assert.Equal(t, tid[:], idBytes)
 
 	// Enable 128 bit trace ids
 	os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
-	w3cCtx, ok = span128.Context().(ddtrace.SpanContextW3C)
-	if !ok {
-		assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	}
-	id128bit := w3cCtx.TraceID128()
+	w3cCtx = span128.Context()
+	// if !ok {
+	// 	assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
+	// }
+	id128bit := w3cCtx.TraceID()
 	assert.NotEmpty(t, id128bit)
 	assert.Len(t, id128bit, 32)
 	// Ensure that the lower order bits match the span's 64-bit trace id
 	b, err := hex.DecodeString(id128bit)
 	assert.NoError(t, err)
-	assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+	tid = span128.Context().TraceIDBytes()
+	assert.Equal(t, tid[:], b)
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {

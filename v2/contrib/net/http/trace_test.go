@@ -340,7 +340,7 @@ func TestTraceAndServe(t *testing.T) {
 			assert.False(ok)
 			called = true
 		}
-		customOpts := []ddtrace.StartSpanOption{tracer.Tag(ext.SpanKind, "custom.kind"), tracer.Tag(ext.Component, "custom.component")}
+		customOpts := []tracer.StartSpanOption{tracer.Tag(ext.SpanKind, "custom.kind"), tracer.Tag(ext.Component, "custom.component")}
 		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{SpanOpts: customOpts})
 		spans := mt.FinishedSpans()
 		span := spans[0]
@@ -418,7 +418,7 @@ func BenchmarkTraceAndServe(b *testing.B) {
 			Service:     "service-name",
 			Resource:    "resource-name",
 			FinishOpts:  []ddtrace.FinishOption{},
-			SpanOpts:    []ddtrace.StartSpanOption{},
+			SpanOpts:    []tracer.StartSpanOption{},
 			QueryParams: false,
 		}
 		TraceAndServe(handler, noopWriter{}, req, &cfg)

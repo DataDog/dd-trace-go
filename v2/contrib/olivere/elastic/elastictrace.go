@@ -18,7 +18,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -56,7 +55,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.Path
 	method := req.Method
 	resource := t.config.resourceNamer(url, method)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(t.config.serviceName),
 		tracer.SpanType(ext.SpanTypeElasticSearch),
 		tracer.ResourceName(resource),

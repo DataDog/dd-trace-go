@@ -7,6 +7,7 @@ package pubsub
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
@@ -22,6 +23,10 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 )
+
+func lowerEqual(t *testing.T, id uint64, tid [16]byte) {
+	assert.Equal(t, id, binary.BigEndian.Uint64(tid[8:]))
+}
 
 func TestPropagation(t *testing.T) {
 	assert := assert.New(t)
@@ -45,7 +50,8 @@ func TestPropagation(t *testing.T) {
 		assert.Equal(msg.Data, []byte("hello"), "wrong payload")
 		span, ok := tracer.SpanFromContext(ctx)
 		assert.True(ok, "no span")
-		assert.Equal(uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
+		lowerEqual(t, 42, span.Context().TraceIDBytes())
+		//assert.Equal(uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
 		msgID = msg.ID
 		spanID = span.Context().SpanID()
 		pubTime = msg.PublishTime.String()
@@ -132,7 +138,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	var (
 		msgID   string
 		spanID  uint64
-		traceID uint64
+		traceID string
 		pubTime string
 		called  bool
 	)
@@ -158,7 +164,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal("pubsub.receive", spans[1].OperationName())
 
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
-	assert.Equal(traceID, spans[0].TraceID())
+	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(map[string]interface{}{
 		"message_size":      float64(5),
 		"num_attributes":    float64(5),
@@ -174,7 +180,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	}, filterTags(spans[0].Tags()))
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
-	assert.Equal(traceID, spans[1].TraceID())
+	assert.Equal(traceID, spans[1].Context().TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
 	assert.Equal(map[string]interface{}{
 		"message_size":      float64(5),
@@ -205,7 +211,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	var (
 		msgID   string
 		spanID  uint64
-		traceID uint64
+		traceID string
 		pubTime string
 		called  bool
 	)
@@ -229,7 +235,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert.Len(spans, 1, "wrong number of spans")
 	assert.Equal("pubsub.receive", spans[0].OperationName())
 
-	assert.Equal(traceID, spans[0].TraceID())
+	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
 	assert.Equal(map[string]interface{}{
 		"message_size":      float64(5),

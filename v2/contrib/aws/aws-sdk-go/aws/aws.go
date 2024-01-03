@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/awsnamingschema"
@@ -82,7 +81,7 @@ func (h *handlers) Send(req *request.Request) {
 
 	region := awsRegion(req)
 
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(resourceName(req)),

@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -154,7 +153,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 
 // newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
 func newChildSpan(ctx context.Context, p *params) *tracer.Span {
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.Tag(ext.Component, componentName),

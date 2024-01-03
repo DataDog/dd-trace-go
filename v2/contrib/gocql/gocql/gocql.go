@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -160,7 +159,7 @@ func (tq *Query) PageState(state []byte) *Query {
 // NewChildSpan creates a new span from the params and the context.
 func (tq *Query) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tq.params
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.config.resourceName),
@@ -351,7 +350,7 @@ func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
 // newChildSpan creates a new span from the params and the context.
 func (tb *Batch) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tb.params
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(p.config.resourceName),

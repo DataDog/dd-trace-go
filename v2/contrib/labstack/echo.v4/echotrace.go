@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -39,7 +38,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 		fn.apply(cfg)
 	}
 	log.Debug("contrib/labstack/echo.v4: Configuring Middleware: %#v", cfg)
-	spanOpts := make([]ddtrace.StartSpanOption, 0, 3+len(cfg.tags))
+	spanOpts := make([]tracer.StartSpanOption, 0, 3+len(cfg.tags))
 	spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
 	for k, v := range cfg.tags {
 		spanOpts = append(spanOpts, tracer.Tag(k, v))

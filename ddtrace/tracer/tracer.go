@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -47,22 +46,22 @@ type TracerConf struct { //nolint:revive
 	ServiceTag           string
 }
 
-// SpanContext represents a span state that can propagate to descendant spans
-// and across process boundaries. It contains all the information needed to
-// spawn a direct descendant of the span that it belongs to. It can be used
-// to create distributed tracing by propagating it using the provided interfaces.
-type SpanContext interface {
-	// SpanID returns the span ID that this context is carrying.
-	SpanID() uint64
+// // SpanContext represents a span state that can propagate to descendant spans
+// // and across process boundaries. It contains all the information needed to
+// // spawn a direct descendant of the span that it belongs to. It can be used
+// // to create distributed tracing by propagating it using the provided interfaces.
+// type SpanContext interface {
+// 	// SpanID returns the span ID that this context is carrying.
+// 	SpanID() uint64
 
-	// TraceID returns the trace ID that this context is carrying.
-	TraceID() uint64
+// 	// TraceID returns the trace ID that this context is carrying.
+// 	TraceID() uint64
 
-	// ForeachBaggageItem provides an iterator over the key/value pairs set as
-	// baggage within this context. Iteration stops when the handler returns
-	// false.
-	ForeachBaggageItem(handler func(k, v string) bool)
-}
+// 	// ForeachBaggageItem provides an iterator over the key/value pairs set as
+// 	// baggage within this context. Iteration stops when the handler returns
+// 	// false.
+// 	ForeachBaggageItem(handler func(k, v string) bool)
+// }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
 // and propagating spans. The official implementation if exposed as functions
@@ -74,10 +73,10 @@ type Tracer interface {
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (SpanContext, error)
+	Extract(carrier interface{}) (*SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier interface{}) error
 
 	// Stop stops the tracer. Calls to Stop should be idempotent.
 	Stop()
@@ -243,14 +242,14 @@ func StartSpan(operationName string, opts ...StartSpanOption) *Span {
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (SpanContext, error) {
+func Extract(carrier interface{}) (*SpanContext, error) {
 	return GetGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx SpanContext, carrier interface{}) error {
+func Inject(ctx *SpanContext, carrier interface{}) error {
 	return GetGlobalTracer().Inject(ctx, carrier)
 }
 
@@ -504,8 +503,8 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	}
 }
 
-func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
-	var opts ddtrace.StartSpanConfig
+func SpanStart(operationName string, options ...StartSpanOption) *Span {
+	var opts StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
 	}
@@ -515,24 +514,17 @@ func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	} else {
 		startTime = opts.StartTime.UnixNano()
 	}
-	var context *spanContext
+	var context *SpanContext
 	// The default pprof context is taken from the start options and is
 	// not nil when using StartSpanFromContext()
 	pprofContext := opts.Context
 	if opts.Parent != nil {
-		if ctx, ok := opts.Parent.(*spanContext); ok {
-			context = ctx
-			if pprofContext == nil && ctx.span != nil {
-				// Inherit the context.Context from parent span if it was propagated
-				// using ChildOf() rather than StartSpanFromContext(), see
-				// applyPPROFLabels() below.
-				pprofContext = ctx.span.pprofCtxActive
-			}
-		} else if p, ok := opts.Parent.(ddtrace.SpanContextW3C); ok {
-			context = &spanContext{
-				traceID: p.TraceID128Bytes(),
-				spanID:  p.SpanID(),
-			}
+		context = opts.Parent
+		if pprofContext == nil && opts.Parent.span != nil {
+			// Inherit the context.Context from parent span if it was propagated
+			// using ChildOf() rather than StartSpanFromContext(), see
+			// applyPPROFLabels() below.
+			pprofContext = opts.Parent.span.pprofCtxActive
 		}
 	}
 	if pprofContext == nil {
@@ -599,7 +591,7 @@ func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
-func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *Span {
+func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
 	span := SpanStart(operationName, options...)
 	if span.service == "" {
 		span.service = t.config.serviceName
@@ -730,39 +722,38 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
 
 // updateSampling runs trace sampling rules on the context, since properties like resource / tags
 // could change and impact the result of sampling. This must be done once before context is propagated.
-func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
-	sctx, ok := ctx.(*spanContext)
-	if sctx == nil || !ok {
+func (t *tracer) updateSampling(ctx *SpanContext) {
+	if ctx == nil {
 		return
 	}
 	// without this check some mock spans tests fail
-	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
+	if t.rulesSampling == nil || ctx.trace == nil || ctx.trace.root == nil {
 		return
 	}
 	// want to avoid locking the entire trace from a span for long.
 	// if SampleTrace successfully samples the trace,
 	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
 	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
-	if sctx.trace.isLocked() {
+	if ctx.trace.isLocked() {
 		// trace sampling decision already taken and locked, no re-sampling shall occur
 		return
 	}
 
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
-	if t.rulesSampling.SampleTrace(sctx.trace.root) {
-		sctx.trace.setLocked(true)
+	if t.rulesSampling.SampleTrace(ctx.trace.root) {
+		ctx.trace.setLocked(true)
 	}
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (SpanContext, error) {
+func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 	return t.config.propagator.Extract(carrier)
 }
 

@@ -8,7 +8,7 @@ package httprouter
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -19,7 +19,7 @@ const defaultServiceName = "http.router"
 
 type routerConfig struct {
 	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption
+	spanOpts      []tracer.StartSpanOption
 	analyticsRate float64
 	headerTags    *internal.LockMap
 }
@@ -54,7 +54,7 @@ func WithService(name string) RouterOptionFn {
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
 	}

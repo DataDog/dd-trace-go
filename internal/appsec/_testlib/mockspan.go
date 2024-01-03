@@ -48,6 +48,6 @@ func (m *MockSpan) SetTag(key string, value interface{}) {
 // 	panic("unused")
 // }
 
-// func (m *MockSpan) StartChild(op string, opts ...ddtrace.StartSpanOption) any {
+// func (m *MockSpan) StartChild(op string, opts ...tracer.StartSpanOption) any {
 // 	panic("unused")
 // }

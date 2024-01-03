@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -57,7 +56,7 @@ type SQLCommentCarrier struct {
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
-func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
+func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 	c.SpanID = generateSpanID(now())
 	tags := make(map[string]string)
 	switch c.Mode {
@@ -68,27 +67,25 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	case DBMPropagationModeFull:
 		var (
 			sampled int64
-			traceID uint64
+			traceID uint64 = c.SpanID
 		)
-		if ctx, ok := spanCtx.(*spanContext); ok {
+		if ctx != nil {
 			if sp, ok := ctx.SamplingPriority(); ok && sp > 0 {
 				sampled = 1
 			}
-			traceID = ctx.TraceID()
-		}
-		if traceID == 0 { // check if this is a root span
-			traceID = c.SpanID
+			traceID = ctx.traceID.Lower()
 		}
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case DBMPropagationModeService:
-		if ctx, ok := spanCtx.(*spanContext); ok {
+		if ctx != nil {
 			if e, ok := ctx.meta(ext.Environment); ok && e != "" {
 				tags[sqlCommentEnv] = e
 			}
 			if v, ok := ctx.meta(ext.Version); ok && v != "" {
 				tags[sqlCommentParentVersion] = v
 			}
+
 		}
 		if globalconfig.ServiceName() != "" {
 			tags[sqlCommentParentService] = globalconfig.ServiceName()
@@ -174,8 +171,8 @@ func commentQuery(query string, tags map[string]string) string {
 }
 
 // Extract parses for key value attributes in a sql query injected with trace information in order to build a span context
-func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
-	var ctx *spanContext
+func (c *SQLCommentCarrier) Extract() (*SpanContext, error) {
+	var ctx *SpanContext
 	// There may be multiple comments within the sql query, so we must identify which one contains trace information.
 	// We look at each comment until we find one that contains a traceparent
 	if traceComment, found := findTraceComment(c.Query); found {
@@ -194,8 +191,8 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 
 // spanContextFromTraceComment looks for specific kv pairs in a comment containing trace information.
 // It returns a span context with the appropriate attributes
-func spanContextFromTraceComment(c string) (*spanContext, error) {
-	var ctx spanContext
+func spanContextFromTraceComment(c string) (*SpanContext, error) {
+	var ctx SpanContext
 	kvs := strings.Split(c, ",")
 	for _, unparsedKV := range kvs {
 		splitKV := strings.Split(unparsedKV, "=")

@@ -1097,12 +1097,12 @@ func WithOrchestrion(metadata map[string]string) StartOption {
 
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
 // to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
-type StartSpanOption = ddtrace.StartSpanOption
+// more correct to refer to it as the type as the origin, tracer.StartSpanOption.
+//type StartSpanOption = tracer.StartSpanOption
 
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
 		}
@@ -1139,7 +1139,7 @@ func Measured() StartSpanOption {
 // If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
 // value given here.
 func WithSpanID(id uint64) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.SpanID = id
 	}
 }
@@ -1147,15 +1147,15 @@ func WithSpanID(id uint64) StartSpanOption {
 // ChildOf tells StartSpan to use the given span context as a parent for the created span.
 //
 // Deprecated: Use span.StartChild instead.
-func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+func ChildOf(ctx *SpanContext) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
 		cfg.Parent = ctx
 	}
 }
 
 // withContext associates the ctx with the span.
 func withContext(ctx context.Context) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.Context = ctx
 	}
 }
@@ -1163,7 +1163,7 @@ func withContext(ctx context.Context) StartSpanOption {
 // StartTime sets a custom time as the start time for the created span. By
 // default a span is started using the creation time.
 func StartTime(t time.Time) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.StartTime = t
 	}
 }
@@ -1173,15 +1173,15 @@ func StartTime(t time.Time) StartSpanOption {
 // float64 between 0 and 1 where 0.5 would represent 50% of events.
 func AnalyticsRate(rate float64) StartSpanOption {
 	if math.IsNaN(rate) {
-		return func(cfg *ddtrace.StartSpanConfig) {}
+		return func(cfg *StartSpanConfig) {}
 	}
 	return Tag(ext.EventSampleRate, rate)
 }
 
 // WithStartSpanConfig merges the given StartSpanConfig into the one used to start the span.
 // It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
-func WithStartSpanConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
-	return func(c *ddtrace.StartSpanConfig) {
+func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
+	return func(c *StartSpanConfig) {
 		// copy cfg into c only if cfg fields are not zero values
 		// c fields have precedence, as they may have been set up before running this option
 		if c.SpanID == 0 {

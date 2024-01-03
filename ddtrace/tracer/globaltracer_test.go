@@ -8,22 +8,20 @@ package tracer
 import (
 	"sync"
 	"testing"
-
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 )
 
 type raceTestTracer struct {
 	stopped bool
 }
 
-func (*raceTestTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) *Span {
+func (*raceTestTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
 	return nil
 }
 func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
-func (*raceTestTracer) Extract(_ interface{}) (SpanContext, error) {
-	return NoopSpanContext{}, nil
+func (*raceTestTracer) Extract(_ interface{}) (*SpanContext, error) {
+	return nil, nil
 }
-func (*raceTestTracer) Inject(_ SpanContext, _ interface{}) error { return nil }
+func (*raceTestTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }

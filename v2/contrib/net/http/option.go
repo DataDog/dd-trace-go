@@ -25,7 +25,7 @@ type commonConfig struct {
 	ignoreRequest func(*http.Request) bool
 	serviceName   string
 	resourceNamer func(*http.Request) string
-	spanOpts      []ddtrace.StartSpanOption
+	spanOpts      []tracer.StartSpanOption
 }
 
 type config struct {
@@ -65,7 +65,7 @@ func defaults(cfg *config) {
 	}
 	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
+	cfg.spanOpts = []tracer.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
@@ -124,9 +124,9 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// WithSpanOptions defines a set of additional tracer.StartSpanOption to be added
 // to spans started by the integration.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *commonConfig) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}

@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -32,7 +31,7 @@ type oteltracer struct {
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
 	var ssConfig = oteltrace.NewSpanStartConfig(opts...)
 	// OTel name is akin to resource name in Datadog
-	var ddopts = []ddtrace.StartSpanOption{tracer.ResourceName(spanName)}
+	var ddopts = []tracer.StartSpanOption{tracer.ResourceName(spanName)}
 	if !ssConfig.NewRoot() {
 		if s, ok := tracer.SpanFromContext(ctx); ok {
 			// if the span originates from the Datadog tracer,
@@ -41,7 +40,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
-			ddopts = append(ddopts, tracer.ChildOf(&otelCtxToDDCtx{sctx}))
+			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})))
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
@@ -51,7 +50,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		ddopts = append(ddopts, tracer.Tag(ext.SpanKind, k.String()))
 	}
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
-	var cfg ddtrace.StartSpanConfig
+	var cfg tracer.StartSpanConfig
 	cfg.Tags = make(map[string]interface{})
 	for _, attr := range ssConfig.Attributes() {
 		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
@@ -83,10 +82,10 @@ type otelCtxToDDCtx struct {
 	oc oteltrace.SpanContext
 }
 
-func (c *otelCtxToDDCtx) TraceID() uint64 {
-	id := c.oc.TraceID()
-	return binary.BigEndian.Uint64(id[8:])
-}
+// func (c *otelCtxToDDCtx) TraceID() uint64 {
+// 	id := c.oc.TraceID()
+// 	return binary.BigEndian.Uint64(id[8:])
+// }
 
 func (c *otelCtxToDDCtx) SpanID() uint64 {
 	id := c.oc.SpanID()
@@ -95,11 +94,11 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
 
-func (c *otelCtxToDDCtx) TraceID128() string {
+func (c *otelCtxToDDCtx) TraceID() string {
 	id := c.oc.TraceID()
 	return hex.EncodeToString(id[:])
 }
 
-func (c *otelCtxToDDCtx) TraceID128Bytes() [16]byte {
+func (c *otelCtxToDDCtx) TraceIDBytes() [16]byte {
 	return c.oc.TraceID()
 }

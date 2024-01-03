@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -1527,7 +1526,7 @@ func TestWithStartSpanConfig(t *testing.T) {
 		spanID  = uint64(123)
 		tm, _   = time.Parse(time.RFC3339, "2019-01-01T00:00:00Z")
 	)
-	cfg := ddtrace.NewStartSpanConfig(
+	cfg := NewStartSpanConfig(
 		ChildOf(parent.Context()),
 		Measured(),
 		ResourceName("resource"),
@@ -1551,7 +1550,7 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(float64(1), s.metrics[keyMeasured])
 	assert.Equal("value", s.meta["key"])
 	assert.Equal(parent.Context().SpanID(), s.parentID)
-	assert.Equal(parent.Context().TraceID(), s.traceID)
+	assert.Equal(parent.Context().TraceID(), s.Context().TraceID())
 	assert.Equal("resource", s.resource)
 	assert.Equal(service, s.service)
 	assert.Equal(spanID, s.spanID)
@@ -1563,7 +1562,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 	var (
 		assert = assert.New(t)
 	)
-	cfg := ddtrace.NewStartSpanConfig(
+	cfg := NewStartSpanConfig(
 		Tag("key", "value"),
 		Tag("k2", "shouldnt_override"),
 	)
@@ -1583,7 +1582,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {
-	var cfg ddtrace.StartSpanConfig
+	var cfg StartSpanConfig
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -1602,7 +1601,7 @@ func BenchmarkConfig(b *testing.B) {
 	})
 	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
 		b.ReportAllocs()
-		cfg := ddtrace.NewStartSpanConfig(
+		cfg := NewStartSpanConfig(
 			ServiceName("SomeService"),
 			ResourceName("SomeResource"),
 		)
@@ -1637,7 +1636,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		defer tracer.Stop()
 		assert.NoError(b, err)
 		b.ReportAllocs()
-		cfg := ddtrace.NewStartSpanConfig(
+		cfg := NewStartSpanConfig(
 			ServiceName("SomeService"),
 			ResourceName("SomeResource"),
 		)

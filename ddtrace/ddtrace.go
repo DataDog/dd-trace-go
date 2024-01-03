@@ -13,24 +13,23 @@
 package ddtrace // import "github.com/DataDog/dd-trace-go/v2/ddtrace"
 
 import (
-	"context"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// SpanContextW3C represents a SpanContext with an additional method to allow
-// access of the 128-bit trace id of the span, if present.
-type SpanContextW3C interface {
-	SpanContext
+// // SpanContextW3C represents a SpanContext with an additional method to allow
+// // access of the 128-bit trace id of the span, if present.
+// type SpanContextW3C interface {
+// 	SpanContext
 
-	// TraceID128 returns the hex-encoded 128-bit trace ID that this context is carrying.
-	// The string will be exactly 32 bytes and may include leading zeroes.
-	TraceID128() string
+// 	// TraceID128 returns the hex-encoded 128-bit trace ID that this context is carrying.
+// 	// The string will be exactly 32 bytes and may include leading zeroes.
+// 	TraceID128() string
 
-	// TraceID128 returns the raw bytes of the 128-bit trace ID that this context is carrying.
-	TraceID128Bytes() [16]byte
-}
+// 	// TraceID128 returns the raw bytes of the 128-bit trace ID that this context is carrying.
+// 	TraceID128Bytes() [16]byte
+// }
 
 // SpanContext represents a span state that can propagate to descendant spans
 // and across process boundaries. It contains all the information needed to
@@ -41,16 +40,16 @@ type SpanContext interface {
 	SpanID() uint64
 
 	// TraceID returns the trace ID that this context is carrying.
-	TraceID() uint64
+	TraceID() string
+
+	// TraceID128 returns the raw bytes of the 128-bit trace ID that this context is carrying.
+	TraceIDBytes() [16]byte
 
 	// ForeachBaggageItem provides an iterator over the key/value pairs set as
 	// baggage within this context. Iteration stops when the handler returns
 	// false.
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
-
-// StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
-type StartSpanOption func(cfg *StartSpanConfig)
 
 // FinishOption is a configuration option that can be used with a Span's Finish method.
 type FinishOption func(cfg *FinishConfig)
@@ -74,41 +73,6 @@ type FinishConfig struct {
 
 	// SkipStackFrames specifies the offset at which to start reporting stack frames from the stack.
 	SkipStackFrames uint
-}
-
-// StartSpanConfig holds the configuration for starting a new span. It is usually passed
-// around by reference to one or more StartSpanOption functions which shape it into its
-// final form.
-type StartSpanConfig struct {
-	// Parent holds the SpanContext that should be used as a parent for the
-	// new span. If nil, implementations should return a root span.
-	Parent SpanContext
-
-	// StartTime holds the time that should be used as the start time of the span.
-	// Implementations should use the current time when StartTime.IsZero().
-	StartTime time.Time
-
-	// Tags holds a set of key/value pairs that should be set as metadata on the
-	// new span.
-	Tags map[string]interface{}
-
-	// SpanID will be the SpanID of the Span, overriding the random number that would
-	// be generated. If no Parent SpanContext is present, then this will also set the
-	// TraceID to the same value.
-	SpanID uint64
-
-	// Context is the parent context where the span should be stored.
-	Context context.Context
-}
-
-// NewStartSpanConfig allows to build a base config struct. It accepts the same options as StartSpan.
-// It's useful to reduce the number of operations in any hot path and update it for request/operation specifics.
-func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
-	var cfg StartSpanConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-	return cfg
 }
 
 // Logger implementations are able to log given messages that the tracer or profiler might output.

@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -162,7 +161,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 	t.Run("simple-client", func(t *testing.T) {
 		simpleClientOpts := &redis.UniversalOptions{Addrs: []string{"127.0.0.1:6379"}}
 		simpleClient := redis.NewUniversalClient(simpleClientOpts)
-		config := &ddtrace.StartSpanConfig{}
+		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"out.db":                  "0",
 			"out.host":                "127.0.0.1",
@@ -185,7 +184,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 				"127.0.0.2:6379",
 			}}
 		failoverClient := redis.NewUniversalClient(failoverClientOpts)
-		config := &ddtrace.StartSpanConfig{}
+		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"out.db":                  "0",
 			"db.redis.database_index": 0,
@@ -206,7 +205,7 @@ func TestAdditionalTagsFromClient(t *testing.T) {
 			},
 			DialTimeout: 1}
 		clusterClient := redis.NewUniversalClient(clusterClientOpts)
-		config := &ddtrace.StartSpanConfig{}
+		config := &tracer.StartSpanConfig{}
 		expectedTags := map[string]interface{}{
 			"addrs": "127.0.0.1:6379, 127.0.0.2:6379",
 		}

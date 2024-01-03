@@ -10,26 +10,25 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestStringSliceModify(t *testing.T) {
 	t.Run("modify-original", func(t *testing.T) {
-		opts := []ddtrace.StartSpanOption{tracer.Tag("mytag", "myvalue")}
+		opts := []tracer.StartSpanOption{tracer.Tag("mytag", "myvalue")}
 		optsCopy := Copy(opts...)
 		opts[0] = tracer.ResourceName("somethingelse")
-		cfg := new(ddtrace.StartSpanConfig)
+		cfg := new(tracer.StartSpanConfig)
 		for _, fn := range optsCopy {
 			fn(cfg)
 		}
 		assert.Equal(t, "myvalue", cfg.Tags["mytag"])
 	})
 	t.Run("modify-copy", func(t *testing.T) {
-		opts := []ddtrace.StartSpanOption{tracer.Tag("mytag", "myvalue")}
+		opts := []tracer.StartSpanOption{tracer.Tag("mytag", "myvalue")}
 		optsCopy := Copy(opts...)
 		optsCopy[0] = tracer.ResourceName("somethingelse")
-		cfg := new(ddtrace.StartSpanConfig)
+		cfg := new(tracer.StartSpanConfig)
 		for _, fn := range opts {
 			fn(cfg)
 		}
