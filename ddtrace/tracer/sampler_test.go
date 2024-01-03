@@ -796,20 +796,18 @@ func TestRulesSampler(t *testing.T) {
 				spanName: "abcde123",
 			},
 			{
-				rules: []SamplingRule{SpanTagsResourceRule(
-					map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-1")},
-					"", "", "", 1.0)},
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"host": "hn-1"}, "", "", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			},
 			{
-				rules:    []SamplingRule{SpanTagsResourceRule(map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-100")}, "res-1*", "", "", 1.0)},
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn-100"}, "res-1*", "", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
 			},
 			{
 				rules: []SamplingRule{SpanTagsResourceRule(
-					map[string]*regexp.Regexp{"hostname": regexp.MustCompile("hn-10")},
+					map[string]string{"hostname": "hn-10"},
 					"res-100", "", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
@@ -1262,19 +1260,24 @@ func TestSamplingRuleMarshall(t *testing.T) {
 		out string
 	}{
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), nil, 0, 0, nil, nil, 0, nil},
-			`{"service":"srv.[0-9]+","name":"","sample_rate":0,"type":"trace(0)"}`},
+			`{"service":"srv.[0-9]+","sample_rate":0,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.*"), regexp.MustCompile("ops.[0-9]+"), 0, 0, nil, nil, 0, nil},
 			`{"service":"srv.*","name":"ops.[0-9]+","sample_rate":0,"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, 0, nil},
 			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"trace(0)"}`},
 		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), nil, 0, nil},
-			`{"service":"","name":"","resource":"http_get","sample_rate":0.35,"type":"trace(0)"}`},
+			`{"resource":"http_get","sample_rate":0.35,"type":"trace(0)"}`},
 		{SamplingRule{nil, nil, 0.35, 0, regexp.MustCompile("http_get"), map[string]*regexp.Regexp{"host": regexp.MustCompile("hn-*")}, 0, nil},
-			`{"service":"","name":"","resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"trace(0)"}`},
+			`{"resource":"http_get","sample_rate":0.35,"tags":{"host":"hn-*"},"type":"trace(0)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 0, nil, nil, 1, nil},
 			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(1)"}`},
 		{SamplingRule{regexp.MustCompile("srv.[0-9]+"), regexp.MustCompile("ops.[0-9]+"), 0.55, 1000, nil, nil, 1, nil},
 			`{"service":"srv.[0-9]+","name":"ops.[0-9]+","sample_rate":0.55,"type":"span(1)","max_per_second":1000}`},
+		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"), nil, 0, nil},
+			`{"resource":"//bar","sample_rate":1,"type":"trace(0)"}`},
+		{SamplingRule{nil, nil, 1, 0, regexp.MustCompile("//bar"),
+			map[string]*regexp.Regexp{"tag_key": regexp.MustCompile("tag_value.[0-9]+")}, 0, nil},
+			`{"resource":"//bar","sample_rate":1,"tags":{"tag_key":"tag_value.[0-9]+"},"type":"trace(0)"}`},
 	} {
 		m, err := tt.in.MarshalJSON()
 		assert.Nil(t, err)
