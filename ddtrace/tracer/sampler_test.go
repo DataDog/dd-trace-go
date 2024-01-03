@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math"
