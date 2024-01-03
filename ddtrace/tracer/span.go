@@ -57,6 +57,12 @@ type errorConfig struct {
 	stackSkip    uint
 }
 
+// AsMap places tags and span properties into a map and returns it.
+//
+// Note that this is not performant, nor are spans guaranteed to have all of their
+// properties set at any time during normal operation! This is used for testing only,
+// and should not be used in non-test code, or you may run into performance or other
+// issues.
 func (s *Span) AsMap() map[string]interface{} {
 	m := make(map[string]interface{})
 	m[ext.SpanName] = s.name
