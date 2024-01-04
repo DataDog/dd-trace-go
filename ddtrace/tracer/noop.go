@@ -5,7 +5,9 @@
 
 package tracer
 
-import "github.com/DataDog/dd-trace-go/v2/ddtrace"
+import (
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+)
 
 var _ Tracer = (*NoopTracer)(nil)
 
@@ -14,7 +16,10 @@ type NoopTracer struct{}
 
 // StartSpan implements Tracer.
 func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) *Span {
-	return nil
+	// Create a bare minimum span to avoid panics in tests.
+	s := &Span{}
+	s.context = newSpanContext(s, nil)
+	return s
 }
 
 // SetServiceInfo implements Tracer.
