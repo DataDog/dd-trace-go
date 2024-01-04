@@ -19,6 +19,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/trace"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -391,6 +392,11 @@ func TestAllUploaded(t *testing.T) {
 	//
 	// TODO: Further check that the uploaded profiles are all valid
 
+	var customLabelKeys []string
+	for i := 0; i < 50; i++ {
+		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
+	}
+
 	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	// The channel is buffered with 2 entries so we can check that the
@@ -406,6 +412,7 @@ func TestAllUploaded(t *testing.T) {
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(1*time.Millisecond),
+		WithCustomProfilerLabelKeys(customLabelKeys...),
 	)
 
 	validateProfile := func(profile profileMeta, seq uint64) {
@@ -421,6 +428,7 @@ func TestAllUploaded(t *testing.T) {
 			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
+		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}

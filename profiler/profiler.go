@@ -27,6 +27,10 @@ import (
 // outChannelSize specifies the size of the profile output channel.
 const outChannelSize = 5
 
+// customProfileLabelLimit is the maximum number of pprof labels which can
+// be used as custom attributes in the profiler UI
+const customProfileLabelLimit = 10
+
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
@@ -132,6 +136,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+	if len(cfg.customProfilerLabels) > customProfileLabelLimit {
+		cfg.customProfilerLabels = cfg.customProfilerLabels[:customProfileLabelLimit]
 	}
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
 	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
@@ -289,6 +296,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// missing a trace because the feature isn't turned on.
 				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
 			},
+			customAttributes: p.cfg.customProfilerLabels,
 		}
 		p.seq++
 
