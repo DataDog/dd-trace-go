@@ -19,13 +19,17 @@ import (
 )
 
 // Level specifies the logging level that the log package prints at.
-type Level int
+type Level string
 
 const (
 	// LevelDebug represents debug level messages.
-	LevelDebug Level = iota
-	// LevelWarn represents warning and errors.
-	LevelWarn
+	LevelDebug Level = "DEBUG"
+	// LevelInfo represents info level messages.
+	LevelInfo Level = "INFO"
+	// LevelWarn represents warning messages.
+	LevelWarn Level = "WARN"
+	// LevelError represents error messages.
+	LevelError Level = "ERROR"
 )
 
 var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
@@ -35,7 +39,7 @@ var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
 // between this package and ddtrace
 type Logger interface {
 	// Log prints the given message.
-	Log(msg string)
+	Log(lvl Level, msg string)
 }
 
 var (
@@ -78,17 +82,17 @@ func Debug(fmt string, a ...interface{}) {
 	if !DebugEnabled() {
 		return
 	}
-	printMsg("DEBUG", fmt, a...)
+	printMsg(LevelDebug, fmt, a...)
 }
 
 // Warn prints a warning message.
 func Warn(fmt string, a ...interface{}) {
-	printMsg("WARN", fmt, a...)
+	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message.
 func Info(fmt string, a ...interface{}) {
-	printMsg("INFO", fmt, a...)
+	printMsg(LevelInfo, fmt, a...)
 }
 
 var (
@@ -181,7 +185,7 @@ func flushLocked() {
 		} else {
 			msg += fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
-		printMsg("ERROR", msg)
+		printMsg(LevelError, msg)
 	}
 	for k := range erragg {
 		// compiler-optimized map-clearing post go1.11 (golang/go#20138)
@@ -190,22 +194,26 @@ func flushLocked() {
 	erron = false
 }
 
-func printMsg(lvl, format string, a ...interface{}) {
+func printMsg(lvl Level, format string, a ...interface{}) {
 	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
 	mu.RLock()
-	logger.Log(msg)
+	logger.Log(lvl, msg)
 	mu.RUnlock()
 }
 
 type defaultLogger struct{ l *log.Logger }
 
-func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
+var _ Logger = &defaultLogger{}
+
+func (p *defaultLogger) Log(_ Level, msg string) { p.l.Print(msg) }
 
 // DiscardLogger discards every call to Log().
 type DiscardLogger struct{}
 
+var _ Logger = &DiscardLogger{}
+
 // Log implements Logger.
-func (d DiscardLogger) Log(_ string) {}
+func (d DiscardLogger) Log(_ Level, _ string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {
@@ -213,6 +221,8 @@ type RecordLogger struct {
 	logs   []string
 	ignore []string // a log is ignored if it contains a string in ignored
 }
+
+var _ Logger = &RecordLogger{}
 
 // Ignore adds substrings to the ignore field of RecordLogger, allowing
 // the RecordLogger to ignore attempts to log strings with certain substrings.
@@ -223,7 +233,7 @@ func (r *RecordLogger) Ignore(substrings ...string) {
 }
 
 // Log implements Logger.
-func (r *RecordLogger) Log(msg string) {
+func (r *RecordLogger) Log(_ Level, msg string) {
 	r.m.Lock()
 	defer r.m.Unlock()
 	for _, ignored := range r.ignore {

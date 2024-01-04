@@ -21,8 +21,10 @@ type testLogger struct {
 	lines []string
 }
 
+var _ Logger = &testLogger{}
+
 // Print implements Logger.
-func (tp *testLogger) Log(msg string) {
+func (tp *testLogger) Log(_ Level, msg string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.lines = append(tp.lines, msg)
@@ -130,12 +132,12 @@ func TestLog(t *testing.T) {
 func TestRecordLoggerIgnore(t *testing.T) {
 	tp := new(RecordLogger)
 	tp.Ignore("appsec")
-	tp.Log("this is an appsec log")
-	tp.Log("this is a tracer log")
+	tp.Log(LevelWarn, "this is an appsec log")
+	tp.Log(LevelWarn, "this is a tracer log")
 	assert.Len(t, tp.Logs(), 1)
 	assert.NotContains(t, tp.Logs()[0], "appsec")
 	tp.Reset()
-	tp.Log("this is an appsec log")
+	tp.Log(LevelWarn, "this is an appsec log")
 	assert.Len(t, tp.Logs(), 1)
 	assert.Contains(t, tp.Logs()[0], "appsec")
 }

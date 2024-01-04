@@ -114,7 +114,7 @@ func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
 // Logger implementations are able to log given messages that the tracer or profiler might output.
 type Logger interface {
 	// Log prints the given message.
-	Log(msg string)
+	Log(lvl log.Level, msg string)
 }
 
 // UseLogger sets l as the logger for all tracer and profiler logs.
