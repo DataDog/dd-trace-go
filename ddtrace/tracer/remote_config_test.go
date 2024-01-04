@@ -36,7 +36,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s := tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.5, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.5, s.metrics[keyRulesSamplerAppliedRate])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
@@ -48,7 +48,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request")
 		s.Finish()
-		require.NotContains(t, keyRulesSamplerAppliedRate, s.Metrics)
+		require.NotContains(t, keyRulesSamplerAppliedRate, s.metrics)
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
@@ -73,7 +73,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s := tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.2, s.metrics[keyRulesSamplerAppliedRate])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
@@ -85,7 +85,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
@@ -267,12 +267,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s := tracer.StartSpan("web.request")
 		s.Finish()
-		require.NotContains(t, "key0", s.Meta)
-		require.NotContains(t, "key1", s.Meta)
-		require.NotContains(t, "key2", s.Meta)
-		require.Equal(t, "val3", s.Meta["key3"])
-		require.Equal(t, "val4", s.Meta["key4"])
-		require.Equal(t, globalconfig.RuntimeID(), s.Meta[ext.RuntimeID])
+		require.NotContains(t, "key0", s.meta)
+		require.NotContains(t, "key1", s.meta)
+		require.NotContains(t, "key2", s.meta)
+		require.Equal(t, "val3", s.meta["key3"])
+		require.Equal(t, "val4", s.meta["key4"])
+		require.Equal(t, globalconfig.RuntimeID(), s.meta[ext.RuntimeID])
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
 		// Telemetry
@@ -285,12 +285,12 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, "val0", s.Meta["key0"])
-		require.Equal(t, "val1", s.Meta["key1"])
-		require.Equal(t, "val2", s.Meta["key2"])
-		require.NotContains(t, "key3", s.Meta)
-		require.NotContains(t, "key4", s.Meta)
-		require.Equal(t, globalconfig.RuntimeID(), s.Meta[ext.RuntimeID])
+		require.Equal(t, "val0", s.meta["key0"])
+		require.Equal(t, "val1", s.meta["key1"])
+		require.Equal(t, "val2", s.meta["key2"])
+		require.NotContains(t, "key3", s.meta)
+		require.NotContains(t, "key4", s.meta)
+		require.Equal(t, globalconfig.RuntimeID(), s.meta[ext.RuntimeID])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
@@ -317,9 +317,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s := tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.2, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.2, s.metrics[keyRulesSamplerAppliedRate])
 		require.Equal(t, "my-tag-from-rc", globalconfig.HeaderTag("X-Test-Header"))
-		require.Equal(t, "from-rc", s.Meta["ddtag"])
+		require.Equal(t, "from-rc", s.meta["ddtag"])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
@@ -335,9 +335,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		s = tracer.StartSpan("web.request")
 		s.Finish()
-		require.Equal(t, 0.1, s.Metrics[keyRulesSamplerAppliedRate])
+		require.Equal(t, 0.1, s.metrics[keyRulesSamplerAppliedRate])
 		require.Equal(t, "my-tag-from-env", globalconfig.HeaderTag("X-Test-Header"))
-		require.Equal(t, "from-env", s.Meta["ddtag"])
+		require.Equal(t, "from-env", s.meta["ddtag"])
 
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)

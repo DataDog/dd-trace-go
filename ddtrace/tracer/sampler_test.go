@@ -25,9 +25,9 @@ import (
 func TestPrioritySampler(t *testing.T) {
 	// create a new span with given service/env
 	mkSpan := func(svc, env string) *Span {
-		s := &Span{Service: svc, Meta: map[string]string{}}
+		s := &Span{service: svc, meta: map[string]string{}}
 		if env != "" {
-			s.Meta["env"] = env
+			s.meta["env"] = env
 		}
 		return s
 	}
@@ -35,12 +35,12 @@ func TestPrioritySampler(t *testing.T) {
 	t.Run("mkspan", func(t *testing.T) {
 		assert := assert.New(t)
 		s := mkSpan("my-service", "my-env")
-		assert.Equal("my-service", s.Service)
-		assert.Equal("my-env", s.Meta[ext.Environment])
+		assert.Equal("my-service", s.service)
+		assert.Equal("my-env", s.meta[ext.Environment])
 
 		s = mkSpan("my-service2", "")
-		assert.Equal("my-service2", s.Service)
-		_, ok := s.Meta[ext.Environment]
+		assert.Equal("my-service2", s.service)
+		_, ok := s.meta[ext.Environment]
 		assert.False(ok)
 	})
 
@@ -149,22 +149,22 @@ func TestPrioritySampler(t *testing.T) {
 		))
 
 		testSpan1 := newBasicSpan("http.request")
-		testSpan1.Service = "obfuscate.http"
-		testSpan1.TraceID = math.MaxUint64 - (math.MaxUint64 / 4)
+		testSpan1.service = "obfuscate.http"
+		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 4)
 
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.Metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
+		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 
-		testSpan1.TraceID = math.MaxUint64 - (math.MaxUint64 / 3)
+		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 3)
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
+		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 
-		testSpan1.Service = "other-service"
-		testSpan1.TraceID = 1
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.Metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.Metrics[keySamplingPriorityRate])
+		testSpan1.service = "other-service"
+		testSpan1.traceID = 1
+		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
+		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
 	})
 }
 
@@ -423,8 +423,8 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
 				assert.True(result)
-				assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
-				assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
+				assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
+				assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 			})
 		}
 	})
@@ -483,9 +483,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.True(result)
-				assert.Contains(span.Metrics, keySpanSamplingMechanism)
-				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
-				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+				assert.Contains(span.metrics, keySpanSamplingMechanism)
+				assert.Contains(span.metrics, keySingleSpanSamplingRuleRate)
+				assert.Contains(span.metrics, keySingleSpanSamplingMPS)
 			})
 		}
 	})
@@ -523,9 +523,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.True(result)
-				assert.Contains(span.Metrics, keySpanSamplingMechanism)
-				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
-				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+				assert.Contains(span.metrics, keySpanSamplingMechanism)
+				assert.Contains(span.metrics, keySingleSpanSamplingRuleRate)
+				assert.Contains(span.metrics, keySingleSpanSamplingMPS)
 			})
 		}
 	})
@@ -564,9 +564,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
-				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
-				assert.NotContains(span.Metrics, keySingleSpanSamplingRuleRate)
-				assert.NotContains(span.Metrics, keySingleSpanSamplingMPS)
+				assert.NotContains(span.metrics, keySpanSamplingMechanism)
+				assert.NotContains(span.metrics, keySingleSpanSamplingRuleRate)
+				assert.NotContains(span.metrics, keySingleSpanSamplingMPS)
 			})
 		}
 	})
@@ -607,9 +607,9 @@ func TestRulesSampler(t *testing.T) {
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv)
 				result := rs.SampleSpan(span)
 				assert.False(result)
-				assert.NotContains(span.Metrics, keySpanSamplingMechanism)
-				assert.NotContains(span.Metrics, keySingleSpanSamplingRuleRate)
-				assert.NotContains(span.Metrics, keySingleSpanSamplingMPS)
+				assert.NotContains(span.metrics, keySpanSamplingMechanism)
+				assert.NotContains(span.metrics, keySingleSpanSamplingRuleRate)
+				assert.NotContains(span.metrics, keySingleSpanSamplingMPS)
 			})
 		}
 	})
@@ -635,9 +635,9 @@ func TestRulesSampler(t *testing.T) {
 					span := makeSpan("http.request", "test-service")
 					result := rs.SampleTrace(span)
 					assert.True(result)
-					assert.Equal(rate, span.Metrics[keyRulesSamplerAppliedRate])
-					if rate > 0.0 && (span.Metrics[keySamplingPriority] != ext.PriorityUserReject) {
-						assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
+					assert.Equal(rate, span.metrics[keyRulesSamplerAppliedRate])
+					if rate > 0.0 && (span.metrics[keySamplingPriority] != ext.PriorityUserReject) {
+						assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 					}
 				})
 			}
@@ -670,7 +670,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 func TestRulesSamplerInternals(t *testing.T) {
 	makeSpanAt := func(op string, svc string, ts time.Time) *Span {
 		s := newSpan(op, svc, "", 0, 0, 0)
-		s.Start = ts.UnixNano()
+		s.start = ts.UnixNano()
 		return s
 	}
 
@@ -680,8 +680,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 0.0, now)
-		assert.Equal(0.0, span.Metrics[keyRulesSamplerAppliedRate])
-		_, ok := span.Metrics[keyRulesSamplerLimiterRate]
+		assert.Equal(0.0, span.metrics[keyRulesSamplerAppliedRate])
+		_, ok := span.metrics[keyRulesSamplerLimiterRate]
 		assert.False(ok)
 	})
 
@@ -696,8 +696,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
-		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
-		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
+		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 	})
 
 	t.Run("limited-rate", func(t *testing.T) {
@@ -712,14 +712,14 @@ func TestRulesSamplerInternals(t *testing.T) {
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
-		assert.EqualValues(ext.PriorityUserKeep, span.Metrics[keySamplingPriority])
-		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
-		assert.Equal(1.0, span.Metrics[keyRulesSamplerLimiterRate])
+		assert.EqualValues(ext.PriorityUserKeep, span.metrics[keySamplingPriority])
+		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
 		span = makeSpanAt("http.request", "test-service", now)
 		rs.traces.applyRule(span, 1.0, now)
-		assert.EqualValues(ext.PriorityUserReject, span.Metrics[keySamplingPriority])
-		assert.Equal(1.0, span.Metrics[keyRulesSamplerAppliedRate])
-		assert.Equal(0.75, span.Metrics[keyRulesSamplerLimiterRate])
+		assert.EqualValues(ext.PriorityUserReject, span.metrics[keySamplingPriority])
+		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(0.75, span.metrics[keyRulesSamplerLimiterRate])
 	})
 }
 

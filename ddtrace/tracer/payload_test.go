@@ -24,7 +24,7 @@ func newSpanList(n int) spanList {
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
-		list[i].Start = fixedTime
+		list[i].start = fixedTime
 	}
 	return list
 }
@@ -87,7 +87,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newPayload()
 		s := newBasicSpan("X")
-		s.Meta["key"] = strings.Repeat("X", 10*1024)
+		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
 		for i := 0; i < count; i++ {
 			trace[i] = s

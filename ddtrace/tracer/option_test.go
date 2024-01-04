@@ -1548,15 +1548,15 @@ func TestWithStartSpanConfig(t *testing.T) {
 
 	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
 	defer s.Finish()
-	assert.Equal(float64(1), s.Metrics[keyMeasured])
-	assert.Equal("value", s.Meta["key"])
-	assert.Equal(parent.Context().SpanID(), s.ParentID)
-	assert.Equal(parent.Context().TraceID(), s.TraceID)
-	assert.Equal("resource", s.Resource)
-	assert.Equal(service, s.Service)
-	assert.Equal(spanID, s.SpanID)
-	assert.Equal(ext.SpanTypeWeb, s.Type)
-	assert.Equal(tm.UnixNano(), s.Start)
+	assert.Equal(float64(1), s.metrics[keyMeasured])
+	assert.Equal("value", s.meta["key"])
+	assert.Equal(parent.Context().SpanID(), s.parentID)
+	assert.Equal(parent.Context().TraceID(), s.traceID)
+	assert.Equal("resource", s.resource)
+	assert.Equal(service, s.service)
+	assert.Equal(spanID, s.spanID)
+	assert.Equal(ext.SpanTypeWeb, s.spanType)
+	assert.Equal(tm.UnixNano(), s.start)
 }
 
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
@@ -1578,8 +1578,8 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		WithStartSpanConfig(cfg),
 	)
 	defer s.Finish()
-	assert.Equal("v2", s.Meta["k2"])
-	assert.Equal("value", s.Meta["key"])
+	assert.Equal("v2", s.meta["k2"])
+	assert.Equal("value", s.meta["key"])
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {
