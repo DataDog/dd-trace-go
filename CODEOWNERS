@@ -24,3 +24,6 @@
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance
+
+
+# testing if the previous PR worked ... ignore me!
