@@ -666,7 +666,14 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
 		return
 	}
+	sctx.mu.Lock()
+	defer sctx.mu.Unlock()
+	if sctx.trace.locked {
+		// trace sampling decision already taken and locked, no re-sampling shall occur
+		return
+	}
 	t.rulesSampling.SampleTrace(sctx.trace.root)
+	sctx.trace.locked = true
 }
 
 // Extract uses the configured or default TextMap Propagator.
