@@ -242,7 +242,8 @@ func testExec(cfg *Config) func(*testing.T) {
 		cfg.mockTracer.Reset()
 		tx, err := cfg.DB.BeginTx(ctx, nil) // Generates 2 spans with `sql.query_type` Connect & Begin
 		assert.Equal(nil, err)
-		_, err = tx.ExecContext(ctx, query) // Generates 1 span with `sql.query_type` Exec
+		// Generates 1 span with `sql.query_type` Exec, but 3 spans for the mssql driver (Prepare, Exec, Close)
+		_, err = tx.ExecContext(ctx, query)
 		assert.Equal(nil, err)
 		err = tx.Commit() // Generates 1 span with `sql.query_type` Commit
 		assert.Equal(nil, err)
@@ -253,7 +254,7 @@ func testExec(cfg *Config) func(*testing.T) {
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
-			assert.Len(spans, 7)
+			assert.Len(spans, 6)
 			span := spans[2]
 			cfg.ExpectTags["sql.query_type"] = "Prepare"
 			assert.Equal(cfg.ExpectName, span.OperationName())
