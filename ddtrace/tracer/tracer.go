@@ -670,14 +670,14 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	// if SampleTrace successfully samples the trace,
 	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
 	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
-	if sctx.trace.isTraceLocked() {
+	if sctx.trace.isLocked() {
 		// trace sampling decision already taken and locked, no re-sampling shall occur
 		return
 	}
 
 	// if sampling was successful, need to lock the trace to prevent further re-sampling
 	if t.rulesSampling.SampleTrace(sctx.trace.root) {
-		sctx.trace.setTraceLocked(true)
+		sctx.trace.setLocked(true)
 	}
 }
 

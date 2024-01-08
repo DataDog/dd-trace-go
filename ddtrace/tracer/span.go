@@ -481,10 +481,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	}
 
 	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-		s.context.trace.mu.RLock()
-		locked := s.context.trace.locked
-		s.context.trace.mu.RUnlock()
-		if !locked {
+		if !s.context.trace.isLocked() {
 			tr.rulesSampling.SampleTrace(s)
 		}
 	}

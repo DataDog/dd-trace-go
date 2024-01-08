@@ -345,13 +345,13 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	return updatedPriority
 }
 
-func (t *trace) isTraceLocked() bool {
+func (t *trace) isLocked() bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.locked
 }
 
-func (t *trace) setTraceLocked(locked bool) {
+func (t *trace) setLocked(locked bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.locked = locked
