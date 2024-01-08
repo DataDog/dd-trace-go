@@ -13,12 +13,13 @@
 package mocktracer
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"net/http"
 	"net/url"
 	"sync"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
