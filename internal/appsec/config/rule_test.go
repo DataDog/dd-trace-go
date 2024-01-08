@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package appsec
+package config
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ func TestStaticRule(t *testing.T) {
 		return
 	}
 
-	var parsedRules rulesFragment
+	var parsedRules RulesFragment
 	require.NoError(t, json.Unmarshal([]byte(rules.StaticRecommendedRules), &parsedRules))
 	waf, err := waf.NewHandle(parsedRules, "", "")
 	require.NoError(t, err)
