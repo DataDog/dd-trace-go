@@ -383,6 +383,7 @@ func TestNewUpdateRequest(t *testing.T) {
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
 func TestAsync(t *testing.T) {
 	require.NoError(t, Start(DefaultClientConfig()))
+	defer Stop()
 
 	for i := 10; i <= 10000; i *= 10 {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
