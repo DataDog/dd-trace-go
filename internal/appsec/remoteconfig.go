@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 
@@ -47,14 +48,15 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 	return m1
 }
 
-// combineRCRulesUpdates updates the state of the given rulesManager with the combination of all the provided rules updates
-func combineRCRulesUpdates(r *rulesManager, updates map[string]remoteconfig.ProductUpdate) (map[string]rc.ApplyStatus, error) {
-	statuses := map[string]rc.ApplyStatus{}
+// combineRCRulesUpdates updates the state of the given RulesManager with the combination of all the provided rules updates
+func combineRCRulesUpdates(r *config.RulesManager, updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
+	// Spare some re-allocations (but there may still be some because 1 update may contain N configs)
+	statuses = make(map[string]rc.ApplyStatus, len(updates))
 	// Set the default statuses for all updates to unacknowledged
 	for _, u := range updates {
 		statuses = mergeMaps(statuses, statusesFromUpdate(u, false, nil))
 	}
-	var err error
+
 updateLoop:
 	// Process rules related updates
 	for p, u := range updates {
@@ -63,52 +65,52 @@ updateLoop:
 		}
 		switch p {
 		case rc.ProductASMData:
-			// Merge all rules data entries together and store them as a rulesManager edit entry
+			// Merge all rules data entries together and store them as a RulesManager edit entry
 			rulesData, status := mergeRulesData(u)
 			statuses = mergeMaps(statuses, status)
-			r.addEdit("asmdata", rulesFragment{RulesData: rulesData})
+			r.AddEdit("asmdata", config.RulesFragment{RulesData: rulesData})
 		case rc.ProductASMDD:
-			// Switch the base rules of the rulesManager if the config received through ASM_DD is valid
+			// Switch the base rules of the RulesManager if the config received through ASM_DD is valid
 			// If the config was removed, switch back to the static recommended rules
 			if len(u) > 1 { // Don't process configs if more than one is received for ASM_DD
 				log.Debug("appsec: Remote config: more than one config received for ASM_DD. Updates won't be applied")
-				err = errors.New("More than one config received for ASM_DD")
+				err = errors.New("more than one config received for ASM_DD")
 				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
 				break updateLoop
 			}
 			for path, data := range u {
 				if data == nil {
 					log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
-					r.changeBase(defaultRulesFragment(), "")
+					r.ChangeBase(config.DefaultRulesFragment(), "")
 					break
 				}
-				var newBase rulesFragment
+				var newBase config.RulesFragment
 				if err = json.Unmarshal(data, &newBase); err != nil {
 					log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
 					statuses[path] = genApplyStatus(true, err)
 					break updateLoop
 				}
 				log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
-				r.changeBase(newBase, path)
+				r.ChangeBase(newBase, path)
 			}
 		case rc.ProductASM:
-			// Store each config received through ASM as an edit entry in the rulesManager
+			// Store each config received through ASM as an edit entry in the RulesManager
 			// Those entries will get merged together when the final rules are compiled
-			// If a config gets removed, the rulesManager edit entry gets removed as well
+			// If a config gets removed, the RulesManager edit entry gets removed as well
 			for path, data := range u {
 				log.Debug("appsec: Remote config: processing the %s ASM config", path)
 				if data == nil {
 					log.Debug("appsec: Remote config: ASM config %s was removed", path)
-					r.removeEdit(path)
+					r.RemoveEdit(path)
 					continue
 				}
-				var f rulesFragment
+				var f config.RulesFragment
 				if err = json.Unmarshal(data, &f); err != nil {
 					log.Debug("appsec: Remote config: error processing ASM config %s: %v", path, err)
 					statuses[path] = genApplyStatus(true, err)
 					break updateLoop
 				}
-				r.addEdit(path, f)
+				r.AddEdit(path, f)
 			}
 		default:
 			log.Debug("appsec: Remote config: ignoring unsubscribed product %s", p)
@@ -143,29 +145,29 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		return map[string]rc.ApplyStatus{}
 	}
 
-	// Create a new local rulesManager
-	r := a.cfg.rulesManager.clone()
-	statuses, err := combineRCRulesUpdates(r, updates)
+	// Create a new local RulesManager
+	r := a.cfg.RulesManager.Clone()
+	statuses, err := combineRCRulesUpdates(&r, updates)
 	if err != nil {
 		log.Debug("appsec: Remote config: not applying any updates because of error: %v", err)
 		return statuses
 	}
 
 	// Compile the final rules once all updates have been processed and no error occurred
-	r.compile()
-	log.Debug("appsec: Remote config: final compiled rules: %s", r)
+	r.Compile()
+	log.Debug("appsec: Remote config: final compiled rules: %s", r.String())
 
-	// If an error occurs while updating the WAF handle, don't swap the rulesManager and propagate the error
+	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
-	if err = a.swapWAF(r.latest); err != nil {
+	if err = a.swapWAF(r.Latest); err != nil {
 		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
 		for k := range statuses {
 			statuses[k] = genApplyStatus(true, err)
 		}
 		return statuses
 	}
-	// Replace the rulesManager with the new one holding the new state
-	a.cfg.rulesManager = r
+	// Replace the RulesManager with the new one holding the new state
+	a.cfg.RulesManager = &r
 
 	return statuses
 }
@@ -211,10 +213,10 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 	return statuses
 }
 
-func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]rc.ApplyStatus) {
+func mergeRulesData(u remoteconfig.ProductUpdate) ([]config.RuleDataEntry, map[string]rc.ApplyStatus) {
 	// Following the RFC, merging should only happen when two rules data with the same ID and same Type are received
 	// allRulesData[ID][Type] will return the rules data of said id and type, if it exists
-	allRulesData := make(map[string]map[string]ruleDataEntry)
+	allRulesData := make(map[string]map[string]config.RuleDataEntry)
 	statuses := statusesFromUpdate(u, true, nil)
 
 	for path, raw := range u {
@@ -228,7 +230,7 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 			continue
 		}
 
-		var rulesData rulesData
+		var rulesData config.RulesData
 		if err := json.Unmarshal(raw, &rulesData); err != nil {
 			log.Debug("appsec: Remote config: error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
 			statuses[path] = genApplyStatus(false, err)
@@ -238,7 +240,7 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 		// Check each entry against allRulesData to see if merging is necessary
 		for _, ruleData := range rulesData.RulesData {
 			if allRulesData[ruleData.ID] == nil {
-				allRulesData[ruleData.ID] = make(map[string]ruleDataEntry)
+				allRulesData[ruleData.ID] = make(map[string]config.RuleDataEntry)
 			}
 			if data, ok := allRulesData[ruleData.ID][ruleData.Type]; ok {
 				// Merge rules data entries with the same ID and Type
@@ -251,7 +253,7 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 	}
 
 	// Aggregate all the rules data before passing it over to the WAF
-	var rulesData []ruleDataEntry
+	var rulesData []config.RuleDataEntry
 	for _, m := range allRulesData {
 		for _, data := range m {
 			rulesData = append(rulesData, data)
@@ -263,7 +265,8 @@ func mergeRulesData(u remoteconfig.ProductUpdate) ([]ruleDataEntry, map[string]r
 // mergeRulesDataEntries merges two slices of rules data entries together, removing duplicates and
 // only keeping the longest expiration values for similar entries.
 func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.ASMDataRuleDataEntry {
-	mergeMap := map[string]int64{}
+	// There will be at most len(entries1) + len(entries2)  entries in the merge map
+	mergeMap := make(map[string]int64, len(entries1)+len(entries2))
 
 	for _, entry := range entries1 {
 		mergeMap[entry.Value] = entry.Expiration
@@ -278,43 +281,40 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 	// Create the final slice and return it
 	entries := make([]rc.ASMDataRuleDataEntry, 0, len(mergeMap))
 	for val, exp := range mergeMap {
-		entries = append(entries, rc.ASMDataRuleDataEntry{
-			Value:      val,
-			Expiration: exp,
-		})
+		entries = append(entries, rc.ASMDataRuleDataEntry{Value: val, Expiration: exp})
 	}
 	return entries
 }
 
 func (a *appsec) startRC() error {
-	if a.cfg.rc != nil {
-		return remoteconfig.Start(*a.cfg.rc)
+	if a.cfg.RC != nil {
+		return remoteconfig.Start(*a.cfg.RC)
 	}
 	return nil
 }
 
 func (a *appsec) stopRC() {
-	if a.cfg.rc != nil {
+	if a.cfg.RC != nil {
 		remoteconfig.Stop()
 	}
 }
 
 func (a *appsec) registerRCProduct(p string) error {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterCapability(c)
 }
 
 func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return nil
 	}
@@ -322,7 +322,7 @@ func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
 }
 
 func (a *appsec) enableRemoteActivation() error {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	err := a.registerRCProduct(rc.ProductASMFeatures)
@@ -336,8 +336,19 @@ func (a *appsec) enableRemoteActivation() error {
 	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
+var blockingCapabilities = [...]remoteconfig.Capability{
+	remoteconfig.ASMUserBlocking,
+	remoteconfig.ASMRequestBlocking,
+	remoteconfig.ASMIPBlocking,
+	remoteconfig.ASMDDRules,
+	remoteconfig.ASMExclusions,
+	remoteconfig.ASMCustomRules,
+	remoteconfig.ASMCustomBlockingResponse,
+	remoteconfig.ASMTrustedIPs,
+}
+
 func (a *appsec) enableRCBlocking() {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return
 	}
@@ -354,16 +365,7 @@ func (a *appsec) enableRCBlocking() {
 	}
 
 	if _, isSet := os.LookupEnv(internal.EnvRules); !isSet {
-		caps := []remoteconfig.Capability{
-			remoteconfig.ASMUserBlocking,
-			remoteconfig.ASMRequestBlocking,
-			remoteconfig.ASMIPBlocking,
-			remoteconfig.ASMDDRules,
-			remoteconfig.ASMExclusions,
-			remoteconfig.ASMCustomRules,
-			remoteconfig.ASMCustomBlockingResponse,
-		}
-		for _, c := range caps {
+		for _, c := range blockingCapabilities {
 			if err := a.registerRCCapability(c); err != nil {
 				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
 			}
@@ -372,18 +374,10 @@ func (a *appsec) enableRCBlocking() {
 }
 
 func (a *appsec) disableRCBlocking() {
-	if a.cfg.rc == nil {
+	if a.cfg.RC == nil {
 		return
 	}
-	caps := []remoteconfig.Capability{
-		remoteconfig.ASMDDRules,
-		remoteconfig.ASMExclusions,
-		remoteconfig.ASMIPBlocking,
-		remoteconfig.ASMRequestBlocking,
-		remoteconfig.ASMUserBlocking,
-		remoteconfig.ASMCustomRules,
-	}
-	for _, c := range caps {
+	for _, c := range blockingCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
 		}

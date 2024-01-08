@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build linux
+
 package internal
 
 import (
@@ -20,20 +22,20 @@ const (
 	// cgroupPath is the path to the cgroup file where we can find the container id if one exists.
 	cgroupPath = "/proc/self/cgroup"
 
-	// cgroupV2Key is the key used to store the cgroup v2 identify the cgroupv2 mount point in the cgroupMounts map.
-	cgroupV2Key = "cgroupv2"
-
 	// cgroupV1BaseController is the base controller used to identify the cgroup v1 mount point in the cgroupMounts map.
 	cgroupV1BaseController = "memory"
 
 	// defaultCgroupMountPath is the path to the cgroup mount point.
 	defaultCgroupMountPath = "/sys/fs/cgroup"
-)
 
-const (
 	uuidSource      = "[0-9a-f]{8}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{4}[-_][0-9a-f]{12}|[0-9a-f]{8}(?:-[0-9a-f]{4}){4}$"
 	containerSource = "[0-9a-f]{64}"
 	taskSource      = "[0-9a-f]{32}-\\d+"
+
+	// From https://github.com/torvalds/linux/blob/5859a2b1991101d6b978f3feb5325dad39421f29/include/linux/proc_ns.h#L41-L49
+	// Currently, host namespace inode number are hardcoded, which can be used to detect
+	// if we're running in host namespace or not (does not work when running in DinD)
+	hostCgroupNamespaceInode = 0xEFFFFFFB
 )
 
 var (
@@ -47,15 +49,14 @@ var (
 	containerID string
 
 	// entityID is the entityID to use for the container. It is the `cid-<containerID>` if the container id available,
-	// otherwise the cgroup v2 node inode prefixed with `in-` or an empty string on cgroup v1 or incompatible OS.
-	// It is retrieved by finding cgroup2 mounts in /proc/mounts, finding the cgroup v2 node path in /proc/self/cgroup and
-	// calling stat on mountPath+nodePath to get the inode.
+	// otherwise the cgroup node controller's inode prefixed with `in-` or an empty string on incompatible OS.
+	// We use the memory controller on cgroupv1 and the root cgroup on cgroupv2.
 	entityID string
 )
 
 func init() {
 	containerID = readContainerID(cgroupPath)
-	entityID = readEntityID(defaultCgroupMountPath, cgroupPath)
+	entityID = readEntityID(defaultCgroupMountPath, cgroupPath, isHostCgroupNamespace())
 }
 
 // parseContainerID finds the first container ID reading from r and returns it.
@@ -145,16 +146,37 @@ func inodeForPath(path string) string {
 	return fmt.Sprintf("in-%d", stats.Ino)
 }
 
-// readEntityID attempts to return the cgroup v2 node inode or empty on failure.
-func readEntityID(mountPath, cgroupPath string) string {
+// readEntityID attempts to return the cgroup node inode or empty on failure.
+func readEntityID(mountPath, cgroupPath string, isHostCgroupNamespace bool) string {
+	// First try to emit the containerID if available. It will be retrieved if the container is
+	// running in the host cgroup namespace, independently of the cgroup version.
 	if containerID != "" {
 		return "cid-" + containerID
+	}
+	// Rely on the inode if we're not running in the host cgroup namespace.
+	if isHostCgroupNamespace {
+		return ""
 	}
 	return getCgroupInode(mountPath, cgroupPath)
 }
 
-// EntityID attempts to return the container ID or the cgroup v2 node inode if the container ID is not available.
-// The cid is prefixed with `cid-` and the inode with `in-`.
+// EntityID attempts to return the container ID or the cgroup node controller's inode if the container ID
+// is not available. The cid is prefixed with `cid-` and the inode with `in-`.
 func EntityID() string {
 	return entityID
+}
+
+// isHostCgroupNamespace checks if the agent is running in the host cgroup namespace.
+func isHostCgroupNamespace() bool {
+	fi, err := os.Stat("/proc/self/ns/cgroup")
+	if err != nil {
+		return false
+	}
+
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	if ok {
+		return stat.Ino == hostCgroupNamespaceInode
+	}
+
+	return false
 }
