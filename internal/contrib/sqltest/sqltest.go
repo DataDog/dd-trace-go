@@ -240,11 +240,11 @@ func testExec(cfg *Config) func(*testing.T) {
 		)
 
 		cfg.mockTracer.Reset()
-		tx, err := cfg.DB.BeginTx(ctx, nil)
+		tx, err := cfg.DB.BeginTx(ctx, nil) // Generates 2 spans with `sql.query_type` Connect & Begin
 		assert.Equal(nil, err)
-		_, err = tx.ExecContext(ctx, query)
+		_, err = tx.ExecContext(ctx, query) // Generates 1 span with `sql.query_type` Exec
 		assert.Equal(nil, err)
-		err = tx.Commit()
+		err = tx.Commit() // Generates 1 span with `sql.query_type` Commit
 		assert.Equal(nil, err)
 
 		parent.Finish() // flush children
@@ -267,7 +267,7 @@ func testExec(cfg *Config) func(*testing.T) {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
 		} else {
-			assert.Len(spans, 5)
+			assert.Len(spans, 4)
 		}
 
 		var span *mocktracer.Span
