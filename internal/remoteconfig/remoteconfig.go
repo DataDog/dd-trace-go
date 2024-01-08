@@ -90,13 +90,15 @@ type Client struct {
 	repository *rc.Repository
 	stop       chan struct{}
 
-	callbacks             []Callback
-	_callbacksMu          sync.RWMutex
-	products              map[string]struct{}
-	_productsMu           sync.RWMutex
-	productsWithCallbacks map[string]ProductCallback
-	capabilities          map[Capability]struct{}
-	_capabilitiesMu       sync.RWMutex
+	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
+	callbacks                []Callback
+	_callbacksMu             sync.RWMutex
+	products                 map[string]struct{}
+	_productsMu              sync.RWMutex
+	productsWithCallbacks    map[string]ProductCallback
+	_productsWithCallbacksMu sync.RWMutex
+	capabilities             map[Capability]struct{}
+	_capabilitiesMu          sync.RWMutex
 
 	lastError error
 }
@@ -246,12 +248,16 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	if client == nil {
 		return ErrClientNotStarted
 	}
-	client._productsMu.Lock()
-	defer client._productsMu.Unlock()
+	client._productsMu.RLock()
+	defer client._productsMu.RUnlock()
 	if _, found := client.products[product]; found {
 		return fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
+
+	client._productsWithCallbacksMu.Lock()
+	defer client._productsWithCallbacksMu.Unlock()
 	client.productsWithCallbacks[product] = callback
+
 	client._capabilitiesMu.Lock()
 	defer client._capabilitiesMu.Unlock()
 	for _, cap := range capabilities {
@@ -298,6 +304,8 @@ func RegisterProduct(p string) error {
 	}
 	client._productsMu.Lock()
 	defer client._productsMu.Unlock()
+	client._productsWithCallbacksMu.RLock()
+	defer client._productsWithCallbacksMu.RUnlock()
 	if _, found := client.productsWithCallbacks[p]; found {
 		return fmt.Errorf("product %s already registered via Subscribe", p)
 	}
@@ -323,6 +331,8 @@ func HasProduct(p string) (bool, error) {
 	}
 	client._productsMu.RLock()
 	defer client._productsMu.RUnlock()
+	client._productsWithCallbacksMu.RLock()
+	defer client._productsWithCallbacksMu.RUnlock()
 	_, found := client.products[p]
 	_, foundWithCallback := client.productsWithCallbacks[p]
 	return found || foundWithCallback, nil
@@ -372,8 +382,8 @@ func (c *Client) globalCallbacks() []Callback {
 }
 
 func (c *Client) productCallbacks() map[string]ProductCallback {
-	c._callbacksMu.RLock()
-	defer c._callbacksMu.RUnlock()
+	c._productsWithCallbacksMu.RLock()
+	defer c._productsWithCallbacksMu.RUnlock()
 	callbacks := make(map[string]ProductCallback, len(c.productsWithCallbacks))
 	for k, v := range c.productsWithCallbacks {
 		callbacks[k] = v
@@ -382,8 +392,10 @@ func (c *Client) productCallbacks() map[string]ProductCallback {
 }
 
 func (c *Client) allProducts() []string {
-	client._productsMu.RLock()
-	defer client._productsMu.RUnlock()
+	c._productsMu.RLock()
+	defer c._productsMu.RUnlock()
+	c._productsWithCallbacksMu.RLock()
+	defer c._productsWithCallbacksMu.RUnlock()
 	products := make([]string, 0, len(c.products)+len(c.productsWithCallbacks))
 	for p := range c.products {
 		products = append(products, p)
