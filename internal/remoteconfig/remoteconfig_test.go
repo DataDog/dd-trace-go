@@ -391,11 +391,11 @@ func TestAsync(t *testing.T) {
 			// Subscriptions
 			for j := 0; j < i; j++ {
 				product := fmt.Sprintf("%d", rand.Int()%10)
-				cap := Capability(rand.Uint32() % 10)
+				capability := Capability(rand.Uint32() % 10)
 				wg.Add(1)
 				go func() {
 					callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
-					Subscribe(product, callback, cap)
+					Subscribe(product, callback, capability)
 					wg.Done()
 				}()
 			}
