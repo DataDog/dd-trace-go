@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -376,4 +378,77 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
 	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
 	require.True(t, req.Client.IsTracer)
+}
+
+// TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
+func TestAsync(t *testing.T) {
+	require.NoError(t, Start(DefaultClientConfig()))
+
+	for i := 10; i <= 10000; i *= 10 {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			var wg sync.WaitGroup
+
+			// Subscriptions
+			for j := 0; j < i; j++ {
+				product := fmt.Sprintf("%d", rand.Int()%10)
+				cap := Capability(rand.Uint32() % 10)
+				go func() {
+					callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
+					Subscribe(product, callback, cap)
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+
+			// Products
+			for j := 0; j < i; j++ {
+				go func() {
+					RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+			for j := 0; j < i; j++ {
+				go func() {
+					UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+
+			// Capabilities
+			for j := 0; j < i; j++ {
+				go func() {
+					RegisterCapability(Capability(rand.Uint32() % 10))
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+			for j := 0; j < i; j++ {
+				go func() {
+					UnregisterCapability(Capability(rand.Uint32() % 10))
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+
+			// Callbacks
+			callback := func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			for j := 0; j < i; j++ {
+				go func() {
+					RegisterCallback(callback)
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+			for j := 0; j < i; j++ {
+				go func() {
+					UnregisterCallback(callback)
+					wg.Done()
+				}()
+				wg.Add(1)
+			}
+			wg.Wait()
+		})
+	}
 }
