@@ -13,13 +13,12 @@
 package mocktracer
 
 import (
-	"net/http"
-	"net/url"
-	"sync"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"net/http"
+	"net/url"
+	"sync"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -79,7 +78,8 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
-func (*mocktracer) Stop() {
+func (t *mocktracer) Stop() {
+	t.Reset()
 	tracer.StopTestTracer()
 }
 
