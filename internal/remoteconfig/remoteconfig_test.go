@@ -392,61 +392,61 @@ func TestAsync(t *testing.T) {
 			for j := 0; j < i; j++ {
 				product := fmt.Sprintf("%d", rand.Int()%10)
 				cap := Capability(rand.Uint32() % 10)
+				wg.Add(1)
 				go func() {
 					callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
 					Subscribe(product, callback, cap)
 					wg.Done()
 				}()
-				wg.Add(1)
 			}
 
 			// Products
 			for j := 0; j < i; j++ {
-				go func() {
-					RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+				}()
 			}
 			for j := 0; j < i; j++ {
-				go func() {
-					UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+				}()
 			}
 
 			// Capabilities
 			for j := 0; j < i; j++ {
-				go func() {
-					RegisterCapability(Capability(rand.Uint32() % 10))
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					RegisterCapability(Capability(rand.Uint32() % 10))
+				}()
 			}
 			for j := 0; j < i; j++ {
-				go func() {
-					UnregisterCapability(Capability(rand.Uint32() % 10))
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					UnregisterCapability(Capability(rand.Uint32() % 10))
+				}()
 			}
 
 			// Callbacks
 			callback := func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
 			for j := 0; j < i; j++ {
-				go func() {
-					RegisterCallback(callback)
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					RegisterCallback(callback)
+				}()
 			}
 			for j := 0; j < i; j++ {
-				go func() {
-					UnregisterCallback(callback)
-					wg.Done()
-				}()
 				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					UnregisterCallback(callback)
+				}()
 			}
 			wg.Wait()
 		})
