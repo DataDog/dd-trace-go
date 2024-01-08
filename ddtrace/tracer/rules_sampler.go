@@ -84,20 +84,20 @@ type SamplingRule struct {
 
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *Span) bool {
-	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
+	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
 	}
-	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
+	if sr.Name != nil && !sr.Name.MatchString(s.name) {
 		return false
 	}
-	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
+	if sr.Resource != nil && !sr.Resource.MatchString(s.resource) {
 		return false
 	}
 	s.Lock()
 	defer s.Unlock()
-	if sr.Tags != nil && s.Meta != nil {
+	if sr.Tags != nil && s.meta != nil {
 		for k, regex := range sr.Tags {
-			v, ok := s.Meta[k]
+			v, ok := s.meta[k]
 			if !ok || !regex.MatchString(v) {
 				return false
 			}

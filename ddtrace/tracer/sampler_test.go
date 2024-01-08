@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
-
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
 )
@@ -918,7 +916,8 @@ func TestRulesSampler(t *testing.T) {
 				defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 				os.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
 				defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-				_, _, _, stop := startTestTracer(t)
+				_, _, _, stop, err := startTestTracer(t)
+				assert.NoError(t, err)
 				defer stop()
 
 				s, _ := StartSpanFromContext(context.Background(), "web.request",
@@ -927,8 +926,8 @@ func TestRulesSampler(t *testing.T) {
 				s.SetTag("tag2", "val2")
 				s.Finish()
 
-				assert.EqualValues(t, s.(*span).Metrics[keySamplingPriority], test.samplingPriority)
-				assert.EqualValues(t, s.(*span).Metrics[keyRulesSamplerAppliedRate], test.appliedRate)
+				assert.EqualValues(t, s.metrics[keySamplingPriority], test.samplingPriority)
+				assert.EqualValues(t, s.metrics[keyRulesSamplerAppliedRate], test.appliedRate)
 			})
 		}
 	})
@@ -939,7 +938,8 @@ func TestRulesSampler(t *testing.T) {
 		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
 		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		tr, _, _, stop := startTestTracer(t)
+		tr, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
 		defer stop()
 
 		originSpan, _ := StartSpanFromContext(context.Background(), "web.request",
@@ -947,20 +947,20 @@ func TestRulesSampler(t *testing.T) {
 		originSpan.SetTag("tag1", "val1")
 		// based on the  Tag("tag0", "val0") start span option, span sampling would be 'drop',
 		// and setting the second pair of tags doesn't invoke sampling func
-		assert.EqualValues(t, -1, originSpan.(*span).Metrics[keySamplingPriority])
-		assert.EqualValues(t, 0, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.EqualValues(t, -1, originSpan.metrics[keySamplingPriority])
+		assert.EqualValues(t, 0, originSpan.metrics[keyRulesSamplerAppliedRate])
 		headers := TextMapCarrier(map[string]string{})
 
 		// inject invokes resampling, since span satisfies rule #2, sampling will be 'keep'
 		tr.Inject(originSpan.Context(), headers)
-		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
-		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.EqualValues(t, 2, originSpan.metrics[keySamplingPriority])
+		assert.EqualValues(t, 1, originSpan.metrics[keyRulesSamplerAppliedRate])
 
 		// context already injected / propagated, and the sampling decision can no longer be changed
 		originSpan.SetTag("tag2", "val2")
 		originSpan.Finish()
-		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
-		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.EqualValues(t, 2, originSpan.metrics[keySamplingPriority])
+		assert.EqualValues(t, 1, originSpan.metrics[keyRulesSamplerAppliedRate])
 
 		w3cCtx, err := tr.Extract(headers)
 		assert.Nil(t, err)
@@ -968,7 +968,7 @@ func TestRulesSampler(t *testing.T) {
 		w3cSpan, _ := StartSpanFromContext(context.Background(), "web.request", ChildOf(w3cCtx))
 		w3cSpan.Finish()
 
-		assert.EqualValues(t, 2, w3cSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 2, w3cSpan.metrics[keySamplingPriority])
 	})
 }
 
