@@ -666,7 +666,19 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
 		return
 	}
-	t.rulesSampling.SampleTrace(sctx.trace.root)
+	// want to avoid locking the entire trace from a span for long.
+	// if SampleTrace successfully samples the trace,
+	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
+	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
+	if sctx.trace.isLocked() {
+		// trace sampling decision already taken and locked, no re-sampling shall occur
+		return
+	}
+
+	// if sampling was successful, need to lock the trace to prevent further re-sampling
+	if t.rulesSampling.SampleTrace(sctx.trace.root) {
+		sctx.trace.setLocked(true)
+	}
 }
 
 // Extract uses the configured or default TextMap Propagator.

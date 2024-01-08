@@ -946,11 +946,11 @@ func TestRulesSampler(t *testing.T) {
 		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
 		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
 
-		// context already injected / propagated, but the sampling decision can still be changed
+		// context already injected / propagated, and the sampling decision can no longer be changed
 		originSpan.SetTag("tag2", "val2")
 		originSpan.Finish()
-		assert.EqualValues(t, -1, originSpan.(*span).Metrics[keySamplingPriority])
-		assert.EqualValues(t, 0, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
+		assert.EqualValues(t, 2, originSpan.(*span).Metrics[keySamplingPriority])
+		assert.EqualValues(t, 1, originSpan.(*span).Metrics[keyRulesSamplerAppliedRate])
 
 		w3cCtx, err := tr.Extract(headers)
 		assert.Nil(t, err)
