@@ -41,23 +41,9 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
-      #This It will be removed after merge the system-tests PR: https://github.com/DataDog/system-tests/pull/1948
-      - name: Checkout dd-trace-go (Deprecated.)
-        uses: actions/checkout@v3
-        with:
-          path: utils/build/docker/golang/parametric/dd-trace-go
-          ref: ${{ inputs.ref || github.ref }}
-
       - uses: actions/setup-go@v3
         with:
           go-version: "1.19"
-
-      #This It will be removed after merge the system-tests PR: https://github.com/DataDog/system-tests/pull/1948
-      - name: Patch dd-trace-go version (Deprecated)
-        run: |
-          cd utils/build/docker/golang/parametric/
-          echo "replace gopkg.in/DataDog/dd-trace-go.v1 => ./dd-trace-go" >> go.mod
-          go mod tidy
 
       - name: Build runner
         uses: ./.github/actions/install_runner
