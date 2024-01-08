@@ -528,7 +528,7 @@ func (s *Span) Finish(opts ...ddtrace.FinishOption) {
 		s.SetTag("go_execution_traced", "partial")
 	}
 
-	if tr, ok := internal.GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+	if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
 		if !s.context.trace.isLocked() {
 			tr.rulesSampling.SampleTrace(s)
 		}
