@@ -18,16 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
-var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
-
-// Logger implementations are able to log given messages that the tracer might
-// output. This interface is duplicated here to avoid a cyclic dependency
-// between this package and ddtrace
-type Logger interface {
-	// Log prints the given message.
-	Log(msg string)
-}
-
 // Level specifies the logging level that the log package prints at.
 type Level int
 
@@ -56,6 +46,16 @@ const (
 	// LevelError represents error messages.
 	LevelError
 )
+
+var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
+
+// Logger implementations are able to log given messages that the tracer might
+// output. This interface is duplicated here to avoid a cyclic dependency
+// between this package and ddtrace
+type Logger interface {
+	// Log prints the given message.
+	Log(msg string)
+}
 
 var (
 	mu     sync.RWMutex // guards below fields
