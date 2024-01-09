@@ -41,6 +41,8 @@ jobs:
             fi
           done
           echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.NEEDS_TRIAGE_GITHUB_TOKEN }}
       - name: Add needs-triage label
         if: steps.is-author-guild-member.outputs.result == 'false'
         run: |-
