@@ -34,7 +34,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
-type TracerConf struct {
+type TracerConf struct { //nolint:revive
 	CanComputeStats      bool
 	CanDropP0s           bool
 	DebugAbandonedSpans  bool

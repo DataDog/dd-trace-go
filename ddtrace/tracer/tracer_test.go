@@ -2584,19 +2584,19 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	assert.NotContains(t, untracedSpan.meta, "go_execution_traced")
 }
 
-func wasteA(d time.Duration) {
+func wasteA(d time.Duration) { //nolint:revive
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
 	}
 }
 
-func wasteB(d time.Duration) {
+func wasteB(d time.Duration) { //nolint:revive
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
 	}
 }
 
-func wasteC(d time.Duration) {
+func wasteC(d time.Duration) { //nolint:revive
 	start := time.Now()
 	for start.Add(d).Before(time.Now()) {
 	}
