@@ -35,7 +35,7 @@ func setTestTime() func() {
 // spanAge takes in a span and returns the current test duration of the
 // span in seconds as a string
 func spanAge(s *Span) string {
-	return fmt.Sprintf("%d sec", (now()-s.Start)/int64(time.Second))
+	return fmt.Sprintf("%d sec", (now()-s.start)/int64(time.Second))
 }
 
 func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, finishedSpans int) {
@@ -58,7 +58,7 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 
 func formatSpanString(s *Span) string {
 	s.Lock()
-	msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.Name, s.SpanID, s.TraceID, spanAge(s))
+	msg := fmt.Sprintf("[name: %s, span_id: %d, trace_id: %d, age: %s],", s.name, s.spanID, s.traceID, spanAge(s))
 	s.Unlock()
 	return msg
 }

@@ -117,4 +117,22 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+
+	// MapSpanStart is used by Span.AsMap to store the span start.
+	MapSpanStart = "_ddtrace.span_start"
+
+	// MapSpanDuration is used by Span.AsMap to store the span duration.
+	MapSpanDuration = "_ddtrace.span_duration"
+
+	// MapSpanSpanID is used by Span.AsMap to store the span id.
+	MapSpanID = "_ddtrace.span_id"
+
+	// MapSpanTraceID is used by Span.AsMap to store the span trace id.
+	MapSpanTraceID = "_ddtrace.span_traceid"
+
+	// MapSpanParentID is used by Span.AsMap to store the span parent id.
+	MapSpanParentID = "_ddtrace.span_parentid"
+
+	// MapSpanError is used by Span.AsMap to store the span error value.
+	MapSpanError = "_ddtrace.span_error"
 )

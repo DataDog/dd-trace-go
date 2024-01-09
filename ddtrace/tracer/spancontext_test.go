@@ -84,7 +84,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.Metrics {
+						for range root.metrics {
 							// this range simulates iterating over the metrics map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -100,7 +100,7 @@ func testAsyncSpanRace(t *testing.T) {
 				case <-done:
 					root.Finish()
 					for i := 0; i < 500; i++ {
-						for range root.Meta {
+						for range root.meta {
 							// this range simulates iterating over the meta map
 							// as we do when encoding msgpack upon flushing.
 							continue
@@ -183,10 +183,10 @@ func TestPartialFlush(t *testing.T) {
 		ts := transport.Traces()
 		require.Len(t, ts, 1)
 		require.Len(t, ts[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].Meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
 
@@ -200,10 +200,10 @@ func TestPartialFlush(t *testing.T) {
 		tsRoot := transport.Traces()
 		require.Len(t, tsRoot, 1)
 		require.Len(t, tsRoot[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].Meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].Metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].Meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].Metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
+		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 		telemetryClient.AssertNumberOfCalls(t, "Count", 1)
@@ -326,9 +326,9 @@ func TestSpanFinishPriority(t *testing.T) {
 	trace := traces[0]
 	assert.Len(trace, 2)
 	for _, span := range trace {
-		if span.Name == "root" {
+		if span.name == "root" {
 			// root should have inherited child's sampling priority
-			assert.Equal(span.Metrics[keySamplingPriority], 2.)
+			assert.Equal(span.metrics[keySamplingPriority], 2.)
 			return
 		}
 	}
@@ -508,19 +508,19 @@ func TestSpanPeerService(t *testing.T) {
 	for _, tc := range testCases {
 		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
-				assert.NotContains(t, s.Meta, "peer.service")
+				assert.NotContains(t, s.meta, "peer.service")
 			} else {
-				assert.Equal(t, tc.wantPeerService, s.Meta["peer.service"])
+				assert.Equal(t, tc.wantPeerService, s.meta["peer.service"])
 			}
 			if tc.wantPeerServiceSource == "" {
-				assert.NotContains(t, s.Meta, "_dd.peer.service.source")
+				assert.NotContains(t, s.meta, "_dd.peer.service.source")
 			} else {
-				assert.Equal(t, tc.wantPeerServiceSource, s.Meta["_dd.peer.service.source"])
+				assert.Equal(t, tc.wantPeerServiceSource, s.meta["_dd.peer.service.source"])
 			}
 			if tc.wantPeerServiceRemappedFrom == "" {
-				assert.NotContains(t, s.Meta, "_dd.peer.service.remapped_from")
+				assert.NotContains(t, s.meta, "_dd.peer.service.remapped_from")
 			} else {
-				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.Meta["_dd.peer.service.remapped_from"])
+				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.meta["_dd.peer.service.remapped_from"])
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -583,8 +583,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.Service)
-			assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
+			assert.Equal(t, "span-service", s.service)
+			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
 		}
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
@@ -596,8 +596,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "global-service", s.Service)
-			assert.NotContains(t, s.Meta, "_dd.base_service")
+			assert.Equal(t, "global-service", s.service)
+			assert.NotContains(t, s.meta, "_dd.base_service")
 		}
 	})
 	t.Run("span-service-equal-different-case", func(t *testing.T) {
@@ -609,8 +609,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "GLOBAL-service", s.Service)
-			assert.NotContains(t, s.Meta, "_dd.base_service")
+			assert.Equal(t, "GLOBAL-service", s.service)
+			assert.NotContains(t, s.meta, "_dd.base_service")
 		}
 	})
 	t.Run("global-service-not-set", func(t *testing.T) {
@@ -619,10 +619,10 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, nil, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.Service)
+			assert.Equal(t, "span-service", s.service)
 			// in this case we don't assert to a concrete value because the default tracer service name is calculated
 			// based on the process name and might change depending on how tests are run.
-			assert.NotEmpty(t, s.Meta["_dd.base_service"])
+			assert.NotEmpty(t, s.meta["_dd.base_service"])
 		}
 	})
 	t.Run("using-tag-option", func(t *testing.T) {
@@ -634,8 +634,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.Service)
-			assert.Equal(t, "global-service", s.Meta["_dd.base_service"])
+			assert.Equal(t, "span-service", s.service)
+			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
 		}
 	})
 }
@@ -643,14 +643,14 @@ func TestSpanDDBaseService(t *testing.T) {
 func TestNewSpanContext(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		span := &Span{
-			TraceID:  1,
-			SpanID:   2,
-			ParentID: 3,
+			traceID:  1,
+			spanID:   2,
+			parentID: 3,
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID.Lower(), span.TraceID)
-		assert.Equal(ctx.spanID, span.SpanID)
+		assert.Equal(ctx.traceID.Lower(), span.traceID)
+		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
 		assert.Nil(ctx.trace.priority)
 		assert.Equal(ctx.trace.root, span)
@@ -659,17 +659,17 @@ func TestNewSpanContext(t *testing.T) {
 
 	t.Run("priority", func(t *testing.T) {
 		span := &Span{
-			TraceID:  1,
-			SpanID:   2,
-			ParentID: 3,
-			Metrics:  map[string]float64{keySamplingPriority: 1},
+			traceID:  1,
+			spanID:   2,
+			parentID: 3,
+			metrics:  map[string]float64{keySamplingPriority: 1},
 		}
 		ctx := newSpanContext(span, nil)
 		assert := assert.New(t)
-		assert.Equal(ctx.traceID.Lower(), span.TraceID)
-		assert.Equal(ctx.spanID, span.SpanID)
-		assert.Equal(ctx.TraceID(), span.TraceID)
-		assert.Equal(ctx.SpanID(), span.SpanID)
+		assert.Equal(ctx.traceID.Lower(), span.traceID)
+		assert.Equal(ctx.spanID, span.spanID)
+		assert.Equal(ctx.TraceID(), span.traceID)
+		assert.Equal(ctx.SpanID(), span.spanID)
 		assert.Equal(*ctx.trace.priority, 1.)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
@@ -699,9 +699,9 @@ func TestNewSpanContext(t *testing.T) {
 
 func TestSpanContextParent(t *testing.T) {
 	s := &Span{
-		TraceID:  1,
-		SpanID:   2,
-		ParentID: 3,
+		traceID:  1,
+		spanID:   2,
+		parentID: 3,
 	}
 	for name, parentCtx := range map[string]*spanContext{
 		"basic": {
@@ -734,8 +734,8 @@ func TestSpanContextParent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := newSpanContext(s, parentCtx)
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID.Lower(), s.TraceID)
-			assert.Equal(ctx.spanID, s.SpanID)
+			assert.Equal(ctx.traceID.Lower(), s.traceID)
+			assert.Equal(ctx.spanID, s.spanID)
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
 			}

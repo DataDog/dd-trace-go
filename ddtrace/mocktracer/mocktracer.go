@@ -79,7 +79,8 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 }
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
-func (*mocktracer) Stop() {
+func (t *mocktracer) Stop() {
+	t.Reset()
 	tracer.StopTestTracer()
 }
 
@@ -156,6 +157,12 @@ func (t *mocktracer) Reset() {
 func (t *mocktracer) addFinishedSpan(s *tracer.Span) {
 	t.Lock()
 	defer t.Unlock()
+	// If the span is not in the open spans, we may be finishing a span that was started
+	// before the mock tracer was started. In this case, we don't want to add it to the
+	// finished spans.
+	if _, ok := t.openSpans[s.Context().SpanID()]; !ok {
+		return
+	}
 	delete(t.openSpans, s.Context().SpanID())
 	if t.finishedSpans == nil {
 		t.finishedSpans = make([]*Span, 0, 1)

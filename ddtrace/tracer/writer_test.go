@@ -31,8 +31,8 @@ func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", random.Uint64(), random.Uint64(), random.Uint64())
 	for i := 0; i < n; i++ {
 		istr := fmt.Sprintf("%0.10d", i)
-		s.Meta[istr] = istr
-		s.Metrics[istr] = float64(i)
+		s.meta[istr] = istr
+		s.metrics[istr] = float64(i)
 	}
 	return s
 }
@@ -133,9 +133,9 @@ func TestLogWriter(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
-		s.Metrics["nan"] = math.NaN()
-		s.Metrics["+inf"] = math.Inf(1)
-		s.Metrics["-inf"] = math.Inf(-1)
+		s.metrics["nan"] = math.NaN()
+		s.metrics["+inf"] = math.Inf(1)
+		s.metrics["-inf"] = math.Inf(-1)
 		h.add([]*Span{s})
 		h.flush()
 		json := string(buf.Bytes())
@@ -171,14 +171,14 @@ func TestLogWriter(t *testing.T) {
 			Traces [][]jsonSpan `json:"traces"`
 		}
 		s := &Span{
-			Name:     "basicName",
-			Service:  "basicService",
-			Resource: "basicResource",
-			Meta: map[string]string{
+			name:     "basicName",
+			service:  "basicService",
+			resource: "basicResource",
+			meta: map[string]string{
 				"env":     "prod",
 				"version": "1.26.0",
 			},
-			Metrics: map[string]float64{
+			metrics: map[string]float64{
 				"widgets": 1e26,
 				"zero":    0.0,
 				"big":     math.MaxFloat64,
@@ -187,12 +187,12 @@ func TestLogWriter(t *testing.T) {
 				"-inf":    math.Inf(-1),
 				"+inf":    math.Inf(1),
 			},
-			SpanID:   10,
-			TraceID:  11,
-			ParentID: 12,
-			Start:    123,
-			Duration: 456,
-			Error:    789,
+			spanID:   10,
+			traceID:  11,
+			parentID: 12,
+			start:    123,
+			duration: 456,
+			error:    789,
 		}
 		expected := jsonSpan{
 			Name:     "basicName",
@@ -227,9 +227,9 @@ func TestLogWriter(t *testing.T) {
 	t.Run("invalid-characters", func(t *testing.T) {
 		assert := assert.New(t)
 		s := newSpan("name\n", "srv\t", `"res"`, 2, 1, 3)
-		s.Start = 12
-		s.Meta["query\n"] = "Select * from \n Where\nvalue"
-		s.Metrics["version\n"] = 3
+		s.start = 12
+		s.meta["query\n"] = "Select * from \n Where\nvalue"
+		s.metrics["version\n"] = 3
 
 		var w logTraceWriter
 		w.encodeSpan(s)
@@ -425,9 +425,9 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
-	s.Metrics["nan"] = math.NaN()
-	s.Metrics["+inf"] = math.Inf(1)
-	s.Metrics["-inf"] = math.Inf(-1)
+	s.metrics["nan"] = math.NaN()
+	s.metrics["+inf"] = math.Inf(1)
+	s.metrics["-inf"] = math.Inf(-1)
 	h := &logTraceWriter{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

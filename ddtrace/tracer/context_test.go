@@ -19,7 +19,7 @@ import (
 )
 
 func TestContextWithSpan(t *testing.T) {
-	want := &Span{SpanID: 123}
+	want := &Span{spanID: 123}
 	ctx := ContextWithSpan(context.Background(), want)
 	got := ctx.Value(internal.ActiveSpanKey)
 	assert := assert.New(t)
@@ -29,7 +29,7 @@ func TestContextWithSpan(t *testing.T) {
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
-		want := &Span{SpanID: 123}
+		want := &Span{spanID: 123}
 		ctx := ContextWithSpan(context.Background(), want)
 		got, ok := SpanFromContext(ctx)
 		assert.True(ok)
@@ -79,11 +79,11 @@ func TestStartSpanFromContext(t *testing.T) {
 	//assert.NotNil(gotctx)
 	//assert.False(ok)
 
-	assert.Equal(uint64(456), got.TraceID)
-	assert.Equal(uint64(123), got.ParentID)
-	assert.Equal("http.request", got.Name)
-	assert.Equal("gin", got.Service)
-	assert.Equal("/", got.Resource)
+	assert.Equal(uint64(456), got.traceID)
+	assert.Equal(uint64(123), got.parentID)
+	assert.Equal("http.request", got.name)
+	assert.Equal("gin", got.service)
+	assert.Equal("/", got.resource)
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
@@ -165,7 +165,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	assert.Nil(ctx.Value("not_found_key"))
 
 	internalSpan := child
-	assert.Equal("http.request", internalSpan.Name)
+	assert.Equal("http.request", internalSpan.name)
 
 	// the returned context includes the span
 	ctxSpan, ok := SpanFromContext(ctx)

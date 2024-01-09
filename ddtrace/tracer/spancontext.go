@@ -108,10 +108,10 @@ type spanContext struct {
 // for the same span.
 func newSpanContext(span *Span, parent *spanContext) *spanContext {
 	context := &spanContext{
-		spanID: span.SpanID,
+		spanID: span.spanID,
 		span:   span,
 	}
-	context.traceID.SetLower(span.TraceID)
+	context.traceID.SetLower(span.traceID)
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
@@ -124,7 +124,7 @@ func newSpanContext(span *Span, parent *spanContext) *spanContext {
 	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-		id128 := time.Duration(span.Start) / time.Second
+		id128 := time.Duration(span.start) / time.Second
 		// casting from int64 -> uint32 should be safe since the start time won't be
 		// negative, and the seconds should fit within 32-bits for the foreseeable future.
 		// (We only want 32 bits of time, then the rest is zero)
@@ -155,6 +155,9 @@ func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
 
 // TraceID128 implements ddtrace.SpanContextW3C.
 func (c *spanContext) TraceID128() string {
+	if c == nil {
+		return ""
+	}
 	return c.traceID.HexEncoded()
 }
 
@@ -216,7 +219,7 @@ func (c *spanContext) baggageItem(key string) string {
 func (c *spanContext) meta(key string) (val string, ok bool) {
 	c.span.RLock()
 	defer c.span.RUnlock()
-	val, ok = c.span.Meta[key]
+	val, ok = c.span.meta[key]
 	return val, ok
 }
 
@@ -341,6 +344,18 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	return updatedPriority
 }
 
+func (t *trace) isLocked() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.locked
+}
+
+func (t *trace) setLocked(locked bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.locked = locked
+}
+
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
 func (t *trace) push(sp *Span) {
@@ -360,7 +375,7 @@ func (t *trace) push(sp *Span) {
 		}
 		return
 	}
-	if v, ok := sp.Metrics[keySamplingPriority]; ok {
+	if v, ok := sp.metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
@@ -419,8 +434,8 @@ func (t *trace) finishedOne(s *Span) {
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.Service != "" && !strings.EqualFold(s.Service, tc.ServiceTag) {
-		s.Meta[keyBaseService] = tc.ServiceTag
+	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
+		s.meta[keyBaseService] = tc.ServiceTag
 	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
@@ -494,10 +509,10 @@ func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
 // tags as applicable for the given span.
 func setPeerService(s *Span, t Tracer) {
 	tc := t.TracerConf()
-	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
-		spanKind := s.Meta[ext.SpanKind]
+		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 		shouldSetDefaultPeerService := isOutboundRequest && tc.PeerServiceDefaults
 		if !shouldSetDefaultPeerService {
@@ -505,13 +520,13 @@ func setPeerService(s *Span, t Tracer) {
 		}
 		source := setPeerServiceFromSource(s)
 		if source == "" {
-			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
 		s.setMeta(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
-	ps := s.Meta[ext.PeerService]
+	ps := s.meta[ext.PeerService]
 	if to, ok := tc.PeerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
@@ -523,7 +538,7 @@ func setPeerService(s *Span, t Tracer) {
 // the peer.service value, or the empty string if no valid source tag was available.
 func setPeerServiceFromSource(s *Span) string {
 	has := func(tag string) bool {
-		_, ok := s.Meta[tag]
+		_, ok := s.meta[tag]
 		return ok
 	}
 	var sources []string
@@ -538,7 +553,7 @@ func setPeerServiceFromSource(s *Span) string {
 			"tablename",
 			"bucketname",
 		}
-	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
+	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
 		}
@@ -566,7 +581,7 @@ func setPeerServiceFromSource(s *Span) string {
 		}...)
 	}
 	for _, source := range sources {
-		if val, ok := s.Meta[source]; ok {
+		if val, ok := s.meta[source]; ok {
 			s.setMeta(ext.PeerService, val)
 			return source
 		}

@@ -282,8 +282,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	err = tracer.Inject(ctx, carrier)
 	assert.Nil(err)
 
-	tid := strconv.FormatUint(root.TraceID, 10)
-	pid := strconv.FormatUint(root.SpanID, 10)
+	tid := strconv.FormatUint(root.traceID, 10)
+	pid := strconv.FormatUint(root.spanID, 10)
 
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
@@ -1779,7 +1779,7 @@ func TestEnvVars(t *testing.T) {
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
 					assert.Equal(tc.tid, sctx.traceID)
-					assert.Equal(tc.out[0], sctx.span.ParentID)
+					assert.Equal(tc.out[0], sctx.span.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
 					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
@@ -2262,7 +2262,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(root.meta, keyTraceID128)
 	})
 
 	t.Run("datadog, malformed tid", func(t *testing.T) {
@@ -2275,7 +2275,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.Meta, keyTraceID128)
+		assert.NotContains(root.meta, keyTraceID128)
 	})
 
 	t.Run("datadog, valid tid", func(t *testing.T) {
@@ -2288,6 +2288,6 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.Equal("640cfd8d00000000", root.Meta[keyTraceID128])
+		assert.Equal("640cfd8d00000000", root.meta[keyTraceID128])
 	})
 }

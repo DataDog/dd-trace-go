@@ -57,23 +57,50 @@ type errorConfig struct {
 	stackSkip    uint
 }
 
+// AsMap places tags and span properties into a map and returns it.
+//
+// Note that this is not performant, nor are spans guaranteed to have all of their
+// properties set at any time during normal operation! This is used for testing only,
+// and should not be used in non-test code, or you may run into performance or other
+// issues.
+func (s *Span) AsMap() map[string]interface{} {
+	m := make(map[string]interface{})
+	m[ext.SpanName] = s.name
+	m[ext.ServiceName] = s.service
+	m[ext.ResourceName] = s.resource
+	m[ext.SpanType] = s.spanType
+	m[ext.MapSpanStart] = s.start
+	m[ext.MapSpanDuration] = s.duration
+	for k, v := range s.meta {
+		m[k] = v
+	}
+	for k, v := range s.metrics {
+		m[k] = v
+	}
+	m[ext.MapSpanID] = s.spanID
+	m[ext.MapSpanTraceID] = s.traceID
+	m[ext.MapSpanParentID] = s.parentID
+	m[ext.MapSpanError] = s.error
+	return m
+}
+
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name     string             `msg:"name"`              // operation name
-	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type     string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
+	name     string             `msg:"name"`              // operation name
+	service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
+	resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	spanType string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
+	start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
+	duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
+	meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
+	metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+	spanID   uint64             `msg:"span_id"`           // identifier of this span
+	traceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
+	parentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
+	error    int32              `msg:"error"`             // error status of the span; 0 means no errors
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -246,7 +273,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(root.Meta, keyUserID)
+		delete(root.meta, keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
 		s.context.updated = true
@@ -256,7 +283,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 			trace.unsetPropagatingTag(keyPropagatedUserID)
 			s.context.updated = true
 		}
-		delete(root.Meta, keyPropagatedUserID)
+		delete(root.meta, keyPropagatedUserID)
 	}
 
 	usrData := map[string]string{
@@ -305,17 +332,17 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 	setError := func(yes bool) {
 		if yes {
-			if s.Error == 0 {
+			if s.error == 0 {
 				// new error
 				atomic.AddInt32(&s.context.errors, 1)
 			}
-			s.Error = 1
+			s.error = 1
 		} else {
-			if s.Error > 0 {
+			if s.error > 0 {
 				// flip from active to inactive
 				atomic.AddInt32(&s.context.errors, -1)
 			}
-			s.Error = 0
+			s.error = 0
 		}
 	}
 	if s.finished {
@@ -389,21 +416,21 @@ func takeStacktrace(n, skip uint) string {
 
 // setMeta sets a string tag. This method is not safe for concurrent use.
 func (s *Span) setMeta(key, v string) {
-	if s.Meta == nil {
-		s.Meta = make(map[string]string, 1)
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
 	}
-	delete(s.Metrics, key)
+	delete(s.metrics, key)
 	switch key {
 	case ext.SpanName:
-		s.Name = v
+		s.name = v
 	case ext.ServiceName:
-		s.Service = v
+		s.service = v
 	case ext.ResourceName:
-		s.Resource = v
+		s.resource = v
 	case ext.SpanType:
-		s.Type = v
+		s.spanType = v
 	default:
-		s.Meta[key] = v
+		s.meta[key] = v
 	}
 }
 
@@ -436,10 +463,10 @@ func (s *Span) setTagBool(key string, v bool) {
 // setMetric sets a numeric tag, in our case called a metric. This method
 // is not safe for concurrent use.
 func (s *Span) setMetric(key string, v float64) {
-	if s.Metrics == nil {
-		s.Metrics = make(map[string]float64, 1)
+	if s.metrics == nil {
+		s.metrics = make(map[string]float64, 1)
 	}
-	delete(s.Meta, key)
+	delete(s.meta, key)
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
@@ -450,7 +477,7 @@ func (s *Span) setMetric(key string, v float64) {
 		// We have it here for backward compatibility.
 		s.setSamplingPriorityLocked(int(v), samplernames.Manual)
 	default:
-		s.Metrics[key] = v
+		s.metrics[key] = v
 	}
 }
 
@@ -500,6 +527,13 @@ func (s *Span) Finish(opts ...ddtrace.FinishOption) {
 		// there's nothign we can show.
 		s.SetTag("go_execution_traced", "partial")
 	}
+
+	if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if !s.context.trace.isLocked() {
+			tr.rulesSampling.SampleTrace(s)
+		}
+	}
+
 	s.finish(t)
 
 	if s.pprofCtxRestore != nil {
@@ -523,7 +557,7 @@ func (s *Span) SetOperationName(operationName string) {
 		// already finished
 		return
 	}
-	s.Name = operationName
+	s.name = operationName
 }
 
 func (s *Span) finish(finishTime int64) {
@@ -536,11 +570,11 @@ func (s *Span) finish(finishTime int64) {
 		// already finished
 		return
 	}
-	if s.Duration == 0 {
-		s.Duration = finishTime - s.Start
+	if s.duration == 0 {
+		s.duration = finishTime - s.start
 	}
-	if s.Duration < 0 {
-		s.Duration = 0
+	if s.duration < 0 {
+		s.duration = 0
 	}
 
 	keep := true
@@ -567,7 +601,7 @@ func (s *Span) finish(finishTime int64) {
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
-			s, s.Name, s.Resource, s.Meta, s.Metrics)
+			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
 }
@@ -576,25 +610,25 @@ func (s *Span) finish(finishTime int64) {
 // version version.
 func newAggregableSpan(s *Span, obfuscator *obfuscate.Obfuscator) *aggregableSpan {
 	var statusCode uint32
-	if sc, ok := s.Meta["http.status_code"]; ok && sc != "" {
+	if sc, ok := s.meta["http.status_code"]; ok && sc != "" {
 		if c, err := strconv.Atoi(sc); err == nil && c > 0 && c <= math.MaxInt32 {
 			statusCode = uint32(c)
 		}
 	}
 	key := aggregation{
-		Name:       s.Name,
-		Resource:   obfuscatedResource(obfuscator, s.Type, s.Resource),
-		Service:    s.Service,
-		Type:       s.Type,
-		Synthetics: strings.HasPrefix(s.Meta[keyOrigin], "synthetics"),
+		Name:       s.name,
+		Resource:   obfuscatedResource(obfuscator, s.spanType, s.resource),
+		Service:    s.service,
+		Type:       s.spanType,
+		Synthetics: strings.HasPrefix(s.meta[keyOrigin], "synthetics"),
 		StatusCode: statusCode,
 	}
 	return &aggregableSpan{
 		key:      key,
-		Start:    s.Start,
-		Duration: s.Duration,
-		TopLevel: s.Metrics[keyTopLevel] == 1,
-		Error:    s.Error,
+		Start:    s.start,
+		Duration: s.duration,
+		TopLevel: s.metrics[keyTopLevel] == 1,
+		Error:    s.error,
 	}
 }
 
@@ -634,8 +668,8 @@ func shouldKeep(s *Span) bool {
 		// traces with any span containing an error get kept
 		return true
 	}
-	if v, ok := s.Metrics[ext.EventSampleRate]; ok {
-		return sampledByRate(s.TraceID, v)
+	if v, ok := s.metrics[ext.EventSampleRate]; ok {
+		return sampledByRate(s.traceID, v)
 	}
 	return false
 }
@@ -643,10 +677,10 @@ func shouldKeep(s *Span) bool {
 // shouldComputeStats mentions whether this span needs to have stats computed for.
 // Warning: callers must guard!
 func shouldComputeStats(s *Span) bool {
-	if v, ok := s.Metrics[keyMeasured]; ok && v == 1 {
+	if v, ok := s.metrics[keyMeasured]; ok && v == 1 {
 		return true
 	}
-	if v, ok := s.Metrics[keyTopLevel]; ok && v == 1 {
+	if v, ok := s.metrics[keyTopLevel]; ok && v == 1 {
 		return true
 	}
 	return false
@@ -661,23 +695,23 @@ func (s *Span) String() string {
 	s.RLock()
 	defer s.RUnlock()
 	lines := []string{
-		fmt.Sprintf("Name: %s", s.Name),
-		fmt.Sprintf("Service: %s", s.Service),
-		fmt.Sprintf("Resource: %s", s.Resource),
-		fmt.Sprintf("TraceID: %d", s.TraceID),
+		fmt.Sprintf("Name: %s", s.name),
+		fmt.Sprintf("Service: %s", s.service),
+		fmt.Sprintf("Resource: %s", s.resource),
+		fmt.Sprintf("TraceID: %d", s.traceID),
 		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
-		fmt.Sprintf("SpanID: %d", s.SpanID),
-		fmt.Sprintf("ParentID: %d", s.ParentID),
-		fmt.Sprintf("Start: %s", time.Unix(0, s.Start)),
-		fmt.Sprintf("Duration: %s", time.Duration(s.Duration)),
-		fmt.Sprintf("Error: %d", s.Error),
-		fmt.Sprintf("Type: %s", s.Type),
+		fmt.Sprintf("SpanID: %d", s.spanID),
+		fmt.Sprintf("ParentID: %d", s.parentID),
+		fmt.Sprintf("Start: %s", time.Unix(0, s.start)),
+		fmt.Sprintf("Duration: %s", time.Duration(s.duration)),
+		fmt.Sprintf("Error: %d", s.error),
+		fmt.Sprintf("Type: %s", s.spanType),
 		"Tags:",
 	}
-	for key, val := range s.Meta {
+	for key, val := range s.meta {
 		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
 	}
-	for key, val := range s.Metrics {
+	for key, val := range s.metrics {
 		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
 	}
 	return strings.Join(lines, "\n")
@@ -712,11 +746,11 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID128()
 		} else {
-			traceID = fmt.Sprintf("%d", s.TraceID)
+			traceID = fmt.Sprintf("%d", s.traceID)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
-		fmt.Fprintf(f, `dd.span_id="%d" `, s.SpanID)
-		fmt.Fprintf(f, `dd.parent_id="%d"`, s.ParentID)
+		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
+		fmt.Fprintf(f, `dd.parent_id="%d"`, s.parentID)
 	default:
 		fmt.Fprintf(f, "%%!%c(ddtrace.Span=%v)", c, s)
 	}

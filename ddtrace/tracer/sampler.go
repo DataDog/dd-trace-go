@@ -77,7 +77,7 @@ func (r *rateSampler) Sample(s *Span) bool {
 	}
 	r.RLock()
 	defer r.RUnlock()
-	return sampledByRate(s.TraceID, r.rate)
+	return sampledByRate(s.traceID, r.rate)
 }
 
 // sampledByRate verifies if the number n should be sampled at the specified
@@ -127,7 +127,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := "service:" + spn.Service + ",env:" + spn.Meta[ext.Environment]
+	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
@@ -140,7 +140,7 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 // to modify the span.
 func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
-	if sampledByRate(spn.TraceID, rate) {
+	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)

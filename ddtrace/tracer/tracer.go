@@ -34,7 +34,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 )
 
-type TracerConf struct {
+type TracerConf struct { //nolint:revive
 	CanComputeStats      bool
 	CanDropP0s           bool
 	DebugAbandonedSpans  bool
@@ -551,24 +551,24 @@ func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	}
 	// span defaults
 	span := &Span{
-		Name:     operationName,
-		Service:  "",
-		Resource: operationName,
-		SpanID:   id,
-		TraceID:  id,
-		Start:    startTime,
+		name:     operationName,
+		service:  "",
+		resource: operationName,
+		spanID:   id,
+		traceID:  id,
+		start:    startTime,
 	}
 	if context != nil {
 		// this is a child span
-		span.TraceID = context.traceID.Lower()
-		span.ParentID = context.spanID
+		span.traceID = context.traceID.Lower()
+		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
 			// local parent, inherit service
 			context.span.RLock()
-			span.Service = context.span.Service
+			span.service = context.span.service
 			context.span.RUnlock()
 		} else {
 			// remote parent
@@ -588,10 +588,10 @@ func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
 	}
-	if isRootSpan || context.span.Service != span.Service {
+	if isRootSpan || context.span.service != span.service {
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
-		delete(span.Metrics, keyMeasured)
+		delete(span.metrics, keyMeasured)
 	}
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	span.pprofCtxRestore = pprofContext
@@ -601,8 +601,8 @@ func SpanStart(operationName string, options ...ddtrace.StartSpanOption) *Span {
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) *Span {
 	span := SpanStart(operationName, options...)
-	if span.Service == "" {
-		span.Service = t.config.serviceName
+	if span.service == "" {
+		span.service = t.config.serviceName
 	}
 	span.noDebugStack = t.config.noDebugStack
 	if t.config.hostname != "" {
@@ -614,12 +614,12 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.SetTag(k, v)
 	}
 	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
-			span.Service = newSvc
+		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
+			span.service = newSvc
 		}
 	}
 	if t.config.version != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.Service == t.config.serviceName) {
+		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
 			span.setMeta(ext.Version, t.config.version)
 		}
 	}
@@ -631,14 +631,14 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		t.sample(span)
 	}
 	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.Service]; ok {
-			span.Service = newSvc
+		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
+			span.service = newSvc
 		}
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
-			span, span.Name, span.Resource, span.Meta, span.Metrics)
+			span, span.name, span.resource, span.meta, span.metrics)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {
 		t.applyPPROFLabels(span.pprofCtxRestore, span)
@@ -653,7 +653,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	if span.ParentID == 0 {
+	if span.parentID == 0 {
 		// TODO(kjn v2): This is incorrect. It needs to be applied when the span
 		// is the local root, not the global root. Need to investigate injecting
 		// this data into TracerConfig, not doing it like this.
@@ -679,20 +679,20 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	if t.config.profilerHotspots {
 		// allocate the max-length slice to avoid growing it later
 		labels = make([]string, 0, 6)
-		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.SpanID, 10))
+		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	// nil checks might not be needed, but better be safe than sorry
 	if localRootSpan := span.Root(); localRootSpan != nil {
 		if t.config.profilerHotspots {
-			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.SpanID, 10))
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
 		}
 		if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.Resource)
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
 			if span == localRootSpan {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.Resource)
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
 			}
 		}
 	}
@@ -707,7 +707,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.Type == "") span resource names generally do not.
 func spanResourcePIISafe(s *Span) bool {
-	return s.Type == ext.SpanTypeWeb || s.Type == ext.AppTypeRPC || s.Type == ""
+	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
 
 // Stop stops the tracer.
@@ -731,7 +731,34 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx SpanContext, carrier interface{}) error {
+	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
+}
+
+// updateSampling runs trace sampling rules on the context, since properties like resource / tags
+// could change and impact the result of sampling. This must be done once before context is propagated.
+func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
+	sctx, ok := ctx.(*spanContext)
+	if sctx == nil || !ok {
+		return
+	}
+	// without this check some mock spans tests fail
+	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
+		return
+	}
+	// want to avoid locking the entire trace from a span for long.
+	// if SampleTrace successfully samples the trace,
+	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
+	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
+	if sctx.trace.isLocked() {
+		// trace sampling decision already taken and locked, no re-sampling shall occur
+		return
+	}
+
+	// if sampling was successful, need to lock the trace to prevent further re-sampling
+	if t.rulesSampling.SampleTrace(sctx.trace.root) {
+		sctx.trace.setLocked(true)
+	}
 }
 
 // Extract uses the configured or default TextMap Propagator.
@@ -798,7 +825,7 @@ func (t *tracer) sample(span *Span) {
 	if sampler.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
@@ -811,12 +838,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 	span.goExecTraced = true
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
-	taskName := span.Resource
+	taskName := span.resource
 	// If the resource could contain PII (e.g. SQL query that's not using bind
 	// arguments), play it safe and just use the span type as the taskName,
 	// e.g. "sql".
 	if !spanResourcePIISafe(span) {
-		taskName = span.Type
+		taskName = span.spanType
 	}
 	end := noopTaskEnd
 	if !globalinternal.IsExecutionTraced(ctx) {
@@ -832,7 +859,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 		ctx = globalinternal.WithExecutionNotTraced(ctx)
 	}
 	var b [8]byte
-	binary.LittleEndian.PutUint64(b[:], span.SpanID)
+	binary.LittleEndian.PutUint64(b[:], span.spanID)
 	// TODO: can we make string(b[:]) not allocate? e.g. with unsafe
 	// shenanigans? rt.Log won't retain the message string, though perhaps
 	// we can't assume that will always be the case.

@@ -85,10 +85,10 @@ func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
 	// Also, locking is not required as it's called while the span is already locked or it's
 	// being initialized.
 	return &abandonedSpanCandidate{
-		Name:     s.Name,
-		TraceID:  s.TraceID,
-		SpanID:   s.SpanID,
-		Start:    s.Start,
+		Name:     s.name,
+		TraceID:  s.traceID,
+		SpanID:   s.spanID,
+		Start:    s.start,
 		Finished: finished,
 	}
 }
