@@ -65,10 +65,8 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 	case DBMPropagationModeDisabled:
 		return nil
 	case DBMPropagationModeFull:
-		var (
-			sampled int64
-			traceID uint64 = c.SpanID
-		)
+		var sampled int64
+		traceID := c.SpanID
 		if ctx != nil {
 			if sp, ok := ctx.SamplingPriority(); ok && sp > 0 {
 				sampled = 1
