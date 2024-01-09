@@ -84,8 +84,8 @@ func SetLevel(lvl Level) {
 }
 
 func CurrentLevel() Level {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return level
 }
 
