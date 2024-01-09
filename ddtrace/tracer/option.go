@@ -262,6 +262,10 @@ type config struct {
 	headerAsTags dynamicConfig[[]string]
 
 	contribStats bool
+
+	// dynamicInstrumentationEnabled specifies if the tracer should make requests for dynamic instrumentation
+	// configurations from remote config. Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
+	dynamicInstrumentationEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -367,6 +371,8 @@ func newConfig(opts ...StartOption) *config {
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
+
+	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {

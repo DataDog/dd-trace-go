@@ -171,14 +171,23 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	return statuses
 }
 
-// startRemoteConfig starts the remote config client
-// and registers the APM_TRACING product and its callback.
+// startRemoteConfig starts the remote config client.
+// It registers the APM_TRACING product with a callback,
+// and the LIVE_DEBUGGING product without a callback.
 func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	err := remoteconfig.Start(rcConfig)
 	if err != nil {
 		return err
 	}
-	return remoteconfig.Subscribe(
+
+	if t.config.dynamicInstrumentationEnabled {
+		err = remoteconfig.RegisterProduct(state.ProductLiveDebugging)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
 		t.onRemoteConfigUpdate,
 		remoteconfig.APMTracingSampleRate,
@@ -186,4 +195,9 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingCustomTags,
 		remoteconfig.APMTracingEnabled,
 	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
