@@ -1094,11 +1094,6 @@ func WithOrchestrion(metadata map[string]string) StartOption {
 	}
 }
 
-// StartSpanOption is a configuration option for StartSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, tracer.StartSpanOption.
-//type StartSpanOption = tracer.StartSpanOption
-
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
 	return func(cfg *StartSpanConfig) {

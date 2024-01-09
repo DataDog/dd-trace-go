@@ -128,9 +128,6 @@ func TestSQLCommentCarrier(t *testing.T) {
 			assert.Equal(t, tc.expectedExtractErr, err)
 
 			if tc.expectedExtractErr == nil {
-				//xctx, ok := sctx.(*SpanContext)
-				//require.True(t, ok)
-
 				assert.Equal(t, carrier.SpanID, sctx.spanID)
 				assert.Equal(t, traceID, sctx.traceID.Lower())
 
@@ -160,8 +157,6 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	carrier := SQLCommentCarrier{Query: q}
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
-	//xctx, ok := sctx.(*SpanContext)
-	//assert.True(t, ok)
 
 	assert.Equal(t, spanID, sctx.spanID)
 	assert.Equal(t, lower, sctx.traceID.Lower())

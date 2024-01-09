@@ -67,8 +67,6 @@ func TestSpanWithNewRoot(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, child.(*span).DD)
 
-	//var parentBytes oteltrace.TraceID
-	//uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
 	assert.NotEqual(noopParent.Context().TraceID(), child.SpanContext().TraceID())
 }
 

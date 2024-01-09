@@ -51,7 +51,6 @@ func TestPropagation(t *testing.T) {
 		span, ok := tracer.SpanFromContext(ctx)
 		assert.True(ok, "no span")
 		lowerEqual(t, 42, span.Context().TraceIDBytes())
-		//assert.Equal(uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
 		msgID = msg.ID
 		spanID = span.Context().SpanID()
 		pubTime = msg.PublishTime.String()

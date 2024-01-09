@@ -126,9 +126,6 @@ func Test128(t *testing.T) {
 	span, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span.Context().TraceID())
 	w3cCtx := span.Context()
-	// if !ok {
-	// 	assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	// }
 	id128 := w3cCtx.TraceID()
 	assert.Len(t, id128, 32) // ensure there are enough leading zeros
 	idBytes, err := hex.DecodeString(id128)
@@ -142,9 +139,6 @@ func Test128(t *testing.T) {
 	span128, _ := StartSpanFromContext(context.Background(), "http.request")
 	assert.NotZero(t, span128.Context().TraceID())
 	w3cCtx = span128.Context()
-	// if !ok {
-	// 	assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-	// }
 	id128bit := w3cCtx.TraceID()
 	assert.NotEmpty(t, id128bit)
 	assert.Len(t, id128bit, 32)

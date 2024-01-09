@@ -203,8 +203,6 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 
 			ctx, err := tracer.Extract(headers)
 			assert.Nil(err)
-			//sctx, ok := ctx.(*spanContext)
-			//assert.True(ok)
 			assert.Equal("00000000000000000000000000000004", ctx.traceID.HexEncoded())
 			assert.Equal(uint64(1), ctx.spanID)    // should use x-datadog-parent-id, not the id in the tracestate
 			assert.Equal("synthetics", ctx.origin) // should use x-datadog-origin, not the origin in the tracestate
@@ -305,10 +303,6 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sctx, ok := ctx.(*spanContext)
-	// if !ok {
-	// 	t.Fatal("not a *spanContext")
-	// }
 	if ctx.origin != "synthetics" {
 		t.Fatalf("didn't propagate origin, got: %q", ctx.origin)
 	}

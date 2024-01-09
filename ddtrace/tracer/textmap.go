@@ -553,10 +553,6 @@ func (*propagatorB3) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if !ctx.traceID.HasUpper() { // 64-bit trace id
 		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
 	} else { // 128-bit trace id
-		//var w3Cctx ddtrace.SpanContextW3C
-		//if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-		//	return ErrInvalidSpanContext
-		//}
 		writer.Set(b3TraceIDHeader, ctx.TraceID())
 	}
 	writer.Set(b3SpanIDHeader, fmt.Sprintf("%016x", ctx.spanID))
@@ -642,10 +638,6 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx *SpanContext, writer Text
 	if !ctx.traceID.HasUpper() { // 64-bit trace id
 		traceID = fmt.Sprintf("%016x", ctx.traceID.Lower())
 	} else { // 128-bit trace id
-		// var w3Cctx ddtrace.SpanContextW3C
-		// if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-		// 	return ErrInvalidSpanContext
-		// }
 		traceID = ctx.TraceID()
 	}
 	sb.WriteString(fmt.Sprintf("%s-%016x", traceID, ctx.spanID))
@@ -761,9 +753,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	var traceID string
 	if ctx.traceID.HasUpper() {
 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-		//if w3Cctx, ok := spanCtx.(ddtrace.SpanContextW3C); ok {
 		traceID = ctx.TraceID()
-		//}
 	} else {
 		traceID = fmt.Sprintf("%032x", ctx.traceID)
 		if ctx.trace != nil {

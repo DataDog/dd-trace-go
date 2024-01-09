@@ -103,6 +103,8 @@ type SpanContext struct {
 	origin     string // e.g. "synthetics"
 }
 
+// FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
+// to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID = c.TraceIDBytes()

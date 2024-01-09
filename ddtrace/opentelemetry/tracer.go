@@ -82,11 +82,6 @@ type otelCtxToDDCtx struct {
 	oc oteltrace.SpanContext
 }
 
-// func (c *otelCtxToDDCtx) TraceID() uint64 {
-// 	id := c.oc.TraceID()
-// 	return binary.BigEndian.Uint64(id[8:])
-// }
-
 func (c *otelCtxToDDCtx) SpanID() uint64 {
 	id := c.oc.SpanID()
 	return binary.BigEndian.Uint64(id[:])

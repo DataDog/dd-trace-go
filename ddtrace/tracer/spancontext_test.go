@@ -691,8 +691,6 @@ func TestNewSpanContext(t *testing.T) {
 			DefaultPriorityHeader: "3",
 		}))
 		assert.Nil(err)
-		//sctx, ok := ctx.(*SpanContext)
-		//assert.True(ok)
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)

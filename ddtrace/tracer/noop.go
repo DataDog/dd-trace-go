@@ -39,17 +39,3 @@ func (NoopTracer) SubmitStats(*Span)               {}
 func (NoopTracer) SubmitAbandonedSpan(*Span, bool) {}
 func (NoopTracer) SubmitChunk(any)                 {}
 func (NoopTracer) Flush()                          {}
-
-// var _ ddtrace.SpanContext = (*NoopSpanContext)(nil)
-
-// // NoopSpanContext is an implementation of ddtrace.SpanContext that is a no-op.
-// type NoopSpanContext struct{}
-
-// // SpanID implements ddtrace.SpanContext.
-// func (NoopSpanContext) SpanID() uint64 { return 0 }
-
-// // TraceID implements ddtrace.SpanContext.
-// func (NoopSpanContext) TraceID() uint64 { return 0 }
-
-// // ForeachBaggageItem implements ddtrace.SpanContext.
-// func (NoopSpanContext) ForeachBaggageItem(_ func(k, v string) bool) {}
