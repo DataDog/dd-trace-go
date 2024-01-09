@@ -40,37 +40,33 @@ func TestASMFeaturesProductUpdate(t *testing.T) {
 		// Is appsec expected to be started at the end of the test
 		startedAfter bool
 		// The expected configuration at the end of the RC updates round
-		env           map[string]string
-		apiSecEnabled bool
-		sampleRate    float64
+		env        map[string]string
+		sampleRate float64
 	}{
 		{
-			name:          "all-enabled",
-			payload:       []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
-			startBefore:   true,
-			startedAfter:  true,
-			sampleRate:    0.7,
-			apiSecEnabled: true,
+			name:         "all-enabled",
+			payload:      []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
+			startBefore:  true,
+			startedAfter: true,
+			sampleRate:   0.7,
 		},
 		{
-			name:         "apisec-disabled",
+			name:         "apisec-deactivated",
 			payload:      []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.0}}`),
 			startBefore:  true,
 			startedAfter: true,
 		},
 		{
-			name:          "start-after",
-			payload:       []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
-			startedAfter:  true,
-			sampleRate:    0.7,
-			apiSecEnabled: true,
+			name:         "start-after",
+			payload:      []byte(`{"asm":{"enabled":true},"api_security":{"request_sample_rate": 0.7}}`),
+			startedAfter: true,
+			sampleRate:   0.7,
 		},
 		{
-			name:          "stop-appsec",
-			payload:       []byte(`{"asm":{"enabled":false},"api_security":{"request_sample_rate": 0.5}}`),
-			startBefore:   true,
-			sampleRate:    0.5,
-			apiSecEnabled: true,
+			name:        "stop-appsec",
+			payload:     []byte(`{"asm":{"enabled":false},"api_security":{"request_sample_rate": 0.5}}`),
+			startBefore: true,
+			sampleRate:  0.5,
 		},
 		{
 			name:        "stop-appsec-and-apisec",
@@ -78,11 +74,10 @@ func TestASMFeaturesProductUpdate(t *testing.T) {
 			startBefore: true,
 		},
 		{
-			name:          "config-removed",
-			payload:       nil,
-			startBefore:   true,
-			sampleRate:    internal.DefaultAPISecSampleRate,
-			apiSecEnabled: true,
+			name:        "config-removed",
+			payload:     nil,
+			startBefore: true,
+			sampleRate:  internal.DefaultAPISecSampleRate,
 		},
 	} {
 		t.Setenv(config.EnvEnabled, "true")
@@ -105,7 +100,7 @@ func TestASMFeaturesProductUpdate(t *testing.T) {
 			a.onAPISecConfigUpdate(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
 
 			require.Equal(t, tc.startedAfter, a.started)
-			require.Equal(t, tc.apiSecEnabled, a.cfg.APISec.Enabled)
+			require.True(t, a.cfg.APISec.Enabled)
 			require.Equal(t, tc.sampleRate, a.cfg.APISec.SampleRate)
 
 		})
@@ -127,7 +122,7 @@ func TestASMFeaturesProductUpdate(t *testing.T) {
 			a.onRemoteActivation(remoteconfig.ProductUpdate{"features/config.json": tc.payload})
 
 			require.Equal(t, tc.startedAfter, a.started)
-			require.Equal(t, tc.apiSecEnabled, a.cfg.APISec.Enabled)
+			require.True(t, a.cfg.APISec.Enabled)
 			require.Equal(t, tc.sampleRate, a.cfg.APISec.SampleRate)
 
 		})
@@ -139,7 +134,6 @@ func TestAPISecurityCallback(t *testing.T) {
 		t.Skipf("WAF cannot be used: %v", err)
 	}
 
-	t.Setenv(internal.EnvAPISecEnabled, "true")
 	t.Setenv(config.EnvEnabled, "true")
 
 	for _, tc := range []struct {
@@ -162,6 +156,9 @@ func TestAPISecurityCallback(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.enabled {
+				t.Setenv(internal.EnvAPISecEnabled, "true")
+			}
 			cfg, err := config.NewConfig()
 			require.NoError(t, err)
 			a := newAppSec(cfg)
@@ -169,12 +166,11 @@ func TestAPISecurityCallback(t *testing.T) {
 			require.NotNil(t, a)
 			defer a.stop()
 			require.NoError(t, a.startRC())
-			require.True(t, a.cfg.APISec.Enabled)
+			require.Equal(t, tc.enabled, a.cfg.APISec.Enabled)
 			require.Equal(t, internal.DefaultAPISecSampleRate, a.cfg.APISec.SampleRate)
 			payload := []byte(fmt.Sprintf(`{"api_security":{"request_sample_rate": %f}}`, tc.sampleRate))
 			a.onAPISecConfigUpdate(remoteconfig.ProductUpdate{"features/config.json": payload})
 			require.Equal(t, tc.enabled, a.cfg.APISec.Enabled)
-			require.Equal(t, tc.enabled, a.cfg.APISec.SampleRate > 0)
 		})
 	}
 }
