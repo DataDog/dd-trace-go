@@ -197,7 +197,7 @@ func flushLocked() {
 func printMsg(lvl Level, format string, a ...interface{}) {
 	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
 	mu.RLock()
-	logger.Log(int(lvl), msg)
+	logger.Log(lvl, msg)
 	mu.RUnlock()
 }
 
@@ -205,7 +205,7 @@ type defaultLogger struct{ l *log.Logger }
 
 var _ Logger = &defaultLogger{}
 
-func (p *defaultLogger) Log(_ int, msg string) { p.l.Print(msg) }
+func (p *defaultLogger) Log(_ Level, msg string) { p.l.Print(msg) }
 
 // DiscardLogger discards every call to Log().
 type DiscardLogger struct{}
@@ -213,7 +213,7 @@ type DiscardLogger struct{}
 var _ Logger = &DiscardLogger{}
 
 // Log implements Logger.
-func (d DiscardLogger) Log(_ int, _ string) {}
+func (d DiscardLogger) Log(_ Level, _ string) {}
 
 // RecordLogger records every call to Log() and makes it available via Logs().
 type RecordLogger struct {
@@ -233,7 +233,7 @@ func (r *RecordLogger) Ignore(substrings ...string) {
 }
 
 // Log implements Logger.
-func (r *RecordLogger) Log(_ int, msg string) {
+func (r *RecordLogger) Log(_ Level, msg string) {
 	r.m.Lock()
 	defer r.m.Unlock()
 	for _, ignored := range r.ignore {
