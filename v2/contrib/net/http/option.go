@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -30,7 +29,7 @@ type commonConfig struct {
 
 type config struct {
 	commonConfig
-	finishOpts []ddtrace.FinishOption
+	finishOpts []tracer.FinishOption
 	headerTags *internal.LockMap
 }
 

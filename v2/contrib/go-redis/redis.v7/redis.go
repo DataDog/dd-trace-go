@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -133,7 +132,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
-	var finishOpts []ddtrace.FinishOption
+	var finishOpts []tracer.FinishOption
 	errRedis := cmd.Err()
 	if errRedis != redis.Nil && ddh.config.errCheck(errRedis) {
 		finishOpts = append(finishOpts, tracer.WithError(errRedis))
@@ -170,7 +169,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
-	var finishOpts []ddtrace.FinishOption
+	var finishOpts []tracer.FinishOption
 	for _, cmd := range cmds {
 		errCmd := cmd.Err()
 		if errCmd != redis.Nil && ddh.config.errCheck(errCmd) {

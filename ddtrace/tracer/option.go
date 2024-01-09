@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -178,7 +177,7 @@ type config struct {
 
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
-	logger ddtrace.Logger
+	logger Logger
 
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
@@ -743,7 +742,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 // Diagnostic and startup tracer logs are prefixed to simplify the search within logs.
 // If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
 // function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
-func WithLogger(logger ddtrace.Logger) StartOption {
+func WithLogger(logger Logger) StartOption {
 	return func(c *config) {
 		c.logger = logger
 	}
@@ -1208,48 +1207,6 @@ func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
 				}
 			}
 		}
-	}
-}
-
-// FinishOption is a configuration option for FinishSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.FinishOption.
-type FinishOption = ddtrace.FinishOption
-
-// FinishTime sets the given time as the finishing time for the span. By default,
-// the current time is used.
-func FinishTime(t time.Time) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.FinishTime = t
-	}
-}
-
-// WithError marks the span as having had an error. It uses the information from
-// err to set tags such as the error message, error type and stack trace. It has
-// no effect if the error is nil.
-func WithError(err error) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.Error = err
-	}
-}
-
-// NoDebugStack prevents any error presented using the WithError finishing option
-// from generating a stack trace. This is useful in situations where errors are frequent
-// and performance is critical.
-func NoDebugStack() FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.NoDebugStack = true
-	}
-}
-
-// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
-func StackFrames(n, skip uint) FinishOption {
-	if n == 0 {
-		return NoDebugStack()
-	}
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.StackFrames = n
-		cfg.SkipStackFrames = skip
 	}
 }
 

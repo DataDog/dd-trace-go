@@ -12,7 +12,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -417,7 +416,7 @@ func BenchmarkTraceAndServe(b *testing.B) {
 		cfg := ServeConfig{
 			Service:     "service-name",
 			Resource:    "resource-name",
-			FinishOpts:  []ddtrace.FinishOption{},
+			FinishOpts:  []tracer.FinishOption{},
 			SpanOpts:    []tracer.StartSpanOption{},
 			QueryParams: false,
 		}

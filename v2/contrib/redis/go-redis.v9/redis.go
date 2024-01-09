@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -123,7 +122,7 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 
 		conn, err := hook(ctx, network, addr)
 
-		var finishOpts []ddtrace.FinishOption
+		var finishOpts []tracer.FinishOption
 		if err != nil {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
@@ -154,7 +153,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 
 		err := hook(ctx, cmd)
 
-		var finishOpts []ddtrace.FinishOption
+		var finishOpts []tracer.FinishOption
 		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}
@@ -184,7 +183,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 
 		err := hook(ctx, cmds)
 
-		var finishOpts []ddtrace.FinishOption
+		var finishOpts []tracer.FinishOption
 		if err != nil && err != redis.Nil && ddh.config.errCheck(err) {
 			finishOpts = append(finishOpts, tracer.WithError(err))
 		}

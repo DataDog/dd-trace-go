@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -23,7 +22,7 @@ const defaultServiceName = "mux.router"
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []tracer.StartSpanOption // additional span options to be applied
-	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
+	finishOpts    []tracer.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool

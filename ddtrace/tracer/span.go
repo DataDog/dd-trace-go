@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -483,13 +482,13 @@ func (s *Span) setMetric(key string, v float64) {
 
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
-func (s *Span) Finish(opts ...ddtrace.FinishOption) {
+func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
 	t := now()
 	if len(opts) > 0 {
-		cfg := ddtrace.FinishConfig{
+		cfg := FinishConfig{
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {

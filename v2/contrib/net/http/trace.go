@@ -10,7 +10,6 @@ package http // import "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -43,7 +42,7 @@ type ServeConfig struct {
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
 	// FinishOpts specifies any options to be used when finishing the request span.
-	FinishOpts []ddtrace.FinishOption
+	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
 	SpanOpts []tracer.StartSpanOption
 }
