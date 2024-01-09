@@ -7,14 +7,13 @@ package httpsec
 
 import (
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/appsec-internal-go/limiter"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
 	emitter "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
@@ -63,7 +62,7 @@ func SupportsAddress(addr string) bool {
 }
 
 // NewWAFEventListener returns the WAF event listener to register in order to enable it.
-func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, apiSecCfg *internal.APISecConfig, limiter limiter.Limiter) dyngo.EventListener {
+func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses map[string]struct{}, timeout time.Duration, apiSecCfg *config.APISecConfig, limiter limiter.Limiter) dyngo.EventListener {
 	var monitorRulesOnce sync.Once // per instantiation
 	// TODO: port wafDiags to telemetry metrics and logs instead of span tags (ultimately removing them from here hopefully)
 	wafDiags := handle.Diagnostics()
@@ -119,7 +118,7 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 				}
 			}
 		}
-		if canExtractSchemas(apiSecCfg) {
+		if apiSecCfg.CanExtractSchemas() {
 			// This address will be passed as persistent. The WAF will keep it in store and trigger schema extraction
 			// for each run.
 			values["waf.context.processor"] = map[string]any{"extract-schema": true}
@@ -190,10 +189,4 @@ func NewWAFEventListener(handle *waf.Handle, actions emitter.Actions, addresses 
 			}
 		}))
 	})
-}
-
-// canExtractSchemas checks that API Security is enabled and that sampling rate
-// allows extracting schemas
-func canExtractSchemas(cfg *internal.APISecConfig) bool {
-	return cfg != nil && cfg.Enabled && cfg.SampleRate >= rand.Float64()
 }

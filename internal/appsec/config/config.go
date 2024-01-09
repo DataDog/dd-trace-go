@@ -7,8 +7,10 @@ package config
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
@@ -32,10 +34,24 @@ type Config struct {
 	TraceRateLimit int64
 	// Obfuscator configuration
 	Obfuscator internal.ObfuscatorConfig
-	// APISec configuration
-	APISec internal.APISecConfig
+	// API Security configuration
+	APISec APISecConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
 	RC *remoteconfig.ClientConfig
+}
+
+// APISecConfig wraps internal.APISecConfig around a mutex
+type APISecConfig struct {
+	internal.APISecConfig
+	sync.RWMutex // This mutex guards internal.APISecConfig.SampleRate
+}
+
+// CanExtractSchemas checks that API Security is enabled and that sampling rate
+// allows extracting schemas
+func (cfg *APISecConfig) CanExtractSchemas() bool {
+	cfg.RLock()
+	defer cfg.RUnlock()
+	return cfg.APISecConfig.Enabled && cfg.SampleRate >= rand.Float64()
 }
 
 // WithRCConfig sets the AppSec remote config client configuration to the specified cfg
@@ -76,6 +92,6 @@ func NewConfig() (*Config, error) {
 		WAFTimeout:     internal.WAFTimeoutFromEnv(),
 		TraceRateLimit: int64(internal.RateLimitFromEnv()),
 		Obfuscator:     internal.NewObfuscatorConfig(),
-		APISec:         internal.NewAPISecConfig(),
+		APISec:         APISecConfig{APISecConfig: internal.NewAPISecConfig()},
 	}, nil
 }

@@ -172,15 +172,14 @@ func (a *appsec) onAPISecConfigUpdate(u remoteconfig.ProductUpdate) map[string]r
 	}
 
 	log.Debug("appsec: Remote config: processing %s", cfg.path)
-	// TODO: mutex
-	a.cfg.APISec.SampleRate = cfg.APISecurity.RequestSampleRate
-	if cfg.APISecurity.RequestSampleRate > 0 && !a.cfg.APISec.Enabled {
-		a.cfg.APISec.Enabled = true
-		log.Debug("appsec: Remote config: enabling API Security. Sample rate: %f", cfg.APISecurity.RequestSampleRate)
-	} else if cfg.APISecurity.RequestSampleRate == 0 && a.cfg.APISec.Enabled {
-		a.cfg.APISec.Enabled = false
-		log.Debug("appsec: Remote config: disabling API Security")
+	a.cfg.APISec.Lock()
+	if cfg.APISecurity.RequestSampleRate > 0 && a.cfg.APISec.SampleRate == 0 {
+		log.Debug("appsec: Remote config: activating API Security. Sample rate: %f", cfg.APISecurity.RequestSampleRate)
+	} else if cfg.APISecurity.RequestSampleRate == 0 && a.cfg.APISec.SampleRate > 0 {
+		log.Debug("appsec: Remote config: deactivating API Security. Feature will be re-activated upon receiving a configuration with a sampling rate > 0")
 	}
+	a.cfg.APISec.SampleRate = cfg.APISecurity.RequestSampleRate
+	a.cfg.APISec.Unlock()
 
 	return statusesFromUpdate(u, true, nil)
 }
