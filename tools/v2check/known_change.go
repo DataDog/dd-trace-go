@@ -8,9 +8,10 @@ package main
 import (
 	"go/ast"
 	"go/types"
+	"strings"
+
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
-	"strings"
 )
 
 type context map[string]any
