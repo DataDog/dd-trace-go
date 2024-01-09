@@ -103,17 +103,17 @@ func Debug(fmt string, a ...interface{}) {
 	if !DebugEnabled() {
 		return
 	}
-	printMsg(fmt, a...)
+	printMsg(LevelDebug, fmt, a...)
 }
 
 // Warn prints a warning message.
 func Warn(fmt string, a ...interface{}) {
-	printMsg(fmt, a...)
+	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message.
 func Info(fmt string, a ...interface{}) {
-	printMsg(fmt, a...)
+	printMsg(LevelInfo, fmt, a...)
 }
 
 var (
@@ -206,7 +206,7 @@ func flushLocked() {
 		} else {
 			msg += fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
-		printMsg(msg)
+		printMsg(LevelError, msg)
 	}
 	for k := range erragg {
 		// compiler-optimized map-clearing post go1.11 (golang/go#20138)
@@ -215,8 +215,8 @@ func flushLocked() {
 	erron = false
 }
 
-func printMsg(format string, a ...interface{}) {
-	msg := fmt.Sprintf("%s: %s", prefixMsg, fmt.Sprintf(format, a...))
+func printMsg(lvl Level, format string, a ...interface{}) {
+	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
 	mu.RLock()
 	logger.Log(msg)
 	mu.RUnlock()
