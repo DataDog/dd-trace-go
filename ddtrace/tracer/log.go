@@ -85,7 +85,7 @@ func logStartup(t *tracer) {
 	}
 
 	featureFlags := make([]string, 0, len(t.config.featureFlags))
-	for f, _ := range t.config.featureFlags {
+	for f := range t.config.featureFlags {
 		featureFlags = append(featureFlags, f)
 	}
 
