@@ -1,8 +1,5 @@
 name: Label APM Ecosystems issues
 on:
-  push:
-    paths:
-      - "contrib/**"
   issues:
     paths:
       - "contrib/**"
