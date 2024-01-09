@@ -170,7 +170,7 @@ func (c *SpanContext) TraceID() string {
 	return c.traceID.HexEncoded()
 }
 
-// TraceID128Bytes implements ddtrace.SpanContextW3C.
+// TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	return c.traceID
 }
