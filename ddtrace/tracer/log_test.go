@@ -113,7 +113,7 @@ func TestStartupLog(t *testing.T) {
 		assert.Error(err)
 
 		require.Len(t, tp.Logs(), 1)
-		assert.Contains(tp.Logs()[0], "WARN: DIAGNOSTICS Error(s) parsing sampling rules: found errors:\n\tat index 1: rate not provided")
+		assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided`, tp.Logs()[0])
 	})
 
 	t.Run("lambda", func(t *testing.T) {
@@ -154,10 +154,8 @@ func TestLogSamplingRules(t *testing.T) {
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
 	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
 	defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-	_, _, _, stop, err := startTestTracer(t, WithLogger(tp))
-	assert.Nil(err)
-	defer stop()
-
+	_, _, _, _, err := startTestTracer(t, WithLogger(tp))
+	assert.Error(err)
 	assert.Len(tp.Logs(), 1)
 	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 1: rate not provided\n\tat index 3: rate not provided\n\tat index 4: ignoring rule {Service: Name: Rate:9\.10 MaxPerSecond:0 Resource: Tags:map\[\]}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
 }
