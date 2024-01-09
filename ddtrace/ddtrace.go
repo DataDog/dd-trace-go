@@ -114,25 +114,33 @@ func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
 // Logger implementations are able to log given messages that the tracer or profiler might output.
 type Logger interface {
 	// Log prints the given message.
-	Log(lvl LogLevel, msg string)
+	Log(msg string)
 }
 
-// LogLevel specifies the logging level that the log package prints at.
+// LogLevel represents the logging level that the log package prints at.
 type LogLevel log.Level
 
 func (l LogLevel) String() string {
 	return log.Level(l).String()
 }
 
-type wrapLogger struct {
-	innerLogger Logger
-}
-
-func (l wrapLogger) Log(lvl log.Level, msg string) {
-	l.innerLogger.Log(LogLevel(lvl), msg)
-}
-
 // UseLogger sets l as the logger for all tracer and profiler logs.
 func UseLogger(l Logger) {
-	log.UseLogger(wrapLogger{l})
+	log.UseLogger(l)
+}
+
+type loggerAdapter struct {
+	fn func(lvl LogLevel, msg string, a ...any)
+}
+
+func (l loggerAdapter) Log(msg string) {
+	l.fn(LogLevel(log.CurrentLevel()), msg)
+}
+
+// AdaptLogger adapts a function to the Logger interface to adapt any logger to the
+// ddtrace.Logger interface.
+func AdaptLogger(fn func(lvl LogLevel, msg string, a ...any)) Logger {
+	return loggerAdapter{
+		fn: fn,
+	}
 }
