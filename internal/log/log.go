@@ -21,6 +21,21 @@ import (
 // Level specifies the logging level that the log package prints at.
 type Level int
 
+func (l Level) String() string {
+	switch l {
+	case LevelDebug:
+		return "DEBUG"
+	case LevelInfo:
+		return "INFO"
+	case LevelWarn:
+		return "WARN"
+	case LevelError:
+		return "ERROR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 const (
 	// LevelDebug represents debug level messages.
 	LevelDebug Level = iota

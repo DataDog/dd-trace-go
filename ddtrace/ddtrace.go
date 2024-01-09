@@ -121,18 +121,7 @@ type Logger interface {
 type LogLevel log.Level
 
 func (l LogLevel) String() string {
-	switch log.Level(l) {
-	case log.LevelDebug:
-		return "DEBUG"
-	case log.LevelInfo:
-		return "INFO"
-	case log.LevelWarn:
-		return "WARN"
-	case log.LevelError:
-		return "ERROR"
-	default:
-		return "UNKNOWN"
-	}
+	return log.Level(l).String()
 }
 
 type wrapLogger struct {
