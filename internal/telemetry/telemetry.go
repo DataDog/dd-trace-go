@@ -71,7 +71,7 @@ func (c *client) productChange(namespace Namespace, enabled bool) {
 		log("attempted to send product change event, but telemetry client has not started")
 		return
 	}
-	products := new(Products)
+	products := new(ProductsPayload)
 	switch namespace {
 	case NamespaceAppSec:
 		products.AppSec = ProductDetails{Enabled: enabled}
