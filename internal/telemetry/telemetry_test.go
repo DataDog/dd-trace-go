@@ -29,7 +29,7 @@ func TestProductEnabled(t *testing.T) {
 	body := client.requests[0].Body
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
-	var productsPayload = body.Payload.(*Products)
+	var productsPayload = body.Payload.(*ProductsPayload)
 	assert.True(t, productsPayload.Profiler.Enabled)
 }
 
