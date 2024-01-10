@@ -180,14 +180,14 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	productInfo := Products{
 		AppSec: ProductDetails{
 			Version: version.Tag,
-			// if the appsec is the one starting the telemetry client,
-			// then profiling is enabled
+			// if appsec is the one starting the telemetry client,
+			// then AppSec is enabled
 			Enabled: namespace == NamespaceAppSec,
 		},
 		Profiler: ProductDetails{
 			Version: version.Tag,
 			// if the profiler is the one starting the telemetry client,
-			// then profiling is enabled
+			// then profiling is enabled.
 			Enabled: namespace == NamespaceProfilers,
 		},
 	}

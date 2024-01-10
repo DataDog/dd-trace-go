@@ -161,10 +161,12 @@ func Start(opts ...StartOption) {
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
 	}
-	appsec.Start(appsec.WithRCConfig(cfg))
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
+
+	appsec.Start(appsec.WithRCConfig(cfg))
 	_ = t.hostname() // Prime the hostname cache
 }
 

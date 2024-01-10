@@ -18,22 +18,22 @@ import (
 // telemetry_cgo.go.
 var cgoEnabled bool
 
-func startTelemetry() {
+// reportToTelemetry emits the relevant telemetry product change event to report
+// activation of the AppSec feature.
+func reportToTelemetry() {
+	if telemetry.Disabled() {
+		// Do nothing if telemetry is explicitly disabled.
+		return
+	}
+
 	cfg := []telemetry.Configuration{
-		makeTelemetryConfigEntry("goos", runtime.GOOS),
-		makeTelemetryConfigEntry("goarch", runtime.GOARCH),
-		makeTelemetryConfigEntry("cgo_enabled", strconv.FormatBool(cgoEnabled)),
+		{Name: "goos", Value: runtime.GOOS},
+		{Name: "goarch", Value: runtime.GOARCH},
+		{Name: "cgo_enabled", Value: strconv.FormatBool(cgoEnabled)},
 	}
 	if runtime.GOOS == "linux" {
-		cfg = append(cfg, makeTelemetryConfigEntry("osinfo_libdl_path", osinfo.DetectLibDl("/")))
+		cfg = append(cfg, telemetry.Configuration{Name: "osinfo_libdl_path", Value: osinfo.DetectLibDl("/")})
 	}
 
 	telemetry.GlobalClient.ProductChange(telemetry.NamespaceAppSec, true, cfg)
-}
-
-func makeTelemetryConfigEntry(name, value string) telemetry.Configuration {
-	return telemetry.Configuration{
-		Name:  name,
-		Value: value,
-	}
 }

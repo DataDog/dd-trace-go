@@ -7,9 +7,9 @@
 package osinfo
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
+	"path"
 )
 
 // OSName returns the name of the operating system, including the distribution
@@ -28,22 +28,22 @@ func OSVersion() string {
 
 // DetectLibDl returns the path to libdl.so.2 if present in /lib or /lib64,
 // otherwise returns an empty string.
-func DetectLibDl(root string) (path string) {
+func DetectLibDl(root string) string {
 	return detectLibDl(root, os.DirFS(root))
 }
 
 // detectLibDl is the testable implementation of DetectLibDl.
-func detectLibDl(root string, fsys fs.FS) (path string) {
+func detectLibDl(root string, fsys fs.FS) string {
 	dirs := [...]string{
 		"lib",
 		"lib64",
 	}
 	for _, dir := range dirs {
-		path := fmt.Sprintf("%s/libdl.so.2", dir)
-		if _, err := fs.Stat(fsys, path); os.IsNotExist(err) || err != nil {
+		file := path.Join(dir, "libdl.so.2")
+		if _, err := fs.Stat(fsys, file); os.IsNotExist(err) || err != nil {
 			continue
 		}
-		return root + path
+		return path.Join(root, file)
 	}
 	return ""
 }

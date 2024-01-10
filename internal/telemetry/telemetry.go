@@ -12,9 +12,10 @@ import (
 )
 
 // ProductChange signals that the product has changed with some configuration
-// information. It will start the telemetry client if it is not already started.
-// ProductChange assumes that the telemetry client has been configured already
-// by the caller using the ApplyOps method.
+// information. It will start the telemetry client if it is not already started,
+// unless enabled is false (in which case the call does nothing). ProductChange
+// assumes that the telemetry client has been configured already by the caller
+// using the ApplyOps method.
 // If the client is already started, it will send any necessary
 // app-product-change events to indicate whether the product is enabled, as well
 // as an app-client-configuration-change event in case any new configuration
@@ -23,6 +24,10 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.started {
+		if !enabled {
+			// Namespace is not enabled & telemetry isn't started, won't start it now.
+			return
+		}
 		c.start(configuration, namespace)
 		return
 	}
@@ -31,7 +36,7 @@ func (c *client) ProductChange(namespace Namespace, enabled bool, configuration 
 	case NamespaceTracers, NamespaceProfilers, NamespaceAppSec:
 		c.productChange(namespace, enabled)
 	default:
-		log("unknown product namespace provided to ProductChange")
+		log("unknown product namespace %q provided to ProductChange", namespace)
 	}
 }
 
@@ -68,12 +73,14 @@ func (c *client) productChange(namespace Namespace, enabled bool) {
 	}
 	products := new(Products)
 	switch namespace {
-	case NamespaceProfilers:
-		products.Profiler = ProductDetails{Enabled: enabled}
 	case NamespaceAppSec:
 		products.AppSec = ProductDetails{Enabled: enabled}
+	case NamespaceProfilers:
+		products.Profiler = ProductDetails{Enabled: enabled}
+	case NamespaceTracers:
+		// Nothing to do
 	default:
-		log("unknown product namespace, app-product-change telemetry event will not send")
+		log("unknown product namespace: %q. The app-product-change telemetry event will not send", namespace)
 		return
 	}
 	productReq := c.newRequest(RequestTypeAppProductChange)

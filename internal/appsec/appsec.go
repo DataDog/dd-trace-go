@@ -162,7 +162,7 @@ func (a *appsec) start() error {
 	// TODO: log the config like the APM tracer does but we first need to define
 	//   an user-friendly string representation of our config and its sources
 
-	startTelemetry()
+	reportToTelemetry()
 
 	return nil
 }
