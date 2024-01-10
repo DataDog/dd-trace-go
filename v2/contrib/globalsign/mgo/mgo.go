@@ -11,7 +11,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -74,7 +73,7 @@ type Session struct {
 }
 
 func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) *tracer.Span {
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(cfg.spanName),

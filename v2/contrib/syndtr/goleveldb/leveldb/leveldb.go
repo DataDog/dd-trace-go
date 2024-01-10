@@ -10,7 +10,6 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -265,7 +264,7 @@ func (it *Iterator) Release() {
 }
 
 func startSpan(cfg *config, name string) *tracer.Span {
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),

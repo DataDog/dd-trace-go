@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -47,7 +46,7 @@ type monitor struct {
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
 	b, _ := bson.MarshalExtJSON(evt.Command, false, false)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName("mongo." + evt.CommandName),

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -178,7 +177,7 @@ type config struct {
 
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
-	logger ddtrace.Logger
+	logger Logger
 
 	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
 	runtimeMetrics bool
@@ -743,7 +742,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 // Diagnostic and startup tracer logs are prefixed to simplify the search within logs.
 // If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
 // function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
-func WithLogger(logger ddtrace.Logger) StartOption {
+func WithLogger(logger Logger) StartOption {
 	return func(c *config) {
 		c.logger = logger
 	}
@@ -1095,14 +1094,9 @@ func WithOrchestrion(metadata map[string]string) StartOption {
 	}
 }
 
-// StartSpanOption is a configuration option for StartSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.StartSpanOption.
-type StartSpanOption = ddtrace.StartSpanOption
-
 // Tag sets the given key/value pair as a tag on the started Span.
 func Tag(k string, v interface{}) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
 			cfg.Tags = map[string]interface{}{}
 		}
@@ -1139,7 +1133,7 @@ func Measured() StartSpanOption {
 // If there is no parent Span (eg from ChildOf), then the TraceID will also be set to the
 // value given here.
 func WithSpanID(id uint64) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.SpanID = id
 	}
 }
@@ -1147,15 +1141,15 @@ func WithSpanID(id uint64) StartSpanOption {
 // ChildOf tells StartSpan to use the given span context as a parent for the created span.
 //
 // Deprecated: Use span.StartChild instead.
-func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+func ChildOf(ctx *SpanContext) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
 		cfg.Parent = ctx
 	}
 }
 
 // withContext associates the ctx with the span.
 func withContext(ctx context.Context) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.Context = ctx
 	}
 }
@@ -1163,7 +1157,7 @@ func withContext(ctx context.Context) StartSpanOption {
 // StartTime sets a custom time as the start time for the created span. By
 // default a span is started using the creation time.
 func StartTime(t time.Time) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *StartSpanConfig) {
 		cfg.StartTime = t
 	}
 }
@@ -1173,15 +1167,15 @@ func StartTime(t time.Time) StartSpanOption {
 // float64 between 0 and 1 where 0.5 would represent 50% of events.
 func AnalyticsRate(rate float64) StartSpanOption {
 	if math.IsNaN(rate) {
-		return func(cfg *ddtrace.StartSpanConfig) {}
+		return func(cfg *StartSpanConfig) {}
 	}
 	return Tag(ext.EventSampleRate, rate)
 }
 
 // WithStartSpanConfig merges the given StartSpanConfig into the one used to start the span.
 // It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
-func WithStartSpanConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
-	return func(c *ddtrace.StartSpanConfig) {
+func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
+	return func(c *StartSpanConfig) {
 		// copy cfg into c only if cfg fields are not zero values
 		// c fields have precedence, as they may have been set up before running this option
 		if c.SpanID == 0 {
@@ -1208,48 +1202,6 @@ func WithStartSpanConfig(cfg ddtrace.StartSpanConfig) StartSpanOption {
 				}
 			}
 		}
-	}
-}
-
-// FinishOption is a configuration option for FinishSpan. It is aliased in order
-// to help godoc group all the functions returning it together. It is considered
-// more correct to refer to it as the type as the origin, ddtrace.FinishOption.
-type FinishOption = ddtrace.FinishOption
-
-// FinishTime sets the given time as the finishing time for the span. By default,
-// the current time is used.
-func FinishTime(t time.Time) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.FinishTime = t
-	}
-}
-
-// WithError marks the span as having had an error. It uses the information from
-// err to set tags such as the error message, error type and stack trace. It has
-// no effect if the error is nil.
-func WithError(err error) FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.Error = err
-	}
-}
-
-// NoDebugStack prevents any error presented using the WithError finishing option
-// from generating a stack trace. This is useful in situations where errors are frequent
-// and performance is critical.
-func NoDebugStack() FinishOption {
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.NoDebugStack = true
-	}
-}
-
-// StackFrames limits the number of stack frames included into erroneous spans to n, starting from skip.
-func StackFrames(n, skip uint) FinishOption {
-	if n == 0 {
-		return NoDebugStack()
-	}
-	return func(cfg *ddtrace.FinishConfig) {
-		cfg.StackFrames = n
-		cfg.SkipStackFrames = skip
 	}
 }
 

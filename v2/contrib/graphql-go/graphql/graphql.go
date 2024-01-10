@@ -11,7 +11,6 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
@@ -119,7 +118,7 @@ func (i datadogExtension) Name() string {
 // ParseDidStart is being called before starting the parse
 func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, graphql.ParseFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
@@ -146,7 +145,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 // ValidationDidStart is called just before the validation begins
 func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Context, graphql.ValidationFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
@@ -177,7 +176,7 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 // ExecutionDidStart notifies about the start of the execution
 func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Context, graphql.ExecutionFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
@@ -222,7 +221,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	default:
 		operationName = info.FieldName
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,

@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -124,7 +123,7 @@ func (c *Pipeliner) Exec() ([]redis.Cmder, error) {
 
 func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) {
 	p := c.params
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName("redis"),
@@ -143,7 +142,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 	cmds, err := c.Pipeliner.Exec()
 	span.SetTag(ext.ResourceName, commandsToString(cmds))
 	span.SetTag("redis.pipeline_length", strconv.Itoa(len(cmds)))
-	var finishOpts []ddtrace.FinishOption
+	var finishOpts []tracer.FinishOption
 	if err != redis.Nil {
 		finishOpts = append(finishOpts, tracer.WithError(err))
 	}
@@ -196,7 +195,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			parts := strings.Split(raw, " ")
 			length := len(parts) - 1
 			p := tc.params
-			opts := []ddtrace.StartSpanOption{
+			opts := []tracer.StartSpanOption{
 				tracer.SpanType(ext.SpanTypeRedis),
 				tracer.ServiceName(p.config.serviceName),
 				tracer.ResourceName(parts[0]),
@@ -215,7 +214,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			}
 			span, _ := tracer.StartSpanFromContext(ctx, p.config.spanName, opts...)
 			err := tc.process(cmd)
-			var finishOpts []ddtrace.FinishOption
+			var finishOpts []tracer.FinishOption
 			if err != redis.Nil {
 				finishOpts = append(finishOpts, tracer.WithError(err))
 			}

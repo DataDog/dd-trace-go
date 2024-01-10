@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
@@ -39,7 +38,7 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("with-service", func(t *testing.T) {
 		mt := newMockTracer()
-		parent := MockSpan(newSpan("http.request", &ddtrace.StartSpanConfig{Tags: parentTags}))
+		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
 		s := MockSpan(mt.StartSpan(
 			"db.query",
 			tracer.ServiceName("my-service"),
@@ -60,7 +59,7 @@ func TestTracerStartSpan(t *testing.T) {
 
 	t.Run("inherit", func(t *testing.T) {
 		mt := newMockTracer()
-		parent := MockSpan(newSpan("http.request", &ddtrace.StartSpanConfig{Tags: parentTags}))
+		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
 		s := MockSpan(mt.StartSpan("db.query", tracer.ChildOf(parent.Context())))
 
 		assert := assert.New(t)

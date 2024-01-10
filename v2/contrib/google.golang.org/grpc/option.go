@@ -6,7 +6,6 @@
 package grpc
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -50,7 +49,7 @@ type config struct {
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
 	withErrorDetailTags bool
-	spanOpts            []ddtrace.StartSpanOption
+	spanOpts            []tracer.StartSpanOption
 	tags                map[string]interface{}
 }
 
@@ -209,9 +208,9 @@ func WithCustomTag(key string, value interface{}) OptionFn {
 	}
 }
 
-// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// WithSpanOptions defines a set of additional tracer.StartSpanOption to be added
 // to spans started by the integration.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = append(cfg.spanOpts, opts...)
 	}

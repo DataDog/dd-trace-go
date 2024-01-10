@@ -9,7 +9,6 @@ package http // import "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/httptrace"
@@ -54,7 +53,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resource == "" {
 		resource = r.Method + " " + route
 	}
-	so := make([]ddtrace.StartSpanOption, len(mux.cfg.spanOpts), len(mux.cfg.spanOpts)+1)
+	so := make([]tracer.StartSpanOption, len(mux.cfg.spanOpts), len(mux.cfg.spanOpts)+1)
 	copy(so, mux.cfg.spanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.headerTags))
 	TraceAndServe(mux.ServeMux, w, r, &ServeConfig{
@@ -85,7 +84,7 @@ func WrapHandler(h http.Handler, service, resource string, opts ...Option) http.
 		if r := cfg.resourceNamer(req); r != "" {
 			resc = r
 		}
-		so := make([]ddtrace.StartSpanOption, len(cfg.spanOpts), len(cfg.spanOpts)+1)
+		so := make([]tracer.StartSpanOption, len(cfg.spanOpts), len(cfg.spanOpts)+1)
 		copy(so, cfg.spanOpts)
 		so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 		TraceAndServe(h, w, req, &ServeConfig{

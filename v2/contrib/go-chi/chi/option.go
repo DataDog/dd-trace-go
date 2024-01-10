@@ -9,7 +9,7 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -22,7 +22,7 @@ const defaultServiceName = "chi.router"
 
 type config struct {
 	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
+	spanOpts      []tracer.StartSpanOption // additional span options to be applied
 	analyticsRate float64
 	isStatusError func(statusCode int) bool
 	ignoreRequest func(r *http.Request) bool
@@ -71,7 +71,7 @@ func WithService(name string) OptionFn {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = opts
 	}

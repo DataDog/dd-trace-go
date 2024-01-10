@@ -9,7 +9,6 @@ import (
 	"context"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -73,7 +72,7 @@ func (c *Client) KV() *KV {
 }
 
 func (k *KV) startSpan(resourceName string, key string) *tracer.Span {
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.ServiceName(k.config.serviceName),
 		tracer.SpanType(ext.SpanTypeConsul),

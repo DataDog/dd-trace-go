@@ -17,9 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 func TestPrioritySampler(t *testing.T) {

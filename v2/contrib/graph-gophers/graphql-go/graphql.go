@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
@@ -53,7 +52,7 @@ var _ tracer.Tracer = (*Tracer)(nil)
 
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
-	opts := []ddtrace.StartSpanOption{
+	opts := []ddtracer.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlQuery, queryString),
 		ddtracer.Tag(tagGraphqlOperationName, operationName),
@@ -102,7 +101,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 	if t.cfg.omitTrivial && trivial {
 		return ctx, func(queryError *errors.QueryError) {}
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []ddtracer.StartSpanOption{
 		ddtracer.ServiceName(t.cfg.serviceName),
 		ddtracer.Tag(tagGraphqlField, fieldName),
 		ddtracer.Tag(tagGraphqlType, typeName),
