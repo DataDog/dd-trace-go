@@ -35,6 +35,12 @@ func TestDetectLibDl(t *testing.T) {
 				"nope/libdl.so.2": &fstest.MapFile{},
 			},
 		},
+		{
+			expectedPath: "/lib/arm64-linux-gnu/libdl.so.2",
+			testFs: fstest.MapFS{
+				"lib/arm64-linux-gnu/libdl.so.2": &fstest.MapFile{},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		got := detectLibDl("/", tc.testFs)

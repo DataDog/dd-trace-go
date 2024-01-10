@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"runtime"
+	"sync"
 )
 
 // OSName returns the name of the operating system, including the distribution
@@ -26,24 +28,48 @@ func OSVersion() string {
 	return osVersion()
 }
 
-// DetectLibDl returns the path to libdl.so.2 if present in /lib or /lib64,
-// otherwise returns an empty string.
+var (
+	detectLibDlOnce sync.Once
+	detectedLibDl   string
+)
+
+// DetectLibDl returns the path to libdl.so if present under one of the
+// traditional library paths (under `/lib`, `/lib64`, `/usr/lib`, etc...). This
+// is a no-op on platforms other than Linux. The lookup is done exactly once,
+// and the result will be re-used by subsequent calls.
 func DetectLibDl(root string) string {
-	return detectLibDl(root, os.DirFS(root))
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+
+	detectLibDlOnce.Do(func() { detectedLibDl = detectLibDl(root, os.DirFS(root)) })
+	return detectedLibDl
 }
 
 // detectLibDl is the testable implementation of DetectLibDl.
 func detectLibDl(root string, fsys fs.FS) string {
-	dirs := [...]string{
+	prefixes := [...]string{
 		"lib",
 		"lib64",
+		"usr/lib",
+		"usr/lib64",
+		"usr/local/lib",
+		"usr/local/lib64",
 	}
-	for _, dir := range dirs {
-		file := path.Join(dir, "libdl.so.2")
-		if _, err := fs.Stat(fsys, file); os.IsNotExist(err) || err != nil {
-			continue
+
+	var result string
+	for _, prefix := range prefixes {
+		_ = fs.WalkDir(fsys, prefix, func(path string, dir fs.DirEntry, err error) error {
+			if dir == nil || dir.IsDir() || dir.Name() != "libdl.so.2" {
+				return nil
+			}
+			// Found it!
+			result = path
+			return fs.SkipAll
+		})
+		if result != "" {
+			return path.Join(root, result)
 		}
-		return path.Join(root, file)
 	}
 	return ""
 }
