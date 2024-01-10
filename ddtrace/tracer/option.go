@@ -93,6 +93,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/tidwall/buntdb":                     {"BuntDB", false},
 	"github.com/twitchtv/twirp":                     {"Twirp", false},
 	"github.com/urfave/negroni":                     {"Negroni", false},
+	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
 	"github.com/zenazn/goji":                        {"Goji", false},
 }
 
@@ -161,7 +162,7 @@ type config struct {
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
-	globalTags map[string]interface{}
+	globalTags dynamicConfig[map[string]interface{}]
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
@@ -323,7 +324,7 @@ func newConfig(opts ...StartOption) *config {
 	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
-	c.headerAsTags = newDynamicConfig(nil, setHeaderTags)
+	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		WithHeaderTags(strings.Split(v, ","))(c)
 	}
@@ -410,22 +411,23 @@ func newConfig(opts ...StartOption) *config {
 		c.httpClient = defaultClient
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
+	globalTags := c.globalTags.get()
 	if c.env == "" {
-		if v, ok := c.globalTags["env"]; ok {
+		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
 				c.env = e
 			}
 		}
 	}
 	if c.version == "" {
-		if v, ok := c.globalTags["version"]; ok {
+		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
 				c.version = ver
 			}
 		}
 	}
 	if c.serviceName == "" {
-		if v, ok := c.globalTags["service"]; ok {
+		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
 				c.serviceName = s
 				globalconfig.SetServiceName(s)
@@ -489,6 +491,9 @@ func newConfig(opts ...StartOption) *config {
 		}
 		c.dogstatsdAddr = addr
 	}
+	// Re-initialize the globalTags config with the value constructed from the environment and start options
+	// This allows persisting the initial value of globalTags for future resets and updates.
+	c.initGlobalTags(c.globalTags.get())
 
 	return c
 }
@@ -704,7 +709,7 @@ func statsTags(c *config) []string {
 	if c.hostname != "" {
 		tags = append(tags, "host:"+c.hostname)
 	}
-	for k, v := range c.globalTags {
+	for k, v := range c.globalTags.get() {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
@@ -735,6 +740,9 @@ func WithFeatureFlags(feats ...string) StartOption {
 }
 
 // WithLogger sets logger as the tracer's error printer.
+// Diagnostic and startup tracer logs are prefixed to simplify the search within logs.
+// If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
+// function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
 func WithLogger(logger ddtrace.Logger) StartOption {
 	return func(c *config) {
 		c.logger = logger
@@ -876,11 +884,23 @@ func WithPeerServiceMapping(from, to string) StartOption {
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
 	return func(c *config) {
-		if c.globalTags == nil {
-			c.globalTags = make(map[string]interface{})
+		if c.globalTags.get() == nil {
+			c.initGlobalTags(map[string]interface{}{})
 		}
-		c.globalTags[k] = v
+		c.globalTags.Lock()
+		defer c.globalTags.Unlock()
+		c.globalTags.current[k] = v
 	}
+}
+
+// initGlobalTags initializes the globalTags config with the provided init value
+func (c *config) initGlobalTags(init map[string]interface{}) {
+	apply := func(map[string]interface{}) bool {
+		// always set the runtime ID on updates
+		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
+		return true
+	}
+	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
@@ -1231,12 +1251,14 @@ func StackFrames(n, skip uint) FinishOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		c.headerAsTags = newDynamicConfig(headerAsTags, setHeaderTags)
+		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
 		setHeaderTags(headerAsTags)
 	}
 }
 
-func setHeaderTags(headerAsTags []string) {
+// setHeaderTags sets the global header tags.
+// Always resets the global value and returns true.
+func setHeaderTags(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
 		if strings.HasPrefix(h, "x-datadog-") {
@@ -1245,6 +1267,7 @@ func setHeaderTags(headerAsTags []string) {
 		header, tag := normalizer.HeaderTag(h)
 		globalconfig.SetHeaderTag(header, tag)
 	}
+	return true
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

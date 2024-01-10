@@ -110,6 +110,9 @@ func (p *profiler) doRequest(bat batch) error {
 	if containerID != "" {
 		req.Header.Set("Datadog-Container-ID", containerID)
 	}
+	if entityID != "" {
+		req.Header.Set("Datadog-Entity-ID", entityID)
+	}
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := p.cfg.httpClient.Do(req)
@@ -133,13 +136,14 @@ func (p *profiler) doRequest(bat batch) error {
 }
 
 type uploadEvent struct {
-	Start          string            `json:"start"`
-	End            string            `json:"end"`
-	Attachments    []string          `json:"attachments"`
-	Tags           string            `json:"tags_profiler"`
-	Family         string            `json:"family"`
-	Version        string            `json:"version"`
-	EndpointCounts map[string]uint64 `json:"endpoint_counts,omitempty"`
+	Start            string            `json:"start"`
+	End              string            `json:"end"`
+	Attachments      []string          `json:"attachments"`
+	Tags             string            `json:"tags_profiler"`
+	Family           string            `json:"family"`
+	Version          string            `json:"version"`
+	EndpointCounts   map[string]uint64 `json:"endpoint_counts,omitempty"`
+	CustomAttributes []string          `json:"custom_attributes,omitempty"`
 }
 
 // encode encodes the profile as a multipart mime request.
@@ -154,12 +158,13 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 	tags = append(tags, "runtime:go")
 
 	event := &uploadEvent{
-		Version:        "4",
-		Family:         "go",
-		Start:          bat.start.Format(time.RFC3339Nano),
-		End:            bat.end.Format(time.RFC3339Nano),
-		Tags:           strings.Join(tags, ","),
-		EndpointCounts: bat.endpointCounts,
+		Version:          "4",
+		Family:           "go",
+		Start:            bat.start.Format(time.RFC3339Nano),
+		End:              bat.end.Format(time.RFC3339Nano),
+		Tags:             strings.Join(tags, ","),
+		EndpointCounts:   bat.endpointCounts,
+		CustomAttributes: bat.customAttributes,
 	}
 
 	for _, p := range bat.profiles {
