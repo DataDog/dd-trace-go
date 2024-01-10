@@ -31,26 +31,3 @@ type SpanContext interface {
 	// false.
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
-
-// LogLevel represents the logging level that the log package prints at.
-type LogLevel log.Level
-
-func (l LogLevel) String() string {
-	return log.Level(l).String()
-}
-
-type loggerAdapter struct {
-	fn func(lvl LogLevel, msg string, a ...any)
-}
-
-func (l loggerAdapter) Log(msg string) {
-	l.fn(LogLevel(log.CurrentLevel()), msg)
-}
-
-// AdaptLogger adapts a function to the Logger interface to adapt any logger to the
-// ddtrace.Logger interface.
-func AdaptLogger(fn func(lvl LogLevel, msg string, a ...any)) tracer.Logger {
-	return loggerAdapter{
-		fn: fn,
-	}
-}
