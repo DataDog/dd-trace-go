@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -376,4 +378,74 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
 	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
 	require.True(t, req.Client.IsTracer)
+}
+
+// TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
+func TestAsync(t *testing.T) {
+	require.NoError(t, Start(DefaultClientConfig()))
+	defer Stop()
+	const iterations = 10000
+	var wg sync.WaitGroup
+
+	// Subscriptions
+	for i := 0; i < iterations; i++ {
+		product := fmt.Sprintf("%d", rand.Int()%10)
+		capability := Capability(rand.Uint32() % 10)
+		wg.Add(1)
+		go func() {
+			callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			Subscribe(product, callback, capability)
+			wg.Done()
+		}()
+	}
+
+	// Products
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+		}()
+	}
+
+	// Capabilities
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterCapability(Capability(rand.Uint32() % 10))
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterCapability(Capability(rand.Uint32() % 10))
+		}()
+	}
+
+	// Callbacks
+	callback := func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterCallback(callback)
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterCallback(callback)
+		}()
+	}
+	wg.Wait()
 }
