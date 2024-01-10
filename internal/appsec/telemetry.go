@@ -7,8 +7,8 @@ package appsec
 
 import (
 	"runtime"
-	"strconv"
 
+	waf "github.com/DataDog/go-libddwaf/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -18,22 +18,70 @@ import (
 // telemetry_cgo.go.
 var cgoEnabled bool
 
-// reportToTelemetry emits the relevant telemetry product change event to report
-// activation of the AppSec feature.
-func reportToTelemetry() {
+type appsecTelemetry struct {
+	configs []telemetry.Configuration
+	enabled bool
+}
+
+var (
+	wafSupported, _ = waf.SupportsTarget()
+	wafHealthy, _   = waf.Health()
+	staticConfigs   = []telemetry.Configuration{
+		{Name: "goos", Value: runtime.GOOS, Origin: "code"},
+		{Name: "goarch", Value: runtime.GOARCH, Origin: "code"},
+		{Name: "waf_supports_target", Value: wafSupported, Origin: "code"},
+		{Name: "waf_healthy", Value: wafHealthy, Origin: "code"},
+	}
+)
+
+// newAppsecTelemetry creates a new telemetry event for AppSec.
+func newAppsecTelemetry() *appsecTelemetry {
 	if telemetry.Disabled() {
-		// Do nothing if telemetry is explicitly disabled.
+		// If telemetry is disabled, we won't do anything...
+		return nil
+	}
+
+	configs := make([]telemetry.Configuration, len(staticConfigs)+1, len(staticConfigs)+2)
+	configs[0] = telemetry.Configuration{Name: "cgo_enabled", Value: cgoEnabled}
+	copy(configs[1:], staticConfigs)
+	if runtime.GOOS == "linux" {
+		configs = append(configs, telemetry.Configuration{Name: "osinfo_libdl_path", Value: osinfo.DetectLibDl("/")})
+	}
+
+	return &appsecTelemetry{
+		configs: configs,
+	}
+}
+
+// addConfig adds a new configuration entry to this telemetry event.
+func (a *appsecTelemetry) addConfig(name string, value any) {
+	if a == nil {
+		return
+	}
+	a.configs = append(a.configs, telemetry.Configuration{Name: name, Value: value})
+}
+
+// addEnvConfig adds a new envionment-sourced configuration entry to this event.
+func (a *appsecTelemetry) addEnvConfig(name string, value any) {
+	if a == nil {
+		return
+	}
+	a.configs = append(a.configs, telemetry.Configuration{Name: name, Value: value, Origin: "env_var"})
+}
+
+// setEnabled makes AppSec as having effectively been enabled.
+func (a *appsecTelemetry) setEnabled() {
+	if a == nil {
+		return
+	}
+	a.enabled = true
+}
+
+// emit sends the telemetry event to the telemetry.GlobalClient.
+func (a *appsecTelemetry) emit() {
+	if a == nil {
 		return
 	}
 
-	cfg := []telemetry.Configuration{
-		{Name: "goos", Value: runtime.GOOS},
-		{Name: "goarch", Value: runtime.GOARCH},
-		{Name: "cgo_enabled", Value: strconv.FormatBool(cgoEnabled)},
-	}
-	if runtime.GOOS == "linux" {
-		cfg = append(cfg, telemetry.Configuration{Name: "osinfo_libdl_path", Value: osinfo.DetectLibDl("/")})
-	}
-
-	telemetry.GlobalClient.ProductChange(telemetry.NamespaceAppSec, true, cfg)
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceAppSec, a.enabled, a.configs)
 }
