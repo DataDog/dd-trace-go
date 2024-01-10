@@ -17,9 +17,9 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func TestFastHTTPHeadersCarrierSet(t *testing.T) {
+func TestHTTPHeadersCarrierSet(t *testing.T) {
 	assert := assert.New(t)
-	fcc := &FastHTTPHeadersCarrier{
+	fcc := &HTTPHeadersCarrier{
 		ReqHeader: new(fasthttp.RequestHeader),
 	}
 	t.Run("key-val", func(t *testing.T) {
@@ -55,7 +55,7 @@ func TestFastHTTPHeadersCarrierSet(t *testing.T) {
 	})
 }
 
-func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
+func TestHTTPHeadersCarrierForeachKey(t *testing.T) {
 	assert := assert.New(t)
 	h := new(fasthttp.RequestHeader)
 	headers := map[string][]string{
@@ -68,7 +68,7 @@ func TestFastHTTPHeadersCarrierForeachKey(t *testing.T) {
 			h.Add(k, v)
 		}
 	}
-	fcc := &FastHTTPHeadersCarrier{
+	fcc := &HTTPHeadersCarrier{
 		ReqHeader: h,
 	}
 	err := fcc.ForeachKey(func(k, v string) error {
@@ -84,7 +84,7 @@ func TestInjectExtract(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	pspan, _ := tracer.StartSpanFromContext(context.Background(), "test")
-	fcc := &FastHTTPHeadersCarrier{
+	fcc := &HTTPHeadersCarrier{
 		ReqHeader: &fasthttp.RequestHeader{},
 	}
 	err := tracer.Inject(pspan.Context(), fcc)
