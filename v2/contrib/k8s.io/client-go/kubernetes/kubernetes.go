@@ -8,7 +8,6 @@ package kubernetes // import "github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/c
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
@@ -54,13 +53,12 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
-		if traceID == 0 {
+		if traceID == tracer.TraceIDZero {
 			// tracer is not running
 			return
 		}
-		kubeAuditID := strconv.FormatUint(traceID, 10)
-		req.Header.Set("Audit-Id", kubeAuditID)
-		span.SetTag("kubernetes.audit_id", kubeAuditID)
+		req.Header.Set("Audit-Id", traceID)
+		span.SetTag("kubernetes.audit_id", traceID)
 	}))
 	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
 	return httptrace.WrapRoundTripper(rt, localOpts...)

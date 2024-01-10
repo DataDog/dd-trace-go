@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -68,9 +67,7 @@ func TestSpanWithNewRoot(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, child.(*span).DD)
 
-	var parentBytes oteltrace.TraceID
-	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
-	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
+	assert.NotEqual(noopParent.Context().TraceID(), child.SpanContext().TraceID())
 }
 
 func TestSpanWithoutNewRoot(t *testing.T) {
@@ -80,8 +77,8 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
-	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
+	parentCtxW3C := parent.Context()
+	assert.Equal(parentCtxW3C.TraceIDBytes(), [16]byte(child.SpanContext().TraceID()))
 }
 
 func TestTracerOptions(t *testing.T) {

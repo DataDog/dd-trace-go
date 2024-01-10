@@ -8,7 +8,7 @@ package fasthttp
 import (
 	"github.com/valyala/fasthttp"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 )
 
@@ -17,7 +17,7 @@ const defaultServiceName = "fasthttp"
 type config struct {
 	serviceName   string
 	spanName      string
-	spanOpts      []ddtrace.StartSpanOption
+	spanOpts      []tracer.StartSpanOption
 	isStatusError func(int) bool
 	resourceNamer func(*fasthttp.RequestCtx) string
 	ignoreRequest func(*fasthttp.RequestCtx) bool
@@ -54,7 +54,7 @@ func WithService(name string) OptionFn {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) OptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
 	return func(cfg *config) {
 		cfg.spanOpts = opts
 	}

@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
@@ -84,8 +83,8 @@ func (t *mocktracer) Stop() {
 	tracer.StopTestTracer()
 }
 
-func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) *tracer.Span {
-	var cfg ddtrace.StartSpanConfig
+func (t *mocktracer) StartSpan(operationName string, opts ...tracer.StartSpanOption) *tracer.Span {
+	var cfg tracer.StartSpanConfig
 	for _, fn := range opts {
 		fn(&cfg)
 	}
@@ -177,13 +176,13 @@ const (
 	baggagePrefix  = tracer.DefaultBaggageHeaderPrefix
 )
 
-func (t *mocktracer) Extract(carrier interface{}) (tracer.SpanContext, error) {
+func (t *mocktracer) Extract(carrier interface{}) (*tracer.SpanContext, error) {
 	return tracer.NewPropagator(&tracer.PropagatorConfig{
 		MaxTagsHeaderLen: 512,
 	}).Extract(carrier)
 }
 
-func (t *mocktracer) Inject(context tracer.SpanContext, carrier interface{}) error {
+func (t *mocktracer) Inject(context *tracer.SpanContext, carrier interface{}) error {
 	return tracer.NewPropagator(&tracer.PropagatorConfig{
 		MaxTagsHeaderLen: 512,
 	}).Inject(context, carrier)

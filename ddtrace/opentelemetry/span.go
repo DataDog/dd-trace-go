@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -94,12 +93,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.DD.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
-	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); ok {
-		traceID = w3cCtx.TraceID128Bytes()
-	} else {
-		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
-		uint64ToByte(ctx.TraceID(), traceID[:])
-	}
+	traceID = ctx.TraceIDBytes()
 	uint64ToByte(ctx.SpanID(), spanID[:])
 	config := oteltrace.SpanContextConfig{
 		TraceID: traceID,

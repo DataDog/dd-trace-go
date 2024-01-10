@@ -25,7 +25,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var _ ddtrace.SpanContext = (*spanContext)(nil)
+const TraceIDZero string = "00000000000000000000000000000000"
+
+var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
 type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
 
@@ -81,7 +83,7 @@ func (t *traceID) UpperHex() string {
 // and across process boundaries. It contains all the information needed to
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
-type spanContext struct {
+type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
@@ -101,13 +103,28 @@ type spanContext struct {
 	origin     string // e.g. "synthetics"
 }
 
+// FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
+// to start child spans.
+func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
+	var sc SpanContext
+	sc.traceID = c.TraceIDBytes()
+	sc.spanID = c.SpanID()
+	sc.baggage = make(map[string]string)
+	c.ForeachBaggageItem(func(k, v string) bool {
+		sc.hasBaggage = 1
+		sc.baggage[k] = v
+		return true
+	})
+	return &sc
+}
+
 // newSpanContext creates a new SpanContext to serve as context for the given
 // span. If the provided parent is not nil, the context will inherit the trace,
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
-func newSpanContext(span *Span, parent *spanContext) *spanContext {
-	context := &spanContext{
+func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
+	context := &SpanContext{
 		spanID: span.spanID,
 		span:   span,
 	}
@@ -148,26 +165,20 @@ func newSpanContext(span *Span, parent *spanContext) *spanContext {
 }
 
 // SpanID implements ddtrace.SpanContext.
-func (c *spanContext) SpanID() uint64 { return c.spanID }
+func (c *SpanContext) SpanID() uint64 { return c.spanID }
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
-
-// TraceID128 implements ddtrace.SpanContextW3C.
-func (c *spanContext) TraceID128() string {
-	if c == nil {
-		return ""
-	}
+func (c *SpanContext) TraceID() string {
 	return c.traceID.HexEncoded()
 }
 
-// TraceID128Bytes implements ddtrace.SpanContextW3C.
-func (c *spanContext) TraceID128Bytes() [16]byte {
+// TraceIDBytes implements ddtrace.SpanContext.
+func (c *SpanContext) TraceIDBytes() [16]byte {
 	return c.traceID
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
-func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
@@ -180,7 +191,7 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 }
 
-func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
@@ -190,14 +201,14 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	}
 }
 
-func (c *spanContext) SamplingPriority() (p int, ok bool) {
-	if c.trace == nil {
+func (c *SpanContext) SamplingPriority() (p int, ok bool) {
+	if c == nil || c.trace == nil {
 		return 0, false
 	}
 	return c.trace.samplingPriority()
 }
 
-func (c *spanContext) setBaggageItem(key, val string) {
+func (c *SpanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.baggage == nil {
@@ -207,7 +218,7 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.baggage[key] = val
 }
 
-func (c *spanContext) baggageItem(key string) string {
+func (c *SpanContext) baggageItem(key string) string {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
@@ -216,7 +227,7 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
-func (c *spanContext) meta(key string) (val string, ok bool) {
+func (c *SpanContext) meta(key string) (val string, ok bool) {
 	c.span.RLock()
 	defer c.span.RUnlock()
 	val, ok = c.span.meta[key]
@@ -224,7 +235,7 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 }
 
 // finish marks this span as finished in the trace.
-func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
+func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32

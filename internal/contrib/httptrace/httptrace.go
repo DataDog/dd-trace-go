@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -28,7 +27,7 @@ var (
 
 // StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
 // http.useragent). Any further span start option can be added with opts.
-func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (*tracer.Span, context.Context) {
+func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
 
@@ -36,9 +35,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (*tracer
 	if cfg.traceClientIP {
 		ipTags, _ = httptrace.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
-	nopts := make([]ddtrace.StartSpanOption, 0, len(opts)+1+len(ipTags))
+	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
-		func(cfg *ddtrace.StartSpanConfig) {
+		func(cfg *tracer.StartSpanConfig) {
 			if cfg.Tags == nil {
 				cfg.Tags = make(map[string]interface{})
 			}
@@ -113,7 +112,7 @@ func urlFromRequest(r *http.Request) string {
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
-func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtrace.StartSpanOption {
+func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) tracer.StartSpanOption {
 	var tags []struct {
 		key string
 		val string
@@ -128,7 +127,7 @@ func HeaderTagsFromRequest(req *http.Request, headerCfg *internal.LockMap) ddtra
 		}
 	})
 
-	return func(cfg *ddtrace.StartSpanConfig) {
+	return func(cfg *tracer.StartSpanConfig) {
 		for _, t := range tags {
 			cfg.Tags[t.key] = t.val
 		}

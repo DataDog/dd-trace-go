@@ -46,7 +46,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/graphqlsec"
@@ -189,7 +188,7 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 		rootSpan, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(opCtx), opts...)
 	}
 	createChildSpan := func(name string, start, finish time.Time) {
-		childOpts := []ddtrace.StartSpanOption{
+		childOpts := []tracer.StartSpanOption{
 			tracer.StartTime(start),
 			tracer.ResourceName(name),
 			tracer.Tag(ext.Component, componentName),

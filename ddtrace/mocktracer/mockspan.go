@@ -9,13 +9,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-func newSpan(operationName string, cfg *ddtrace.StartSpanConfig) *tracer.Span {
-	return tracer.SpanStart(operationName, func(c *ddtrace.StartSpanConfig) {
+func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
+	return tracer.SpanStart(operationName, func(c *tracer.StartSpanConfig) {
 		*c = *cfg
 	})
 }
@@ -51,7 +50,6 @@ func (s *Span) Tags() map[string]interface{} {
 	if s == nil {
 		return make(map[string]interface{})
 	}
-
 	m := make(map[string]interface{}, len(s.m))
 	for k, v := range s.m {
 		switch k {
@@ -91,7 +89,7 @@ start: %s
 duration: %s
 id: %d
 parent: %d
-trace: %d
+trace: %v
 baggage: %#v
 `, s.OperationName(), s.Tags(), s.StartTime(), s.Duration(), sc.SpanID(), s.ParentID(), sc.TraceID(), baggage)
 }
@@ -145,6 +143,6 @@ func (s *Span) Unwrap() *tracer.Span {
 	return s.sp
 }
 
-func (s *Span) Context() tracer.SpanContext {
+func (s *Span) Context() *tracer.SpanContext {
 	return s.sp.Context()
 }

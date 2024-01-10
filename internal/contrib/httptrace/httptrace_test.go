@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -247,7 +246,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		b.Errorf("Failed to create request: %v", err)
 		return
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName("SomeService"),
 		tracer.ResourceName("SomeResource"),
 		tracer.Tag(ext.HTTPRoute, "/some/route/?"),

@@ -133,7 +133,7 @@ func TestConsumer(t *testing.T) {
 		s := spans[0]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg1))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
+		assert.Equal(t, spanctx.TraceID(), s.Context().TraceID(),
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
@@ -150,7 +150,7 @@ func TestConsumer(t *testing.T) {
 		s := spans[1]
 		spanctx, err := tracer.Extract(NewConsumerMessageCarrier(msg2))
 		assert.NoError(t, err)
-		assert.Equal(t, spanctx.TraceID(), s.TraceID(),
+		assert.Equal(t, spanctx.TraceID(), s.Context().TraceID(),
 			"span context should be injected into the consumer message headers")
 
 		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))

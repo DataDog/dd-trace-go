@@ -6,6 +6,7 @@
 package mocktracer
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -26,7 +27,9 @@ type spanContext struct {
 	span    *tracer.Span
 }
 
-func (sc *spanContext) TraceID() uint64 { return sc.traceID }
+func (sc *spanContext) TraceID() string { return strconv.FormatUint(sc.traceID, 10) }
+
+func (sc *spanContext) TraceIDBytes() [16]byte { return [16]byte{} }
 
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
 

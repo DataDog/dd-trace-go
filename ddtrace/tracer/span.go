@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -105,7 +104,7 @@ type Span struct {
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
 	finished     bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context      *spanContext `msg:"-"` // span propagation context
+	context      *SpanContext `msg:"-"` // span propagation context
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -116,7 +115,7 @@ type Span struct {
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
-func (s *Span) Context() ddtrace.SpanContext {
+func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
@@ -306,7 +305,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 }
 
 // StartChild starts a new child span with the given operation name and options.
-func (s *Span) StartChild(operationName string, opts ...ddtrace.StartSpanOption) *Span {
+func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 	if s == nil {
 		return nil
 	}
@@ -483,13 +482,13 @@ func (s *Span) setMetric(key string, v float64) {
 
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
-func (s *Span) Finish(opts ...ddtrace.FinishOption) {
+func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
 	t := now()
 	if len(opts) > 0 {
-		cfg := ddtrace.FinishConfig{
+		cfg := FinishConfig{
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
@@ -699,7 +698,7 @@ func (s *Span) String() string {
 		fmt.Sprintf("Service: %s", s.service),
 		fmt.Sprintf("Resource: %s", s.resource),
 		fmt.Sprintf("TraceID: %d", s.traceID),
-		fmt.Sprintf("TraceID128: %s", s.context.TraceID128()),
+		fmt.Sprintf("TraceID128: %s", s.context.TraceID()),
 		fmt.Sprintf("SpanID: %d", s.spanID),
 		fmt.Sprintf("ParentID: %d", s.parentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.start)),
@@ -744,7 +743,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		}
 		var traceID string
 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", false) && s.context.traceID.HasUpper() {
-			traceID = s.context.TraceID128()
+			traceID = s.context.TraceID()
 		} else {
 			traceID = fmt.Sprintf("%d", s.traceID)
 		}

@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -22,8 +21,8 @@ const defaultServiceName = "mux.router"
 
 type routerConfig struct {
 	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
+	spanOpts      []tracer.StartSpanOption // additional span options to be applied
+	finishOpts    []tracer.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
@@ -84,7 +83,7 @@ func WithService(name string) RouterOptionFn {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOptionFn {
+func WithSpanOptions(opts ...tracer.StartSpanOption) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
 	}

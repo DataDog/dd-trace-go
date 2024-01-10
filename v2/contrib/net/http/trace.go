@@ -10,7 +10,6 @@ package http // import "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 import (
 	"net/http"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -43,9 +42,9 @@ type ServeConfig struct {
 	// by AppSec. It is only taken into account when AppSec is enabled.
 	RouteParams map[string]string
 	// FinishOpts specifies any options to be used when finishing the request span.
-	FinishOpts []ddtrace.FinishOption
+	FinishOpts []tracer.FinishOption
 	// SpanOpts specifies any options to be applied to the request starting span.
-	SpanOpts []ddtrace.StartSpanOption
+	SpanOpts []tracer.StartSpanOption
 }
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
@@ -65,7 +64,7 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
 	// Pre-append span.kind and component tags to the options so that they can be overridden.
-	opts = append([]ddtrace.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindServer), tracer.Tag(ext.Component, componentName)}, opts...)
+	opts = append([]tracer.StartSpanOption{tracer.Tag(ext.SpanKind, ext.SpanKindServer), tracer.Tag(ext.Component, componentName)}, opts...)
 	span, ctx := httptrace.StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	defer func() {

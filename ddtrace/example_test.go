@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -32,12 +31,7 @@ func Example_datadog() {
 	child := span.StartChild("read.file")
 	child.SetTag(ext.ResourceName, "test.json")
 
-	// If you are using 128 bit trace ids and want to generate the high
-	// order bits, cast the span's context to ddtrace.SpanContextW3C.
-	// See Issue #1677
-	if w3Cctx, ok := child.Context().(ddtrace.SpanContextW3C); ok {
-		fmt.Printf("128 bit trace id = %s\n", w3Cctx.TraceID128())
-	}
+	fmt.Printf("128 bit trace id = %s\n", child.Context().TraceID())
 
 	// Perform an operation.
 	_, err := os.ReadFile("~/test.json")
