@@ -72,6 +72,28 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		spanKind:   ssConfig.SpanKind(),
 		attributes: cfg.Tags,
 	})
+	// Add span links to underlying Datadog span
+	for _, link := range ssConfig.Links() {
+		traceIDbytes := link.SpanContext.TraceID()
+		traceIDUpper := binary.BigEndian.Uint64(traceIDbytes[:8])
+		traceIDLower := binary.BigEndian.Uint64(traceIDbytes[8:])
+
+		spanIDbytes := link.SpanContext.SpanID()
+		spanID := binary.BigEndian.Uint64(spanIDbytes[:])
+
+		tracestate := link.SpanContext.TraceState().String()
+		traceflags := uint32(2147483648) // 0 | 1 << 31
+		if link.SpanContext.IsSampled() {
+			traceflags = uint32(2147483649) // 1 | 1 << 31
+		}
+
+		attributes := make(map[string]string)
+		for _, attr := range link.Attributes {
+			attributes[string(attr.Key)] = attr.Value.Emit()
+		}
+
+		s.AddLink(ddtrace.SpanLink{traceIDLower, traceIDUpper, spanID, attributes, tracestate, traceflags})
+	}
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values

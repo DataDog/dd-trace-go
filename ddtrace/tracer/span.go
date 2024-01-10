@@ -64,18 +64,19 @@ type errorConfig struct {
 type span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	Name     string             `msg:"name"`              // operation name
-	Service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	Resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	Type     string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	Start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	Duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	Meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	Metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	SpanID   uint64             `msg:"span_id"`           // identifier of this span
-	TraceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	ParentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	Error    int32              `msg:"error"`             // error status of the span; 0 means no errors
+	Name      string             `msg:"name"`              // operation name
+	Service   string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
+	Resource  string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	Type      string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
+	Start     int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
+	Duration  int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
+	Meta      map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
+	Metrics   map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+	SpanID    uint64             `msg:"span_id"`           // identifier of this span
+	TraceID   uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
+	ParentID  uint64             `msg:"parent_id"`         // identifier of the span's direct parent
+	Error     int32              `msg:"error"`             // error status of the span; 0 means no errors
+	SpanLinks []ddtrace.SpanLink `msg:"span_links"`        // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -104,6 +105,31 @@ func (s *span) SetBaggageItem(key, val string) {
 // empty string if the value isn't found in this Span.
 func (s *span) BaggageItem(key string) string {
 	return s.context.baggageItem(key)
+}
+
+// LinkSpan sets a casuality link to another span via a spanContext. It also
+// stores details about the link in an attributes map.
+func (s *span) LinkSpan(spanContext ddtrace.SpanContext, attributes map[string]string) {
+	traceIDLower := spanContext.TraceID()
+	var traceIDUpper uint64
+	if w3Cctx, ok := spanContext.(ddtrace.SpanContextW3C); ok {
+		traceIDHex := w3Cctx.TraceID128()[:16]
+		traceIDUpper, _ = strconv.ParseUint(traceIDHex, 16, 64)
+	}
+
+	spanID := spanContext.SpanID()
+	link := ddtrace.SpanLink{}
+	link.TraceID = traceIDLower
+	link.TraceIDHigh = traceIDUpper
+	link.SpanID = spanID
+	link.Attributes = attributes
+	// TODO: Add support for setting tracestate and traceflags
+	s.AddLink(link)
+}
+
+// AddLink sets a mapping between two spans via ddtrace.SpanLink struct
+func (s *span) AddLink(link ddtrace.SpanLink) {
+	s.SpanLinks = append(s.SpanLinks, link)
 }
 
 // SetTag adds a set of key/value metadata to the span.

@@ -75,6 +75,10 @@ type Span interface {
 
 	// Context returns the SpanContext of this Span.
 	Context() SpanContext
+
+	// AddLink sets a casaul relatationship between one or more spans
+	LinkSpan(spanContext SpanContext, attributes map[string]string)
+	AddLink(link SpanLink)
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -92,6 +96,17 @@ type SpanContext interface {
 	// baggage within this context. Iteration stops when the handler returns
 	// false.
 	ForeachBaggageItem(handler func(k, v string) bool)
+}
+
+// https://github.com/open-telemetry/opentelemetry-go/blob/v1.21.0/trace/trace.go#L412
+//go:generate msgp
+type SpanLink struct {
+	TraceID     uint64            `msg:"trace_id"`                // Required. The low 64 bits of a referenced trace id
+	TraceIDHigh uint64            `msg:"trace_id_high,omitempty"` // Optional. The high 64 bits of a referenced trace id.
+	SpanID      uint64            `msg:"span_id"`                 // Required.
+	Attributes  map[string]string `msg:"attributes,omitempty"`    // Optional. Simple mapping of keys to string values.
+	Tracestate  string            `msg:"tracestate,omitempty"`    // Optional. W3C tracestate.
+	Flags       uint32            `msg:"flags,omitempty"`         // Optional. W3C trace flags. If set, the high bit (bit 31) must be set.
 }
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
@@ -144,6 +159,9 @@ type StartSpanConfig struct {
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
+
+	// SpanLink is a causal relationship between two spans. A span can have multiple links.
+	Links []SpanLink
 }
 
 // Logger implementations are able to log given messages that the tracer or profiler might output.

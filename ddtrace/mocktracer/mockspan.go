@@ -7,6 +7,7 @@ package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -107,6 +108,7 @@ type mockspan struct {
 	parentID  uint64
 	context   *spanContext
 	tracer    *mocktracer
+	links     []ddtrace.SpanLink
 }
 
 // SetTag sets a given tag on the span.
@@ -185,6 +187,31 @@ func (s *mockspan) BaggageItem(key string) string {
 func (s *mockspan) SetBaggageItem(key, val string) {
 	s.context.setBaggageItem(key, val)
 	return
+}
+
+// LinkSpan sets a casuality link to another span via a spanContext. It also
+// stores details about the link in an attributes map.
+func (s *mockspan) LinkSpan(spanContext ddtrace.SpanContext, attributes map[string]string) {
+	traceIDLower := spanContext.TraceID()
+	var traceIDUpper uint64
+	if w3Cctx, ok := spanContext.(ddtrace.SpanContextW3C); ok {
+		traceIDHex := w3Cctx.TraceID128()[:16]
+		traceIDUpper, _ = strconv.ParseUint(traceIDHex, 16, 64)
+	}
+
+	spanID := spanContext.SpanID()
+	link := ddtrace.SpanLink{}
+	link.TraceID = traceIDLower
+	link.TraceIDHigh = traceIDUpper
+	link.SpanID = spanID
+	link.Attributes = attributes
+	// TODO: Add support for setting tracestate and traceflags
+	s.AddLink(link)
+}
+
+// AddLink sets a mapping between two spans via ddtrace.SpanLink struct
+func (s *mockspan) AddLink(link ddtrace.SpanLink) {
+	s.links = append(s.links, link)
 }
 
 // Finish finishes the current span with the given options.

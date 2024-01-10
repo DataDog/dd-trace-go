@@ -1141,6 +1141,12 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
+	return func(cfg *ddtrace.StartSpanConfig) {
+		cfg.Links = append(cfg.Links, links...)
+	}
+}
+
 var measuredTag = Tag(keyMeasured, 1)
 
 // Measured marks this span to be measured for metrics and stats calculations.

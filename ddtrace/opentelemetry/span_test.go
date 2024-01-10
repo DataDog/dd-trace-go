@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -104,6 +105,43 @@ func TestSpanSetName(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 	assert.Contains(p, strings.ToLower("NewName"))
+}
+
+func TestSpanLink(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "link")
+	sp.End()
+
+	_, decoratedSpan := tr.Start(context.Background(), "test",
+		oteltrace.WithLinks(oteltrace.Link{
+			SpanContext: sp.SpanContext(),
+			Attributes:  []attribute.KeyValue{attribute.String("yes", "no")},
+		}))
+
+	decoratedSpan.End()
+	tracer.Flush()
+	payload, err := waitForPayload(ctx, payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.NotNil(payload)
+
+	spContext := sp.SpanContext()
+	traceIDbytes := spContext.TraceID()
+	traceIDUpper := binary.BigEndian.Uint64(traceIDbytes[:8])
+	traceIDLower := binary.BigEndian.Uint64(traceIDbytes[8:])
+	spanIDbytes := spContext.SpanID()
+	spanID := binary.BigEndian.Uint64(spanIDbytes[:])
+
+	encodedLink := fmt.Sprintf("\"span_links\":[{\"trace_id\":%d,\"trace_id_high\":%d,\"span_id\":%d,\"attributes\":{\"yes\":\"no\"},\"tracestate\":\"dd=s:1;t.dm:-1;t.tid:%016x\",\"flags\":2147483649}]", traceIDLower, traceIDUpper, spanID, traceIDUpper)
+	assert.Contains(payload, encodedLink)
 }
 
 func TestSpanEnd(t *testing.T) {

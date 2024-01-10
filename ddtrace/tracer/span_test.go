@@ -65,6 +65,24 @@ func TestSpanContext(t *testing.T) {
 	assert.NotNil(span.Context())
 }
 
+func TestSpanLink(t *testing.T) {
+	assert := assert.New(t)
+
+	rootSpan := newSpan("root", "service", "res", 123, 456, 0)
+	linkedSpan := newSpan("linked", "service", "res", 1, 2, 0)
+	attrs := map[string]string{"key1": "val1"}
+
+	rootSpan.LinkSpan(linkedSpan.Context(), attrs)
+	assert.Equal(len(rootSpan.SpanLinks), 1)
+
+	spanLink := rootSpan.SpanLinks[0]
+	assert.Equal(spanLink.TraceID, uint64(0x2))
+	assert.Equal(spanLink.SpanID, uint64(0x1))
+	assert.Equal(spanLink.Attributes["key1"], "val1")
+	assert.Equal(spanLink.Tracestate, "")
+	assert.Equal(spanLink.Flags, uint32(0))
+}
+
 func TestSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
 
