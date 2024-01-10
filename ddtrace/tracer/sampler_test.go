@@ -630,8 +630,8 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				_, rules, _ := samplingRulesFromEnv()
-
+				_, rules, err := samplingRulesFromEnv()
+				assert.Nil(t, err)
 				assert := assert.New(t)
 				rs := newRulesSampler(nil, rules, globalSampleRate())
 
@@ -647,61 +647,95 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules", func(t *testing.T) {
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
-			rules    string
+			rules    []SamplingRule
 			spanSrv  string
 			spanName string
+			hasMPS   bool
 		}{
 			{
-				rules:    `[{"name": "abcd?", "sample_rate": 1.0, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanNameServiceMPSRule("abcd?", "", 1.0, 100)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+				hasMPS:   true,
+			},
+			{
+				rules:    []SamplingRule{SpanNameServiceRule("abcd?", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"service": "*abcd","max_per_second":100, "sample_rate": 1.0}]`,
+				rules:    []SamplingRule{SpanNameServiceMPSRule("", "*abcd", 1.0, 100)},
+				spanSrv:  "xyzabcd",
+				spanName: "abcde",
+				hasMPS:   true,
+			},
+			{
+				rules:    []SamplingRule{SpanNameServiceRule("", "*abcd", 1.0)},
 				spanSrv:  "xyzabcd",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"service": "?*", "sample_rate": 1.0, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanNameServiceMPSRule("abcd?", "*service", 1.0, 100)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+				hasMPS:   true,
+			},
+			{
+				rules:    []SamplingRule{SpanNameServiceRule("abcd?", "*service", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"sample_rate": 1.0,"tags":{"hostname":"hn*"}, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanNameServiceMPSRule("", "?*", 1.0, 100)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+				hasMPS:   true,
+			},
+			{
+				rules:    []SamplingRule{SpanNameServiceRule("", "?*", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"sample_rate": 1.0,"resource":"res*", "tags":{"hostname":"hn*"}, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"sample_rate": 1.0,"tags":{"hostname":"hn*"}, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "res*", "", "", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 			{
-				rules:    `[{"sample_rate": 1.0,"resource":"res*", "tags":{"hostname":"hn*"}, "max_per_second":100}]`,
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "abc*", "", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "", "test*", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "abc*", "test*", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
-				_, rules, err := samplingRulesFromEnv()
-				assert.Nil(t, err)
 				assert := assert.New(t)
-				rs := newRulesSampler(nil, rules, globalSampleRate())
+				c := newConfig(WithSamplingRules(tt.rules))
+				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.True(result)
 				assert.Contains(span.Metrics, keySpanSamplingMechanism)
 				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
-				assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+				if tt.hasMPS {
+					assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+				}
 			})
 		}
 	})
@@ -817,6 +851,31 @@ func TestRulesSampler(t *testing.T) {
 				rules:    []SamplingRule{SpanNameServiceRule(``, "\\w+", 1.0)},
 				spanSrv:  "test-service",
 				spanName: "abcde123",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "incorrect*"}, "", "", "", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "resnope*", "", "", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "abcno", "", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "", "test234", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
+			{
+				rules:    []SamplingRule{SpanTagsResourceRule(map[string]string{"hostname": "hn*"}, "", "abc234", "testno", 1.0)},
+				spanSrv:  "test-service",
+				spanName: "abcde",
 			},
 		} {
 			t.Run("", func(t *testing.T) {
