@@ -1187,14 +1187,15 @@ func FinishTime(t time.Time) FinishOption {
 
 // WithError marks the span as having had an error. It uses the information from
 // err to set tags such as the error message, error type and stack trace. It has
-// no effect if the error is nil or the underlying object is a nil pointer (https://go.dev/doc/faq#nil_error).
+// no effect if the error is nil or the underlying value is a nil pointer (https://go.dev/doc/faq#nil_error).
 func WithError(err error) FinishOption {
 	if err == nil {
 		return func(_ *ddtrace.FinishConfig) {}
 	}
 	v := reflect.ValueOf(err)
-	// Here be dragons: https://go.dev/doc/faq#nil_error
-	// https://github.com/DataDog/dd-trace-go/issues/2029
+	// It's easy to accidentally make a non-nil error with underlying nil: https://go.dev/doc/faq#nil_error
+	// This code checks to make sure we don't accidentally save an error with a nil pointer value.
+	// See also: https://github.com/DataDog/dd-trace-go/issues/2029
 	if !v.IsValid() || (v.Kind() == reflect.Ptr && v.IsNil()) {
 		log.Debug("Underlying error value is nil pointer, ignoring. See https://go.dev/doc/faq#nil_error for details.")
 		return func(_ *ddtrace.FinishConfig) {}
