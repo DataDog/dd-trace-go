@@ -29,7 +29,22 @@ jobs:
             --color='#0E8A16'                                                   \
             --description='New issues that have not yet been triaged'           \
             --force
+      - name: Is author a guild member?
+        id: is-author-guild-member
+        run: |-
+          members=$(gh api /orgs/DataDog/teams/dd-trace-go-guild/members --jq='.[].id')
+          result='false'
+          for member in ${members}; do
+            if [ "${member}" = "${{ github.event.issue.user.id }}" ]; then
+              result='true'
+              break
+            fi
+          done
+          echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.NEEDS_TRIAGE_GITHUB_TOKEN }}
       - name: Add needs-triage label
+        if: steps.is-author-guild-member.outputs.result == 'false'
         run: |-
           gh issue edit ${{ github.event.issue.number }}                        \
             --repo='${{ github.repository }}'                                   \
@@ -86,7 +101,6 @@ jobs:
               "issue_number": ${{ toJson(matrix.number) }},
               "issue_title": ${{ toJson(matrix.title) }},
               "issue_url": ${{ toJson(format('github.com/{0}/issues/{1}', github.repository, matrix.number)) }},
-              "issue_body": ${{ toJson(matrix.body) }},
               "created_at": ${{ toJson(matrix.createdAt) }}
             }
         env:
