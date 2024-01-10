@@ -65,7 +65,7 @@ func detectLibDl(root string, fsys fs.FS) string {
 			}
 			// Found it!
 			result = path
-			return fs.SkipAll
+			return fs.SkipDir // TODO: fs.SkipAll once 1.20+ is the minimum supported Go version
 		})
 		if result != "" {
 			return path.Join(root, result)
