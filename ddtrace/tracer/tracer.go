@@ -21,6 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -166,7 +167,10 @@ func Start(opts ...StartOption) {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	startTelemetry(t.config)
 
-	appsec.Start(appsec.WithRCConfig(cfg))
+	// appsec.Start() may use the telemetry client to report activation, so it is
+	// important this happens _AFTER_ startTelemetry() has been called, so the
+	// client is appropriately configured.
+	appsec.Start(appsecConfig.WithRCConfig(cfg))
 	_ = t.hostname() // Prime the hostname cache
 }
 
@@ -653,7 +657,34 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
+}
+
+// updateSampling runs trace sampling rules on the context, since properties like resource / tags
+// could change and impact the result of sampling. This must be done once before context is propagated.
+func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
+	sctx, ok := ctx.(*spanContext)
+	if sctx == nil || !ok {
+		return
+	}
+	// without this check some mock spans tests fail
+	if t.rulesSampling == nil || sctx.trace == nil || sctx.trace.root == nil {
+		return
+	}
+	// want to avoid locking the entire trace from a span for long.
+	// if SampleTrace successfully samples the trace,
+	// it will lock the span and the trace mutexes in span.setSamplingPriorityLocked
+	// and trace.setSamplingPriority respectively, so we can't rely on those mutexes.
+	if sctx.trace.isLocked() {
+		// trace sampling decision already taken and locked, no re-sampling shall occur
+		return
+	}
+
+	// if sampling was successful, need to lock the trace to prevent further re-sampling
+	if t.rulesSampling.SampleTrace(sctx.trace.root) {
+		sctx.trace.setLocked(true)
+	}
 }
 
 // Extract uses the configured or default TextMap Propagator.
@@ -679,7 +710,7 @@ func (t *tracer) sample(span *span) {
 	if rs, ok := sampler.(RateSampler); ok && rs.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, rs.Rate())
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
