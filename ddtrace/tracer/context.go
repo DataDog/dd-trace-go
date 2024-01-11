@@ -13,9 +13,6 @@ import (
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
-	if s == nil {
-		return ctx
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}

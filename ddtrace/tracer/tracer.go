@@ -761,10 +761,6 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) SubmitStats(s *Span) {
-	// sp, ok := s.(*Span)
-	// if !ok {
-	// 	return
-	// }
 	select {
 	case t.stats.In <- newAggregableSpan(s, t.obfuscator):
 		// ok
@@ -774,10 +770,6 @@ func (t *tracer) SubmitStats(s *Span) {
 }
 
 func (t *tracer) SubmitAbandonedSpan(s *Span, finished bool) {
-	// sp, ok := s.(*Span)
-	// if !ok {
-	// 	return
-	// }
 	select {
 	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, finished):
 		// ok

@@ -64,6 +64,9 @@ type errorConfig struct {
 // issues.
 func (s *Span) AsMap() map[string]interface{} {
 	m := make(map[string]interface{})
+	if s == nil {
+		return m
+	}
 	m[ext.SpanName] = s.name
 	m[ext.ServiceName] = s.service
 	m[ext.ResourceName] = s.resource

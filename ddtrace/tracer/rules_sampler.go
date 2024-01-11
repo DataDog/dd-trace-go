@@ -44,11 +44,26 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *Span) bool { return r.traces.sampleRules(s) }
+func (r *rulesSampler) SampleTrace(s *Span) bool {
+	if s == nil {
+		return false
+	}
+	return r.traces.sampleRules(s)
+}
 
-func (r *rulesSampler) SampleTraceGlobalRate(s *Span) bool { return r.traces.sampleGlobalRate(s) }
+func (r *rulesSampler) SampleTraceGlobalRate(s *Span) bool {
+	if s == nil {
+		return false
+	}
+	return r.traces.sampleGlobalRate(s)
+}
 
-func (r *rulesSampler) SampleSpan(s *Span) bool { return r.spans.apply(s) }
+func (r *rulesSampler) SampleSpan(s *Span) bool {
+	if s == nil {
+		return false
+	}
+	return r.spans.apply(s)
+}
 
 func (r *rulesSampler) HasSpanRules() bool { return r.spans.enabled() }
 

@@ -165,20 +165,34 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 }
 
 // SpanID implements ddtrace.SpanContext.
-func (c *SpanContext) SpanID() uint64 { return c.spanID }
+func (c *SpanContext) SpanID() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.spanID
+}
 
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
+	if c == nil {
+		return TraceIDZero
+	}
 	return c.traceID.HexEncoded()
 }
 
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
+	if c == nil {
+		return emptyTraceID
+	}
 	return c.traceID
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+	if c == nil {
+		return
+	}
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
