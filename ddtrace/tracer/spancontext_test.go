@@ -801,6 +801,17 @@ func TestSpanContextIterator(t *testing.T) {
 	assert.Equal("value", got["key"])
 }
 
+func TestNilSpanContextIterator(t *testing.T) {
+	got := make(map[string]string)
+	var ctx *SpanContext
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+
+	assert.Len(t, got, 0)
+}
+
 func TestSpanContextIteratorBreak(t *testing.T) {
 	got := make(map[string]string)
 	ctx := SpanContext{baggage: map[string]string{"key": "value"}}

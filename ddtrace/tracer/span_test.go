@@ -49,6 +49,53 @@ func newBasicSpan(operationName string) *Span {
 	return newSpan(operationName, "", "", 0, 0, 0)
 }
 
+func TestSpanAsMap(t *testing.T) {
+	assertions := assert.New(t)
+	for _, tt := range []struct {
+		name string
+		span *Span
+		want any
+	}{
+		{
+			name: "basic",
+			span: newBasicSpan("my.op"),
+			want: "my.op",
+		},
+		{
+			name: "nil span",
+			span: nil,
+			want: nil,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assertions.Equal(tt.want, tt.span.AsMap()[ext.SpanName])
+		})
+	}
+}
+
+func TestNilSpan(t *testing.T) {
+	assertions := assert.New(t)
+	var (
+		span *Span
+		ctx  = span.Context()
+	)
+	// nil span should return a nil context
+	assertions.Nil(ctx)
+	assertions.Equal(TraceIDZero, ctx.TraceID())
+	assertions.Equal([16]byte(emptyTraceID), ctx.TraceIDBytes())
+	assertions.Equal(uint64(0), ctx.SpanID())
+	sp, ok := ctx.SamplingPriority()
+	assertions.Equal(0, sp)
+	assertions.Equal(false, ok)
+	// calls on nil span should be no-op
+	assertions.Nil(span.Root())
+	span.SetBaggageItem("key", "value")
+	span.SetTag("key", "value")
+	span.SetUser("user")
+	assertions.Nil(span.StartChild("child"))
+	span.Finish()
+}
+
 func TestSpanBaggage(t *testing.T) {
 	assert := assert.New(t)
 
