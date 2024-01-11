@@ -36,13 +36,23 @@ type Operation interface {
 	// Parent returns the parent operation, or nil for the root operation.
 	Parent() Operation
 
-	// self is an internal method guaranteeing only *operation implements Operation.
-	self() *operation
+	// unwrap is an internal method guaranteeing only *operation implements Operation.
+	unwrap() *operation
 }
 
+// ArgOf marks a particular type as being the argument type of a given operation
+// type. This allows this type to be listened to by an operation start listener.
+// This removes the possibility of incorrectly pairing an operation and payload
+// when setting up listeners, as it allows compiler-assisted coherence checks.
 type ArgOf[O Operation] interface {
 	IsArgOf(O)
 }
+
+// ResultOf marks a particular type as being the result type of a given
+// operation. This allows this type to be listened to by an operation finish
+// listener.
+// This removes the possibility of incorrectly pairing an operation and payload
+// when setting up listeners, as it allows compiler-assisted coherence checks.
 type ResultOf[O Operation] interface {
 	IsResultOf(O)
 }
@@ -83,7 +93,7 @@ func (o *operation) Parent() Operation {
 }
 
 // This is the one true Operation implementation!
-func (o *operation) self() *operation { return o }
+func (o *operation) unwrap() *operation { return o }
 
 // NewRootOperation creates and returns a new root operation, with no parent
 // operation. Root operations are meant to be the top-level operation of an
@@ -125,7 +135,7 @@ func NewOperation(parent Operation) Operation {
 	}
 	var parentOp *operation
 	if parent != nil {
-		parentOp = parent.self()
+		parentOp = parent.unwrap()
 	}
 	return &operation{parent: parentOp}
 }
@@ -135,20 +145,20 @@ func NewOperation(parent Operation) Operation {
 func StartOperation[O Operation, E ArgOf[O]](op O, args E) {
 	// Bubble-up the start event starting from the parent operation as you can't
 	// listen for your own start event
-	for current := op.self().parent; current != nil; current = current.parent {
+	for current := op.unwrap().parent; current != nil; current = current.parent {
 		emitEvent(&current.eventRegister, op, args)
 	}
 }
 
 func newOperation(parent Operation) *operation {
-	return &operation{parent: parent.self()}
+	return &operation{parent: parent.unwrap()}
 }
 
 // Finish finishes the operation along with its results and emits a
 // finish event with the operation results.
 // The operation is then disabled and its event listeners removed.
 func Finish[O Operation, E ResultOf[O]](op O, results E) {
-	o := op.self()
+	o := op.unwrap()
 	defer o.disable() // This will need the RLock below to be released...
 
 	o.mu.RLock()
@@ -179,7 +189,7 @@ func (o *operation) disable() {
 // On registers and event listener that will be called when the operation
 // begins.
 func On[O Operation, E ArgOf[O]](op Operation, l EventListener[O, E]) {
-	o := op.self()
+	o := op.unwrap()
 
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -192,7 +202,7 @@ func On[O Operation, E ArgOf[O]](op Operation, l EventListener[O, E]) {
 // OnFinish registers an event listener that will be called when the operation
 // finishes.
 func OnFinish[O Operation, E ResultOf[O]](op Operation, l EventListener[O, E]) {
-	o := op.self()
+	o := op.unwrap()
 
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -203,7 +213,7 @@ func OnFinish[O Operation, E ResultOf[O]](op Operation, l EventListener[O, E]) {
 }
 
 func OnData[T any](op Operation, l DataListener[T]) {
-	o := op.self()
+	o := op.unwrap()
 
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -214,7 +224,7 @@ func OnData[T any](op Operation, l DataListener[T]) {
 }
 
 func EmitData[T any](op Operation, data T) {
-	o := op.self()
+	o := op.unwrap()
 
 	o.mu.RLock()
 	defer o.mu.RUnlock()
