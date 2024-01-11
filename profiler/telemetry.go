@@ -30,8 +30,9 @@ func startTelemetry(c *config) {
 		telemetry.WithHTTPClient(c.httpClient),
 		telemetry.WithURL(c.agentless, c.agentURL),
 	)
-	telemetry.GlobalClient.ProductStart(
+	telemetry.GlobalClient.ProductChange(
 		telemetry.NamespaceProfilers,
+		true,
 		[]telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},

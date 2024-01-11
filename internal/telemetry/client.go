@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
@@ -31,7 +30,7 @@ import (
 // Client buffers and sends telemetry messages to Datadog (possibly through an
 // agent).
 type Client interface {
-	ProductStart(namespace Namespace, configuration []Configuration)
+	ProductChange(namespace Namespace, enabled bool, configuration []Configuration)
 	ConfigChange(configuration []Configuration)
 	Record(namespace Namespace, metric MetricKind, name string, value float64, tags []string, common bool)
 	Count(namespace Namespace, name string, value float64, tags []string, common bool)
@@ -181,14 +180,16 @@ func (c *client) start(configuration []Configuration, namespace Namespace) {
 	productInfo := Products{
 		AppSec: ProductDetails{
 			Version: version.Tag,
-			Enabled: appsec.Enabled(),
+			// if appsec is the one starting the telemetry client,
+			// then AppSec is enabled
+			Enabled: namespace == NamespaceAppSec,
 		},
-	}
-	productInfo.Profiler = ProductDetails{
-		Version: version.Tag,
-		// if the profiler is the one starting the telemetry client,
-		// then profiling is enabled
-		Enabled: namespace == NamespaceProfilers,
+		Profiler: ProductDetails{
+			Version: version.Tag,
+			// if the profiler is the one starting the telemetry client,
+			// then profiling is enabled.
+			Enabled: namespace == NamespaceProfilers,
+		},
 	}
 	payload := &AppStarted{
 		Configuration: configuration,
