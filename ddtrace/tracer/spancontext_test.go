@@ -169,7 +169,7 @@ func TestPartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 	t.Run("WithFlush", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		telemetryClient.ProductStart(telemetry.NamespaceTracers, nil)
+		telemetryClient.ProductChange(telemetry.NamespaceTracers, true, nil)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 		tracer, transport, flush, stop, err := startTestTracer(t)
 		assert.Nil(t, err)

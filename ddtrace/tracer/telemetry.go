@@ -7,8 +7,10 @@ package tracer
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -100,5 +102,11 @@ func startTelemetry(c *config) {
 			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
 		}
 	}
-	telemetry.GlobalClient.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
+	if runtime.GOOS == "linux" {
+		if path := osinfo.DetectLibDl("/"); path != "" {
+			// Help collect data on the libdl path for Linux
+			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "osinfo_libdl_path", Value: path})
+		}
+	}
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)
 }
