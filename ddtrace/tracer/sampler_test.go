@@ -733,16 +733,17 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				c := newConfig(WithSamplingRules(tt.rules))
+				c, err := newConfig(WithSamplingRules(tt.rules))
+				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, globalSampleRate())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]string{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.True(result)
-				assert.Contains(span.Metrics, keySpanSamplingMechanism)
-				assert.Contains(span.Metrics, keySingleSpanSamplingRuleRate)
+				assert.Contains(span.metrics, keySpanSamplingMechanism)
+				assert.Contains(span.metrics, keySingleSpanSamplingRuleRate)
 				if tt.hasMPS {
-					assert.Contains(span.Metrics, keySingleSpanSamplingMPS)
+					assert.Contains(span.metrics, keySingleSpanSamplingMPS)
 				}
 			})
 		}
