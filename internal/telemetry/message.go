@@ -168,7 +168,7 @@ func BoolConfig(key string, val bool) Configuration {
 
 // ProductsPayload is the top-level key for the app-product-change payload.
 type ProductsPayload struct {
-	Products `json:"products"`
+	Products Products `json:"products"`
 }
 
 // Products specifies information about available products.

@@ -74,9 +74,9 @@ func (c *client) productChange(namespace Namespace, enabled bool) {
 	products := new(ProductsPayload)
 	switch namespace {
 	case NamespaceAppSec:
-		products.AppSec = ProductDetails{Enabled: enabled}
+		products.Products.AppSec = ProductDetails{Enabled: enabled}
 	case NamespaceProfilers:
-		products.Profiler = ProductDetails{Enabled: enabled}
+		products.Products.Profiler = ProductDetails{Enabled: enabled}
 	case NamespaceTracers:
 		// Nothing to do
 	default:
