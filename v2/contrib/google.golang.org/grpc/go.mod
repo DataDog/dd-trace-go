@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/golang/protobuf v1.5.3
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.8
 	google.golang.org/grpc v1.57.1
@@ -23,7 +24,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.5.0 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/uuid v1.3.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
