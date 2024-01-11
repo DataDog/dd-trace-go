@@ -197,7 +197,9 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("appsec: Remote config: Starting AppSec")
-			if err = a.start(); err != nil {
+			telemetry := newAppsecTelemetry()
+			defer telemetry.emit()
+			if err = a.start(telemetry); err != nil {
 				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 			}
 		} else if !data.ASM.Enabled && a.started {
