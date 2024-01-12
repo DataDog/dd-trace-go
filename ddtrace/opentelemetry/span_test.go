@@ -38,7 +38,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			}
 			buf, err := io.ReadAll(r.Body)
 			if err != nil || len(buf) == 0 {
-				t.Fatalf("Test agent: Error receiving traces")
+				t.Fatalf("Test agent: Error receiving traces: %v", err)
 			}
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
