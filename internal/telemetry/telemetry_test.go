@@ -30,7 +30,7 @@ func TestProductEnabled(t *testing.T) {
 
 	assert.Equal(t, RequestTypeAppProductChange, body.RequestType)
 	var productsPayload = body.Payload.(*ProductsPayload)
-	assert.True(t, productsPayload.Profiler.Enabled)
+	assert.True(t, productsPayload.Products.Profiler.Enabled)
 }
 
 func TestConfigChange(t *testing.T) {

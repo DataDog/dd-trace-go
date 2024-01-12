@@ -65,8 +65,6 @@ func waitForPayload(ctx context.Context, payloads chan string) (string, error) {
 }
 
 func TestSpanResourceNameDefault(t *testing.T) {
-	t.Skip("Currently broken on CI, but passes locally. Tracking issue: https://github.com/DataDog/dd-trace-go/issues/2499")
-
 	assert := assert.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
