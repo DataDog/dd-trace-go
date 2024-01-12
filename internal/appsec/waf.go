@@ -97,6 +97,9 @@ type wafEventListener func(*waf.Handle, sharedsec.Actions, *config.Config, limit
 
 var wafEventListeners []wafEventListener
 
+// AddWAFEventListener adds a new WAF event listener to be registered whenever a new root operation
+// is created. The normal way to use this is to call it from a `func init() {}` so that it is
+// guaranteed to have happened before any listened to event may be emitted.
 func AddWAFEventListener(fn wafEventListener) {
 	wafEventListeners = append(wafEventListeners, fn)
 }

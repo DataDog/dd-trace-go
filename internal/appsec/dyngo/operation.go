@@ -223,6 +223,9 @@ func OnData[T any](op Operation, l DataListener[T]) {
 	addDataListener(&o.dataBroadcaster, l)
 }
 
+// EmitData sends a data event up the operation stack. Listeners will be matched
+// based on `T`. Callers may need to manually specify T when the static type of
+// the value is more specific that the intended data event type.
 func EmitData[T any](op Operation, data T) {
 	o := op.unwrap()
 

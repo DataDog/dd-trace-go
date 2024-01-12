@@ -53,6 +53,7 @@ var supportedAddresses = listener.AddressSet{
 	UserIDAddr:                         {},
 }
 
+// Install registers the HTTP WAF Event Listener on the given root operation.
 func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
 		log.Debug("[appsec] registering the HTTP WAF Event Listener")

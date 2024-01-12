@@ -32,6 +32,7 @@ var supportedAddresses = listener.AddressSet{
 	graphQLServerResolverAddr: {},
 }
 
+// Install registers the GraphQL WAF Event Listener on the given root operation.
 func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
 		log.Debug("[appsec] registering the GraphQL WAF Event Listener")
