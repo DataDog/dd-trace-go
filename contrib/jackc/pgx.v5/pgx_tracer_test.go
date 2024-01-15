@@ -68,91 +68,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestTraceQuery(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	opts := []Option{
-		WithTraceQuery(true),
-		WithTraceConnect(false),
-		WithTracePrepare(false),
-	}
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
-	conn, err := Connect(ctx, postgresDSN, opts...)
-	require.NoError(t, err)
-
-	query := fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", tableName)
-	rows, err := conn.Query(ctx, query)
-	require.NoError(t, err)
-	require.NoError(t, rows.Err())
-	rows.Close()
-	span.Finish()
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
-
-	s0 := spans[0]
-	assert.Equal(t, "pgx.query", s0.OperationName())
-	assert.Equal(t, query, s0.Tag(ext.ResourceName))
-	checkDefaultTags(t, s0)
-
-	s1 := spans[1]
-	assert.Equal(t, "parent", s1.OperationName())
-	assert.Equal(t, "parent", s1.Tag(ext.ResourceName))
-}
-
-func TestTraceBatch(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	opts := []Option{
-		WithTraceQuery(true),
-		WithTraceConnect(false),
-		WithTracePrepare(true),
-		WithTraceBatch(true),
-	}
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
-	conn, err := Connect(ctx, postgresDSN, opts...)
-	require.NoError(t, err)
-
-	batch := &pgx.Batch{}
-	batch.Queue(`SELECT 1`)
-	batch.Queue(`SELECT 2`)
-	batch.Queue(`SELECT 3`)
-	br := conn.SendBatch(ctx, batch)
-
-	var rows pgx.Rows
-	var qErr error
-	for qErr != nil {
-		rows, qErr = br.Query()
-		require.NoError(t, qErr)
-		rows.Close()
-	}
-
-	err = br.Close()
-	require.NoError(t, err)
-
-	span.Finish()
-	spans := mt.FinishedSpans()
-	expectedSpans := batch.Len() + 2
-	require.Len(t, spans, expectedSpans)
-	require.Len(t, mt.OpenSpans(), 0)
-
-	for i, s := range spans[0 : expectedSpans-2] {
-		assert.Equal(t, "pgx.batch.query", s.OperationName())
-		assert.Equal(t, fmt.Sprintf("SELECT %d", i+1), s.Tag(ext.ResourceName))
-		checkDefaultTags(t, s)
-	}
-
-	s0 := spans[expectedSpans-2]
-	assert.Equal(t, "pgx.batch", s0.OperationName())
-	assert.Equal(t, "pgx.batch", s0.Tag(ext.ResourceName))
-	checkDefaultTags(t, s0)
-
-	s1 := spans[expectedSpans-1]
-	assert.Equal(t, "parent", s1.OperationName())
-	assert.Equal(t, "parent", s1.Tag(ext.ResourceName))
-}
-
 func Test_Tracer(t *testing.T) {
 	t.Run("Test_QueryTracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -438,7 +353,72 @@ func Test_Tracer(t *testing.T) {
 		assert.Equal(t, "pgx.connect", s0.OperationName())
 		assert.Equal(t, "connect", s0.Tag(ext.ResourceName))
 		checkDefaultTags(t, s0)
+	})
 
+	t.Run("Test_DisableTracers", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx := context.Background()
+
+		conn, err := Connect(
+			ctx,
+			postgresDSN,
+			WithTraceCopyFrom(false),
+			WithTraceQuery(false),
+			WithTraceConnect(false),
+			WithTracePrepare(false),
+			WithTraceBatch(false),
+		)
+		require.NoError(t, err)
+		defer conn.Close(ctx)
+
+		_, err = conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)`)
+		require.NoError(t, err)
+
+		numbers := []int{1, 2, 3}
+
+		copyFromSource := pgx.CopyFromSlice(len(numbers), func(i int) ([]any, error) {
+			return []any{numbers[i]}, nil
+		})
+
+		_, err = conn.CopyFrom(ctx, []string{"numbers"}, []string{"number"}, copyFromSource)
+		require.NoError(t, err)
+
+		assert.Len(t, mt.OpenSpans(), 0)
+		assert.Len(t, mt.FinishedSpans(), 0)
+
+		batch := &pgx.Batch{}
+		batch.Queue(`SELECT 1`)
+		batch.Queue(`SELECT 2`)
+		batch.Queue(`SELECT 3`)
+
+		br := conn.SendBatch(ctx, batch)
+
+		var (
+			a int
+			b int
+			c int
+		)
+
+		err = br.QueryRow().Scan(&a)
+		require.NoError(t, err)
+
+		err = br.QueryRow().Scan(&b)
+		require.NoError(t, err)
+
+		err = br.QueryRow().Scan(&c)
+		require.NoError(t, err)
+
+		assert.Equal(t, a, 1)
+		assert.Equal(t, b, 2)
+		assert.Equal(t, c, 3)
+
+		err = br.Close()
+		require.NoError(t, err)
+
+		assert.Len(t, mt.OpenSpans(), 0)
+		assert.Len(t, mt.FinishedSpans(), 0)
 	})
 }
 
