@@ -10,11 +10,11 @@ import (
 	"strings"
 )
 
-type Service int
+type IntegrationType int
 
 const (
 	// client/server
-	HTTPClient Service = iota
+	HTTPClient IntegrationType = iota
 	HTTPServer
 	GRPCClient
 	GRPCServer
@@ -42,8 +42,8 @@ const (
 	VaultOutbound
 )
 
-func opV1(s Service) string {
-	switch s {
+func opV1(t IntegrationType) string {
+	switch t {
 	// Client/Server
 	case HTTPClient:
 		return "http.client.request"
@@ -95,8 +95,8 @@ func opV1(s Service) string {
 	return ""
 }
 
-func opV0(s Service) string {
-	switch s {
+func opV0(t IntegrationType) string {
+	switch t {
 	case HTTPClient, HTTPServer:
 		return "http.request"
 	case GRPCClient:
@@ -139,19 +139,19 @@ func opV0(s Service) string {
 	return ""
 }
 
-func OpName(s Service) string {
+func OpName(t IntegrationType) string {
 	switch GetVersion() {
 	case SchemaV1:
-		return opV1(s)
+		return opV1(t)
 	default:
-		return opV0(s)
+		return opV0(t)
 	}
 }
 
-func OpNameOverrideV0(s Service, overrideV0 string) string {
+func OpNameOverrideV0(t IntegrationType, overrideV0 string) string {
 	switch GetVersion() {
 	case SchemaV1:
-		return opV1(s)
+		return opV1(t)
 	default:
 		return overrideV0
 	}
@@ -177,14 +177,14 @@ func isMessagingSendOp(awsService, awsOperation string) bool {
 	return false
 }
 
-func AWSOpName(service, operation, overrideV0 string) string {
+func AWSOpName(awsService, awsOp, overrideV0 string) string {
 	switch GetVersion() {
 	case SchemaV1:
 		op := "request"
-		if isMessagingSendOp(service, operation) {
+		if isMessagingSendOp(awsService, awsOp) {
 			op = "send"
 		}
-		return fmt.Sprintf("aws.%s.%s", strings.ToLower(service), op)
+		return fmt.Sprintf("aws.%s.%s", strings.ToLower(awsService), op)
 	default:
 		return overrideV0
 	}
