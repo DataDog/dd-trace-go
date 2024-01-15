@@ -366,7 +366,9 @@ func TestIntegrationEnabled(t *testing.T) {
 		}
 		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
 		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
-		require.NoErrorf(t, err, "integration: %v", pkg)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
 		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
 	}
 }
