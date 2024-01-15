@@ -3,13 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate protoc -I . fixtures_test.proto --go_out=plugins=grpc:.
+//go:generate sh gen_proto.sh
 
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
 package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -19,7 +21,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	context "golang.org/x/net/context"
+	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -29,6 +31,7 @@ const componentName = "google.golang.org/grpc"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported(componentName)
 }
 
 // cache a constant option: saves one allocation per call
@@ -82,6 +85,13 @@ func finishWithError(span ddtrace.Span, err error, cfg *config) {
 		err = nil
 	}
 	span.SetTag(tagCode, errcode.String())
+	if e, ok := status.FromError(err); ok && cfg.withErrorDetailTags {
+		for i, d := range e.Details() {
+			if d, ok := d.(proto.Message); ok {
+				span.SetTag(tagStatusDetailsPrefix+fmt.Sprintf("_%d", i), d.String())
+			}
+		}
+	}
 
 	// only allocate finishOptions if needed, and allocate the exact right size
 	var finishOptions []tracer.FinishOption

@@ -9,25 +9,33 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
 )
 
 // outChannelSize specifies the size of the profile output channel.
 const outChannelSize = 5
 
+// customProfileLabelLimit is the maximum number of pprof labels which can
+// be used as custom attributes in the profiler UI
+const customProfileLabelLimit = 10
+
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
 	containerID    = internal.ContainerID() // replaced in tests
+	entityID       = internal.EntityID()    // replaced in tests
 )
 
 // Start starts the profiler. If the profiler is already running, it will be
@@ -84,11 +92,6 @@ type profiler struct {
 	lastTrace time.Time
 }
 
-func (p *profiler) shouldTrace() bool {
-	p.cfg.traceConfig.Refresh()
-	return p.cfg.traceConfig.Enabled && time.Since(p.lastTrace) > p.cfg.traceConfig.Period
-}
-
 // testHooks are functions that are replaced during testing which would normally
 // depend on accessing runtime state that is not needed/available for the test
 type testHooks struct {
@@ -125,12 +128,18 @@ func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
+	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+		return nil, errors.New("profiling not supported in AWS Lambda runtimes")
+	}
 	cfg, err := defaultConfig()
 	if err != nil {
 		return nil, err
 	}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+	if len(cfg.customProfilerLabels) > customProfileLabelLimit {
+		cfg.customProfilerLabels = cfg.customProfilerLabels[:customProfileLabelLimit]
 	}
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
 	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
@@ -189,6 +198,26 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if cfg.logStartup {
 		logStartup(cfg)
 	}
+	var tags []string
+	var seenVersionTag bool
+	for _, tag := range cfg.tags.Slice() {
+		// If the user configured a tag via DD_VERSION or WithVersion,
+		// override any version tags the user provided via WithTags,
+		// since having more than one version tag breaks the comparison
+		// UI. If a version is only supplied by WithTags, keep only the
+		// first one.
+		if strings.HasPrefix(strings.ToLower(tag), "version:") {
+			if cfg.version != "" || seenVersionTag {
+				continue
+			}
+			seenVersionTag = true
+		}
+		tags = append(tags, tag)
+	}
+	if cfg.version != "" {
+		tags = append(tags, "version:"+cfg.version)
+	}
+	cfg.tags = immutable.NewStringSlice(tags)
 
 	p := profiler{
 		cfg:    cfg,
@@ -268,6 +297,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// missing a trace because the feature isn't turned on.
 				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
 			},
+			customAttributes: p.cfg.customProfilerLabels,
 		}
 		p.seq++
 
@@ -278,10 +308,26 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 		// finished (because p.pendingProfiles will have been
 		// incremented to count every non-CPU profile before CPU
 		// profiling starts)
+
 		profileTypes := p.enabledProfileTypes()
-		if p.shouldTrace() {
+
+		// Decide whether we should record an execution trace
+		p.cfg.traceConfig.Refresh()
+		// Randomly record a trace with probability (profile period) / (trace period).
+		// Note that if the trace period is equal to or less than the profile period,
+		// we will always record a trace
+		// We do multiplication here instead of division to defensively guard against
+		// division by 0
+		shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
+		// As a special case, we want to trace during the first
+		// profiling cycle since startup activity is generally much
+		// different than regular operation
+		firstCycle := bat.seq == 0
+		shouldTrace := p.cfg.traceConfig.Enabled && (shouldTraceRandomly || firstCycle)
+		if shouldTrace {
 			profileTypes = append(profileTypes, executionTrace)
 		}
+
 		for _, t := range profileTypes {
 			if t != CPUProfile {
 				p.pendingProfiles.Add(1)

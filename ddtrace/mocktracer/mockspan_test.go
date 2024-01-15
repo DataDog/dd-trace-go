@@ -192,6 +192,14 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert.Equal(len(s.tracer.finishedSpans), 1)
 }
 
+func TestSpanString(t *testing.T) {
+	s := basicSpan("http.request")
+	s.Finish(tracer.WithError(errors.New("some error")))
+
+	assert := assert.New(t)
+	assert.NotEmpty(s.String())
+}
+
 func TestSpanWithID(t *testing.T) {
 	spanID := uint64(123456789)
 	span := newMockTracer().StartSpan("", tracer.WithSpanID(spanID))

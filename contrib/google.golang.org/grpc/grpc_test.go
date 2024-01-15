@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
-	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,11 +38,6 @@ import (
 
 func TestUnary(t *testing.T) {
 	assert := assert.New(t)
-
-	rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
-	require.NoError(t, err, "error setting up rig")
-	defer rig.Close()
-	client := rig.client
 
 	for name, tt := range map[string]struct {
 		message     string
@@ -67,6 +62,11 @@ func TestUnary(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			rig, err := newRig(true, WithServiceName("grpc"), WithRequestTags())
+			require.NoError(t, err, "error setting up rig")
+			defer rig.Close()
+			client := rig.client
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -102,7 +102,9 @@ func TestUnary(t *testing.T) {
 			assert.NotNil(clientSpan)
 			assert.NotNil(rootSpan)
 
+			// this tag always contains the resolved address
 			assert.Equal(clientSpan.Tag(ext.TargetHost), "127.0.0.1")
+			assert.Equal(clientSpan.Tag(ext.PeerHostname), "localhost")
 			assert.Equal(clientSpan.Tag(ext.TargetPort), rig.port)
 			assert.Equal(clientSpan.Tag(tagCode), tt.wantCode.String())
 			assert.Equal(clientSpan.TraceID(), rootSpan.TraceID())
@@ -173,6 +175,7 @@ func TestStreaming(t *testing.T) {
 			case "grpc.client":
 				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost),
 					"expected target host tag to be set in span: %v", span)
+				assert.Equal(t, "localhost", span.Tag(ext.PeerHostname))
 				assert.Equal(t, rig.port, span.Tag(ext.TargetPort),
 					"expected target host port to be set in span: %v", span)
 				fallthrough
@@ -535,6 +538,7 @@ func TestStreamSendsErrorCode(t *testing.T) {
 
 // fixtureServer a dummy implementation of our grpc fixtureServer.
 type fixtureServer struct {
+	UnimplementedFixtureServer
 	lastRequestMetadata atomic.Value
 }
 
@@ -577,6 +581,10 @@ func (s *fixtureServer) Ping(ctx context.Context, in *FixtureRequest) (*FixtureR
 		return &FixtureReply{Message: "disabled"}, nil
 	case in.Name == "invalid":
 		return nil, status.Error(codes.InvalidArgument, "invalid")
+	case in.Name == "errorDetails":
+		s, _ := status.New(codes.Unknown, "unknown").
+			WithDetails(&FixtureReply{Message: "a"}, &FixtureReply{Message: "b"})
+		return nil, s.Err()
 	}
 	return &FixtureReply{Message: "passed"}, nil
 }
@@ -616,7 +624,7 @@ func newRigWithInterceptors(
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial(li.Addr().String(), clientInterceptors...)
+	conn, err := grpc.Dial("localhost:"+port, clientInterceptors...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
@@ -1074,6 +1082,46 @@ func TestClientNamingSchema(t *testing.T) {
 	}
 	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
 	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+}
+
+func TestWithErrorDetailTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	for _, c := range []struct {
+		opts     []Option
+		details0 interface{}
+		details1 interface{}
+		details2 interface{}
+	}{
+		{opts: []Option{WithErrorDetailTags()}, details0: "message:\"a\"", details1: "message:\"b\"", details2: nil},
+		{opts: []Option{}, details0: nil, details1: nil, details2: nil},
+	} {
+		rig, err := newRig(true, c.opts...)
+		if err != nil {
+			t.Fatalf("error setting up rig: %s", err)
+		}
+		ctx := context.Background()
+		span, ctx := tracer.StartSpanFromContext(ctx, "x", tracer.ServiceName("y"), tracer.ResourceName("z"))
+		rig.client.Ping(ctx, &FixtureRequest{Name: "errorDetails"})
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+
+		var serverSpan mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "grpc.server":
+				serverSpan = s
+			}
+		}
+
+		assert.NotNil(t, serverSpan)
+		assert.Equal(t, c.details0, serverSpan.Tag("grpc.status_details._0"))
+		assert.Equal(t, c.details1, serverSpan.Tag("grpc.status_details._1"))
+		assert.Equal(t, c.details2, serverSpan.Tag("grpc.status_details._2"))
+		rig.Close()
+		mt.Reset()
+	}
 }
 
 func getGenSpansFn(traceClient, traceServer bool) namingschematest.GenSpansFn {

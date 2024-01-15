@@ -9,6 +9,10 @@ on:
       runs-on:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
   workflow_call:
     inputs:
       go-version:
@@ -17,17 +21,21 @@ on:
       runs-on:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
 
 jobs:
   test-multi-os:
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: "${{ (inputs.go-version == '1.19' && inputs.runs-on == 'windows-latest') && 'windows-2019' || inputs.runs-on }}"
     env:
       REPORT: gotestsum-report.xml # path to where test results will be saved
     steps:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          repository: 'DataDog/dd-trace-go'
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ inputs.go-version }}

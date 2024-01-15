@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
@@ -14,8 +16,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -231,6 +235,144 @@ func TestLoadAgentFeatures(t *testing.T) {
 	})
 }
 
+// clearIntegreationsForTests clears the state of all integrations
+func clearIntegrationsForTests() {
+	for name, state := range contribIntegrations {
+		state.imported = false
+		contribIntegrations[name] = state
+	}
+}
+
+func TestAgentIntegration(t *testing.T) {
+	t.Run("err", func(t *testing.T) {
+		assert.False(t, MarkIntegrationImported("this-integration-does-not-exist"))
+	})
+
+	// this test is run before configuring integrations and after: ensures we clean up global state
+	defaultUninstrumentedTest := func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		cfg.loadContribIntegrations(nil)
+		assert.Equal(t, len(cfg.integrations), 55)
+		for integrationName, v := range cfg.integrations {
+			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
+		}
+	}
+	t.Run("default_before", defaultUninstrumentedTest)
+
+	t.Run("OK import", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		ok := MarkIntegrationImported("github.com/go-chi/chi")
+		assert.True(t, ok)
+		cfg.loadContribIntegrations([]*debug.Module{})
+		assert.True(t, cfg.integrations["chi"].Instrumented)
+	})
+
+	t.Run("available", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "github.com/go-redis/redis",
+			Version: "v1.538",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["Redis"].Available)
+		assert.Equal(t, cfg.integrations["Redis"].Version, "v1.538")
+	})
+
+	t.Run("grpc", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.520",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC"].Available)
+		assert.Equal(t, cfg.integrations["gRPC"].Version, "v1.520")
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+	})
+
+	t.Run("grpc v12", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v1.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.True(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "v1.10")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+
+	t.Run("grpc bad", func(t *testing.T) {
+		cfg := newConfig()
+		defer clearIntegrationsForTests()
+
+		d := debug.Module{
+			Path:    "google.golang.org/grpc",
+			Version: "v10.10",
+		}
+
+		deps := []*debug.Module{&d}
+		cfg.loadContribIntegrations(deps)
+		assert.False(t, cfg.integrations["gRPC v12"].Available)
+		assert.Equal(t, cfg.integrations["gRPC v12"].Version, "")
+		assert.False(t, cfg.integrations["gRPC"].Available)
+	})
+
+	// ensure we clean up global state
+	t.Run("default_after", defaultUninstrumentedTest)
+}
+
+type contribPkg struct {
+	Dir        string
+	Root       string
+	ImportPath string
+	Name       string
+}
+
+func TestIntegrationEnabled(t *testing.T) {
+	body, err := exec.Command("go", "list", "-json", "../../contrib/...").Output()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	var packages []contribPkg
+	stream := json.NewDecoder(strings.NewReader(string(body)))
+	for stream.More() {
+		var out contribPkg
+		err := stream.Decode(&out)
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		packages = append(packages, out)
+	}
+	for _, pkg := range packages {
+		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") {
+			continue
+		}
+		p := strings.Replace(pkg.Dir, pkg.Root, "../..", 1)
+		body, err := exec.Command("grep", "-rl", "MarkIntegrationImported", p).Output()
+		if err != nil {
+			t.Fatalf(err.Error())
+		}
+		assert.NotEqual(t, len(body), 0, "expected %s to call MarkIntegrationImported", pkg.Name)
+	}
+}
+
 func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		assert := assert.New(t)
@@ -417,8 +559,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.(RateSampler).Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "ddagent.consul.local:58126"}, c.agentURL)
-		assert.NotNil(c.globalTags)
-		assert.Equal("v", c.globalTags["k"])
+		assert.NotNil(c.globalTags.get())
+		assert.Equal("v", c.globalTags.get()["k"])
 		assert.Equal("testEnv", c.env)
 		assert.True(c.debug)
 	})
@@ -430,12 +572,13 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig()
 
-		assert.Equal("test", c.globalTags["env"])
-		assert.Equal("aVal", c.globalTags["aKey"])
-		assert.Equal("bVal", c.globalTags["bKey"])
-		assert.Equal("", c.globalTags["cKey"])
+		globalTags := c.globalTags.get()
+		assert.Equal("test", globalTags["env"])
+		assert.Equal("aVal", globalTags["aKey"])
+		assert.Equal("bVal", globalTags["bKey"])
+		assert.Equal("", globalTags["cKey"])
 
-		dVal, ok := c.globalTags["dKey"]
+		dVal, ok := globalTags["dKey"]
 		assert.False(ok)
 		assert.Equal(nil, dVal)
 	})
@@ -487,14 +630,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -503,7 +646,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -512,7 +655,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer os.Unsetenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
@@ -576,6 +719,36 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			WithPeerServiceMapping("old2", "new2")(c)
 			assert.Equal(t, c.peerServiceDefaultsEnabled, true)
 			assert.Equal(t, c.peerServiceMappings, map[string]string{"old": "new", "old2": "new2"})
+		})
+	})
+
+	t.Run("debug-open-spans", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			c := newConfig()
+			assert.Equal(t, false, c.debugAbandonedSpans)
+			assert.Equal(t, time.Duration(0), c.spanTimeout)
+		})
+
+		t.Run("debug-on", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, 10*time.Minute, c.spanTimeout)
+		})
+
+		t.Run("timeout-set", func(t *testing.T) {
+			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
+			t.Setenv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
+			c := newConfig()
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Minute, c.spanTimeout)
+		})
+
+		t.Run("with-function", func(t *testing.T) {
+			c := newConfig()
+			WithDebugSpansMode(time.Second)(c)
+			assert.Equal(t, true, c.debugAbandonedSpans)
+			assert.Equal(t, time.Second, c.spanTimeout)
 		})
 	})
 }
@@ -732,6 +905,7 @@ func TestServiceName(t *testing.T) {
 		c = newConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
+		defer globalconfig.SetServiceName("")
 	})
 }
 
@@ -822,8 +996,9 @@ func TestTagSeparators(t *testing.T) {
 			os.Setenv("DD_TAGS", tag.in)
 			defer os.Unsetenv("DD_TAGS")
 			c := newConfig()
+			globalTags := c.globalTags.get()
 			for key, expected := range tag.out {
-				got, ok := c.globalTags[key]
+				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
 				assert.Equal(expected, got)
 			}
@@ -946,6 +1121,7 @@ func TestEnvConfig(t *testing.T) {
 func TestStatsTags(t *testing.T) {
 	assert := assert.New(t)
 	c := newConfig(WithService("serviceName"), WithEnv("envName"))
+	defer globalconfig.SetServiceName("")
 	c.hostname = "hostName"
 	tags := statsTags(c)
 
@@ -1020,11 +1196,14 @@ func TestWithLogStartup(t *testing.T) {
 
 func TestWithHeaderTags(t *testing.T) {
 	t.Run("default-off", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig()
 		assert.Equal(0, globalconfig.HeaderTagsLen())
 	})
+
 	t.Run("single-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		newConfig(WithHeaderTags([]string{header}))
@@ -1032,6 +1211,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("header-and-tag", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		header := "Header"
 		tag := "tag"
@@ -1040,6 +1220,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("multi-header", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"1header:1tag", "2header", "3header:3tag"}))
 		assert.Equal("1tag", globalconfig.HeaderTag("1header"))
@@ -1048,6 +1229,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("normalization", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		newConfig(WithHeaderTags([]string{"  h!e@a-d.e*r  ", "  2header:t!a@g.  "}))
 		assert.Equal(ext.HTTPRequestHeaders+".h_e_a-d_e_r", globalconfig.HeaderTag("h!e@a-d.e*r"))
@@ -1055,6 +1237,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("envvar-only", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		os.Setenv("DD_TRACE_HEADER_TAGS", "  1header:1tag,2.h.e.a.d.e.r  ")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
 
@@ -1066,6 +1249,7 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 
 	t.Run("env-override", func(t *testing.T) {
+		defer globalconfig.ClearHeaderTags()
 		assert := assert.New(t)
 		os.Setenv("DD_TRACE_HEADER_TAGS", "unexpected")
 		defer os.Unsetenv("DD_TRACE_HEADER_TAGS")
@@ -1073,6 +1257,9 @@ func TestWithHeaderTags(t *testing.T) {
 		assert.Equal(ext.HTTPRequestHeaders+".expected", globalconfig.HeaderTag("Expected"))
 		assert.Equal(1, globalconfig.HeaderTagsLen())
 	})
+
+	// ensures we cleaned up global state correctly
+	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
 func TestHostnameDisabled(t *testing.T) {
@@ -1089,5 +1276,81 @@ func TestHostnameDisabled(t *testing.T) {
 		t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false")
 		c := newConfig()
 		assert.False(t, c.enableHostnameDetection)
+	})
+}
+
+func TestPartialFlushing(t *testing.T) {
+	t.Run("None", func(t *testing.T) {
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Default-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.False(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 10, c.partialFlushMinSpans)
+	})
+	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
+		c := newConfig()
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+	})
+	t.Run("WithPartialFlushOption", func(t *testing.T) {
+		c := newConfig()
+		WithPartialFlushing(20)(c)
+		assert.True(t, c.partialFlushEnabled)
+		assert.Equal(t, 20, c.partialFlushMinSpans)
+	})
+}
+
+func TestWithStatsComputation(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig()
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("disabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c := newConfig(WithStatsComputation(false))
+		assert.False(c.statsComputationEnabled)
+	})
+	t.Run("enabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
+		c := newConfig()
+		assert.True(c.statsComputationEnabled)
+	})
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
+		c := newConfig(WithStatsComputation(true))
+		assert.True(c.statsComputationEnabled)
 	})
 }

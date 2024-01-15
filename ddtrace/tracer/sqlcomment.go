@@ -87,7 +87,7 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			traceID uint64
 		)
 		if ctx, ok := spanCtx.(*spanContext); ok {
-			if sp, ok := ctx.samplingPriority(); ok && sp > 0 {
+			if sp, ok := ctx.SamplingPriority(); ok && sp > 0 {
 				sampled = 1
 			}
 			traceID = ctx.TraceID()

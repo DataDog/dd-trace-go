@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 
+	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -24,6 +26,7 @@ const componentName = "julienschmidt/httprouter"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
+	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
 }
 
 // Router is a traced version of httprouter.Router.
@@ -59,11 +62,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route = strings.Replace(route, param.Value, ":"+param.Key, 1)
 	}
 	resource := req.Method + " " + route
+	spanOpts := options.Copy(r.config.spanOpts...) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
+	spanOpts = append(spanOpts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Service:  r.config.serviceName,
 		Resource: resource,
-		SpanOpts: r.config.spanOpts,
+		SpanOpts: spanOpts,
 		Route:    route,
 	})
 }

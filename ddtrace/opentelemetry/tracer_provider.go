@@ -19,7 +19,9 @@
 //	yourCode(ctx)
 //	sp.End()
 //
-// Not every feature provided by OpenTelemetry is supported with this wrapper today.
+// Not every feature provided by OpenTelemetry is supported with this wrapper today, and any new API methods
+// added to the OpenTelemetry API will default to being a no-op until implemented by this library. See the
+// OpenTelemetry package docs for more details: https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
 // This package seeks to implement a minimal set of functions within
 // the OpenTelemetry Tracing API (https://opentelemetry.io/docs/reference/specification/trace/api)
 // to allow users to send traces to Datadog using existing OpenTelemetry code with minimal changes to the application.
@@ -27,9 +29,6 @@
 package opentelemetry
 
 import (
-	"fmt"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +38,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
@@ -48,59 +48,35 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 // trace computational workflows.
 // WithInstrumentationVersion and WithSchemaURL TracerOptions are not supported.
 type TracerProvider struct {
-	tracer  *oteltracer
-	ddopts  []tracer.StartOption
-	stopped uint32 // stopped indicates whether the tracerProvider has been shutdown.
+	noop.TracerProvider // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	tracer              *oteltracer
+	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
 	sync.Once
 }
 
-// NewTracerProvider returns an instance of OpenTelemetry TracerProvider with Datadog Tracer start options.
-// This allows propagation of the parameters to tracer.Start.
+// NewTracerProvider returns an instance of an OpenTelemetry TracerProvider,
+// and initializes the Datadog Tracer with the provided start options.
+// This TracerProvider only supports a singleton tracer, and repeated calls to
+// the Tracer() method will return the same instance each time.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
-	return &TracerProvider{ddopts: opts}
+	tracer.Start(opts...)
+	p := &TracerProvider{}
+	t := &oteltracer{
+		DD:       internal.GetGlobalTracer(),
+		provider: p,
+	}
+	p.tracer = t
+	return p
 }
 
-const (
-	w3cPropagator                 = "tracecontext"
-	genericHeaderPropagationStyle = "DD_TRACE_PROPAGATION_STYLE"
-)
-
-// Tracer returns an instance of OpenTelemetry Tracer and initializes Datadog Tracer.
+// Tracer returns the singleton tracer created when NewTracerProvider was called, ignoring
+// the provided name and any provided options to this method.
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
 	if atomic.LoadUint32(&p.stopped) != 0 {
-		return &noopOteltracer{}
+		return noop.NewTracerProvider().Tracer("")
 	}
-	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_INJECT",
-		"DD_PROPAGATION_STYLE_INJECT", genericHeaderPropagationStyle)
-	setW3CPropagationStyle("DD_TRACE_PROPAGATION_STYLE_EXTRACT",
-		"DD_PROPAGATION_STYLE_EXTRACT", genericHeaderPropagationStyle)
-	tracer.Start(p.ddopts...)
-	return &oteltracer{
-		Tracer:   internal.GetGlobalTracer(),
-		provider: p,
-	}
-}
-
-func setW3CPropagationStyle(env ...string) {
-	for _, key := range env {
-		// if trace context propagation style was set but does not contain w3c propagator,
-		// append the w3c propagator
-		if v := os.Getenv(key); v != "" && !strings.Contains(v, w3cPropagator) {
-			style := fmt.Sprintf("%s,%s", v, w3cPropagator)
-			os.Setenv(key, style)
-			log.Info(fmt.Sprintf("W3C context propagation not enabled. "+
-				"Updating '%s' from '%s' to '%s'.", key, v, style))
-			return
-		}
-	}
-	// trace context propagation was not configured through environment variable,
-	// setting propagation style to tracecontext
-	if v := os.Getenv(genericHeaderPropagationStyle); v == "" {
-		log.Info(fmt.Sprintf("Trace context propagation style not configured. "+
-			"Setting '%s' to '%s'.", genericHeaderPropagationStyle, w3cPropagator))
-		os.Setenv(genericHeaderPropagationStyle, w3cPropagator)
-	}
+	return p.tracer
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.

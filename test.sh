@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-tags=""
 contrib=""
 sleeptime=30
 unset INTEGRATION
@@ -11,10 +10,14 @@ if [[ $# -eq 0 ]]; then
 	echo "Use the -h flag for help"
 fi
 
+if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
+  # Needed to run integration tests on Apple Silicon
+  export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		-a|--appsec)
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			shift
 			;;
@@ -28,7 +31,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--all)
 			contrib=true
-			tags="$TAGS appsec"
 			export DD_APPSEC_ENABLED=true
 			export INTEGRATION=true
 			shift
@@ -97,7 +99,7 @@ fi
 ## CORE
 echo testing core
 PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $PACKAGE_NAMES
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -110,5 +112,5 @@ if [[ "$contrib" != "" ]]; then
 	fi
 
 	PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e grpc.v12 -e google.golang.org/api)
-	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic -tags="$tags" $PACKAGE_NAMES 
+	nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v  -coverprofile=contrib_coverage.txt -covermode=atomic $PACKAGE_NAMES
 fi
