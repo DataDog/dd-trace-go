@@ -42,7 +42,7 @@ func appsecUnaryHandlerMiddleware(span ddtrace.Span, handler grpc.UnaryHandler) 
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			if blocked {
-				op.AddTag(trace.BlockedRequestTag, true)
+				op.SetTag(trace.BlockedRequestTag, true)
 			}
 			grpctrace.SetRequestMetadataTags(span, md)
 			trace.SetTags(span, op.Tags())
@@ -87,7 +87,7 @@ func appsecStreamHandlerMiddleware(span ddtrace.Span, handler grpc.StreamHandler
 		defer func() {
 			events := op.Finish(grpcsec.HandlerOperationRes{})
 			if blocked {
-				op.AddTag(trace.BlockedRequestTag, true)
+				op.SetTag(trace.BlockedRequestTag, true)
 			}
 			trace.SetTags(span, op.Tags())
 			if len(events) > 0 {

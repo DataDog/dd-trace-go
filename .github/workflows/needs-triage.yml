@@ -1,0 +1,107 @@
+name: Needs Triage
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+  schedule:
+    - cron: '0 8 * * 1-5' # Every Mon-Fri at 8am UTC
+  workflow_dispatch: # Manually trigger a run
+
+run-name: ${{ github.event_name == 'issues' && format('Label issue \#{0} as needs-triage', github.event.issue.number) || 'Report old un-triaged issues' }}
+
+jobs:
+  add-label:
+    name: Label Issue
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Create needs-triage label if needed
+        run: |-
+          gh label create                                                       \
+            'needs-triage'                                                      \
+            --repo='${{ github.repository }}'                                   \
+            --color='#0E8A16'                                                   \
+            --description='New issues that have not yet been triaged'           \
+            --force
+      - name: Is author a guild member?
+        id: is-author-guild-member
+        run: |-
+          members=$(gh api /orgs/DataDog/teams/dd-trace-go-guild/members --jq='.[].id')
+          result='false'
+          for member in ${members}; do
+            if [ "${member}" = "${{ github.event.issue.user.id }}" ]; then
+              result='true'
+              break
+            fi
+          done
+          echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.NEEDS_TRIAGE_GITHUB_TOKEN }}
+      - name: Add needs-triage label
+        if: steps.is-author-guild-member.outputs.result == 'false'
+        run: |-
+          gh issue edit ${{ github.event.issue.number }}                        \
+            --repo='${{ github.repository }}'                                   \
+            --add-label='needs-triage'
+
+  find-old-issues:
+    name: Find issues in need of attention
+    # Schedule or workflow dispatch
+    if: github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    outputs:
+      count: ${{ steps.find-issues.outputs.count }}
+      json: ${{ steps.find-issues.outputs.json }}
+    steps:
+      - name: Find un-triaged issues older than 3 days
+        id: find-issues
+        run: |-
+          gh issue list                                                         \
+            --repo='${{ github.repository }}'                                   \
+            --state=open                                                        \
+            --label='needs-triage'                                              \
+            --search="created:<$(date --date='today - 3 days' +'%Y-%m-%d')"     \
+            --limit=10                                                          \
+            --json='number,title,body,createdAt'                                \
+            | tee issues.json
+
+          echo "count=$(jq -r '. | length' < issues.json)" >> "${GITHUB_OUTPUT}"
+          echo "json<<EOJSON"                              >> "${GITHUB_OUTPUT}"
+          cat issues.json                                  >> "${GITHUB_OUTPUT}"
+          echo "EOJSON"                                    >> "${GITHUB_OUTPUT}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-slack:
+    needs: find-old-issues
+    # Schedule or workflow dispatch
+    if: github.event_name != 'issues' && fromJson(needs.find-old-issues.outputs.count) > 0
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.find-old-issues.outputs.json) }}
+
+    name: 'Notify Slack about #${{ matrix.number }}'
+
+    steps:
+      - name: Notify about ${{ matrix.number }}
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |-
+            {
+              "issue_number": ${{ toJson(matrix.number) }},
+              "issue_title": ${{ toJson(matrix.title) }},
+              "issue_url": ${{ toJson(format('github.com/{0}/issues/{1}', github.repository, matrix.number)) }},
+              "created_at": ${{ toJson(matrix.createdAt) }}
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.NEEDS_TRIAGE_SLACK_WEBHOOK_URL }}

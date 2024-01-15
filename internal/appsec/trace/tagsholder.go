@@ -33,8 +33,8 @@ func NewTagsHolder() TagsHolder {
 	return TagsHolder{tags: make(map[string]any)}
 }
 
-// AddTag adds the key/value pair to the tags map
-func (m *TagsHolder) AddTag(k string, v any) {
+// SetTag adds the key/value pair to the tags map
+func (m *TagsHolder) SetTag(k string, v any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.tags[k] = v
@@ -66,3 +66,5 @@ func (m *TagsHolder) Tags() map[string]any {
 	}
 	return tags
 }
+
+var _ TagSetter = (*TagsHolder)(nil) // *TagsHolder must implement TagSetter

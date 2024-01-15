@@ -30,8 +30,9 @@ func startTelemetry(c *config) {
 		telemetry.WithHTTPClient(c.httpClient),
 		telemetry.WithURL(c.agentless, c.agentURL),
 	)
-	telemetry.GlobalClient.ProductStart(
+	telemetry.GlobalClient.ProductChange(
 		telemetry.NamespaceProfilers,
+		true,
 		[]telemetry.Configuration{
 			{Name: "delta_profiles", Value: c.deltaProfiles},
 			{Name: "agentless", Value: c.agentless},
@@ -52,6 +53,7 @@ func startTelemetry(c *config) {
 			{Name: "execution_trace_period", Value: c.traceConfig.Period.String()},
 			{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 			{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
+			{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
 		},
 	)
 }
