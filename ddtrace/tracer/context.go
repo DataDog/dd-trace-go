@@ -50,11 +50,7 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
-	//TODO(kjn v2): Check this when separating packages.
-	if s == nil {
-		return nil, ctx
-	}
-	if s.pprofCtxActive != nil {
+	if s != nil && s.pprofCtxActive != nil {
 		ctx = s.pprofCtxActive
 	}
 	return s, ContextWithSpan(ctx, s)

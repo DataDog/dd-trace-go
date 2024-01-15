@@ -216,11 +216,6 @@ func Stop() {
 	log.Flush()
 }
 
-// DDSpan is an alias for ddtrace.DDSpan. It is here to allow godoc to group methods returning
-// ddtrace.DDSpan. It is recommended and is considered more correct to refer to this type as
-// ddtrace.DDSpan instead.
-//type DDSpan = ddtrace.DDSpan
-
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) *Span {
