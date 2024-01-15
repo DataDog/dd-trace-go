@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestOpContribSchemas(t *testing.T) {
+func TestOpName(t *testing.T) {
 	optOverrideV0 := "override-v0"
 
 	testCases := []struct {
