@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewDefaultServiceName(t *testing.T) {
+func TestServiceName(t *testing.T) {
 	defaultServiceName := "default"
 
 	testCases := []struct {
