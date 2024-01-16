@@ -8,8 +8,6 @@ package tracer
 import (
 	"context"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
@@ -109,15 +107,4 @@ func StackFrames(n, skip uint) FinishOption {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
 	}
-}
-
-// Logger implementations are able to log given messages that the tracer or profiler might output.
-type Logger interface {
-	// Log prints the given message.
-	Log(msg string)
-}
-
-// UseLogger sets l as the logger for all tracer and profiler logs.
-func UseLogger(l Logger) {
-	log.UseLogger(l)
 }
