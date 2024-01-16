@@ -43,6 +43,14 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			var js bytes.Buffer
 			msgp.UnmarshalAsJSON(&js, buf)
 			payloads <- js.String()
+		default:
+			if r.Method == "GET" {
+				// Write an empty JSON object to the output, to avoid spurious decoding
+				// errors to be reported in the logs, which may lead someone
+				// investigating a test failure into the wrong direction.
+				_, _ = w.Write([]byte("{}"))
+				return
+			}
 		}
 		w.WriteHeader(200)
 	}))
