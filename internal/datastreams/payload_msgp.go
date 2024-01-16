@@ -49,6 +49,12 @@ func (z *Backlog) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Value")
 				return
 			}
+		case "TsNanos":
+			z.TsNanos, err = dc.ReadInt64()
+			if err != nil {
+				err = msgp.WrapError(err, "TsNanos")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -62,9 +68,9 @@ func (z *Backlog) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *Backlog) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 2
+	// map header, size 3
 	// write "Tags"
-	err = en.Append(0x82, 0xa4, 0x54, 0x61, 0x67, 0x73)
+	err = en.Append(0x83, 0xa4, 0x54, 0x61, 0x67, 0x73)
 	if err != nil {
 		return
 	}
@@ -90,6 +96,16 @@ func (z *Backlog) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Value")
 		return
 	}
+	// write "TsNanos"
+	err = en.Append(0xa7, 0x54, 0x73, 0x4e, 0x61, 0x6e, 0x6f, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt64(z.TsNanos)
+	if err != nil {
+		err = msgp.WrapError(err, "TsNanos")
+		return
+	}
 	return
 }
 
@@ -99,7 +115,7 @@ func (z *Backlog) Msgsize() (s int) {
 	for za0001 := range z.Tags {
 		s += msgp.StringPrefixSize + len(z.Tags[za0001])
 	}
-	s += 6 + msgp.Int64Size
+	s += 6 + msgp.Int64Size + 8 + msgp.Int64Size
 	return
 }
 
@@ -359,52 +375,10 @@ func (z *StatsBucket) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.Backlogs = make([]Backlog, zb0003)
 			}
 			for za0002 := range z.Backlogs {
-				var zb0004 uint32
-				zb0004, err = dc.ReadMapHeader()
+				err = z.Backlogs[za0002].DecodeMsg(dc)
 				if err != nil {
 					err = msgp.WrapError(err, "Backlogs", za0002)
 					return
-				}
-				for zb0004 > 0 {
-					zb0004--
-					field, err = dc.ReadMapKeyPtr()
-					if err != nil {
-						err = msgp.WrapError(err, "Backlogs", za0002)
-						return
-					}
-					switch msgp.UnsafeString(field) {
-					case "Tags":
-						var zb0005 uint32
-						zb0005, err = dc.ReadArrayHeader()
-						if err != nil {
-							err = msgp.WrapError(err, "Backlogs", za0002, "Tags")
-							return
-						}
-						if cap(z.Backlogs[za0002].Tags) >= int(zb0005) {
-							z.Backlogs[za0002].Tags = (z.Backlogs[za0002].Tags)[:zb0005]
-						} else {
-							z.Backlogs[za0002].Tags = make([]string, zb0005)
-						}
-						for za0003 := range z.Backlogs[za0002].Tags {
-							z.Backlogs[za0002].Tags[za0003], err = dc.ReadString()
-							if err != nil {
-								err = msgp.WrapError(err, "Backlogs", za0002, "Tags", za0003)
-								return
-							}
-						}
-					case "Value":
-						z.Backlogs[za0002].Value, err = dc.ReadInt64()
-						if err != nil {
-							err = msgp.WrapError(err, "Backlogs", za0002, "Value")
-							return
-						}
-					default:
-						err = dc.Skip()
-						if err != nil {
-							err = msgp.WrapError(err, "Backlogs", za0002)
-							return
-						}
-					}
 				}
 			}
 		default:
@@ -469,32 +443,9 @@ func (z *StatsBucket) EncodeMsg(en *msgp.Writer) (err error) {
 		return
 	}
 	for za0002 := range z.Backlogs {
-		// map header, size 2
-		// write "Tags"
-		err = en.Append(0x82, 0xa4, 0x54, 0x61, 0x67, 0x73)
+		err = z.Backlogs[za0002].EncodeMsg(en)
 		if err != nil {
-			return
-		}
-		err = en.WriteArrayHeader(uint32(len(z.Backlogs[za0002].Tags)))
-		if err != nil {
-			err = msgp.WrapError(err, "Backlogs", za0002, "Tags")
-			return
-		}
-		for za0003 := range z.Backlogs[za0002].Tags {
-			err = en.WriteString(z.Backlogs[za0002].Tags[za0003])
-			if err != nil {
-				err = msgp.WrapError(err, "Backlogs", za0002, "Tags", za0003)
-				return
-			}
-		}
-		// write "Value"
-		err = en.Append(0xa5, 0x56, 0x61, 0x6c, 0x75, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteInt64(z.Backlogs[za0002].Value)
-		if err != nil {
-			err = msgp.WrapError(err, "Backlogs", za0002, "Value")
+			err = msgp.WrapError(err, "Backlogs", za0002)
 			return
 		}
 	}
@@ -509,11 +460,7 @@ func (z *StatsBucket) Msgsize() (s int) {
 	}
 	s += 9 + msgp.ArrayHeaderSize
 	for za0002 := range z.Backlogs {
-		s += 1 + 5 + msgp.ArrayHeaderSize
-		for za0003 := range z.Backlogs[za0002].Tags {
-			s += msgp.StringPrefixSize + len(z.Backlogs[za0002].Tags[za0003])
-		}
-		s += 6 + msgp.Int64Size
+		s += z.Backlogs[za0002].Msgsize()
 	}
 	return
 }

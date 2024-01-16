@@ -54,11 +54,16 @@ type statsGroup struct {
 	payloadSize    *ddsketch.DDSketch
 }
 
+type offset struct {
+	offset int64
+	ts     int64
+}
+
 type bucket struct {
 	points                     map[uint64]statsGroup
-	latestCommitOffsets        map[partitionConsumerKey]int64
-	latestProduceOffsets       map[partitionKey]int64
-	latestHighWatermarkOffsets map[partitionKey]int64
+	latestCommitOffsets        map[partitionConsumerKey]offset
+	latestProduceOffsets       map[partitionKey]offset
+	latestHighWatermarkOffsets map[partitionKey]offset
 	start                      uint64
 	duration                   uint64
 }
@@ -66,9 +71,9 @@ type bucket struct {
 func newBucket(start, duration uint64) bucket {
 	return bucket{
 		points:                     make(map[uint64]statsGroup),
-		latestCommitOffsets:        make(map[partitionConsumerKey]int64),
-		latestProduceOffsets:       make(map[partitionKey]int64),
-		latestHighWatermarkOffsets: make(map[partitionKey]int64),
+		latestCommitOffsets:        make(map[partitionConsumerKey]offset),
+		latestProduceOffsets:       make(map[partitionKey]offset),
+		latestHighWatermarkOffsets: make(map[partitionKey]offset),
 		start:                      start,
 		duration:                   duration,
 	}
@@ -110,13 +115,13 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 		Backlogs: make([]Backlog, 0, len(b.latestCommitOffsets)+len(b.latestProduceOffsets)+len(b.latestHighWatermarkOffsets)),
 	}
 	for key, offset := range b.latestProduceOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset})
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset.offset, TsNanos: offset.ts})
 	}
 	for key, offset := range b.latestCommitOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}, Value: offset})
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}, Value: offset.offset, TsNanos: offset.ts})
 	}
 	for key, offset := range b.latestHighWatermarkOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}, Value: offset})
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}, Value: offset.offset, TsNanos: offset.ts})
 	}
 	return exported
 }
@@ -272,24 +277,42 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 	btime := alignTs(o.timestamp, bucketDuration.Nanoseconds())
 	b := p.getBucket(btime, p.tsTypeCurrentBuckets)
 	if o.offsetType == produceOffset {
-		b.latestProduceOffsets[partitionKey{
+		key := partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
-		}] = o.offset
+		}
+		current := b.latestProduceOffsets[key]
+		if o.offset >= current.offset {
+			current.offset = o.offset
+			current.ts = o.timestamp
+		}
+		b.latestProduceOffsets[key] = current
 		return
 	}
 	if o.offsetType == highWatermarkOffset {
-		b.latestHighWatermarkOffsets[partitionKey{
+		key := partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
-		}] = o.offset
+		}
+		current := b.latestHighWatermarkOffsets[key]
+		if o.offset >= current.offset {
+			current.offset = o.offset
+			current.ts = o.timestamp
+		}
+		b.latestHighWatermarkOffsets[key] = current
 		return
 	}
-	b.latestCommitOffsets[partitionConsumerKey{
+	key := partitionConsumerKey{
 		partition: o.partition,
 		group:     o.group,
 		topic:     o.topic,
-	}] = o.offset
+	}
+	current := b.latestCommitOffsets[key]
+	if o.offset >= current.offset {
+		current.offset = o.offset
+		current.ts = o.timestamp
+	}
+	b.latestCommitOffsets[key] = current
 }
 
 func (p *Processor) run(tick <-chan time.Time) {

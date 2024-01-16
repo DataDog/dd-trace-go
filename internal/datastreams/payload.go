@@ -42,6 +42,8 @@ type Backlog struct {
 	Tags []string
 	// Value of the backlog
 	Value int64
+	// TsNanos is the timestamp of the last update of the backlog in nanoseconds
+	TsNanos int64
 }
 
 // StatsBucket specifies a set of stats computed over a duration.
