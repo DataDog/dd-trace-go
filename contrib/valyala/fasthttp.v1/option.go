@@ -26,8 +26,8 @@ type Option func(*config)
 
 func newConfig() *config {
 	return &config{
-		serviceName:   namingschema.NewDefaultServiceName(defaultServiceName).GetName(),
-		spanName:      namingschema.NewHTTPServerOp().GetName(),
+		serviceName:   namingschema.ServiceName(defaultServiceName),
+		spanName:      namingschema.OpName(namingschema.HTTPServer),
 		isStatusError: defaultIsServerError,
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: defaultIgnoreRequest,
