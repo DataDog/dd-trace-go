@@ -58,9 +58,9 @@ type Logger interface {
 }
 
 var (
-	mu     sync.RWMutex // guards below fields
-	level               = LevelWarn
-	logger Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
+	mu             sync.RWMutex // guards below fields
+	levelThreshold              = LevelWarn
+	logger         Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
 // UseLogger sets l as the active logger and returns a function to restore the
@@ -76,24 +76,24 @@ func UseLogger(l Logger) (undo func()) {
 	}
 }
 
-// SetLevel sets the given lvl for logging.
+// SetLevel sets the given lvl as log threshold for logging.
 func SetLevel(lvl Level) {
 	mu.Lock()
 	defer mu.Unlock()
-	level = lvl
+	levelThreshold = lvl
 }
 
-func CurrentLevel() Level {
+func DefaultLevel() Level {
 	mu.RLock()
 	defer mu.RUnlock()
-	return level
+	return levelThreshold
 }
 
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
 	mu.RLock()
-	lvl := level
+	lvl := levelThreshold
 	mu.RUnlock()
 	return lvl == LevelDebug
 }
@@ -218,7 +218,13 @@ func flushLocked() {
 func printMsg(lvl Level, format string, a ...interface{}) {
 	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
 	mu.RLock()
-	logger.Log(msg)
+	if ll, ok := logger.(interface {
+		LogL(lvl Level, msg string)
+	}); !ok {
+		logger.Log(msg)
+	} else {
+		ll.LogL(lvl, msg)
+	}
 	mu.RUnlock()
 }
 
