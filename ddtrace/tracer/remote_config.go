@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -180,14 +181,13 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		return err
 	}
 
+	var dynamicInstrumentationError, apmTracingError error
+
 	if t.config.dynamicInstrumentationEnabled {
-		err = remoteconfig.RegisterProduct(state.ProductLiveDebugging)
-		if err != nil {
-			return err
-		}
+		dynamicInstrumentationError = remoteconfig.RegisterProduct(state.ProductLiveDebugging)
 	}
 
-	err = remoteconfig.Subscribe(
+	apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
 		t.onRemoteConfigUpdate,
 		remoteconfig.APMTracingSampleRate,
@@ -195,8 +195,10 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingCustomTags,
 		remoteconfig.APMTracingEnabled,
 	)
-	if err != nil {
-		return err
+
+	if apmTracingError != nil || dynamicInstrumentationError != nil {
+		return fmt.Errorf("could not subscribe to at least one remote config product: %w, %w",
+			apmTracingError, dynamicInstrumentationError)
 	}
 
 	return nil
