@@ -81,6 +81,14 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 	}
 }
 
+// WithFinishOptions applies the given set of options to the spans finished
+// by the router.
+func WithFinishOptions(opts ...ddtrace.FinishOption) RouterOption {
+	return func(cfg *routerConfig) {
+		cfg.finishOpts = append(cfg.finishOpts, opts...)
+	}
+}
+
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
