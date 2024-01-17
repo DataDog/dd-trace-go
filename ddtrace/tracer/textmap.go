@@ -462,6 +462,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		}
 		return nil
 	})
+	log.Debug("Iterating over a textMap error: %v", err)
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +477,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
+		log.Debug("Specific scenario ", err)
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
