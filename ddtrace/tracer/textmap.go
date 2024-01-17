@@ -431,6 +431,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
 		key := strings.ToLower(k)
+		log.Debug("Extracting in datadog propagator: k: %v, value: %v", k, v)
 		switch key {
 		case p.cfg.TraceHeader:
 			var lowerTid uint64
