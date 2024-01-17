@@ -28,6 +28,7 @@ type target struct {
 }
 
 type libConfig struct {
+	Enabled      *bool       `json:"tracing_enabled,omitempty"`
 	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
 	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
 	Tags         *tags       `json:"tracing_tags,omitempty"`
@@ -150,6 +151,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
+		updated = t.config.enabled.handleRC(c.LibConfig.Enabled)
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
+		}
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
@@ -171,5 +176,6 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingSampleRate,
 		remoteconfig.APMTracingHTTPHeaderTags,
 		remoteconfig.APMTracingCustomTags,
+		remoteconfig.APMTracingEnabled,
 	)
 }

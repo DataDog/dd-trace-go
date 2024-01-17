@@ -70,6 +70,8 @@ const (
 	APMTracingHTTPHeaderTags
 	// APMTracingCustomTags enables APM client to set custom tags on all spans
 	APMTracingCustomTags
+	// APMTracingEnabled enables APM tracing
+	APMTracingEnabled
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.

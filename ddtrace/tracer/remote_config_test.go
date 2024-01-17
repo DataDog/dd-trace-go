@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -119,6 +120,29 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "", Origin: ""}})
+	})
+
+	t.Run("RC tracing_enabled = false is applied", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		Start(WithService("my-service"), WithEnv("my-env"))
+		defer Stop()
+
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		oldTracer, ok := internal.GetGlobalTracer().(*tracer)
+		require.Equal(t, true, ok)
+		applyStatus := oldTracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+
+		// oldTracer is replaced with a noop tracer, all subsequent spans are of type internal.NoopSpan
+		// no further remoteConfig changes are applied, as internal.NoopTracer doesn't support those methods
+		s := StartSpan("web.request").(internal.NoopSpan)
+		s.Finish()
+
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 	})
 
 	t.Run("DD_TRACE_HEADER_TAGS=X-Test-Header:my-tag-name-from-env and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {

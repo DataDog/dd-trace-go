@@ -138,7 +138,7 @@ func Start(opts ...StartOption) {
 	}
 	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
 	t := newTracer(opts...)
-	if !t.config.enabled {
+	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -178,6 +178,19 @@ func Start(opts ...StartOption) {
 func Stop() {
 	internal.SetGlobalTracer(&internal.NoopTracer{})
 	log.Flush()
+}
+
+func setTracingEnabled(enabled bool) bool {
+	if enabled {
+		// Enabling tracing after disabling is not supported yet, thus
+		// this action will have no effect.
+		return true
+	}
+	if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+		//	no need to flush / stop writers here, it is done during Stop()
+		Stop()
+	}
+	return true
 }
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
