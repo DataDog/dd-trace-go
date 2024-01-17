@@ -34,13 +34,10 @@ func newConfig(opts ...Option) *config {
 		cfg.analyticsRate = 1.0
 	}
 
-	cfg.consumerServiceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.producerServiceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
-	cfg.consumerSpanName = namingschema.NewKafkaInboundOp().GetName()
-	cfg.producerSpanName = namingschema.NewKafkaOutboundOp().GetName()
+	cfg.consumerServiceName = namingschema.ServiceName(defaultServiceName)
+	cfg.producerServiceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.consumerSpanName = namingschema.OpName(namingschema.KafkaInbound)
+	cfg.producerSpanName = namingschema.OpName(namingschema.KafkaOutbound)
 
 	for _, opt := range opts {
 		opt(cfg)

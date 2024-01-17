@@ -30,14 +30,8 @@ type clientConfig struct {
 type ClientOption func(*clientConfig)
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
-	cfg.spanName = namingschema.NewDBOutboundOp(
-		"consul",
-		namingschema.WithOverrideV0("consul.command"),
-	).GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.ConsulOutbound)
 
 	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
