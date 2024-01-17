@@ -46,18 +46,13 @@ var (
 	expContainerID = regexp.MustCompile(fmt.Sprintf(`(%s|%s|%s)(?:.scope)?$`, uuidSource, containerSource, taskSource))
 
 	// containerID is the containerID read at init from /proc/self/cgroup
-	containerID string
+	containerID = readContainerID(cgroupPath)
 
 	// entityID is the entityID to use for the container. It is the `cid-<containerID>` if the container id available,
 	// otherwise the cgroup node controller's inode prefixed with `in-` or an empty string on incompatible OS.
 	// We use the memory controller on cgroupv1 and the root cgroup on cgroupv2.
-	entityID string
-)
-
-func init() {
-	containerID = readContainerID(cgroupPath)
 	entityID = readEntityID(defaultCgroupMountPath, cgroupPath, isHostCgroupNamespace())
-}
+)
 
 // parseContainerID finds the first container ID reading from r and returns it.
 func parseContainerID(r io.Reader) string {
