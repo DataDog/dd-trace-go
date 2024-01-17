@@ -188,6 +188,13 @@ func (c *SpanContext) TraceIDBytes() [16]byte {
 	return c.traceID
 }
 
+func (c *SpanContext) TraceIDLower() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.traceID.Lower()
+}
+
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	if c == nil {
