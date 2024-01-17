@@ -63,12 +63,9 @@ func defaults(cfg *config) {
 }
 
 func clientDefaults(cfg *config) {
-	sn := namingschema.NewDefaultServiceName(
-		defaultClientServiceName,
-		namingschema.WithOverrideV0(defaultClientServiceName),
-	).GetName()
+	sn := namingschema.ServiceNameOverrideV0(defaultClientServiceName, defaultClientServiceName)
 	cfg.serviceName = func() string { return sn }
-	cfg.spanName = namingschema.NewGRPCClientOp().GetName()
+	cfg.spanName = namingschema.OpName(namingschema.GRPCClient)
 	defaults(cfg)
 }
 
@@ -76,15 +73,14 @@ func serverDefaults(cfg *config) {
 	// We check for a configured service name, so we don't break users who are incorrectly creating their server
 	// before the call `tracer.Start()`
 	if globalconfig.ServiceName() != "" {
-		sn := namingschema.NewDefaultServiceName(defaultServerServiceName).GetName()
+		sn := namingschema.ServiceName(defaultServerServiceName)
 		cfg.serviceName = func() string { return sn }
 	} else {
 		log.Warn("No global service name was detected. GRPC Server may have been created before calling tracer.Start(). Will dynamically fetch service name for every span. " +
 			"Note this may have a slight performance cost, it is always recommended to start the tracer before initializing any traced packages.\n")
-		ns := namingschema.NewDefaultServiceName(defaultServerServiceName)
-		cfg.serviceName = ns.GetName
+		cfg.serviceName = func() string { return namingschema.ServiceName(defaultServerServiceName) }
 	}
-	cfg.spanName = namingschema.NewGRPCServerOp().GetName()
+	cfg.spanName = namingschema.OpName(namingschema.GRPCServer)
 	defaults(cfg)
 }
 
