@@ -176,7 +176,9 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		}
 	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
+	log.Debug("Using injectors: %s", cp.injectorNames)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	log.Debug("Using extractors: %s", cp.extractorsNames)
 	return cp
 }
 
@@ -254,6 +256,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
 func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
+	log.Debug("Inject propagators length: %d", len(p.injectors))
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {
@@ -270,6 +273,7 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // stored in the local trace context even if a previous propagator has already succeeded
 // so long as the trace-ids match.
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	log.Debug("Extract propagators length: %d", len(p.injectors))
 	var ctx ddtrace.SpanContext
 	for _, v := range p.extractors {
 		if ctx != nil {

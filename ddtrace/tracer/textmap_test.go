@@ -1829,6 +1829,38 @@ func TestEnvVars(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("datadog extract no priority", func(t *testing.T) {
+		t.Setenv(headerPropagationStyle, "datadog")
+
+		in := TextMapCarrier{
+			DefaultTraceIDHeader: "1212121212121212121",
+			originHeader:         "synthetics",
+		}
+		out := []uint64{1, 1}
+		//tid := traceIDFrom64Bits(1)
+		tracer := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClient{}))
+		defer tracer.Stop()
+		assert := assert.New(t)
+		ctx, err := tracer.Extract(in)
+		//sctx, err := tracer.NewPropagator(nil).Extract(tracer.TextMapCarrier(headers))
+		//		if err != nil {
+		//			fmt.Println("failed in StartSpan", err, headers)
+		//		} else {
+		//			opts = append(opts, tracer.ChildOf(sctx))
+		//		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := tracer.StartSpan("test", ChildOf(ctx))
+
+		span := s.(*span)
+		assert.Equal(out[1], span.TraceID)
+		assert.Equal(out[0], span.SpanID)
+		_, ok := span.context.SamplingPriority()
+		assert.True(ok)
+
+	})
 }
 
 func checkSameElements(assert *assert.Assertions, want, got string) {
