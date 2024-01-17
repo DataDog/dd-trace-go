@@ -25,14 +25,8 @@ const defaultServiceName = "vault"
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
-	cfg.spanName = namingschema.NewDBOutboundOp(
-		"vault",
-		namingschema.WithOverrideV0("http.request"),
-	).GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.VaultOutbound)
 
 	if internal.BoolEnv("DD_TRACE_VAULT_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
