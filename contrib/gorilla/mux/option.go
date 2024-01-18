@@ -53,7 +53,7 @@ func defaults(cfg *routerConfig) {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
 	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }

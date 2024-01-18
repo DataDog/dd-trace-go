@@ -15,18 +15,19 @@ import (
 const defaultServiceName = "graphql.server"
 
 type config struct {
-	serviceName   string
-	querySpanName string
-	analyticsRate float64
-	omitTrivial   bool
+	serviceName    string
+	querySpanName  string
+	analyticsRate  float64
+	omitTrivial    bool
+	traceVariables bool
 }
 
 // Option represents an option that can be used customize the Tracer.
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.querySpanName = namingschema.NewGraphqlServerOp().GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.querySpanName = namingschema.OpName(namingschema.GraphqlServer)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
@@ -65,9 +66,18 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithOmitTrivial enables omission of graphql fields marked as trivial.
+// WithOmitTrivial enables omission of graphql fields marked as trivial. This
+// also opts trivial fields out of Threat Detection (and blocking).
 func WithOmitTrivial() Option {
 	return func(cfg *config) {
 		cfg.omitTrivial = true
+	}
+}
+
+// WithTraceVariables enables tracing of variables passed into GraphQL queries
+// and resolvers.
+func WithTraceVariables() Option {
+	return func(cfg *config) {
+		cfg.traceVariables = true
 	}
 }

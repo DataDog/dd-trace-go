@@ -44,7 +44,9 @@ func newRulesSampler(traceRules, spanRules []SamplingRule, traceSampleRate float
 	}
 }
 
-func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.apply(s) }
+func (r *rulesSampler) SampleTrace(s *span) bool { return r.traces.sampleRules(s) }
+
+func (r *rulesSampler) SampleTraceGlobalRate(s *span) bool { return r.traces.sampleGlobalRate(s) }
 
 func (r *rulesSampler) SampleSpan(s *span) bool { return r.spans.apply(s) }
 
@@ -70,23 +72,36 @@ type SamplingRule struct {
 	// If not specified, the default is no limit.
 	MaxPerSecond float64
 
-	ruleType     SamplingRuleType
-	exactService string
-	exactName    string
-	limiter      *rateLimiter
+	// Resource specifies the regex pattern that a span resource must match.
+	Resource *regexp.Regexp
+
+	// Tags specifies the map of key-value patterns that span tags must match.
+	Tags map[string]*regexp.Regexp
+
+	ruleType SamplingRuleType
+	limiter  *rateLimiter
 }
 
 // match returns true when the span's details match all the expected values in the rule.
 func (sr *SamplingRule) match(s *span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.Service) {
 		return false
-	} else if sr.exactService != "" && sr.exactService != s.Service {
-		return false
 	}
 	if sr.Name != nil && !sr.Name.MatchString(s.Name) {
 		return false
-	} else if sr.exactName != "" && sr.exactName != s.Name {
+	}
+	if sr.Resource != nil && !sr.Resource.MatchString(s.Resource) {
 		return false
+	}
+	s.Lock()
+	defer s.Unlock()
+	if sr.Tags != nil && s.Meta != nil {
+		for k, regex := range sr.Tags {
+			v, ok := s.Meta[k]
+			if !ok || !regex.MatchString(v) {
+				return false
+			}
+		}
 	}
 	return true
 }
@@ -123,8 +138,8 @@ func (sr SamplingRuleType) String() string {
 // to spans that match the service name provided.
 func ServiceRule(service string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactService: service,
-		Rate:         rate,
+		Service: globMatch(service),
+		Rate:    rate,
 	}
 }
 
@@ -132,8 +147,8 @@ func ServiceRule(service string, rate float64) SamplingRule {
 // to spans that match the operation name provided.
 func NameRule(name string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactName: name,
-		Rate:      rate,
+		Name: globMatch(name),
+		Rate: rate,
 	}
 }
 
@@ -141,9 +156,9 @@ func NameRule(name string, rate float64) SamplingRule {
 // to spans matching both the operation and service names provided.
 func NameServiceRule(name string, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		exactService: service,
-		exactName:    name,
-		Rate:         rate,
+		Service: globMatch(service),
+		Name:    globMatch(name),
+		Rate:    rate,
 	}
 }
 
@@ -154,17 +169,48 @@ func RateRule(rate float64) SamplingRule {
 	}
 }
 
+// TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
+// resource, name, service and tags provided.
+func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
+	return SamplingRule{
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		Resource: globMatch(resource),
+		Rate:     rate,
+		Tags:     tags,
+		ruleType: SamplingRuleTrace,
+	}
+}
+
+// SpanTagsResourceRule returns a SamplingRule that applies the provided sampling rate to spans that match
+// resource, name, service and tags provided. Values of the tags map are expected to be in glob format.
+func SpanTagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
+	globTags := make(map[string]*regexp.Regexp, len(tags))
+	for k, v := range tags {
+		if g := globMatch(v); g != nil {
+			globTags[k] = g
+		}
+	}
+	return SamplingRule{
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		Resource: globMatch(resource),
+		Rate:     rate,
+		Tags:     globTags,
+		ruleType: SamplingRuleSpan,
+	}
+}
+
 // SpanNameServiceRule returns a SamplingRule of type SamplingRuleSpan that applies
 // the provided sampling rate to all spans matching the operation and service name glob patterns provided.
 // Operation and service fields must be valid glob patterns.
 func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
 	return SamplingRule{
-		Service:   globMatch(service),
-		Name:      globMatch(name),
-		Rate:      rate,
-		ruleType:  SamplingRuleSpan,
-		exactName: name,
-		limiter:   newSingleSpanRateLimiter(0),
+		Service:  globMatch(service),
+		Name:     globMatch(name),
+		Rate:     rate,
+		ruleType: SamplingRuleSpan,
+		limiter:  newSingleSpanRateLimiter(0),
 	}
 }
 
@@ -179,7 +225,6 @@ func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingR
 		MaxPerSecond: limit,
 		Rate:         rate,
 		ruleType:     SamplingRuleSpan,
-		exactName:    name,
 		limiter:      newSingleSpanRateLimiter(limit),
 	}
 }
@@ -262,11 +307,31 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 	return true
 }
 
-// apply uses the sampling rules to determine the sampling rate for the
-// provided span. If the rules don't match, and a default rate hasn't been
-// set using DD_TRACE_SAMPLE_RATE, then it returns false and the span is not
+// sampleGlobalRate applies the global trace sampling rate to the span. If the rate is Nan,
+// the function return false, then it returns false and the span is not
 // modified.
-func (rs *traceRulesSampler) apply(span *span) bool {
+func (rs *traceRulesSampler) sampleGlobalRate(span *span) bool {
+	if !rs.enabled() {
+		// short path when disabled
+		return false
+	}
+
+	rs.m.RLock()
+	rate := rs.globalRate
+	rs.m.RUnlock()
+
+	if math.IsNaN(rate) {
+		return false
+	}
+
+	rs.applyRate(span, rate, time.Now())
+	return true
+}
+
+// sampleRules uses the sampling rules to determine the sampling rate for the
+// provided span. If the rules don't match, then it returns false and the span is not
+// modified.
+func (rs *traceRulesSampler) sampleRules(span *span) bool {
 	if !rs.enabled() {
 		// short path when disabled
 		return false
@@ -283,17 +348,17 @@ func (rs *traceRulesSampler) apply(span *span) bool {
 			break
 		}
 	}
-	if !matched && math.IsNaN(rate) {
+	if !matched {
 		// no matching rule or global rate, so we want to fall back
 		// to priority sampling
 		return false
 	}
 
-	rs.applyRule(span, rate, time.Now())
+	rs.applyRate(span, rate, time.Now())
 	return true
 }
 
-func (rs *traceRulesSampler) applyRule(span *span, rate float64, now time.Time) {
+func (rs *traceRulesSampler) applyRate(span *span, rate float64, now time.Time) {
 	span.SetTag(keyRulesSamplerAppliedRate, rate)
 	if !sampledByRate(span.TraceID, rate) {
 		span.setSamplingPriority(ext.PriorityUserReject, samplernames.RuleRate)
@@ -463,7 +528,7 @@ func newSingleSpanRateLimiter(mps float64) *rateLimiter {
 // and '*' treated as regex metacharacters.
 func globMatch(pattern string) *regexp.Regexp {
 	if pattern == "" {
-		return regexp.MustCompile("^.*$")
+		return nil
 	}
 	// escaping regex characters
 	pattern = regexp.QuoteMeta(pattern)
@@ -474,7 +539,8 @@ func globMatch(pattern string) *regexp.Regexp {
 	return regexp.MustCompile(fmt.Sprintf("^%s$", pattern))
 }
 
-// samplingRulesFromEnv parses sampling rules from the DD_TRACE_SAMPLING_RULES,
+// samplingRulesFromEnv parses sampling rules from
+// the DD_TRACE_SAMPLING_RULES, DD_TRACE_SAMPLING_RULES_FILE
 // DD_SPAN_SAMPLING_RULES and DD_SPAN_SAMPLING_RULES_FILE environment variables.
 func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	var errs []string
@@ -483,33 +549,42 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 			err = fmt.Errorf("\n\t%s", strings.Join(errs, "\n\t"))
 		}
 	}()
-	rulesFromEnv := os.Getenv("DD_TRACE_SAMPLING_RULES")
-	if rulesFromEnv != "" {
-		trace, err = unmarshalSamplingRules([]byte(rulesFromEnv), SamplingRuleTrace)
+
+	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
+		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
+		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
+		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-	}
-	span, err = unmarshalSamplingRules([]byte(os.Getenv("DD_SPAN_SAMPLING_RULES")), SamplingRuleSpan)
-	if err != nil {
-		errs = append(errs, err.Error())
-	}
-	rulesFile := os.Getenv("DD_SPAN_SAMPLING_RULES_FILE")
-	if len(span) != 0 {
-		if rulesFile != "" {
-			log.Warn("DIAGNOSTICS Error(s): DD_SPAN_SAMPLING_RULES is available and will take precedence over DD_SPAN_SAMPLING_RULES_FILE")
+		rulesFile := os.Getenv(env + "_FILE")
+		if len(rules) != 0 {
+			if rulesFile != "" {
+				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
+			}
+			return rules, errs
 		}
-		return trace, span, err
-	}
-	if rulesFile != "" {
+		if rulesFile == "" {
+			return rules, errs
+		}
 		rulesFromEnvFile, err := os.ReadFile(rulesFile)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from DD_SPAN_SAMPLING_RULES_FILE: %v", err))
+			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
 		}
-		span, err = unmarshalSamplingRules(rulesFromEnvFile, SamplingRuleSpan)
+		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
+		return rules, errs
+	}
+
+	trace, tErrs := rulesByType(SamplingRuleTrace)
+	if len(tErrs) != 0 {
+		errs = append(errs, tErrs...)
+	}
+	span, sErrs := rulesByType(SamplingRuleSpan)
+	if len(sErrs) != 0 {
+		errs = append(errs, sErrs...)
 	}
 	return trace, span, err
 }
@@ -521,10 +596,12 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		return nil, nil
 	}
 	var jsonRules []struct {
-		Service      string      `json:"service"`
-		Name         string      `json:"name"`
-		Rate         json.Number `json:"sample_rate"`
-		MaxPerSecond float64     `json:"max_per_second"`
+		Service      string            `json:"service"`
+		Name         string            `json:"name"`
+		Rate         json.Number       `json:"sample_rate"`
+		MaxPerSecond float64           `json:"max_per_second"`
+		Resource     string            `json:"resource"`
+		Tags         map[string]string `json:"tags"`
 	}
 	err := json.Unmarshal(b, &jsonRules)
 	if err != nil {
@@ -550,6 +627,10 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
 			continue
 		}
+		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
+		for k, g := range v.Tags {
+			tagGlobs[k] = globMatch(g)
+		}
 		switch spanType {
 		case SamplingRuleSpan:
 			rules = append(rules, SamplingRule{
@@ -557,6 +638,8 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				Name:         globMatch(v.Name),
 				Rate:         rate,
 				MaxPerSecond: v.MaxPerSecond,
+				Resource:     globMatch(v.Resource),
+				Tags:         tagGlobs,
 				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
 				ruleType:     SamplingRuleSpan,
 			})
@@ -565,24 +648,14 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
 				continue
 			}
-			rate, err := v.Rate.Float64()
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
-				continue
-			}
-			if rate < 0.0 || rate > 1.0 {
-				errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
-				continue
-			}
-
-			switch {
-			case v.Service != "" && v.Name != "":
-				rules = append(rules, NameServiceRule(v.Name, v.Service, rate))
-			case v.Service != "":
-				rules = append(rules, ServiceRule(v.Service, rate))
-			case v.Name != "":
-				rules = append(rules, NameRule(v.Name, rate))
-			}
+			rules = append(rules, SamplingRule{
+				Service:  globMatch(v.Service),
+				Name:     globMatch(v.Name),
+				Rate:     rate,
+				Resource: globMatch(v.Resource),
+				Tags:     tagGlobs,
+				ruleType: SamplingRuleTrace,
+			})
 		}
 	}
 	if len(errs) != 0 {
@@ -594,26 +667,33 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 // MarshalJSON implements the json.Marshaler interface.
 func (sr *SamplingRule) MarshalJSON() ([]byte, error) {
 	s := struct {
-		Service      string   `json:"service"`
-		Name         string   `json:"name"`
-		Rate         float64  `json:"sample_rate"`
-		Type         string   `json:"type"`
-		MaxPerSecond *float64 `json:"max_per_second,omitempty"`
+		Service      string            `json:"service,omitempty"`
+		Name         string            `json:"name,omitempty"`
+		Resource     string            `json:"resource,omitempty"`
+		Rate         float64           `json:"sample_rate"`
+		Tags         map[string]string `json:"tags,omitempty"`
+		Type         string            `json:"type"`
+		MaxPerSecond *float64          `json:"max_per_second,omitempty"`
 	}{}
-	if sr.exactService != "" {
-		s.Service = sr.exactService
-	} else if sr.Service != nil {
-		s.Service = fmt.Sprintf("%s", sr.Service)
+	if sr.Service != nil {
+		s.Service = sr.Service.String()
 	}
-	if sr.exactName != "" {
-		s.Name = sr.exactName
-	} else if sr.Name != nil {
-		s.Name = fmt.Sprintf("%s", sr.Name)
+	if sr.Name != nil {
+		s.Name = sr.Name.String()
+	}
+	if sr.MaxPerSecond != 0 {
+		s.MaxPerSecond = &sr.MaxPerSecond
+	}
+	if sr.Resource != nil {
+		s.Resource = sr.Resource.String()
 	}
 	s.Rate = sr.Rate
 	s.Type = fmt.Sprintf("%v(%d)", sr.ruleType.String(), sr.ruleType)
-	if sr.MaxPerSecond != 0 {
-		s.MaxPerSecond = &sr.MaxPerSecond
+	s.Tags = make(map[string]string, len(sr.Tags))
+	for k, v := range sr.Tags {
+		if v != nil {
+			s.Tags[k] = v.String()
+		}
 	}
 	return json.Marshal(&s)
 }
