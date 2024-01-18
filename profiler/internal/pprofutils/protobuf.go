@@ -33,8 +33,21 @@ func (p Protobuf) Convert(protobuf *profile.Profile, text io.Writer) error {
 		}
 		w.WriteString(strings.Join(sampleTypes, " ") + "\n")
 	}
-	if err := protobuf.Aggregate(true, true, false, false, false); err != nil {
-		return err
+	// This is a workaround for a breaking change in the pprof library
+	// when it added columns as an additional attribute for aggregation.
+	if pb, ok := any(protobuf).(interface {
+		Aggregate(bool, bool, bool, bool, bool) error
+	}); ok {
+		if err := pb.Aggregate(true, true, false, false, false); err != nil {
+			return err
+		}
+	}
+	if pb, ok := any(protobuf).(interface {
+		Aggregate(bool, bool, bool, bool, bool, bool) error
+	}); ok {
+		if err := pb.Aggregate(true, true, false, false, false, false); err != nil {
+			return err
+		}
 	}
 	protobuf = protobuf.Compact()
 	sort.Slice(protobuf.Sample, func(i, j int) bool {
