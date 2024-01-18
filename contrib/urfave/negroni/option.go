@@ -32,7 +32,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	if internal.BoolEnv("DD_TRACE_NEGRONI_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
