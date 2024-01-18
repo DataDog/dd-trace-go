@@ -80,19 +80,18 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 	}
 }
 
-func waitForPayload(ctx context.Context, payloads chan traces) (traces, error) {
+func waitForPayload(payloads chan traces) (traces, error) {
 	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("Timed out waiting for traces")
 	case p := <-payloads:
 		return p, nil
+	case <-time.After(10 * time.Second):
+		return nil, fmt.Errorf("Timed out waiting for traces")
 	}
 }
 
 func TestSpanResourceNameDefault(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -102,7 +101,7 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -113,19 +112,19 @@ func TestSpanResourceNameDefault(t *testing.T) {
 
 func TestSpanSetName(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	_, sp := tr.Start(ctx, "OldName")
 	sp.SetName("NewName")
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -135,8 +134,6 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -166,7 +163,7 @@ func TestSpanEnd(t *testing.T) {
 	}
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -220,14 +217,11 @@ func TestSpanSetStatus(t *testing.T) {
 
 	for _, test := range testData {
 		t.Run(fmt.Sprintf("Setting Code: %d", test.code), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
 			var sp oteltrace.Span
 			testStatus := func() {
 				sp.End()
 				tracer.Flush()
-				traces, err := waitForPayload(ctx, payloads)
+				traces, err := waitForPayload(payloads)
 				if err != nil {
 					t.Fatalf(err.Error())
 				}
@@ -258,8 +252,6 @@ func TestSpanSetStatus(t *testing.T) {
 
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -291,7 +283,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -312,8 +304,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 
 func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -330,7 +321,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -344,8 +335,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 
 func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -370,7 +360,7 @@ func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -380,8 +370,7 @@ func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 
 func TestSpanEndOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -400,7 +389,7 @@ func TestSpanEndOptions(t *testing.T) {
 		tracer.WithError(errors.New("persisted_option")))
 	sp.End()
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -417,8 +406,6 @@ func TestSpanEndOptions(t *testing.T) {
 
 func TestSpanSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
@@ -450,7 +437,7 @@ func TestSpanSetAttributes(t *testing.T) {
 
 	sp.End()
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -491,7 +478,7 @@ func TestSpanSetAttributesWithRemapping(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -501,8 +488,6 @@ func TestSpanSetAttributesWithRemapping(t *testing.T) {
 
 func TestTracerStartOptions(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
@@ -511,7 +496,7 @@ func TestTracerStartOptions(t *testing.T) {
 	_, sp := tr.Start(context.Background(), "test")
 	sp.End()
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -534,7 +519,7 @@ func TestOperationNameRemapping(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -650,10 +635,6 @@ func TestRemapName(t *testing.T) {
 			out: "internal",
 		},
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
 	defer cleanup()
@@ -665,7 +646,7 @@ func TestRemapName(t *testing.T) {
 			sp.End()
 
 			tracer.Flush()
-			traces, err := waitForPayload(ctx, payloads)
+			traces, err := waitForPayload(payloads)
 			if err != nil {
 				t.Fatalf(err.Error())
 			}
@@ -677,8 +658,6 @@ func TestRemapName(t *testing.T) {
 
 func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	assert := assert.New(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
 	tr := otel.Tracer("")
@@ -696,7 +675,7 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	sp.End()
 
 	tracer.Flush()
-	traces, err := waitForPayload(ctx, payloads)
+	traces, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
