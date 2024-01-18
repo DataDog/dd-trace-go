@@ -8,7 +8,6 @@ package appsec
 import (
 	"runtime"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	waf "github.com/DataDog/go-libddwaf/v2"
 )
@@ -44,9 +43,6 @@ func newAppsecTelemetry() *appsecTelemetry {
 	configs := make([]telemetry.Configuration, len(staticConfigs)+1, len(staticConfigs)+2)
 	configs[0] = telemetry.Configuration{Name: "cgo_enabled", Value: cgoEnabled}
 	copy(configs[1:], staticConfigs)
-	if runtime.GOOS == "linux" {
-		configs = append(configs, telemetry.Configuration{Name: "osinfo_libdl_path", Value: osinfo.DetectLibDl("/")})
-	}
 
 	return &appsecTelemetry{
 		configs: configs,

@@ -42,7 +42,7 @@ func defaults(cfg *routerConfig) {
 	} else {
 		cfg.analyticsRate = globalconfig.AnalyticsRate()
 	}
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.headerTags = globalconfig.HeaderTagMap()
 }
 

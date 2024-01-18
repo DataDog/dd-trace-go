@@ -32,10 +32,7 @@ func (fn OptionFn) apply(cfg *config) {
 }
 
 func defaults(t *config) {
-	t.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
+	t.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	t.analyticsRate = globalconfig.AnalyticsRate()
 }
 

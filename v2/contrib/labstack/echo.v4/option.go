@@ -46,7 +46,7 @@ func (fn OptionFn) apply(cfg *config) {
 type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()

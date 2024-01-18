@@ -15,7 +15,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/awsnamingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/tags"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -126,17 +125,13 @@ func (h *handlers) serviceName(req *request.Request) string {
 		return h.cfg.serviceName
 	}
 	defaultName := "aws." + awsService(req)
-	return namingschema.NewDefaultServiceName(
-		defaultName,
-		namingschema.WithOverrideV0(defaultName),
-	).GetName()
+	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
 }
 
 func spanName(req *request.Request) string {
 	svc := awsService(req)
 	op := awsOperation(req)
-	getSpanNameV0 := func(awsService string) string { return awsService + ".command" }
-	return awsnamingschema.NewAWSOutboundOp(svc, op, getSpanNameV0).GetName()
+	return namingschema.AWSOpName(svc, op, svc+".command")
 }
 
 func awsService(req *request.Request) string {

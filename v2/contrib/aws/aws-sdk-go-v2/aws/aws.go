@@ -14,7 +14,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/awsnamingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/aws/tags"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -343,9 +342,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 }
 
 func spanName(awsService, awsOperation string) string {
-	return awsnamingschema.NewAWSOutboundOp(awsService, awsOperation, func(s string) string {
-		return s + ".request"
-	}).GetName()
+	return namingschema.AWSOpName(awsService, awsOperation, awsService+".request")
 }
 
 func serviceName(cfg *config, awsService string) string {
@@ -353,8 +350,5 @@ func serviceName(cfg *config, awsService string) string {
 		return cfg.serviceName
 	}
 	defaultName := fmt.Sprintf("aws.%s", awsService)
-	return namingschema.NewDefaultServiceName(
-		defaultName,
-		namingschema.WithOverrideV0(defaultName),
-	).GetName()
+	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
 }

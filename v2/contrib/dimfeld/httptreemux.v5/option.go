@@ -36,7 +36,7 @@ func (fn RouterOptionFn) apply(cfg *routerConfig) {
 }
 
 func defaults(cfg *routerConfig) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.resourceNamer = defaultResourceNamer
 }
 

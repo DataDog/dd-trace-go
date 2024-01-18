@@ -40,11 +40,8 @@ func (fn DialOptionFn) apply(cfg *dialConfig) {
 }
 
 func defaults(cfg *dialConfig) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
-	cfg.spanName = namingschema.NewRedisOutboundOp().GetName()
+	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.RedisOutbound)
 	// cfg.analyticsRate = globalconfig.AnalyticsRate()
 	if internal.BoolEnv("DD_TRACE_REDIGO_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0

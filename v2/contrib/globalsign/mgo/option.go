@@ -28,12 +28,9 @@ func newConfig() *mongoConfig {
 		rate = 1.0
 	}
 	return &mongoConfig{
-		serviceName: namingschema.NewDefaultServiceName(
-			defaultServiceName,
-			namingschema.WithOverrideV0(defaultServiceName),
-		).GetName(),
-		spanName: namingschema.NewMongoDBOutboundOp().GetName(),
-		ctx:      context.Background(),
+		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
+		spanName:    namingschema.OpName(namingschema.MongoDBOutbound),
+		ctx:         context.Background(),
 		// analyticsRate: globalconfig.AnalyticsRate(),
 		analyticsRate: rate,
 	}
