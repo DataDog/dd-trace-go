@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	internaldsm "gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +79,8 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	msg2, err := consumerAction(c)
 	require.NoError(t, err)
+	commits, err := c.CommitMessage(msg2)
+	require.NoError(t, err)
 	assert.Equal(t, msg1.String(), msg2.String())
 	err = c.Close()
 	require.NoError(t, err)
@@ -84,6 +89,22 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	require.Len(t, spans, 2)
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+
+	if c.cfg.dataStreamsEnabled {
+		backlogs := mt.SentDSMBacklogs()
+		sort.Slice(backlogs, func(i, j int) bool {
+			// it will sort the backlogs in the order: commit, high watermark, produce
+			return strings.Join(backlogs[i].Tags, "") < strings.Join(backlogs[j].Tags, "")
+		})
+		require.Len(t, commits, 1)
+		highWatermark := int64(commits[0].Offset)
+		expectedBacklogs := []internaldsm.Backlog{
+			{Tags: []string{"consumer_group:" + testGroupID, "partition:0", "topic:" + testTopic, "type:kafka_commit"}, Value: highWatermark},
+			{Tags: []string{"partition:0", "topic:" + testTopic, "type:kafka_high_watermark"}, Value: highWatermark},
+			{Tags: []string{"partition:0", "topic:" + testTopic, "type:kafka_produce"}, Value: highWatermark - 1},
+		}
+		assert.Equal(t, expectedBacklogs, backlogs)
+	}
 	return spans, msg2
 }
 
