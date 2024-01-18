@@ -715,8 +715,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+		defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(false))
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -865,7 +864,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority.Load(), -1.)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated)).(*span)
@@ -874,7 +873,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.SpanID)
 	assert.Equal(root.SpanID, child.ParentID)
 	assert.Equal(root.TraceID, child.ParentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority.Load(), -1.)
 }
 
 func TestTracerSamplingPriorityPropagation(t *testing.T) {
@@ -886,8 +885,8 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.EqualValues(2, root.Metrics[keySamplingPriority])
 	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
 	assert.EqualValues(2, child.Metrics[keySamplingPriority])
-	assert.EqualValues(2., *root.context.trace.priority)
-	assert.EqualValues(2., *child.context.trace.priority)
+	assert.EqualValues(2., *root.context.trace.priority.Load())
+	assert.EqualValues(2., *child.context.trace.priority.Load())
 }
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
@@ -1046,8 +1045,7 @@ func TestNewSpanChild(t *testing.T) {
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
 		if !is128 {
-			os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-			defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+			defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(false))
 		}
 		assert := assert.New(t)
 

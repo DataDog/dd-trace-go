@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -660,7 +661,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.spanID, span.SpanID)
 		assert.Equal(ctx.TraceID(), span.TraceID)
 		assert.Equal(ctx.SpanID(), span.SpanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(*ctx.trace.priority.Load(), 1.)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -681,7 +682,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), sctx.traceID.Lower())
 		assert.EqualValues(2, sctx.spanID)
-		assert.EqualValues(3, *sctx.trace.priority)
+		assert.EqualValues(3, *sctx.trace.priority.Load())
 		assert.Equal(sctx.trace.root, span)
 	})
 }
@@ -704,7 +705,7 @@ func TestSpanContextParent(t *testing.T) {
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*span{newBasicSpan("abc")},
-				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
+				priority: func() atomic.Pointer[float64] { v := 2.0; p := atomic.Pointer[float64]{}; p.Store(&v); return p }(),
 			},
 		},
 		"sampling_decision": {

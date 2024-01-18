@@ -703,14 +703,14 @@ func TestSpanSamplingPriority(t *testing.T) {
 		v, ok := span.Metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)
-		assert.EqualValues(*span.context.trace.priority, v)
+		assert.EqualValues(*span.context.trace.priority.Load(), v)
 
 		childSpan := tracer.newChildSpan("my.child", span)
 		v0, ok0 := span.Metrics[keySamplingPriority]
 		v1, ok1 := childSpan.Metrics[keySamplingPriority]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
-		assert.EqualValues(*childSpan.context.trace.priority, v0)
+		assert.EqualValues(*childSpan.context.trace.priority.Load(), v0)
 	}
 }
 
@@ -829,7 +829,6 @@ func TestSpanLog(t *testing.T) {
 		// Generate 128 bit trace ids, but don't log them. So only the lower
 		// 64 bits should be logged in decimal form.
 		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
-		// DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED is false by default
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		defer stop()
@@ -860,7 +859,7 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-generation", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		defer func(enabled bool) { TraceID128BitEnabled.Store(enabled) }(TraceID128BitEnabled.Swap(true))
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))

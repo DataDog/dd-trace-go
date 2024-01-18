@@ -102,6 +102,13 @@ type spanContext struct {
 	origin     string // e.g. "synthetics"
 }
 
+// TODO - this is just a temporary hack to avoid accessing mutex locked resource in a hotpath
+var TraceID128BitEnabled atomic.Bool = atomic.Bool{}
+
+func init() {
+	TraceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", false))
+}
+
 // newSpanContext creates a new SpanContext to serve as context for the given
 // span. If the provided parent is not nil, the context will inherit the trace,
 // baggage and other values from it. This method also pushes the span into the
@@ -122,7 +129,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	} else if TraceID128BitEnabled.Load() {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.Start) / time.Second
@@ -185,8 +192,8 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.setSamplingPriority(p, sampler) {
-		// the trace's sampling priority was updated: mark this as updated
+	priority := c.trace.priority.Load()
+	if priority != nil && *priority != float64(p) {
 		c.updated = true
 	}
 }
@@ -244,15 +251,15 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex      // guards below fields
-	spans            []*span           // all the spans that are part of this trace
-	tags             map[string]string // trace level tags
-	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
-	finished         int               // the number of finished spans
-	full             bool              // signifies that the span buffer is full
-	priority         *float64          // sampling priority
-	locked           bool              // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	mu               sync.RWMutex            // guards below fields
+	spans            []*span                 // all the spans that are part of this trace
+	tags             map[string]string       // trace level tags
+	propagatingTags  map[string]string       // trace level tags that will be propagated across service boundaries
+	finished         int                     // the number of finished spans
+	full             bool                    // signifies that the span buffer is full
+	priority         atomic.Pointer[float64] // sampling priority
+	locked           bool                    // specifies if the sampling priority can be altered
+	samplingDecision samplingDecision        // samplingDecision indicates whether to send the trace to the agent.
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -280,17 +287,12 @@ func newTrace() *trace {
 	return &trace{spans: make([]*span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	if t.priority == nil {
+func (t *trace) samplingPriority() (p int, ok bool) {
+	priority := t.priority.Load()
+	if priority == nil {
 		return 0, false
 	}
-	return int(*t.priority), true
-}
-
-func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
+	return int(*priority), true
 }
 
 // setSamplingPriority sets the sampling priority and returns true if it was modified.
@@ -325,13 +327,14 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	if t.locked {
 		return false
 	}
-
-	updatedPriority := t.priority == nil || *t.priority != float64(p)
-
-	if t.priority == nil {
-		t.priority = new(float64)
+	priority := t.priority.Load()
+	oldPriority := priority
+	if priority == nil {
+		priority = new(float64)
+		oldPriority = priority
 	}
-	*t.priority = float64(p)
+	*priority = float64(p)
+	t.priority.Store(priority)
 	_, ok := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && !ok && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -342,7 +345,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		delete(t.propagatingTags, keyDecisionMaker)
 	}
 
-	return updatedPriority
+	return *priority != *oldPriority
 }
 
 func (t *trace) isLocked() bool {
@@ -424,6 +427,7 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
+
 	tr, ok := internal.GetGlobalTracer().(*tracer)
 	if !ok {
 		return
@@ -435,11 +439,12 @@ func (t *trace) finishedOne(s *span) {
 	if s.Service != "" && !strings.EqualFold(s.Service, tr.config.serviceName) {
 		s.Meta[keyBaseService] = tr.config.serviceName
 	}
-	if s == t.root && t.priority != nil {
+	priority := t.priority.Load()
+	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		t.root.setMetric(keySamplingPriority, *priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -478,7 +483,11 @@ func (t *trace) finishedOne(s *span) {
 	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
 	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+	priority = t.priority.Load()
+	if priority != nil {
+		finishedSpans[0].setMetric(keySamplingPriority, *priority)
+	}
+
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0], tr)
