@@ -71,8 +71,12 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 	tp = NewTracerProvider(opts...)
 	otel.SetTracerProvider(tp)
 	return tp, payloads, func() {
-		s.Close()
-		tp.Shutdown()
+		if err := s.Close(); err != nil {
+			t.Fatalf("Test Agent server Close failure: %v", err)
+		}
+		if err := tp.Shutdown(); err != nil {
+			t.Fatalf("Tracer Provider shutdown failure: %v", err)
+		}
 	}
 }
 
