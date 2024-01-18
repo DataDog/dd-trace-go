@@ -51,11 +51,11 @@ func startTelemetry(c *config) {
 		{Name: "trace_debug_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
-		// TODO: trace_enabled OR tracing_enabled?
-		{Name: "trace_enabled", Value: c.enabled.toTelemetry()},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
+		// TODO: trace_enabled OR tracing_enabled?
+		c.enabled.toTelemetry(),
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
