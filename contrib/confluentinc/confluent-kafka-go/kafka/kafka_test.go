@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +78,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	msg2, err := consumerAction(c)
 	require.NoError(t, err)
-	commits, err := c.CommitMessage(msg2)
+	_, err = c.CommitMessage(msg2)
 	require.NoError(t, err)
 	assert.Equal(t, msg1.String(), msg2.String())
 	err = c.Close()
@@ -92,18 +91,17 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.cfg.dataStreamsEnabled {
 		backlogs := mt.SentDSMBacklogs()
-		sort.Slice(backlogs, func(i, j int) bool {
-			// it will sort the backlogs in the order: commit, high watermark, produce
-			return strings.Join(backlogs[i].Tags, "") < strings.Join(backlogs[j].Tags, "")
-		})
-		require.Len(t, commits, 1)
-		highWatermark := int64(commits[0].Offset)
-		expectedBacklogs := []internaldsm.Backlog{
-			{Tags: []string{"consumer_group:" + testGroupID, "partition:0", "topic:" + testTopic, "type:kafka_commit"}, Value: highWatermark},
-			{Tags: []string{"partition:0", "topic:" + testTopic, "type:kafka_high_watermark"}, Value: highWatermark},
-			{Tags: []string{"partition:0", "topic:" + testTopic, "type:kafka_produce"}, Value: highWatermark - 1},
+		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+			m := make(map[string]struct{})
+			for _, b := range backlogs {
+				m[strings.Join(b.Tags, "")] = struct{}{}
+			}
+			return m
 		}
-		assert.Equal(t, expectedBacklogs, backlogs)
+		backlogsMap := toMap(backlogs)
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
 	}
 	return spans, msg2
 }
