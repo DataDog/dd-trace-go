@@ -149,99 +149,64 @@ func (sr SamplingRuleType) String() string {
 	}
 }
 
-// ServiceRule returns a SamplingRule that applies the provided sampling rate
-// to spans that match the service name provided.
-func ServiceRule(service string, rate float64) SamplingRule {
-	return SamplingRule{
-		Service: globMatch(service),
-		Rate:    rate,
-	}
+// Rule is used to create a sampling rule.
+type Rule struct {
+	ServiceGlob  string
+	NameGlob     string
+	ResourceGlob string
+	Tags         map[string]string // map of string to glob pattern
+	Rate         float64
+	MaxPerSecond float64
 }
 
-// NameRule returns a SamplingRule that applies the provided sampling rate
-// to spans that match the operation name provided.
-func NameRule(name string, rate float64) SamplingRule {
-	return SamplingRule{
-		Name: globMatch(name),
-		Rate: rate,
-	}
-}
-
-// NameServiceRule returns a SamplingRule that applies the provided sampling rate
-// to spans matching both the operation and service names provided.
-func NameServiceRule(name string, service string, rate float64) SamplingRule {
-	return SamplingRule{
-		Service: globMatch(service),
-		Name:    globMatch(name),
-		Rate:    rate,
-	}
-}
-
-// RateRule returns a SamplingRule that applies the provided sampling rate to all spans.
-func RateRule(rate float64) SamplingRule {
-	return SamplingRule{
-		Rate: rate,
-	}
-}
-
-// TagsResourceRule returns a SamplingRule that applies the provided sampling rate to traces with spans that match
-// resource, name, service and tags provided.
-func TagsResourceRule(tags map[string]*regexp.Regexp, resource, name, service string, rate float64) SamplingRule {
-	return SamplingRule{
-		Service:  globMatch(service),
-		Name:     globMatch(name),
-		Resource: globMatch(resource),
-		Rate:     rate,
-		Tags:     tags,
-		ruleType: SamplingRuleTrace,
-	}
-}
-
-// SpanTagsResourceRule returns a SamplingRule that applies the provided sampling rate to spans that match
-// resource, name, service and tags provided. Values of the tags map are expected to be in glob format.
-func SpanTagsResourceRule(tags map[string]string, resource, name, service string, rate float64) SamplingRule {
-	globTags := make(map[string]*regexp.Regexp, len(tags))
-	for k, v := range tags {
-		if g := globMatch(v); g != nil {
-			globTags[k] = g
+// TraceSamplingRules creates a sampling rule that applies to the entire trace if any spans satisfy the criteria.
+func TraceSamplingRules(rules ...Rule) []SamplingRule {
+	var samplingRules []SamplingRule
+	for _, r := range rules {
+		sr := SamplingRule{
+			Service:  globMatch(r.ServiceGlob),
+			Name:     globMatch(r.NameGlob),
+			Resource: globMatch(r.ResourceGlob),
+			Rate:     r.Rate,
+			ruleType: SamplingRuleTrace,
 		}
+		if len(r.Tags) != 0 {
+			sr.Tags = make(map[string]*regexp.Regexp, len(r.Tags))
+			for k, v := range r.Tags {
+				if g := globMatch(v); g != nil {
+					sr.Tags[k] = g
+				}
+			}
+		}
+		samplingRules = append(samplingRules, sr)
 	}
-	return SamplingRule{
-		Service:  globMatch(service),
-		Name:     globMatch(name),
-		Resource: globMatch(resource),
-		Rate:     rate,
-		Tags:     globTags,
-		ruleType: SamplingRuleSpan,
-	}
+	return samplingRules
 }
 
-// SpanNameServiceRule returns a SamplingRule of type SamplingRuleSpan that applies
-// the provided sampling rate to all spans matching the operation and service name glob patterns provided.
-// Operation and service fields must be valid glob patterns.
-func SpanNameServiceRule(name, service string, rate float64) SamplingRule {
-	return SamplingRule{
-		Service:  globMatch(service),
-		Name:     globMatch(name),
-		Rate:     rate,
-		ruleType: SamplingRuleSpan,
-		limiter:  newSingleSpanRateLimiter(0),
+// SpanSamplingRules creates a sampling rule that applies to a single span without affecting the entire trace.
+func SpanSamplingRules(rules ...Rule) []SamplingRule {
+	var samplingRules []SamplingRule
+	for _, r := range rules {
+		sr := SamplingRule{
+			Service:      globMatch(r.ServiceGlob),
+			Name:         globMatch(r.NameGlob),
+			Resource:     globMatch(r.ResourceGlob),
+			Rate:         r.Rate,
+			ruleType:     SamplingRuleSpan,
+			MaxPerSecond: r.MaxPerSecond,
+			limiter:      newSingleSpanRateLimiter(r.MaxPerSecond),
+		}
+		if len(r.Tags) != 0 {
+			sr.Tags = make(map[string]*regexp.Regexp, len(r.Tags))
+			for k, v := range r.Tags {
+				if g := globMatch(v); g != nil {
+					sr.Tags[k] = g
+				}
+			}
+		}
+		samplingRules = append(samplingRules, sr)
 	}
-}
-
-// SpanNameServiceMPSRule returns a SamplingRule of type SamplingRuleSpan that applies
-// the provided sampling rate to all spans matching the operation and service name glob patterns
-// up to the max number of spans per second that can be sampled.
-// Operation and service fields must be valid glob patterns.
-func SpanNameServiceMPSRule(name, service string, rate, limit float64) SamplingRule {
-	return SamplingRule{
-		Service:      globMatch(service),
-		Name:         globMatch(name),
-		MaxPerSecond: limit,
-		Rate:         rate,
-		ruleType:     SamplingRuleSpan,
-		limiter:      newSingleSpanRateLimiter(limit),
-	}
+	return samplingRules
 }
 
 // traceRulesSampler allows a user-defined list of rules to apply to traces.

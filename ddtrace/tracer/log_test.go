@@ -53,7 +53,7 @@ func TestStartupLog(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithAnalyticsRate(1.0),
 			WithServiceVersion("2.3.4"),
-			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
+			WithSamplingRules(TraceSamplingRules(Rule{ServiceGlob: "mysql", Rate: 0.75})),
 			WithDebugMode(true),
 			WithOrchestrion(map[string]string{"version": "v1"}),
 			WithFeatureFlags("discovery"),
@@ -88,7 +88,7 @@ func TestStartupLog(t *testing.T) {
 			WithRuntimeMetrics(),
 			WithAnalyticsRate(1.0),
 			WithServiceVersion("2.3.4"),
-			WithSamplingRules([]SamplingRule{ServiceRule("mysql", 0.75)}),
+			WithSamplingRules(TraceSamplingRules(Rule{ServiceGlob: "mysql", Rate: 0.75})),
 			WithDebugMode(true),
 		)
 		assert.Nil(err)
