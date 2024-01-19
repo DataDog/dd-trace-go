@@ -83,6 +83,7 @@ func TestNilSpan(t *testing.T) {
 	assertions.Nil(ctx)
 	assertions.Equal(TraceIDZero, ctx.TraceID())
 	assertions.Equal([16]byte(emptyTraceID), ctx.TraceIDBytes())
+	assertions.Equal(uint64(0), ctx.TraceIDLower())
 	assertions.Equal(uint64(0), ctx.SpanID())
 	sp, ok := ctx.SamplingPriority()
 	assertions.Equal(0, sp)
@@ -90,7 +91,13 @@ func TestNilSpan(t *testing.T) {
 	// calls on nil span should be no-op
 	assertions.Nil(span.Root())
 	span.SetBaggageItem("key", "value")
+	if v := span.BaggageItem("key"); v != "" {
+		t.Errorf("expected empty string, got %s", v)
+	}
 	span.SetTag("key", "value")
+	if v := span.Tag("key"); v != nil {
+		t.Errorf("expected nil, got %s", v)
+	}
 	span.SetUser("user")
 	assertions.Nil(span.StartChild("child"))
 	span.Finish()
@@ -330,26 +337,32 @@ func (p *panicStringer) String() string {
 
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
-
 	span := newBasicSpan("web.request")
+
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.meta["component"])
+	assert.Equal("tracer", span.Tag("component"))
 
 	span.SetTag("tagInt", 1234)
 	assert.Equal(float64(1234), span.metrics["tagInt"])
+	assert.Equal(float64(1234), span.Tag("tagInt"))
 
 	span.SetTag("tagStruct", struct{ A, B int }{1, 2})
 	assert.Equal("{1 2}", span.meta["tagStruct"])
+	assert.Equal("{1 2}", span.Tag("tagStruct"))
 
 	span.SetTag(ext.Error, true)
 	assert.Equal(int32(1), span.error)
+	assert.Equal("", span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.error)
+	assert.Equal("", span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, errors.New("abc"))
 	assert.Equal(int32(1), span.error)
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
+	assert.Equal("abc", span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 	assert.NotEmpty(span.meta[ext.ErrorStack])
 
@@ -361,30 +374,39 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag(ext.SamplingPriority, 2)
 	assert.Equal(float64(2), span.metrics[keySamplingPriority])
+	assert.Equal(float64(2), span.Tag(ext.SamplingPriority))
 
 	span.SetTag(ext.AnalyticsEvent, true)
 	assert.Equal(1.0, span.metrics[ext.EventSampleRate])
+	assert.Equal(1.0, span.Tag(ext.AnalyticsEvent))
 
 	span.SetTag(ext.AnalyticsEvent, false)
 	assert.Equal(0.0, span.metrics[ext.EventSampleRate])
+	assert.Equal(0.0, span.Tag(ext.AnalyticsEvent))
 
 	span.SetTag(ext.ManualDrop, true)
 	assert.Equal(-1., span.metrics[keySamplingPriority])
+	assert.Equal(-1., span.Tag(ext.ManualDrop))
 
 	span.SetTag(ext.ManualKeep, true)
 	assert.Equal(2., span.metrics[keySamplingPriority])
+	assert.Equal(2., span.Tag(ext.ManualKeep))
 
 	span.SetTag("some.bool", true)
 	assert.Equal("true", span.meta["some.bool"])
+	assert.Equal("true", span.Tag("some.bool"))
 
 	span.SetTag("some.other.bool", false)
 	assert.Equal("false", span.meta["some.other.bool"])
+	assert.Equal("false", span.Tag("some.other.bool"))
 
 	span.SetTag("time", (*time.Time)(nil))
 	assert.Equal("<nil>", span.meta["time"])
+	assert.Equal("<nil>", span.Tag("time"))
 
 	span.SetTag("nilStringer", (*nilStringer)(nil))
 	assert.Equal("<nil>", span.meta["nilStringer"])
+	assert.Equal("<nil>", span.Tag("nilStringer"))
 
 	span.SetTag("somestrings", []string{"foo", "bar"})
 	assert.Equal("foo", span.meta["somestrings.0"])

@@ -225,6 +225,47 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
+func (s *Span) Tag(k string) interface{} {
+	if s == nil {
+		return nil
+	}
+	s.RLock()
+	defer s.RUnlock()
+	switch k {
+	case ext.AnalyticsEvent, ext.EventSampleRate:
+		return s.metrics[ext.EventSampleRate]
+	case ext.SamplingPriority, ext.ManualDrop, ext.ManualKeep:
+		return s.metrics[keySamplingPriority]
+	case ext.Error, ext.MapSpanError:
+		return s.meta[ext.ErrorMsg]
+	case ext.SpanName:
+		return s.name
+	case ext.ServiceName:
+		return s.service
+	case ext.ResourceName:
+		return s.resource
+	case ext.SpanType:
+		return s.spanType
+	case ext.MapSpanStart:
+		return s.start
+	case ext.MapSpanDuration:
+		return s.duration
+	case ext.MapSpanID:
+		return s.spanID
+	case ext.MapSpanTraceID:
+		return s.traceID
+	case ext.MapSpanParentID:
+		return s.parentID
+	}
+	if v, ok := s.meta[k]; ok {
+		return v
+	}
+	if v, ok := s.metrics[k]; ok {
+		return v
+	}
+	return nil
+}
+
 // setSamplingPriority locks then span, then updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerName) {
