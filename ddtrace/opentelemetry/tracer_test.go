@@ -207,7 +207,7 @@ func TestSpanTelemetry(t *testing.T) {
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
-func TestConcurrentSetAttributes(t *testing.T) {
+func TestConcurrentSetAttributes(_ *testing.T) {
 	tp := NewTracerProvider()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
