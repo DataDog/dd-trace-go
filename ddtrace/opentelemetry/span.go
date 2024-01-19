@@ -46,6 +46,8 @@ func (s *span) SetName(name string) {
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.finished {
 		return
 	}
