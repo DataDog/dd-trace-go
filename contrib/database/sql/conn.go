@@ -294,6 +294,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, dbSystem),
+		// this is a test.
 	)
 	if tp.cfg.tags != nil {
 		for key, tag := range tp.cfg.tags {
