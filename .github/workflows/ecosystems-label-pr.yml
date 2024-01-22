@@ -1,4 +1,4 @@
-name: Label APM Ecosystems issues
+name: Label APM Ecosystems Pull Requests
 on:
   pull_request:
     paths:
