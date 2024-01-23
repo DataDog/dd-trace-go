@@ -225,6 +225,13 @@ func (s *Span) SetTag(key string, value interface{}) {
 	s.setMeta(key, fmt.Sprint(value))
 }
 
+// Tag returns the value for a given tag key.
+// If the key does not exist, Tag returns nil.
+// All values may be of type string, float64, or int32 (only for ext.Error).
+// If the original tag value was not one of these types, Tag will return a string
+// representation of the value.
+// Use ext.Error to check if the span has an error, and ext.ErrorMsg, ext.ErrorType,
+// and ext.ErrorStack to get the error details.
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
@@ -236,8 +243,8 @@ func (s *Span) Tag(k string) interface{} {
 		return s.metrics[ext.EventSampleRate]
 	case ext.SamplingPriority, ext.ManualDrop, ext.ManualKeep:
 		return s.metrics[keySamplingPriority]
-	case ext.Error, ext.MapSpanError:
-		return s.meta[ext.ErrorMsg]
+	case ext.Error:
+		return s.error
 	case ext.SpanName:
 		return s.name
 	case ext.ServiceName:
@@ -246,16 +253,6 @@ func (s *Span) Tag(k string) interface{} {
 		return s.resource
 	case ext.SpanType:
 		return s.spanType
-	case ext.MapSpanStart:
-		return s.start
-	case ext.MapSpanDuration:
-		return s.duration
-	case ext.MapSpanID:
-		return s.spanID
-	case ext.MapSpanTraceID:
-		return s.traceID
-	case ext.MapSpanParentID:
-		return s.parentID
 	}
 	if v, ok := s.meta[k]; ok {
 		return v
