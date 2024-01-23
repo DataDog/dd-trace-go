@@ -472,8 +472,12 @@ func (c *client) newRequest(t RequestType) *Request {
 		"DD-Client-Library-Version":  {version.Tag},
 		"DD-Agent-Env":               {c.Env},
 		"DD-Agent-Hostname":          {hostname},
-		"Datadog-Container-ID":       {internal.ContainerID()},
-		"Datadog-Entity-ID":          {internal.EntityID()},
+	}
+	if cid := internal.ContainerID(); cid != "" {
+		header.Set("Datadog-Container-ID", cid)
+	}
+	if eid := internal.EntityID(); eid != "" {
+		header.Set("Datadog-Entity-ID", eid)
 	}
 	if c.URL == getAgentlessURL() {
 		header.Set("DD-API-KEY", c.APIKey)
