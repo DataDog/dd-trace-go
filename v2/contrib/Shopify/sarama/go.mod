@@ -58,5 +58,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/v2 => ../../../..

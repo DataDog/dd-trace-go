@@ -70,7 +70,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/v2 => ../../../..
-
-replace github.com/DataDog/dd-trace-go/v2/contrib/net/http => ../../../contrib/net/http

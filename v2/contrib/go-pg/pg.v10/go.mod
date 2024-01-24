@@ -52,5 +52,3 @@ require (
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 	mellium.im/sasl v0.3.1 // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/v2 => ../../../..
