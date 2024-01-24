@@ -353,18 +353,21 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag(ext.Error, true)
 	assert.Equal(int32(1), span.error)
-	assert.Equal("", span.Tag(ext.Error))
+	assert.Equal(int32(1), span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.error)
-	assert.Equal("", span.Tag(ext.Error))
+	assert.Equal(int32(0), span.Tag(ext.Error))
 
 	span.SetTag(ext.Error, errors.New("abc"))
 	assert.Equal(int32(1), span.error)
+	assert.Equal(int32(1), span.Tag(ext.Error))
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
-	assert.Equal("abc", span.Tag(ext.Error))
+	assert.Equal("abc", span.Tag(ext.ErrorMsg))
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
+	assert.Equal("*errors.errorString", span.Tag(ext.ErrorType))
 	assert.NotEmpty(span.meta[ext.ErrorStack])
+	assert.Equal(span.meta[ext.ErrorStack], span.Tag(ext.ErrorStack))
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.error)
