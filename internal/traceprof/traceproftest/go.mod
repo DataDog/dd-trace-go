@@ -5,7 +5,7 @@ go 1.21
 toolchain go1.21.5
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240124125033-e62631d689c5
 	github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63
 	github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20231220194510-f0d293776f63
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b
@@ -28,7 +28,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.5.1 // indirect
+	github.com/ebitengine/purego v0.5.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
