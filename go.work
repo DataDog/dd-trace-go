@@ -1,6 +1,7 @@
 go 1.19
 
 use (
+	.
 	./internal/apps
 	./internal/contrib/validationtest
 	./internal/traceprof/traceproftest
