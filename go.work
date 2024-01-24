@@ -1,4 +1,4 @@
-go 1.21
+go 1.21 // Go version must match the highest supported version, not the minimum supported version.
 
 use (
 	.
