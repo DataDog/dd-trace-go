@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.21
+go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
