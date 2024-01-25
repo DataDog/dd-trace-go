@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -189,7 +188,6 @@ func TestRateSamplerSetting(t *testing.T) {
 func TestRuleEnvVars(t *testing.T) {
 	t.Run("sample-rate", func(t *testing.T) {
 		assert := assert.New(t)
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
 		for _, tt := range []struct {
 			in  string
 			out float64
@@ -201,7 +199,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "42.0", out: math.NaN()},    // default if out of range
 			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
-			os.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
+			t.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
 			res := globalSampleRate()
 			if math.IsNaN(tt.out) {
 				assert.True(math.IsNaN(res))
@@ -213,7 +211,6 @@ func TestRuleEnvVars(t *testing.T) {
 
 	t.Run("rate-limit", func(t *testing.T) {
 		assert := assert.New(t)
-		defer os.Unsetenv("DD_TRACE_RATE_LIMIT")
 		for _, tt := range []struct {
 			in  string
 			out *rate.Limiter
@@ -226,7 +223,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "-1.0", out: rate.NewLimiter(100.0, 100)},    // default if out of range
 			{in: "1point0", out: rate.NewLimiter(100.0, 100)}, // default if invalid value
 		} {
-			os.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
+			t.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
 			res := newRateLimiter()
 			assert.Equal(tt.out, res.limiter)
 		}
@@ -234,7 +231,7 @@ func TestRuleEnvVars(t *testing.T) {
 
 	t.Run("trace-sampling-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
+
 		tests := []struct {
 			value  string
 			ruleN  int
@@ -283,7 +280,7 @@ func TestRuleEnvVars(t *testing.T) {
 		}
 		for i, test := range tests {
 			t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
-				os.Setenv("DD_TRACE_SAMPLING_RULES", test.value)
+				t.Setenv("DD_TRACE_SAMPLING_RULES", test.value)
 				rules, _, err := samplingRulesFromEnv()
 				if test.errStr == "" {
 					assert.NoError(err)
@@ -297,7 +294,6 @@ func TestRuleEnvVars(t *testing.T) {
 
 	t.Run("span-sampling-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 
 		for i, tt := range []struct {
 			value  string
@@ -340,7 +336,7 @@ func TestRuleEnvVars(t *testing.T) {
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.value)
+				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.value)
 				_, rules, err := samplingRulesFromEnv()
 				if tt.errStr == "" {
 					assert.NoError(err)
@@ -354,7 +350,6 @@ func TestRuleEnvVars(t *testing.T) {
 
 	t.Run("span-sampling-rules-regex", func(t *testing.T) {
 		assert := assert.New(t)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 
 		for i, tt := range []struct {
 			rules         string
@@ -417,7 +412,7 @@ func TestRuleEnvVars(t *testing.T) {
 			},
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
+				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
 				_, rules, err := samplingRulesFromEnv()
 				assert.NoError(err)
 				if tt.srvRegex == "" {
@@ -468,7 +463,6 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-trace-rules-env", func(t *testing.T) {
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
 		for _, tt := range []struct {
 			rules    string
 			spanSrv  string
@@ -521,7 +515,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_TRACE_SAMPLING_RULES", tt.rules)
+				t.Setenv("DD_TRACE_SAMPLING_RULES", tt.rules)
 				rules, _, err := samplingRulesFromEnv()
 				assert.Nil(t, err)
 
@@ -596,7 +590,6 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("matching-span-rules-from-env", func(t *testing.T) {
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
 			rules    string
 			spanSrv  string
@@ -629,7 +622,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
+				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
 				_, rules, err := samplingRulesFromEnv()
 				assert.Nil(t, err)
 				assert := assert.New(t)
@@ -741,7 +734,6 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("not-matching-span-rules-from-env", func(t *testing.T) {
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
 			rules    string
 			spanSrv  string
@@ -787,7 +779,7 @@ func TestRulesSampler(t *testing.T) {
 			},
 		} {
 			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
+				t.Setenv("DD_SPAN_SAMPLING_RULES", tt.rules)
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
@@ -804,7 +796,6 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("not-matching-span-rules", func(t *testing.T) {
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
 		for _, tt := range []struct {
 			spanSrv  string
 			spanName string
@@ -907,8 +898,7 @@ func TestRulesSampler(t *testing.T) {
 			for _, rate := range sampleRates {
 				t.Run("", func(t *testing.T) {
 					assert := assert.New(t)
-					os.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
-					defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+					t.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
 					rs := newRulesSampler(nil, rules, globalSampleRate())
 
 					span := makeSpan("http.request", "test-service")
@@ -963,10 +953,8 @@ func TestRulesSampler(t *testing.T) {
 
 		for _, test := range testEnvs {
 			t.Run("", func(t *testing.T) {
-				os.Setenv("DD_TRACE_SAMPLING_RULES", test.rules)
-				defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-				os.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
-				defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+				t.Setenv("DD_TRACE_SAMPLING_RULES", test.rules)
+				t.Setenv("DD_TRACE_SAMPLE_RATE", test.generalRate)
 				_, _, _, stop := startTestTracer(t)
 				defer stop()
 
@@ -983,11 +971,9 @@ func TestRulesSampler(t *testing.T) {
 	})
 
 	t.Run("locked-sampling-before-propagating-context", func(t *testing.T) {
-		os.Setenv("DD_TRACE_SAMPLING_RULES",
+		t.Setenv("DD_TRACE_SAMPLING_RULES",
 			`[{"tags": {"tag2": "val2"}, "sample_rate": 0},{"tags": {"tag1": "val1"}, "sample_rate": 1},{"tags": {"tag0": "val*"}, "sample_rate": 0}]`)
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0")
 		tr, _, _, stop := startTestTracer(t)
 		defer stop()
 
@@ -1134,7 +1120,6 @@ func TestSamplingLimiter(t *testing.T) {
 		assert.Equal(now, sl.prevTime)
 		assert.Equal(100.0, sl.seen)
 		assert.Equal(42.0, sl.allowed)
-
 	})
 
 	t.Run("discards-rate", func(t *testing.T) {
@@ -1352,8 +1337,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 	}
 
 	b.Run("no-regex", func(b *testing.B) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv.name.ops.date", name:"name.ops.date?", sample_rate": 0.234}]`)
-		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv.name.ops.date", "name": "name.ops.date?", "sample_rate": 0.234}]`)
 		_, rules, err := samplingRulesFromEnv()
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
@@ -1366,8 +1350,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 	})
 
 	b.Run("glob-match-?", func(b *testing.B) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv?name?ops?date", name:"name*ops*date*", sample_rate": 0.234}]`)
-		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv?name?ops?date", "name": "name*ops*date*", "sample_rate": 0.234}]`)
 		_, rules, err := samplingRulesFromEnv()
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
@@ -1380,8 +1363,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 	})
 
 	b.Run("glob-match-*", func(b *testing.B) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv*name*ops*date", name:"name?ops?date?", sample_rate": 0.234}]`)
-		os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "srv*name*ops*date", "name": "name?ops?date?", "sample_rate": 0.234}]`)
 
 		_, rules, err := samplingRulesFromEnv()
 		assert.Nil(b, err)
