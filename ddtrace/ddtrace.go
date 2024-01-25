@@ -26,6 +26,9 @@ type SpanContext interface {
 	// TraceID128 returns the raw bytes of the 128-bit trace ID that this context is carrying.
 	TraceIDBytes() [16]byte
 
+	// TraceIDLower returns the lower part of the trace ID that this context is carrying.
+	TraceIDLower() uint64
+
 	// ForeachBaggageItem provides an iterator over the key/value pairs set as
 	// baggage within this context. Iteration stops when the handler returns
 	// false.

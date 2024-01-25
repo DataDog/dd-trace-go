@@ -188,6 +188,7 @@ func (c *SpanContext) TraceIDBytes() [16]byte {
 	return c.traceID
 }
 
+// TraceIDLower implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDLower() uint64 {
 	if c == nil {
 		return 0
