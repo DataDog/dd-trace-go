@@ -6,17 +6,16 @@
 package appsec_test
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"os"
 	"strconv"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestEnabled(t *testing.T) {

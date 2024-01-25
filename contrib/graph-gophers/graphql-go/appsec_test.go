@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"os"
 	"path"
 	"testing"
@@ -240,12 +241,10 @@ func enableAppSec(t *testing.T) func() {
 	rulesFile := path.Join(tmpDir, "rules.json")
 	err = os.WriteFile(rulesFile, []byte(rules), 0644)
 	require.NoError(t, err)
-	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	restore := func() {
 		appsec.Stop()
-		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
 		_ = os.RemoveAll(tmpDir)
 	}

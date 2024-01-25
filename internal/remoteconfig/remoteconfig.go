@@ -165,6 +165,11 @@ func Start(config ClientConfig) error {
 	return err
 }
 
+// IsUpAndRunning returns whether RC client has started and is running.
+func IsUpAndRunning() bool {
+	return client != nil
+}
+
 // Stop stops the client's update poll loop.
 // Noop if the client has already been stopped.
 // The remote config client is supposed to have the same lifecycle as the tracer.

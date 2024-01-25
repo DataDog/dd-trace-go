@@ -21,7 +21,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -169,9 +168,15 @@ func Start(opts ...StartOption) {
 
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
-	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
+	// client is appropriately configured. Same for remote config with startRemoteConfig().
+	appsec.Start()
 	_ = t.hostname() // Prime the hostname cache
+}
+
+// IsUpAndRunning returns true if the tracer is started and is not a noop tracer, false otherwise
+func IsUpAndRunning() bool {
+	_, ok := internal.GetGlobalTracer().(*internal.NoopTracer)
+	return !ok
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.

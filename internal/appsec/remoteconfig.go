@@ -288,35 +288,22 @@ func mergeRulesDataEntries(entries1, entries2 []rc.ASMDataRuleDataEntry) []rc.AS
 	return entries
 }
 
-func (a *appsec) startRC() error {
-	if a.cfg.RC != nil {
-		return remoteconfig.Start(*a.cfg.RC)
-	}
-	return nil
-}
-
-func (a *appsec) stopRC() {
-	if a.cfg.RC != nil {
-		remoteconfig.Stop()
-	}
-}
-
 func (a *appsec) registerRCProduct(p string) error {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterProduct(p)
 }
 
 func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	return remoteconfig.RegisterCapability(c)
 }
 
 func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return nil
 	}
@@ -324,7 +311,7 @@ func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
 }
 
 func (a *appsec) enableRemoteActivation() error {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		return fmt.Errorf("no valid remote configuration client")
 	}
 	err := a.registerRCProduct(rc.ProductASMFeatures)
@@ -350,7 +337,7 @@ var blockingCapabilities = [...]remoteconfig.Capability{
 }
 
 func (a *appsec) enableRCBlocking() {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		log.Debug("appsec: Remote config: no valid remote configuration client")
 		return
 	}
@@ -376,7 +363,7 @@ func (a *appsec) enableRCBlocking() {
 }
 
 func (a *appsec) disableRCBlocking() {
-	if a.cfg.RC == nil {
+	if !a.cfg.RCEnabled {
 		return
 	}
 	for _, c := range blockingCapabilities {

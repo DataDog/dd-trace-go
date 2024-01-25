@@ -7,6 +7,7 @@ package chi
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -407,7 +408,7 @@ func TestIgnoreRequest(t *testing.T) {
 }
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 
 	if !appsec.Enabled() {

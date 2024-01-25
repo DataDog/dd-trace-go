@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"net"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -133,7 +134,7 @@ func TestAppSec(t *testing.T) {
 // Test that http blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -226,7 +227,7 @@ func TestBlocking(t *testing.T) {
 // Test that user blocking works by using custom rules/rules data
 func TestUserBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")

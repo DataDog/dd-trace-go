@@ -13,6 +13,7 @@ package appsec
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -152,4 +153,33 @@ func getRootSpan(ctx context.Context) tracer.Span {
 	}
 	log.Error("appsec: could not access the root span")
 	return nil
+}
+
+var tracerNotStarted sync.Once
+
+// Start is the entrypoint to start Appsec in your application.
+// It starts the Appsec security protections according to the configured the security rules in DataDog UI
+// and the given options. The main way to start appsec is to set `DD_APPSEC_ENABLED=true` in your environment.
+// You can also use the `Start()` function to start appsec in your application to have a have a finer control on when to start it.
+// and when to stop it. All options that can be passed to `Start()` are documented in the `options` package and have a
+// environment variable equivalent.
+// Note: APM Tracer has to be started before calling this function.
+func Start(opts ...options.StartOption) {
+	if !tracer.IsUpAndRunning() {
+		tracerNotStarted.Do(func() { log.Error("appsec: tracer not started. appsec won't start. Please use tracer.Start() first") })
+		return
+	}
+
+	optsCopy := make([]options.StartOption, len(opts)+1)
+
+	// We put the code activation option first so that it can be overridden by the user
+	optsCopy[0] = options.WithCodeActivation(true)
+	optsCopy = append(optsCopy, opts...)
+
+	appsec.Start(optsCopy...)
+}
+
+// Stop stop Appsec in your application.
+func Stop() {
+	appsec.Stop()
 }

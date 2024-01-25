@@ -6,6 +6,8 @@
 package appsec_test
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,18 +16,16 @@ import (
 	"testing"
 
 	waf "github.com/DataDog/go-libddwaf/v2"
+	"github.com/stretchr/testify/require"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 
 	if !appsec.Enabled() {
@@ -82,7 +82,7 @@ func TestCustomRules(t *testing.T) {
 
 func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 
 	if !appsec.Enabled() {
@@ -148,7 +148,7 @@ func TestUserRules(t *testing.T) {
 // the WAF is properly detecting an LFI attempt and that the corresponding security event is being sent to the agent.
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 
 	if !appsec.Enabled() {
@@ -299,7 +299,7 @@ func TestWAF(t *testing.T) {
 // Test that request blocking works by using custom rules/rules data
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
@@ -450,7 +450,7 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
 		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
-		appsec.Start()
+		appsec.Start(options.WithCodeActivation(true), options.WithAPISecSampleRate(1.0), options.WithAPISecEnabled())
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
 		mt := mocktracer.Start()
@@ -471,7 +471,7 @@ func TestAPISecurity(t *testing.T) {
 
 	t.Run("disabled", func(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
-		appsec.Start()
+		appsec.Start(options.WithCodeActivation(true))
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
 		mt := mocktracer.Start()

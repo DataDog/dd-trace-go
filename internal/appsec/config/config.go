@@ -7,19 +7,17 @@ package config
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"os"
 	"strconv"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 )
 
 // EnvEnabled is the env var used to enable/disable appsec
 const EnvEnabled = "DD_APPSEC_ENABLED"
-
-// StartOption is used to customize the AppSec configuration when invoked with appsec.Start()
-type StartOption func(c *Config)
 
 // Config is the AppSec configuration.
 type Config struct {
@@ -34,29 +32,12 @@ type Config struct {
 	Obfuscator internal.ObfuscatorConfig
 	// APISec configuration
 	APISec internal.APISecConfig
-	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC *remoteconfig.ClientConfig
-}
-
-// WithRCConfig sets the AppSec remote config client configuration to the specified cfg
-func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
-	return func(c *Config) {
-		c.RC = &cfg
-	}
-}
-
-// IsEnabled returns true when appsec is enabled when the environment variable
-// DD_APPSEC_ENABLED is set to true.
-// It also returns whether the env var is actually set in the env or not.
-func IsEnabled() (enabled bool, set bool, err error) {
-	enabledStr, set := os.LookupEnv(EnvEnabled)
-	if enabledStr == "" {
-		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(enabledStr); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", EnvEnabled, enabledStr)
-	}
-
-	return enabled, set, nil
+	// RCEnabled is true when remote configuration is enabled
+	RCEnabled bool
+	// CodeActivation options.WithCodeActivation(true) or options.WithCodeActivation(false), nil when not set
+	CodeActivation *bool
+	// EnvVarActivation `DD_APPSEC_ENABLED` state, false, not set, or true
+	EnvVarActivation *bool
 }
 
 // NewConfig returns a fresh appsec configuration read from the env
@@ -71,11 +52,64 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{
-		RulesManager:   r,
-		WAFTimeout:     internal.WAFTimeoutFromEnv(),
-		TraceRateLimit: int64(internal.RateLimitFromEnv()),
-		Obfuscator:     internal.NewObfuscatorConfig(),
-		APISec:         internal.NewAPISecConfig(),
-	}, nil
+	cfg := &Config{
+		RulesManager:     r,
+		WAFTimeout:       internal.WAFTimeoutFromEnv(),
+		TraceRateLimit:   int64(internal.RateLimitFromEnv()),
+		Obfuscator:       internal.NewObfuscatorConfig(),
+		APISec:           internal.NewAPISecConfig(),
+		RCEnabled:        remoteconfig.IsUpAndRunning(),
+		CodeActivation:   nil,
+		EnvVarActivation: IsEnabledViaEnvVar(),
+	}
+
+	cfg.logInconsistencies()
+	return cfg, nil
+}
+
+// logInconsistencies logs inconsistencies in the config
+func (e *Config) logInconsistencies() {
+	if e.EnvVarActivation != nil && e.CodeActivation != nil && *e.EnvVarActivation != *e.CodeActivation {
+		log.Warn("appsec: inconsistent configuration: DD_APPSEC_ENABLED env var is set to %v but options.WithCodeActivation in appsec.Start() is set to %v; Appsec will be disabled", *e.EnvVarActivation, *e.CodeActivation)
+	}
+
+	if e.APISec.Enabled && e.APISec.SampleRate == 0 {
+		log.Warn("appsec: inconsistent configuration: APISec is enabled but the sample rate is set to 0")
+	}
+}
+
+// IsAppsecExplicitelyEnabled returns true when appsec is enabled intentionally by the user in the starting environment or code.
+// using either `DD_APPSEC_ENABLED=true` or `appsec.Start(options.WithCodeActivation(true))`
+func (e *Config) IsAppsecExplicitelyEnabled() bool {
+	return e.EnvVarActivation != nil && *e.EnvVarActivation || e.CodeActivation != nil && *e.CodeActivation
+}
+
+// IsAppsecExplicitelyDisabled returns true when appsec is disabled intentionally by the user in the starting environment or code.
+// using either `DD_APPSEC_ENABLED=false` or `appsec.Start(options.WithCodeActivation(false))`
+func (e *Config) IsAppsecExplicitelyDisabled() bool {
+	return e.EnvVarActivation != nil && !*e.EnvVarActivation || e.CodeActivation != nil && !*e.CodeActivation
+}
+
+// CanAppsecBeEnabledLater returns true when appsec can be enabled later in the process.
+// This is the case when the env var is not set and the code activation is not set and remote configuration is enabled.
+func (e *Config) CanAppsecBeEnabledLater() bool {
+	return e.EnvVarActivation == nil && e.CodeActivation == nil && e.RCEnabled
+}
+
+// IsEnabledViaEnvVar returns true when appsec is enabled when the environment variable
+// DD_APPSEC_ENABLED is set to true.
+// It also returns whether the env var is actually set in the env or not.
+func IsEnabledViaEnvVar() *bool {
+	enabledStr, set := os.LookupEnv(EnvEnabled)
+	if enabledStr == "" || !set {
+		return nil
+	}
+
+	enabled, err := strconv.ParseBool(enabledStr)
+	if err != nil {
+		fmt.Errorf("could not parse %s value `%s` as a boolean value", EnvEnabled, enabledStr)
+		return nil
+	}
+
+	return &enabled
 }

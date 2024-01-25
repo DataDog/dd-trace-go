@@ -7,6 +7,7 @@ package appsec_test
 
 import (
 	"context"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
@@ -146,7 +147,7 @@ func TestSetUser(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	privateAppsec.Start()
+	privateAppsec.Start(options.WithCodeActivation(true))
 	defer privateAppsec.Stop()
 	if !privateAppsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")

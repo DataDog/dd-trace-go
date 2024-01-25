@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"sync"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
@@ -25,28 +26,43 @@ func Enabled() bool {
 	return activeAppSec != nil && activeAppSec.started
 }
 
+func newConfigWithOpts(opts ...options.StartOption) (*config.Config, error) {
+	cfg, err := config.NewConfig()
+	if err != nil {
+		return nil, err
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	return cfg, nil
+}
+
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
-func Start(opts ...config.StartOption) {
+func Start(opts ...options.StartOption) {
+	cfg, err := newConfigWithOpts(opts...)
+	if err != nil {
+		logUnexpectedStartError(err)
+		return
+	}
+
 	telemetry := newAppsecTelemetry()
 	defer telemetry.emit()
 
 	// AppSec can start either:
 	// 1. Manually thanks to DD_APPSEC_ENABLED
-	// 2. Remotely when DD_APPSEC_ENABLED is undefined
-	// Note: DD_APPSEC_ENABLED=false takes precedence over remote configuration
+	// 2. Manually thanks to options.WithCodeActivation(true)
+	// 2. Remotely when DD_APPSEC_ENABLED and options.WithCodeActivation are undefined
+	// Note: DD_APPSEC_ENABLED=false and options.WithCodeActivation(false) takes precedence over remote configuration
 	// and enforces to have AppSec disabled.
-	enabled, set, err := config.IsEnabled()
-	if err != nil {
-		logUnexpectedStartError(err)
-		return
-	}
-	if set {
-		telemetry.addEnvConfig("DD_APPSEC_ENABLED", enabled)
+
+	if cfg.EnvVarActivation != nil {
+		telemetry.addEnvConfig("DD_APPSEC_ENABLED", *cfg.EnvVarActivation)
 	}
 
-	// Check if AppSec is explicitly disabled
-	if set && !enabled {
+	// Check if AppSec is explicitly disabled in case the env var is set to false of WithCodeActivation(false) is used
+	if cfg.IsAppsecExplicitelyDisabled() {
 		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
 		return
 	}
@@ -54,49 +70,34 @@ func Start(opts ...config.StartOption) {
 	// Check whether libddwaf - required for Threats Detection - is ok or not
 	if ok, err := waf.Health(); !ok {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
-		if set {
+		if cfg.IsAppsecExplicitelyEnabled() {
 			// DD_APPSEC_ENABLED is explicitly set so we log an error
-			log.Error("appsec: threats detection cannot be enabled for the following reasons: %vappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			log.Error("appsec: threats detection cannot be enabledCfg for the following reasons: %vappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+			log.Debug("appsec: remote activation of threats detection cannot be enabledCfg for the following reasons: %v", err)
 		}
 		return
 	}
 
 	// From this point we know that AppSec is either enabled or can be enabled through remote config
-	cfg, err := config.NewConfig()
-	if err != nil {
-		logUnexpectedStartError(err)
-		return
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
 	appsec := newAppSec(cfg)
 
-	// Start the remote configuration client
-	log.Debug("appsec: starting the remote configuration client")
-	if err := appsec.startRC(); err != nil {
-		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
-	}
-
-	if !set {
-		// AppSec is not enforced by the env var and can be enabled through remote config
+	if cfg.CanAppsecBeEnabledLater() {
+		// AppSec is not enforced by the env var and can be enabledCfg through remote config
 		log.Debug("appsec: %s is not set, appsec won't start until activated through remote configuration", config.EnvEnabled)
 		if err := appsec.enableRemoteActivation(); err != nil {
-			// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
+			// ASM is not enabledCfg and can't be enabledCfg through remote configuration. Nothing more can be done.
 			logUnexpectedStartError(err)
-			appsec.stopRC()
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
 	} else if err := appsec.start(telemetry); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
-		appsec.stopRC()
 		return
 	}
+
 	setActiveAppSec(appsec)
 }
 
@@ -119,7 +120,6 @@ func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeAppSec != nil {
-		activeAppSec.stopRC()
 		activeAppSec.stop()
 	}
 	activeAppSec = a

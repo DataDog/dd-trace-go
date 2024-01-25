@@ -7,6 +7,7 @@ package gin
 
 import (
 	"fmt"
+	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +24,7 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("appsec disabled")
@@ -149,7 +150,7 @@ func TestAppSec(t *testing.T) {
 }
 
 func TestControlFlow(t *testing.T) {
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
@@ -373,7 +374,7 @@ func TestControlFlow(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
-	appsec.Start()
+	appsec.Start(options.WithCodeActivation(true))
 	defer appsec.Stop()
 	if !appsec.Enabled() {
 		t.Skip("AppSec needs to be enabled for this test")
