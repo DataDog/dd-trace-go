@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/contrib/k8s.io/client-go
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
 	github.com/stretchr/testify v1.8.4
 	k8s.io/apimachinery v0.23.17
 	k8s.io/client-go v0.23.17

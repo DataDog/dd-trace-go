@@ -6,8 +6,8 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8 h1:l/IyatFhUAxhFTV+/jCr/Qptgu4SIdI8t65WuMA7+j4=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8/go.mod h1:xBOE4HUzKYgS7n3GhUHZfETSsUB1slLDDBAyM/nrmA0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1 h1:tJNi6VbvrMENBYBDPKG3gc1F/85OQnSAsJ3LtcY4xBY=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1/go.mod h1:xBOE4HUzKYgS7n3GhUHZfETSsUB1slLDDBAyM/nrmA0=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63 h1:MOOzkoYNzflkuKOE+GGFKfd6IbrRQ1JFBiNJq83P1IY=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63/go.mod h1:yHv1unjMvzesvzHHBKxDl1SoSxMwH/zT2ISRVv7qKpc=
 github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20231220194510-f0d293776f63 h1:yDNaJPUxYyeYwjgkjbh3gAdq50DIaerl8v4F7MY3VZo=
