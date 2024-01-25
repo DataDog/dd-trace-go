@@ -7,7 +7,6 @@ package appsec
 
 import (
 	"encoding/json"
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/options"
 	"os"
 	"reflect"
 	"sort"
@@ -25,11 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func startRemoteConfig(t *testing.T) {
-	remoteconfig.Reset()
-	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
-}
-
 func TestASMFeaturesCallback(t *testing.T) {
 	if supported, _ := waf.Health(); !supported {
 		t.Skip("WAF cannot be used")
@@ -39,6 +33,8 @@ func TestASMFeaturesCallback(t *testing.T) {
 	cfg, err := config.NewConfig()
 	require.NoError(t, err)
 	a := newAppSec(cfg)
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	defer remoteconfig.Stop()
 
 	t.Setenv(config.EnvEnabled, "")
 	os.Unsetenv(config.EnvEnabled)
@@ -331,11 +327,11 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		t.Skip("WAF cannot be used")
 	}
 
-	t.Run("DD_APPSEC_ENABLED && CodeActivation unset", func(t *testing.T) {
+	t.Run("DD_APPSEC_ENABLED unset", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "")
 		os.Unsetenv(config.EnvEnabled)
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
+		require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+		defer remoteconfig.Stop()
 		Start()
 		defer Stop()
 
@@ -351,8 +347,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("DD_APPSEC_ENABLED=true", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
+		remoteconfig.Reset()
+		require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+		defer remoteconfig.Stop()
 		Start()
 		defer Stop()
 
@@ -367,37 +364,9 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "false")
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
+		require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+		defer remoteconfig.Stop()
 		Start()
-		defer Stop()
-		require.Nil(t, activeAppSec)
-		require.False(t, Enabled())
-	})
-
-	t.Run("WithCodeActivation(true)", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "")
-		os.Unsetenv(config.EnvEnabled)
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
-		Start(options.WithCodeActivation(true))
-		defer Stop()
-
-		require.True(t, Enabled())
-		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
-		require.NoError(t, err)
-		require.False(t, found)
-		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
-		require.NoError(t, err)
-		require.False(t, found)
-	})
-
-	t.Run("WithCodeActivation(false)", func(t *testing.T) {
-		t.Setenv(config.EnvEnabled, "")
-		os.Unsetenv(config.EnvEnabled)
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
-		Start(options.WithCodeActivation(false))
 		defer Stop()
 		require.Nil(t, activeAppSec)
 		require.False(t, Enabled())
@@ -432,8 +401,8 @@ func TestCapabilities(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			startRemoteConfig(t)
-			defer remoteconfig.Reset()
+			require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+			defer remoteconfig.Stop()
 			Start()
 			defer Stop()
 			if !Enabled() && activeAppSec == nil {
@@ -573,9 +542,9 @@ func TestOnRCUpdate(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			startRemoteConfig(t)
-			defer remoteconfig.Reset()
-			Start(options.WithCodeActivation(true))
+			require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+			defer remoteconfig.Stop()
+			Start()
 			defer Stop()
 			if !Enabled() {
 				t.Skip()
@@ -597,8 +566,8 @@ func TestOnRCUpdate(t *testing.T) {
 
 		t.Setenv(config.EnvEnabled, "")
 		os.Unsetenv(config.EnvEnabled)
-		startRemoteConfig(t)
-		defer remoteconfig.Reset()
+		require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+		defer remoteconfig.Stop()
 		Start()
 		defer Stop()
 		require.False(t, Enabled())
@@ -694,9 +663,9 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			startRemoteConfig(t)
-			defer remoteconfig.Reset()
-			Start(options.WithCodeActivation(true))
+			require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+			defer remoteconfig.Stop()
+			Start()
 			defer Stop()
 
 			if !Enabled() {
