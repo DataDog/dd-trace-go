@@ -97,3 +97,8 @@ func (c *otelCtxToDDCtx) TraceID() string {
 func (c *otelCtxToDDCtx) TraceIDBytes() [16]byte {
 	return c.oc.TraceID()
 }
+
+func (c *otelCtxToDDCtx) TraceIDLower() uint64 {
+	tid := c.oc.TraceID()
+	return binary.BigEndian.Uint64(tid[8:])
+}
