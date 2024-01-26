@@ -8,7 +8,12 @@ require (
 	golang.org/x/sync v0.5.0
 )
 
-require github.com/DataDog/go-sqllexer v0.0.10 // indirect
+require (
+	github.com/DataDog/go-sqllexer v0.0.10 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	google.golang.org/grpc v1.60.1 // indirect
+)
 
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
@@ -25,7 +30,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.5.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
