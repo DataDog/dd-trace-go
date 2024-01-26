@@ -111,6 +111,14 @@ func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
 	return t.dsmProcessor
 }
 
+func UnwrapSlice(ss []*Span) []*tracer.Span {
+	ret := make([]*tracer.Span, len(ss))
+	for i, sp := range ss {
+		ret[i] = sp.Unwrap()
+	}
+	return ret
+}
+
 func (t *mocktracer) OpenSpans() []*Span {
 	t.RLock()
 	defer t.RUnlock()
