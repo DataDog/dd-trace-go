@@ -87,6 +87,11 @@ func newMockTracer() *mocktracer {
 	return &t
 }
 
+// This is called by the spans when they finish
+func (t *mocktracer) FinishSpan(s *tracer.Span) {
+	t.addFinishedSpan(s)
+}
+
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
 	t.Reset()
