@@ -8,7 +8,6 @@ package tracer
 import (
 	"fmt"
 	"math"
-	"os"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -40,8 +39,7 @@ func TestStartupLog(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
 
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
 		tracer, _, _, stop, err := startTestTracer(t,
 			WithLogger(tp),
 			WithService("configured.service"),
@@ -73,10 +71,8 @@ func TestStartupLog(t *testing.T) {
 	t.Run("limit", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
-		os.Setenv("DD_TRACE_RATE_LIMIT", "1000.001")
-		defer os.Unsetenv("DD_TRACE_RATE_LIMIT")
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
+		t.Setenv("DD_TRACE_RATE_LIMIT", "1000.001")
 		tracer, _, _, stop, err := startTestTracer(t,
 			WithLogger(tp),
 			WithService("configured.service"),
@@ -106,9 +102,7 @@ func TestStartupLog(t *testing.T) {
 	t.Run("errors", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service","sample_rate": 0.234}, {"service": "other.service"}]`)
-		defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service","sample_rate": 0.234}, {"service": "other.service"}]`)
 		tracer, _, _, _, err := startTestTracer(t, WithLogger(tp))
 		assert.Nil(tracer)
 		assert.Error(err)
@@ -153,8 +147,7 @@ func TestLogSamplingRules(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 	tp.Ignore("appsec: ", telemetry.LogPrefix)
-	os.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-	defer os.Unsetenv("DD_TRACE_SAMPLING_RULES")
+	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
 	_, _, _, _, err := startTestTracer(t, WithLogger(tp))
 	assert.Error(err)
 	assert.Len(tp.Logs(), 1)

@@ -55,20 +55,22 @@ type statsGroup struct {
 }
 
 type bucket struct {
-	points               map[uint64]statsGroup
-	latestCommitOffsets  map[partitionConsumerKey]int64
-	latestProduceOffsets map[partitionKey]int64
-	start                uint64
-	duration             uint64
+	points                     map[uint64]statsGroup
+	latestCommitOffsets        map[partitionConsumerKey]int64
+	latestProduceOffsets       map[partitionKey]int64
+	latestHighWatermarkOffsets map[partitionKey]int64
+	start                      uint64
+	duration                   uint64
 }
 
 func newBucket(start, duration uint64) bucket {
 	return bucket{
-		points:               make(map[uint64]statsGroup),
-		latestCommitOffsets:  make(map[partitionConsumerKey]int64),
-		latestProduceOffsets: make(map[partitionKey]int64),
-		start:                start,
-		duration:             duration,
+		points:                     make(map[uint64]statsGroup),
+		latestCommitOffsets:        make(map[partitionConsumerKey]int64),
+		latestProduceOffsets:       make(map[partitionKey]int64),
+		latestHighWatermarkOffsets: make(map[partitionKey]int64),
+		start:                      start,
+		duration:                   duration,
 	}
 }
 
@@ -105,13 +107,16 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 		Start:    b.start,
 		Duration: b.duration,
 		Stats:    stats,
-		Backlogs: make([]Backlog, 0, len(b.latestCommitOffsets)+len(b.latestProduceOffsets)),
+		Backlogs: make([]Backlog, 0, len(b.latestCommitOffsets)+len(b.latestProduceOffsets)+len(b.latestHighWatermarkOffsets)),
 	}
 	for key, offset := range b.latestProduceOffsets {
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset})
 	}
 	for key, offset := range b.latestCommitOffsets {
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}, Value: offset})
+	}
+	for key, offset := range b.latestHighWatermarkOffsets {
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}, Value: offset})
 	}
 	return exported
 }
@@ -154,6 +159,7 @@ type offsetType int
 const (
 	produceOffset offsetType = iota
 	commitOffset
+	highWatermarkOffset
 )
 
 type kafkaOffset struct {
@@ -272,11 +278,37 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		}] = o.offset
 		return
 	}
+	if o.offsetType == highWatermarkOffset {
+		b.latestHighWatermarkOffsets[partitionKey{
+			partition: o.partition,
+			topic:     o.topic,
+		}] = o.offset
+		return
+	}
 	b.latestCommitOffsets[partitionConsumerKey{
 		partition: o.partition,
 		group:     o.group,
 		topic:     o.topic,
 	}] = o.offset
+}
+
+func (p *Processor) processInput(in *processorInput) {
+	atomic.AddInt64(&p.stats.payloadsIn, 1)
+	if in.typ == pointTypeStats {
+		p.add(in.point)
+	} else if in.typ == pointTypeKafkaOffset {
+		p.addKafkaOffset(in.kafkaOffset)
+	}
+}
+
+func (p *Processor) flushInput() {
+	for {
+		in := p.in.pop()
+		if in == nil {
+			return
+		}
+		p.processInput(in)
+	}
 }
 
 func (p *Processor) run(tick <-chan time.Time) {
@@ -285,6 +317,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 		case now := <-tick:
 			p.sendToAgent(p.flush(now))
 		case done := <-p.flushRequest:
+			p.flushInput()
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
 		case <-p.stop:
@@ -297,12 +330,7 @@ func (p *Processor) run(tick <-chan time.Time) {
 				time.Sleep(time.Millisecond * 10)
 				continue
 			}
-			atomic.AddInt64(&p.stats.payloadsIn, 1)
-			if s.typ == pointTypeStats {
-				p.add(s.point)
-			} else if s.typ == pointTypeKafkaOffset {
-				p.addKafkaOffset(s.kafkaOffset)
-			}
+			p.processInput(s)
 		}
 	}
 }
@@ -457,6 +485,21 @@ func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offse
 		topic:      topic,
 		partition:  partition,
 		offsetType: produceOffset,
+		timestamp:  p.time().UnixNano(),
+	}})
+	if dropped {
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
+}
+
+// TrackKafkaHighWatermarkOffset should be used in the consumer, to track the high watermark offsets of each partition.
+// The first argument is the Kafka cluster ID, and will be used later.
+func (p *Processor) TrackKafkaHighWatermarkOffset(_ string, topic string, partition int32, offset int64) {
+	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
+		offset:     offset,
+		topic:      topic,
+		partition:  partition,
+		offsetType: highWatermarkOffset,
 		timestamp:  p.time().UnixNano(),
 	}})
 	if dropped {

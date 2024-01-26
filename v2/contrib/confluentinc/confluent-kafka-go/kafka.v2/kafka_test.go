@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/contrib/namingschematest"
+	internaldsm "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
@@ -77,6 +79,8 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	msg2, err := consumerAction(c)
 	require.NoError(t, err)
+	_, err = c.CommitMessage(msg2)
+	require.NoError(t, err)
 	assert.Equal(t, msg1.String(), msg2.String())
 	err = c.Close()
 	require.NoError(t, err)
@@ -85,6 +89,21 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	require.Len(t, spans, 2)
 	// they should be linked via headers
 	assert.Equal(t, spans[0].TraceID(), spans[1].TraceID())
+
+	if c.cfg.dataStreamsEnabled {
+		backlogs := mt.SentDSMBacklogs()
+		toMap := func(b []internaldsm.Backlog) map[string]struct{} {
+			m := make(map[string]struct{})
+			for _, b := range backlogs {
+				m[strings.Join(b.Tags, "")] = struct{}{}
+			}
+			return m
+		}
+		backlogsMap := toMap(backlogs)
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+	}
 	return spans, msg2
 }
 

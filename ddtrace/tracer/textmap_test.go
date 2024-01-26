@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -186,8 +185,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
 			t.Setenv(headerPropagationStyle, tc.propagationStyle)
 			if tc.onlyExtractFirst {
-				os.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
-				defer os.Unsetenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST")
+				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 			}
 			tracer, err := newTracer()
 			assert := assert.New(t)
@@ -506,8 +504,7 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
-		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{

@@ -96,12 +96,10 @@ func TestResolveAgentAddr(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			if tt.envHost != "" {
-				os.Setenv("DD_AGENT_HOST", tt.envHost)
-				defer os.Unsetenv("DD_AGENT_HOST")
+				t.Setenv("DD_AGENT_HOST", tt.envHost)
 			}
 			if tt.envPort != "" {
-				os.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
-				defer os.Unsetenv("DD_TRACE_AGENT_PORT")
+				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
 			c.agentURL = resolveAgentAddr()
 			if tt.inOpt != nil {
