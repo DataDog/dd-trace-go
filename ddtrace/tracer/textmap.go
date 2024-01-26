@@ -349,8 +349,6 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	ctx.mu.Lock()
-	defer ctx.mu.Unlock()
 	// propagate the TraceID and the current active SpanID
 	if ctx.traceID.HasUpper() {
 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
@@ -365,10 +363,11 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
-	// propagate OpenTracing baggage
-	for k, v := range ctx.baggage {
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
+		return true
+	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
