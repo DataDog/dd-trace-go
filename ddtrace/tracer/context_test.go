@@ -146,7 +146,7 @@ func Test128(t *testing.T) {
 		// Ensure that the lower order bits match the span's 64-bit trace id
 		b, err := hex.DecodeString(id128bit)
 		assert.NoError(t, err)
-		assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+		assert.Equal(t, span128.Context().TraceIDLower(), binary.BigEndian.Uint64(b[8:]))
 	})
 }
 
