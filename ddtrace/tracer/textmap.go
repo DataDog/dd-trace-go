@@ -349,6 +349,8 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	// propagate the TraceID and the current active SpanID
 	if ctx.traceID.HasUpper() {
 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
