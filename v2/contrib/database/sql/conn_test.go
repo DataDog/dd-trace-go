@@ -277,7 +277,7 @@ func TestWithErrorCheck(t *testing.T) {
 
 	t.Run("defaults", testOpts(true))
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
-		return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
+		return !strings.Contains(err.Error(), `Unknown column 'a' in 'field list'`)
 	})))
 
 }
