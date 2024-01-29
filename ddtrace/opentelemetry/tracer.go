@@ -62,17 +62,8 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			o(&cfg)
 		}
 	}
-	// Since there is no way to see if and how the span operation name was set,
-	// we have to record the attributes  locally.
-	// The span operation name will be calculated when it's ended.
-	s := tracer.StartSpan(spanName, ddopts...)
-	os := oteltrace.Span(&span{
-		DD:         s,
-		oteltracer: t,
-		spanKind:   ssConfig.SpanKind(),
-		attributes: cfg.Tags,
-	})
 	// Add span links to underlying Datadog span
+	ddLinks := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
 	for _, link := range ssConfig.Links() {
 		traceIDbytes := link.SpanContext.TraceID()
 		traceIDUpper := binary.BigEndian.Uint64(traceIDbytes[:8])
@@ -92,8 +83,19 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			attributes[string(attr.Key)] = attr.Value.Emit()
 		}
 
-		s.AddLink(ddtrace.SpanLink{traceIDLower, traceIDUpper, spanID, attributes, tracestate, traceflags})
+		ddLinks = append(ddLinks, ddtrace.SpanLink{traceIDLower, traceIDUpper, spanID, attributes, tracestate, traceflags})
 	}
+	ddopts = append(ddopts, tracer.WithSpanLinks(ddLinks))
+	// Since there is no way to see if and how the span operation name was set,
+	// we have to record the attributes  locally.
+	// The span operation name will be calculated when it's ended.
+	s := tracer.StartSpan(spanName, ddopts...)
+	os := oteltrace.Span(&span{
+		DD:         s,
+		oteltracer: t,
+		spanKind:   ssConfig.SpanKind(),
+		attributes: cfg.Tags,
+	})
 	// Erase the start span options from the context to prevent them from being propagated to children
 	ctx = context.WithValue(ctx, startOptsKey, nil)
 	// Wrap the span in OpenTelemetry and Datadog contexts to propagate span context values
