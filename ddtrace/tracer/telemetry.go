@@ -100,5 +100,5 @@ func startTelemetry(c *config) {
 			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
 		}
 	}
-	telemetry.GlobalClient.ProductStart(telemetry.NamespaceTracers, telemetryConfigs)
+	telemetry.GlobalClient.ProductChange(telemetry.NamespaceTracers, true, telemetryConfigs)
 }

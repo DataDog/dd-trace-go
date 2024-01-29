@@ -1,18 +1,14 @@
-name: Label APM Ecosystems issues
+name: Label APM Ecosystems Pull Requests
 on:
-  issues:
-    types:
-      - reopened
-      - opened
-      - edited
   pull_request:
+    paths:
+      - "contrib/**"
     types:
       - opened
       - reopened
       - edited
 jobs:
   label_issues:
-    if: contains(github.event.pull_request.title, 'contrib')
     runs-on: ubuntu-latest
     steps:
       # https://github.com/marketplace/actions/actions-ecosystem-add-labels

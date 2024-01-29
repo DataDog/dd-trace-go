@@ -27,6 +27,7 @@ type config struct {
 	isStatusError     func(statusCode int) bool
 	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        *internal.LockMap
+	errCheck          func(error) bool
 	tags              map[string]interface{}
 }
 
@@ -37,7 +38,7 @@ type Option func(*config)
 type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
 	cfg.analyticsRate = math.NaN()
 	cfg.isStatusError = isServerError
 	cfg.headerTags = globalconfig.HeaderTagMap()
@@ -126,6 +127,14 @@ func WithHeaderTags(headers []string) Option {
 	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *config) {
 		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+	}
+}
+
+// WithErrorCheck sets the func which determines if err would be ignored (if it returns true, the error is not tagged).
+// This function also checks the errors created from the WithStatusCheck option.
+func WithErrorCheck(errCheck func(error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = errCheck
 	}
 }
 

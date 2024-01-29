@@ -31,8 +31,8 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.NewDefaultServiceName(defaultServiceName).GetName()
-	cfg.spanName = namingschema.NewHTTPServerOp().GetName()
+	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.spanName = namingschema.OpName(namingschema.HTTPServer)
 	cfg.isStatusError = isServerError
 	cfg.resourceNamer = defaultResourceNamer
 

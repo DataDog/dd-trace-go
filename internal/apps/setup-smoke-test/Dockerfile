@@ -42,6 +42,8 @@ RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then
       apk update && apk add gcc libc-dev; \
     fi
 
+RUN go mod tidy
+
 ARG build_with_vendoring
 RUN set -ex; if [ "$build_with_vendoring" = "y" ]; then \
       go mod vendor; \
