@@ -1143,7 +1143,7 @@ func SpanType(name string) StartSpanOption {
 
 func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.Links = append(cfg.Links, links...)
+		cfg.SpanLinks = append(cfg.SpanLinks, links...)
 	}
 }
 

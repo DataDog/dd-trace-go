@@ -161,7 +161,7 @@ type StartSpanConfig struct {
 	Context context.Context
 
 	// SpanLink is a causal relationship between two spans. A span can have multiple links.
-	Links []SpanLink
+	SpanLinks []SpanLink
 }
 
 // Logger implementations are able to log given messages that the tracer or profiler might output.
