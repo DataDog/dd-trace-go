@@ -1,0 +1,28 @@
+version: '3'
+services:
+  scenario:
+    build:
+      # Make repository root available so replace directive in go.mod can point
+      # to the local version of dd-trace-go.
+      context: ../..
+      dockerfile: internal/apps/Dockerfile
+    network_mode: host
+    depends_on:
+      agent:
+        condition: service_healthy
+  agent:
+    image: datadog/agent:latest
+    network_mode: host
+    healthcheck:
+      interval: 1s # default is 30s which would slow "app", see https://github.com/DataDog/datadog-agent/blob/5533bb9c0c23dab6ff2166f75a7ff244ae65f237/Dockerfiles/agent/amd64/Dockerfile#LL200C14-L200C27
+      start_period: 60s # prevent health checks from failing during startup
+    environment:
+     - DD_API_KEY=${DD_API_KEY:?}
+     - DD_SITE=${DD_SITE:-datadoghq.com}
+     - DD_ENV=${USER:-dev}
+     - DD_HOSTNAME=${HOSTNAME:-localhost}
+     - DD_APM_NON_LOCAL_TRAFFIC=true
+    volumes:
+     - /var/run/docker.sock:/var/run/docker.sock
+     - /proc/:/host/proc/:ro
+     - /sys/fs/cgroup:/host/sys/fs/cgroup:ro

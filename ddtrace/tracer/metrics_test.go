@@ -6,7 +6,6 @@
 package tracer
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -34,7 +33,6 @@ type testStatsdClient struct {
 	timingCalls []testStatsdCall
 	counts      map[string]int64
 	tags        []string
-	waitCh      chan struct{}
 	n           int
 	closed      bool
 	flushed     int
@@ -116,12 +114,7 @@ func (tg *testStatsdClient) addMetric(ct callType, tags []string, c testStatsdCa
 		tg.timingCalls = append(tg.timingCalls, c)
 	}
 	tg.tags = tags
-	if tg.n > 0 {
-		tg.n--
-		if tg.n == 0 {
-			close(tg.waitCh)
-		}
-	}
+	tg.n++
 	return nil
 }
 
@@ -226,31 +219,23 @@ func (tg *testStatsdClient) Reset() {
 	tg.timingCalls = tg.timingCalls[:0]
 	tg.counts = make(map[string]int64)
 	tg.tags = tg.tags[:0]
-	if tg.waitCh != nil {
-		close(tg.waitCh)
-		tg.waitCh = nil
-	}
 	tg.n = 0
 }
 
 // Wait blocks until n metrics have been reported using the testStatsdClient or until duration d passes.
 // If d passes, or a wait is already active, an error is returned.
-func (tg *testStatsdClient) Wait(n int, d time.Duration) error {
-	tg.mu.Lock()
-	if tg.waitCh != nil {
-		tg.mu.Unlock()
-		return errors.New("already waiting")
-	}
-	tg.waitCh = make(chan struct{})
-	tg.n = n
-	tg.mu.Unlock()
+func (tg *testStatsdClient) Wait(asserts *assert.Assertions, n int, d time.Duration) error {
+	c := func() bool {
+		tg.mu.RLock()
+		defer tg.mu.RUnlock()
 
-	select {
-	case <-tg.waitCh:
-		return nil
-	case <-time.After(d):
+		return tg.n >= n
+	}
+	if !asserts.Eventually(c, d, 50*time.Millisecond) {
 		return fmt.Errorf("timed out after waiting %s for gauge events", d)
 	}
+
+	return nil
 }
 
 func TestReportRuntimeMetrics(t *testing.T) {
@@ -263,9 +248,9 @@ func TestReportRuntimeMetrics(t *testing.T) {
 		defer trc.wg.Done()
 		trc.reportRuntimeMetrics(time.Millisecond)
 	}()
-	err := tg.Wait(35, 1*time.Second)
-	close(trc.stop)
 	assert := assert.New(t)
+	err := tg.Wait(assert, 35, 1*time.Second)
+	close(trc.stop)
 	assert.NoError(err)
 	calls := tg.CallNames()
 	assert.True(len(calls) > 30)
@@ -286,7 +271,7 @@ func TestReportHealthMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(3, 1*time.Second)
+	tg.Wait(assert, 3, 10*time.Second)
 
 	counts := tg.Counts()
 	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
@@ -301,7 +286,7 @@ func TestTracerMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(5, 100*time.Millisecond)
+	tg.Wait(assert, 5, 100*time.Millisecond)
 
 	calls := tg.CallsByName()
 	counts := tg.Counts()

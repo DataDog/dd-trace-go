@@ -13,10 +13,12 @@ import (
 	"strings"
 	"testing"
 
+	waf "github.com/DataDog/go-libddwaf/v2"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 
 	"github.com/stretchr/testify/require"
 )
@@ -425,4 +427,66 @@ func TestBlocking(t *testing.T) {
 
 		})
 	}
+}
+
+// Test that API Security schemas get collected when API security is enabled
+func TestAPISecurity(t *testing.T) {
+	// Start and trace an HTTP server
+	t.Setenv(config.EnvEnabled, "true")
+	if wafOK, err := waf.Health(); !wafOK {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
+		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are getting extracted as schemas
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
+		appsec.Start()
+		require.True(t, appsec.Enabled())
+		defer appsec.Stop()
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+
+		// Make sure the addresses that are present are not getting extracted as schemas
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+	})
 }

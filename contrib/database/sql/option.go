@@ -6,12 +6,16 @@
 package sql
 
 import (
+	"database/sql/driver"
 	"fmt"
 	"math"
 	"os"
+	"reflect"
+	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
@@ -25,6 +29,82 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
+}
+
+func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
+	if c.dbmPropagationMode == tracer.DBMPropagationModeFull {
+		if dsn == "" {
+			dsn = c.dsn
+		}
+		if dbSystem, ok := dbmFullModeUnsupported(driverName, driver, dsn); ok {
+			log.Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s, downgrading to 'service' mode. "+
+				"See https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
+				dbSystem,
+			)
+			c.dbmPropagationMode = tracer.DBMPropagationModeService
+		}
+	}
+}
+
+func dbmFullModeUnsupported(driverName string, driver driver.Driver, dsn string) (string, bool) {
+	const (
+		sqlServer = "SQL Server"
+		oracle    = "Oracle"
+	)
+	// check if the driver package path is one of the unsupported ones.
+	if tp := reflect.TypeOf(driver); tp != nil && (tp.Kind() == reflect.Pointer || tp.Kind() == reflect.Struct) {
+		pkgPath := ""
+		switch tp.Kind() {
+		case reflect.Pointer:
+			pkgPath = tp.Elem().PkgPath()
+		case reflect.Struct:
+			pkgPath = tp.PkgPath()
+		}
+		driverPkgs := [][3]string{
+			{"github.com", "denisenkom/go-mssqldb", sqlServer},
+			{"github.com", "microsoft/go-mssqldb", sqlServer},
+			{"github.com", "sijms/go-ora", oracle},
+		}
+		for _, dp := range driverPkgs {
+			prefix, pkgName, dbSystem := dp[0], dp[1], dp[2]
+
+			// compare without the prefix to make it work for vendoring.
+			// also, compare only the prefix to make the comparison work when using major versions
+			// of the libraries or subpackages.
+			if strings.HasPrefix(strings.TrimPrefix(pkgPath, prefix+"/"), pkgName) {
+				return dbSystem, true
+			}
+		}
+	}
+
+	// check the DSN if provided.
+	if dsn != "" {
+		prefixes := [][2]string{
+			{"oracle://", oracle},
+			{"sqlserver://", sqlServer},
+		}
+		for _, pr := range prefixes {
+			prefix, dbSystem := pr[0], pr[1]
+			if strings.HasPrefix(dsn, prefix) {
+				return dbSystem, true
+			}
+		}
+	}
+
+	// lastly, check if the registered driver name is one of the unsupported ones.
+	driverNames := [][2]string{
+		{"sqlserver", sqlServer},
+		{"mssql", sqlServer},
+		{"azuresql", sqlServer},
+		{"oracle", oracle},
+	}
+	for _, dn := range driverNames {
+		name, dbSystem := dn[0], dn[1]
+		if name == driverName {
+			return dbSystem, true
+		}
+	}
+	return "", false
 }
 
 // Option represents an option that can be passed to Register, Open or OpenDB.
@@ -70,10 +150,7 @@ func getServiceName(driverName string, rc *registerConfig) string {
 		// the one calculated above.
 		defaultServiceName = rc.serviceName
 	}
-	return namingschema.NewDefaultServiceName(
-		defaultServiceName,
-		namingschema.WithOverrideV0(defaultServiceName),
-	).GetName()
+	return namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 }
 
 func getSpanName(driverName string) string {
@@ -81,10 +158,7 @@ func getSpanName(driverName string) string {
 	if normalizedDBSystem, ok := normalizeDBSystem(driverName); ok {
 		dbSystem = normalizedDBSystem
 	}
-	return namingschema.NewDBOutboundOp(
-		dbSystem,
-		namingschema.WithOverrideV0(fmt.Sprintf("%s.query", driverName)),
-	).GetName()
+	return namingschema.DBOpName(dbSystem, fmt.Sprintf("%s.query", driverName))
 }
 
 // WithServiceName sets the given service name when registering a driver,
