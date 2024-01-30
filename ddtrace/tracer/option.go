@@ -1141,6 +1141,7 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// WithSpanLinks sets span links on the started span
 func WithSpanLinks(links []ddtrace.SpanLink) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.SpanLinks = append(cfg.SpanLinks, links...)
