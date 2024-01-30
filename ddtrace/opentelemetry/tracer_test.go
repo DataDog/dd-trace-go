@@ -139,8 +139,6 @@ func TestForceFlush(t *testing.T) {
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
 			tp, payloads, cleanup := mockTracerProvider(t)
 			defer cleanup()
 
@@ -156,10 +154,10 @@ func TestForceFlush(t *testing.T) {
 			_, sp := tr.Start(context.Background(), "test_span")
 			sp.End()
 			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
-			payload, err := waitForPayload(ctx, payloads)
+			p, err := waitForPayload(payloads)
 			if tc.flushed {
 				assert.NoError(err)
-				assert.Contains(payload, "test_span")
+				assert.Equal("test_span", p[0][0]["resource"])
 				assert.Equal(OK, flushStatus)
 			} else {
 				assert.Equal(ERROR, flushStatus)
