@@ -48,11 +48,3 @@ func (m *MockSpan) Finish(_ ...ddtrace.FinishOption) {
 func (m *MockSpan) Context() ddtrace.SpanContext {
 	panic("unused")
 }
-
-func (m *MockSpan) AddLink(_ ddtrace.SpanLink) {
-	panic("unused")
-}
-
-func (m *MockSpan) LinkSpan(_ ddtrace.SpanContext, _ map[string]string) {
-	panic("unused")
-}

@@ -75,10 +75,6 @@ type Span interface {
 
 	// Context returns the SpanContext of this Span.
 	Context() SpanContext
-
-	// AddLink sets a casaul relatationship between one or more spans
-	LinkSpan(spanContext SpanContext, attributes map[string]string)
-	AddLink(link SpanLink)
 }
 
 // SpanContext represents a span state that can propagate to descendant spans

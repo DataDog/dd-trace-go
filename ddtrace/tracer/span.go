@@ -107,31 +107,6 @@ func (s *span) BaggageItem(key string) string {
 	return s.context.baggageItem(key)
 }
 
-// LinkSpan sets a casuality link to another span via a spanContext. It also
-// stores details about the link in an attributes map.
-func (s *span) LinkSpan(spanContext ddtrace.SpanContext, attributes map[string]string) {
-	traceIDLower := spanContext.TraceID()
-	var traceIDUpper uint64
-	if w3Cctx, ok := spanContext.(ddtrace.SpanContextW3C); ok {
-		traceIDHex := w3Cctx.TraceID128()[:16]
-		traceIDUpper, _ = strconv.ParseUint(traceIDHex, 16, 64)
-	}
-
-	spanID := spanContext.SpanID()
-	link := ddtrace.SpanLink{}
-	link.TraceID = traceIDLower
-	link.TraceIDHigh = traceIDUpper
-	link.SpanID = spanID
-	link.Attributes = attributes
-	// TODO: Add support for setting tracestate and traceflags
-	s.AddLink(link)
-}
-
-// AddLink sets a mapping between two spans via ddtrace.SpanLink struct
-func (s *span) AddLink(link ddtrace.SpanLink) {
-	s.SpanLinks = append(s.SpanLinks, link)
-}
-
 // SetTag adds a set of key/value metadata to the span.
 func (s *span) SetTag(key string, value interface{}) {
 	s.Lock()
