@@ -922,6 +922,28 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	assert.Equal("changed!", childContext.baggage["key"])
 }
 
+func TestTracerInjectConcurrency(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+	span, _ := StartSpanFromContext(context.Background(), "main")
+	defer span.Finish()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+
+			traceContext := map[string]string{}
+			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
+		}(i)
+	}
+
+	wg.Wait()
+}
+
 func TestTracerSpanTags(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
