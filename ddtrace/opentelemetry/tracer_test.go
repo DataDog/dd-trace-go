@@ -207,6 +207,25 @@ func TestSpanTelemetry(t *testing.T) {
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
 }
 
+func TestConcurrentSetAttributes(_ *testing.T) {
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	_, span := tr.Start(context.Background(), "test")
+	defer span.End()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetAttributes(attribute.Float64("workerID", float64(i)))
+		}(i)
+	}
+}
+
 func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	testData := struct {
 		env, srv, op string
