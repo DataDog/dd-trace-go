@@ -138,7 +138,7 @@ func TestSpanLink(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("DD_TRACE_DEBUG", "true")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -148,7 +148,7 @@ func TestSpanLink(t *testing.T) {
 	_, sp := tr.Start(context.Background(), "first_span")
 	sp.End()
 	tracer.Flush()
-	_, err := waitForPayload(ctx, payloads)
+	_, err := waitForPayload(payloads)
 	assert.NoError(err)
 
 	_, decoratedSpan := tr.Start(context.Background(), "span_with_link",
@@ -159,18 +159,16 @@ func TestSpanLink(t *testing.T) {
 
 	decoratedSpan.End()
 	tracer.Flush()
-	payload, err := waitForPayload(ctx, payloads)
+	payload, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
 	assert.NotNil(payload)
+	assert.Len(payload[0][0], 1)
 
-	var trace [][]map[string][]ddtrace.SpanLink
-	err = json.Unmarshal([]byte(payload), &trace)
-	assert.Len(trace, 1)
-	decodedSpanWLink := trace[0][0]
-
-	spanLinks := decodedSpanWLink["span_links"]
+	var spanLinks []ddtrace.SpanLink
+	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
+	json.Unmarshal(spanLinkBytes, &spanLinks)
 	assert.Len(spanLinks, 1)
 
 	spContext := sp.SpanContext()
