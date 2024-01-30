@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -109,6 +111,8 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanLink(t *testing.T) {
 	assert := assert.New(t)
+	t.Setenv("DD_TRACE_DEBUG", "true")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -116,10 +120,13 @@ func TestSpanLink(t *testing.T) {
 	tr := otel.Tracer("")
 	defer cleanup()
 
-	_, sp := tr.Start(context.Background(), "link")
+	_, sp := tr.Start(context.Background(), "first_span")
 	sp.End()
+	tracer.Flush()
+	_, err := waitForPayload(ctx, payloads)
+	assert.NoError(err)
 
-	_, decoratedSpan := tr.Start(context.Background(), "test",
+	_, decoratedSpan := tr.Start(context.Background(), "span_with_link",
 		oteltrace.WithLinks(oteltrace.Link{
 			SpanContext: sp.SpanContext(),
 			Attributes:  []attribute.KeyValue{attribute.String("yes", "no")},
@@ -133,15 +140,30 @@ func TestSpanLink(t *testing.T) {
 	}
 	assert.NotNil(payload)
 
+	var trace [][]map[string][]ddtrace.SpanLink
+	err = json.Unmarshal([]byte(payload), &trace)
+	assert.Len(trace, 1)
+	decodedSpanWLink := trace[0][0]
+
+	spanLinks := decodedSpanWLink["span_links"]
+	assert.Len(spanLinks, 1)
+
 	spContext := sp.SpanContext()
 	traceIDbytes := spContext.TraceID()
 	traceIDUpper := binary.BigEndian.Uint64(traceIDbytes[:8])
 	traceIDLower := binary.BigEndian.Uint64(traceIDbytes[8:])
+	assert.Equal(spanLinks[0].TraceID, traceIDLower)
+	assert.Equal(spanLinks[0].TraceIDHigh, traceIDUpper)
+
 	spanIDbytes := spContext.SpanID()
 	spanID := binary.BigEndian.Uint64(spanIDbytes[:])
+	assert.Equal(spanLinks[0].SpanID, spanID)
 
-	encodedLink := fmt.Sprintf("\"span_links\":[{\"trace_id\":%d,\"trace_id_high\":%d,\"span_id\":%d,\"attributes\":{\"yes\":\"no\"},\"tracestate\":\"dd=s:1;t.dm:-1;t.tid:%016x\",\"flags\":2147483649}]", traceIDLower, traceIDUpper, spanID, traceIDUpper)
-	assert.Contains(payload, encodedLink)
+	assert.Equal(spanLinks[0].Attributes, map[string]string{"yes": "no"})
+
+	tracestate := spContext.TraceState().String()
+	assert.Equal(spanLinks[0].Tracestate, tracestate)
+	assert.Equal(spanLinks[0].Flags, uint32(2147483649))
 }
 
 func TestSpanEnd(t *testing.T) {

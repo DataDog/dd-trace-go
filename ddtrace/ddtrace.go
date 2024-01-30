@@ -102,12 +102,12 @@ type SpanContext interface {
 //
 //go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
 type SpanLink struct {
-	TraceID     uint64            `msg:"trace_id"`                // Required. The low 64 bits of a referenced trace id
-	TraceIDHigh uint64            `msg:"trace_id_high,omitempty"` // Optional. The high 64 bits of a referenced trace id.
-	SpanID      uint64            `msg:"span_id"`                 // Required.
-	Attributes  map[string]string `msg:"attributes,omitempty"`    // Optional. Simple mapping of keys to string values.
-	Tracestate  string            `msg:"tracestate,omitempty"`    // Optional. W3C tracestate.
-	Flags       uint32            `msg:"flags,omitempty"`         // Optional. W3C trace flags. If set, the high bit (bit 31) must be set.
+	TraceID     uint64            `msg:"trace_id" json:"trace_id"`                     // Required. The low 64 bits of a referenced trace id
+	TraceIDHigh uint64            `msg:"trace_id_high,omitempty" json:"trace_id_high"` // Optional. The high 64 bits of a referenced trace id.
+	SpanID      uint64            `msg:"span_id" json:"span_id"`                       // Required.
+	Attributes  map[string]string `msg:"attributes,omitempty" json:"attributes"`       // Optional. Simple mapping of keys to string values.
+	Tracestate  string            `msg:"tracestate,omitempty" json:"tracestate"`       // Optional. W3C tracestate.
+	Flags       uint32            `msg:"flags,omitempty" json:"flags"`                 // Optional. W3C trace flags. If set, the high bit (bit 31) must be set.
 }
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
