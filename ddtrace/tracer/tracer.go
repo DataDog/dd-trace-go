@@ -186,9 +186,10 @@ func setTracingEnabled(enabled bool) bool {
 		// this action will have no effect.
 		return true
 	}
-	if _, ok := internal.GetGlobalTracer().(*tracer); ok {
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
 		//	no need to flush / stop writers here, it is done during Stop()
-		Stop()
+		t.SoftStop()
+		log.Flush()
 	}
 	return true
 }
@@ -652,6 +653,7 @@ func spanResourcePIISafe(s *span) bool {
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
+	t.SoftStop()
 	t.stopOnce.Do(func() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
@@ -666,6 +668,19 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+}
+
+// SoftStop stops the tracer, but keeps the remote config and appsec clients running.
+func (t *tracer) SoftStop() {
+	t.abandonedSpansDebugger.Stop()
+	t.stats.Stop()
+	t.traceWriter.stop()
+	t.statsd.Close()
+	if t.dataStreams != nil {
+		t.dataStreams.Stop()
+	}
+	//TODO: do we stop appsec
+	// appsec.Stop()
 }
 
 // Inject uses the configured or default TextMap Propagator.

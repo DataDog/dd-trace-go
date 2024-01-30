@@ -54,8 +54,7 @@ func startTelemetry(c *config) {
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
-		// TODO: trace_enabled OR tracing_enabled?
-		c.enabled.toTelemetry(),
+		{Name: "trace_enabled", Value: c.enabled.current},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
