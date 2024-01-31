@@ -8,9 +8,8 @@ package grpcutil // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golan
 import (
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"google.golang.org/grpc/metadata"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // MDCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
@@ -18,8 +17,8 @@ import (
 // distributed tracing.
 type MDCarrier metadata.MD
 
-var _ tracer.TextMapWriter = (*MDCarrier)(nil)
-var _ tracer.TextMapReader = (*MDCarrier)(nil)
+var _ ddtrace.TextMapWriter = (*MDCarrier)(nil)
+var _ ddtrace.TextMapReader = (*MDCarrier)(nil)
 
 // Get will return the first entry in the metadata at the given key.
 func (mdc MDCarrier) Get(key string) string {

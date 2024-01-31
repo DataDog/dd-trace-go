@@ -222,40 +222,40 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	assert := assert.New(t)
 
 	err := propagator.Inject(&spanContext{}, 2)
-	assert.Equal(ErrInvalidCarrier, err)
+	assert.Equal(ddtrace.ErrInvalidCarrier, err)
 	err = propagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
-	assert.Equal(ErrInvalidSpanContext, err)
+	assert.Equal(ddtrace.ErrInvalidSpanContext, err)
 	err = propagator.Inject(&spanContext{}, TextMapCarrier(map[string]string{}))
-	assert.Equal(ErrInvalidSpanContext, err) // no traceID and spanID
+	assert.Equal(ddtrace.ErrInvalidSpanContext, err) // no traceID and spanID
 	err = propagator.Inject(&spanContext{traceID: traceIDFrom64Bits(1)}, TextMapCarrier(map[string]string{}))
-	assert.Equal(ErrInvalidSpanContext, err) // no spanID
+	assert.Equal(ddtrace.ErrInvalidSpanContext, err) // no spanID
 
 	_, err = propagator.Extract(2)
-	assert.Equal(ErrInvalidCarrier, err)
+	assert.Equal(ddtrace.ErrInvalidCarrier, err)
 
 	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "1",
 		DefaultParentIDHeader: "A",
 	}))
-	assert.Equal(ErrSpanContextCorrupted, err)
+	assert.Equal(ddtrace.ErrSpanContextCorrupted, err)
 
 	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "A",
 		DefaultParentIDHeader: "2",
 	}))
-	assert.Equal(ErrSpanContextCorrupted, err)
+	assert.Equal(ddtrace.ErrSpanContextCorrupted, err)
 
 	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "0",
 		DefaultParentIDHeader: "0",
 	}))
-	assert.Equal(ErrSpanContextNotFound, err)
+	assert.Equal(ddtrace.ErrSpanContextNotFound, err)
 
 	_, err = propagator.Extract(TextMapCarrier(map[string]string{
 		DefaultTraceIDHeader:  "3",
 		DefaultParentIDHeader: "0",
 	}))
-	assert.Equal(ErrSpanContextNotFound, err)
+	assert.Equal(ddtrace.ErrSpanContextNotFound, err)
 }
 
 func TestTextMapPropagatorInjectHeader(t *testing.T) {
@@ -1913,7 +1913,7 @@ func TestNonePropagator(t *testing.T) {
 
 		_, err := tracer.Extract(headers)
 
-		assert.Equal(err, ErrSpanContextNotFound)
+		assert.Equal(err, ddtrace.ErrSpanContextNotFound)
 		assert.Len(headers, 0)
 	})
 
@@ -1937,7 +1937,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.Len(headers, 0)
 
 			_, err = tracer.Extract(headers)
-			assert.Equal(err, ErrSpanContextNotFound)
+			assert.Equal(err, ddtrace.ErrSpanContextNotFound)
 		})
 		t.Run("", func(t *testing.T) {
 			//"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "NoNe",
@@ -1961,7 +1961,7 @@ func TestNonePropagator(t *testing.T) {
 			assert.Len(headers, 0)
 
 			_, err = tracer.Extract(headers)
-			assert.Equal(err, ErrSpanContextNotFound)
+			assert.Equal(err, ddtrace.ErrSpanContextNotFound)
 		})
 	})
 }

@@ -6,9 +6,8 @@
 package fasthttptrace
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/valyala/fasthttp"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // HTTPHeadersCarrier implements tracer.TextMapWriter and tracer.TextMapReader on top
@@ -18,8 +17,8 @@ type HTTPHeadersCarrier struct {
 	ReqHeader *fasthttp.RequestHeader
 }
 
-var _ tracer.TextMapWriter = (*HTTPHeadersCarrier)(nil)
-var _ tracer.TextMapReader = (*HTTPHeadersCarrier)(nil)
+var _ ddtrace.TextMapWriter = (*HTTPHeadersCarrier)(nil)
+var _ ddtrace.TextMapReader = (*HTTPHeadersCarrier)(nil)
 
 // ForeachKey iterates over fasthttp request header keys and values
 func (f *HTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) error {

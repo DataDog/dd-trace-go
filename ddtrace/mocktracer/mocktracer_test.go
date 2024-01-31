@@ -136,13 +136,13 @@ func TestTracerInject(t *testing.T) {
 		assert := assert.New(t)
 
 		err := mt.Inject(&spanContext{}, 2)
-		assert.Equal(tracer.ErrInvalidCarrier, err) // 2 is not a carrier
+		assert.Equal(ddtrace.ErrInvalidCarrier, err) // 2 is not a carrier
 
 		err = mt.Inject(&spanContext{}, tracer.TextMapCarrier(map[string]string{}))
-		assert.Equal(tracer.ErrInvalidSpanContext, err) // no traceID and spanID
+		assert.Equal(ddtrace.ErrInvalidSpanContext, err) // no traceID and spanID
 
 		err = mt.Inject(&spanContext{traceID: 2}, tracer.TextMapCarrier(map[string]string{}))
-		assert.Equal(tracer.ErrInvalidSpanContext, err) // no spanID
+		assert.Equal(ddtrace.ErrInvalidSpanContext, err) // no spanID
 
 		err = mt.Inject(&spanContext{traceID: 2, spanID: 1}, tracer.TextMapCarrier(map[string]string{}))
 		assert.Nil(err) // ok
@@ -210,19 +210,19 @@ func TestTracerExtract(t *testing.T) {
 		assert := assert.New(t)
 
 		_, err := mt.Extract(2)
-		assert.Equal(tracer.ErrInvalidCarrier, err)
+		assert.Equal(ddtrace.ErrInvalidCarrier, err)
 
 		_, err = mt.Extract(carry(traceHeader, "a"))
-		assert.Equal(tracer.ErrSpanContextCorrupted, err)
+		assert.Equal(ddtrace.ErrSpanContextCorrupted, err)
 
 		_, err = mt.Extract(carry(spanHeader, "a", traceHeader, "2", baggagePrefix+"x", "y"))
-		assert.Equal(tracer.ErrSpanContextCorrupted, err)
+		assert.Equal(ddtrace.ErrSpanContextCorrupted, err)
 
 		_, err = mt.Extract(carry(spanHeader, "1"))
-		assert.Equal(tracer.ErrSpanContextNotFound, err)
+		assert.Equal(ddtrace.ErrSpanContextNotFound, err)
 
 		_, err = mt.Extract(carry())
-		assert.Equal(tracer.ErrSpanContextNotFound, err)
+		assert.Equal(ddtrace.ErrSpanContextNotFound, err)
 	})
 
 	t.Run("ok", func(t *testing.T) {

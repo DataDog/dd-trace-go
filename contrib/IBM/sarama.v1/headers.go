@@ -6,7 +6,7 @@
 package sarama
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"github.com/IBM/sarama"
 )
@@ -17,8 +17,8 @@ type ProducerMessageCarrier struct {
 }
 
 var _ interface {
-	tracer.TextMapReader
-	tracer.TextMapWriter
+	ddtrace.TextMapReader
+	ddtrace.TextMapWriter
 } = (*ProducerMessageCarrier)(nil)
 
 // ForeachKey iterates over every header.
@@ -58,8 +58,8 @@ type ConsumerMessageCarrier struct {
 }
 
 var _ interface {
-	tracer.TextMapReader
-	tracer.TextMapWriter
+	ddtrace.TextMapReader
+	ddtrace.TextMapWriter
 } = (*ConsumerMessageCarrier)(nil)
 
 // NewConsumerMessageCarrier creates a new ConsumerMessageCarrier.

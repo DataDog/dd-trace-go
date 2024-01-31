@@ -200,10 +200,10 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 			return nil, err
 		}
 	} else {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	return ctx, nil
 }
@@ -216,7 +216,7 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 	for _, unparsedKV := range kvs {
 		splitKV := strings.Split(unparsedKV, "=")
 		if len(splitKV) != 2 {
-			return nil, ErrSpanContextCorrupted
+			return nil, ddtrace.ErrSpanContextCorrupted
 		}
 		key := splitKV[0]
 		value := strings.Trim(splitKV[1], "'")
@@ -240,22 +240,22 @@ func spanContextFromTraceComment(c string) (*spanContext, error) {
 // this also supports decoding traceparents from open telemetry sql comments which are 128 bit
 func decodeTraceParent(traceParent string) (traceIDLower uint64, traceIDUpper uint64, spanID uint64, sampled int, err error) {
 	if len(traceParent) < 55 {
-		return 0, 0, 0, 0, ErrSpanContextCorrupted
+		return 0, 0, 0, 0, ddtrace.ErrSpanContextCorrupted
 	}
 	version := traceParent[0:2]
 	switch version {
 	case w3cContextVersion:
 		if traceIDUpper, err = strconv.ParseUint(traceParent[3:19], 16, 64); err != nil {
-			return 0, 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ddtrace.ErrSpanContextCorrupted
 		}
 		if traceIDLower, err = strconv.ParseUint(traceParent[19:35], 16, 64); err != nil {
-			return 0, 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ddtrace.ErrSpanContextCorrupted
 		}
 		if spanID, err = strconv.ParseUint(traceParent[36:52], 16, 64); err != nil {
-			return 0, 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ddtrace.ErrSpanContextCorrupted
 		}
 		if sampled, err = strconv.Atoi(traceParent[53:55]); err != nil {
-			return 0, 0, 0, 0, ErrSpanContextCorrupted
+			return 0, 0, 0, 0, ddtrace.ErrSpanContextCorrupted
 		}
 	default:
 	}

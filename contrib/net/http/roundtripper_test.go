@@ -558,7 +558,7 @@ func TestRoundTripperPropagation(t *testing.T) {
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-		assert.ErrorIs(t, err, tracer.ErrSpanContextNotFound, "should not find headers injected in output")
+		assert.ErrorIs(t, err, ddtrace.ErrSpanContextNotFound, "should not find headers injected in output")
 
 		assert.Empty(t, r.Header.Get(tracer.DefaultTraceIDHeader), "should not find trace_id in output header")
 		assert.Empty(t, r.Header.Get(tracer.DefaultParentIDHeader), "should not find parent_id in output header")

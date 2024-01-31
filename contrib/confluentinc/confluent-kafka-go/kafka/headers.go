@@ -6,9 +6,8 @@
 package kafka
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 // A MessageCarrier injects and extracts traces from a sarama.ProducerMessage.
@@ -17,8 +16,8 @@ type MessageCarrier struct {
 }
 
 var _ interface {
-	tracer.TextMapReader
-	tracer.TextMapWriter
+	ddtrace.TextMapReader
+	ddtrace.TextMapWriter
 } = (*MessageCarrier)(nil)
 
 // ForeachKey iterates over every header.

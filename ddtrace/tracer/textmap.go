@@ -20,14 +20,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
 
-// HTTPHeadersCarrier wraps an http.Header as a TextMapWriter and TextMapReader, allowing
+// HTTPHeadersCarrier wraps an http.Header as a ddtrace.TextMapWriter and ddtrace.TextMapReader, allowing
 // it to be used using the provided Propagator implementation.
 type HTTPHeadersCarrier http.Header
 
-var _ TextMapWriter = (*HTTPHeadersCarrier)(nil)
-var _ TextMapReader = (*HTTPHeadersCarrier)(nil)
+var _ ddtrace.TextMapWriter = (*HTTPHeadersCarrier)(nil)
+var _ ddtrace.TextMapReader = (*HTTPHeadersCarrier)(nil)
 
-// Set implements TextMapWriter.
+// Set implements ddtrace.TextMapWriter.
 func (c HTTPHeadersCarrier) Set(key, val string) {
 	http.Header(c).Set(key, val)
 }
@@ -44,14 +44,14 @@ func (c HTTPHeadersCarrier) ForeachKey(handler func(key, val string) error) erro
 	return nil
 }
 
-// TextMapCarrier allows the use of a regular map[string]string as both TextMapWriter
+// TextMapCarrier allows the use of a regular map[string]string as both ddtrace.TextMapWriter
 // and TextMapReader, making it compatible with the provided Propagator.
 type TextMapCarrier map[string]string
 
-var _ TextMapWriter = (*TextMapCarrier)(nil)
-var _ TextMapReader = (*TextMapCarrier)(nil)
+var _ ddtrace.TextMapWriter = (*TextMapCarrier)(nil)
+var _ ddtrace.TextMapReader = (*TextMapCarrier)(nil)
 
-// Set implements TextMapWriter.
+// Set implements ddtrace.TextMapWriter.
 func (c TextMapCarrier) Set(key, val string) {
 	c[key] = val
 }
@@ -140,7 +140,7 @@ type PropagatorConfig struct {
 //  2. DD_PROPAGATION_STYLE_INJECT (deprecated)
 //  3. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
 //  4. If none of the above, use default values
-func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
+func NewPropagator(cfg *PropagatorConfig, propagators ...ddtrace.Propagator) ddtrace.Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
 	}
@@ -184,8 +184,8 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors        []Propagator
-	extractors       []Propagator
+	injectors        []ddtrace.Propagator
+	extractors       []ddtrace.Propagator
 	injectorNames    string
 	extractorsNames  string
 	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
@@ -195,9 +195,9 @@ type chainedPropagator struct {
 // list of propagators. If the list doesn't contain any valid values, the
 // default propagator will be returned. Any invalid values in the list will log
 // a warning and be ignored.
-func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
+func getPropagators(cfg *PropagatorConfig, ps string) ([]ddtrace.Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPs := []ddtrace.Propagator{&propagatorW3c{}, dd}
 	defaultPsName := "tracecontext,datadog"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
@@ -214,7 +214,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	if ps == "none" {
 		return nil, ""
 	}
-	var list []Propagator
+	var list []ddtrace.Propagator
 	var listNames []string
 	if cfg.B3 {
 		list = append(list, &propagatorB3{})
@@ -289,12 +289,12 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 				// extraction should occur.
 				return ctx, nil
 			}
-		} else if err != ErrSpanContextNotFound {
+		} else if err != ddtrace.ErrSpanContextNotFound {
 			return nil, err
 		}
 	}
 	if ctx == nil {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
@@ -337,17 +337,17 @@ type propagator struct {
 
 func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case TextMapWriter:
+	case ddtrace.TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:
-		return ErrInvalidCarrier
+		return ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer ddtrace.TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
+		return ddtrace.ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
 	if ctx.traceID.HasUpper() {
@@ -416,14 +416,14 @@ func (p *propagator) marshalPropagatingTags(ctx *spanContext) string {
 
 func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
-	case TextMapReader:
+	case ddtrace.TextMapReader:
 		return p.extractTextMap(c)
 	default:
-		return nil, ErrInvalidCarrier
+		return nil, ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (p *propagator) extractTextMap(reader ddtrace.TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -433,18 +433,18 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			var lowerTid uint64
 			lowerTid, err = parseUint64(v)
 			if err != nil {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			ctx.traceID.SetLower(lowerTid)
 		case p.cfg.ParentHeader:
 			ctx.spanID, err = parseUint64(v)
 			if err != nil {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 		case p.cfg.PriorityHeader:
 			priority, err := strconv.Atoi(v)
 			if err != nil {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		case originHeader:
@@ -472,7 +472,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	return &ctx, nil
 }
@@ -528,24 +528,24 @@ type propagatorB3 struct{}
 
 func (p *propagatorB3) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case TextMapWriter:
+	case ddtrace.TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:
-		return ErrInvalidCarrier
+		return ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer ddtrace.TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
+		return ddtrace.ErrInvalidSpanContext
 	}
 	if !ctx.traceID.HasUpper() { // 64-bit trace id
 		writer.Set(b3TraceIDHeader, fmt.Sprintf("%016x", ctx.traceID.Lower()))
 	} else { // 128-bit trace id
 		var w3Cctx ddtrace.SpanContextW3C
 		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
+			return ddtrace.ErrInvalidSpanContext
 		}
 		writer.Set(b3TraceIDHeader, w3Cctx.TraceID128())
 	}
@@ -562,14 +562,14 @@ func (*propagatorB3) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 
 func (p *propagatorB3) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
-	case TextMapReader:
+	case ddtrace.TextMapReader:
 		return p.extractTextMap(c)
 	default:
-		return nil, ErrInvalidCarrier
+		return nil, ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (*propagatorB3) extractTextMap(reader ddtrace.TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -582,12 +582,12 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case b3SpanIDHeader:
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 		case b3SampledHeader:
 			priority, err := strconv.Atoi(v)
 			if err != nil {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		default:
@@ -598,7 +598,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		return nil, err
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	return &ctx, nil
 }
@@ -609,17 +609,17 @@ type propagatorB3SingleHeader struct{}
 
 func (p *propagatorB3SingleHeader) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case TextMapWriter:
+	case ddtrace.TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:
-		return ErrInvalidCarrier
+		return ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writer ddtrace.TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
+		return ddtrace.ErrInvalidSpanContext
 	}
 	sb := strings.Builder{}
 	var traceID string
@@ -628,7 +628,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 	} else { // 128-bit trace id
 		var w3Cctx ddtrace.SpanContextW3C
 		if w3Cctx, ok = spanCtx.(ddtrace.SpanContextW3C); !ok {
-			return ErrInvalidSpanContext
+			return ddtrace.ErrInvalidSpanContext
 		}
 		traceID = w3Cctx.TraceID128()
 	}
@@ -646,14 +646,14 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx ddtrace.SpanContext, writ
 
 func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
-	case TextMapReader:
+	case ddtrace.TextMapReader:
 		return p.extractTextMap(c)
 	default:
-		return nil, ErrInvalidCarrier
+		return nil, ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (*propagatorB3SingleHeader) extractTextMap(reader ddtrace.TextMapReader) (ddtrace.SpanContext, error) {
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -667,7 +667,7 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 				}
 				ctx.spanID, err = strconv.ParseUint(b3Parts[1], 16, 64)
 				if err != nil {
-					return ErrSpanContextCorrupted
+					return ddtrace.ErrSpanContextCorrupted
 				}
 				if len(b3Parts) >= 3 {
 					switch b3Parts[2] {
@@ -678,11 +678,11 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 					case "0":
 						ctx.setSamplingPriority(0, samplernames.Unknown)
 					default:
-						return ErrSpanContextCorrupted
+						return ddtrace.ErrSpanContextCorrupted
 					}
 				}
 			} else {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 		default:
 		}
@@ -692,7 +692,7 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (ddtrace.S
 		return nil, err
 	}
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
-		return nil, ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	return &ctx, nil
 }
@@ -708,10 +708,10 @@ type propagatorW3c struct{}
 
 func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) error {
 	switch c := carrier.(type) {
-	case TextMapWriter:
+	case ddtrace.TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
 	default:
-		return ErrInvalidCarrier
+		return ddtrace.ErrInvalidCarrier
 	}
 }
 
@@ -723,10 +723,10 @@ func (p *propagatorW3c) Inject(spanCtx ddtrace.SpanContext, carrier interface{})
 // which is equal to 00000001 when no other flag is present.
 // tracestateHeader is a comma-separated list of list-members with a <key>=<value> format,
 // where each list-member is managed by a vendor or instrumentation library.
-func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+func (*propagatorW3c) injectTextMap(spanCtx ddtrace.SpanContext, writer ddtrace.TextMapWriter) error {
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
-		return ErrInvalidSpanContext
+		return ddtrace.ErrInvalidSpanContext
 	}
 	flags := ""
 	p, ok := ctx.SamplingPriority()
@@ -869,14 +869,14 @@ func composeTracestate(ctx *spanContext, priority int, oldState string) string {
 
 func (p *propagatorW3c) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	switch c := carrier.(type) {
-	case TextMapReader:
+	case ddtrace.TextMapReader:
 		return p.extractTextMap(c)
 	default:
-		return nil, ErrInvalidCarrier
+		return nil, ddtrace.ErrInvalidCarrier
 	}
 }
 
-func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+func (*propagatorW3c) extractTextMap(reader ddtrace.TextMapReader) (ddtrace.SpanContext, error) {
 	var parentHeader string
 	var stateHeader string
 	var ctx spanContext
@@ -886,7 +886,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (ddtrace.SpanContext,
 		switch key {
 		case traceparentHeader:
 			if parentHeader != "" {
-				return ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			parentHeader = v
 		case tracestateHeader:
@@ -925,37 +925,37 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	header = strings.ToLower(strings.Trim(header, "\t -"))
 	headerLen := len(header)
 	if headerLen == 0 {
-		return ErrSpanContextNotFound
+		return ddtrace.ErrSpanContextNotFound
 	}
 	if headerLen < 55 {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	parts := strings.SplitN(header, "-", 5) // 5 because we expect 4 required + 1 optional substrings
 	if len(parts) < 4 {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	version := strings.Trim(parts[0], nonWordCutset)
 	if len(version) != 2 {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	v, err := strconv.ParseUint(version, 16, 64)
 	if err != nil || v == 255 {
 		// version 255 (0xff) is invalid
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	if v == 0 && headerLen != 55 {
 		// The header length in v0 has to be 55.
 		// It's allowed to be longer in other versions.
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	// parsing traceID
 	fullTraceID := strings.Trim(parts[1], nonWordCutset)
 	if len(fullTraceID) != 32 {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
 	if !isValidID(fullTraceID) {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
 		// Ensure that the 128-bit trace id tag doesn't propagate
@@ -967,22 +967,22 @@ func parseTraceparent(ctx *spanContext, header string) error {
 	// parsing spanID
 	spanID := strings.Trim(parts[2], nonWordCutset)
 	if len(spanID) != 16 {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	if !isValidID(spanID) {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	if ctx.spanID == 0 {
-		return ErrSpanContextNotFound
+		return ddtrace.ErrSpanContextNotFound
 	}
 	// parsing flags
 	flags := parts[3]
 	f, err := strconv.ParseInt(flags, 16, 8)
 	if err != nil {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	ctx.setSamplingPriority(int(f)&0x1, samplernames.Unknown)
 	return nil
@@ -1079,7 +1079,7 @@ func extractTraceID128(ctx *spanContext, v string) error {
 		ctx.traceID.SetLower(l)
 	}
 	if err != nil {
-		return ErrSpanContextCorrupted
+		return ddtrace.ErrSpanContextCorrupted
 	}
 	return nil
 }

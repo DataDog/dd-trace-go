@@ -167,7 +167,7 @@ type config struct {
 	transport transport
 
 	// propagator propagates span context cross-process
-	propagator Propagator
+	propagator ddtrace.Propagator
 
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
@@ -794,7 +794,7 @@ func WithSendRetries(retries int) StartOption {
 }
 
 // WithPropagator sets an alternative propagator to be used by the tracer.
-func WithPropagator(p Propagator) StartOption {
+func WithPropagator(p ddtrace.Propagator) StartOption {
 	return func(c *config) {
 		c.propagator = p
 	}

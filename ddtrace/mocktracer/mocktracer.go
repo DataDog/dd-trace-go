@@ -153,9 +153,9 @@ const (
 )
 
 func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	reader, ok := carrier.(tracer.TextMapReader)
+	reader, ok := carrier.(ddtrace.TextMapReader)
 	if !ok {
-		return nil, tracer.ErrInvalidCarrier
+		return nil, ddtrace.ErrInvalidCarrier
 	}
 	var sc spanContext
 	err := reader.ForeachKey(func(key, v string) error {
@@ -163,21 +163,21 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 		if k == traceHeader {
 			id, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				return tracer.ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			sc.traceID = id
 		}
 		if k == spanHeader {
 			id, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
-				return tracer.ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			sc.spanID = id
 		}
 		if k == priorityHeader {
 			p, err := strconv.Atoi(v)
 			if err != nil {
-				return tracer.ErrSpanContextCorrupted
+				return ddtrace.ErrSpanContextCorrupted
 			}
 			sc.priority = p
 			sc.hasPriority = true
@@ -191,19 +191,19 @@ func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 		return nil, err
 	}
 	if sc.traceID == 0 || sc.spanID == 0 {
-		return nil, tracer.ErrSpanContextNotFound
+		return nil, ddtrace.ErrSpanContextNotFound
 	}
 	return &sc, err
 }
 
 func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
-	writer, ok := carrier.(tracer.TextMapWriter)
+	writer, ok := carrier.(ddtrace.TextMapWriter)
 	if !ok {
-		return tracer.ErrInvalidCarrier
+		return ddtrace.ErrInvalidCarrier
 	}
 	ctx, ok := context.(*spanContext)
 	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return tracer.ErrInvalidSpanContext
+		return ddtrace.ErrInvalidSpanContext
 	}
 	writer.Set(traceHeader, strconv.FormatUint(ctx.traceID, 10))
 	writer.Set(spanHeader, strconv.FormatUint(ctx.spanID, 10))

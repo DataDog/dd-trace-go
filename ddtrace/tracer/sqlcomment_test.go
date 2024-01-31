@@ -46,7 +46,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			injectSpan:         true,
 			expectedQuery:      "/*dddbs='whiskey-db',dde='test-env',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',ddpv='1.0.0'*/ SELECT * from FOO",
 			expectedSpanIDGen:  false,
-			expectedExtractErr: ErrSpanContextNotFound,
+			expectedExtractErr: ddtrace.ErrSpanContextNotFound,
 		},
 		{
 			name:               "no-trace",
@@ -83,7 +83,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 			samplingPriority:   1,
 			expectedQuery:      "SELECT * from FOO",
 			expectedSpanIDGen:  true,
-			expectedExtractErr: ErrSpanContextNotFound,
+			expectedExtractErr: ddtrace.ErrSpanContextNotFound,
 		},
 		{
 			name:               "comment",

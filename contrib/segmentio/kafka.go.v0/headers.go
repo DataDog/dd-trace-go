@@ -18,8 +18,8 @@ type messageCarrier struct {
 }
 
 var _ interface {
-	tracer.TextMapReader
-	tracer.TextMapWriter
+	ddtrace.TextMapReader
+	ddtrace.TextMapWriter
 } = (*messageCarrier)(nil)
 
 // ForeachKey conforms to the TextMapReader interface.

@@ -112,13 +112,13 @@ func (t *opentracer) ContextWithSpanHook(ctx context.Context, openSpan opentraci
 
 func translateError(err error) error {
 	switch err {
-	case tracer.ErrSpanContextNotFound:
+	case ddtrace.ErrSpanContextNotFound:
 		return opentracing.ErrSpanContextNotFound
-	case tracer.ErrInvalidCarrier:
+	case ddtrace.ErrInvalidCarrier:
 		return opentracing.ErrInvalidCarrier
-	case tracer.ErrInvalidSpanContext:
+	case ddtrace.ErrInvalidSpanContext:
 		return opentracing.ErrInvalidSpanContext
-	case tracer.ErrSpanContextCorrupted:
+	case ddtrace.ErrSpanContextCorrupted:
 		return opentracing.ErrSpanContextCorrupted
 	default:
 		return err
