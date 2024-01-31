@@ -76,6 +76,11 @@ func (t *tags) toMap() *map[string]interface{} {
 	return &m
 }
 
+func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+	log.Info("Dynamic Instrumentation RC Update Callback triggered!")
+	return nil
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -184,7 +189,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	var dynamicInstrumentationError, apmTracingError error
 
 	if t.config.dynamicInstrumentationEnabled {
-		dynamicInstrumentationError = remoteconfig.RegisterProduct(state.ProductLiveDebugging)
+		dynamicInstrumentationError = remoteconfig.Subscribe(state.ProductLiveDebugging, t.dynamicInstrumentationRCUpdate)
 	}
 
 	apmTracingError = remoteconfig.Subscribe(

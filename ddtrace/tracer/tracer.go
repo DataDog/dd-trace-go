@@ -164,6 +164,8 @@ func Start(opts ...StartOption) {
 	cfg.ServiceName = t.config.serviceName
 	if err := t.startRemoteConfig(cfg); err != nil {
 		log.Warn("Remote config startup error: %s", err)
+	} else {
+		log.Info("Remote config started succesffully")
 	}
 
 	// start instrumentation telemetry unless it is disabled through the
