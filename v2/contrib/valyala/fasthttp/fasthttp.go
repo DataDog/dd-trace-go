@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package fasthttp provides functions to trace the valyala/fasthttp package (https://github.com/valyala/fasthttp)
-package fasthttp // import "github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp.v1"
+package fasthttp // import "github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp"
 
 import (
 	"fmt"

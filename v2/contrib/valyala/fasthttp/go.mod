@@ -1,11 +1,12 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic
+module github.com/DataDog/dd-trace-go/v2/contrib/valyala/fasthttp
 
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
 	github.com/stretchr/testify v1.8.4
-	gopkg.in/olivere/elastic.v5 v5.0.84
+	github.com/valyala/fasthttp v1.51.0
 )
 
 require (
@@ -18,6 +19,7 @@ require (
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.3 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -27,9 +29,8 @@ require (
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/josharian/intern v1.0.0 // indirect
+	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -37,6 +38,7 @@ require (
 	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
 	github.com/tinylib/msgp v1.1.9 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect

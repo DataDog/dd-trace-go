@@ -1,11 +1,11 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka.go.v0
+module github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic.v5
 
 go 1.19
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
-	github.com/segmentio/kafka-go v0.4.42
 	github.com/stretchr/testify v1.8.4
+	gopkg.in/olivere/elastic.v5 v5.0.84
 )
 
 require (
@@ -27,11 +27,11 @@ require (
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/klauspost/compress v1.17.1 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
-	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.12.0 // indirect

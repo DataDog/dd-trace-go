@@ -8,7 +8,7 @@ use (
 	./tools/v2check
 	./tools/v2check/_stage
 	./v2/contrib/99designs/gqlgen
-	./v2/contrib/IBM/sarama.v1
+	./v2/contrib/IBM/sarama
 	./v2/contrib/Shopify/sarama
 	./v2/contrib/aws/aws-sdk-go
 	./v2/contrib/aws/aws-sdk-go-v2
@@ -47,13 +47,13 @@ use (
 	./v2/contrib/labstack/echo.v4
 	./v2/contrib/miekg/dns
 	./v2/contrib/net/http
-	./v2/contrib/olivere/elastic
+	./v2/contrib/olivere/elastic.v5
 	./v2/contrib/redis/go-redis.v9
-	./v2/contrib/segmentio/kafka.go.v0
+	./v2/contrib/segmentio/kafka-go
 	./v2/contrib/sirupsen/logrus
 	./v2/contrib/syndtr/goleveldb
 	./v2/contrib/tidwall/buntdb
 	./v2/contrib/twitchtv/twirp
 	./v2/contrib/urfave/negroni
-	./v2/contrib/valyala/fasthttp.v1
+	./v2/contrib/valyala/fasthttp
 )
