@@ -528,6 +528,9 @@ func (s *span) finish(finishTime int64) {
 
 	keep := true
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
+		if !t.config.enabled.current {
+			return
+		}
 		// we have an active tracer
 		if t.config.canComputeStats() && shouldComputeStats(s) {
 			// the agent supports computed stats

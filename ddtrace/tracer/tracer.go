@@ -180,20 +180,6 @@ func Stop() {
 	log.Flush()
 }
 
-func setTracingEnabled(enabled bool) bool {
-	if enabled {
-		// Enabling tracing after disabling is not supported yet, thus
-		// this action will have no effect.
-		return true
-	}
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		//	no need to flush / stop writers here, it is done during Stop()
-		t.SoftStop()
-		log.Flush()
-	}
-	return true
-}
-
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
 // ddtrace.Span. It is recommended and is considered more correct to refer to this type as
 // ddtrace.Span instead.
@@ -463,6 +449,9 @@ func (t *tracer) pushChunk(trace *chunk) {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOption) ddtrace.Span {
+	if !t.config.enabled.current {
+		return internal.NoopSpan{}
+	}
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
 		fn(&opts)
@@ -653,7 +642,6 @@ func spanResourcePIISafe(s *span) bool {
 
 // Stop stops the tracer.
 func (t *tracer) Stop() {
-	t.SoftStop()
 	t.stopOnce.Do(func() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
@@ -670,21 +658,11 @@ func (t *tracer) Stop() {
 	remoteconfig.Stop()
 }
 
-// SoftStop stops the tracer, but keeps the remote config and appsec clients running.
-func (t *tracer) SoftStop() {
-	t.abandonedSpansDebugger.Stop()
-	t.stats.Stop()
-	t.traceWriter.stop()
-	t.statsd.Close()
-	if t.dataStreams != nil {
-		t.dataStreams.Stop()
-	}
-	//TODO: do we stop appsec
-	// appsec.Stop()
-}
-
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
+	if !t.config.enabled.current {
+		return nil
+	}
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -717,6 +695,9 @@ func (t *tracer) updateSampling(ctx ddtrace.SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
+	if !t.config.enabled.current {
+		return internal.NoopSpanContext{}, nil
+	}
 	return t.config.propagator.Extract(carrier)
 }
 

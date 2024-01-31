@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -126,21 +127,45 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
 
-		Start(WithService("my-service"), WithEnv("my-env"))
-		defer Stop()
+		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		defer stop()
+
+		t.Setenv("DD_APPSEC_ENABLED", "true")
+		appsec.Start()
+		defer appsec.Stop()
 
 		input := remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
-		oldTracer, ok := internal.GetGlobalTracer().(*tracer)
-		require.Equal(t, true, ok)
-		applyStatus := oldTracer.onRemoteConfigUpdate(input)
-		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 
-		// oldTracer is replaced with a noop tracer, all subsequent spans are of type internal.NoopSpan
-		// no further remoteConfig changes are applied, as internal.NoopTracer doesn't support those methods
+		applyStatus := tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Equal(t, false, tracer.config.enabled.current)
+		require.Equal(t, true, appsec.Enabled())
+		headers := TextMapCarrier{
+			traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
+			tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
+			"ot-baggage-something": "someVal",
+		}
+		sctx, err := tracer.Extract(headers)
+		require.NoError(t, err)
+		require.Equal(t, internal.NoopSpanContext{}, sctx)
+		err = tracer.Inject(internal.NoopSpanContext{}, TextMapCarrier{})
+		require.NoError(t, err)
+		require.Equal(t, internal.NoopSpan{}, tracer.StartSpan("noop"))
+
+		// all subsequent spans are of type internal.NoopSpan
+		// no further remoteConfig changes are applied
 		s := StartSpan("web.request").(internal.NoopSpan)
 		s.Finish()
+
+		// turning tracing back on is not allowed
+		input = remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		applyStatus = tracer.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Equal(t, false, tracer.config.enabled.current)
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 	})
