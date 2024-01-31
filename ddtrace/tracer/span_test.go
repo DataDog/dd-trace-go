@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -567,7 +566,6 @@ func TestSpanProfilingTags(t *testing.T) {
 			require.Equal(t, false, ok)
 		})
 	}
-
 }
 
 func TestSpanError(t *testing.T) {
@@ -775,12 +773,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -809,12 +804,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("notracer/env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		span := tracer.StartSpan("test.request").(*span)

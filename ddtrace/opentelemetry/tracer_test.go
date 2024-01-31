@@ -139,8 +139,6 @@ func TestForceFlush(t *testing.T) {
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
 			tp, payloads, cleanup := mockTracerProvider(t)
 			defer cleanup()
 
@@ -156,10 +154,10 @@ func TestForceFlush(t *testing.T) {
 			_, sp := tr.Start(context.Background(), "test_span")
 			sp.End()
 			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
-			payload, err := waitForPayload(ctx, payloads)
+			p, err := waitForPayload(payloads)
 			if tc.flushed {
 				assert.NoError(err)
-				assert.Contains(payload, "test_span")
+				assert.Equal("test_span", p[0][0]["resource"])
 				assert.Equal(OK, flushStatus)
 			} else {
 				assert.Equal(ERROR, flushStatus)
@@ -205,6 +203,25 @@ func TestSpanTelemetry(t *testing.T) {
 	_, _ = tr.Start(context.Background(), "otel.span")
 	telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	telemetryClient.AssertNumberOfCalls(t, "Count", 1)
+}
+
+func TestConcurrentSetAttributes(_ *testing.T) {
+	tp := NewTracerProvider()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	_, span := tr.Start(context.Background(), "test")
+	defer span.End()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetAttributes(attribute.Float64("workerID", float64(i)))
+		}(i)
+	}
 }
 
 func BenchmarkOTelApiWithNoTags(b *testing.B) {

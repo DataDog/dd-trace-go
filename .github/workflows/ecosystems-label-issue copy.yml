@@ -1,0 +1,17 @@
+name: Label APM Ecosystems issues
+on:
+  issues:
+    types:
+      - reopened
+      - opened
+      - edited
+jobs:
+  label_issues:
+    if: contains(github.event.issue.title, 'contrib')
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/marketplace/actions/actions-ecosystem-add-labels
+      - name: add label
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          labels: apm:ecosystem
