@@ -410,4 +410,8 @@ func TestStartRemoteConfig(t *testing.T) {
 	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingCustomTags)
 	require.NoError(t, err)
 	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingEnabled)
+	require.NoError(t, err)
+	require.True(t, found)
 }
