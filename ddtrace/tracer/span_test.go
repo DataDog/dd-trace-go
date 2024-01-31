@@ -337,6 +337,8 @@ func (p *panicStringer) String() string {
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
 	span := newBasicSpan("web.request")
+	assert.Equal("web.request", span.name)
+	assert.Equal("web.request", span.Tag(ext.SpanName))
 
 	span.SetTag("component", "tracer")
 	assert.Equal("tracer", span.meta["component"])
@@ -373,26 +375,6 @@ func TestSpanSetTag(t *testing.T) {
 
 	span.SetTag(ext.Error, false)
 	assert.Equal(int32(0), span.error)
-
-	span.SetTag(ext.SamplingPriority, 2)
-	assert.Equal(float64(2), span.metrics[keySamplingPriority])
-	assert.Equal(float64(2), span.Tag(ext.SamplingPriority))
-
-	span.SetTag(ext.AnalyticsEvent, true)
-	assert.Equal(1.0, span.metrics[ext.EventSampleRate])
-	assert.Equal(1.0, span.Tag(ext.AnalyticsEvent))
-
-	span.SetTag(ext.AnalyticsEvent, false)
-	assert.Equal(0.0, span.metrics[ext.EventSampleRate])
-	assert.Equal(0.0, span.Tag(ext.AnalyticsEvent))
-
-	span.SetTag(ext.ManualDrop, true)
-	assert.Equal(-1., span.metrics[keySamplingPriority])
-	assert.Equal(-1., span.Tag(ext.ManualDrop))
-
-	span.SetTag(ext.ManualKeep, true)
-	assert.Equal(2., span.metrics[keySamplingPriority])
-	assert.Equal(2., span.Tag(ext.ManualKeep))
 
 	span.SetTag("some.bool", true)
 	assert.Equal("true", span.meta["some.bool"])
@@ -432,6 +414,19 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
+}
+
+func TestSpanTagsStartSpan(t *testing.T) {
+	assert := assert.New(t)
+	tr, _, _, stop, err := startTestTracer(t)
+	assert.NoError(err)
+	defer stop()
+
+	span := tr.StartSpan("operation-name", ServiceName("service"), Tag("tag", "value"))
+
+	assert.Equal("value", span.Tag("tag"))
+	assert.Equal("service", span.Tag(ext.ServiceName))
+	assert.Equal("operation-name", span.Tag(ext.SpanName))
 }
 
 func TestSpanSetTagError(t *testing.T) {

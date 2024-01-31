@@ -239,10 +239,6 @@ func (s *Span) Tag(k string) interface{} {
 	s.RLock()
 	defer s.RUnlock()
 	switch k {
-	case ext.AnalyticsEvent, ext.EventSampleRate:
-		return s.metrics[ext.EventSampleRate]
-	case ext.SamplingPriority, ext.ManualDrop, ext.ManualKeep:
-		return s.metrics[keySamplingPriority]
 	case ext.Error:
 		return s.error
 	case ext.SpanName:
