@@ -31,6 +31,8 @@ func (sc *spanContext) TraceID() string { return strconv.FormatUint(sc.traceID, 
 
 func (sc *spanContext) TraceIDBytes() [16]byte { return [16]byte{} }
 
+func (sc *spanContext) TraceIDLower() uint64 { return sc.traceID }
+
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
 
 func (sc *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {

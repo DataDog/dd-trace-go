@@ -1,14 +1,19 @@
 module github.com/DataDog/dd-trace-go/internal/apps
 
-go 1.21
+go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20231220194510-f0d293776f63
-	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20231220194510-f0d293776f63
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
 	golang.org/x/sync v0.5.0
 )
 
-require github.com/DataDog/go-sqllexer v0.0.10 // indirect
+require (
+	github.com/DataDog/go-sqllexer v0.0.10 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
+	google.golang.org/grpc v1.60.1 // indirect
+)
 
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
@@ -23,9 +28,9 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.5.1 // indirect
+	github.com/ebitengine/purego v0.5.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -51,8 +56,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 )
-
-// use local version of dd-trace-go
-replace github.com/DataDog/dd-trace-go/v2 => ../..
-
-replace github.com/DataDog/dd-trace-go/v2/contrib/net/http => ../../v2/contrib/net/http
