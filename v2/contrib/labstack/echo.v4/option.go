@@ -141,7 +141,7 @@ func WithHeaderTags(headers []string) OptionFn {
 
 // WithErrorCheck sets the func which determines if err would be ignored (if it returns true, the error is not tagged).
 // This function also checks the errors created from the WithStatusCheck option.
-func WithErrorCheck(errCheck func(error) bool) Option {
+func WithErrorCheck(errCheck func(error) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.errCheck = errCheck
 	}
