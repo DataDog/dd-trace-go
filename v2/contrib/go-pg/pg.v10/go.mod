@@ -11,11 +11,8 @@ require (
 	github.com/DataDog/go-sqllexer v0.0.10 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.19.0 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
-	google.golang.org/grpc v1.60.1 // indirect
 )
 
 require (
@@ -23,7 +20,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.4.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201091455-64fd9f5ae7fc
 	github.com/DataDog/go-libddwaf/v2 v2.2.3 // indirect
 	github.com/DataDog/go-tuf v1.0.2-0.5.2 // indirect
 	github.com/DataDog/sketches-go v1.4.3 // indirect

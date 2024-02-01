@@ -3,17 +3,12 @@ module github.com/DataDog/dd-trace-go/internal/apps
 go 1.19
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201091455-64fd9f5ae7fc
 	github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1
 	golang.org/x/sync v0.5.0
 )
 
-require (
-	github.com/DataDog/go-sqllexer v0.0.10 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
-	google.golang.org/grpc v1.60.1 // indirect
-)
+require github.com/DataDog/go-sqllexer v0.0.10 // indirect
 
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0 // indirect
