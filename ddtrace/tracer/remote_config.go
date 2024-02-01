@@ -77,9 +77,22 @@ func (t *tags) toMap() *map[string]interface{} {
 }
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	log.Info("Dynamic Instrumentation RC Update Callback triggered!")
+
+	for k, v := range u {
+		log.Info("rc configuration for %s:\n\t%s\n", k, v)
+		passFullConfiguration(k, string(v))
+	}
+
+	// XXX: This function would typically respond with a status to say if the config was acknowledged
+	// but since we're extracting from BPF, we do not have a feedback loop and
 	return nil
 }
+
+// passFullConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
+// a bpf program to this function and extracts the raw bytes accordingly.
+//
+//go:noinline
+func passFullConfiguration(path, config string) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {

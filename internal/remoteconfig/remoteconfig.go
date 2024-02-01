@@ -212,10 +212,8 @@ func (c *Client) updateState() {
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err)
+		log.Info("remoteconfig: http request error: %v", err)
 		return
-	} else {
-		log.Info("remoteconfig request successful!")
 	}
 
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -246,9 +244,6 @@ func (c *Client) updateState() {
 		return
 	}
 
-	for i := range update.Roots {
-		log.Info("Root config: %s", string(update.Roots[i]))
-	}
 	c.lastError = c.applyUpdate(&update)
 }
 
@@ -424,7 +419,6 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		productUpdates[p] = make(ProductUpdate)
 	}
 	for _, f := range pbUpdate.TargetFiles {
-		log.Info("Got RC update: %s %s", f.Path, f.Raw)
 		fileMap[f.Path] = f.Raw
 		for _, p := range allProducts {
 			// Check the config file path to make sure it belongs to the right product
