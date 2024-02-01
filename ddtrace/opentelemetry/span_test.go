@@ -135,12 +135,11 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanLink(t *testing.T) {
 	assert := assert.New(t)
-	t.Setenv("DD_TRACE_DEBUG", "true")
 
 	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Use traceID and spanID that can be unmarshalled from unint64 to float64 without loss of precision
+	// Use traceID, spanID, and traceflags that can be unmarshalled from unint64 to float64 without loss of precision
 	traceID, _ := oteltrace.TraceIDFromHex("00000000000001c8000000000000007b")
 	spanID, _ := oteltrace.SpanIDFromHex("000000000000000f")
 	traceState, _ := oteltrace.ParseTraceState("dd_origin=ci")

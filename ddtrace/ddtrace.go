@@ -94,9 +94,9 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-// SpanLink represents a reference to a span that exists outside of the trace
-//
 //go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
+//
+//  SpanLink represents a reference to a span that exists outside of the trace
 type SpanLink struct {
 	TraceID     uint64            `msg:"trace_id" json:"trace_id"`                     // Required. The low 64 bits of a referenced trace id
 	TraceIDHigh uint64            `msg:"trace_id_high,omitempty" json:"trace_id_high"` // Optional. The high 64 bits of a referenced trace id.
