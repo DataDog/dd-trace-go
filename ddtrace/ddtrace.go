@@ -94,16 +94,23 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
-//go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
+// SpanLink represents a reference to a span that exists outside of the trace.
 //
-// SpanLink represents a reference to a span that exists outside of the trace
+//go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
+
 type SpanLink struct {
-	TraceID     uint64            `msg:"trace_id" json:"trace_id"`                     // Required. The low 64 bits of a referenced trace id
-	TraceIDHigh uint64            `msg:"trace_id_high,omitempty" json:"trace_id_high"` // Optional. The high 64 bits of a referenced trace id.
-	SpanID      uint64            `msg:"span_id" json:"span_id"`                       // Required.
-	Attributes  map[string]string `msg:"attributes,omitempty" json:"attributes"`       // Optional. Simple mapping of keys to string values.
-	Tracestate  string            `msg:"tracestate,omitempty" json:"tracestate"`       // Optional. W3C tracestate.
-	Flags       uint32            `msg:"flags,omitempty" json:"flags"`                 // Optional. W3C trace flags. If set, the high bit (bit 31) must be set.
+	// TraceID represents the low 64 bits of the linked span's trace id. This field is required.
+	TraceID uint64 `msg:"trace_id" json:"trace_id"`
+	// TraceIDHigh represents the high 64 bits of the linked span's trace id. This field is only set if the linked span's trace id is 128 bits.
+	TraceIDHigh uint64 `msg:"trace_id_high,omitempty" json:"trace_id_high"`
+	// SpanID represents the linked span's span id.
+	SpanID uint64 `msg:"span_id" json:"span_id"`
+	// Attributes is a mapping of keys to string values. These values are used to add additional context to the span link.
+	Attributes map[string]string `msg:"attributes,omitempty" json:"attributes"`
+	// Tracestate is the tracestate of the linked span. This field is optional.
+	Tracestate string `msg:"tracestate,omitempty" json:"tracestate"`
+	// Flags represents the W3C trace flags of the linked span. This field is optional.
+	Flags uint32 `msg:"flags,omitempty" json:"flags"`
 }
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
@@ -157,7 +164,7 @@ type StartSpanConfig struct {
 	// Context is the parent context where the span should be stored.
 	Context context.Context
 
-	// SpanLink is a causal relationship between two spans. A span can have multiple links.
+	// SpanLink represents a causal relationship between two spans. A span can have multiple links.
 	SpanLinks []SpanLink
 }
 

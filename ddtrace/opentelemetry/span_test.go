@@ -161,7 +161,7 @@ func TestSpanLink(t *testing.T) {
 	_, decoratedSpan := tr.Start(context.Background(), "span_with_link",
 		oteltrace.WithLinks(oteltrace.Link{
 			SpanContext: remoteSpanContext,
-			Attributes:  []attribute.KeyValue{attribute.String("yes", "no")},
+			Attributes:  []attribute.KeyValue{attribute.String("link.name", "alpha_transaction")},
 		}))
 	decoratedSpan.End()
 
@@ -185,7 +185,7 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(spanLinks[0].TraceID, uint64(123))
 	assert.Equal(spanLinks[0].TraceIDHigh, uint64(456))
 	assert.Equal(spanLinks[0].SpanID, uint64(15))
-	assert.Equal(spanLinks[0].Attributes, map[string]string{"yes": "no"})
+	assert.Equal(spanLinks[0].Attributes, map[string]string{"link.name": "alpha_transaction"})
 	assert.Equal(spanLinks[0].Tracestate, "dd_origin=ci")
 	assert.Equal(spanLinks[0].Flags, uint32(0x80000000))
 }

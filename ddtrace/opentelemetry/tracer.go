@@ -63,29 +63,35 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		}
 	}
 	// Add span links to underlying Datadog span
-	ddLinks := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
-	for _, link := range ssConfig.Links() {
-		traceIDbytes := link.SpanContext.TraceID()
-		traceIDUpper := binary.BigEndian.Uint64(traceIDbytes[:8])
-		traceIDLower := binary.BigEndian.Uint64(traceIDbytes[8:])
+	if len(ssConfig.Links()) > 0 {
+		links := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
+		for _, otelLink := range ssConfig.Links() {
+			var link ddtrace.SpanLink
 
-		spanIDbytes := link.SpanContext.SpanID()
-		spanID := binary.BigEndian.Uint64(spanIDbytes[:])
+			traceIDbytes := otelLink.SpanContext.TraceID()
+			link.TraceIDHigh = binary.BigEndian.Uint64(traceIDbytes[:8])
+			link.TraceID = binary.BigEndian.Uint64(traceIDbytes[8:])
 
-		tracestate := link.SpanContext.TraceState().String()
-		traceflags := uint32(2147483648) // 0 | 1 << 31
-		if link.SpanContext.IsSampled() {
-			traceflags = uint32(2147483649) // 1 | 1 << 31
+			spanIDbytes := otelLink.SpanContext.SpanID()
+			link.SpanID = binary.BigEndian.Uint64(spanIDbytes[:])
+
+			link.Tracestate = otelLink.SpanContext.TraceState().String()
+
+			if otelLink.SpanContext.IsSampled() {
+				link.Flags = uint32(0x80000001)
+			} else {
+				link.Flags = uint32(0x80000000)
+			}
+
+			link.Attributes = make(map[string]string)
+			for _, attr := range otelLink.Attributes {
+				link.Attributes[string(attr.Key)] = attr.Value.Emit()
+			}
+
+			links = append(links, link)
 		}
-
-		attributes := make(map[string]string)
-		for _, attr := range link.Attributes {
-			attributes[string(attr.Key)] = attr.Value.Emit()
-		}
-
-		ddLinks = append(ddLinks, ddtrace.SpanLink{traceIDLower, traceIDUpper, spanID, attributes, tracestate, traceflags})
+		ddopts = append(ddopts, tracer.WithSpanLinks(links))
 	}
-	ddopts = append(ddopts, tracer.WithSpanLinks(ddLinks))
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
