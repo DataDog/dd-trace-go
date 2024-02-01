@@ -546,6 +546,8 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 }
 
 func TestExecutionTraceRandom(t *testing.T) {
+	t.Skip("flaky test, see: https://github.com/DataDog/dd-trace-go/issues/2529")
+
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())

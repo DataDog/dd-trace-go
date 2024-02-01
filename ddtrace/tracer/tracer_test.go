@@ -942,6 +942,29 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	assert.Equal("changed!", childContext.baggage["key"])
 }
 
+func TestTracerInjectConcurrency(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+	span, _ := StartSpanFromContext(context.Background(), "main")
+	defer span.Finish()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+
+			traceContext := map[string]string{}
+			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
+		}(i)
+	}
+
+	wg.Wait()
+}
+
 func TestTracerSpanTags(t *testing.T) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
@@ -1652,46 +1675,56 @@ func TestTracerFlush(t *testing.T) {
 func TestTracerReportsHostname(t *testing.T) {
 	const hostname = "hostname-test"
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
 
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+			tracer, _, _, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
+			defer stop()
 
-		root := tracer.StartSpan("root")
-		child := tracer.StartSpan("child", ChildOf(root.Context()))
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root")
+			child := tracer.StartSpan("child", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		name, ok := root.meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
+			name, ok := root.meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
 
-		name, ok = child.meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
-	})
+			name, ok = child.meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
+		})
+	}
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/false", false)
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			tracer, _, _, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
+			defer stop()
 
-		root := tracer.StartSpan("root")
-		child := tracer.StartSpan("child", ChildOf(root.Context()))
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root")
+			child := tracer.StartSpan("child", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		_, ok := root.meta[keyHostname]
-		assert.False(ok)
-		_, ok = child.meta[keyHostname]
-		assert.False(ok)
-	})
+			_, ok := root.meta[keyHostname]
+			assert.False(ok)
+			_, ok = child.meta[keyHostname]
+			assert.False(ok)
+		})
+	}
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/false", false)
 
 	t.Run("WithHostname", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithHostname(hostname))

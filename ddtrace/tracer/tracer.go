@@ -403,7 +403,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Flush()
 			t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
-			// when using the agent traceWriter. However, this functionnality is used
+			// when using the agent traceWriter. However, this functionality is used
 			// in Lambda so for that purpose this mechanism should suffice.
 			done <- struct{}{}
 

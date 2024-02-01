@@ -368,10 +368,11 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
-	// propagate OpenTracing baggage
-	for k, v := range ctx.baggage {
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
+		return true
+	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
