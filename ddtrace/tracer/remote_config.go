@@ -155,11 +155,16 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
-		if t.config.enabled.current != false {
-			//	not possible to remotely turn on tracing
-			updated = t.config.enabled.handleRC(c.LibConfig.Enabled)
-			if updated {
-				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
+		if c.LibConfig.Enabled != nil {
+			if t.config.enabled.current == true && *c.LibConfig.Enabled == false {
+				log.Debug("APM tracing disabled via remote config. Restart the service to enable it.")
+				updated = t.config.enabled.handleRC(c.LibConfig.Enabled)
+				if updated {
+					telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
+				}
+			}
+			if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
+				log.Debug("Disabling tracing via remote config. No traces will be sent.")
 			}
 		}
 	}

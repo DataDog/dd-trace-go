@@ -126,11 +126,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	t.Run("RC tracing_enabled = false is applied", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		defer telemetry.MockGlobalClient(telemetryClient)()
-
-		tracer, _, _, stop := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
-		defer stop()
-
 		t.Setenv("DD_APPSEC_ENABLED", "true")
+
+		Start(WithService("my-service"), WithEnv("my-env"))
+		defer Stop()
+
 		appsec.Start()
 		defer appsec.Stop()
 
@@ -138,21 +138,23 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			"path": []byte(`{"lib_config": {"tracing_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
 
-		applyStatus := tracer.onRemoteConfigUpdate(input)
+		tr, ok := internal.GetGlobalTracer().(*tracer)
+		require.Equal(t, true, ok)
+		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		require.Equal(t, false, tracer.config.enabled.current)
+		require.Equal(t, false, tr.config.enabled.current)
 		require.Equal(t, true, appsec.Enabled())
 		headers := TextMapCarrier{
 			traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
 			tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
 			"ot-baggage-something": "someVal",
 		}
-		sctx, err := tracer.Extract(headers)
+		sctx, err := tr.Extract(headers)
 		require.NoError(t, err)
 		require.Equal(t, internal.NoopSpanContext{}, sctx)
-		err = tracer.Inject(internal.NoopSpanContext{}, TextMapCarrier{})
+		err = tr.Inject(internal.NoopSpanContext{}, TextMapCarrier{})
 		require.NoError(t, err)
-		require.Equal(t, internal.NoopSpan{}, tracer.StartSpan("noop"))
+		require.Equal(t, internal.NoopSpan{}, tr.StartSpan("noop"))
 
 		// all subsequent spans are of type internal.NoopSpan
 		// no further remoteConfig changes are applied
@@ -163,9 +165,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		input = remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`),
 		}
-		applyStatus = tracer.onRemoteConfigUpdate(input)
+		applyStatus = tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
-		require.Equal(t, false, tracer.config.enabled.current)
+		require.Equal(t, false, tr.config.enabled.current)
 
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 	})
