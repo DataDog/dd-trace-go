@@ -44,7 +44,7 @@ jobs:
             cgocheck:  # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
               GOEXPERIMENT=cgocheck2
       fail-fast: false
-    name: native/${{ toJSON(matrix) }}
+    name: native ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
         include:
           - runs-on: windows-latest
             go-args: ""
-    name: ${{ toJSON(matrix) }}
+    name: disabled ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -106,7 +106,7 @@ jobs:
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
-    name: golang-containers/${{ toJSON(matrix) }}
+    name: golang-containers ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest
     container:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
@@ -158,6 +158,7 @@ jobs:
 
   linux-arm64:
     runs-on: ubuntu-latest
+    name: linux/arm64 ${{ toJSON(matrix) }}
     strategy:
       matrix:
         cgo_enabled: # test it compiles with and without the cgo
@@ -172,7 +173,7 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Go modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
