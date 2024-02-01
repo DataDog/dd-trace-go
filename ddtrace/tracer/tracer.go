@@ -503,7 +503,6 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
-	// span links
 	for _, link := range opts.SpanLinks {
 		span.SpanLinks = append(span.SpanLinks, link)
 	}
