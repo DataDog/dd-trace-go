@@ -11,7 +11,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,6 +22,7 @@ import (
 )
 
 func TestHttpDistributedTrace(t *testing.T) {
+	assert := assert.New(t)
 	tp, payloads, cleanup := mockTracerProvider(t)
 	defer cleanup()
 	otel.SetTracerProvider(tp)
@@ -33,11 +33,10 @@ func TestHttpDistributedTrace(t *testing.T) {
 
 	w := otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedSpan := oteltrace.SpanFromContext(r.Context())
-		assert.Equal(t, rootSpan.SpanContext().TraceID(), receivedSpan.SpanContext().TraceID())
+		assert.Equal(rootSpan.SpanContext().TraceID(), receivedSpan.SpanContext().TraceID())
 	}), "testOperation")
 	testServer := httptest.NewServer(w)
 	defer testServer.Close()
-
 	c := http.Client{Transport: otelhttp.NewTransport(nil)}
 	req, err := http.NewRequestWithContext(sctx, http.MethodGet, testServer.URL, nil)
 	require.NoError(t, err)
@@ -47,12 +46,11 @@ func TestHttpDistributedTrace(t *testing.T) {
 	rootSpan.End()
 
 	p := <-payloads
-	numSpans := strings.Count(p, "\"span_id\"")
-	assert.Equal(t, 3, numSpans)
-	assert.Contains(t, p, `"name":"internal"`)
-	assert.Contains(t, p, `"name":"server.request`)
-	assert.Contains(t, p, `"name":"client.request"`)
-	assert.Contains(t, p, `"resource":"testRootSpan"`)
-	assert.Contains(t, p, `"resource":"testOperation"`)
-	assert.Contains(t, p, `"resource":"HTTP GET"`)
+	assert.Len(p, 2)
+	assert.Equal("server.request", p[0][0]["name"])
+	assert.Equal("internal", p[1][0]["name"])
+	assert.Equal("client.request", p[1][1]["name"])
+	assert.Equal("testOperation", p[0][0]["resource"])
+	assert.Equal("testRootSpan", p[1][0]["resource"])
+	assert.Equal("HTTP GET", p[1][1]["resource"])
 }
