@@ -492,9 +492,6 @@ func (t *trace) finishedOne(s *span) {
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
-	if !tr.config.enabled.current {
-		return
-	}
 	tr.pushChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
