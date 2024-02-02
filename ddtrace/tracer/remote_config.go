@@ -165,6 +165,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 			}
 			if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
 				log.Debug("Disabling tracing via remote config. No traces will be sent.")
+				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
 			}
 		}
 	}
