@@ -182,7 +182,7 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(uint64(15), spanLinks[0].SpanID)
 	assert.Equal(map[string]string{"link.name": "alpha_transaction"}, spanLinks[0].Attributes)
 	assert.Equal(traceStateVal, spanLinks[0].Tracestate)
-	assert.Equal(uint32(oteltrace.FlagsSampled), spanLinks[0].Flags)
+	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
 func TestSpanEnd(t *testing.T) {

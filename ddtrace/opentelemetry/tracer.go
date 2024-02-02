@@ -66,18 +66,21 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	if len(ssConfig.Links()) > 0 {
 		links := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
 		for _, link := range ssConfig.Links() {
+			ctx := otelCtxToDDCtx{link.SpanContext}
 			attrs := make(map[string]string, len(link.Attributes))
 			for _, attr := range link.Attributes {
 				attrs[string(attr.Key)] = attr.Value.Emit()
 			}
-			ctx := otelCtxToDDCtx{link.SpanContext}
 			links = append(links, ddtrace.SpanLink{
 				TraceID:     ctx.TraceID(),
 				TraceIDHigh: ctx.TraceIDUpper(),
 				SpanID:      ctx.SpanID(),
-				Attributes:  attrs,
 				Tracestate:  link.SpanContext.TraceState().String(),
-				Flags:       uint32(link.SpanContext.TraceFlags()),
+				Attributes:  attrs,
+				// To distinguish between "not sampled" and "not set", Datadog
+				// will rely on the highest bit being set. The OTel API doesn't
+				// differentiate this, so we will just always mark it as set.
+				Flags: uint32(link.SpanContext.TraceFlags()) | (1 << 31),
 			})
 		}
 		ddopts = append(ddopts, tracer.WithSpanLinks(links))
