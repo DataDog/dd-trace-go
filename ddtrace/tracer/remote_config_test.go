@@ -162,9 +162,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.Finish()
 
 		// turning tracing back on is not allowed
-		input = remoteconfig.ProductUpdate{
-			"path": []byte(`{"lib_config": {"tracing_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`),
-		}
+		input = remoteconfig.ProductUpdate{"path": nil}
 		applyStatus = tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
 		require.Equal(t, false, tr.config.enabled.current)

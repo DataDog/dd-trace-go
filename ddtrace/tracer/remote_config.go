@@ -111,10 +111,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
-		updated = t.config.enabled.reset()
-		if updated {
-			telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 			telemetry.GlobalClient.ConfigChange(telemConfigs)
