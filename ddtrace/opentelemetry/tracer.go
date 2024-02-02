@@ -62,33 +62,23 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			o(&cfg)
 		}
 	}
-	// Add span links to underlying Datadog span
+	// Add provide OTel Span Links to the underlying Datadog span.
 	if len(ssConfig.Links()) > 0 {
 		links := make([]ddtrace.SpanLink, 0, len(ssConfig.Links()))
-		for _, otelLink := range ssConfig.Links() {
-			var link ddtrace.SpanLink
-
-			traceIDbytes := otelLink.SpanContext.TraceID()
-			link.TraceIDHigh = binary.BigEndian.Uint64(traceIDbytes[:8])
-			link.TraceID = binary.BigEndian.Uint64(traceIDbytes[8:])
-
-			spanIDbytes := otelLink.SpanContext.SpanID()
-			link.SpanID = binary.BigEndian.Uint64(spanIDbytes[:])
-
-			link.Tracestate = otelLink.SpanContext.TraceState().String()
-
-			if otelLink.SpanContext.IsSampled() {
-				link.Flags = uint32(0x80000001)
-			} else {
-				link.Flags = uint32(0x80000000)
+		for _, link := range ssConfig.Links() {
+			attrs := make(map[string]string, len(link.Attributes))
+			for _, attr := range link.Attributes {
+				attrs[string(attr.Key)] = attr.Value.Emit()
 			}
-
-			link.Attributes = make(map[string]string)
-			for _, attr := range otelLink.Attributes {
-				link.Attributes[string(attr.Key)] = attr.Value.Emit()
-			}
-
-			links = append(links, link)
+			ctx := otelCtxToDDCtx{link.SpanContext}
+			links = append(links, ddtrace.SpanLink{
+				TraceID:     ctx.TraceID(),
+				TraceIDHigh: ctx.TraceIDUpper(),
+				SpanID:      ctx.SpanID(),
+				Attributes:  attrs,
+				Tracestate:  link.SpanContext.TraceState().String(),
+				Flags:       uint32(link.SpanContext.TraceFlags()),
+			})
 		}
 		ddopts = append(ddopts, tracer.WithSpanLinks(links))
 	}
@@ -116,6 +106,11 @@ type otelCtxToDDCtx struct {
 func (c *otelCtxToDDCtx) TraceID() uint64 {
 	id := c.oc.TraceID()
 	return binary.BigEndian.Uint64(id[8:])
+}
+
+func (c *otelCtxToDDCtx) TraceIDUpper() uint64 {
+	id := c.oc.TraceID()
+	return binary.BigEndian.Uint64(id[:8])
 }
 
 func (c *otelCtxToDDCtx) SpanID() uint64 {
