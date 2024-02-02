@@ -533,6 +533,9 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 		traceID:  id,
 		start:    startTime,
 	}
+	for _, link := range opts.SpanLinks {
+		span.spanLinks = append(span.spanLinks, link)
+	}
 	if context != nil {
 		// this is a child span
 		span.traceID = context.traceID.Lower()

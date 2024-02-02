@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
@@ -1002,6 +1002,22 @@ func TestServiceName(t *testing.T) {
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
 	})
+}
+
+func TestStartWithLink(t *testing.T) {
+	assert := assert.New(t)
+
+	links := []SpanLink{{TraceID: 1, SpanID: 2}, {TraceID: 3, SpanID: 4}}
+	tracer, err := newTracer()
+	assert.NoError(err)
+	defer tracer.Stop()
+
+	span := tracer.StartSpan("test.request", WithSpanLinks(links))
+	assert.Len(span.spanLinks, 2)
+	assert.Equal(span.spanLinks[0].TraceID, uint64(1))
+	assert.Equal(span.spanLinks[0].SpanID, uint64(2))
+	assert.Equal(span.spanLinks[1].TraceID, uint64(3))
+	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
 func TestTagSeparators(t *testing.T) {

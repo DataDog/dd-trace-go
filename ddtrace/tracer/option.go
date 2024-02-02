@@ -1121,6 +1121,13 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// WithSpanLinks sets span links on the started span.
+func WithSpanLinks(links []SpanLink) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		cfg.SpanLinks = append(cfg.SpanLinks, links...)
+	}
+}
+
 var measuredTag = Tag(keyMeasured, 1)
 
 // Measured marks this span to be measured for metrics and stats calculations.

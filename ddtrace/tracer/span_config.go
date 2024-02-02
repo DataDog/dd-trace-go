@@ -36,6 +36,9 @@ type StartSpanConfig struct {
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
+
+	// SpanLink represents a causal relationship between two spans. A span can have multiple links.
+	SpanLinks []SpanLink
 }
 
 // NewStartSpanConfig allows to build a base config struct. It accepts the same options as StartSpan.

@@ -61,6 +61,36 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			o(&cfg)
 		}
 	}
+	// Add span links to underlying Datadog span
+	if len(ssConfig.Links()) > 0 {
+		links := make([]tracer.SpanLink, 0, len(ssConfig.Links()))
+		for _, otelLink := range ssConfig.Links() {
+			var link tracer.SpanLink
+
+			traceIDbytes := otelLink.SpanContext.TraceID()
+			link.TraceIDHigh = binary.BigEndian.Uint64(traceIDbytes[:8])
+			link.TraceID = binary.BigEndian.Uint64(traceIDbytes[8:])
+
+			spanIDbytes := otelLink.SpanContext.SpanID()
+			link.SpanID = binary.BigEndian.Uint64(spanIDbytes[:])
+
+			link.Tracestate = otelLink.SpanContext.TraceState().String()
+
+			if otelLink.SpanContext.IsSampled() {
+				link.Flags = uint32(0x80000001)
+			} else {
+				link.Flags = uint32(0x80000000)
+			}
+
+			link.Attributes = make(map[string]string)
+			for _, attr := range otelLink.Attributes {
+				link.Attributes[string(attr.Key)] = attr.Value.Emit()
+			}
+
+			links = append(links, link)
+		}
+		ddopts = append(ddopts, tracer.WithSpanLinks(links))
+	}
 	// Since there is no way to see if and how the span operation name was set,
 	// we have to record the attributes  locally.
 	// The span operation name will be calculated when it's ended.
