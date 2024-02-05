@@ -41,7 +41,16 @@ fi
 
 $runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
 
-SCOPES=("gin-gonic/gin" "google.golang.org/grpc" "net/http" "gorilla/mux" "go-chi/chi" "go-chi/chi.v5" "labstack/echo.v4")
+SCOPES=(
+  "gin-gonic/gin" \
+  "google.golang.org/grpc" \
+  "net/http" "gorilla/mux" \
+  "go-chi/chi" "go-chi/chi.v5" \
+  "labstack/echo.v4" \
+  "99designs/gqlgen" \
+  "graphql-go/graphql" \
+  "graph-gophers/graphql-go"
+)
 for SCOPE in "${SCOPES[@]}"; do
   contrib=$(basename "$SCOPE")
   echo "Running appsec tests for contrib/$SCOPE"
