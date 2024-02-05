@@ -51,7 +51,7 @@ func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperation
 		err = e
 	})
 	dyngo.StartOperation(op, args)
-	dyngo.Finish(op, types.SDKBodyOperationRes{})
+	dyngo.FinishOperation(op, types.SDKBodyOperationRes{})
 	return err
 }
 

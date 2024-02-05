@@ -95,6 +95,10 @@ func newWAFHandle(rules config.RulesFragment, cfg *config.Config) (*wafHandle, e
 
 type wafEventListener func(*waf.Handle, sharedsec.Actions, *config.Config, limiter.Limiter, dyngo.Operation)
 
+// wafEventListeners is the global list of event listeners registered by contribs at init time. This
+// is thread-safe assuming all writes (via AddWAFEventListener) are performed within `init`
+// functions; so this is written to only during initialization, and is read from concurrently only
+// during runtime when no writes are happening anymore.
 var wafEventListeners []wafEventListener
 
 // AddWAFEventListener adds a new WAF event listener to be registered whenever a new root operation

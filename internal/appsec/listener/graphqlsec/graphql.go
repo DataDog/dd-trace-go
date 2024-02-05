@@ -35,7 +35,7 @@ var supportedAddresses = listener.AddressSet{
 // Install registers the GraphQL WAF Event Listener on the given root operation.
 func Install(wafHandle *waf.Handle, _ sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, cfg, lim); listener != nil {
-		log.Debug("[appsec] registering the GraphQL WAF Event Listener")
+		log.Debug("appsec: registering the GraphQL WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
 }
@@ -51,13 +51,13 @@ type wafEventListener struct {
 
 func newWafEventListener(wafHandle *waf.Handle, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
-		log.Debug("[appsec] no WAF Handle available, the GraphQL WAF Event Listener will not be registered")
+		log.Debug("appsec: no WAF Handle available, the GraphQL WAF Event Listener will not be registered")
 		return nil
 	}
 
 	addresses := listener.FilterAddressSet(supportedAddresses, wafHandle)
 	if len(addresses) == 0 {
-		log.Debug("[appsec] no supported GraphQL address is used by currently loaded WAF rules, the GraphQL WAF Event Listener will not be registered")
+		log.Debug("appsec: no supported GraphQL address is used by currently loaded WAF rules, the GraphQL WAF Event Listener will not be registered")
 		return nil
 	}
 

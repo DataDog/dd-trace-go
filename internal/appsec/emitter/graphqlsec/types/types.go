@@ -35,7 +35,7 @@ type (
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
 func (q *RequestOperation) Finish(res RequestOperationRes) {
-	dyngo.Finish(q, res)
+	dyngo.FinishOperation(q, res)
 }
 
 func (RequestOperationArgs) IsArgOf(*RequestOperation)   {}
@@ -69,7 +69,7 @@ type (
 // Finish the GraphQL query operation, along with the given results, and emit a finish event up in
 // the operation stack.
 func (q *ExecutionOperation) Finish(res ExecutionOperationRes) {
-	dyngo.Finish(q, res)
+	dyngo.FinishOperation(q, res)
 }
 
 func (ExecutionOperationArgs) IsArgOf(*ExecutionOperation)   {}
@@ -105,7 +105,7 @@ type (
 // Finish the GraphQL Field operation, along with the given results, and emit a finish event up in
 // the operation stack.
 func (q *ResolveOperation) Finish(res ResolveOperationRes) {
-	dyngo.Finish(q, res)
+	dyngo.FinishOperation(q, res)
 }
 
 func (ResolveOperationArgs) IsArgOf(*ResolveOperation)   {}

@@ -340,7 +340,7 @@ func TestUsage(t *testing.T) {
 
 	t.Run("recursive-operation", func(t *testing.T) {
 		root := startOperation(RootArgs{}, nil)
-		defer dyngo.Finish(root, RootRes{})
+		defer dyngo.FinishOperation(root, RootRes{})
 
 		called := 0
 		dyngo.On(root, func(operation, HTTPHandlerArgs) { called++ })
@@ -362,7 +362,7 @@ func TestUsage(t *testing.T) {
 	t.Run("concurrency", func(t *testing.T) {
 		// root is the shared operation having concurrent accesses in this test
 		root := startOperation(RootArgs{}, nil)
-		defer dyngo.Finish(root, RootRes{})
+		defer dyngo.FinishOperation(root, RootRes{})
 
 		// Create nbGoroutines registering event listeners concurrently
 		nbGoroutines := 1000
@@ -405,7 +405,7 @@ func TestUsage(t *testing.T) {
 				startBarrier.Wait()
 				defer done.Done()
 				op := startOperation(MyOperationArgs{}, root)
-				defer dyngo.Finish(op, MyOperationRes{})
+				defer dyngo.FinishOperation(op, MyOperationRes{})
 			}()
 		}
 
@@ -463,7 +463,7 @@ func startOperation[T dyngo.ArgOf[operation]](args T, parent dyngo.Operation) op
 // Helper function to run operations recursively.
 func runOperation[A dyngo.ArgOf[operation], R dyngo.ResultOf[operation]](parent dyngo.Operation, args A, res R, child func(dyngo.Operation)) {
 	op := startOperation(args, parent)
-	defer dyngo.Finish(op, res)
+	defer dyngo.FinishOperation(op, res)
 	if child != nil {
 		child(op)
 	}
@@ -479,7 +479,7 @@ func TestOperationData(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			dyngo.EmitData(op, &data)
 		}
-		dyngo.Finish(op, MyOperationRes{})
+		dyngo.FinishOperation(op, MyOperationRes{})
 		require.Equal(t, 10, data)
 	})
 
@@ -493,8 +493,8 @@ func TestOperationData(t *testing.T) {
 			for i := 0; i < 10; i++ {
 				dyngo.EmitData(op2, &data)
 			}
-			dyngo.Finish(op2, MyOperation2Res{})
-			dyngo.Finish(op1, MyOperationRes{})
+			dyngo.FinishOperation(op2, MyOperation2Res{})
+			dyngo.FinishOperation(op1, MyOperationRes{})
 			require.Equal(t, 10, data)
 		})
 
@@ -507,8 +507,8 @@ func TestOperationData(t *testing.T) {
 			for i := 0; i < 10; i++ {
 				dyngo.EmitData(op2, &data)
 			}
-			dyngo.Finish(op2, MyOperation2Res{})
-			dyngo.Finish(op1, MyOperationRes{})
+			dyngo.FinishOperation(op2, MyOperation2Res{})
+			dyngo.FinishOperation(op1, MyOperationRes{})
 			require.Equal(t, 20, data)
 		})
 	})
@@ -524,22 +524,22 @@ func TestOperationEvents(t *testing.T) {
 		})
 
 		op2 := startOperation(MyOperation2Args{}, op1)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 
 		// Called once
 		require.Equal(t, 1, called)
 
 		op2 = startOperation(MyOperation2Args{}, op1)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 
 		// Called again
 		require.Equal(t, 2, called)
 
 		// Finish the operation so that it gets disabled and its listeners removed
-		dyngo.Finish(op1, MyOperationRes{})
+		dyngo.FinishOperation(op1, MyOperationRes{})
 
 		op2 = startOperation(MyOperation2Args{}, op1)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 
 		// No longer called
 		require.Equal(t, 2, called)
@@ -554,35 +554,35 @@ func TestOperationEvents(t *testing.T) {
 		})
 
 		op2 := startOperation(MyOperation2Args{}, op1)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// Called once
 		require.Equal(t, 1, called)
 
 		op2 = startOperation(MyOperation2Args{}, op1)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// Called again
 		require.Equal(t, 2, called)
 
 		op3 := startOperation(MyOperation3Args{}, op2)
-		dyngo.Finish(op3, MyOperation3Res{})
+		dyngo.FinishOperation(op3, MyOperation3Res{})
 		// Not called
 		require.Equal(t, 2, called)
 
 		op2 = startOperation(MyOperation2Args{}, op3)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// Called again
 		require.Equal(t, 3, called)
 
 		// Finish the operation so that it gets disabled and its listeners removed
-		dyngo.Finish(op1, MyOperationRes{})
+		dyngo.FinishOperation(op1, MyOperationRes{})
 
 		op2 = startOperation(MyOperation2Args{}, op3)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// No longer called
 		require.Equal(t, 3, called)
 
 		op2 = startOperation(MyOperation2Args{}, op2)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// No longer called
 		require.Equal(t, 3, called)
 	})
@@ -605,16 +605,16 @@ func TestOperationEvents(t *testing.T) {
 
 		// Trigger the registered events
 		op2 := startOperation(MyOperation2Args{}, op)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// We should have 4 calls
 		require.Equal(t, 2, calls)
 
 		// Finish the operation to disable it. Its event listeners should then be removed.
-		dyngo.Finish(op, MyOperationRes{})
+		dyngo.FinishOperation(op, MyOperationRes{})
 
 		// Trigger the same events
 		op2 = startOperation(MyOperation2Args{}, op)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// The number of calls should be unchanged
 		require.Equal(t, 2, calls)
 
@@ -622,7 +622,7 @@ func TestOperationEvents(t *testing.T) {
 		registerTo(op)
 		// Trigger the same events
 		op2 = startOperation(MyOperation2Args{}, op)
-		dyngo.Finish(op2, MyOperation2Res{})
+		dyngo.FinishOperation(op2, MyOperation2Res{})
 		// The number of calls should be unchanged
 		require.Equal(t, 2, calls)
 	})
@@ -630,7 +630,7 @@ func TestOperationEvents(t *testing.T) {
 	t.Run("event-listener-panic", func(t *testing.T) {
 		t.Run("start", func(t *testing.T) {
 			op := startOperation(MyOperationArgs{}, nil)
-			defer dyngo.Finish(op, MyOperationRes{})
+			defer dyngo.FinishOperation(op, MyOperationRes{})
 
 			// Panic on start
 			calls := 0
@@ -643,14 +643,14 @@ func TestOperationEvents(t *testing.T) {
 			require.NotPanics(t, func() {
 				op := startOperation(MyOperationArgs{}, op)
 				require.NotNil(t, op)
-				defer dyngo.Finish(op, MyOperationRes{})
+				defer dyngo.FinishOperation(op, MyOperationRes{})
 				require.Equal(t, calls, 1)
 			})
 		})
 
 		t.Run("finish", func(t *testing.T) {
 			op := startOperation(MyOperationArgs{}, nil)
-			defer dyngo.Finish(op, MyOperationRes{})
+			defer dyngo.FinishOperation(op, MyOperationRes{})
 			// Panic on finish
 			calls := 0
 			dyngo.OnFinish(op, func(operation, MyOperationRes) {
@@ -662,7 +662,7 @@ func TestOperationEvents(t *testing.T) {
 			require.NotPanics(t, func() {
 				op := startOperation(MyOperationArgs{}, op)
 				require.NotNil(t, op)
-				dyngo.Finish(op, MyOperationRes{})
+				dyngo.FinishOperation(op, MyOperationRes{})
 				require.Equal(t, calls, 1)
 			})
 		})
@@ -675,12 +675,12 @@ func BenchmarkEvents(b *testing.B) {
 		for length := 1; length <= 64; length *= 2 {
 			b.Run(fmt.Sprintf("stack=%d", length), func(b *testing.B) {
 				root := startOperation(MyOperationArgs{}, nil)
-				defer dyngo.Finish(root, MyOperationRes{})
+				defer dyngo.FinishOperation(root, MyOperationRes{})
 
 				op := root
 				for i := 0; i < length-1; i++ {
 					op = startOperation(MyOperationArgs{}, op)
-					defer dyngo.Finish(op, MyOperationRes{})
+					defer dyngo.FinishOperation(op, MyOperationRes{})
 				}
 
 				b.Run("start event", func(b *testing.B) {
@@ -700,7 +700,7 @@ func BenchmarkEvents(b *testing.B) {
 					b.ResetTimer()
 					for n := 0; n < b.N; n++ {
 						leafOp := startOperation(MyOperationArgs{}, op)
-						dyngo.Finish(leafOp, MyOperationRes{})
+						dyngo.FinishOperation(leafOp, MyOperationRes{})
 					}
 				})
 			})
@@ -709,7 +709,7 @@ func BenchmarkEvents(b *testing.B) {
 
 	b.Run("registering", func(b *testing.B) {
 		op := startOperation(MyOperationArgs{}, nil)
-		defer dyngo.Finish(op, MyOperationRes{})
+		defer dyngo.FinishOperation(op, MyOperationRes{})
 
 		b.Run("start event", func(b *testing.B) {
 			b.ReportAllocs()

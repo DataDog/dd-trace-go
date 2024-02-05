@@ -41,7 +41,7 @@ func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) er
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
 	dyngo.OnData(op, func(e error) { err = e })
 	dyngo.StartOperation(op, args)
-	dyngo.Finish(op, UserIDOperationRes{})
+	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err
 }
 

@@ -30,7 +30,7 @@ func TestUsage(t *testing.T) {
 		return func(t *testing.T) {
 			localRootOp := dyngo.NewRootOperation()
 			dyngo.StartOperation(localRootOp, rootArgs{})
-			defer dyngo.Finish(localRootOp, rootRes{})
+			defer dyngo.FinishOperation(localRootOp, rootRes{})
 
 			var handlerStarted, handlerFinished, recvStarted, recvFinished int
 			defer func() {

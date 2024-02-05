@@ -32,7 +32,7 @@ type (
 // Finish the HTTP handler operation, along with the given results and emits a
 // finish event up in the operation stack.
 func (op *Operation) Finish(res HandlerOperationRes) []any {
-	dyngo.Finish(op, res)
+	dyngo.FinishOperation(op, res)
 	return op.Events()
 }
 
@@ -80,7 +80,7 @@ type (
 
 // Finish finishes the SDKBody operation and emits a finish event
 func (op *SDKBodyOperation) Finish() {
-	dyngo.Finish(op, SDKBodyOperationRes{})
+	dyngo.FinishOperation(op, SDKBodyOperationRes{})
 }
 
 // Error implements the Error interface

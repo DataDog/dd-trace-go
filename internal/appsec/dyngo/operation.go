@@ -150,14 +150,10 @@ func StartOperation[O Operation, E ArgOf[O]](op O, args E) {
 	}
 }
 
-func newOperation(parent Operation) *operation {
-	return &operation{parent: parent.unwrap()}
-}
-
-// Finish finishes the operation along with its results and emits a
+// FinishOperation finishes the operation along with its results and emits a
 // finish event with the operation results.
 // The operation is then disabled and its event listeners removed.
-func Finish[O Operation, E ResultOf[O]](op O, results E) {
+func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	o := op.unwrap()
 	defer o.disable() // This will need the RLock below to be released...
 

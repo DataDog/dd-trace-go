@@ -91,14 +91,14 @@ func (e *MonitoringError) Error() string {
 // Finish the gRPC handler operation, along with the given results, and emit a
 // finish event up in the operation stack.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) []any {
-	dyngo.Finish(op, res)
+	dyngo.FinishOperation(op, res)
 	return op.Events()
 }
 
 // Finish the gRPC handler operation, along with the given results, and emits a
 // finish event up in the operation stack.
 func (op ReceiveOperation) Finish(res ReceiveOperationRes) {
-	dyngo.Finish(op, res)
+	dyngo.FinishOperation(op, res)
 }
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}

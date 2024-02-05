@@ -43,7 +43,7 @@ var supportedAddresses = listener.AddressSet{
 // Install registers the gRPC WAF Event Listener on the given root operation.
 func Install(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, lim limiter.Limiter, root dyngo.Operation) {
 	if listener := newWafEventListener(wafHandle, actions, cfg, lim); listener != nil {
-		log.Debug("[appsec] registering the gRPC WAF Event Listener")
+		log.Debug("appsec: registering the gRPC WAF Event Listener")
 		dyngo.On(root, listener.onEvent)
 	}
 }
@@ -60,13 +60,13 @@ type wafEventListener struct {
 
 func newWafEventListener(wafHandle *waf.Handle, actions sharedsec.Actions, cfg *config.Config, limiter limiter.Limiter) *wafEventListener {
 	if wafHandle == nil {
-		log.Debug("[appsec] no WAF Handle available, the gRPC WAF Event Listener will not be registered")
+		log.Debug("appsec: no WAF Handle available, the gRPC WAF Event Listener will not be registered")
 		return nil
 	}
 
 	addresses := listener.FilterAddressSet(supportedAddresses, wafHandle)
 	if len(addresses) == 0 {
-		log.Debug("[appsec] no supported gRPC address is used by currently loaded WAF rules, the gRPC WAF Event Listener will not be registered")
+		log.Debug("appsec: no supported gRPC address is used by currently loaded WAF rules, the gRPC WAF Event Listener will not be registered")
 		return nil
 	}
 
