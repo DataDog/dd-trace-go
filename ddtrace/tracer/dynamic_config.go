@@ -20,8 +20,8 @@ type dynamicConfig[T any] struct {
 	startup   T                 // holds the startup configuration value
 	cfgName   string            // holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
 	cfgOrigin string            // holds the origin of the current configuration value (currently only supports remote_config, empty otherwise)
-	apply     func(T) bool      // applies a configuration value
-	equal     func(x, y T) bool // compares two configuration values
+	apply     func(T) bool      // executes any config-specific operations to propagate the update properly, returns whether the update was applied
+	equal     func(x, y T) bool // compares two configuration values, this is used to avoid unnecessary config and telemetry updates
 }
 
 func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(x, y T) bool) dynamicConfig[T] {
@@ -32,6 +32,13 @@ func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(
 		apply:   apply,
 		equal:   equal,
 	}
+}
+
+// get returns the current configuration value
+func (dc *dynamicConfig[T]) get() T {
+	dc.RLock()
+	defer dc.RUnlock()
+	return dc.current
 }
 
 // update applies a new configuration value
@@ -90,6 +97,19 @@ func equalSlice[T comparable](x, y []T) bool {
 	}
 	for i, v := range x {
 		if v != y[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// equalMap compares two maps of comparable keys and values
+func equalMap[T comparable](x, y map[T]interface{}) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for k, v := range x {
+		if yv, ok := y[k]; !ok || yv != v {
 			return false
 		}
 	}

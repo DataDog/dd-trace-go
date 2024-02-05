@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -338,6 +337,25 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("nilStringer", (*nilStringer)(nil))
 	assert.Equal("<nil>", span.Meta["nilStringer"])
 
+	span.SetTag("somestrings", []string{"foo", "bar"})
+	assert.Equal("foo", span.Meta["somestrings.0"])
+	assert.Equal("bar", span.Meta["somestrings.1"])
+
+	span.SetTag("somebools", []bool{true, false})
+	assert.Equal("true", span.Meta["somebools.0"])
+	assert.Equal("false", span.Meta["somebools.1"])
+
+	span.SetTag("somenums", []int{-1, 5, 2})
+	assert.Equal(-1., span.Metrics["somenums.0"])
+	assert.Equal(5., span.Metrics["somenums.1"])
+	assert.Equal(2., span.Metrics["somenums.2"])
+
+	span.SetTag("someslices", [][]string{{"a, b, c"}, {"d"}, nil, {"e, f"}})
+	assert.Equal("[a, b, c]", span.Meta["someslices.0"])
+	assert.Equal("[d]", span.Meta["someslices.1"])
+	assert.Equal("[]", span.Meta["someslices.2"])
+	assert.Equal("[e, f]", span.Meta["someslices.3"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
@@ -548,7 +566,6 @@ func TestSpanProfilingTags(t *testing.T) {
 			require.Equal(t, false, ok)
 		})
 	}
-
 }
 
 func TestSpanError(t *testing.T) {
@@ -756,12 +773,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -790,12 +804,9 @@ func TestSpanLog(t *testing.T) {
 	})
 
 	t.Run("notracer/env", func(t *testing.T) {
-		os.Setenv("DD_SERVICE", "tracer.test")
-		defer os.Unsetenv("DD_SERVICE")
-		os.Setenv("DD_VERSION", "1.2.3")
-		defer os.Unsetenv("DD_VERSION")
-		os.Setenv("DD_ENV", "testenv")
-		defer os.Unsetenv("DD_ENV")
+		t.Setenv("DD_SERVICE", "tracer.test")
+		t.Setenv("DD_VERSION", "1.2.3")
+		t.Setenv("DD_ENV", "testenv")
 		assert := assert.New(t)
 		tracer, _, _, stop := startTestTracer(t)
 		span := tracer.StartSpan("test.request").(*span)

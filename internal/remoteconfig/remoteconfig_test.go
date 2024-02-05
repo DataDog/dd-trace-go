@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,6 +63,27 @@ func TestRCClient(t *testing.T) {
 					statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
 				}
 			}
+			return statuses
+		})
+		require.NoError(t, err)
+
+		resp := genUpdateResponse([]byte("test"), cfgPath)
+		err := client.applyUpdate(resp)
+		require.NoError(t, err)
+	})
+
+	t.Run("subscribe", func(t *testing.T) {
+		client, err = newClient(cfg)
+		require.NoError(t, err)
+
+		cfgPath := "datadog/2/APM_TRACING/foo/bar"
+		err = Subscribe(rc.ProductAPMTracing, func(u ProductUpdate) map[string]rc.ApplyStatus {
+			statuses := map[string]rc.ApplyStatus{}
+			require.NotNil(t, u)
+			require.Len(t, u, 1)
+			require.NotNil(t, u[cfgPath])
+			require.Equal(t, string(u[cfgPath]), "test")
+			statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
 			return statuses
 		})
 		require.NoError(t, err)
@@ -288,4 +311,141 @@ func TestRegistration(t *testing.T) {
 			require.NotEqual(t, reflect.ValueOf(dummyCallback3), reflect.ValueOf(c))
 		}
 	})
+}
+
+func TestSubscribe(t *testing.T) {
+	var err error
+	client, err = newClient(DefaultClientConfig())
+	require.NoError(t, err)
+
+	var callback Callback = func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var pCallback ProductCallback = func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }
+
+	err = Subscribe("my-product", pCallback)
+	require.NoError(t, err)
+	require.Len(t, client.callbacks, 0)
+	require.Len(t, client.productsWithCallbacks, 1)
+	require.Equal(t, reflect.ValueOf(pCallback), reflect.ValueOf(client.productsWithCallbacks["my-product"]))
+
+	err = RegisterProduct("my-product")
+	require.Error(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = RegisterProduct("my-second-product")
+	require.NoError(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = Subscribe("my-second-product", pCallback)
+	require.Error(t, err)
+	require.Len(t, client.productsWithCallbacks, 1)
+
+	err = RegisterCallback(callback)
+	require.NoError(t, err)
+	require.Len(t, client.callbacks, 1)
+	require.Len(t, client.productsWithCallbacks, 1)
+	require.Equal(t, reflect.ValueOf(callback), reflect.ValueOf(client.callbacks[0]))
+}
+
+func TestNewUpdateRequest(t *testing.T) {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test-svc"
+	cfg.Env = "test-env"
+	cfg.TracerVersion = "tracer-version"
+	cfg.AppVersion = "app-version"
+	var err error
+	client, err = newClient(cfg)
+	require.NoError(t, err)
+
+	err = RegisterProduct("my-product")
+	require.NoError(t, err)
+	err = RegisterCapability(ASMActivation)
+	require.NoError(t, err)
+	err = Subscribe("my-second-product", func(u ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
+	require.NoError(t, err)
+
+	b, err := client.newUpdateRequest()
+	require.NoError(t, err)
+
+	var req clientGetConfigsRequest
+	err = json.Unmarshal(b.Bytes(), &req)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"my-product", "my-second-product"}, req.Client.Products)
+	require.Equal(t, []uint8([]byte{0x10, 0x2}), req.Client.Capabilities)
+	require.Equal(t, "go", req.Client.ClientTracer.Language)
+	require.Equal(t, "test-svc", req.Client.ClientTracer.Service)
+	require.Equal(t, "test-env", req.Client.ClientTracer.Env)
+	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
+	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
+	require.True(t, req.Client.IsTracer)
+}
+
+// TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
+func TestAsync(t *testing.T) {
+	require.NoError(t, Start(DefaultClientConfig()))
+	defer Stop()
+	const iterations = 10000
+	var wg sync.WaitGroup
+
+	// Subscriptions
+	for i := 0; i < iterations; i++ {
+		product := fmt.Sprintf("%d", rand.Int()%10)
+		capability := Capability(rand.Uint32() % 10)
+		wg.Add(1)
+		go func() {
+			callback := func(update ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			Subscribe(product, callback, capability)
+			wg.Done()
+		}()
+	}
+
+	// Products
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
+		}()
+	}
+
+	// Capabilities
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterCapability(Capability(rand.Uint32() % 10))
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterCapability(Capability(rand.Uint32() % 10))
+		}()
+	}
+
+	// Callbacks
+	callback := func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			RegisterCallback(callback)
+		}()
+	}
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			UnregisterCallback(callback)
+		}()
+	}
+	wg.Wait()
 }

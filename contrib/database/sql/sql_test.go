@@ -38,8 +38,10 @@ func TestMain(m *testing.M) {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)
 	}
-	defer sqltest.Prepare(tableName)()
-	os.Exit(m.Run())
+	cleanup := sqltest.Prepare(tableName)
+	testResult := m.Run()
+	cleanup()
+	os.Exit(testResult)
 }
 
 func TestSqlServer(t *testing.T) {
@@ -291,6 +293,10 @@ func TestMySQLUint64(t *testing.T) {
 // hangingConnector hangs on Connect until ctx is cancelled.
 type hangingConnector struct{}
 
+func (h *hangingConnector) Open(_ string) (driver.Conn, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (h *hangingConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	select {
 	case <-ctx.Done():
@@ -299,7 +305,7 @@ func (h *hangingConnector) Connect(ctx context.Context) (driver.Conn, error) {
 }
 
 func (h *hangingConnector) Driver() driver.Driver {
-	panic("hangingConnector: Driver() not implemented")
+	return h
 }
 
 func TestConnectCancelledCtx(t *testing.T) {

@@ -33,14 +33,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2
         with:
+          go_version: ${{ inputs.go-version }}
           golangci_lint_version: v1.52.2
           fail_on_error: true
           reporter: github-pr-review
@@ -203,7 +199,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml
+          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
@@ -247,7 +243,6 @@ jobs:
               go test -v ./contrib/google.golang.org/api/...
 
       - name: Testing outlier gRPC v1.2
-        if: inputs.ref != 'refs/heads/v2-dev'
         run: |
               # This hacky approach is necessary because running the tests regularly
               # do not allow using grpc-go@v1.2.0 alongside sketches-go@v1.0.0

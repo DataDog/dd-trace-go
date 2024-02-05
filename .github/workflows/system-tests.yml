@@ -40,12 +40,14 @@ jobs:
           - echo
           - chi
           - gin
+          - uds-echo
         scenario:
           - DEFAULT
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
           - APPSEC_REQUEST_BLOCKING
+          - APPSEC_API_SECURITY
           - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
@@ -106,14 +108,6 @@ jobs:
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
-
-      - name: Patch dd-trace-go version
-        if: ${{ inputs.branch_ref == 'refs/heads/v2-dev' }}
-        run: |
-          cd utils/build/docker/golang/app
-          find -type f -name '*.go' -exec sed -i 's#gopkg.in/DataDog/dd-trace-go.v1#github.com/DataDog/dd-trace-go/v2#g' {} \;
-          echo "replace github.com/DataDog/dd-trace-go/v2 => /home/runner/work/dd-trace-go/dd-trace-go/binaries/dd-trace-go" >> go.mod
-          go mod tidy
 
       - name: Build weblog
         run: ./build.sh -i weblog

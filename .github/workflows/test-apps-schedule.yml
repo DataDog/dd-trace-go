@@ -1,0 +1,24 @@
+# See /internal/apps/README.md for more information.
+name: "Test Apps Schedule"
+on:
+  workflow_dispatch: # manually (just for testing the cron)
+  schedule:
+    - cron: "0 0 * * *" # nightly
+    - cron: "0 0 * * 2" # weekly (tuesdays)
+
+jobs:
+  nightly:
+    if: github.event.schedule == '0 0 * * *'
+    uses: ./.github/workflows/test-apps.yml
+    secrets: inherit
+    with:
+      "arg: scenario_duration": "10m"
+      "arg: tags": "trigger:nightly"
+
+  weekly:
+    if: github.event.schedule == '0 0 * * 2'
+    uses: ./.github/workflows/test-apps.yml
+    secrets: inherit
+    with:
+      "arg: scenario_duration": "1h"
+      "arg: tags": "trigger:weekly"

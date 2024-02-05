@@ -435,3 +435,17 @@ func Test_heartbeatInterval(t *testing.T) {
 		})
 	}
 }
+
+func TestNoEmptyHeaders(t *testing.T) {
+	c := &client{}
+	req := c.newRequest(RequestTypeAppStarted)
+	assertNotEmpty := func(header string) {
+		headers := *req.Header
+		vals := headers[header]
+		for _, v := range vals {
+			assert.NotEmpty(t, v, "%s header should not be empty", header)
+		}
+	}
+	assertNotEmpty("Datadog-Container-ID")
+	assertNotEmpty("Datadog-Entity-ID")
+}

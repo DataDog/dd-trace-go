@@ -30,6 +30,7 @@ type target struct {
 type libConfig struct {
 	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
 	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
+	Tags         *tags       `json:"tracing_tags,omitempty"`
 }
 
 type headerTags []headerTag
@@ -58,14 +59,63 @@ func (ht headerTag) toString() string {
 	return sb.String()
 }
 
+type tags []string
+
+func (t *tags) toMap() *map[string]interface{} {
+	if t == nil {
+		return nil
+	}
+	m := make(map[string]interface{}, len(*t))
+	for _, tag := range *t {
+		if kv := strings.SplitN(tag, ":", 2); len(kv) == 2 {
+			m[kv[0]] = kv[1]
+		}
+	}
+	return &m
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
-func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
+func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
-	u, found := updates[state.ProductAPMTracing]
-	if !found {
+	if len(u) == 0 {
 		return statuses
 	}
+	removed := func() bool {
+		// Returns true if all the values in the update are nil.
+		for _, raw := range u {
+			if raw != nil {
+				return false
+			}
+		}
+		return true
+	}
 	var telemConfigs []telemetry.Configuration
+	if removed() {
+		// The remote-config client is signaling that the configuration has been deleted for this product.
+		// We re-apply the startup configuration values.
+		for path := range u {
+			log.Debug("Nil payload from RC. Path: %s.", path)
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
+		}
+		log.Debug("Resetting configurations")
+		updated := t.config.traceSampleRate.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		}
+		updated = t.config.headerAsTags.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
+		}
+		updated = t.config.globalTags.reset()
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
+		}
+		if len(telemConfigs) > 0 {
+			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
+			telemetry.GlobalClient.ConfigChange(telemConfigs)
+		}
+		return statuses
+	}
 	for path, raw := range u {
 		if raw == nil {
 			continue
@@ -96,6 +146,10 @@ func (t *tracer) onRemoteConfigUpdate(updates map[string]remoteconfig.ProductUpd
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
 		}
+		updated = t.config.globalTags.handleRC(c.LibConfig.Tags.toMap())
+		if updated {
+			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
+		}
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
@@ -111,9 +165,11 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	if err != nil {
 		return err
 	}
-	err = remoteconfig.RegisterProduct(state.ProductAPMTracing)
-	if err != nil {
-		return err
-	}
-	return remoteconfig.RegisterCallback(t.onRemoteConfigUpdate)
+	return remoteconfig.Subscribe(
+		state.ProductAPMTracing,
+		t.onRemoteConfigUpdate,
+		remoteconfig.APMTracingSampleRate,
+		remoteconfig.APMTracingHTTPHeaderTags,
+		remoteconfig.APMTracingCustomTags,
+	)
 }

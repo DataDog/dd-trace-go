@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -61,12 +62,15 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			request := c.Request()
 			route := c.Path()
 			resource := request.Method + " " + route
-			opts := append(spanOpts, tracer.ResourceName(resource), tracer.Tag(ext.HTTPRoute, route))
-
+			opts := options.Copy(spanOpts...) // opts must be a copy of spanOpts, locally scoped, to avoid races.
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 			}
-			opts = append(opts, httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+			opts = append(opts,
+				tracer.ResourceName(resource),
+				tracer.Tag(ext.HTTPRoute, route),
+				httptrace.HeaderTagsFromRequest(request, cfg.headerTags))
+
 			var finishOpts []tracer.FinishOption
 			if cfg.noDebugStack {
 				finishOpts = []tracer.FinishOption{tracer.NoDebugStack()}
@@ -85,7 +89,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 			// serve the request to the next middleware
 			err := next(c)
-			if err != nil {
+			if err != nil && !shouldIgnoreError(cfg, err) {
 				// invokes the registered HTTP error handler
 				c.Error(err)
 
@@ -105,16 +109,28 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
+					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
+						finishOpts = append(finishOpts, tracer.WithError(statusErr))
+					}
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
-					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
+					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
+						finishOpts = append(finishOpts, tracer.WithError(statusErr))
+					}
 				}
 				span.SetTag(ext.HTTPCode, "200")
 			}
 			return err
 		}
 	}
+}
+
+func errorFromStatusCode(statusCode int) error {
+	return fmt.Errorf("%d: %s", statusCode, http.StatusText(statusCode))
+}
+
+func shouldIgnoreError(cfg *config, err error) bool {
+	return cfg.errCheck != nil && !cfg.errCheck(err)
 }

@@ -3,9 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build appsec
-// +build appsec
-
 package appsec_test
 
 import (
@@ -15,6 +12,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 
 	waf "github.com/DataDog/go-libddwaf/v2"
 	"github.com/stretchr/testify/assert"
@@ -22,8 +20,8 @@ import (
 )
 
 func TestEnabled(t *testing.T) {
-	enabledConfig, _ := strconv.ParseBool(os.Getenv("DD_APPSEC_ENABLED"))
-	wafSupported, _ := waf.SupportsTarget()
+	enabledConfig, _ := strconv.ParseBool(os.Getenv(config.EnvEnabled))
+	wafSupported, _ := waf.Health()
 	canBeEnabled := enabledConfig && wafSupported
 
 	require.False(t, appsec.Enabled())
@@ -36,8 +34,8 @@ func TestEnabled(t *testing.T) {
 // Test that everything goes well when simply starting and stopping appsec
 func TestStartStop(t *testing.T) {
 	// Use t.Setenv() to automatically restore the initial env var value, if set
-	t.Setenv("DD_APPSEC_ENABLED", "")
-	os.Unsetenv("DD_APPSEC_ENABLED")
+	t.Setenv(config.EnvEnabled, "")
+	os.Unsetenv(config.EnvEnabled)
 	appsec.Start()
 	appsec.Stop()
 }

@@ -25,64 +25,88 @@ on:
     branches: release-v*
 env:
   DD_APPSEC_WAF_TIMEOUT: 5s
-  JUNIT_REPORT: gotestsum-report.xml
-  TO_TEST: ./appsec/... ./internal/appsec/... ./contrib/google.golang.org/grpc/... ./contrib/net/http/... ./contrib/gorilla/mux/... ./contrib/go-chi/... ./contrib/labstack/echo.v4/... ./contrib/gin-gonic/gin/...
+  JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
   native:
     strategy:
       matrix:
-        runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04, windows-latest ]
+        runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
         go-version: [ "1.21", "1.20", "1.19" ]
-        cgo_enabled: # test it compiles with and without cgo
-          - 0
-          - 1
-        build_tags: # test it compiles with and without the appsec build tag
-          - ""
-          - "appsec"
+        cgo_enabled: [ "0", "1" ] # test it compiles with and without cgo
         appsec_enabled: # test it compiles with and without appsec enabled
-          - true
-          - false
+          - DD_APPSEC_ENABLED=true
+          - DD_APPSEC_ENABLED=false
+          - "" # the env var is not defined so that the remote-config path can be taken
+        include:
+          - cgocheck:
+              GODEBUG=cgocheck=2
+          - go-version: "1.21"
+            cgocheck:  # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
+              GOEXPERIMENT=cgocheck2
       fail-fast: false
+    name: native ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Go modules cache
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          restore-keys: go-pkg-mod-
 
       - name: go test
         shell: bash
         run: |
-          # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
-          # https://go.dev/doc/go1.21 (runtime section)
-          if [[ ${{matrix['go-version']}} == '1.21' ]]; then
-            export GOEXPERIMENT=cgocheck2
-          else
-            export GODEBUG=cgocheck=2
-          fi
-          # Install gotestsum to get the results in a junit file
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
+          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.JUNIT_REPORT }}
+          files: ${{ env.JUNIT_REPORT }}*.xml
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+  # Tests cases were appsec end up being disabled
+  waf-disabled:
+    strategy:
+      fail-fast: false
+      matrix:
+        go-args: [ "-tags datadog.no_waf", "-tags go1.22" ]
+        runs-on: [ macos-13, ubuntu-latest ]
+        appsec_enabled:
+          - DD_APPSEC_ENABLED=true
+          - "" # the env var is not defined so that the remote-config path can be taken
+        include:
+          - runs-on: windows-latest
+            go-args: ""
+    name: disabled ${{ toJSON(matrix) }}
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: go test
+        shell: bash
+        run: |
+          go install gotest.tools/gotestsum@latest
+          # Run the tests with gotestsum
+          env ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
+
+      - name: Upload the results to Datadog CI App
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}*.xml
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
+    name: golang-containers ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest
     container:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
@@ -90,9 +114,6 @@ jobs:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
-        build_tags: # test it compiles with and without the appsec build tag
-          - ""
-          - "appsec"
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
@@ -106,12 +127,12 @@ jobs:
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git
+        run: apk add gcc musl-dev libc6-compat git bash
 
       - name: Go modules cache
         uses: actions/cache@v3
@@ -123,20 +144,21 @@ jobs:
       - name: go test
         run: |
           # Install gotestsum to get the results in a junit file
-          env GOBIN=$PWD go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} ./gotestsum --junitfile $JUNIT_REPORT -- -v -tags="${{matrix.build_tags}}" $TO_TEST
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
       - name: Upload the results to Datadog CI App
         if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.JUNIT_REPORT }}
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          files: ${{ env.JUNIT_REPORT }}*.xml
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
 
   linux-arm64:
     runs-on: ubuntu-latest
+    name: linux/arm64 ${{ toJSON(matrix) }}
     strategy:
       matrix:
         cgo_enabled: # test it compiles with and without the cgo
@@ -147,20 +169,21 @@ jobs:
           - false
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Go modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      - run: docker run --platform=linux/arm64 -v $PWD:$PWD -w $PWD -eCGO_ENABLED=${{ matrix.cgo_enabled }} -eDD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} -eDD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT golang go test -v -tags appsec $TO_TEST
+      - run: |
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=${{ matrix.appsec_enabled }} DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main

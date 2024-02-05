@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/trace"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -341,6 +343,33 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// startTestProfiler starts up a profiler wired up to an in-memory mock backend
+// using the given profiler options, and returns a channel with the provided
+// buffer size to which profiles will be sent. The profiler and mock backend
+// will be stopped when the calling test case completes
+func startTestProfiler(t *testing.T, size int, options ...Option) <-chan profileMeta {
+	profiles := make(chan profileMeta, size)
+	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: profiles})
+	t.Cleanup(func() { server.Close() })
+
+	options = append(options, WithHTTPClient(client))
+	if err := Start(options...); err != nil {
+		t.Fatalf("starting test profiler: %s", err)
+	}
+	t.Cleanup(Stop)
+	return profiles
+}
+
+// doOneShortProfileUpload is a test helper which starts a profiler with a short
+// period and no profile types enabled, intended to write quick tests which
+// check that various metadata makes it through the profiler
+func doOneShortProfileUpload(t *testing.T, opts ...Option) profileMeta {
+	opts = append(opts,
+		WithProfileTypes(), WithPeriod(10*time.Millisecond),
+	)
+	return <-startTestProfiler(t, 1, opts...)
+}
+
 func TestAllUploaded(t *testing.T) {
 	// This is a kind of end-to-end test that runs the real profiles (i.e.
 	// not mocking/replacing any internal functions) and verifies that the
@@ -348,21 +377,17 @@ func TestAllUploaded(t *testing.T) {
 	//
 	// TODO: Further check that the uploaded profiles are all valid
 
-	// received indicates that the server has received a profile upload.
-	// This is used similarly to a sync.WaitGroup but avoids a potential
-	// panic if too many requests are received before profiling is stopped
-	// and the WaitGroup count goes negative.
-	//
+	var customLabelKeys []string
+	for i := 0; i < 50; i++ {
+		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
+	}
+
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
 	// bad state after the first round of profiling.
-	received := make(chan profileMeta, 2)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: received})
-	defer server.Close()
-
-	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+	profiles := startTestProfiler(t, 2,
 		WithProfileTypes(
 			BlockProfile,
 			CPUProfile,
@@ -372,8 +397,8 @@ func TestAllUploaded(t *testing.T) {
 		),
 		WithPeriod(10*time.Millisecond),
 		CPUDuration(1*time.Millisecond),
+		WithCustomProfilerLabelKeys(customLabelKeys...),
 	)
-	defer Stop()
 
 	validateProfile := func(profile profileMeta, seq uint64) {
 		expected := []string{
@@ -384,35 +409,28 @@ func TestAllUploaded(t *testing.T) {
 			"goroutines.pprof",
 			"goroutineswait.pprof",
 		}
-		if executionTraceEnabledDefault && seq == 0 {
+		if executionTraceEnabledDefault {
 			expected = append(expected, "go.trace")
 		}
 		assert.ElementsMatch(t, expected, profile.event.Attachments)
+		assert.ElementsMatch(t, customLabelKeys[:customProfileLabelLimit], profile.event.CustomAttributes)
 
 		assert.Contains(t, profile.tags, fmt.Sprintf("profile_seq:%d", seq))
 	}
 
-	validateProfile(<-received, 0)
-	validateProfile(<-received, 1)
+	validateProfile(<-profiles, 0)
+	validateProfile(<-profiles, 1)
 }
 
 func TestCorrectTags(t *testing.T) {
-	got := make(chan profileMeta)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
-	Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(
-			HeapProfile,
-		),
+	profiles := startTestProfiler(t, 1,
+		WithProfileTypes(HeapProfile),
 		WithPeriod(10*time.Millisecond),
 		WithService("xyz"),
 		WithEnv("testing"),
 		WithTags("foo:bar", "baz:bonk"),
 		WithHostname("example"),
 	)
-	defer Stop()
 	expected := []string{
 		"baz:bonk",
 		"env:testing",
@@ -426,7 +444,7 @@ func TestCorrectTags(t *testing.T) {
 		// are clobbered due to a bug caused by the same
 		// profiler-internal tag slice being appended to from different
 		// goroutines concurrently.
-		p := <-got
+		p := <-profiles
 		for _, tag := range expected {
 			require.Contains(t, p.tags, tag)
 		}
@@ -434,22 +452,7 @@ func TestCorrectTags(t *testing.T) {
 }
 
 func TestImmediateProfile(t *testing.T) {
-	received := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case received <- struct{}{}:
-		default:
-		}
-	}))
-	defer server.Close()
-
-	err := Start(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithProfileTypes(HeapProfile),
-		WithPeriod(3*time.Second),
-	)
-	require.NoError(t, err)
-	defer Stop()
+	profiles := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(3*time.Second))
 
 	// Wait a little less than 2 profile periods. We should start profiling
 	// immediately. If it takes significantly longer than 1 profile period to get
@@ -458,18 +461,14 @@ func TestImmediateProfile(t *testing.T) {
 	select {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
-	case <-received:
+	case <-profiles:
 	}
 }
 
-func TestExecutionTrace(t *testing.T) {
-	got := make(chan profileMeta)
-	server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
+func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
-	// reduce. In theory we could use the entire int64 space, but when we do
+	// reason. In theory we could use the entire int64 space, but when we do
 	// this the runtime can crash with the error shown below.
 	//
 	// runtime: kevent on fd 3 failed with 60
@@ -477,39 +476,13 @@ func TestExecutionTrace(t *testing.T) {
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
-	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
-	err := Start(
-		WithAgentAddr(server.Listener.Addr().String()),
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
+	profile := <-startTestProfiler(t, 1,
+		WithPeriod(10*time.Millisecond),
 		WithProfileTypes(CPUProfile),
-		WithPeriod(1*time.Second),
 		CPUProfileRate(int(cpuProfileRate)),
 	)
-	require.NoError(t, err)
-	defer Stop()
-
-	contains := func(haystack []string, needle string) bool {
-		for _, s := range haystack {
-			if s == needle {
-				return true
-			}
-		}
-		return false
-	}
-	seenTraces := 0
-	for i := 0; i < 4; i++ {
-		m := <-got
-		t.Log(m.event.Attachments, m.tags)
-		if contains(m.event.Attachments, "go.trace") && contains(m.tags, "go_execution_traced:yes") {
-			seenTraces++
-			assertContainsCPUProfileRateLog(t, m.attachments["go.trace"], cpuProfileRate)
-		}
-	}
-	// With a trace frequency of 3 seconds and a profiling period of 1
-	// second, we should see 2 traces after 4 profile collections: one at
-	// the start, and one 3 seconds later.
-	if seenTraces != 2 {
-		t.Errorf("wanted %d traces, got %d", 2, seenTraces)
-	}
+	assertContainsCPUProfileRateLog(t, profile.attachments["go.trace"], cpuProfileRate)
 }
 
 // assertContainsCPUProfileRateLog checks for the presence of the log written by
@@ -519,16 +492,119 @@ func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileR
 	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
 }
 
+func sliceContains[T comparable](haystack []T, needle T) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestExecutionTraceMisconfiguration(t *testing.T) {
+	rl := new(log.RecordLogger)
+	defer log.UseLogger(rl)()
+	// Test the profiler with an execution trace period of 0.
+	// This is considered misconfiguration and tracing shouldn't be enabled.
+	//
+	// This test is partly defensive in nature: when doing randomized traces,
+	// recording with probability (period / execution trace period),
+	// depending on how it's implemented we may divide by 0. The Go
+	// spec says that implementations _will_ panic for integer division by
+	// 0, and _may_ choose to panic for floating point division by 0.
+	// See go.dev/ref/spec#Arithmetic_operators, and go.dev/issue/43577
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "0ms")
+	profile := doOneShortProfileUpload(t,
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
+	)
+	assert.NotContains(t, profile.event.Attachments, "go.trace")
+	log.Flush()
+	for _, m := range rl.Logs() {
+		if strings.Contains(m, "Invalid execution trace config") {
+			return
+		}
+	}
+	t.Log(rl.Logs())
+	t.Error("did not warn on invalid trace config")
+}
+
+func TestExecutionTraceRandom(t *testing.T) {
+	t.Skip("flaky test, see: https://github.com/DataDog/dd-trace-go/issues/2529")
+
+	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
+		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
+		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
+		profiles := startTestProfiler(t, 10,
+			WithProfileTypes(),
+			WithPeriod(profilePeriod),
+		)
+
+		seenTraces := 0
+		for i := 0; i < count; i++ {
+			profile := <-profiles
+			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
+				seenTraces++
+			} else if i == 0 {
+				t.Error("did not see a trace in the first upload")
+			}
+		}
+		return seenTraces
+	}
+
+	doTrial := func(t *testing.T, rate, tolerance float64) bool {
+		profileDurationMs := 10.0
+		traceDurationMs := profileDurationMs / rate
+		const count = 100
+		seen := collectTraces(t,
+			time.Duration(profileDurationMs)*time.Millisecond,
+			time.Duration(traceDurationMs)*time.Millisecond,
+			count,
+		)
+		// We're simulating Bernoulli trials with the given rate, which
+		// should follow a binomial distribution. Assert that we're
+		// within the given number of standard deviations of the
+		// expected mean
+		stdDev := math.Sqrt(count * rate * (1 - rate))
+		mean := count * rate
+		lower, upper := int(mean-tolerance*stdDev), int(mean+tolerance*stdDev)
+		if seen >= lower && seen <= upper {
+			return true
+		}
+		t.Logf("observed %d traces, outside the desired bound of [%d, %d]", seen, lower, upper)
+		return false
+	}
+
+	sampleRates := []float64{
+		1.0 / 15.0, // our default rate
+		0.5,        // higher to catch failures from under-sampling
+		1.0,        // record all the time
+	}
+	for _, rate := range sampleRates {
+		name := fmt.Sprintf("rate-%f", rate)
+		t.Run(name, func(t *testing.T) {
+			// We should be within 2 standard deviations ~95% of the time
+			// with a correct implementation. If we do this twice, then
+			// we have a ~99.999% chance of succeeding with a correct
+			// implementation. We keep a reasonably tight tolerance
+			// to ensure that an incorrect implementation is more likely
+			// to fail both times
+			for i := 0; i < 2; i++ {
+				if doTrial(t, rate, 2.0) {
+					return
+				}
+			}
+			t.Error("failed after retry")
+		})
+	}
+}
+
 // TestEndpointCounts verfies that the unit of work feature works end to end.
 func TestEndpointCounts(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		t.Run(name, func(t *testing.T) {
-			// Spin up mock backend
-			got := make(chan profileMeta, 1)
-			server := httptest.NewServer(&mockBackend{t: t, profiles: got})
-			defer server.Close()
-
 			// Configure endpoint counting
 			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
 
@@ -536,20 +612,15 @@ func TestEndpointCounts(t *testing.T) {
 			tracer.Start()
 			defer tracer.Stop()
 
-			// Start profiler
-			err := Start(
-				WithAgentAddr(server.Listener.Addr().String()),
+			profiles := startTestProfiler(t, 1,
 				WithProfileTypes(CPUProfile),
 				WithPeriod(100*time.Millisecond),
 			)
-			require.NoError(t, err)
-			defer Stop()
-
 			// Create spans until the first profile is finished
 			var m profileMeta
 			for m.attachments == nil {
 				select {
-				case m = <-got:
+				case m = <-profiles:
 				default:
 					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
 					span.Finish()
@@ -568,10 +639,6 @@ func TestEndpointCounts(t *testing.T) {
 }
 
 func TestExecutionTraceSizeLimit(t *testing.T) {
-	got := make(chan profileMeta)
-	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
-	defer server.Close()
-
 	done := make(chan struct{})
 	// bigMessage just forces a bunch of data to be written to the trace buffer.
 	// We'll write ~300k bytes per second, and try to stop at ~100k bytes with
@@ -594,17 +661,14 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
-	err := Start(
-		WithHTTPClient(client),
+	profiles := startTestProfiler(t, 1,
 		WithProfileTypes(), // just want the execution trace
 		WithPeriod(2*time.Second),
 	)
-	require.NoError(t, err)
-	defer Stop()
 
 	const expectedSize = 300 * 1024
 	for i := 0; i < 5; i++ {
-		m := <-got
+		m := <-profiles
 		if p, ok := m.attachments["go.trace"]; ok {
 			if len(p) > expectedSize {
 				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
@@ -612,27 +676,18 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 			return
 		}
 	}
-	t.Errorf("did not see an execution trace")
 }
 
 func TestExecutionTraceEnabledFlag(t *testing.T) {
 	for _, status := range []string{"true", "false"} {
 		t.Run(status, func(t *testing.T) {
-			got := make(chan profileMeta)
-			server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
-			defer server.Close()
-
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
-			err := Start(
-				WithHTTPClient(client),
+			profiles := startTestProfiler(t, 1,
 				WithProfileTypes(),
-				WithPeriod(1*time.Second),
+				WithPeriod(10*time.Millisecond),
 			)
-			require.NoError(t, err)
-			defer Stop()
-
-			m := <-got
+			m := <-profiles
 			t.Log(m.event.Attachments, m.tags)
 			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
@@ -640,22 +695,8 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 }
 
 func TestVersionResolution(t *testing.T) {
-	doOneProfileUpload := func(opts ...Option) profileMeta {
-		received := make(chan profileMeta)
-		server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: received})
-		defer server.Close()
-
-		opts = append(opts,
-			WithHTTPClient(client), WithProfileTypes(), WithPeriod(10*time.Millisecond),
-		)
-		err := Start(opts...)
-		require.NoError(t, err)
-		defer Stop()
-		return <-received
-	}
-
 	t.Run("tags only", func(t *testing.T) {
-		data := doOneProfileUpload(WithTags("version:4.5.6", "version:7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6", "version:7.8.9"))
 		assert.Contains(t, data.tags, "version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
@@ -663,7 +704,7 @@ func TestVersionResolution(t *testing.T) {
 	t.Run("env", func(t *testing.T) {
 		// Environment variable gets priority over tags
 		t.Setenv("DD_VERSION", "1.2.3")
-		data := doOneProfileUpload(WithTags("version:4.5.6"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"))
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:1.2.3")
 	})
@@ -671,14 +712,14 @@ func TestVersionResolution(t *testing.T) {
 	t.Run("WithVersion", func(t *testing.T) {
 		// WithVersion gets the highest priority
 		t.Setenv("DD_VERSION", "1.2.3")
-		data := doOneProfileUpload(WithTags("version:4.5.6"), WithVersion("7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("version:4.5.6"), WithVersion("7.8.9"))
 		assert.NotContains(t, data.tags, "version:1.2.3")
 		assert.NotContains(t, data.tags, "version:4.5.6")
 		assert.Contains(t, data.tags, "version:7.8.9")
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		data := doOneProfileUpload(WithTags("Version:4.5.6", "version:7.8.9"))
+		data := doOneShortProfileUpload(t, WithTags("Version:4.5.6", "version:7.8.9"))
 		assert.Contains(t, data.tags, "Version:4.5.6")
 		assert.NotContains(t, data.tags, "version:7.8.9")
 	})
