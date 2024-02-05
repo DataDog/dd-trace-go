@@ -34,6 +34,8 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
+          # https://github.com/DataDog/system-tests/pull/1853
+          ref: 'e10b2a242ad4e1480d6772095a82b6533c66b769'
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
