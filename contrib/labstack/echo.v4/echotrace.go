@@ -89,7 +89,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 			// serve the request to the next middleware
 			err := next(c)
-			if err != nil && !shouldIgnoreError(cfg, err) {
+			if err != nil {
 				// invokes the registered HTTP error handler
 				c.Error(err)
 
@@ -109,28 +109,16 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 				}
 			} else if status := c.Response().Status; status > 0 {
 				if cfg.isStatusError(status) {
-					if statusErr := errorFromStatusCode(status); !shouldIgnoreError(cfg, statusErr) {
-						finishOpts = append(finishOpts, tracer.WithError(statusErr))
-					}
+					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status))))
 				}
 				span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 			} else {
 				if cfg.isStatusError(200) {
-					if statusErr := errorFromStatusCode(200); !shouldIgnoreError(cfg, statusErr) {
-						finishOpts = append(finishOpts, tracer.WithError(statusErr))
-					}
+					finishOpts = append(finishOpts, tracer.WithError(fmt.Errorf("%d: %s", 200, http.StatusText(200))))
 				}
 				span.SetTag(ext.HTTPCode, "200")
 			}
 			return err
 		}
 	}
-}
-
-func errorFromStatusCode(statusCode int) error {
-	return fmt.Errorf("%d: %s", statusCode, http.StatusText(statusCode))
-}
-
-func shouldIgnoreError(cfg *config, err error) bool {
-	return cfg.errCheck != nil && !cfg.errCheck(err)
 }
