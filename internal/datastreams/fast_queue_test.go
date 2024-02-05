@@ -6,8 +6,11 @@
 package datastreams
 
 import (
-	"github.com/stretchr/testify/assert"
+	"runtime"
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFastQueue(t *testing.T) {
@@ -23,5 +26,42 @@ func TestFastQueue(t *testing.T) {
 	for i := 0; i < queueSize; i++ {
 		assert.False(t, q.push(&processorInput{point: statsPoint{hash: uint64(i)}}))
 		assert.Equal(t, uint64(i), q.pop().point.hash)
+	}
+}
+
+func TestNoDoubleReads(t *testing.T) {
+	var wg sync.WaitGroup
+	var q = newFastQueue()
+	var countPerG = 1000
+	for i := 0; i < countPerG*runtime.GOMAXPROCS(0); i++ {
+		q.push(&processorInput{point: statsPoint{hash: uint64(i)}})
+	}
+
+	var seenPerG = make([]map[uint64]struct{}, runtime.GOMAXPROCS(0))
+	for g := 0; g < runtime.GOMAXPROCS(0); g++ {
+		wg.Add(1)
+		g := g
+		seenPerG[g] = make(map[uint64]struct{})
+		go func() {
+			defer wg.Done()
+			for i := 0; i < countPerG; i++ {
+				val := q.pop()
+				if val == nil {
+					continue
+				}
+				seenPerG[g][val.point.hash] = struct{}{}
+			}
+		}()
+	}
+	wg.Wait()
+
+	var seen = make(map[uint64]struct{})
+	for _, v := range seenPerG {
+		for k := range v {
+			if _, ok := seen[k]; ok {
+				t.Fatalf("double read of %d", k)
+			}
+			seen[k] = struct{}{}
+		}
 	}
 }
