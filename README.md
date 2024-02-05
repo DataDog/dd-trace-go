@@ -10,7 +10,7 @@
 
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
-- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases and microservices so that developers have great visiblity into bottlenecks and troublesome requests.  
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visiblity into bottlenecks and troublesome requests.  
 The package [`github.com/DataDog/dd-trace-go/v2/ddtrace/tracer`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`github.com/DataDog/dd-trace-go/v2/ddtrace/contrib`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib).
 
 - [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
@@ -27,7 +27,7 @@ go get github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 go get github.com/DataDog/dd-trace-go/v2/profiler
 ```
 
-Additionally there are many [contrib](./contrib) packages that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/net/http), [gorilla/mux](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/database/sql):
+Additionally there are many [contrib](./contrib) packages, published as nested modules, that can be installed to automatically instrument and trace commonly used Go libraries such as [net/http](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/net/http), [gorilla/mux](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux) or [database/sql](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib/database/sql):
 
 ```
 go get github.com/DataDog/dd-trace-go/v2/contrib/gorilla/mux
@@ -41,7 +41,7 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
  - [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
  - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
  - [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
- - If you are migrating from an older version of the tracer (e.g. 0.6.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
+ - If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Support Policy
 
@@ -92,8 +92,8 @@ Before considering contributions to the project, please take a moment to read ou
 
 ### Testing
 
-Tests can be run locally using the Go toolset. To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an
-idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
+Tests can be run locally using the Go toolset. To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To find
+out the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
 The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
 
