@@ -37,7 +37,6 @@ type Tracer interface {
 
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []Span
-	SentDSMBacklogs() []datastreams.Backlog
 
 	// Reset resets the spans and services recorded in the tracer. This is
 	// especially useful when running tests in a loop, where a clean start
@@ -64,25 +63,11 @@ type mocktracer struct {
 	sync.RWMutex  // guards below spans
 	finishedSpans []Span
 	openSpans     map[uint64]Span
-	dsmTransport  *mockDSMTransport
-	dsmProcessor  *datastreams.Processor
-}
-
-func (t *mocktracer) SentDSMBacklogs() []datastreams.Backlog {
-	t.dsmProcessor.Flush()
-	return t.dsmTransport.backlogs
 }
 
 func newMockTracer() *mocktracer {
 	var t mocktracer
 	t.openSpans = make(map[uint64]Span)
-	t.dsmTransport = &mockDSMTransport{}
-	client := &http.Client{
-		Transport: t.dsmTransport,
-	}
-	t.dsmProcessor = datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
-	t.dsmProcessor.Start()
-	t.dsmProcessor.Flush()
 	return &t
 }
 
@@ -106,8 +91,27 @@ func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOp
 	return span
 }
 
+type noOpTransport struct{}
+
+// RoundTrip does nothing and returns a dummy response.
+func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// You can customize the dummy response if needed.
+	return &http.Response{
+		StatusCode:    200,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Request:       req,
+		ContentLength: -1,
+		Body:          http.NoBody,
+	}, nil
+}
+
 func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
-	return t.dsmProcessor
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	return datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
 }
 
 func (t *mocktracer) OpenSpans() []Span {
