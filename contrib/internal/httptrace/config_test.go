@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -50,28 +49,12 @@ func TestConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			defer cleanEnv()()
 			for k, v := range tc.env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 			c := newConfig()
 			require.Equal(t, tc.cfg.queryStringRegexp, c.queryStringRegexp)
 			require.Equal(t, tc.cfg.queryString, c.queryString)
 		})
-	}
-}
-
-func cleanEnv() func() {
-	env := map[string]string{
-		envQueryStringDisabled: os.Getenv(envQueryStringDisabled),
-		envQueryStringRegexp:   os.Getenv(envQueryStringRegexp),
-	}
-	for k := range env {
-		os.Unsetenv(k)
-	}
-	return func() {
-		for k, v := range env {
-			os.Setenv(k, v)
-		}
 	}
 }

@@ -107,6 +107,7 @@ type mockspan struct {
 	parentID  uint64
 	context   *spanContext
 	tracer    *mocktracer
+	links     []ddtrace.SpanLink
 }
 
 // SetTag sets a given tag on the span.
