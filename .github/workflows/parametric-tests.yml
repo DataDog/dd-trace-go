@@ -33,8 +33,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: 'DataDog/system-tests'
-          # https://github.com/DataDog/system-tests/pull/1853
-          ref: 'ff2b0873b1414a199f5db75976c8aa06ff918aff'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@v3
