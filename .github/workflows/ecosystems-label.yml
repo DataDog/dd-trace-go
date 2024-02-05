@@ -1,5 +1,12 @@
-name: Label APM Ecosystems Pull Requests
+name: Label APM Ecosystems issues
 on:
+  issues:
+    paths:
+      - "contrib/**"
+    types:
+      - reopened
+      - opened
+      - edited
   pull_request:
     paths:
       - "contrib/**"
