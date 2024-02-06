@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 
 	"github.com/labstack/echo/v4"
 )
@@ -26,7 +27,7 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response
 			// and handling the error. Don't call the echo error handler in this case
-			if _, ok := err.(*httpsec.MonitoringError); !ok && err != nil {
+			if _, ok := err.(*types.MonitoringError); !ok && err != nil {
 				c.Error(err)
 			}
 		})

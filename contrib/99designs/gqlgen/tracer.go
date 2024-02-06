@@ -50,6 +50,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -103,12 +104,12 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlsec.StartRequestOperation(ctx, nil /* root */, span, graphqlsec.RequestOperationArgs{
+	ctx, req := graphqlsec.StartRequestOperation(ctx, nil /* root */, span, types.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, req, span, graphqlsec.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, req, span, types.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -123,11 +124,11 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 			}
 			defer span.Finish(tracer.WithError(err))
 		}
-		query.Finish(graphqlsec.ExecutionOperationRes{
+		query.Finish(types.ExecutionOperationRes{
 			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 			Error: response.Errors,
 		})
-		req.Finish(graphqlsec.RequestOperationRes{
+		req.Finish(types.RequestOperationRes{
 			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
 			Error: response.Errors,
 		})
@@ -150,13 +151,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*graphqlsec.ExecutionOperation](ctx), span, graphqlsec.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.FromContext[*types.ExecutionOperation](ctx), span, types.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
 		Trivial:   !(fieldCtx.IsMethod || fieldCtx.IsResolver), // TODO: Is this accurate?
 	})
-	defer func() { op.Finish(graphqlsec.ResolveOperationRes{Data: res, Error: err}) }()
+	defer func() { op.Finish(types.ResolveOperationRes{Data: res, Error: err}) }()
 	res, err = next(ctx)
 	return
 }
