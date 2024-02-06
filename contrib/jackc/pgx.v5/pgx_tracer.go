@@ -99,6 +99,7 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	}
 	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or timestamp
 	// information about when the actual operation started or finished.
+	// pgx.Batch* types don't support concurrency. This function doesn't support it either.
 	if t.prevBatchQuery != nil {
 		t.prevBatchQuery.finish()
 	}
