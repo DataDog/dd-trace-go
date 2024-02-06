@@ -17,6 +17,14 @@ import (
 type operationType string
 
 const (
+	tagOperationType   = "db.postgres.operation"
+	tagRowsAffected    = "db.result.rows_affected"
+	tagBatchNumQueries = "db.batch.num_queries"
+	tagCopyFromTables  = "db.copy_from.tables"
+	tagCopyFromColumns = "db.copy_from.columns"
+)
+
+const (
 	operationTypeConnect  operationType = "Connect"
 	operationTypeQuery                  = "Query"
 	operationTypePrepare                = "Prepare"
@@ -69,7 +77,7 @@ func (t *pgxTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.Tra
 	}
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
-		span.SetTag("db.query.rows_affected", data.CommandTag.RowsAffected())
+		span.SetTag(tagRowsAffected, data.CommandTag.RowsAffected())
 	}
 	finishSpan(ctx, data.Err)
 }
@@ -79,7 +87,7 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 		return ctx
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeBatch, "",
-		tracer.Tag("db.batch.num_queries", data.Batch.Len()),
+		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
 	return ctx
@@ -95,7 +103,7 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 		t.prevBatchQuery.finish()
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeQuery, data.SQL,
-		tracer.Tag("db.query.rows_affected", data.CommandTag.RowsAffected()),
+		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
 	t.prevBatchQuery = &tracedBatchQuery{
@@ -120,8 +128,8 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 		return ctx
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeCopyFrom, "",
-		tracer.Tag("db.copy_from.tables", data.TableName),
-		tracer.Tag("db.copy_from.columns", data.ColumnNames),
+		tracer.Tag(tagCopyFromTables, data.TableName),
+		tracer.Tag(tagCopyFromColumns, data.ColumnNames),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.copy_from", opts...)
 	return ctx
@@ -173,7 +181,7 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag("db.operation", string(op)),
+		tracer.Tag(tagOperationType, string(op)),
 	}
 	opts = append(opts, extraOpts...)
 	if sqlStatement != "" {

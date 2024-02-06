@@ -88,7 +88,7 @@ func TestConnect(t *testing.T) {
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.connect", s.OperationName())
 	assert.Equal(t, "Connect", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Connect", s.Tag("db.operation"))
+	assert.Equal(t, "Connect", s.Tag("db.postgres.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
@@ -113,18 +113,18 @@ func TestQuery(t *testing.T) {
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.query", s.OperationName())
 	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
+	assert.Equal(t, "Query", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 
 	s = spans[1]
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.query", s.OperationName())
 	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
+	assert.Equal(t, "Query", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 0, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -148,18 +148,18 @@ func TestPrepare(t *testing.T) {
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.prepare", s.OperationName())
 	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Prepare", s.Tag("db.operation"))
+	assert.Equal(t, "Prepare", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, nil, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, nil, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 
 	s = spans[1]
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.prepare", s.OperationName())
 	assert.Equal(t, "select \"number\" from \"numbers\"", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Prepare", s.Tag("db.operation"))
+	assert.Equal(t, "Prepare", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "select \"number\" from \"numbers\"", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, nil, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, nil, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -183,34 +183,34 @@ func TestBatch(t *testing.T) {
 	assertCommonTags(t, batchSpan)
 	assert.Equal(t, "pgx.batch", batchSpan.OperationName())
 	assert.Equal(t, "Batch", batchSpan.Tag(ext.ResourceName))
-	assert.Equal(t, "Batch", batchSpan.Tag("db.operation"))
+	assert.Equal(t, "Batch", batchSpan.Tag("db.postgres.operation"))
 	assert.Equal(t, nil, batchSpan.Tag(ext.DBStatement))
-	assert.EqualValues(t, nil, batchSpan.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, nil, batchSpan.Tag("db.result.rows_affected"))
 	assert.EqualValues(t, 3, batchSpan.Tag("db.batch.num_queries"))
 	assert.Equal(t, ps.SpanID(), batchSpan.ParentID())
 
 	s := spans[0]
 	assert.Equal(t, "pgx.batch.query", s.OperationName())
 	assert.Equal(t, "SELECT 1", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
+	assert.Equal(t, "Query", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "SELECT 1", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
 
 	s = spans[1]
 	assert.Equal(t, "pgx.batch.query", s.OperationName())
 	assert.Equal(t, "SELECT 2", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
+	assert.Equal(t, "Query", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "SELECT 2", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
 
 	s = spans[2]
 	assert.Equal(t, "pgx.batch.query", s.OperationName())
 	assert.Equal(t, "SELECT 3", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Query", s.Tag("db.operation"))
+	assert.Equal(t, "Query", s.Tag("db.postgres.operation"))
 	assert.Equal(t, "SELECT 3", s.Tag(ext.DBStatement))
-	assert.EqualValues(t, 1, s.Tag("db.query.rows_affected"))
+	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
 }
 
@@ -234,7 +234,7 @@ func TestCopyFrom(t *testing.T) {
 	assertCommonTags(t, s)
 	assert.Equal(t, "pgx.copy_from", s.OperationName())
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Copy From", s.Tag("db.operation"))
+	assert.Equal(t, "Copy From", s.Tag("db.postgres.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
 	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
 	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
