@@ -17,7 +17,7 @@ import (
 type operationType string
 
 const (
-	tagOperationType   = "db.postgres.operation"
+	tagOperation       = "db.operation"
 	tagRowsAffected    = "db.result.rows_affected"
 	tagBatchNumQueries = "db.batch.num_queries"
 	tagCopyFromTables  = "db.copy_from.tables"
@@ -181,7 +181,7 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(tagOperationType, string(op)),
+		tracer.Tag(tagOperation, string(op)),
 	}
 	opts = append(opts, extraOpts...)
 	if sqlStatement != "" {
@@ -191,10 +191,10 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		opts = append(opts, tracer.ResourceName(string(op)))
 	}
 	if host := connConfig.Host; host != "" {
-		opts = append(opts, tracer.Tag(ext.TargetHost, host))
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, host))
 	}
 	if port := connConfig.Port; port != 0 {
-		opts = append(opts, tracer.Tag(ext.TargetPort, int(port)))
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, int(port)))
 	}
 	if db := connConfig.Database; db != "" {
 		opts = append(opts, tracer.Tag(ext.DBName, db))
