@@ -135,59 +135,54 @@ func TestSpanSetName(t *testing.T) {
 
 func TestSpanLink(t *testing.T) {
 	assert := assert.New(t)
-
-	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
 
 	// Use traceID, spanID, and traceflags that can be unmarshalled from unint64 to float64 without loss of precision
 	traceID, _ := oteltrace.TraceIDFromHex("00000000000001c8000000000000007b")
 	spanID, _ := oteltrace.SpanIDFromHex("000000000000000f")
-	traceState, _ := oteltrace.ParseTraceState("dd_origin=ci")
+	traceStateVal := "dd_origin=ci"
+	traceState, _ := oteltrace.ParseTraceState(traceStateVal)
 	remoteSpanContext := oteltrace.NewSpanContext(
 		oteltrace.SpanContextConfig{
 			TraceID:    traceID,
 			SpanID:     spanID,
-			TraceFlags: 0x0,
+			TraceFlags: oteltrace.FlagsSampled,
 			TraceState: traceState,
 			Remote:     true,
 		},
 	)
 
-	_, payloads, cleanup := mockTracerProvider(t)
-	tr := otel.Tracer("")
-	defer cleanup()
-
 	// Create a span with a link to a remote span
-	_, decoratedSpan := tr.Start(context.Background(), "span_with_link",
+	_, span := tr.Start(context.Background(), "span_with_link",
 		oteltrace.WithLinks(oteltrace.Link{
 			SpanContext: remoteSpanContext,
 			Attributes:  []attribute.KeyValue{attribute.String("link.name", "alpha_transaction")},
 		}))
-	decoratedSpan.End()
+	span.End()
 
-	// Flush span with link and unmarshal the payload to a map
 	tracer.Flush()
 	payload, err := waitForPayload(payloads)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
 	assert.NotNil(payload)
-	// Ensure payload contains one trace and one span
-	assert.Len(payload[0], 1)
+	assert.Len(payload, 1)    // only one trace
+	assert.Len(payload[0], 1) // only one span
 
-	// Convert the span_links field from type []map[string]interface{} to a struct
 	var spanLinks []ddtrace.SpanLink
 	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
 	json.Unmarshal(spanLinkBytes, &spanLinks)
-	assert.Len(spanLinks, 1)
+	assert.Len(spanLinks, 1) // only one span link
 
 	// Ensure the span link has the correct values
-	assert.Equal(spanLinks[0].TraceID, uint64(123))
-	assert.Equal(spanLinks[0].TraceIDHigh, uint64(456))
-	assert.Equal(spanLinks[0].SpanID, uint64(15))
-	assert.Equal(spanLinks[0].Attributes, map[string]string{"link.name": "alpha_transaction"})
-	assert.Equal(spanLinks[0].Tracestate, "dd_origin=ci")
-	assert.Equal(spanLinks[0].Flags, uint32(0x80000000))
+	assert.Equal(uint64(123), spanLinks[0].TraceID)
+	assert.Equal(uint64(456), spanLinks[0].TraceIDHigh)
+	assert.Equal(uint64(15), spanLinks[0].SpanID)
+	assert.Equal(map[string]string{"link.name": "alpha_transaction"}, spanLinks[0].Attributes)
+	assert.Equal(traceStateVal, spanLinks[0].Tracestate)
+	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
 func TestSpanEnd(t *testing.T) {
