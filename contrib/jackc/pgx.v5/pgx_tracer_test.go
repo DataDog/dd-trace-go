@@ -72,10 +72,8 @@ func TestConnect(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	opts := append(tracingAllDisabled(), WithTraceConnect(true))
-	runAllOperations(t, ctx, opts...)
-	parent.Finish()
+	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
@@ -97,10 +95,8 @@ func TestQuery(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	opts := append(tracingAllDisabled(), WithTraceQuery(true))
-	runAllOperations(t, ctx, opts...)
-	parent.Finish()
+	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 3)
@@ -132,10 +128,8 @@ func TestPrepare(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	opts := append(tracingAllDisabled(), WithTracePrepare(true))
-	runAllOperations(t, ctx, opts...)
-	parent.Finish()
+	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 3)
@@ -167,10 +161,8 @@ func TestBatch(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	opts := append(tracingAllDisabled(), WithTraceBatch(true))
-	runAllOperations(t, ctx, opts...)
-	parent.Finish()
+	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 5)
@@ -218,10 +210,8 @@ func TestCopyFrom(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	opts := append(tracingAllDisabled(), WithTraceCopyFrom(true))
-	runAllOperations(t, ctx, opts...)
-	parent.Finish()
+	runAllOperations(t, opts...)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
@@ -251,7 +241,10 @@ func tracingAllDisabled() []Option {
 	}
 }
 
-func runAllOperations(t *testing.T, ctx context.Context, opts ...Option) {
+func runAllOperations(t *testing.T, opts ...Option) {
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
 	// Connect
 	conn, err := Connect(ctx, postgresDSN, opts...)
 	require.NoError(t, err)
