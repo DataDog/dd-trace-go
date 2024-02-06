@@ -589,6 +589,128 @@ func TestWithHeaderTags(t *testing.T) {
 	})
 }
 
+func TestWithErrorCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		opts    []Option
+		wantErr error
+	}{
+		{
+			name: "ignore-4xx-404-error",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "not found",
+				Internal: errors.New("not found"),
+			},
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
+			},
+			wantErr: nil, // 404 is returned, hence not tagged
+		},
+		{
+			name: "ignore-4xx-500-error",
+			err: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					var he *echo.HTTPError
+					if errors.As(err, &he) {
+						// do not tag 4xx errors
+						return !(he.Code < 500 && he.Code >= 400)
+					}
+					return true
+				}),
+			},
+			wantErr: &echo.HTTPError{
+				Code:     http.StatusInternalServerError,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			}, // this is 500, tagged
+		},
+		{
+			name: "ignore-none",
+			err:  errors.New("any error"),
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return true
+				}),
+			},
+			wantErr: errors.New("any error"),
+		},
+		{
+			name: "ignore-all",
+			err:  errors.New("any error"),
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
+			},
+			wantErr: nil,
+		},
+		{
+			// withErrorCheck also runs for the errors created from the WithStatusCheck option.
+			name: "ignore-errors-from-status-check",
+			err: &echo.HTTPError{
+				Code:     http.StatusNotFound,
+				Message:  "internal error",
+				Internal: errors.New("internal error"),
+			},
+			opts: []Option{
+				WithStatusCheck(func(statusCode int) bool {
+					return statusCode == http.StatusNotFound
+				}),
+				WithErrorCheck(func(err error) bool {
+					return false
+				}),
+			},
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(tt.opts...))
+			var called, traced bool
+
+			// always return the specified error
+			router.GET("/err", func(c echo.Context) error {
+				_, traced = tracer.SpanFromContext(c.Request().Context())
+				called = true
+				return tt.err
+			})
+			r := httptest.NewRequest(http.MethodGet, "/err", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			assert.True(t, called)
+			assert.True(t, traced)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1) // fail at once if there is no span
+
+			span := spans[0]
+			if tt.wantErr == nil {
+				assert.NotContains(t, span.Tags(), ext.Error)
+				return
+			}
+			assert.Equal(t, tt.wantErr, span.Tag(ext.Error))
+		})
+	}
+}
+
 func TestWithCustomTags(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

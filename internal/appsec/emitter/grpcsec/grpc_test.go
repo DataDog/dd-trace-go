@@ -11,19 +11,24 @@ import (
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	grpcsec "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec/types"
 
 	"github.com/stretchr/testify/require"
 )
 
+type (
+	rootArgs struct{}
+	rootRes  struct{}
+)
+
+func (rootArgs) IsArgOf(dyngo.Operation)   {}
+func (rootRes) IsResultOf(dyngo.Operation) {}
+
 func TestUsage(t *testing.T) {
 	testRPCRepresentation := func(expectedRecvOperation int) func(*testing.T) {
 		return func(t *testing.T) {
-			type (
-				rootArgs struct{}
-				rootRes  struct{}
-			)
-			localRootOp := dyngo.NewOperation(nil)
+			localRootOp := dyngo.NewRootOperation()
 			dyngo.StartOperation(localRootOp, rootArgs{})
 			defer dyngo.FinishOperation(localRootOp, rootRes{})
 
@@ -37,34 +42,32 @@ func TestUsage(t *testing.T) {
 
 			const expectedMessageFormat = "message number %d"
 
-			localRootOp.On(grpcsec.OnHandlerOperationStart(func(handlerOp *grpcsec.HandlerOperation, args grpcsec.HandlerOperationArgs) {
+			dyngo.On(localRootOp, func(handlerOp *types.HandlerOperation, args types.HandlerOperationArgs) {
 				handlerStarted++
 
-				handlerOp.On(grpcsec.OnReceiveOperationStart(func(op grpcsec.ReceiveOperation, _ grpcsec.ReceiveOperationArgs) {
+				dyngo.On(handlerOp, func(op types.ReceiveOperation, _ types.ReceiveOperationArgs) {
 					recvStarted++
 
-					op.On(grpcsec.OnReceiveOperationFinish(func(_ grpcsec.ReceiveOperation, res grpcsec.ReceiveOperationRes) {
+					dyngo.OnFinish(op, func(_ types.ReceiveOperation, res types.ReceiveOperationRes) {
 						expectedMessage := fmt.Sprintf(expectedMessageFormat, recvStarted)
 						require.Equal(t, expectedMessage, res.Message)
 						recvFinished++
 
 						handlerOp.AddSecurityEvents([]any{expectedMessage})
-					}))
-				}))
+					})
+				})
 
-				handlerOp.On(grpcsec.OnHandlerOperationFinish(func(*grpcsec.HandlerOperation, grpcsec.HandlerOperationRes) {
-					handlerFinished++
-				}))
-			}))
+				dyngo.OnFinish(handlerOp, func(*types.HandlerOperation, types.HandlerOperationRes) { handlerFinished++ })
+			})
 
-			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), grpcsec.HandlerOperationArgs{}, localRootOp)
+			_, rpcOp := grpcsec.StartHandlerOperation(context.Background(), types.HandlerOperationArgs{}, localRootOp)
 
 			for i := 1; i <= expectedRecvOperation; i++ {
-				recvOp := grpcsec.StartReceiveOperation(grpcsec.ReceiveOperationArgs{}, rpcOp)
-				recvOp.Finish(grpcsec.ReceiveOperationRes{Message: fmt.Sprintf(expectedMessageFormat, i)})
+				recvOp := grpcsec.StartReceiveOperation(types.ReceiveOperationArgs{}, rpcOp)
+				recvOp.Finish(types.ReceiveOperationRes{Message: fmt.Sprintf(expectedMessageFormat, i)})
 			}
 
-			secEvents := rpcOp.Finish(grpcsec.HandlerOperationRes{})
+			secEvents := rpcOp.Finish(types.HandlerOperationRes{})
 
 			require.Len(t, secEvents, expectedRecvOperation)
 			for i, e := range secEvents {
