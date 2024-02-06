@@ -18,7 +18,7 @@ type config struct {
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:   namingschema.NewDefaultServiceName(defaultServiceName).GetName(),
+		serviceName:   namingschema.ServiceName(defaultServiceName),
 		traceQuery:    true,
 		traceBatch:    true,
 		traceCopyFrom: true,
