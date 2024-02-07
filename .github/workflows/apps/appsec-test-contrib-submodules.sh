@@ -26,6 +26,7 @@ function docker_runner() {
   docker run \
     --platform="$PLATFORM" \
     -v "$PWD":"$PWD" -w "$WD" \
+    -v "$HOME/go/pkg/mod:/go/pkg/mod" \
     -eCGO_ENABLED="$CGO_ENABLED" \
     -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
     -eDD_APPSEC_WAF_TIMEOUT="$DD_APPSEC_WAF_TIMEOUT" \
