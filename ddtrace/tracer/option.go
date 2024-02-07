@@ -862,6 +862,7 @@ func WithServiceMapping(from, to string) StartOption {
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
+// Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
 	// TODO: add link to public docs
 	return func(c *config) {
