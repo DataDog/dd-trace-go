@@ -74,7 +74,7 @@ jobs:
       fail-fast: false
       matrix:
         go-args: [ "-tags datadog.no_waf", "-tags go1.22" ]
-        runs-on: [ macos-13, ubuntu-latest ]
+        runs-on: [ macos-13, ubuntu-latest-16-cores ]
         appsec_enabled:
           - DD_APPSEC_ENABLED=true
           - "" # the env var is not defined so that the remote-config path can be taken
@@ -107,7 +107,7 @@ jobs:
   # Same tests but on the official golang container for linux
   golang-linux-container:
     name: golang-containers ${{ toJSON(matrix) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-cores
     container:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     strategy:
@@ -157,7 +157,7 @@ jobs:
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
 
   linux-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-16-cores
     name: linux/arm64 ${{ toJSON(matrix) }}
     strategy:
       matrix:
