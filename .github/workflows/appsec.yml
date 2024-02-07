@@ -34,14 +34,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           cache: false
-      - name: Go modules cache
+      - name: Cache Go modules
         id: cache
         uses: actions/cache@v4
         with:
-          path: ${{ steps.go-env.outputs.gomodcache }}
+          path: ${{ runner.temp }}/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
-      - run: env GOMODCACHE=/go/pkg/mod go mod download
+      - name: Download Go modules
+        run: env GOMODCACHE=${{ runner.temp }}/go/pkg/mod go mod download
 
   native:
     strategy:
@@ -156,11 +157,11 @@ jobs:
         id: cache
         uses: actions/cache/restore@v4
         with:
-          path: /go/mod/cache
+          path: ${{ runner.temp }}/go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
           fail-on-cache-miss: true
-      - run: go env -w GOMODCACHE=/go/mod/cache
+      - run: go env -w GOMODCACHE=${{ runner.temp }}/go/mod/cache
 
       - name: go test
         run: |
@@ -211,7 +212,7 @@ jobs:
       - run: |
           env GOMODCACHE=/go/mod/cache CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
-  smoke-tests:
+  test-app:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
