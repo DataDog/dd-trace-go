@@ -40,6 +40,7 @@ jobs:
         with:
           path: ${{ runner.temp }}/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          enableCrossOsArchive: true
           restore-keys: go-pkg-mod-
       - name: Download Go modules
         run: env GOMODCACHE=${{ runner.temp }}/go/pkg/mod go mod download
@@ -161,6 +162,7 @@ jobs:
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
           fail-on-cache-miss: true
+          enableCrossOsArchive: true
       - run: go env -w GOMODCACHE=${{ runner.temp }}/go/mod/cache
 
       - name: go test
@@ -202,6 +204,7 @@ jobs:
           path: /go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
           fail-on-cache-miss: true
       - run: go env -w GOMODCACHE=/go/mod/cache
 
