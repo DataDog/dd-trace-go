@@ -134,16 +134,21 @@ jobs:
       - if: ${{ matrix.distribution == 'alpine' }}
         run: apk add gcc musl-dev libc6-compat git bash
 
+      # Cache the downloaded Go modules
+      - name: go env
+        run: echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        id: go-env
       - name: Go modules cache
+        id: cache
         uses: actions/cache@v4
         with:
-          path: ~/go/pkg/mod
+          path: ${{ steps.go-env.outputs.gomodcache }}
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
 
       - name: go test
         run: |
-          go env
+          echo ${{ steps.cache.outputs.cache-hit }}
           # Install gotestsum to get the results in a junit file
           go install gotest.tools/gotestsum@latest
           # Run the tests with gotestsum
@@ -173,7 +178,7 @@ jobs:
       - name: Go modules cache
         uses: actions/cache@v4
         with:
-          path: ~/go/pkg/mod
+          path: /go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
       - name: Set up QEMU
