@@ -36,7 +36,7 @@ jobs:
           cache: false
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: ${{ runner.temp }}/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
@@ -156,7 +156,7 @@ jobs:
       # Restore the Go modules cache
       - name: Go modules cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ runner.temp }}/go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
@@ -199,21 +199,21 @@ jobs:
       # Restore the Go modules cache
       - name: Go modules cache
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v3
         with:
-          path: /go/mod/cache
+          path: ${{ runner.temp }}/go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           fail-on-cache-miss: true
-      - run: go env -w GOMODCACHE=/go/mod/cache
+      - run: go env -w GOMODCACHE=${{ runner.temp }}/go/mod/cache
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
       - run: |
-          env GOMODCACHE=/go/mod/cache CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+          env GOMODCACHE=${{ runner.temp }}/go/mod/cache CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   test-app:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
