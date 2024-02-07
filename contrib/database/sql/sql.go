@@ -262,12 +262,11 @@ func reportDBStats(interval time.Duration, db *sql.DB) {
 		if db == nil {
 			log.Debug("No traced DB connection found; cannot pull DB stats.")
 			return
-		} else {
-			log.Debug("Traced DB connection found: reporting DB stats.")
-			stats := db.Stats()
-			// Start with just 1 metric
-			openConns := stats.OpenConnections
-			tracer.ReportGauge("sql.db.open_connections", 1, float64(openConns))
 		}
+		log.Debug("Traced DB connection found: reporting DB stats.")
+		stats := db.Stats()
+		// Start with just 1 metric
+		openConns := stats.OpenConnections
+		tracer.ReportGauge("sql.db.open_connections", 1, float64(openConns))
 	}
 }

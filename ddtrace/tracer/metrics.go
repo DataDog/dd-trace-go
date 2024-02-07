@@ -101,12 +101,11 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 	}
 }
 
-// The below functions were added so that the contrib libraries can have access to the tracer statsd client
-// However, they also make it so customers could use the tracer's statsd client to submit custom metrics, which we probably don't want.
+// ReportGauge uses the tracer's statsd client to submit a gauge metric to Datadog under the given name
 func ReportGauge(name string, data float64, rate float64, tags ...string) {
 	if t, ok := internal.GetGlobalTracer().(*tracer); ok{
 		t.statsd.Gauge(name, data, tags, rate)
-	}
+	} // else return an error if not of type *tracer?
 }
 // func ReportCount(name string, value int64, rate float64, tags ...string){}
 
