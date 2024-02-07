@@ -209,7 +209,11 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		driverName: driverName,
 		cfg:        cfg,
 	}
-	return sql.OpenDB(tc)
+	db := sql.OpenDB(tc)
+	if cfg.dbStats {
+		go reportDBStats(10 * time.Second, db)
+	}
+	return db
 }
 
 // Open returns connection to a DB using the traced version of the given driver. The driver may
@@ -249,4 +253,21 @@ func processOptions(cfg *config, driverName string, driver driver.Driver, dsn st
 		fn(cfg)
 	}
 	cfg.checkDBMPropagation(driverName, driver, dsn)
+}
+
+// leaving interval as a param in case we'd want it to be configurable
+func reportDBStats(interval time.Duration, db *sql.DB) {
+	for range time.NewTicker(interval).C {
+		log.Debug("Attempting to pull DB stats...")
+		if db == nil {
+			log.Debug("No traced DB connection found; cannot pull DB stats.")
+			return
+		} else {
+			log.Debug("Traced DB connection found: reporting DB stats.")
+			stats := db.Stats()
+			// Start with just 1 metric
+			openConns := stats.OpenConnections
+			tracer.ReportGauge("sql.db.open_connections", 1, float64(openConns))
+		}
+	}
 }

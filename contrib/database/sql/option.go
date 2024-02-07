@@ -29,6 +29,7 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
+	dbStats bool
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
@@ -260,5 +261,13 @@ func WithSQLCommentInjection(mode tracer.SQLCommentInjectionMode) Option {
 func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	return func(cfg *config) {
 		cfg.dbmPropagationMode = mode
+	}
+}
+// WithDBStats enables polling of DBStats metrics on the registered DB
+// ref: https://pkg.go.dev/database/sql#DBStats
+// These metrics are submitted to Datadog and are not billed as custom metrics
+func WithDBStats() Option {
+	return func(cfg *config) {
+		cfg.dbStats = true
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -99,3 +100,13 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 		}
 	}
 }
+
+// The below functions were added so that the contrib libraries can have access to the tracer statsd client
+// However, they also make it so customers could use the tracer's statsd client to submit custom metrics, which we probably don't want.
+func ReportGauge(name string, data float64, rate float64, tags ...string) {
+	if t, ok := internal.GetGlobalTracer().(*tracer); ok{
+		t.statsd.Gauge(name, data, tags, rate)
+	}
+}
+// func ReportCount(name string, value int64, rate float64, tags ...string){}
+
