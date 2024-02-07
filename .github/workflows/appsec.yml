@@ -27,6 +27,22 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 5s
   JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
+  go-mod-caching:
+    runs-on: ubuntu-latest-16-cores
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          cache: false
+      - name: Go modules cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.go-env.outputs.gomodcache }}
+          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-
+      - run: env GOMODCACHE=/go/pkg/mod go mod download
+
   native:
     strategy:
       matrix:
@@ -106,6 +122,7 @@ jobs:
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
+    needs: go-mod-caching
     name: golang-containers ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest-16-cores
     container:
@@ -132,19 +149,18 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       # Install gcc and the libc headers on alpine images
       - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git bash
+        run: apk add gcc musl-dev libc6-compat git bash tar
 
-      # Cache the downloaded Go modules
-      - name: go env
-        run: echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-        id: go-env
+      # Restore the Go modules cache
       - name: Go modules cache
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
-          path: ${{ steps.go-env.outputs.gomodcache }}
+          path: /go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
+          fail-on-cache-miss: true
+      - run: go env -w GOMODCACHE=/go/mod/cache
 
       - name: go test
         run: |
@@ -163,6 +179,7 @@ jobs:
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
 
   linux-arm64:
+    needs: go-mod-caching
     runs-on: ubuntu-latest-16-cores
     name: linux/arm64 ${{ toJSON(matrix) }}
     strategy:
@@ -175,18 +192,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      # Restore the Go modules cache
       - name: Go modules cache
-        uses: actions/cache@v4
+        id: cache
+        uses: actions/cache/restore@v4
         with:
-          path: /go/pkg/mod
+          path: /go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
+          fail-on-cache-miss: true
+      - run: go env -w GOMODCACHE=/go/mod/cache
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
       - run: |
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+          env GOMODCACHE=/go/mod/cache CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 
   smoke-tests:
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
