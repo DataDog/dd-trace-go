@@ -314,7 +314,7 @@ func newTracer(opts ...StartOption) *tracer {
 			defer t.wg.Done()
 			// should I capture the channel in the goroutine or outside of it, before line 313?
 			c := globalconfig.ContribStatsChan()
-			t.reportContribMetrics(defaultMetricsReportInterval, c)
+			t.reportContribMetrics(c)
 		}()
 	}
 	t.wg.Add(1)

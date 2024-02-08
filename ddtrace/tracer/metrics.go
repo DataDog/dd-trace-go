@@ -102,7 +102,7 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 }
 
 // reportContribMetrics only supports gauge and count types for now, but support for other types could be added in the future
-func (t *tracer) reportContribMetrics(interval time.Duration, c chan internal.Stat) {
+func (t *tracer) reportContribMetrics(c chan internal.Stat) {
 	for {
 		select {
 			case s := <-c:
@@ -129,5 +129,3 @@ func (t *tracer) reportContribMetrics(interval time.Duration, c chan internal.St
 		}
 	}
 }
-
-
