@@ -28,34 +28,52 @@ env:
   JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
   go-mod-caching:
+    env:
+      GOMODCACHE: ${{ runner.temp }}/go/pkg/mod
     runs-on: ubuntu-latest-16-cores
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+      cache-path: ${{ env.GOMODCACHE }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute cache key
+        id: cache-key
+        run: echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" > $GITHUB_OUTPUT
+
       - uses: actions/setup-go@v5
         with:
           cache: false
+
       - name: Cache Go modules
         id: cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          enableCrossOsArchive: true
+          path: ${{ env.GOMODCACHE }}
+          key: ${{ steps.cache-key.outputs.key }}
           restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          lookup-only: true
+
       - name: Download Go modules
         if: steps.cache.outputs.cache-hit != 'true'
-        run: env GOMODCACHE=${{ runner.temp }}/go/pkg/mod go mod download -x
+        run: go mod download -x
+
   go-mod-caching-test:
     needs: go-mod-caching
+    env:
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.cache-path }}
     runs-on: ubuntu-latest-16-cores
     steps:
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          enableCrossOsArchive: true
+          key: ${{ needs.go-mod-caching.outputs.cache-key }}
           restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
       - run: ls -l ${{ runner.temp }}/go/pkg/mod
 
 #  native:
