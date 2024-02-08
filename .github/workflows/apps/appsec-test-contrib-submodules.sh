@@ -2,9 +2,13 @@
 
 set -ev
 
-# This script is used to test the contrib submodules in the apps directory.
+# This script is used to test appsec and its contrib .
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/appsec.yml.
+
+DOCKER_GOLANG_VERSION=${DOCKER_GOLANG_VERSION:-1}
+DOCKER_GOLANG_DISTRIB=${DOCKER_GOLANG_DISTRIB:-alpine}
+DOCKER_PLATFORM=${DOCKER_PLATFORM:-linux/amd64}
 
 echo "Running appsec tests for:"
 echo "  GODEBUG=$GODEBUG"
@@ -12,38 +16,25 @@ echo "  GOEXPERIMENT=$GOEXPERIMENT"
 echo "  CGO_ENABLED=$CGO_ENABLED"
 echo "  DD_APPSEC_ENABLED=$DD_APPSEC_ENABLED"
 echo "  DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT"
-
-function gotestsum_runner() {
-  report=$1; shift; shift
-  gotestsum --junitfile "$report" -- -v "$@"
-}
+echo "  DOCKER_PLATFORM=$DOCKER_PLATFORM"
+echo "  DOCKER_GOLANG_VERSION=$DOCKER_GOLANG_VERSION"
+echo "  DOCKER_GOLANG_DISTRIB=$DOCKER_GOLANG_DISTRIB"
 
 function docker_runner() {
-  # ignore the first argument, which is the JUnit report
-  shift
-  # capture the working directory for the test run
-  WD=$(realpath "$1"); shift
   docker run \
-    --platform="$PLATFORM" \
-    -v "$PWD":"$PWD" -w "$WD" \
+    --platform="$DOCKER_PLATFORM" \
+    -v "$PWD":"$PWD" -w "$PWD" \
     -v "$GOMODCACHE:$GOMODCACHE" \
     -eGOMODCACHE="$GOMODCACHE" \
     -eCGO_ENABLED="$CGO_ENABLED" \
     -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
     -eDD_APPSEC_WAF_TIMEOUT="$DD_APPSEC_WAF_TIMEOUT" \
-    golang go test -v "$@"
+    golang:$DOCKER_GOLANG_VERSION-DOCKER_GOLANG_DISTRIB go test -v "$@"
 }
 
-runner="gotestsum_runner"
-if [[ "$1" == "docker" ]]; then
-  runner="docker_runner"; shift
-  PLATFORM=$1
-  [[ -z "$PLATFORM" ]] && PLATFORM="linux/arm64"
-fi
+docker_runner ./appsec/... ./internal/appsec/...
 
-$runner "$JUNIT_REPORT.xml" "." ./appsec/... ./internal/appsec/...
-
-SCOPES=(
+CONTRIBS=(
   "gin-gonic/gin" \
   "google.golang.org/grpc" \
   "net/http" "gorilla/mux" \
@@ -53,8 +44,7 @@ SCOPES=(
   "graphql-go/graphql" \
   "graph-gophers/graphql-go"
 )
-for SCOPE in "${SCOPES[@]}"; do
-  contrib=$(basename "$SCOPE")
-  echo "Running appsec tests for contrib/$SCOPE"
-  $runner "$JUNIT_REPORT.$contrib.xml" "." "./contrib/$SCOPE/..."
+for CONTRIB in "${CONTRIBS[@]}"; do
+  echo "Running appsec tests for contrib/$CONTRIB"
+  docker_runner "./contrib/$CONTRIB/..."
 done

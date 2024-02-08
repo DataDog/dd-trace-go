@@ -199,19 +199,7 @@ jobs:
         run: apk add gcc musl-dev libc6-compat git bash tar
 
       - name: go test
-        run: |
-          # Install gotestsum to get the results in a junit file
-          go install gotest.tools/gotestsum@latest
-          # Run the tests with gotestsum
-          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-
-      - name: Upload the results to Datadog CI App
-        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.JUNIT_REPORT }}*.xml
-          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
+        run: env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 
   linux-arm64:
     name: linux/arm64 ${{ toJSON(matrix) }}
@@ -244,7 +232,7 @@ jobs:
         with:
           platforms: arm64
 
-      - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+      - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DOCKER_PLATFORM=linux/arm64 ./.github/workflows/apps/appsec-test-contrib-submodules.sh
 #
 #  test-app:
 #    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
