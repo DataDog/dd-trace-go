@@ -42,6 +42,12 @@ RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then
       apk update && apk add gcc libc-dev; \
     fi
 
+# If requested, upgrade go-libddwaf to the desired release.
+ARG go_libddwaf_ref=""
+RUN if [ "${go_libddwaf_ref}" != "" ]; then \
+    go get -u github.com/DataDog/go-libddwaf/v2@${go_libddwaf_ref}; \
+  fi
+
 RUN go mod tidy
 
 ARG build_with_vendoring
