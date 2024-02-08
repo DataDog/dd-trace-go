@@ -29,17 +29,19 @@ env:
 jobs:
   go-mod-caching:
     env:
-      GOMODCACHE: ${{ runner.temp }}/go/pkg/mod
+      GOMODCACHE:
     runs-on: ubuntu-latest-16-cores
     outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
-      cache-path: ${{ env.GOMODCACHE }}
+      key: ${{ steps.cfg.outputs.key }}
+      path: ${{ steps.cfg.outputs.path }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute cache key
-        id: cache-key
-        run: echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" > $GITHUB_OUTPUT
+      - name: Compute cache configuration
+        id: cfg
+        run: |
+          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" > $GITHUB_OUTPUT
+          echo "path=${{ runner.temp }}/go/pkg/mod" > $GITHUB_OUTPUT
 
       - uses: actions/setup-go@v5
         with:
@@ -50,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.GOMODCACHE }}
-          key: ${{ steps.cache-key.outputs.key }}
+          key: ${{ steps.cfg.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           lookup-only: true
@@ -62,14 +64,14 @@ jobs:
   go-mod-caching-test:
     needs: go-mod-caching
     env:
-      GOMODCACHE: ${{ needs.go-mod-caching.outputs.cache-path }}
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
     runs-on: ubuntu-latest-16-cores
     steps:
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/go/pkg/mod
-          key: ${{ needs.go-mod-caching.outputs.cache-key }}
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           fail-on-cache-miss: true
