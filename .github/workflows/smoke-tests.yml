@@ -40,6 +40,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
+          # otherwise the repository where the caller workflow started from. In this case, we need to check out the
+          # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
+          # obtain its name than hard-coding it.
+          repository: DataDog/dd-trace-go
       - uses: actions/setup-go@v3
         with:
           go-version: "stable"
@@ -135,6 +140,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
+          # otherwise the repository where the caller workflow started from. In this case, we need to check out the
+          # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
+          # obtain its name than hard-coding it.
+          repository: DataDog/dd-trace-go
       - uses: docker/setup-buildx-action@v3
       - name: Build
         uses: docker/build-push-action@v5
