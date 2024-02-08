@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ev
+set -ex
 
 # This script is used to test appsec and its contrib .
 # It is run by the GitHub Actions CI workflow defined in
@@ -40,19 +40,16 @@ function docker_runner() {
 EOF
 }
 
-docker_runner ./appsec/... ./internal/appsec/...
-
-CONTRIBS=(
-  "gin-gonic/gin" \
-  "google.golang.org/grpc" \
-  "net/http" "gorilla/mux" \
-  "go-chi/chi" "go-chi/chi.v5" \
-  "labstack/echo.v4" \
-  "99designs/gqlgen" \
-  "graphql-go/graphql" \
-  "graph-gophers/graphql-go"
-)
-for CONTRIB in "${CONTRIBS[@]}"; do
-  echo "Running appsec tests for contrib/$CONTRIB"
-  docker_runner "./contrib/$CONTRIB/..."
-done
+docker_runner \
+  ./appsec/... \
+  ./internal/appsec/... \
+  ./contrib/gin-gonic/gin/... \
+  ./contrib/google.golang.org/grpc/... \
+  ./contrib/net/http/... \
+  ./contrib/gorilla/mux/... \
+  ./contrib/go-chi/chi/... \
+  ./contrib/go-chi/chi.v5/... \
+  ./contrib/labstack/echo.v4/... \
+  ./contrib/99designs/gqlgen/... \
+  ./contrib/graphql-go/graphql/... \
+  ./contrib/graph-gophers/graphql-go/...
