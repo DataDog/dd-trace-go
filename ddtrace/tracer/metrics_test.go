@@ -249,7 +249,7 @@ func TestReportContribMetrics(t *testing.T) {
 		c := make(chan internal.Stat)
 		go func() {
 			defer trc.wg.Done()
-			trc.reportContribMetrics(time.Millisecond, c)
+			trc.reportContribMetrics(c)
 		}()
 		s := internal.Stat{
 			Name: "gauge",
@@ -274,7 +274,7 @@ func TestReportContribMetrics(t *testing.T) {
 		c := make(chan internal.Stat)
 		go func() {
 			defer trc.wg.Done()
-			trc.reportContribMetrics(time.Millisecond, c)
+			trc.reportContribMetrics(c)
 		}()
 
 		s := internal.Stat{
@@ -299,7 +299,7 @@ func TestReportContribMetrics(t *testing.T) {
 		c := make(chan internal.Stat)
 		go func() {
 			defer trc.wg.Done()
-			trc.reportContribMetrics(time.Millisecond, c)
+			trc.reportContribMetrics(c)
 		}()
 		s := internal.Stat{
 			Name: "count",
@@ -324,7 +324,7 @@ func TestReportContribMetrics(t *testing.T) {
 		c := make(chan internal.Stat)
 		go func() {
 			defer trc.wg.Done()
-			trc.reportContribMetrics(time.Millisecond, c)
+			trc.reportContribMetrics(c)
 		}()
 
 		s := internal.Stat{
@@ -352,7 +352,7 @@ func TestReportContribMetrics(t *testing.T) {
 		c := make(chan internal.Stat)
 		go func() {
 			defer trc.wg.Done()
-			trc.reportContribMetrics(time.Millisecond, c)
+			trc.reportContribMetrics(c)
 		}()
 
 		s := internal.Stat{
