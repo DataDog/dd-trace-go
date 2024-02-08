@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ev
 
 # This script is used to test the contrib submodules in the apps directory.
 # It is run by the GitHub Actions CI workflow defined in
@@ -26,7 +26,7 @@ function docker_runner() {
   docker run \
     --platform="$PLATFORM" \
     -v "$PWD":"$PWD" -w "$WD" \
-    -v "/go/pkg/mod:/go/pkg/mod" \
+    -v "$GOMODCACHE:$GOMODCACHE" \
     -eGOMODCACHE="$GOMODCACHE" \
     -eCGO_ENABLED="$CGO_ENABLED" \
     -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
