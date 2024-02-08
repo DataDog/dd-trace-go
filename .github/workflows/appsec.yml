@@ -24,7 +24,7 @@ on:
   push:
     branches: release-v*
 env:
-  DD_APPSEC_WAF_TIMEOUT: 5s
+  DD_APPSEC_WAF_TIMEOUT: 1m
   JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
   go-mod-caching:
@@ -213,39 +213,38 @@ jobs:
 #          files: ${{ env.JUNIT_REPORT }}*.xml
 #          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
 #
-#  linux-arm64:
-#    needs: go-mod-caching
-#    runs-on: ubuntu-latest-16-cores
-#    name: linux/arm64 ${{ toJSON(matrix) }}
-#    strategy:
-#      matrix:
-#        cgo_enabled: # test it compiles with and without cgo
-#          - 0
-#          - 1
-#      fail-fast: false
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          ref: ${{ inputs.ref || github.ref }}
-#
-#      # Restore the Go modules cache
-#      - name: Go modules cache
-#        id: cache
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: ${{ runner.temp }}/go/mod/cache
-#          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-#          restore-keys: go-pkg-mod-
-#          enableCrossOsArchive: true
-#          fail-on-cache-miss: true
-#      - run: go env -w GOMODCACHE=${{ runner.temp }}/go/mod/cache
-#
-#      - name: Set up QEMU
-#        uses: docker/setup-qemu-action@v3
-#        with:
-#          platforms: arm64
-#      - run: |
-#          env GOMODCACHE=${{ runner.temp }}/go/mod/cache CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true DD_APPSEC_WAF_TIMEOUT=$DD_APPSEC_WAF_TIMEOUT ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
+  linux-arm64:
+    name: linux/arm64 ${{ toJSON(matrix) }}
+    runs-on: ubuntu-latest-16-cores
+    needs: go-mod-caching
+    env:
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+    strategy:
+      matrix:
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+      fail-fast: false
+    steps:
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - run: env CGO_ENABLED=${{ matrix.cgo_enabled }} DD_APPSEC_ENABLED=true ./.github/workflows/apps/appsec-test-contrib-submodules.sh docker linux/arm64
 #
 #  test-app:
 #    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
