@@ -155,64 +155,64 @@ jobs:
 #          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 #
 #
-#  # Same tests but on the official golang container for linux
-#  golang-linux-container:
-#    needs: go-mod-caching
-#    name: golang-containers ${{ toJSON(matrix) }}
-#    runs-on: ubuntu-latest-16-cores
-#    container:
-#      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
-#    strategy:
-#      matrix:
-#        go-version: [ "1.21", "1.20", "1.19" ]
-#        distribution: [ bookworm, bullseye, buster, alpine ]
-#        cgo_enabled: # test it compiles with and without cgo
-#          - 0
-#          - 1
-#        appsec_enabled: # test it compiles with and without appsec enabled
-#          - DD_APPSEC_ENABLED=true
-#          - DD_APPSEC_ENABLED=false
-#          - "" # the env var is not defined so that the remote-config path can be taken
-#        exclude:
-#          - go-version: "1.21"
-#            distribution: buster
-#
-#      fail-fast: false
-#    steps:
-#      - uses: actions/checkout@v4
-#        with:
-#          ref: ${{ inputs.ref || github.ref }}
-#      # Install gcc and the libc headers on alpine images
-#      - if: ${{ matrix.distribution == 'alpine' }}
-#        run: apk add gcc musl-dev libc6-compat git bash tar
-#
-#      # Restore the Go modules cache
-#      - name: Go modules cache
-#        id: cache
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: ${{ runner.temp }}/go/mod/cache
-#          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-#          restore-keys: go-pkg-mod-
-#          fail-on-cache-miss: true
-#          enableCrossOsArchive: true
-#      - run: go env -w GOMODCACHE=${{ runner.temp }}/go/mod/cache
-#
-#      - name: go test
-#        run: |
-#          # Install gotestsum to get the results in a junit file
-#          go install gotest.tools/gotestsum@latest
-#          # Run the tests with gotestsum
-#          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-#
-#      - name: Upload the results to Datadog CI App
-#        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
-#        uses: ./.github/actions/dd-ci-upload
-#        with:
-#          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-#          files: ${{ env.JUNIT_REPORT }}*.xml
-#          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
-#
+  # Same tests but on the official golang container for linux
+  golang-linux-container:
+    name: golang-containers ${{ toJSON(matrix) }}
+    runs-on: ubuntu-latest-16-cores
+    needs: go-mod-caching
+    env:
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+    container:
+      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+    strategy:
+      matrix:
+        go-version: [ "1.21", "1.20", "1.19" ]
+        distribution: [ bookworm, bullseye, buster, alpine ]
+        cgo_enabled: # test it compiles with and without cgo
+          - 0
+          - 1
+        appsec_enabled: # test it compiles with and without appsec enabled
+          - DD_APPSEC_ENABLED=true
+          - DD_APPSEC_ENABLED=false
+          - "" # the env var is not defined so that the remote-config path can be taken
+        exclude:
+          - go-version: "1.21"
+            distribution: buster
+
+      fail-fast: false
+    steps:
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      # Install gcc and the libc headers on alpine images
+      - if: ${{ matrix.distribution == 'alpine' }}
+        run: apk add gcc musl-dev libc6-compat git bash tar
+
+      - name: go test
+        run: |
+          # Install gotestsum to get the results in a junit file
+          go install gotest.tools/gotestsum@latest
+          # Run the tests with gotestsum
+          env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
+
+      - name: Upload the results to Datadog CI App
+        if: matrix.distribution != 'alpine' # datadog-ci CLI doesn't work on alpine
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          files: ${{ env.JUNIT_REPORT }}*.xml
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ matrix.distribution }}
+
   linux-arm64:
     name: linux/arm64 ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest-16-cores
