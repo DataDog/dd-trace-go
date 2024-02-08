@@ -21,7 +21,7 @@ echo "  DOCKER_GOLANG_VERSION=$DOCKER_GOLANG_VERSION"
 echo "  DOCKER_GOLANG_DISTRIB=$DOCKER_GOLANG_DISTRIB"
 
 function docker_runner() {
-  docker run \
+  cat <<EOF | docker run -i \
     --platform="$DOCKER_PLATFORM" \
     -v "$PWD":"$PWD" -w "$PWD" \
     -v "$GOMODCACHE:$GOMODCACHE" \
@@ -29,7 +29,15 @@ function docker_runner() {
     -eCGO_ENABLED="$CGO_ENABLED" \
     -eDD_APPSEC_ENABLED="$DD_APPSEC_ENABLED" \
     -eDD_APPSEC_WAF_TIMEOUT="$DD_APPSEC_WAF_TIMEOUT" \
-    golang:$DOCKER_GOLANG_VERSION-DOCKER_GOLANG_DISTRIB go test -v "$@"
+    golang:$DOCKER_GOLANG_VERSION-$DOCKER_GOLANG_DISTRIB
+      go env
+      # Install gcc and the libc headers on alpine images
+      if [[ $DOCKER_GOLANG_DISTRIB == "alpine" ]]; then
+        apk add gcc musl-dev libc6-compat git bash tar
+      fi;
+      go test -v "$@"
+      exit 0
+EOF
 }
 
 docker_runner ./appsec/... ./internal/appsec/...

@@ -28,6 +28,7 @@ env:
   JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
   go-mod-caching:
+    name: Prepare Go modules cache
     runs-on: ubuntu-latest-16-cores
     outputs:
       key: ${{ steps.cfg.outputs.key }}
@@ -193,10 +194,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
-
-      # Install gcc and the libc headers on alpine images
-      - if: ${{ matrix.distribution == 'alpine' }}
-        run: apk add gcc musl-dev libc6-compat git bash tar
 
       - name: go test
         run: env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
