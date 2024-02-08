@@ -260,6 +260,8 @@ type config struct {
 
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
+
+	contribStats bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -340,6 +342,7 @@ func newConfig(opts ...StartOption) *config {
 		c.logToStdout = true
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
+	c.contribStats = internal.BoolEnv("DD_TRACE_CONTRIB_STATS_ENABLED", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
 	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
@@ -1256,6 +1259,15 @@ func setHeaderTags(headerAsTags []string) bool {
 		globalconfig.SetHeaderTag(header, tag)
 	}
 	return true
+}
+
+// WithContribStats opens up a channel of communication between tracer and contrib libraries
+// for submitting stats from contribs to Datadog via the tracer's statsd client
+// It is enabled by default but can be disabled with `WithContribStats(false)`
+func WithContribStats(enabled bool) StartOption {
+	return func(c *config) {
+		c.contribStats = enabled
+	}
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

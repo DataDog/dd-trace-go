@@ -23,6 +23,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
@@ -305,6 +306,16 @@ func newTracer(opts ...StartOption) *tracer {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
+	}
+	if c.contribStats {
+		log.Debug("Contrib stats enabled.")
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			// should I capture the channel in the goroutine or outside of it, before line 313?
+			c := globalconfig.ContribStatsChan()
+			t.reportContribMetrics(defaultMetricsReportInterval, c)
+		}()
 	}
 	t.wg.Add(1)
 	go func() {

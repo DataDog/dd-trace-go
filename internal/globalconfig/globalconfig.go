@@ -20,6 +20,7 @@ var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
 	headersAsTags: internal.NewLockMap(map[string]string{}),
+	contribStats: make(chan internal.Stat),
 }
 
 type config struct {
@@ -28,6 +29,7 @@ type config struct {
 	serviceName   string
 	runtimeID     string
 	headersAsTags *internal.LockMap
+	contribStats chan internal.Stat
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -92,4 +94,10 @@ func HeaderTagsLen() int {
 // It is invoked when WithHeaderTags is called, in order to overwrite the config
 func ClearHeaderTags() {
 	cfg.headersAsTags.Clear()
+}
+
+// ContribStatsChan grants access to the channel for sharing stats from contrib to tracer
+func ContribStatsChan() chan internal.Stat{
+	// Lock even for returning a value, not reading/writing?
+	return cfg.contribStats
 }

@@ -43,3 +43,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		assert.Equal(t, 0.2, cfg.analyticsRate)
 	})
 }
+
+func TestWithDBStats(t *testing.T) {
+	cfg := new(config)
+	defaults(cfg, "", nil)
+	WithDBStats(true)
+	assert.Equal(t, true, cfg.dbStats)
+}

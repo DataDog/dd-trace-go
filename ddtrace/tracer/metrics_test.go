@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -236,6 +238,137 @@ func (tg *testStatsdClient) Wait(asserts *assert.Assertions, n int, d time.Durat
 	}
 
 	return nil
+}
+
+func TestReportContribMetrics(t *testing.T) {
+	t.Run("gauge", func(t *testing.T) {
+		var tg testStatsdClient
+		trc := newUnstartedTracer(withStatsdClient(&tg))
+		defer trc.statsd.Close()
+		trc.wg.Add(1)
+		c := make(chan internal.Stat)
+		go func() {
+			defer trc.wg.Done()
+			trc.reportContribMetrics(time.Millisecond, c)
+		}()
+		s := internal.Stat{
+			Name: "gauge",
+			Kind: "gauge",
+			Value: float64(1.0),
+			Tags: nil,
+			Rate: 1,
+		}
+		c <- s
+		assert := assert.New(t)
+		close(trc.stop)
+		calls := tg.CallNames()
+		assert.Contains(calls, "gauge")
+	})
+	t.Run("incompatible gauge", func (t *testing.T) {
+		var tg testStatsdClient
+		tp := new(log.RecordLogger)
+		trc := newUnstartedTracer(withStatsdClient(&tg), WithLogger(tp), WithDebugMode(true))
+		defer trc.statsd.Close()
+		trc.wg.Add(1)
+
+		c := make(chan internal.Stat)
+		go func() {
+			defer trc.wg.Done()
+			trc.reportContribMetrics(time.Millisecond, c)
+		}()
+
+		s := internal.Stat{
+			Name: "NotGauge",
+			Kind: "gauge",
+			Value: 1, // not a float64
+			Tags: nil,
+			Rate: 1,
+		}
+		c <- s
+		assert := assert.New(t)
+		close(trc.stop)
+		calls := tg.CallNames()
+		assert.NotContains(calls, "NotGauge")
+		assert.Contains(tp.Logs()[0], "Contrib library submitted gauge stat with incompatible value; looking for float64 value but got int. Dropping stat NotGauge.")
+	})
+	t.Run("count", func(t *testing.T) {
+		var tg testStatsdClient
+		trc := newUnstartedTracer(withStatsdClient(&tg))
+		defer trc.statsd.Close()
+		trc.wg.Add(1)
+		c := make(chan internal.Stat)
+		go func() {
+			defer trc.wg.Done()
+			trc.reportContribMetrics(time.Millisecond, c)
+		}()
+		s := internal.Stat{
+			Name: "count",
+			Kind: "count",
+			Value: int64(1),
+			Tags: nil,
+			Rate: 1,
+		}
+		c <- s
+		assert := assert.New(t)
+		close(trc.stop)
+		calls := tg.CallNames()
+		assert.Contains(calls, "count")
+	})
+	t.Run("incompatible count", func(t *testing.T) {
+		var tg testStatsdClient
+		tp := new(log.RecordLogger)
+		trc := newUnstartedTracer(withStatsdClient(&tg), WithLogger(tp), WithDebugMode(true))
+		defer trc.statsd.Close()
+		trc.wg.Add(1)
+
+		c := make(chan internal.Stat)
+		go func() {
+			defer trc.wg.Done()
+			trc.reportContribMetrics(time.Millisecond, c)
+		}()
+
+		s := internal.Stat{
+			Name: "NotCount",
+			Kind: "count",
+			Value: 1, //not int64
+			Tags: nil,
+			Rate: 1,
+		}
+		c <- s
+		assert := assert.New(t)
+		close(trc.stop)
+		calls := tg.CallNames()
+		assert.NotContains(calls, "count")
+		fmt.Println(tp.Logs()[0])
+		assert.Contains(tp.Logs()[0], "Contrib library submitted count stat with incompatible value; looking for int64 value but got int. Dropping stat NotCount.")
+	})
+	t.Run("incompatible kind", func (t *testing.T) {
+		var tg testStatsdClient
+		tp := new(log.RecordLogger)
+		trc := newUnstartedTracer(withStatsdClient(&tg), WithLogger(tp), WithDebugMode(true))
+		defer trc.statsd.Close()
+		trc.wg.Add(1)
+
+		c := make(chan internal.Stat)
+		go func() {
+			defer trc.wg.Done()
+			trc.reportContribMetrics(time.Millisecond, c)
+		}()
+
+		s := internal.Stat{
+			Name: "incompatible",
+			Kind: "incompatible",
+			Value: 100,
+			Tags: nil,
+			Rate: 1,
+		}
+		c <- s
+		assert := assert.New(t)
+		close(trc.stop)
+		calls := tg.CallNames()
+		assert.NotContains(calls, "incompatible")
+		assert.Contains(tp.Logs()[0], "Contrib stat submission failed: metric type incompatible not supported")
+	})
 }
 
 func TestReportRuntimeMetrics(t *testing.T) {

@@ -23,8 +23,10 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
+	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -154,7 +156,7 @@ func (t *tracedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		cfg:        t.cfg,
 	}
 	if dsn != "" {
-		tp.meta, _ = internal.ParseDSN(t.driverName, dsn)
+		tp.meta, _ = sqlinternal.ParseDSN(t.driverName, dsn)
 	}
 	start := time.Now()
 	ctx, end := startTraceTask(ctx, string(QueryTypeConnect))
@@ -211,7 +213,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if cfg.dbStats {
-		go reportDBStats(10 * time.Second, db)
+		go pollDBStats(10 * time.Second, db)
 	}
 	return db
 }
@@ -256,17 +258,25 @@ func processOptions(cfg *config, driverName string, driver driver.Driver, dsn st
 }
 
 // leaving interval as a param in case we'd want it to be configurable
-func reportDBStats(interval time.Duration, db *sql.DB) {
+func pollDBStats(interval time.Duration, db *sql.DB) {
 	for range time.NewTicker(interval).C {
-		log.Debug("Attempting to pull DB stats...")
 		if db == nil {
 			log.Debug("No traced DB connection found; cannot pull DB stats.")
 			return
 		}
-		log.Debug("Traced DB connection found: reporting DB stats.")
+		log.Debug("Traced DB connection found: polling DB stats.")
 		stats := db.Stats()
-		// Start with just 1 metric
+		// Starting with just 1 metric & no tags, to complete a MVP.
 		openConns := stats.OpenConnections
-		tracer.ReportGauge("sql.db.open_connections", 1, float64(openConns))
+		s := internal.Stat{
+			Name: "sql.db.open_connections",
+			Kind: "gauge",
+			Value: float64(openConns),
+			Tags: nil,
+			Rate: 1,
+		}
+		c := globalconfig.ContribStatsChan()
+		c <- s
 	}
 }
+

@@ -5,7 +5,9 @@
 
 package internal
 
-import "time"
+import (
+	"time"
+)
 
 type StatsdClient interface {
 	Incr(name string, tags []string, rate float64) error
@@ -14,4 +16,12 @@ type StatsdClient interface {
 	Timing(name string, value time.Duration, tags []string, rate float64) error
 	Flush() error
 	Close() error
+}
+
+type Stat struct {
+	Name string
+	Kind string 
+	Value interface{} //Really, it can only be a "number" type, but wasn't sure if we want to enforce that here yet
+	Tags []string 
+	Rate float64
 }
