@@ -44,6 +44,9 @@ func TestMain(m *testing.M) {
 	os.Exit(testResult)
 }
 
+// func TestDBStats(){}
+// Holding off on writing this until I get review on the implementation decision
+
 func TestSqlServer(t *testing.T) {
 	driverName := "sqlserver"
 	Register(driverName, &mssql.Driver{})
