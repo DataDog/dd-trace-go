@@ -36,14 +36,15 @@ jobs:
           cache: false
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           enableCrossOsArchive: true
           restore-keys: go-pkg-mod-
       - name: Download Go modules
-        run: env GOMODCACHE=${{ runner.temp }}/go/pkg/mod go mod download
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: env GOMODCACHE=${{ runner.temp }}/go/pkg/mod go mod download -x
 
   native:
     strategy:
@@ -156,7 +157,7 @@ jobs:
       # Restore the Go modules cache
       - name: Go modules cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
@@ -198,7 +199,7 @@ jobs:
       # Restore the Go modules cache
       - name: Go modules cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/go/mod/cache
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
