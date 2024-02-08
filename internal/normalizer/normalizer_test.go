@@ -6,6 +6,7 @@
 package normalizer
 
 import (
+	"net/textproto"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -13,7 +14,44 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNormalizeHeaderTag(t *testing.T) {
+func TestHeaderTagSlice(t *testing.T) {
+	t.Run("single", func(t *testing.T) {
+		hSlice := []string{"header:tag"}
+		hMap := HeaderTagSlice(hSlice)
+		assert.Len(t, hMap, 1)
+		v, ok := hMap[textproto.CanonicalMIMEHeaderKey("header")]
+		assert.True(t, ok)
+		assert.Equal(t, "tag", v)
+	})
+	t.Run("multi", func(t *testing.T) {
+		hSlice := []string{"header1:tag1", "header2:tag2"}
+		hMap := HeaderTagSlice(hSlice)
+		assert.Len(t, hMap, 2)
+		v, ok := hMap[textproto.CanonicalMIMEHeaderKey("header1")]
+		assert.True(t, ok)
+		assert.Equal(t, "tag1", v)
+		v, ok = hMap[textproto.CanonicalMIMEHeaderKey("header2")]
+		assert.True(t, ok)
+		assert.Equal(t, "tag2", v)
+	})
+	t.Run("datadog headers", func(t *testing.T) {
+		hSlice := []string{"x-datadog-id:tag"}
+		hMap := HeaderTagSlice(hSlice)
+		assert.Len(t, hMap, 0)
+	})
+	t.Run("leading colon", func(t *testing.T) {
+		hSlice := []string{":header"}
+		hMap := HeaderTagSlice(hSlice)
+		assert.Len(t, hMap, 0)
+	})
+	t.Run("trailing colon", func(t *testing.T) {
+		hSlice := []string{"header:"}
+		hMap := HeaderTagSlice(hSlice)
+		assert.Len(t, hMap, 0)
+	})
+}
+
+func TestHeaderTag(t *testing.T) {
 	t.Run("single", func(t *testing.T) {
 		header, tag := HeaderTag("header")
 		assert.Equal(t, "Header", header)
