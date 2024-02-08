@@ -40,8 +40,8 @@ jobs:
       - name: Compute cache configuration
         id: cfg
         run: |
-          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" > $GITHUB_OUTPUT
-          echo "path=${{ runner.temp }}/go/pkg/mod" > $GITHUB_OUTPUT
+          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
+          echo "path=${{ runner.temp }}/go/pkg/mod" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-go@v5
         with:
