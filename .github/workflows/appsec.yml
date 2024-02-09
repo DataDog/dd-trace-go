@@ -197,6 +197,8 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
+      - run: ls -lh $GOMODCACHE
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
