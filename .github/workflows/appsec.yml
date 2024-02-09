@@ -250,8 +250,10 @@ jobs:
           cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
             set -ex
+            pwd
+            ls -l
             go env
-            go test -v "$@"
+            go test -v $TESTS
           EOF
 #
 #  test-app:
