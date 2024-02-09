@@ -248,14 +248,9 @@ jobs:
             CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
           cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT \
-            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
             set -ex
             go env
-            # Install gcc and the libc headers on alpine images
-            if [[ $DOCKER_GOLANG_DISTRIB == "alpine" ]]; then
-              apk add gcc musl-dev libc6-compat
-            fi;
             go test -v "$@"
           EOF
 #
