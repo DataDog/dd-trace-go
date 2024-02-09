@@ -253,7 +253,7 @@ jobs:
             pwd
             ls -l
             go env
-            go test -v $TESTS
+            go test -v "$TESTS"
           EOF
 #
 #  test-app:
