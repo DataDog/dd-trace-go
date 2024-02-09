@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -589,13 +590,11 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	return trace, span, err
 }
 
-// unmarshalSamplingRules unmarshals JSON from b and returns the sampling rules found, attributing
-// the type t to them. If any errors are occurred, they are returned.
-func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule, error) {
+func (sr *SamplingRule) UnmarshalJSON(b []byte) error {
 	if len(b) == 0 {
-		return nil, nil
+		return nil
 	}
-	var jsonRules []struct {
+	var jsonRule struct {
 		Service      string            `json:"service"`
 		Name         string            `json:"name"`
 		Rate         json.Number       `json:"sample_rate"`
@@ -603,63 +602,54 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 		Resource     string            `json:"resource"`
 		Tags         map[string]string `json:"tags"`
 	}
-	err := json.Unmarshal(b, &jsonRules)
+	err := json.Unmarshal(b, &jsonRule)
 	if err != nil {
+		return fmt.Errorf("error unmarshalling JSON: %v", err)
+	}
+	if jsonRule.Rate == "" {
+		jsonRule.Rate = "1"
+	}
+	rate, err := jsonRule.Rate.Float64()
+	if err != nil {
+		return err
+	}
+	if rate < 0.0 || rate > 1.0 {
+		return fmt.Errorf("rate is out of [0.0, 1.0] range")
+	}
+	tagGlobs := make(map[string]*regexp.Regexp, len(jsonRule.Tags))
+	for k, g := range jsonRule.Tags {
+		tagGlobs[k] = globMatch(g)
+	}
+	sr.Service = globMatch(jsonRule.Service)
+	sr.Name = globMatch(jsonRule.Name)
+	sr.Rate = rate
+	sr.MaxPerSecond = jsonRule.MaxPerSecond
+	sr.Resource = globMatch(jsonRule.Resource)
+	sr.Tags = tagGlobs
+
+	return nil
+}
+
+// unmarshalSamplingRules unmarshals JSON from b and returns the sampling rules found, attributing
+// the type t to them. If any errors are occurred, they are returned.
+func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	var rules []SamplingRule
+	err := json.Unmarshal(b, &rules)
+	if err != nil {
+		debug.PrintStack()
 		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
 	}
-	rules := make([]SamplingRule, 0, len(jsonRules))
-	var errs []string
-	for i, v := range jsonRules {
-		if v.Rate == "" {
-			if spanType == SamplingRuleSpan {
-				v.Rate = "1"
-			} else {
-				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
-				continue
-			}
+
+	for _, r := range rules {
+		if spanType == SamplingRuleSpan {
+			r.limiter = newSingleSpanRateLimiter(r.MaxPerSecond)
+			r.ruleType = SamplingRuleSpan
+		} else {
+			r.ruleType = SamplingRuleTrace
 		}
-		rate, err := v.Rate.Float64()
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("at index %d: %v", i, err))
-			continue
-		}
-		if rate < 0.0 || rate > 1.0 {
-			errs = append(errs, fmt.Sprintf("at index %d: ignoring rule %+v: rate is out of [0.0, 1.0] range", i, v))
-			continue
-		}
-		tagGlobs := make(map[string]*regexp.Regexp, len(v.Tags))
-		for k, g := range v.Tags {
-			tagGlobs[k] = globMatch(g)
-		}
-		switch spanType {
-		case SamplingRuleSpan:
-			rules = append(rules, SamplingRule{
-				Service:      globMatch(v.Service),
-				Name:         globMatch(v.Name),
-				Rate:         rate,
-				MaxPerSecond: v.MaxPerSecond,
-				Resource:     globMatch(v.Resource),
-				Tags:         tagGlobs,
-				limiter:      newSingleSpanRateLimiter(v.MaxPerSecond),
-				ruleType:     SamplingRuleSpan,
-			})
-		case SamplingRuleTrace:
-			if v.Rate == "" {
-				errs = append(errs, fmt.Sprintf("at index %d: rate not provided", i))
-				continue
-			}
-			rules = append(rules, SamplingRule{
-				Service:  globMatch(v.Service),
-				Name:     globMatch(v.Name),
-				Rate:     rate,
-				Resource: globMatch(v.Resource),
-				Tags:     tagGlobs,
-				ruleType: SamplingRuleTrace,
-			})
-		}
-	}
-	if len(errs) != 0 {
-		return rules, fmt.Errorf("%s", strings.Join(errs, "\n\t"))
 	}
 	return rules, nil
 }
