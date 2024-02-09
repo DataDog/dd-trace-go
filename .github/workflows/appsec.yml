@@ -115,8 +115,6 @@ jobs:
     name: disabled ${{ toJSON(matrix) }}
     needs: go-mod-caching
     runs-on: ${{ matrix.runs-on }}
-    env:
-      GOMODCACHE: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }} # TODO: proper windows support - ignored for now
     strategy:
       fail-fast: false
       matrix:
@@ -149,6 +147,8 @@ jobs:
 
       - name: go test
         shell: bash
+        env:
+          GOMODCACHE: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           env ${{ matrix.appsec_enabled }} go test -v ${{ matrix.go-args }} $TESTS
 
@@ -157,8 +157,6 @@ jobs:
     name: golang-containers ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest-16-cores
     needs: go-mod-caching
-    env:
-      GOMODCACHE: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }}
     strategy:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
@@ -197,8 +195,6 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - run: ls -lh $GOMODCACHE
-
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
@@ -212,6 +208,7 @@ jobs:
       - name: go test
         env:
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
+          GOMODCACHE: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           cat <<EOF | docker run -i --platform=${{ matrix.platform }}  -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
