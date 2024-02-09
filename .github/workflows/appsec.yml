@@ -25,7 +25,7 @@ on:
     branches: release-v*
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
-  TESTS: >
+  TESTS: >-
     ./appsec/...
     ./internal/appsec/...
     ./contrib/gin-gonic/gin/...
@@ -116,7 +116,7 @@ jobs:
     needs: go-mod-caching
     runs-on: ${{ matrix.runs-on }}
     env:
-      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }} # TODO: proper windows support - ignored for now
     strategy:
       fail-fast: false
       matrix:
@@ -163,6 +163,7 @@ jobs:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
+        platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
         cgo_enabled: # test it compiles with and without cgo
           - 0
           - 1
@@ -173,6 +174,12 @@ jobs:
         exclude:
           - go-version: "1.21"
             distribution: buster
+        include:
+          - platform: linux/arm64
+            go-version: "1"
+            distribution: alpine
+            cgo_enabled: 0
+            appsec_enabled: -eDD_APPSEC_ENABLED=true
 
       fail-fast: false
     steps:
@@ -189,11 +196,17 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      - name: Set up qemu for arm64
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: go test
         env:
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
-          cat <<EOF | docker run -i -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+          cat <<EOF | docker run -i --platform=${{ matrix.platform }}  -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
@@ -201,48 +214,45 @@ jobs:
               go test -v $TESTS
           EOF
 
-  linux-arm64:
-    name: linux/arm64 ${{ toJSON(matrix) }}
-    runs-on: ubuntu-latest-16-cores
-    needs: go-mod-caching
-    env:
-      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
-    strategy:
-      matrix:
-        cgo_enabled: # test it compiles with and without cgo
-          - 0
-          - 1
-      fail-fast: false
-    steps:
-      - name: Restore Go modules cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ needs.go-mod-caching.outputs.path }}
-          key: ${{ needs.go-mod-caching.outputs.key }}
-          restore-keys: go-pkg-mod-
-          enableCrossOsArchive: true
-          fail-on-cache-miss: true
-
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: go test
-        env:
-            DD_APPSEC_ENABLED: true
-            CGO_ENABLED: ${{ matrix.cgo_enabled }}
-        run: |
-          cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
-              set -ex
-              go env
-              go test -v $TESTS
-          EOF
+#  linux-arm64:
+#    name: linux/arm64 ${{ toJSON(matrix) }}
+#    runs-on: ubuntu-latest-16-cores
+#    needs: go-mod-caching
+#    env:
+#      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+#    strategy:
+#      matrix:
+#        cgo_enabled: # test it compiles with and without cgo
+#          - 0
+#          - 1
+#      fail-fast: false
+#    steps:
+#      - name: Restore Go modules cache
+#        uses: actions/cache/restore@v4
+#        with:
+#          path: ${{ needs.go-mod-caching.outputs.path }}
+#          key: ${{ needs.go-mod-caching.outputs.key }}
+#          restore-keys: go-pkg-mod-
+#          enableCrossOsArchive: true
+#          fail-on-cache-miss: true
+#
+#      - uses: actions/checkout@v4
+#        with:
+#          ref: ${{ inputs.ref || github.ref }}
+#
+#
+#
+#      - name: go test
+#        env:
+#            DD_APPSEC_ENABLED: true
+#            CGO_ENABLED: ${{ matrix.cgo_enabled }}
+#        run: |
+#          cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+#            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
+#              set -ex
+#              go env
+#              go test -v $TESTS
+#          EOF
 #
 #  test-app:
 #    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
