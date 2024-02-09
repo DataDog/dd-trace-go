@@ -38,7 +38,6 @@ env:
     ./contrib/99designs/gqlgen/...
     ./contrib/graphql-go/graphql/...
     ./contrib/graph-gophers/graphql-go/...
-  JUNIT_REPORT: /tmp/gotestsum-report
 jobs:
   go-mod-caching:
     name: Prepare Go modules cache
@@ -75,24 +74,11 @@ jobs:
           GOMODCACHE: ${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
-  go-mod-caching-test:
-    needs: go-mod-caching
-    env:
-      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
-    runs-on: ubuntu-latest-16-cores
-    steps:
-      - name: Restore Go modules cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ needs.go-mod-caching.outputs.path }}
-          key: ${{ needs.go-mod-caching.outputs.key }}
-          restore-keys: go-pkg-mod-
-          enableCrossOsArchive: true
-          fail-on-cache-miss: true
-
-      - run: ls -l ${{ runner.temp }}/go/pkg/mod
-
 #  native:
+#    name: native ${{ toJSON(matrix) }}
+#    runs-on: ${{ matrix.runs-on }}
+#    env:
+#      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
 #    strategy:
 #      matrix:
 #        runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
@@ -109,8 +95,6 @@ jobs:
 #            cgocheck:  # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
 #              GOEXPERIMENT=cgocheck2
 #      fail-fast: false
-#    name: native ${{ toJSON(matrix) }}
-#    runs-on: ${{ matrix.runs-on }}
 #    steps:
 #      - uses: actions/checkout@v4
 #        with:
@@ -125,50 +109,36 @@ jobs:
 #          go install gotest.tools/gotestsum@latest
 #          # Run the tests with gotestsum
 #          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-#
-#      - name: Upload the results to Datadog CI App
-#        uses: ./.github/actions/dd-ci-upload
-#        with:
-#          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-#          files: ${{ env.JUNIT_REPORT }}*.xml
-#          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
-#
-#  # Tests cases were appsec end up being disabled
-#  disabled:
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        go-args: [ "-tags datadog.no_waf", "-tags go1.22" ]
-#        runs-on: [ macos-13, ubuntu-latest-16-cores ]
-#        appsec_enabled:
-#          - DD_APPSEC_ENABLED=true
-#          - "" # the env var is not defined so that the remote-config path can be taken
-#        include:
-#          - runs-on: windows-latest
-#            go-args: ""
-#    name: disabled ${{ toJSON(matrix) }}
-#    runs-on: ${{ matrix.runs-on }}
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: actions/setup-go@v5
-#        with:
-#          go-version: stable
-#
-#      - name: go test
-#        shell: bash
-#        run: |
-#          go install gotest.tools/gotestsum@latest
-#          # Run the tests with gotestsum
-#          env ${{ matrix.appsec_enabled }} ./.github/workflows/apps/appsec-test-contrib-submodules.sh
-#
-#      - name: Upload the results to Datadog CI App
-#        uses: ./.github/actions/dd-ci-upload
-#        with:
-#          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-#          files: ${{ env.JUNIT_REPORT }}*.xml
-#          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
-#
-#
+
+  # Tests cases were appsec end up being disabled at compilation time
+  disabled:
+    strategy:
+      fail-fast: false
+      matrix:
+        go-args:
+          - "-tags datadog.no_waf"
+        runs-on: [ macos-13, ubuntu-latest-16-cores ]
+        appsec_enabled:
+          - DD_APPSEC_ENABLED=true
+          - "" # the env var is not defined so that the remote-config path can be taken
+        include:
+          # Windows is not supported for now
+          - runs-on: windows-latest
+            go-args: ""
+    name: disabled ${{ toJSON(matrix) }}
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: go test
+        shell: bash
+        run: |
+          env ${{ matrix.appsec_enabled }} go test -v ${{ matrix.go-args }} $TESTS
+
   # Same tests but on the official golang container for linux
   golang-linux-container:
     name: golang-containers ${{ toJSON(matrix) }}
@@ -176,8 +146,6 @@ jobs:
     needs: go-mod-caching
     env:
       GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
-#    container:
-#      image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     strategy:
       matrix:
         go-version: [ "1.21", "1.20", "1.19" ]
@@ -186,8 +154,8 @@ jobs:
           - 0
           - 1
         appsec_enabled: # test it compiles with and without appsec enabled
-          - DD_APPSEC_ENABLED=true
-          - DD_APPSEC_ENABLED=false
+          - -eDD_APPSEC_ENABLED=true
+          - -eDD_APPSEC_ENABLED=false
           - "" # the env var is not defined so that the remote-config path can be taken
         exclude:
           - go-version: "1.21"
@@ -209,7 +177,16 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: go test
-        run: env CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} /bin/bash ./.github/workflows/apps/appsec-test-contrib-submodules.sh
+        env:
+          CGO_ENABLED: ${{ matrix.cgo_enabled }}
+        run: |
+          cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
+            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+              set -ex
+              go env
+              go test -v $TESTS
+          EOF
 
   linux-arm64:
     name: linux/arm64 ${{ toJSON(matrix) }}
@@ -249,11 +226,9 @@ jobs:
         run: |
           cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
-            set -ex
-            pwd
-            ls -l
-            go env
-            go test -v $TESTS
+              set -ex
+              go env
+              go test -v $TESTS
           EOF
 #
 #  test-app:
