@@ -112,6 +112,11 @@ jobs:
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
+    name: disabled ${{ toJSON(matrix) }}
+    needs: go-mod-caching
+    runs-on: ${{ matrix.runs-on }}
+    env:
+      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
     strategy:
       fail-fast: false
       matrix:
@@ -125,14 +130,22 @@ jobs:
           # Windows is not supported for now
           - runs-on: windows-latest
             go-args: ""
-    name: disabled ${{ toJSON(matrix) }}
-    runs-on: ${{ matrix.runs-on }}
     steps:
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache: false # we manage the caching ourselves
 
       - name: go test
         shell: bash
@@ -180,7 +193,7 @@ jobs:
         env:
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
         run: |
-          cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+          cat <<EOF | docker run -i -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
