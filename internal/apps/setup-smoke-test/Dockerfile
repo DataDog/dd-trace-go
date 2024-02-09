@@ -37,10 +37,20 @@ RUN go env -w CGO_ENABLED=$build_with_cgo
 
 # GCC and the C library headers are needed for compilation of runtime/cgo with
 # CGO_ENABLED=1 - but the golang:alpine image doesn't provide them out of the box.
-ARG build_env
+ARG build_env="bookworm"
 RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then \
       apk update && apk add gcc libc-dev; \
     fi
+
+# If requested, upgrade go-libddwaf to the desired release.
+ARG go_libddwaf_ref=""
+RUN if [ "${go_libddwaf_ref}" != "" ]; then \
+  case "${build_env}" in \
+  alpine) apk update && apk add git;; \
+  *) apt update && apt install -y git ;; \
+  esac; \
+  go get -u github.com/DataDog/go-libddwaf/v2@${go_libddwaf_ref}; \
+  fi
 
 RUN go mod tidy
 
