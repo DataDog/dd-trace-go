@@ -52,7 +52,7 @@ jobs:
         id: cfg
         run: |
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
-          echo "path=${{ runner.temp }}/go/pkg/mod" >> $GITHUB_OUTPUT
+          echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-go@v5
         with:
@@ -179,6 +179,12 @@ jobs:
             go-version: "1"
             distribution: alpine
             appsec_enabled: -eDD_APPSEC_ENABLED=true
+            cgo_enabled: 0
+          - platform: linux/arm64
+            go-version: "1"
+            distribution: alpine
+            appsec_enabled: -eDD_APPSEC_ENABLED=true
+            cgo_enabled: 1
 
       fail-fast: false
     steps:
@@ -216,46 +222,6 @@ jobs:
               go test -v $TESTS
           EOF
 
-#  linux-arm64:
-#    name: linux/arm64 ${{ toJSON(matrix) }}
-#    runs-on: ubuntu-latest-16-cores
-#    needs: go-mod-caching
-#    env:
-#      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
-#    strategy:
-#      matrix:
-#        cgo_enabled: # test it compiles with and without cgo
-#          - 0
-#          - 1
-#      fail-fast: false
-#    steps:
-#      - name: Restore Go modules cache
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: ${{ needs.go-mod-caching.outputs.path }}
-#          key: ${{ needs.go-mod-caching.outputs.key }}
-#          restore-keys: go-pkg-mod-
-#          enableCrossOsArchive: true
-#          fail-on-cache-miss: true
-#
-#      - uses: actions/checkout@v4
-#        with:
-#          ref: ${{ inputs.ref || github.ref }}
-#
-#
-#
-#      - name: go test
-#        env:
-#            DD_APPSEC_ENABLED: true
-#            CGO_ENABLED: ${{ matrix.cgo_enabled }}
-#        run: |
-#          cat <<EOF | docker run -i --platform=linux/arm64 -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-#            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_ENABLED -eDD_APPSEC_WAF_TIMEOUT golang
-#              set -ex
-#              go env
-#              go test -v $TESTS
-#          EOF
-#
 #  test-app:
 #    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
 #    with:
