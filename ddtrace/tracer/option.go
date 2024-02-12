@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -30,6 +32,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
+	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -1233,6 +1236,93 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
 		setHeaderTags(headerAsTags)
 	}
+}
+
+// WithTestDefaults configures the tracer to not send spans to the agent, and to not collect metrics.
+// Warning:
+// This option should only be used in tests, as it will prevent the tracer from sending spans to the agent.
+func WithTestDefaults() StartOption {
+	return func(c *config) {
+		c.statsdClient = &statsd.NoOpClient{}
+		c.transport = newDummyTransport()
+	}
+}
+
+// Mock Transport with a real Encoder
+type dummyTransport struct {
+	sync.RWMutex
+	traces spanLists
+	stats  []*statsPayload
+}
+
+func newDummyTransport() *dummyTransport {
+	return &dummyTransport{traces: spanLists{}}
+}
+
+func (t *dummyTransport) Len() int {
+	t.RLock()
+	defer t.RUnlock()
+	return len(t.traces)
+}
+
+func (t *dummyTransport) sendStats(p *statsPayload) error {
+	t.Lock()
+	t.stats = append(t.stats, p)
+	t.Unlock()
+	return nil
+}
+
+func (t *dummyTransport) Stats() []*statsPayload {
+	t.RLock()
+	defer t.RUnlock()
+	return t.stats
+}
+
+func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
+	traces, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	t.Lock()
+	t.traces = append(t.traces, traces...)
+	t.Unlock()
+	ok := io.NopCloser(strings.NewReader("OK"))
+	return ok, nil
+}
+
+func (t *dummyTransport) endpoint() string {
+	return "http://localhost:9/v0.4/traces"
+}
+
+func decode(p *payload) (spanLists, error) {
+	var traces spanLists
+	err := msgp.Decode(p, &traces)
+	return traces, err
+}
+
+func encode(traces [][]*Span) (*payload, error) {
+	p := newPayload()
+	for _, t := range traces {
+		if err := p.push(t); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
+func (t *dummyTransport) Reset() {
+	t.Lock()
+	t.traces = t.traces[:0]
+	t.Unlock()
+}
+
+func (t *dummyTransport) Traces() spanLists {
+	t.Lock()
+	defer t.Unlock()
+
+	traces := t.traces
+	t.traces = spanLists{}
+	return traces
 }
 
 // setHeaderTags sets the global header tags.

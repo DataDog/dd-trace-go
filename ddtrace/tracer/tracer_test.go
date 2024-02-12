@@ -35,7 +35,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *Span {
@@ -2148,83 +2147,6 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
-}
-
-// Mock Transport with a real Encoder
-type dummyTransport struct {
-	sync.RWMutex
-	traces spanLists
-	stats  []*statsPayload
-}
-
-func newDummyTransport() *dummyTransport {
-	return &dummyTransport{traces: spanLists{}}
-}
-
-func (t *dummyTransport) Len() int {
-	t.RLock()
-	defer t.RUnlock()
-	return len(t.traces)
-}
-
-func (t *dummyTransport) sendStats(p *statsPayload) error {
-	t.Lock()
-	t.stats = append(t.stats, p)
-	t.Unlock()
-	return nil
-}
-
-func (t *dummyTransport) Stats() []*statsPayload {
-	t.RLock()
-	defer t.RUnlock()
-	return t.stats
-}
-
-func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
-	traces, err := decode(p)
-	if err != nil {
-		return nil, err
-	}
-	t.Lock()
-	t.traces = append(t.traces, traces...)
-	t.Unlock()
-	ok := io.NopCloser(strings.NewReader("OK"))
-	return ok, nil
-}
-
-func (t *dummyTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
-}
-
-func decode(p *payload) (spanLists, error) {
-	var traces spanLists
-	err := msgp.Decode(p, &traces)
-	return traces, err
-}
-
-func encode(traces [][]*Span) (*payload, error) {
-	p := newPayload()
-	for _, t := range traces {
-		if err := p.push(t); err != nil {
-			return p, err
-		}
-	}
-	return p, nil
-}
-
-func (t *dummyTransport) Reset() {
-	t.Lock()
-	t.traces = t.traces[:0]
-	t.Unlock()
-}
-
-func (t *dummyTransport) Traces() spanLists {
-	t.Lock()
-	defer t.Unlock()
-
-	traces := t.traces
-	t.traces = spanLists{}
-	return traces
 }
 
 // comparePayloadSpans allows comparing two spans which might have been
