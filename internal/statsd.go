@@ -7,6 +7,7 @@ package internal
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -35,15 +36,22 @@ type StatsCarrier struct {
 	statsd       StatsdClient
 	stop         chan struct{}
 	wg           sync.WaitGroup
+	stopped uint64
 }
 
 func NewStatsCarrier(statsd StatsdClient) *StatsCarrier {
 	return &StatsCarrier{
 		contribStats: make(chan Stat),
 		statsd:       statsd,
+		stopped: 1,
 	}
 }
 func (sc *StatsCarrier) Start() {
+	if atomic.SwapUint64(&sc.stopped, 0) == 0 {
+		// already running
+		log.Warn("(*StatsCarrier).Start called more than once. This is likely a programming error.")
+		return
+	}
 	sc.stop = make(chan struct{})
 	sc.wg.Add(1)
 	go func() {
@@ -67,9 +75,10 @@ func (sc *StatsCarrier) run() {
 	}
 }
 
-func (sc *StatsCarrier) Stop() {
-	// right now there's only 1 place in the code that calls sc.Stop - that's in tracer.Stop().
-	// but I'm wondering if we need any kind of buffer to check whether the channel has already been closed, to ensure we avoid a panic
+func (sc *StatsCarrier) Stop() {	
+	if atomic.SwapUint64(&(sc.stopped), 1) > 0 {
+		return
+	}
 	close(sc.stop)
 	sc.wg.Wait()
 }

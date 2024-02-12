@@ -174,17 +174,6 @@ func TestReportContribMetrics(t *testing.T) {
 		sc.Start()
 		defer sc.Stop()
 		sc.Add(s)
-		// var wg sync.WaitGroup
-		// wg.Add(1)
-		// go func() {
-		// 	defer wg.Done()
-		// 	for i := 0; i < 10; i++ {
-		// 		sc.Add(s)
-		// 	}
-		// 	assert := assert.New(t)
-		// 	callCounts := tg.CallsByName()
-		// 	assert.Equal(10, callCounts["gauge"])
-		// }()
 		assert := assert.New(t)
 		calls := tg.CallNames()
 		assert.Contains(calls, "gauge")
