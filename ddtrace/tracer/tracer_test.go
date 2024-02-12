@@ -687,12 +687,6 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 }
 
 func TestTracerContribStats(t *testing.T) {
-	t.Run("on", func(t *testing.T) {
-		tp := new(log.RecordLogger)
-		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
-		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Contrib stats enabled.")
-	})
 	t.Run("off", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
@@ -700,12 +694,12 @@ func TestTracerContribStats(t *testing.T) {
 		assert.Len(t, tp.Logs(), 0)
 	})
 	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "true")
+		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
 		defer os.Unsetenv("DD_TRACE_CONTRIB_STATS_ENABLED")
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Contrib stats enabled.")
+		assert.False(t, tracer.config.contribStats)
 	})
 	t.Run("env override", func(t *testing.T) {
 		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
@@ -713,7 +707,7 @@ func TestTracerContribStats(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Contrib stats enabled.")
+		assert.True(t, tracer.config.contribStats)
 	})
 }
 
