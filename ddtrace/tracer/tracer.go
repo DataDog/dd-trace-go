@@ -106,6 +106,8 @@ type tracer struct {
 	// abandonedSpansDebugger specifies where and how potentially abandoned spans are stored
 	// when abandoned spans debugging is enabled.
 	abandonedSpansDebugger *abandonedSpansDebugger
+
+	statsCarrier *globalinternal.StatsCarrier
 }
 
 const (
@@ -152,6 +154,10 @@ func Start(opts ...StartOption) {
 	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
+	}
+	if sc := t.statsCarrier; sc != nil {
+		sc.Start()
+		globalconfig.SetStatsCarrier(sc)
 	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
@@ -260,6 +266,10 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 			return f.DataStreams
 		})
 	}
+	var statsCarrier *globalinternal.StatsCarrier
+	if c.contribStats {
+		statsCarrier = globalinternal.NewStatsCarrier(statsd)
+	}
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -279,8 +289,9 @@ func newUnstartedTracer(opts ...StartOption) *tracer {
 				Cache:            c.agent.HasFlag("sql_cache"),
 			},
 		}),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
+		statsd:       statsd,
+		dataStreams:  dataStreamsProcessor,
+		statsCarrier: statsCarrier,
 	}
 	return t
 }
@@ -306,16 +317,6 @@ func newTracer(opts ...StartOption) *tracer {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
-	}
-	if c.contribStats {
-		log.Debug("Contrib stats enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
-			// should I capture the channel in the goroutine or outside of it, before line 313?
-			c := globalconfig.ContribStatsChan()
-			t.reportContribMetrics(c)
-		}()
 	}
 	t.wg.Add(1)
 	go func() {
@@ -661,6 +662,9 @@ func (t *tracer) Stop() {
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()
+	}
+	if t.statsCarrier != nil {
+		t.statsCarrier.Stop()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()

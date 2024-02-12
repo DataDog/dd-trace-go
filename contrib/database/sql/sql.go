@@ -213,7 +213,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if cfg.dbStats {
-		go pollDBStats(10 * time.Second, db)
+		go pollDBStats(10*time.Second, db)
 	}
 	return db
 }
@@ -269,14 +269,12 @@ func pollDBStats(interval time.Duration, db *sql.DB) {
 		// Starting with just 1 metric & no tags, to complete a MVP.
 		openConns := stats.OpenConnections
 		s := internal.Stat{
-			Name: "sql.db.open_connections",
-			Kind: "gauge",
+			Name:  "sql.db.open_connections",
+			Kind:  "gauge",
 			Value: float64(openConns),
-			Tags: nil,
-			Rate: 1,
+			Tags:  nil,
+			Rate:  1,
 		}
-		c := globalconfig.ContribStatsChan()
-		c <- s
+		globalconfig.PushStat(s)
 	}
 }
-

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	"github.com/google/uuid"
 )
@@ -20,7 +21,7 @@ var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
 	headersAsTags: internal.NewLockMap(map[string]string{}),
-	contribStats: make(chan internal.Stat),
+	statsCarrier:  &internal.StatsCarrier{},
 }
 
 type config struct {
@@ -29,7 +30,7 @@ type config struct {
 	serviceName   string
 	runtimeID     string
 	headersAsTags *internal.LockMap
-	contribStats chan internal.Stat
+	statsCarrier  *internal.StatsCarrier
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -96,8 +97,16 @@ func ClearHeaderTags() {
 	cfg.headersAsTags.Clear()
 }
 
-// ContribStatsChan grants access to the channel for sharing stats from contrib to tracer
-func ContribStatsChan() chan internal.Stat{
-	// Lock even for returning a value, not reading/writing?
-	return cfg.contribStats
+// SetStatsCarrier sets the provided StatsCarrier as globalconfig's "sc"
+func SetStatsCarrier(sc *internal.StatsCarrier) {
+	cfg.statsCarrier = sc
+}
+
+// PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
+func PushStat(stat internal.Stat) {
+	if cfg.statsCarrier == nil {
+		log.Debug("No stats carrier found; dropping stat %v", stat.Name)
+		return
+	}
+	cfg.statsCarrier.Add(stat)
 }

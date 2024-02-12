@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
@@ -97,35 +96,6 @@ func (t *tracer) reportHealthMetrics(interval time.Duration) {
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(atomic.SwapUint32(&t.tracesDropped, 0)), []string{"reason:trace_too_large"}, 1)
 		case <-t.stop:
 			return
-		}
-	}
-}
-
-// reportContribMetrics only supports gauge and count types for now, but support for other types could be added in the future
-func (t *tracer) reportContribMetrics(c chan internal.Stat) {
-	for {
-		select {
-			case s := <-c:
-				switch s.Kind {
-				case "gauge":
-					v, ok := s.Value.(float64)
-					if !ok {
-						log.Debug("Contrib library submitted gauge stat with incompatible value; looking for float64 value but got %T. Dropping stat %v.", s.Value, s.Name)
-						break
-					}
-					t.statsd.Gauge(s.Name, v, s.Tags, s.Rate)
-				case "count":
-					v, ok := s.Value.(int64)
-					if !ok {
-						log.Debug("Contrib library submitted count stat with incompatible value; looking for int64 value but got %T. Dropping stat %v.", s.Value, s.Name)
-						break
-					}
-					t.statsd.Count(s.Name, v, s.Tags, s.Rate)
-				default:
-					log.Debug("Contrib stat submission failed: metric type %v not supported", s.Kind)
-				}
-			case <- t.stop:
-				return
 		}
 	}
 }
