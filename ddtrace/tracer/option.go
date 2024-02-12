@@ -1241,9 +1241,12 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 // WithTestDefaults configures the tracer to not send spans to the agent, and to not collect metrics.
 // Warning:
 // This option should only be used in tests, as it will prevent the tracer from sending spans to the agent.
-func WithTestDefaults() StartOption {
+func WithTestDefaults(statsdClient any) StartOption {
 	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClient{}
+		if statsdClient == nil {
+			statsdClient = &statsd.NoOpClient{}
+		}
+		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
 	}
 }
