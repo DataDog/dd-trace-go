@@ -896,6 +896,15 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
+// WithSampler sets the given sampler to be used with the tracer. By default
+// an all-permissive sampler is used.
+// Deprecated: Use WithSamplerRate instead. Custom sampling will be phased out in a future release.
+func WithSampler(s Sampler) StartOption {
+	return func(c *config) {
+		c.sampler = &customSampler{s: s}
+	}
+}
+
 // WithRateSampler sets the given sampler rate to be used with the tracer.
 // The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
 func WithSamplerRate(rate float64) StartOption {
