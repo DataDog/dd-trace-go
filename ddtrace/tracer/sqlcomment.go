@@ -57,6 +57,8 @@ const (
 	sqlCommentDBService     = "dddbs"
 	sqlCommentParentVersion = "ddpv"
 	sqlCommentEnv           = "dde"
+	sqlCommentPeerHostname  = "ddh"
+	sqlCommentPeerDBName    = "dddb"
 )
 
 // Current trace context version (see https://www.w3.org/TR/trace-context/#version)
@@ -66,10 +68,12 @@ const w3cContextVersion = "00"
 // of a sqlcommenter formatted comment prepended to the original query text.
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 type SQLCommentCarrier struct {
-	Query         string
-	Mode          DBMPropagationMode
-	DBServiceName string
-	SpanID        uint64
+	Query          string
+	Mode           DBMPropagationMode
+	DBServiceName  string
+	SpanID         uint64
+	PeerDBHostname string
+	PeerDBName     string
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
@@ -104,6 +108,12 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 			}
 			if v, ok := ctx.meta(ext.Version); ok && v != "" {
 				tags[sqlCommentParentVersion] = v
+			}
+			if c.PeerDBName != "" {
+				tags[sqlCommentPeerDBName] = c.PeerDBName
+			}
+			if c.PeerDBHostname != "" {
+				tags[sqlCommentPeerHostname] = c.PeerDBHostname
 			}
 		}
 		if globalconfig.ServiceName() != "" {
@@ -155,7 +165,7 @@ func commentQuery(query string, tags map[string]string) string {
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
-	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent}
+	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent, sqlCommentPeerHostname, sqlCommentPeerDBName}
 	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {

@@ -7,6 +7,7 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql
 
 import (
 	"net"
+	"net/url"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -32,7 +33,15 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 			return
 		}
 	default:
-		// not supported
+		// Try to parse the DSN and see if the scheme contains a known driver name.
+		u, err := url.Parse(dsn)
+		if err != nil {
+			// dsn is not a valid URL, so just ignore
+			break
+		}
+		if driverName != u.Scheme {
+			return ParseDSN(u.Scheme, dsn)
+		}
 	}
 	return reduceKeys(meta), nil
 }
