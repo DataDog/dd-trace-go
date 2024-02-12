@@ -767,7 +767,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	// we need to recreate tracestate
 	if ctx.updated ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
-		ctx.trace.propagatingTagsLen() == 0 {
+		(ctx.trace != nil && ctx.trace.propagatingTagsLen() == 0) {
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))
