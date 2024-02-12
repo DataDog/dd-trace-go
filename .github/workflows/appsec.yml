@@ -132,9 +132,9 @@ jobs:
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }}
+          path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
-          restore-keys: go-pkg-mod-
+          restore-skeys: go-pkg-mod-
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
@@ -148,8 +148,9 @@ jobs:
       - name: go test
         shell: bash
         env:
-          GOMODCACHE: ${{ runner.temp }}/${{ needs.go-mod-caching.outputs.path }}
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
+          ls -lh $GOMODCACHE
           env ${{ matrix.appsec_enabled }} go test -v ${{ matrix.go-args }} $TESTS
 
   # Same tests but on the official golang container for linux
