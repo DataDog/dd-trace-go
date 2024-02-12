@@ -389,6 +389,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	for _, fn := range opts {
+		if fn == nil {
+			continue
+		}
 		fn(c)
 	}
 	if c.agentURL == nil {
