@@ -1190,7 +1190,7 @@ func AnalyticsRate(rate float64) StartSpanOption {
 
 // WithStartSpanConfig merges the given StartSpanConfig into the one used to start the span.
 // It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
-func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
+func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 	return func(c *StartSpanConfig) {
 		// copy cfg into c only if cfg fields are not zero values
 		// c fields have precedence, as they may have been set up before running this option
