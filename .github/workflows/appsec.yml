@@ -74,10 +74,9 @@ jobs:
         run: go mod download -x
 
   baremetal:
-    name: native ${{ toJSON(matrix) }}
+    name: baremetal ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
-    env:
-      GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+    needs: go-mod-caching
     strategy:
       matrix:
         runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
