@@ -277,3 +277,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
+
+replace inet.af/netaddr => go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
