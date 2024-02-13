@@ -129,6 +129,8 @@ jobs:
           - runs-on: windows-latest
             go-args: ""
     steps:
+      - uses: actions/checkout@v4
+
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
         with:
@@ -137,8 +139,6 @@ jobs:
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           fail-on-cache-miss: true
-
-      - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
