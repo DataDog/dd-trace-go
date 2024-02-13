@@ -264,7 +264,7 @@ func pollDBStats(interval time.Duration, db *sql.DB) {
 			log.Debug("No traced DB connection found; cannot pull DB stats.")
 			return
 		}
-		log.Debug("Traced DB connection found: polling DB stats.")
+		log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
 		stats := db.Stats()
 		// Starting with just 1 metric & no tags, to complete a MVP.
 		openConns := stats.OpenConnections
