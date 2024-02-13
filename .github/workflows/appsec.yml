@@ -71,7 +71,7 @@ jobs:
       - name: Download Go modules
         if: steps.cache.outputs.cache-hit != 'true'
         env:
-          GOMODCACHE: ${{ steps.cfg.outputs.path }}
+          GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
 #  native:
@@ -145,10 +145,13 @@ jobs:
           go-version: stable
           cache: false # we manage the caching ourselves
 
+      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os == 'Windows'
+      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os != 'Windows'
+
       - name: go test
         shell: bash
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           ls -lh $GOMODCACHE
           env ${{ matrix.appsec_enabled }} go test -v ${{ matrix.go-args }} $TESTS
@@ -209,7 +212,7 @@ jobs:
       - name: go test
         env:
           CGO_ENABLED: ${{ matrix.cgo_enabled }}
-          GOMODCACHE: ${{ needs.go-mod-caching.outputs.path }}
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           cat <<EOF | docker run -i --platform=${{ matrix.platform }}  -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
