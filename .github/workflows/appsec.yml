@@ -62,7 +62,6 @@ jobs:
         with:
           path: ${{ steps.cfg.outputs.path }}
           key: ${{ steps.cfg.outputs.key }}
-          restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           lookup-only: true
 
@@ -190,6 +189,8 @@ jobs:
 
       fail-fast: false
     steps:
+      - uses: actions/checkout@v4
+
       - name: Restore Go modules cache
         uses: actions/cache/restore@v4
         with:
@@ -198,10 +199,6 @@ jobs:
           restore-keys: go-pkg-mod-
           enableCrossOsArchive: true
           fail-on-cache-miss: true
-
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
 
       - name: Set up qemu for arm64
         if: matrix.platform == 'linux/arm64'
