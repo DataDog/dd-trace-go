@@ -46,6 +46,8 @@ jobs:
       key: ${{ steps.cfg.outputs.key }}
       path: ${{ steps.cfg.outputs.path }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Compute cache configuration
         id: cfg
         run: |
@@ -65,8 +67,6 @@ jobs:
           enableCrossOsArchive: true
           lookup-only: true
 
-      - uses: actions/checkout@v4
-        if: steps.cache.outputs.cache-hit != 'true'
       - name: Download Go modules
         if: steps.cache.outputs.cache-hit != 'true'
         env:
