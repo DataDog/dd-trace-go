@@ -115,9 +115,9 @@ jobs:
           if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
             cgocheck="GODEBUG=cgocheck=2"
           fi
-          for cgo in (0 1); do
-            for appsec_enabled_env in ("" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"); do
-                for cgocheck_env in ("" "$cgocheck"); do
+          for cgo in 0 1; do
+            for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+                for cgocheck_env in "" "$cgocheck"; do
                   env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS
                 done
             done
