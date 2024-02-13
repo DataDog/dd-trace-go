@@ -81,17 +81,6 @@ jobs:
       matrix:
         runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
         go-version: [ "1.21", "1.20", "1.19" ]
-        cgo_enabled: [ "0", "1" ] # test it compiles with and without cgo
-        appsec_enabled: # test it compiles with and without appsec enabled
-          - DD_APPSEC_ENABLED=true
-          - DD_APPSEC_ENABLED=false
-          - "" # the env var is not defined so that the remote-config path can be taken
-        include:
-          - cgocheck:
-              GODEBUG=cgocheck=2
-          - go-version: "1.21"
-            cgocheck:  # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
-              GOEXPERIMENT=cgocheck2
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -115,10 +104,24 @@ jobs:
       - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         if: runner.os != 'Windows'
 
+      # go test is being manually called multiple times here for the sake of reusing the runner.
+      # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
+      # reruns under different settings.
+
       - name: go test
         shell: bash
         run: |
-          env ${{ matrix.cgocheck }} CGO_ENABLED=${{ matrix.cgo_enabled }} ${{ matrix.appsec_enabled }} go test -v $TESTS
+          cgocheck="GOEXPERIMENT=cgocheck2"
+          if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
+            cgocheck="GODEBUG=cgocheck=2"
+          fi
+          for cgo in (0 1); do
+            for appsec_enabled_env in ("" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"); do
+                for cgocheck_env in ("" "$cgocheck"); do
+                  env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS
+                done
+            done
+          done
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
