@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
@@ -612,14 +613,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "200")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -627,7 +628,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "-520")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -635,7 +636,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "1000")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
@@ -881,6 +882,19 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("testService4", globalconfig.ServiceName())
 		defer globalconfig.SetServiceName("")
 	})
+}
+
+func TestStartWithLink(t *testing.T) {
+	assert := assert.New(t)
+
+	links := []ddtrace.SpanLink{{TraceID: 1, SpanID: 2}, {TraceID: 3, SpanID: 4}}
+	span := newTracer().StartSpan("test.request", WithSpanLinks(links)).(*span)
+
+	assert.Len(span.SpanLinks, 2)
+	assert.Equal(span.SpanLinks[0].TraceID, uint64(1))
+	assert.Equal(span.SpanLinks[0].SpanID, uint64(2))
+	assert.Equal(span.SpanLinks[1].TraceID, uint64(3))
+	assert.Equal(span.SpanLinks[1].SpanID, uint64(4))
 }
 
 func TestTagSeparators(t *testing.T) {

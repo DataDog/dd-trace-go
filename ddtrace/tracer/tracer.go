@@ -506,6 +506,10 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		Start:        startTime,
 		noDebugStack: t.config.noDebugStack,
 	}
+	for _, link := range opts.SpanLinks {
+		span.SpanLinks = append(span.SpanLinks, link)
+	}
+
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}

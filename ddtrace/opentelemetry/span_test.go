@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
@@ -130,6 +131,58 @@ func TestSpanSetName(t *testing.T) {
 	}
 	p := traces[0]
 	assert.Equal(strings.ToLower("NewName"), p[0]["name"])
+}
+
+func TestSpanLink(t *testing.T) {
+	assert := assert.New(t)
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	// Use traceID, spanID, and traceflags that can be unmarshalled from unint64 to float64 without loss of precision
+	traceID, _ := oteltrace.TraceIDFromHex("00000000000001c8000000000000007b")
+	spanID, _ := oteltrace.SpanIDFromHex("000000000000000f")
+	traceStateVal := "dd_origin=ci"
+	traceState, _ := oteltrace.ParseTraceState(traceStateVal)
+	remoteSpanContext := oteltrace.NewSpanContext(
+		oteltrace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: oteltrace.FlagsSampled,
+			TraceState: traceState,
+			Remote:     true,
+		},
+	)
+
+	// Create a span with a link to a remote span
+	_, span := tr.Start(context.Background(), "span_with_link",
+		oteltrace.WithLinks(oteltrace.Link{
+			SpanContext: remoteSpanContext,
+			Attributes:  []attribute.KeyValue{attribute.String("link.name", "alpha_transaction")},
+		}))
+	span.End()
+
+	tracer.Flush()
+	payload, err := waitForPayload(payloads)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	assert.NotNil(payload)
+	assert.Len(payload, 1)    // only one trace
+	assert.Len(payload[0], 1) // only one span
+
+	var spanLinks []ddtrace.SpanLink
+	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
+	json.Unmarshal(spanLinkBytes, &spanLinks)
+	assert.Len(spanLinks, 1) // only one span link
+
+	// Ensure the span link has the correct values
+	assert.Equal(uint64(123), spanLinks[0].TraceID)
+	assert.Equal(uint64(456), spanLinks[0].TraceIDHigh)
+	assert.Equal(uint64(15), spanLinks[0].SpanID)
+	assert.Equal(map[string]string{"link.name": "alpha_transaction"}, spanLinks[0].Attributes)
+	assert.Equal(traceStateVal, spanLinks[0].Tracestate)
+	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
 func TestSpanEnd(t *testing.T) {
