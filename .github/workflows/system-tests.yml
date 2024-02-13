@@ -87,6 +87,13 @@ jobs:
               DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
               DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
               DD_SITE="datadoghq.com"
+          # GraphQL System Tests
+          - scenario: GRAPHQL_APPSEC
+            weblog-variant: graph-gophers
+          - scenario: GRAPHQL_APPSEC
+            weblog-variant: graphql-go
+          - scenario: GRAPHQL_APPSEC
+            weblog-variant: gqlgen
 
       fail-fast: false
     env:
