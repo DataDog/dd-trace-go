@@ -111,6 +111,9 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
+		if !t.config.enabled.current {
+			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 			telemetry.GlobalClient.ConfigChange(telemConfigs)
@@ -153,15 +156,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		}
 		if c.LibConfig.Enabled != nil {
 			if t.config.enabled.current == true && *c.LibConfig.Enabled == false {
-				log.Debug("APM tracing disabled via remote config. Restart the service to enable it.")
-				updated = t.config.enabled.handleRC(c.LibConfig.Enabled)
-				if updated {
-					telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-				}
-			}
-			if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
-				log.Debug("Disabling tracing via remote config. No traces will be sent.")
+				log.Debug("Disabling APM tracing. Restart the service to enable it.")
+				t.config.enabled.handleRC(c.LibConfig.Enabled)
 				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
+			} else if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
+				log.Debug("APM Tracing is disabled. Restart the service to enable it.")
 			}
 		}
 	}
