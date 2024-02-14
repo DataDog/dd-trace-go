@@ -39,6 +39,19 @@ env:
     ./contrib/graphql-go/graphql/...
     ./contrib/graph-gophers/graphql-go/...
 jobs:
+  # Prepare the cache of Go modules to share it will the other jobs.
+  # This maximizes cache hits and minimizes the time spent downloading Go modules.
+  # Note 1: @actions/cache is very sensitive and it's easy to mess up. Things to know:
+  #          - doing it after @actions/checkout is required for all the metadata to be available;
+  #          - sharing the cache with windows requires backslashes to be used in the path;
+  #          - sharing the cache between OSes requires the base path to be the same, so a relative one is used;
+  #          - as of writing this doc, @actions/cache doest work inside docker containers, so had to design so
+  #            containerized jobs around this problem, by restoring the cache in the runner and mounting it in the
+  #            container ourselves.
+  # Note 2: a lot of time was spent on making caching work across macos, linux,
+  # windows and golang containers. So this is very sensitive and should be
+  # validated again in case of changes. To do so, you can click on the @actions/cache
+  # actions logs and look for the "Cache hit" or "Cache miss" messages.
   go-mod-caching:
     name: Prepare Go modules cache
     runs-on: ubuntu-latest-16-cores
@@ -79,6 +92,7 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
+        runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it an ARM machine
         go-version: [ "1.21", "1.20", "1.19" ]
       fail-fast: true # saving some CI time - macos runners too long to get
     steps:
@@ -114,7 +128,10 @@ jobs:
           for cgo in 0 1; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
+                    exit 1
+                  fi
                 done
             done
           done
@@ -127,13 +144,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-args:
-          - "-tags datadog.no_waf" # Disabling the WAF results in disabling appsec as of today
-        runs-on: [ macos-latest, ubuntu-latest-16-cores ]
-        include:
-          # Windows is not supported for now, so we can test one case only
-          - runs-on: windows-latest
-            go-args: ""
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
     steps:
       - uses: actions/checkout@v4
 
@@ -159,8 +170,15 @@ jobs:
       - name: go test
         shell: bash
         run: |
-          go test -v ${{ matrix.go-args }} $TESTS # DD_APPSEC_ENABLED undefined to enter the remote activation path
-          env DD_APPSEC_ENABLED=true go test -v ${{ matrix.go-args }} $TESTS
+          set -ex
+          for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+            for go_tags in "" "-tags datadog.no_waf"; do
+              if [ ! env $appsec_enabled go test -v $go_tags $TESTS ]; then
+                echo "Failed: env $appsec_enabled go test -v $go_tags $TESTS"
+                exit 1
+              fi
+            done
+          done
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
