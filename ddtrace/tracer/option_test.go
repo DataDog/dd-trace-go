@@ -522,7 +522,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
 			c := tracer.config
-			assert.True(t, c.enabled)
+			assert.True(t, c.enabled.current)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -530,7 +530,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			tracer := newTracer()
 			defer tracer.Stop()
 			c := tracer.config
-			assert.False(t, c.enabled)
+			assert.False(t, c.enabled.current)
 		})
 	})
 
@@ -613,14 +613,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "200")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("default", func(t *testing.T) {
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -628,7 +628,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "-520")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -636,7 +636,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", "1000")
 			assert := assert.New(t)
 			c := newConfig()
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
@@ -1142,21 +1142,21 @@ func TestWithTraceEnabled(t *testing.T) {
 	t.Run("WithTraceEnabled", func(t *testing.T) {
 		assert := assert.New(t)
 		c := newConfig(WithTraceEnabled(false))
-		assert.False(c.enabled)
+		assert.False(c.enabled.current)
 	})
 
 	t.Run("env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c := newConfig()
-		assert.False(c.enabled)
+		assert.False(c.enabled.current)
 	})
 
 	t.Run("env-override", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c := newConfig(WithTraceEnabled(true))
-		assert.True(c.enabled)
+		assert.True(c.enabled.current)
 	})
 }
 
