@@ -312,7 +312,7 @@ func (p *Producer) startSpan(msg *kafka.Message) ddtrace.Span {
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
-	//if there's a span context in the headers, use that as the parent
+	// if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
