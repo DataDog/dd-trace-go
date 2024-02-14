@@ -249,7 +249,7 @@ jobs:
               go test -v $TESTS
           EOF
 
-#  test-app:
-#    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
-#    with:
-#      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  test-app-smoke-tests:
+    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
+    with:
+      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
