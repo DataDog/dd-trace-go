@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v2"
 	pAppsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -448,8 +449,8 @@ func TestAPISecurity(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "true")
-		t.Setenv("DD_API_SECURITY_REQUEST_SAMPLE_RATE", "1.0")
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
 		appsec.Start()
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()
@@ -470,7 +471,7 @@ func TestAPISecurity(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_API_SECURITY_ENABLED", "false")
+		t.Setenv(internal.EnvAPISecEnabled, "false")
 		appsec.Start()
 		require.True(t, appsec.Enabled())
 		defer appsec.Stop()

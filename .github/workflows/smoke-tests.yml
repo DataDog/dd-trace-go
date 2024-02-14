@@ -4,8 +4,12 @@ on:
   workflow_call: # allows to reuse this workflow
     inputs:
       ref:
-        description: 'The branch to run the workflow on'
+        description: The branch or tag to run the workflow on
         required: true
+        type: string
+      go-libddwaf-ref:
+        description: A git ref to update github.com/DataDog/go-libddwaf/v2 to. No-op if empty.
+        required: false
         type: string
   push:
     branches:
@@ -36,13 +40,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
+          # otherwise the repository where the caller workflow started from. In this case, we need to check out the
+          # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
+          # obtain its name than hard-coding it.
+          repository: DataDog/dd-trace-go
       - uses: actions/setup-go@v3
         with:
           go-version: "stable"
           cache: true
       - name: go get -u
-        run: |
+        run: |-
           go get -u -t $PACKAGES
+          go mod tidy
+      - name: Install requested go-libddwaf version
+        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
+        run: |-
+          go get -u -t github.com/DataDog/go-libddwaf/v2@${{ inputs.go-libddwaf-ref }}
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
@@ -126,6 +140,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
+          # otherwise the repository where the caller workflow started from. In this case, we need to check out the
+          # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
+          # obtain its name than hard-coding it.
+          repository: DataDog/dd-trace-go
       - uses: docker/setup-buildx-action@v3
       - name: Build
         uses: docker/build-push-action@v5
@@ -142,5 +161,6 @@ jobs:
             build_with_vendoring=${{ matrix.build-with-vendoring }}
             build_with_cgo=${{ matrix.build-with-cgo }}
             deployment_env=${{ matrix.deployment-env }}
+            go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
