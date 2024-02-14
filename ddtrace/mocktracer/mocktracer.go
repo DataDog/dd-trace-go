@@ -13,22 +13,11 @@
 package mocktracer
 
 import (
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
-	"sync"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
-var _ ddtrace.Tracer = (*mocktracer)(nil)
-var _ Tracer = (*mocktracer)(nil)
+var _ Tracer = (*mocktracerV2Adapter)(nil)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
@@ -49,170 +38,61 @@ type Tracer interface {
 	Stop()
 }
 
+type mocktracerV2Adapter struct {
+	tracer v2.Tracer
+}
+
+// FinishedSpans implements Tracer.
+func (mta *mocktracerV2Adapter) FinishedSpans() []Span {
+	spans := mta.tracer.FinishedSpans()
+	return convertSpans(spans)
+}
+
+// OpenSpans implements Tracer.
+func (mta *mocktracerV2Adapter) OpenSpans() []Span {
+	spans := mta.tracer.FinishedSpans()
+	return convertSpans(spans)
+}
+
+func convertSpans(spans []*v2.Span) []Span {
+	ss := make([]Span, len(spans))
+	for i, s := range spans {
+		ss[i] = mockspanV2Adapter{
+			span: s,
+		}
+	}
+	return ss
+}
+
+// Reset implements Tracer.
+func (mta *mocktracerV2Adapter) Reset() {
+	mta.tracer.Reset()
+}
+
+// SentDSMBacklogs implements Tracer.
+func (mta *mocktracerV2Adapter) SentDSMBacklogs() []datastreams.Backlog {
+	sdb := mta.tracer.SentDSMBacklogs()
+	db := make([]datastreams.Backlog, len(sdb))
+	for i, b := range sdb {
+		db[i] = datastreams.Backlog{
+			Tags:  b.Tags,
+			Value: b.Value,
+		}
+	}
+	return db
+}
+
+// Stop implements Tracer.
+func (mta *mocktracerV2Adapter) Stop() {
+	mta.tracer.Stop()
+	mta.tracer = nil
+}
+
 // Start sets the internal tracer to a mock and returns an interface
 // which allows querying it. Call Start at the beginning of your tests
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	t := newMockTracer()
-	internal.SetGlobalTracer(t)
-	internal.Testing = true
-	return t
-}
-
-type mocktracer struct {
-	sync.RWMutex  // guards below spans
-	finishedSpans []Span
-	openSpans     map[uint64]Span
-	dsmTransport  *mockDSMTransport
-	dsmProcessor  *datastreams.Processor
-}
-
-func (t *mocktracer) SentDSMBacklogs() []datastreams.Backlog {
-	t.dsmProcessor.Flush()
-	return t.dsmTransport.backlogs
-}
-
-func newMockTracer() *mocktracer {
-	var t mocktracer
-	t.openSpans = make(map[uint64]Span)
-	t.dsmTransport = &mockDSMTransport{}
-	client := &http.Client{
-		Transport: t.dsmTransport,
-	}
-	t.dsmProcessor = datastreams.NewProcessor(&statsd.NoOpClient{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client, func() bool { return true })
-	t.dsmProcessor.Start()
-	t.dsmProcessor.Flush()
-	return &t
-}
-
-// Stop deactivates the mock tracer and sets the active tracer to a no-op.
-func (*mocktracer) Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
-	internal.Testing = false
-}
-
-func (t *mocktracer) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
-	var cfg ddtrace.StartSpanConfig
-	for _, fn := range opts {
-		fn(&cfg)
-	}
-	span := newSpan(t, operationName, &cfg)
-
-	t.Lock()
-	t.openSpans[span.SpanID()] = span
-	t.Unlock()
-
-	return span
-}
-
-func (t *mocktracer) GetDataStreamsProcessor() *datastreams.Processor {
-	return t.dsmProcessor
-}
-
-func (t *mocktracer) OpenSpans() []Span {
-	t.RLock()
-	defer t.RUnlock()
-	spans := make([]Span, 0, len(t.openSpans))
-	for _, s := range t.openSpans {
-		spans = append(spans, s)
-	}
-	return spans
-}
-
-func (t *mocktracer) FinishedSpans() []Span {
-	t.RLock()
-	defer t.RUnlock()
-	return t.finishedSpans
-}
-
-func (t *mocktracer) Reset() {
-	t.Lock()
-	defer t.Unlock()
-	for k := range t.openSpans {
-		delete(t.openSpans, k)
-	}
-	t.finishedSpans = nil
-}
-
-func (t *mocktracer) addFinishedSpan(s Span) {
-	t.Lock()
-	defer t.Unlock()
-	delete(t.openSpans, s.SpanID())
-	if t.finishedSpans == nil {
-		t.finishedSpans = make([]Span, 0, 1)
-	}
-	t.finishedSpans = append(t.finishedSpans, s)
-}
-
-const (
-	traceHeader    = tracer.DefaultTraceIDHeader
-	spanHeader     = tracer.DefaultParentIDHeader
-	priorityHeader = tracer.DefaultPriorityHeader
-	baggagePrefix  = tracer.DefaultBaggageHeaderPrefix
-)
-
-func (t *mocktracer) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
-	reader, ok := carrier.(tracer.TextMapReader)
-	if !ok {
-		return nil, tracer.ErrInvalidCarrier
-	}
-	var sc spanContext
-	err := reader.ForeachKey(func(key, v string) error {
-		k := strings.ToLower(key)
-		if k == traceHeader {
-			id, err := strconv.ParseUint(v, 10, 64)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.traceID = id
-		}
-		if k == spanHeader {
-			id, err := strconv.ParseUint(v, 10, 64)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.spanID = id
-		}
-		if k == priorityHeader {
-			p, err := strconv.Atoi(v)
-			if err != nil {
-				return tracer.ErrSpanContextCorrupted
-			}
-			sc.priority = p
-			sc.hasPriority = true
-		}
-		if strings.HasPrefix(k, baggagePrefix) {
-			sc.setBaggageItem(strings.TrimPrefix(k, baggagePrefix), v)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if sc.traceID == 0 || sc.spanID == 0 {
-		return nil, tracer.ErrSpanContextNotFound
-	}
-	return &sc, err
-}
-
-func (t *mocktracer) Inject(context ddtrace.SpanContext, carrier interface{}) error {
-	writer, ok := carrier.(tracer.TextMapWriter)
-	if !ok {
-		return tracer.ErrInvalidCarrier
-	}
-	ctx, ok := context.(*spanContext)
-	if !ok || ctx.traceID == 0 || ctx.spanID == 0 {
-		return tracer.ErrInvalidSpanContext
-	}
-	writer.Set(traceHeader, strconv.FormatUint(ctx.traceID, 10))
-	writer.Set(spanHeader, strconv.FormatUint(ctx.spanID, 10))
-	if ctx.hasSamplingPriority() {
-		writer.Set(priorityHeader, strconv.Itoa(ctx.priority))
-	}
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		writer.Set(baggagePrefix+k, v)
-		return true
-	})
-	return nil
+	t := v2.Start()
+	return &mocktracerV2Adapter{tracer: t}
 }

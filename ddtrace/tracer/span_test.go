@@ -8,18 +8,13 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
@@ -70,46 +65,6 @@ func TestSpanOperationName(t *testing.T) {
 	span := newBasicSpan("web.request")
 	span.SetOperationName("http.request")
 	assert.Equal("http.request", span.Name)
-}
-
-func TestSpanFinish(t *testing.T) {
-	if strings.HasPrefix(runtime.GOOS, "windows") {
-		t.Skip("Windows' sleep is not precise enough for this test.")
-	}
-
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// the finish should set finished and the duration
-	time.Sleep(wait)
-	span.Finish()
-	assert.Greater(span.Duration, int64(wait))
-	assert.True(span.finished)
-}
-
-func TestSpanFinishTwice(t *testing.T) {
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
-
-	tracer, _, _, stop := startTestTracer(t)
-	defer stop()
-
-	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
-
-	// the finish must be idempotent
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	time.Sleep(wait)
-	span.Finish()
-	tracer.awaitPayload(t, 1)
-
-	previousDuration := span.Duration
-	time.Sleep(wait)
-	span.Finish()
-	assert.Equal(previousDuration, span.Duration)
-	tracer.awaitPayload(t, 1)
 }
 
 func TestShouldDrop(t *testing.T) {
@@ -377,82 +332,6 @@ func TestSpanSetTagError(t *testing.T) {
 	})
 }
 
-func TestTraceManualKeepAndManualDrop(t *testing.T) {
-	for _, scenario := range []struct {
-		tag  string
-		keep bool
-		p    int // priority
-	}{
-		{ext.ManualKeep, true, 0},
-		{ext.ManualDrop, false, 1},
-	} {
-		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
-			defer tracer.Stop()
-			span := tracer.newRootSpan("root span", "my service", "my resource")
-			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
-		})
-
-		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
-			tracer := newTracer()
-			defer tracer.Stop()
-			spanCtx := &spanContext{traceID: traceIDFrom64Bits(42), spanID: 42}
-			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
-			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx)).(*span)
-			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
-		})
-	}
-}
-
-// This test previously failed when running with -race.
-func TestTraceManualKeepRace(t *testing.T) {
-	const numGoroutines = 100
-
-	t.Run("SetTag", func(t *testing.T) {
-		tracer := newTracer()
-		defer tracer.Stop()
-		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
-		defer rootSpan.Finish()
-
-		wg := &sync.WaitGroup{}
-		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
-			go func() {
-				defer wg.Done()
-				childSpan := tracer.newChildSpan("child", rootSpan)
-				childSpan.SetTag(ext.ManualKeep, true)
-				childSpan.Finish()
-			}()
-		}
-		wg.Wait()
-	})
-
-	// setting the tag using a StartSpan option has the same race
-	t.Run("StartSpanOption", func(t *testing.T) {
-		tracer := newTracer()
-		defer tracer.Stop()
-		rootSpan := tracer.newRootSpan("root span", "my service", "my resource")
-		defer rootSpan.Finish()
-
-		wg := &sync.WaitGroup{}
-		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
-			go func() {
-				defer wg.Done()
-				childSpan := tracer.StartSpan(
-					"child",
-					ChildOf(rootSpan.Context()),
-					Tag(ext.ManualKeep, true),
-				)
-				childSpan.Finish()
-			}()
-		}
-		wg.Wait()
-	})
-}
-
 func TestSpanSetDatadogTags(t *testing.T) {
 	assert := assert.New(t)
 
@@ -466,168 +345,10 @@ func TestSpanSetDatadogTags(t *testing.T) {
 	assert.Equal("SELECT * FROM users;", span.Resource)
 }
 
-func TestSpanStart(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// a new span sets the Start after the initialization
-	assert.NotEqual(int64(0), span.Start)
-}
-
-func TestSpanString(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	// don't bother checking the contents, just make sure it works.
-	assert.NotEqual("", span.String())
-	span.Finish()
-	assert.NotEqual("", span.String())
-}
-
 const (
 	intUpperLimit = int64(1) << 53
 	intLowerLimit = -intUpperLimit
 )
-
-func TestSpanSetMetric(t *testing.T) {
-	for name, tt := range map[string]func(assert *assert.Assertions, span *span){
-		"init": func(assert *assert.Assertions, span *span) {
-			assert.Equal(6, len(span.Metrics))
-			_, ok := span.Metrics[keySamplingPriority]
-			assert.True(ok)
-			_, ok = span.Metrics[keySamplingPriorityRate]
-			assert.True(ok)
-		},
-		"float": func(assert *assert.Assertions, span *span) {
-			span.SetTag("temp", 72.42)
-			assert.Equal(72.42, span.Metrics["temp"])
-		},
-		"int": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", 1024)
-			assert.Equal(1024.0, span.Metrics["bytes"])
-		},
-		"max": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", intUpperLimit-1)
-			assert.Equal(float64(intUpperLimit-1), span.Metrics["bytes"])
-		},
-		"min": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", intLowerLimit+1)
-			assert.Equal(float64(intLowerLimit+1), span.Metrics["bytes"])
-		},
-		"toobig": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", intUpperLimit)
-			assert.Equal(0.0, span.Metrics["bytes"])
-			assert.Equal(fmt.Sprint(intUpperLimit), span.Meta["bytes"])
-		},
-		"toosmall": func(assert *assert.Assertions, span *span) {
-			span.SetTag("bytes", intLowerLimit)
-			assert.Equal(0.0, span.Metrics["bytes"])
-			assert.Equal(fmt.Sprint(intLowerLimit), span.Meta["bytes"])
-		},
-		"finished": func(assert *assert.Assertions, span *span) {
-			span.Finish()
-			span.SetTag("finished.test", 1337)
-			assert.Equal(6, len(span.Metrics))
-			_, ok := span.Metrics["finished.test"]
-			assert.False(ok)
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-			tracer := newTracer(withTransport(newDefaultTransport()))
-			defer tracer.Stop()
-			span := tracer.newRootSpan("http.request", "mux.router", "/")
-			tt(assert, span)
-		})
-	}
-}
-
-func TestSpanProfilingTags(t *testing.T) {
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-
-	for _, profilerEnabled := range []bool{false, true} {
-		name := fmt.Sprintf("profilerEnabled=%t", profilerEnabled)
-		t.Run(name, func(t *testing.T) {
-			oldVal := traceprof.SetProfilerEnabled(profilerEnabled)
-			defer func() { traceprof.SetProfilerEnabled(oldVal) }()
-
-			span := tracer.newRootSpan("pylons.request", "pylons", "/")
-			val, ok := span.Metrics["_dd.profiling.enabled"]
-			require.Equal(t, true, ok)
-			require.Equal(t, profilerEnabled, val != 0)
-
-			childSpan := tracer.newChildSpan("my.child", span)
-			_, ok = childSpan.Metrics["_dd.profiling.enabled"]
-			require.Equal(t, false, ok)
-		})
-	}
-}
-
-func TestSpanError(t *testing.T) {
-	t.Setenv("DD_CLIENT_HOSTNAME_ENABLED", "false") // the host name is inconsistently returning a value, causing the test to flake.
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// check the error is set in the default meta
-	err := errors.New("Something wrong")
-	span.SetTag(ext.Error, err)
-	assert.Equal(int32(1), span.Error)
-	assert.Equal("Something wrong", span.Meta[ext.ErrorMsg])
-	assert.Equal("*errors.errorString", span.Meta[ext.ErrorType])
-	assert.NotEqual("", span.Meta[ext.ErrorStack])
-	span.Finish()
-
-	// operating on a finished span is a no-op
-	span = tracer.newRootSpan("flask.request", "flask", "/")
-	nMeta := len(span.Meta)
-	span.Finish()
-	span.SetTag(ext.Error, err)
-	assert.Equal(int32(0), span.Error)
-
-	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
-	t.Logf("%q\n", span.Meta)
-	assert.Equal(nMeta+3, len(span.Meta))
-	assert.Equal("", span.Meta[ext.ErrorMsg])
-	assert.Equal("", span.Meta[ext.ErrorType])
-	assert.Equal("", span.Meta[ext.ErrorStack])
-}
-
-func TestSpanError_Typed(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// check the error is set in the default meta
-	err := &boomError{}
-	span.SetTag(ext.Error, err)
-	assert.Equal(int32(1), span.Error)
-	assert.Equal("boom", span.Meta[ext.ErrorMsg])
-	assert.Equal("*tracer.boomError", span.Meta[ext.ErrorType])
-	assert.NotEqual("", span.Meta[ext.ErrorStack])
-}
-
-func TestSpanErrorNil(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	internal.SetGlobalTracer(tracer)
-	defer tracer.Stop()
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// don't set the error if it's nil
-	nMeta := len(span.Meta)
-	span.SetTag(ext.Error, nil)
-	assert.Equal(int32(0), span.Error)
-	assert.Equal(nMeta, len(span.Meta))
-}
 
 func TestUniqueTagKeys(t *testing.T) {
 	assert := assert.New(t)
@@ -646,70 +367,6 @@ func TestUniqueTagKeys(t *testing.T) {
 
 	assert.Equal(12.0, span.Metrics["foo.bar"])
 	assert.NotContains(span.Meta, "foo.bar")
-}
-
-// Prior to a bug fix, this failed when running `go test -race`
-func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, _, stop := startTestTracer(t)
-	defer stop()
-
-	done := make(chan struct{})
-	go func() {
-		span := tracer.newRootSpan("pylons.request", "pylons", "/")
-		span.Finish()
-		// It doesn't make much sense to update the span after it's been finished,
-		// but an error in a user's code could lead to this.
-		span.SetOperationName("race_test")
-		span.SetTag("race_test", "true")
-		span.SetTag("race_test2", 133.7)
-		span.SetTag("race_test3", 133.7)
-		span.SetTag(ext.Error, errors.New("t"))
-		span.SetUser("race_test_user_1")
-		done <- struct{}{}
-	}()
-
-	for {
-		select {
-		case <-done:
-			return
-		default:
-			tracer.traceWriter.flush()
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
-func TestSpanSamplingPriority(t *testing.T) {
-	assert := assert.New(t)
-	tracer := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-
-	span := tracer.newRootSpan("my.name", "my.service", "my.resource")
-	_, ok := span.Metrics[keySamplingPriority]
-	assert.True(ok)
-	_, ok = span.Metrics[keySamplingPriorityRate]
-	assert.True(ok)
-
-	for _, priority := range []int{
-		ext.PriorityUserReject,
-		ext.PriorityAutoReject,
-		ext.PriorityAutoKeep,
-		ext.PriorityUserKeep,
-		999, // not used, but we should allow it
-	} {
-		span.SetTag(ext.SamplingPriority, priority)
-		v, ok := span.Metrics[keySamplingPriority]
-		assert.True(ok)
-		assert.EqualValues(priority, v)
-		assert.EqualValues(*span.context.trace.priority, v)
-
-		childSpan := tracer.newChildSpan("my.child", span)
-		v0, ok0 := span.Metrics[keySamplingPriority]
-		v1, ok1 := childSpan.Metrics[keySamplingPriority]
-		assert.Equal(ok0, ok1)
-		assert.Equal(v0, v1)
-		assert.EqualValues(*childSpan.context.trace.priority, v0)
-	}
 }
 
 func TestSpanLog(t *testing.T) {

@@ -20,9 +20,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -1873,32 +1871,6 @@ func TestNonePropagator(t *testing.T) {
 		assert.True(ok)
 		assert.Nil(err)
 		assert.Len(headers, 0)
-	})
-
-	t.Run("inject/none,b3", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "none,b3")
-		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
-		tracer := newTracer(WithLogger(tp))
-		defer tracer.Stop()
-		// reinitializing to capture log output, since propagators are parsed before logger is set
-		tracer.config.propagator = NewPropagator(&PropagatorConfig{})
-		root := tracer.StartSpan("web.request").(*span)
-		root.SetTag(ext.SamplingPriority, -1)
-		root.SetBaggageItem("item", "x")
-		ctx, ok := root.Context().(*spanContext)
-		ctx.traceID = traceIDFrom64Bits(1)
-		ctx.spanID = 1
-		headers := TextMapCarrier(map[string]string{})
-		err := tracer.Inject(ctx, headers)
-
-		assert := assert.New(t)
-		assert.True(ok)
-		assert.Nil(err)
-		assert.Equal("0000000000000001", headers[b3TraceIDHeader])
-		assert.Equal("0000000000000001", headers[b3SpanIDHeader])
-		assert.Contains(tp.Logs()[0], "Propagator \"none\" has no effect when combined with other propagators. "+
-			"To disable the propagator, set to `none`")
 	})
 
 	t.Run("extract/none", func(t *testing.T) {

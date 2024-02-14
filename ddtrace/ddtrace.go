@@ -17,7 +17,7 @@ import (
 	"context"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // SpanContextW3C represents a SpanContext with an additional method to allow
@@ -95,23 +95,7 @@ type SpanContext interface {
 }
 
 // SpanLink represents a reference to a span that exists outside of the trace.
-//
-//go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
-
-type SpanLink struct {
-	// TraceID represents the low 64 bits of the linked span's trace id. This field is required.
-	TraceID uint64 `msg:"trace_id" json:"trace_id"`
-	// TraceIDHigh represents the high 64 bits of the linked span's trace id. This field is only set if the linked span's trace id is 128 bits.
-	TraceIDHigh uint64 `msg:"trace_id_high,omitempty" json:"trace_id_high"`
-	// SpanID represents the linked span's span id.
-	SpanID uint64 `msg:"span_id" json:"span_id"`
-	// Attributes is a mapping of keys to string values. These values are used to add additional context to the span link.
-	Attributes map[string]string `msg:"attributes,omitempty" json:"attributes"`
-	// Tracestate is the tracestate of the linked span. This field is optional.
-	Tracestate string `msg:"tracestate,omitempty" json:"tracestate"`
-	// Flags represents the W3C trace flags of the linked span. This field is optional.
-	Flags uint32 `msg:"flags,omitempty" json:"flags"`
-}
+type SpanLink = v2.SpanLink
 
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
 type StartSpanOption func(cfg *StartSpanConfig)
@@ -176,5 +160,5 @@ type Logger interface {
 
 // UseLogger sets l as the logger for all tracer and profiler logs.
 func UseLogger(l Logger) {
-	log.UseLogger(l)
+	v2.UseLogger(l)
 }

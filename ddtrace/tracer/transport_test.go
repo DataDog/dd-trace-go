@@ -11,15 +11,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // getTestSpan returns a Span with different fields set
@@ -76,48 +72,6 @@ func TestTracesAgentIntegration(t *testing.T) {
 		_, err = transport.send(p)
 		assert.NoError(err)
 	}
-}
-
-func TestResolveAgentAddr(t *testing.T) {
-	c := new(config)
-	for _, tt := range []struct {
-		inOpt            StartOption
-		envHost, envPort string
-		out              *url.URL
-	}{
-		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
-		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
-		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
-		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
-		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
-		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
-		{WithAgentAddr("ip.other:1234"), "", "9876", &url.URL{Scheme: "http", Host: "ip.other:1234"}},
-		{WithAgentAddr("ip.other:8888"), "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.other:8888"}},
-	} {
-		t.Run("", func(t *testing.T) {
-			if tt.envHost != "" {
-				t.Setenv("DD_AGENT_HOST", tt.envHost)
-			}
-			if tt.envPort != "" {
-				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
-			}
-			c.agentURL = resolveAgentAddr()
-			if tt.inOpt != nil {
-				tt.inOpt(c)
-			}
-			assert.Equal(t, tt.out, c.agentURL)
-		})
-	}
-
-	t.Run("UDS", func(t *testing.T) {
-		old := defaultSocketAPM
-		d, err := os.Getwd()
-		require.NoError(t, err)
-		defaultSocketAPM = d // Choose a file we know will exist
-		defer func() { defaultSocketAPM = old }()
-		c.agentURL = resolveAgentAddr()
-		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.agentURL)
-	})
 }
 
 func TestTransportResponse(t *testing.T) {
@@ -237,69 +191,4 @@ func TestCustomTransport(t *testing.T) {
 	// make sure our custom round tripper was used
 	assert.Len(crt.reqs, 1)
 	assert.Equal(hits, 1)
-}
-
-func TestWithHTTPClient(t *testing.T) {
-	// disable instrumentation telemetry to prevent flaky number of requests
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	assert := assert.New(t)
-	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		hits++
-	}))
-	defer srv.Close()
-
-	u, err := url.Parse(srv.URL)
-	assert.NoError(err)
-	c := &http.Client{}
-	rt := wrapRecordingRoundTripper(c)
-	trc := newTracer(WithAgentAddr(u.Host), WithHTTPClient(c))
-	defer trc.Stop()
-
-	p, err := encode(getTestTrace(1, 1))
-	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
-	assert.NoError(err)
-	assert.Len(rt.reqs, 2)
-	assert.Contains(rt.reqs[0].URL.Path, "/info")
-	assert.Contains(rt.reqs[1].URL.Path, "/traces")
-	assert.Equal(hits, 2)
-}
-
-func TestWithUDS(t *testing.T) {
-	// disable instrumentation telemetry to prevent flaky number of requests
-	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
-	assert := assert.New(t)
-	dir, err := os.MkdirTemp("", "socket")
-	if err != nil {
-		t.Fatal(err)
-	}
-	udsPath := filepath.Join(dir, "apm.socket")
-	defer os.RemoveAll(udsPath)
-	unixListener, err := net.Listen("unix", udsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var hits int
-	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		hits++
-	})}
-	go srv.Serve(unixListener)
-	defer srv.Close()
-
-	trc := newTracer(WithUDS(udsPath))
-	rt := wrapRecordingRoundTripper(trc.config.httpClient)
-	defer trc.Stop()
-
-	p, err := encode(getTestTrace(1, 1))
-	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
-	assert.NoError(err)
-	// There are 2 requests, but one happens on tracer startup before we wrap the round tripper.
-	// This is OK for this test, since we just want to check that WithUDS allows communication
-	// between a server and client over UDS. hits tells us that there were 2 requests received.
-	assert.Len(rt.reqs, 1)
-	assert.Equal(hits, 2)
 }

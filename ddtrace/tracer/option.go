@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -22,14 +21,13 @@ import (
 	"strings"
 	"time"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	v2traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -278,224 +276,13 @@ func (c *config) HasFeature(f string) bool {
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
-type StartOption func(*config)
+type StartOption = v2.StartOption
 
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
 
 // partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
 const partialFlushMinSpansDefault = 1000
-
-// newConfig renders the tracer configuration based on defaults, environment variables
-// and passed user opts.
-func newConfig(opts ...StartOption) *config {
-	c := new(config)
-	c.sampler = NewAllSampler()
-
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
-		globalconfig.SetAnalyticsRate(1.0)
-	}
-	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
-		var err error
-		c.hostname, err = os.Hostname()
-		if err != nil {
-			log.Warn("unable to look up hostname: %v", err)
-		}
-	}
-	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
-		c.hostname = v
-	}
-	if v := os.Getenv("DD_ENV"); v != "" {
-		c.env = v
-	}
-	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
-		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
-			return r == ',' || r == ' '
-		})...)(c)
-	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
-	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		c.version = ver
-	}
-	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { WithServiceMapping(key, val)(c) })
-	}
-	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		WithHeaderTags(strings.Split(v, ","))(c)
-	}
-	if v := os.Getenv("DD_TAGS"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
-	}
-	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-		c.logToStdout = true
-	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
-	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
-	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	if c.debugAbandonedSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	}
-	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
-	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
-	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
-	if c.partialFlushMinSpans <= 0 {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	} else if c.partialFlushMinSpans >= traceMaxSize {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	}
-	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
-	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
-	// if it's explicitly set, and don't require both variables to be configured.
-
-	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
-		namingschema.SetVersion(v)
-		c.spanAttributeSchemaVersion = int(v)
-	} else {
-		v := namingschema.SetDefaultVersion()
-		c.spanAttributeSchemaVersion = int(v)
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
-	}
-	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
-	// These default service names are always disabled for v1 onwards.
-	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
-
-	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
-	c.peerServiceDefaultsEnabled = true
-	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
-		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	}
-	c.peerServiceMappings = make(map[string]string)
-	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, func(key, val string) { c.peerServiceMappings[key] = val })
-	}
-
-	for _, fn := range opts {
-		fn(c)
-	}
-	if c.agentURL == nil {
-		c.agentURL = resolveAgentAddr()
-		if url := internal.AgentURLFromEnv(); url != nil {
-			c.agentURL = url
-		}
-	}
-	if c.agentURL.Scheme == "unix" {
-		// If we're connecting over UDS we can just rely on the agent to provide the hostname
-		log.Debug("connecting to agent over unix, do not set hostname on any traces")
-		c.enableHostnameDetection = false
-		c.httpClient = udsClient(c.agentURL.Path)
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
-		}
-	} else if c.httpClient == nil {
-		c.httpClient = defaultClient
-	}
-	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	globalTags := c.globalTags.get()
-	if c.env == "" {
-		if v, ok := globalTags["env"]; ok {
-			if e, ok := v.(string); ok {
-				c.env = e
-			}
-		}
-	}
-	if c.version == "" {
-		if v, ok := globalTags["version"]; ok {
-			if ver, ok := v.(string); ok {
-				c.version = ver
-			}
-		}
-	}
-	if c.serviceName == "" {
-		if v, ok := globalTags["service"]; ok {
-			if s, ok := v.(string); ok {
-				c.serviceName = s
-				globalconfig.SetServiceName(s)
-			}
-		} else {
-			// There is not an explicit service set, default to binary name.
-			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.serviceName = filepath.Base(os.Args[0])
-		}
-	}
-	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
-	}
-	if c.propagator == nil {
-		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
-		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
-		if max < 0 {
-			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
-			max = 0
-		}
-		if max > maxPropagatedTagsLength {
-			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
-			max = maxPropagatedTagsLength
-		}
-		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: max,
-		})
-	}
-	if c.logger != nil {
-		log.UseLogger(c.logger)
-	}
-	if c.debug {
-		log.SetLevel(log.LevelDebug)
-	}
-	c.agent = loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		c.loadContribIntegrations([]*debug.Module{})
-	} else {
-		c.loadContribIntegrations(info.Deps)
-	}
-	if c.statsdClient == nil {
-		// configure statsd client
-		addr := c.dogstatsdAddr
-		if addr == "" {
-			// no config defined address; use defaults
-			addr = defaultDogstatsdAddr()
-		}
-		if agentport := c.agent.StatsdPort; agentport > 0 {
-			// the agent reported a non-standard port
-			host, _, err := net.SplitHostPort(addr)
-			if err == nil {
-				// we have a valid host:port address; replace the port because
-				// the agent knows better
-				if host == "" {
-					host = defaultHostname
-				}
-				addr = net.JoinHostPort(host, strconv.Itoa(agentport))
-			}
-			// not a valid TCP address, leave it as it is (could be a socket connection)
-		}
-		c.dogstatsdAddr = addr
-	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	c.initGlobalTags(c.globalTags.get())
-
-	return c
-}
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
@@ -716,26 +503,11 @@ func statsTags(c *config) []string {
 	return tags
 }
 
-// withNoopStats is used for testing to disable statsd client
-func withNoopStats() StartOption {
-	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClient{}
-	}
-}
-
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account
 // that most, if not all features flags are considered to be experimental and result in
 // unexpected bugs.
 func WithFeatureFlags(feats ...string) StartOption {
-	return func(c *config) {
-		if c.featureFlags == nil {
-			c.featureFlags = make(map[string]struct{}, len(feats))
-		}
-		for _, f := range feats {
-			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
-		}
-		log.Info("FEATURES enabled: %v", feats)
-	}
+	return v2.WithFeatureFlags(feats...)
 }
 
 // WithLogger sets logger as the tracer's error printer.
@@ -743,9 +515,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 // If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
 // function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
 func WithLogger(logger ddtrace.Logger) StartOption {
-	return func(c *config) {
-		c.logger = logger
-	}
+	return v2.WithLogger(logger)
 }
 
 // WithPrioritySampling is deprecated, and priority sampling is enabled by default.
@@ -754,50 +524,38 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 // To learn more about priority sampling, please visit:
 // https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
 func WithPrioritySampling() StartOption {
-	return func(c *config) {
-		// This is now enabled by default.
-	}
+	return nil
 }
 
 // WithDebugStack can be used to globally enable or disable the collection of stack traces when
 // spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
 // FinishOption.
 func WithDebugStack(enabled bool) StartOption {
-	return func(c *config) {
-		c.noDebugStack = !enabled
-	}
+	return v2.WithDebugStack(enabled)
 }
 
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
-	return func(c *config) {
-		c.debug = enabled
-	}
+	return v2.WithDebugMode(enabled)
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
 // This option is only required if the the Datadog Lambda Extension is not
 // running.
 func WithLambdaMode(enabled bool) StartOption {
-	return func(c *config) {
-		c.logToStdout = enabled
-	}
+	return v2.WithLambdaMode(enabled)
 }
 
 // WithSendRetries enables re-sending payloads that are not successfully
 // submitted to the agent.  This will cause the tracer to retry the send at
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
-	return func(c *config) {
-		c.sendRetries = retries
-	}
+	return v2.WithSendRetries(retries)
 }
 
 // WithPropagator sets an alternative propagator to be used by the tracer.
 func WithPropagator(p Propagator) StartOption {
-	return func(c *config) {
-		c.propagator = p
-	}
+	return v2.WithPropagator(&propagatorV1Adapter{propagator: p})
 }
 
 // WithServiceName is deprecated. Please use WithService.
@@ -805,91 +563,52 @@ func WithPropagator(p Propagator) StartOption {
 // to WithService, please note that WithService will determine the service name of
 // server and framework integrations.
 func WithServiceName(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		if globalconfig.ServiceName() != "" {
-			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
-				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
-		}
-		globalconfig.SetServiceName("")
-	}
+	return v2.WithService(name)
 }
 
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
-	}
+	return v2.WithService(name)
 }
 
 // WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
 // This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
 func WithGlobalServiceName(enabled bool) StartOption {
-	return func(_ *config) {
-		namingschema.SetUseGlobalServiceName(enabled)
-	}
+	return v2.WithGlobalServiceName(enabled)
 }
 
 // WithAgentAddr sets the address where the agent is located. The default is
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   addr,
-		}
-	}
+	return v2.WithAgentAddr(addr)
 }
 
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
-	return func(c *config) {
-		c.env = env
-	}
+	return v2.WithEnv(env)
 }
 
 // WithServiceMapping determines service "from" to be renamed to service "to".
 // This option is is case sensitive and can be used multiple times.
 func WithServiceMapping(from, to string) StartOption {
-	return func(c *config) {
-		if c.serviceMappings == nil {
-			c.serviceMappings = make(map[string]string)
-		}
-		c.serviceMappings[from] = to
-	}
+	return v2.WithServiceMapping(from, to)
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
 func WithPeerServiceDefaults(enabled bool) StartOption {
-	// TODO: add link to public docs
-	return func(c *config) {
-		c.peerServiceDefaultsEnabled = enabled
-	}
+	return v2.WithPeerServiceDefaults(enabled)
 }
 
 // WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
 func WithPeerServiceMapping(from, to string) StartOption {
-	return func(c *config) {
-		if c.peerServiceMappings == nil {
-			c.peerServiceMappings = make(map[string]string)
-		}
-		c.peerServiceMappings[from] = to
-	}
+	return v2.WithPeerServiceMapping(from, to)
 }
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
-	return func(c *config) {
-		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{})
-		}
-		c.globalTags.Lock()
-		defer c.globalTags.Unlock()
-		c.globalTags.current[k] = v
-	}
+	return v2.WithGlobalTag(k, v)
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
@@ -902,12 +621,20 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
+type samplerV1Adapter struct {
+	sampler Sampler
+}
+
+// Sample implements tracer.Sampler.
+func (sa *samplerV1Adapter) Sample(span *v2.Span) bool {
+	s := &v2traceinternal.SpanV2Adapter{Span: span}
+	return sa.sampler.Sample(s)
+}
+
 // WithSampler sets the given sampler to be used with the tracer. By default
 // an all-permissive sampler is used.
 func WithSampler(s Sampler) StartOption {
-	return func(c *config) {
-		c.sampler = s
-	}
+	return v2.WithSampler(&samplerV1Adapter{sampler: s})
 }
 
 // WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
@@ -921,49 +648,28 @@ func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
 
 // WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
 func WithHTTPClient(client *http.Client) StartOption {
-	return func(c *config) {
-		c.httpClient = client
-	}
+	return v2.WithHTTPClient(client)
 }
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "unix",
-			Path:   socketPath,
-		}
-	}
+	return v2.WithUDS(socketPath)
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	return func(cfg *config) {
-		if on {
-			globalconfig.SetAnalyticsRate(1.0)
-		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the global sampling rate for sampling APM events.
 func WithAnalyticsRate(rate float64) StartOption {
-	return func(_ *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			globalconfig.SetAnalyticsRate(rate)
-		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
 func WithRuntimeMetrics() StartOption {
-	return func(cfg *config) {
-		cfg.runtimeMetrics = true
-	}
+	return v2.WithRuntimeMetrics()
 }
 
 // WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
@@ -975,64 +681,61 @@ func WithRuntimeMetrics() StartOption {
 //
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
-	return func(cfg *config) {
-		cfg.dogstatsdAddr = addr
-	}
+	return v2.WithDogstatsdAddress(addr)
 }
 
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
-	return func(cfg *config) {
-		for _, rule := range rules {
-			if rule.ruleType == SamplingRuleSpan {
-				cfg.spanRules = append(cfg.spanRules, rule)
-			} else {
-				cfg.traceRules = append(cfg.traceRules, rule)
-			}
+	rr := make([]v2.SamplingRule, len(rules))
+	for i, r := range rules {
+		var ssr []v2.SamplingRule
+		if r.ruleType == SamplingRuleSpan {
+			ssr = v2.SpanSamplingRules(v2.Rule{
+				Rate: r.Rate,
+			})
+		} else {
+			ssr = v2.TraceSamplingRules(v2.Rule{
+				Rate: r.Rate,
+			})
 		}
+		rr[i] = ssr[0]
+		rr[i].MaxPerSecond = r.MaxPerSecond
+		rr[i].Name = r.Name
+		rr[i].Resource = r.Resource
+		rr[i].Service = r.Service
+		rr[i].Tags = r.Tags
 	}
+	return v2.WithSamplingRules(rr)
 }
 
 // WithServiceVersion specifies the version of the service that is running. This will
 // be included in spans from this service in the "version" tag, provided that
 // span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
-	return func(cfg *config) {
-		cfg.version = version
-		cfg.universalVersion = false
-	}
+	return v2.WithServiceVersion(version)
 }
 
 // WithUniversalVersion specifies the version of the service that is running, and will be applied to all spans,
 // regardless of whether span service name and config service name match.
 // See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
 func WithUniversalVersion(version string) StartOption {
-	return func(c *config) {
-		c.version = version
-		c.universalVersion = true
-	}
+	return v2.WithUniversalVersion(version)
 }
 
 // WithHostname allows specifying the hostname with which to mark outgoing traces.
 func WithHostname(name string) StartOption {
-	return func(c *config) {
-		c.hostname = name
-	}
+	return v2.WithHostname(name)
 }
 
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
-	return func(c *config) {
-		c.enabled = enabled
-	}
+	return v2.WithTraceEnabled(enabled)
 }
 
 // WithLogStartup allows enabling or disabling the startup log.
 func WithLogStartup(enabled bool) StartOption {
-	return func(c *config) {
-		c.logStartup = enabled
-	}
+	return v2.WithLogStartup(enabled)
 }
 
 // WithProfilerCodeHotspots enables the code hotspots integration between the
@@ -1042,9 +745,7 @@ func WithLogStartup(enabled bool) StartOption {
 // enabled value defaults to the value of the
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
-	return func(c *config) {
-		c.profilerHotspots = enabled
-	}
+	return v2.WithProfilerCodeHotspots(enabled)
 }
 
 // WithProfilerEndpoints enables the endpoints integration between the tracer
@@ -1055,9 +756,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
 // true.
 func WithProfilerEndpoints(enabled bool) StartOption {
-	return func(c *config) {
-		c.profilerEndpoints = enabled
-	}
+	return v2.WithProfilerEndpoints(enabled)
 }
 
 // WithDebugSpansMode enables debugging old spans that may have been
@@ -1069,10 +768,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // This feature is disabled by default. Turning on this debug mode may
 // be expensive, so it should only be enabled for debugging purposes.
 func WithDebugSpansMode(timeout time.Duration) StartOption {
-	return func(c *config) {
-		c.debugAbandonedSpans = true
-		c.spanTimeout = timeout
-	}
+	return v2.WithDebugSpansMode(timeout)
 }
 
 // WithPartialFlushing enables flushing of partially finished traces.
@@ -1083,10 +779,7 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 // unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Partial flushing
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
-	return func(c *config) {
-		c.partialFlushEnabled = true
-		c.partialFlushMinSpans = numSpans
-	}
+	return v2.WithPartialFlushing(numSpans)
 }
 
 // WithStatsComputation enables client-side stats computation, allowing
@@ -1095,18 +788,13 @@ func WithPartialFlushing(numSpans int) StartOption {
 // This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
 // Client-side stats is off by default.
 func WithStatsComputation(enabled bool) StartOption {
-	return func(c *config) {
-		c.statsComputationEnabled = enabled
-	}
+	return v2.WithStatsComputation(enabled)
 }
 
 // WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
 // This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
 func WithOrchestrion(metadata map[string]string) StartOption {
-	return func(c *config) {
-		c.orchestrionCfg.Enabled = true
-		c.orchestrionCfg.Metadata = metadata
-	}
+	return v2.WithOrchestrion(metadata)
 }
 
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
@@ -1245,82 +933,45 @@ func StackFrames(n, skip uint) FinishOption {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
-	return func(c *config) {
-		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
-		setHeaderTags(headerAsTags)
-	}
-}
-
-// setHeaderTags sets the global header tags.
-// Always resets the global value and returns true.
-func setHeaderTags(headerAsTags []string) bool {
-	globalconfig.ClearHeaderTags()
-	for _, h := range headerAsTags {
-		if strings.HasPrefix(h, "x-datadog-") {
-			continue
-		}
-		header, tag := normalizer.HeaderTag(h)
-		globalconfig.SetHeaderTag(header, tag)
-	}
-	return true
+	return v2.WithHeaderTags(headerAsTags)
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
-type UserMonitoringConfig struct {
-	PropagateID bool
-	Email       string
-	Name        string
-	Role        string
-	SessionID   string
-	Scope       string
-	Metadata    map[string]string
-}
+type UserMonitoringConfig = v2.UserMonitoringConfig
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
-type UserMonitoringOption func(*UserMonitoringConfig)
+type UserMonitoringOption = v2.UserMonitoringOption
 
 // WithUserMetadata returns the option setting additional metadata of the authenticated user.
 // This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
 func WithUserMetadata(key, value string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Metadata[key] = value
-	}
+	return v2.WithUserMetadata(key, value)
 }
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Email = email
-	}
+	return v2.WithUserEmail(email)
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Name = name
-	}
+	return v2.WithUserName(name)
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.SessionID = sessionID
-	}
+	return v2.WithUserSessionID(sessionID)
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Role = role
-	}
+	return v2.WithUserRole(role)
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Scope = scope
-	}
+	return v2.WithUserScope(scope)
 }
 
 // WithPropagation returns the option allowing the user id to be propagated through distributed traces.
@@ -1328,7 +979,5 @@ func WithUserScope(scope string) UserMonitoringOption {
 // This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.PropagateID = true
-	}
+	return v2.WithPropagation()
 }

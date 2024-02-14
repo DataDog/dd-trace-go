@@ -227,6 +227,31 @@ func (c *spanContext) meta(key string) (val string, ok bool) {
 // finish marks this span as finished in the trace.
 func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
 
+// The following spanContext functions implement a private interface for
+// converting v1 span contexts to v2 ones. Only use them when initializing
+// a span context from v1. It's not possible to convert easily all the
+// fields.
+
+func (c *spanContext) SamplingDecision() uint32 {
+	return uint32(c.trace.samplingDecision)
+}
+
+func (c *spanContext) Origin() string {
+	return c.origin
+}
+
+func (c *spanContext) Priority() *float64 {
+	return c.trace.priority
+}
+
+func (c *spanContext) PropagatingTags() map[string]string {
+	return c.trace.propagatingTags
+}
+
+func (c *spanContext) Tags() map[string]string {
+	return c.trace.tags
+}
+
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32
 

@@ -7,6 +7,7 @@ package appsec_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/appsec"
@@ -30,7 +31,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
 		require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 		require.Equal(t, "username", finished.Tag("usr.name"))
@@ -48,7 +49,7 @@ func TestTrackUserLoginSuccessEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.users.login.success."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		require.Equal(t, "user id", finished.Tag("usr.id"))
 	})
 
@@ -80,9 +81,9 @@ func TestTrackUserLoginFailureEvent(t *testing.T) {
 				require.Len(t, mt.FinishedSpans(), 1)
 				finished := mt.FinishedSpans()[0]
 				expectedEventPrefix := "appsec.events.users.login.failure."
-				require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+				require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 				require.Equal(t, "user id", finished.Tag(expectedEventPrefix+"usr.id"))
-				require.Equal(t, userExists, finished.Tag(expectedEventPrefix+"usr.exists"))
+				require.Equal(t, strconv.FormatBool(userExists), finished.Tag(expectedEventPrefix+"usr.exists"))
 				require.Equal(t, "us-east-1", finished.Tag(expectedEventPrefix+"region"))
 			}
 		}
@@ -117,7 +118,7 @@ func TestCustomEvent(t *testing.T) {
 		require.Len(t, mt.FinishedSpans(), 1)
 		finished := mt.FinishedSpans()[0]
 		expectedEventPrefix := "appsec.events.my-custom-event."
-		require.Equal(t, true, finished.Tag(expectedEventPrefix+"track"))
+		require.Equal(t, "true", finished.Tag(expectedEventPrefix+"track"))
 		for k, v := range md {
 			require.Equal(t, v, finished.Tag(expectedEventPrefix+k))
 		}

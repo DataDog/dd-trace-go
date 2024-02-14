@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -48,9 +49,7 @@ type testStatsdCall struct {
 }
 
 func withStatsdClient(s globalinternal.StatsdClient) StartOption {
-	return func(c *config) {
-		c.statsdClient = s
-	}
+	return v2.WithTestDefaults(s)
 }
 
 func (tg *testStatsdClient) addCount(name string, value int64) {
@@ -236,27 +235,6 @@ func (tg *testStatsdClient) Wait(asserts *assert.Assertions, n int, d time.Durat
 	}
 
 	return nil
-}
-
-func TestReportRuntimeMetrics(t *testing.T) {
-	var tg testStatsdClient
-	trc := newUnstartedTracer(withStatsdClient(&tg))
-	defer trc.statsd.Close()
-
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
-		trc.reportRuntimeMetrics(time.Millisecond)
-	}()
-	assert := assert.New(t)
-	err := tg.Wait(assert, 35, 1*time.Second)
-	close(trc.stop)
-	assert.NoError(err)
-	calls := tg.CallNames()
-	assert.True(len(calls) > 30)
-	assert.Contains(calls, "runtime.go.num_cpu")
-	assert.Contains(calls, "runtime.go.mem_stats.alloc")
-	assert.Contains(calls, "runtime.go.gc_stats.pause_quantiles.75p")
 }
 
 func TestReportHealthMetrics(t *testing.T) {

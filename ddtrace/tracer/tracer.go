@@ -8,7 +8,6 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
-	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
 	"strconv"
@@ -16,18 +15,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	appsecConfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -133,51 +131,12 @@ var statsInterval = 10 * time.Second
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) {
-	if internal.Testing {
-		return // mock tracer active
-	}
-	defer telemetry.Time(telemetry.NamespaceGeneral, "init_time", nil, true)()
-	t := newTracer(opts...)
-	if !t.config.enabled {
-		// TODO: instrumentation telemetry client won't get started
-		// if tracing is disabled, but we still want to capture this
-		// telemetry information. Will be fixed when the tracer and profiler
-		// share control of the global telemetry client.
-		return
-	}
-	internal.SetGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
-	if t.dataStreams != nil {
-		t.dataStreams.Start()
-	}
-	// Start AppSec with remote configuration
-	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.agentURL.String()
-	cfg.AppVersion = t.config.version
-	cfg.Env = t.config.env
-	cfg.HTTP = t.config.httpClient
-	cfg.ServiceName = t.config.serviceName
-	if err := t.startRemoteConfig(cfg); err != nil {
-		log.Warn("Remote config startup error: %s", err)
-	}
-
-	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
-
-	// appsec.Start() may use the telemetry client to report activation, so it is
-	// important this happens _AFTER_ startTelemetry() has been called, so the
-	// client is appropriately configured.
-	appsec.Start(appsecConfig.WithRCConfig(cfg))
-	_ = t.hostname() // Prime the hostname cache
+	v2.Start(opts...)
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	internal.SetGlobalTracer(&internal.NoopTracer{})
-	log.Flush()
+	v2.Stop()
 }
 
 // Span is an alias for ddtrace.Span. It is here to allow godoc to group methods returning
@@ -211,120 +170,12 @@ func Inject(ctx ddtrace.SpanContext, carrier interface{}) error {
 // the user id can be propagated across traces using the WithPropagation() option.
 // See https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?tab=set_user#add-user-information-to-traces
 func SetUser(s Span, id string, opts ...UserMonitoringOption) {
-	if s == nil {
-		return
-	}
-	sp, ok := s.(interface {
-		SetUser(string, ...UserMonitoringOption)
-	})
-	if !ok {
-		return
-	}
-	sp.SetUser(id, opts...)
+	sp := s.(internal.SpanV2Adapter).Span
+	v2.SetUser(sp, id, opts...)
 }
 
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
-
-func newUnstartedTracer(opts ...StartOption) *tracer {
-	c := newConfig(opts...)
-	sampler := newPrioritySampler()
-	statsd, err := newStatsdClient(c)
-	if err != nil {
-		log.Warn("Runtime and health metrics disabled: %v", err)
-	}
-	var writer traceWriter
-	if c.logToStdout {
-		writer = newLogTraceWriter(c, statsd)
-	} else {
-		writer = newAgentTraceWriter(c, sampler, statsd)
-	}
-	traces, spans, err := samplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
-	}
-	if traces != nil {
-		c.traceRules = traces
-	}
-	if spans != nil {
-		c.spanRules = spans
-	}
-	globalRate := globalSampleRate()
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, globalRate)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", globalRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
-	var dataStreamsProcessor *datastreams.Processor
-	if c.dataStreamsMonitoringEnabled {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient, func() bool {
-			f := loadAgentFeatures(c.logToStdout, c.agentURL, c.httpClient)
-			return f.DataStreams
-		})
-	}
-	t := &tracer{
-		config:           c,
-		traceWriter:      writer,
-		out:              make(chan *chunk, payloadQueueSize),
-		stop:             make(chan struct{}),
-		flush:            make(chan chan<- struct{}),
-		rulesSampling:    rulesSampler,
-		prioritySampling: sampler,
-		pid:              os.Getpid(),
-		stats:            newConcentrator(c, defaultStatsBucketSize),
-		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
-			SQL: obfuscate.SQLConfig{
-				TableNames:       c.agent.HasFlag("table_names"),
-				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
-				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
-				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-				Cache:            c.agent.HasFlag("sql_cache"),
-			},
-		}),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
-	}
-	return t
-}
-
-// newTracer creates a new no-op tracer for testing.
-// NOTE: This function does NOT set the global tracer, which is required for
-// most finish span/flushing operations to work as expected. If you are calling
-// span.Finish and/or expecting flushing to work, you must call
-// internal.SetGlobalTracer(...) with the tracer provided by this function.
-func newTracer(opts ...StartOption) *tracer {
-	t := newUnstartedTracer(opts...)
-	c := t.config
-	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.runtimeMetrics {
-		log.Debug("Runtime metrics enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
-			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		}()
-	}
-	if c.debugAbandonedSpans {
-		log.Info("Abandoned spans logs enabled.")
-		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
-		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
-	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		tick := t.config.tickChan
-		if tick == nil {
-			ticker := time.NewTicker(flushInterval)
-			defer ticker.Stop()
-			tick = ticker.C
-		}
-		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		t.reportHealthMetrics(statsInterval)
-	}()
-	t.stats.Start()
-	return t
-}
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer
 // is started. Users do not have to call Flush in order to ensure that
@@ -337,12 +188,7 @@ func newTracer(opts ...StartOption) *tracer {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		t.flushSync()
-		if t.dataStreams != nil {
-			t.dataStreams.Flush()
-		}
-	}
+	v2.Flush()
 }
 
 // flushSync triggers a flush and waits for it to complete.
