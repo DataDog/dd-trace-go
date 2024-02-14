@@ -73,15 +73,14 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
-  baremetal:
-    name: baremetal ${{ toJSON(matrix) }}
-    runs-on: ${{ matrix.runs-on }}
+  macos:
+    name: macos ${{ toJSON(matrix) }}
+    runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
     needs: go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
         go-version: [ "1.21", "1.20", "1.19" ]
-      fail-fast: false
+      fail-fast: true # saving some CI time - macos runners too long to get
     steps:
       - uses: actions/checkout@v4
 
@@ -99,18 +98,15 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
 
-      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
-        if: runner.os == 'Windows'
-      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-        if: runner.os != 'Windows'
-
       # go test is being manually called multiple times here for the sake of reusing the runner.
       # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
       # reruns under different settings.
-
       - name: go test
         shell: bash
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
+          set -ex
           cgocheck="GOEXPERIMENT=cgocheck2"
           if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
             cgocheck="GODEBUG=cgocheck=2"
@@ -132,13 +128,10 @@ jobs:
       fail-fast: false
       matrix:
         go-args:
-          - "-tags datadog.no_waf"
-        runs-on: [ macos-13, ubuntu-latest-16-cores ]
-        appsec_enabled:
-          - DD_APPSEC_ENABLED=true
-          - "" # the env var is not defined so that the remote-config path can be taken
+          - "-tags datadog.no_waf" # Disabling the WAF results in disabling appsec as of today
+        runs-on: [ macos-latest, ubuntu-latest-16-cores ]
         include:
-          # Windows is not supported for now
+          # Windows is not supported for now, so we can test one case only
           - runs-on: windows-latest
             go-args: ""
     steps:
@@ -166,7 +159,8 @@ jobs:
       - name: go test
         shell: bash
         run: |
-          env ${{ matrix.appsec_enabled }} go test -v ${{ matrix.go-args }} $TESTS
+          go test -v ${{ matrix.go-args }} $TESTS # DD_APPSEC_ENABLED undefined to enter the remote activation path
+          env DD_APPSEC_ENABLED=true go test -v ${{ matrix.go-args }} $TESTS
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
