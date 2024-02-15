@@ -175,7 +175,7 @@ jobs:
           set -ex
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if [ ! env $appsec_enabled go test -v $go_tags $TESTS ]; then
+              if ! env $appsec_enabled go test -v $go_tags $TESTS; then
                 echo "Failed: env $appsec_enabled go test -v $go_tags $TESTS"
                 exit 1
               fi
