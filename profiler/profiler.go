@@ -296,6 +296,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				// because we don't collect them every profiling cycle from
 				// missing a trace because the feature isn't turned on.
 				fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%v", p.cfg.traceConfig.Enabled),
+				pgoTag(),
 			},
 			customAttributes: p.cfg.customProfilerLabels,
 		}

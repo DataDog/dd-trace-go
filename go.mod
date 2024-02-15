@@ -7,11 +7,10 @@ toolchain go1.21.5
 require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
-	github.com/DataDog/appsec-internal-go v1.4.0
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.50.0
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0
-	github.com/DataDog/datadog-go/v5 v5.4.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240212173910-c57d43e52d80
+	github.com/DataDog/appsec-internal-go v1.4.1
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.48.0
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
+	github.com/DataDog/datadog-go/v5 v5.3.0
 	github.com/DataDog/go-libddwaf/v2 v2.3.1
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.3
@@ -254,8 +253,6 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.20.0 // indirect
-	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
-	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
 	golang.org/x/arch v0.4.0 // indirect
 	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
@@ -271,7 +268,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 	k8s.io/api v0.23.17 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65 // indirect
