@@ -72,6 +72,9 @@ const (
 	APMTracingCustomTags
 )
 
+// APMTracingEnabled enables APM tracing
+const APMTracingEnabled Capability = 19
+
 // ErrClientNotStarted is returned when the remote config client is not started.
 var ErrClientNotStarted = errors.New("remote config client not started")
 

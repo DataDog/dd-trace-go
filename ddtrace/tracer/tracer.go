@@ -37,6 +37,7 @@ type TracerConf struct { //nolint:revive
 	CanComputeStats      bool
 	CanDropP0s           bool
 	DebugAbandonedSpans  bool
+	Disabled             bool
 	PartialFlush         bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults  bool
@@ -173,7 +174,7 @@ func Start(opts ...StartOption) error {
 	if err != nil {
 		return err
 	}
-	if !t.config.enabled {
+	if !t.config.enabled.current {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -583,6 +584,9 @@ func SpanStart(operationName string, options ...StartSpanOption) *Span {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
+	if !t.config.enabled.current {
+		return nil
+	}
 	span := SpanStart(operationName, options...)
 	if span.service == "" {
 		span.service = t.config.serviceName
@@ -714,6 +718,9 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
+	if !t.config.enabled.current {
+		return nil
+	}
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -745,6 +752,9 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
+	if !t.config.enabled.current {
+		return nil, nil
+	}
 	return t.config.propagator.Extract(carrier)
 }
 
@@ -753,6 +763,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		Disabled:             !t.config.enabled.current,
 		PartialFlush:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans: t.config.partialFlushMinSpans,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,

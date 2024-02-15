@@ -217,7 +217,7 @@ type config struct {
 	profilerEndpoints bool
 
 	// enabled reports whether tracing is enabled.
-	enabled bool
+	enabled dynamicConfig[bool]
 
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
@@ -345,7 +345,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
@@ -1024,7 +1024,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		c.enabled = enabled
+		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(b bool) bool { return true }, equal[bool])
 	}
 }
 
