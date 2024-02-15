@@ -147,10 +147,10 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 		sctx, err := tr.Extract(headers)
 		require.NoError(t, err)
-		require.Equal(t, nil, sctx)
+		require.Equal(t, (*SpanContext)(nil), sctx)
 		err = tr.Inject(nil, TextMapCarrier{})
 		require.NoError(t, err)
-		require.Equal(t, nil, tr.StartSpan("noop"))
+		require.Equal(t, (*Span)(nil), tr.StartSpan("noop"))
 
 		// all subsequent spans are of type internal.NoopSpan
 		// no further remoteConfig changes are applied
