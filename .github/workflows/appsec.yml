@@ -123,7 +123,6 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -ex
-          exit 1
           cgocheck="GOEXPERIMENT=cgocheck2"
           if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
             cgocheck="GODEBUG=cgocheck=2"
@@ -174,7 +173,6 @@ jobs:
         shell: bash
         run: |
           set -ex
-          exit 1
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
               if ! env $appsec_enabled go test -v $go_tags $TESTS; then
@@ -194,13 +192,6 @@ jobs:
         go-version: [ "1.21", "1.20", "1.19" ]
         distribution: [ bookworm, bullseye, buster, alpine ]
         platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
-        cgo_enabled: # test it compiles with and without cgo
-          - 0
-          - 1
-        appsec_enabled: # test it compiles with and without appsec enabled
-          - -eDD_APPSEC_ENABLED=true
-          - -eDD_APPSEC_ENABLED=false
-          - "" # the env var is not defined so that the remote-config path can be taken
         exclude:
           - go-version: "1.21"
             distribution: buster
@@ -208,13 +199,9 @@ jobs:
           - platform: linux/arm64
             go-version: "1"
             distribution: alpine
-            appsec_enabled: -eDD_APPSEC_ENABLED=true
-            cgo_enabled: 0
           - platform: linux/arm64
             go-version: "1"
             distribution: alpine
-            appsec_enabled: -eDD_APPSEC_ENABLED=true
-            cgo_enabled: 1
 
       fail-fast: false
     steps:
@@ -244,12 +231,18 @@ jobs:
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
-              exit 1
               if [[ ${{ matrix.distribution }} == alpine ]]; then
                 apk add gcc musl-dev libc6-compat
               fi
               go env
-              go test -v $TESTS
+              for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+                for cgo in 0 1; do
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled go test -v $TESTS; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled go test -v $go_tags $TESTS"
+                    exit 1
+                  fi
+                done
+              done
           EOF
 
   test-app-smoke-tests:
