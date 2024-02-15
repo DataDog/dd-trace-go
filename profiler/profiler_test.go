@@ -694,6 +694,16 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 	}
 }
 
+func TestPgoTag(t *testing.T) {
+	profiles := startTestProfiler(t, 1,
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
+	)
+	m := <-profiles
+	t.Log(m.event.Attachments, m.tags)
+	require.Contains(t, m.tags, "pgo:false")
+}
+
 func TestVersionResolution(t *testing.T) {
 	t.Run("tags only", func(t *testing.T) {
 		data := doOneShortProfileUpload(t, WithTags("version:4.5.6", "version:7.8.9"))
