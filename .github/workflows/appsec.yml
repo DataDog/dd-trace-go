@@ -127,7 +127,7 @@ jobs:
           if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
             cgocheck="GODEBUG=cgocheck=2"
           fi
-          for cgo in 0 1; do
+          for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
                   if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
@@ -175,8 +175,8 @@ jobs:
           set -ex
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled go test -v $go_tags $TESTS; then
-                echo "Failed: env $appsec_enabled go test -v $go_tags $TESTS"
+              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
+                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
                 exit 1
               fi
             done
@@ -224,10 +224,9 @@ jobs:
 
       - name: go test
         env:
-          CGO_ENABLED: ${{ matrix.cgo_enabled }}
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
-          cat <<EOF | docker run -i --platform=${{ matrix.platform }}  -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
+          cat <<EOF | docker run -i --platform=${{ matrix.platform }} -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
               if [[ ${{ matrix.distribution }} == alpine ]]; then
@@ -235,9 +234,9 @@ jobs:
               fi
               go env
               for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-                for cgo in 0 1; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled go test -v $TESTS; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled go test -v $go_tags $TESTS"
+                for cgo in "0" "1"; do
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env go test -v $TESTS; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env go test -v $TESTS"
                     exit 1
                   fi
                 done
