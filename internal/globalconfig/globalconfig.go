@@ -21,7 +21,6 @@ var cfg = &config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
 	headersAsTags: internal.NewLockMap(map[string]string{}),
-	statsCarrier:  &internal.StatsCarrier{},
 }
 
 type config struct {
@@ -109,4 +108,9 @@ func PushStat(stat internal.Stat) {
 		return
 	}
 	cfg.statsCarrier.Add(stat)
+}
+
+// ClearStatsCarrier removes the statsCarrier on the global config
+func ClearStatsCarrier() {
+	cfg.statsCarrier = nil
 }

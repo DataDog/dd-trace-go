@@ -229,6 +229,40 @@ func TestReportContribMetrics(t *testing.T) {
 		calls := tg.CallNames()
 		assert.NotContains(calls, "NotCount")
 	})
+	t.Run("timing", func(t *testing.T) {
+		var tg TestStatsdClient
+		sc := NewStatsCarrier(&tg)
+		s := Stat{
+			Name:  "timing",
+			Kind:  "timing",
+			Value: 1 * time.Second,
+			Tags:  nil,
+			Rate:  1,
+		}
+		sc.Start()
+		defer sc.Stop()
+		sc.Add(s)
+		assert := assert.New(t)
+		calls := tg.CallNames()
+		assert.Contains(calls, "timing")
+	})
+	t.Run("not timing", func(t *testing.T) {
+		var tg TestStatsdClient
+		sc := NewStatsCarrier(&tg)
+		s := Stat{
+			Name:  "NotTiming",
+			Kind:  "timing",
+			Value: 1, //not time.Duration
+			Tags:  nil,
+			Rate:  1,
+		}
+		sc.Start()
+		defer sc.Stop()
+		sc.Add(s)
+		assert := assert.New(t)
+		calls := tg.CallNames()
+		assert.NotContains(calls, "NotTiming")
+	})
 	t.Run("incompatible kind", func(t *testing.T) {
 		var tg TestStatsdClient
 		sc := NewStatsCarrier(&tg)

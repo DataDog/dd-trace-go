@@ -1262,7 +1262,7 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
-func TestWithContribStatsEnabled(t *testing.T) {
+func TestContribStatsEnabled(t *testing.T) {
 	t.Run("Default", func(t *testing.T) {
 		c := newConfig()
 		assert.True(t, c.contribStats)

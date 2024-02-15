@@ -31,6 +31,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -686,12 +687,33 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 }
 
+var debugPrefix = fmt.Sprintf("Datadog Tracer %v DEBUG: ", version.Tag)
+
 func TestTracerContribStats(t *testing.T) {
+	stat := maininternal.Stat{
+		Name:  "test",
+		Kind:  "gauge",
+		Value: float64(1),
+		Tags:  nil,
+		Rate:  1,
+	}
+	t.Run("default on", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
+		defer tracer.Stop()
+		assert.NotNil(t, tracer.statsCarrier)
+		//check that the statscarrier has been set on the globalconfig
+		globalconfig.PushStat(stat)
+		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
+	})
 	t.Run("off", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.Len(t, tp.Logs(), 0)
+		assert.Nil(t, tracer.statsCarrier)
+		//check that there is no statscarrier on the globalconfig
+		globalconfig.PushStat(stat)
+		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
 	})
 	t.Run("env", func(t *testing.T) {
 		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
@@ -699,7 +721,10 @@ func TestTracerContribStats(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
-		assert.False(t, tracer.config.contribStats)
+		assert.Nil(t, tracer.statsCarrier)
+		//check that there is no statscarrier on the globalconfig
+		globalconfig.PushStat(stat)
+		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
 	})
 	t.Run("env override", func(t *testing.T) {
 		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
@@ -707,7 +732,10 @@ func TestTracerContribStats(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
 		defer tracer.Stop()
-		assert.True(t, tracer.config.contribStats)
+		assert.NotNil(t, tracer.statsCarrier)
+		//check that the statscarrier has been set on the globalconfig
+		globalconfig.PushStat(stat)
+		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
 	})
 }
 

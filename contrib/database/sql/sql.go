@@ -212,10 +212,14 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		cfg:        cfg,
 	}
 	db := sql.OpenDB(tc)
-	if cfg.dbStats {
-		go pollDBStats(10*time.Second, db)
+	if dbStatsEnabled(cfg) {
+		go pollDBStats(cfg.dbStats, db, pushDBStats)
 	}
 	return db
+}
+
+func dbStatsEnabled(cfg *config) bool {
+	return int64(cfg.dbStats) > 0
 }
 
 // Open returns connection to a DB using the traced version of the given driver. The driver may
@@ -257,24 +261,28 @@ func processOptions(cfg *config, driverName string, driver driver.Driver, dsn st
 	cfg.checkDBMPropagation(driverName, driver, dsn)
 }
 
-// leaving interval as a param in case we'd want it to be configurable
-func pollDBStats(interval time.Duration, db *sql.DB) {
+// pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStat off to the pushFn.
+func pollDBStats(interval time.Duration, db *sql.DB, pushFn func(stat sql.DBStats)) {
 	for range time.NewTicker(interval).C {
 		if db == nil {
 			log.Debug("No traced DB connection found; cannot pull DB stats.")
 			return
 		}
 		log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
-		stats := db.Stats()
-		// Starting with just 1 metric & no tags, to complete a MVP.
-		openConns := stats.OpenConnections
-		s := internal.Stat{
-			Name:  "sql.db.open_connections",
-			Kind:  "gauge",
-			Value: float64(openConns),
-			Tags:  nil,
-			Rate:  1,
-		}
-		globalconfig.PushStat(s)
+		pushFn(db.Stats())
 	}
+}
+
+// pushDBStats separates the DBStats type out into individual statsd payloads and submits to the globalconfig's statsd client
+func pushDBStats(stats sql.DBStats) {
+	// Starting with just 1 metric & no tags, to complete a MVP.
+	openConns := stats.OpenConnections
+	s := internal.Stat{
+		Name:  "sql.db.open_connections",
+		Kind:  "gauge",
+		Value: float64(openConns),
+		Tags:  nil,
+		Rate:  1,
+	}
+	globalconfig.PushStat(s)
 }

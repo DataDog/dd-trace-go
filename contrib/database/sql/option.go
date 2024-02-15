@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
@@ -29,7 +30,7 @@ type config struct {
 	errCheck           func(err error) bool
 	tags               map[string]interface{}
 	dbmPropagationMode tracer.DBMPropagationMode
-	dbStats            bool
+	dbStats            time.Duration
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
@@ -264,11 +265,12 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	}
 }
 
-// WithDBStats enables polling of DBStats metrics on the registered DB
+// WithDBStats enables polling of DBStats metrics on the registered DB at the specified interval
+// the interval must be non-zero to enable the feature
 // ref: https://pkg.go.dev/database/sql#DBStats
 // These metrics are submitted to Datadog and are not billed as custom metrics
-func WithDBStats(enabled bool) Option {
+func WithDBStats(interval time.Duration) Option {
 	return func(cfg *config) {
-		cfg.dbStats = enabled
+		cfg.dbStats = interval
 	}
 }

@@ -155,10 +155,6 @@ func Start(opts ...StartOption) {
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
-	if sc := t.statsCarrier; sc != nil {
-		sc.Start()
-		globalconfig.SetStatsCarrier(sc)
-	}
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
@@ -335,6 +331,10 @@ func newTracer(opts ...StartOption) *tracer {
 		t.reportHealthMetrics(statsInterval)
 	}()
 	t.stats.Start()
+	if sc := t.statsCarrier; sc != nil {
+		sc.Start()
+		globalconfig.SetStatsCarrier(sc)
+	}
 	return t
 }
 
@@ -665,6 +665,7 @@ func (t *tracer) Stop() {
 	}
 	if t.statsCarrier != nil {
 		t.statsCarrier.Stop()
+		globalconfig.ClearStatsCarrier()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()

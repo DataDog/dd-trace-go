@@ -25,7 +25,7 @@ type StatsdClient interface {
 type Stat struct {
 	Name  string
 	Kind  string
-	Value interface{} //Really, it can only be a "number" type, but wasn't sure if we want to enforce that here yet
+	Value interface{}
 	Tags  []string
 	Rate  float64
 }
@@ -36,14 +36,14 @@ type StatsCarrier struct {
 	statsd       StatsdClient
 	stop         chan struct{}
 	wg           sync.WaitGroup
-	stopped uint64
+	stopped      uint64
 }
 
 func NewStatsCarrier(statsd StatsdClient) *StatsCarrier {
 	return &StatsCarrier{
 		contribStats: make(chan Stat),
 		statsd:       statsd,
-		stopped: 1,
+		stopped:      1,
 	}
 }
 func (sc *StatsCarrier) Start() {
@@ -75,7 +75,7 @@ func (sc *StatsCarrier) run() {
 	}
 }
 
-func (sc *StatsCarrier) Stop() {	
+func (sc *StatsCarrier) Stop() {
 	if atomic.SwapUint64(&(sc.stopped), 1) > 0 {
 		return
 	}
@@ -100,6 +100,13 @@ func (sc *StatsCarrier) push(s Stat) {
 			break
 		}
 		sc.statsd.Count(s.Name, v, s.Tags, s.Rate)
+	case "timing":
+		v, ok := s.Value.(time.Duration)
+		if !ok {
+			log.Debug("Received timing stat with incompatible value; looking for time.Duration value but got %T. Dropping stat %v.", s.Value, s.Name)
+			break
+		}
+		sc.statsd.Timing(s.Name, v, s.Tags, s.Rate)
 	default:
 		log.Debug("Stat submission failed: metric type %v not supported", s.Kind)
 	}
