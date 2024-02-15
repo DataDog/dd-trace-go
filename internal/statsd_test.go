@@ -164,13 +164,7 @@ func TestReportContribMetrics(t *testing.T) {
 	t.Run("gauge", func(t *testing.T) {
 		var tg TestStatsdClient
 		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "gauge",
-			Kind:  "gauge",
-			Value: float64(1.0),
-			Tags:  nil,
-			Rate:  1,
-		}
+		s := NewGauge("gauge", float64(1), nil, 1)
 		sc.Start()
 		defer sc.Stop()
 		sc.Add(s)
@@ -178,33 +172,10 @@ func TestReportContribMetrics(t *testing.T) {
 		calls := tg.CallNames()
 		assert.Contains(calls, "gauge")
 	})
-	t.Run("incompatible gauge", func(t *testing.T) {
-		var tg TestStatsdClient
-		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "NotGauge",
-			Kind:  "gauge",
-			Value: 1, // not a float64
-			Tags:  nil,
-			Rate:  1,
-		}
-		sc.Start()
-		defer sc.Stop()
-		sc.Add(s)
-		assert := assert.New(t)
-		calls := tg.CallNames()
-		assert.NotContains(calls, "NotGauge")
-	})
 	t.Run("count", func(t *testing.T) {
 		var tg TestStatsdClient
 		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "count",
-			Kind:  "count",
-			Value: int64(1),
-			Tags:  nil,
-			Rate:  1,
-		}
+		s := NewCount("count", int64(1), nil, 1)
 		sc.Start()
 		defer sc.Stop()
 		sc.Add(s)
@@ -212,72 +183,15 @@ func TestReportContribMetrics(t *testing.T) {
 		calls := tg.CallNames()
 		assert.Contains(calls, "count")
 	})
-	t.Run("incompatible count", func(t *testing.T) {
-		var tg TestStatsdClient
-		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "NotCount",
-			Kind:  "count",
-			Value: 1, //not int64
-			Tags:  nil,
-			Rate:  1,
-		}
-		sc.Start()
-		defer sc.Stop()
-		sc.Add(s)
-		assert := assert.New(t)
-		calls := tg.CallNames()
-		assert.NotContains(calls, "NotCount")
-	})
 	t.Run("timing", func(t *testing.T) {
 		var tg TestStatsdClient
 		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "timing",
-			Kind:  "timing",
-			Value: 1 * time.Second,
-			Tags:  nil,
-			Rate:  1,
-		}
+		s := NewTiming("timing", 1 * time.Second, nil, 1)
 		sc.Start()
 		defer sc.Stop()
 		sc.Add(s)
 		assert := assert.New(t)
 		calls := tg.CallNames()
 		assert.Contains(calls, "timing")
-	})
-	t.Run("not timing", func(t *testing.T) {
-		var tg TestStatsdClient
-		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "NotTiming",
-			Kind:  "timing",
-			Value: 1, //not time.Duration
-			Tags:  nil,
-			Rate:  1,
-		}
-		sc.Start()
-		defer sc.Stop()
-		sc.Add(s)
-		assert := assert.New(t)
-		calls := tg.CallNames()
-		assert.NotContains(calls, "NotTiming")
-	})
-	t.Run("incompatible kind", func(t *testing.T) {
-		var tg TestStatsdClient
-		sc := NewStatsCarrier(&tg)
-		s := Stat{
-			Name:  "incompatible",
-			Kind:  "incompatible",
-			Value: 100,
-			Tags:  nil,
-			Rate:  1,
-		}
-		sc.Start()
-		defer sc.Stop()
-		sc.Add(s)
-		assert := assert.New(t)
-		calls := tg.CallNames()
-		assert.NotContains(calls, "incompatible")
 	})
 }

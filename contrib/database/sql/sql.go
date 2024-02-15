@@ -277,12 +277,6 @@ func pollDBStats(interval time.Duration, db *sql.DB, pushFn func(stat sql.DBStat
 func pushDBStats(stats sql.DBStats) {
 	// Starting with just 1 metric & no tags, to complete a MVP.
 	openConns := stats.OpenConnections
-	s := internal.Stat{
-		Name:  "sql.db.open_connections",
-		Kind:  "gauge",
-		Value: float64(openConns),
-		Tags:  nil,
-		Rate:  1,
-	}
+	s := internal.NewGauge("sql.db.open_connections", float64(openConns), nil, 1)
 	globalconfig.PushStat(s)
 }

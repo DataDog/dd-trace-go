@@ -104,7 +104,7 @@ func SetStatsCarrier(sc *internal.StatsCarrier) {
 // PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
 func PushStat(stat internal.Stat) {
 	if cfg.statsCarrier == nil {
-		log.Debug("No stats carrier found; dropping stat %v", stat.Name)
+		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
 	}
 	cfg.statsCarrier.Add(stat)

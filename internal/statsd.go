@@ -22,12 +22,115 @@ type StatsdClient interface {
 	Close() error
 }
 
-type Stat struct {
-	Name  string
-	Kind  string
-	Value interface{}
-	Tags  []string
-	Rate  float64
+// type Stat struct {
+// 	Name  string
+// 	Kind  string
+// 	Value interface{}
+// 	Tags  []string
+// 	Rate  float64
+// }
+
+type Stat interface {
+	Name()  string
+	Value() interface{}
+	Tags()  []string
+	Rate()  float64
+}
+
+type Gauge struct {
+	name  string
+	value float64
+	tags  []string
+	rate  float64
+}
+
+func NewGauge(name string, value float64, tags []string, rate float64) Gauge {
+	return Gauge{
+		name: name,
+		value: value,
+		tags: tags,
+		rate: rate,
+	}
+}
+
+func (g Gauge) Name() string {
+	return g.name
+}
+
+func (g Gauge) Value() interface{} {
+	return g.value
+}
+
+func (g Gauge) Tags() []string {
+	return g.tags
+}
+
+func (g Gauge) Rate() float64 {
+	return g.rate
+}
+
+type Count struct {
+	name  string
+	value int64
+	tags  []string
+	rate  float64
+}
+
+func NewCount(name string, value int64, tags []string, rate float64) Count {
+	return Count{
+		name: name,
+		value: value,
+		tags: tags,
+		rate: rate,
+	}
+}
+
+func (c Count) Name() string {
+	return c.name
+}
+
+func (c Count) Value() interface{} {
+	return c.value
+}
+
+func (c Count) Tags() []string {
+	return c.tags
+}
+
+func (c Count) Rate() float64 {
+	return c.rate
+}
+
+type Timing struct {
+	name  string
+	value time.Duration
+	tags  []string
+	rate  float64
+}
+
+func NewTiming(name string, value time.Duration, tags []string, rate float64) Timing {
+	return Timing{
+		name: name,
+		value: value,
+		tags: tags,
+		rate: rate,
+	}
+}
+
+func (t Timing) Name() string {
+	return t.name
+}
+
+func (t Timing) Value() interface{} {
+	return t.value
+}
+
+func (t Timing) Tags() []string {
+	return t.tags
+}
+
+func (t Timing) Rate() float64 {
+	return t.rate
 }
 
 // StatsCarrier collects stats on its contribStats channel and submits them to the Datadog agent via a statsd client
@@ -85,30 +188,30 @@ func (sc *StatsCarrier) Stop() {
 
 // push submits the stat of supported types (gauge or count) via its statsd client
 func (sc *StatsCarrier) push(s Stat) {
-	switch s.Kind {
-	case "gauge":
-		v, ok := s.Value.(float64)
+	switch s.(type) {
+	case Gauge:
+		v, ok := s.Value().(float64)
 		if !ok {
-			log.Debug("Received gauge stat with incompatible value; looking for float64 value but got %T. Dropping stat %v.", s.Value, s.Name)
+			log.Debug("Received gauge stat with incompatible value; looking for float64 value but got %T. Dropping stat %v.", s.Value(), s.Name())
 			break
 		}
-		sc.statsd.Gauge(s.Name, v, s.Tags, s.Rate)
-	case "count":
-		v, ok := s.Value.(int64)
+		sc.statsd.Gauge(s.Name(), v, s.Tags(), s.Rate())
+	case Count:
+		v, ok := s.Value().(int64)
 		if !ok {
-			log.Debug("Received count stat with incompatible value; looking for int64 value but got %T. Dropping stat %v.", s.Value, s.Name)
+			log.Debug("Received count stat with incompatible value; looking for int64 value but got %T. Dropping stat %v.", s.Value(), s.Name())
 			break
 		}
-		sc.statsd.Count(s.Name, v, s.Tags, s.Rate)
-	case "timing":
-		v, ok := s.Value.(time.Duration)
+		sc.statsd.Count(s.Name(), v, s.Tags(), s.Rate())
+	case Timing:
+		v, ok := s.Value().(time.Duration)
 		if !ok {
-			log.Debug("Received timing stat with incompatible value; looking for time.Duration value but got %T. Dropping stat %v.", s.Value, s.Name)
+			log.Debug("Received timing stat with incompatible value; looking for time.Duration value but got %T. Dropping stat %v.", s.Value(), s.Name())
 			break
 		}
-		sc.statsd.Timing(s.Name, v, s.Tags, s.Rate)
+		sc.statsd.Timing(s.Name(), v, s.Tags(), s.Rate())
 	default:
-		log.Debug("Stat submission failed: metric type %v not supported", s.Kind)
+		log.Debug("Stat submission failed: metric type for %v not supported", s.Name())
 	}
 }
 

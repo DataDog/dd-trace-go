@@ -690,13 +690,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 var debugPrefix = fmt.Sprintf("Datadog Tracer %v DEBUG: ", version.Tag)
 
 func TestTracerContribStats(t *testing.T) {
-	stat := maininternal.Stat{
-		Name:  "test",
-		Kind:  "gauge",
-		Value: float64(1),
-		Tags:  nil,
-		Rate:  1,
-	}
+	stat := maininternal.NewGauge("test",float64(1),nil,1)
 	t.Run("default on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
@@ -704,7 +698,7 @@ func TestTracerContribStats(t *testing.T) {
 		assert.NotNil(t, tracer.statsCarrier)
 		//check that the statscarrier has been set on the globalconfig
 		globalconfig.PushStat(stat)
-		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
+		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
 	t.Run("off", func(t *testing.T) {
 		tp := new(log.RecordLogger)
@@ -713,7 +707,7 @@ func TestTracerContribStats(t *testing.T) {
 		assert.Nil(t, tracer.statsCarrier)
 		//check that there is no statscarrier on the globalconfig
 		globalconfig.PushStat(stat)
-		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
+		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
 	t.Run("env", func(t *testing.T) {
 		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
@@ -724,7 +718,7 @@ func TestTracerContribStats(t *testing.T) {
 		assert.Nil(t, tracer.statsCarrier)
 		//check that there is no statscarrier on the globalconfig
 		globalconfig.PushStat(stat)
-		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
+		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
 	t.Run("env override", func(t *testing.T) {
 		os.Setenv("DD_TRACE_CONTRIB_STATS_ENABLED", "false")
@@ -735,7 +729,7 @@ func TestTracerContribStats(t *testing.T) {
 		assert.NotNil(t, tracer.statsCarrier)
 		//check that the statscarrier has been set on the globalconfig
 		globalconfig.PushStat(stat)
-		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name))
+		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
 }
 
