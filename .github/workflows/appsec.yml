@@ -123,6 +123,7 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -ex
+          exit 1
           cgocheck="GOEXPERIMENT=cgocheck2"
           if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
             cgocheck="GODEBUG=cgocheck=2"
@@ -173,6 +174,7 @@ jobs:
         shell: bash
         run: |
           set -ex
+          exit 1
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
               if ! env $appsec_enabled go test -v $go_tags $TESTS; then
@@ -242,6 +244,7 @@ jobs:
             -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
+              exit 1
               if [[ ${{ matrix.distribution }} == alpine ]]; then
                 apk add gcc musl-dev libc6-compat
               fi
