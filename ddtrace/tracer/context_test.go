@@ -42,16 +42,11 @@ func TestSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	parent := StartSpan("test")
-	tID := parent.Context().TraceID()
-	sc := &spanContext{
-		spanID:  parent.Context().SpanID(),
-		traceID: traceIDFrom64Bits(tID),
-	}
-	parent2 := StartSpan("test", ChildOf(sc))
+	parent2 := StartSpan("test", ChildOf(parent.Context()))
 	pctx := ContextWithSpan(context.Background(), parent)
 	child, ctx := StartSpanFromContext(
 		pctx,
@@ -81,7 +76,7 @@ func TestStartSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
@@ -112,7 +107,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 }
 
 func Test128(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
@@ -150,7 +145,7 @@ func Test128(t *testing.T) {
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	child, ctx := StartSpanFromContext(nil, "http.request")
