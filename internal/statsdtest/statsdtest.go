@@ -24,10 +24,10 @@ const (
 
 type TestStatsdClient struct {
 	mu          sync.RWMutex
-	gaugeCalls  []testStatsdCall
-	incrCalls   []testStatsdCall
-	countCalls  []testStatsdCall
-	timingCalls []testStatsdCall
+	gaugeCalls  []TestStatsdCall
+	incrCalls   []TestStatsdCall
+	countCalls  []TestStatsdCall
+	timingCalls []TestStatsdCall
 	counts      map[string]int64
 	tags        []string
 	n           int
@@ -35,7 +35,7 @@ type TestStatsdClient struct {
 	flushed     int
 }
 
-type testStatsdCall struct {
+type TestStatsdCall struct {
 	name     string
 	floatVal float64
 	intVal   int64
@@ -54,7 +54,7 @@ func (tg *TestStatsdClient) addCount(name string, value int64) {
 }
 
 func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
-	return tg.addMetric(callTypeGauge, tags, testStatsdCall{
+	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
 		name:     name,
 		floatVal: value,
 		tags:     make([]string, len(tags)),
@@ -64,7 +64,7 @@ func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rat
 
 func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error {
 	tg.addCount(name, 1)
-	return tg.addMetric(callTypeIncr, tags, testStatsdCall{
+	return tg.addMetric(callTypeIncr, tags, TestStatsdCall{
 		name: name,
 		tags: make([]string, len(tags)),
 		rate: rate,
@@ -73,7 +73,7 @@ func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error
 
 func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate float64) error {
 	tg.addCount(name, value)
-	return tg.addMetric(callTypeCount, tags, testStatsdCall{
+	return tg.addMetric(callTypeCount, tags, TestStatsdCall{
 		name:   name,
 		intVal: value,
 		tags:   make([]string, len(tags)),
@@ -82,7 +82,7 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
-	return tg.addMetric(callTypeTiming, tags, testStatsdCall{
+	return tg.addMetric(callTypeTiming, tags, TestStatsdCall{
 		name:    name,
 		timeVal: value,
 		tags:    make([]string, len(tags)),
@@ -90,7 +90,7 @@ func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []stri
 	})
 }
 
-func (tg *TestStatsdClient) addMetric(ct callType, tags []string, c testStatsdCall) error {
+func (tg *TestStatsdClient) addMetric(ct callType, tags []string, c TestStatsdCall) error {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	copy(c.tags, tags)
@@ -121,34 +121,34 @@ func (tg *TestStatsdClient) Close() error {
 	return nil
 }
 
-func (tg *TestStatsdClient) GaugeCalls() []testStatsdCall {
+func (tg *TestStatsdClient) GaugeCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	c := make([]testStatsdCall, len(tg.gaugeCalls))
+	c := make([]TestStatsdCall, len(tg.gaugeCalls))
 	copy(c, tg.gaugeCalls)
 	return c
 }
 
-func (tg *TestStatsdClient) IncrCalls() []testStatsdCall {
+func (tg *TestStatsdClient) IncrCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	c := make([]testStatsdCall, len(tg.incrCalls))
+	c := make([]TestStatsdCall, len(tg.incrCalls))
 	copy(c, tg.incrCalls)
 	return c
 }
 
-func (tg *TestStatsdClient) CountCalls() []testStatsdCall {
+func (tg *TestStatsdClient) CountCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	c := make([]testStatsdCall, len(tg.countCalls))
+	c := make([]TestStatsdCall, len(tg.countCalls))
 	copy(c, tg.countCalls)
 	return c
 }
 
-func (tg *TestStatsdClient) TimingCalls() []testStatsdCall {
+func (tg *TestStatsdClient) TimingCalls() []TestStatsdCall {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
-	c := make([]testStatsdCall, len(tg.timingCalls))
+	c := make([]TestStatsdCall, len(tg.timingCalls))
 	copy(c, tg.countCalls)
 	return c
 }
