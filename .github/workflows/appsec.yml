@@ -228,8 +228,7 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           cat <<EOF | docker run -i --platform=${{ matrix.platform }}  -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eCGO_ENABLED -eDD_APPSEC_WAF_TIMEOUT ${{ matrix.appsec_enabled }} \
-            golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+            -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -ex
               if [[ ${{ matrix.distribution }} == alpine ]]; then
                 apk add gcc musl-dev libc6-compat
