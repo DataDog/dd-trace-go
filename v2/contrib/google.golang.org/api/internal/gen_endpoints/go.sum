@@ -1,4 +1,2 @@
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8 h1:E3mNcvkwSpW9KKutFUuHtEVws2lrq4YH2a3QFKTQfdE=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8/go.mod h1:jcJ2a9Sz4MkWqxYi9fufYzURI7eIj7zJchzIlOG0w3Y=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=

@@ -617,6 +617,9 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	if t := GetGlobalTracer(); t != nil {
 		tc := t.TracerConf()
+		if !tc.Enabled.current {
+			return
+		}
 		// we have an active tracer
 		if tc.CanComputeStats && shouldComputeStats(s) {
 			// the agent supports computed stats
