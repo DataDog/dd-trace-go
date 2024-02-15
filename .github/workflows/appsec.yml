@@ -227,13 +227,13 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           cat <<EOF | docker run -i --platform=${{ matrix.platform }} -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
-            -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT --entrypoint golang:${{ matrix.go-version }}-${{ matrix.distribution }}
+            -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -euxo pipefail
               if [[ ${{ matrix.distribution }} == alpine ]]; then
                 apk add gcc musl-dev libc6-compat bash
-                exec /bin/bash
-                set -euxo pipefail
               fi
+              exec /bin/bash
+              set -euxo pipefail
               go env
               for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgo in "0" "1"; do
