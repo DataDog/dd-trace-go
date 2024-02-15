@@ -35,6 +35,8 @@ func newBasicSpan(name string, opts ...StartSpanOption) ddtrace.Span {
 
 func TestSpanBaggage(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	span := newBasicSpan("web.request")
 	span.SetBaggageItem("key", "value")
@@ -43,6 +45,8 @@ func TestSpanBaggage(t *testing.T) {
 
 func TestSpanContext(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	span := newBasicSpan("web.request")
 	assert.NotNil(span.Context())
@@ -50,6 +54,8 @@ func TestSpanContext(t *testing.T) {
 
 func TestSpanOperationName(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	span := newBasicSpan("web.request")
 	span.SetOperationName("http.request")
@@ -59,18 +65,23 @@ func TestSpanOperationName(t *testing.T) {
 
 func TestSpanFinishWithTime(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	finishTime := time.Now().Add(10 * time.Second)
 	span := newBasicSpan("web.request")
 	span.Finish(FinishTime(finishTime))
 
 	sm := span.(internal.SpanV2Adapter).Span.AsMap()
-	duration := finishTime.UnixNano() - sm[ext.MapSpanStart].(time.Time).UnixNano()
+	duration := finishTime.UnixNano() - sm[ext.MapSpanStart].(int64)
 	assert.Equal(duration, sm[ext.MapSpanDuration].(int64))
 }
 
 func TestSpanFinishWithNegativeDuration(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
+
 	startTime := time.Now()
 	finishTime := startTime.Add(-10 * time.Second)
 	span := newBasicSpan("web.request", StartTime(startTime))
@@ -81,6 +92,8 @@ func TestSpanFinishWithNegativeDuration(t *testing.T) {
 
 func TestSpanFinishWithError(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	err := errors.New("test error")
 	span := newBasicSpan("web.request")
@@ -95,6 +108,8 @@ func TestSpanFinishWithError(t *testing.T) {
 
 func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	err := errors.New("test error")
 	span := newBasicSpan("web.request")
@@ -109,6 +124,8 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 
 func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert := assert.New(t)
+	Start()
+	defer Stop()
 
 	err := errors.New("test error")
 	span := newBasicSpan("web.request")
@@ -153,8 +170,10 @@ func assertArray[T, W any](t *testing.T, span ddtrace.Span, key string, value []
 
 func TestSpanSetTag(t *testing.T) {
 	assert := assert.New(t)
-	span := newBasicSpan("web.request")
+	Start()
+	defer Stop()
 
+	span := newBasicSpan("web.request")
 	tC := []struct {
 		key   string
 		value any
@@ -223,8 +242,10 @@ const (
 
 func TestUniqueTagKeys(t *testing.T) {
 	assert := assert.New(t)
-	span := newBasicSpan("web.request")
+	Start()
+	defer Stop()
 
+	span := newBasicSpan("web.request")
 	// check to see if setMeta correctly wipes out a metric tag
 	span.SetTag("foo.bar", 12)
 	span.SetTag("foo.bar", "val")

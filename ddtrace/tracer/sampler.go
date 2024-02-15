@@ -41,8 +41,11 @@ func (sa samplerV2Adapter) Rate() float64 {
 
 // Sample implements RateSampler.
 func (sa samplerV2Adapter) Sample(span ddtrace.Span) bool {
-	s := span.(internal.SpanV2Adapter).Span
-	return sa.sampler.Sample(s)
+	s, ok := span.(internal.SpanV2Adapter)
+	if !ok {
+		return false
+	}
+	return sa.sampler.Sample(s.Span)
 }
 
 // SetRate implements RateSampler.
