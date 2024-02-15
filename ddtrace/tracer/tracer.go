@@ -37,6 +37,7 @@ type TracerConf struct { //nolint:revive
 	CanComputeStats      bool
 	CanDropP0s           bool
 	DebugAbandonedSpans  bool
+	Disabled             bool
 	PartialFlush         bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults  bool
@@ -44,7 +45,6 @@ type TracerConf struct { //nolint:revive
 	EnvTag               string
 	VersionTag           string
 	ServiceTag           string
-	Enabled              *dynamicConfig[bool]
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -763,6 +763,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		Disabled:             !t.config.enabled.current,
 		PartialFlush:         t.config.partialFlushEnabled,
 		PartialFlushMinSpans: t.config.partialFlushMinSpans,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
@@ -770,7 +771,6 @@ func (t *tracer) TracerConf() TracerConf {
 		EnvTag:               t.config.env,
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
-		Enabled:              &t.config.enabled,
 	}
 }
 
