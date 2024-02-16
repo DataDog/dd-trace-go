@@ -635,6 +635,12 @@ github.com/DataDog/datadog-go/v5 v5.3.0 h1:2q2qjFOb3RwAZNU+ez27ZVDwErJv5/VpbBPpr
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240215165359-b60747788edc h1:oU+OTrFVpKyT21gJ6bhRcUVe7uKjEsPx3P4nYCByvzA=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240215165359-b60747788edc/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216112914-8364b6baba4a h1:vK6qEiRrfT/PLFoqLqYlvM4KiBgYivBMnlrhpb7Zfvw=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216112914-8364b6baba4a/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216113425-a633e06f5cc2 h1:18FbUQMsdmQTw9QB7otoS+85mE+rocSsphuntBkcmb0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216113425-a633e06f5cc2/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216133339-c464ae920db1 h1:ASvMIAK0JQf1c5RBXPk56yi49r7tUTznkjp37vGUqrM=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216133339-c464ae920db1/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
 github.com/DataDog/go-libddwaf/v2 v2.3.1 h1:bujaT5+KnLDFQqVA5ilvVvW+evUSHow9FrTHRgUwN4A=
 github.com/DataDog/go-libddwaf/v2 v2.3.1/go.mod h1:gsCdoijYQfj8ce/T2bEDNPZFIYnmHluAgVDpuQOWMZE=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=
