@@ -103,17 +103,21 @@ func SetStatsCarrier(sc *internal.StatsCarrier) {
 
 // PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
 func PushStat(stat internal.Stat) {
-	if cfg.statsCarrier == nil {
+	if !StatsCarrier() {
 		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
 	}
 	cfg.statsCarrier.Add(stat)
 }
 
-// ClearStatsCarrier removes the statsCarrier on the global config
+// StatsCarrier returns true if there is a StatsCarrier on the globalconfig, else false
+func StatsCarrier() bool {
+	return cfg.statsCarrier != nil
+}
+
+// ClearStatsCarrier removes the statsCarrier from the global config
+// The scope that calls "Start" on the StatsCarrier is responsible for calling "Stop",
+// the globalconfig is not responsible
 func ClearStatsCarrier() {
-	// if !cfg.statsCarrier.Stopped() {
-	// 	cfg.statsCarrier.Stop()
-	// }
 	cfg.statsCarrier = nil
 }

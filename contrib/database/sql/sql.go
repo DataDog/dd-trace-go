@@ -25,8 +25,6 @@ import (
 
 	sqlinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
@@ -259,24 +257,4 @@ func processOptions(cfg *config, driverName string, driver driver.Driver, dsn st
 		fn(cfg)
 	}
 	cfg.checkDBMPropagation(driverName, driver, dsn)
-}
-
-// pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStat off to the pushFn.
-func pollDBStats(interval time.Duration, db *sql.DB, pushFn func(stat sql.DBStats)) {
-	for range time.NewTicker(interval).C {
-		if db == nil {
-			log.Debug("No traced DB connection found; cannot pull DB stats.")
-			return
-		}
-		log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
-		pushFn(db.Stats())
-	}
-}
-
-// pushDBStats separates the DBStats type out into individual statsd payloads and submits to the globalconfig's statsd client
-func pushDBStats(stats sql.DBStats) {
-	// Starting with just 1 metric & no tags, to complete a MVP.
-	openConns := stats.OpenConnections
-	s := internal.NewGauge("sql.db.open_connections", float64(openConns), nil, 1)
-	globalconfig.PushStat(s)
 }

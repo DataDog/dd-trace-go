@@ -22,19 +22,11 @@ type StatsdClient interface {
 	Close() error
 }
 
-// type Stat struct {
-// 	Name  string
-// 	Kind  string
-// 	Value interface{}
-// 	Tags  []string
-// 	Rate  float64
-// }
-
 type Stat interface {
-	Name()  string
+	Name() string
 	Value() interface{}
-	Tags()  []string
-	Rate()  float64
+	Tags() []string
+	Rate() float64
 }
 
 type Gauge struct {
@@ -46,10 +38,10 @@ type Gauge struct {
 
 func NewGauge(name string, value float64, tags []string, rate float64) Gauge {
 	return Gauge{
-		name: name,
+		name:  name,
 		value: value,
-		tags: tags,
-		rate: rate,
+		tags:  tags,
+		rate:  rate,
 	}
 }
 
@@ -78,10 +70,10 @@ type Count struct {
 
 func NewCount(name string, value int64, tags []string, rate float64) Count {
 	return Count{
-		name: name,
+		name:  name,
 		value: value,
-		tags: tags,
-		rate: rate,
+		tags:  tags,
+		rate:  rate,
 	}
 }
 
@@ -110,10 +102,10 @@ type Timing struct {
 
 func NewTiming(name string, value time.Duration, tags []string, rate float64) Timing {
 	return Timing{
-		name: name,
+		name:  name,
 		value: value,
-		tags: tags,
-		rate: rate,
+		tags:  tags,
+		rate:  rate,
 	}
 }
 
@@ -149,6 +141,9 @@ func NewStatsCarrier(statsd StatsdClient) *StatsCarrier {
 		stopped:      1,
 	}
 }
+
+// Start runs the StatsCarrier in a goroutine
+// Whichever scope calls sc.Start() is resopnsible for calling sc.Stop()
 func (sc *StatsCarrier) Start() {
 	if atomic.SwapUint64(&sc.stopped, 0) == 0 {
 		// already running
@@ -186,11 +181,12 @@ func (sc *StatsCarrier) Stop() {
 	sc.wg.Wait()
 }
 
-// func (sc *StatsCarrier) Stopped() bool {
-// 	return atomic.SwapUint64(&(sc.stopped), 1) > 0
-// }
+// Stopped returns true if the sc.stop channel has already been closed, else false
+func (sc *StatsCarrier) Stopped() bool {
+	return atomic.SwapUint64(&(sc.stopped), 1) > 0
+}
 
-// push submits the stat of supported types (gauge or count) via its statsd client
+// push submits the stat of supported types (gauge, count or timing) via its statsd client
 func (sc *StatsCarrier) push(s Stat) {
 	switch s.(type) {
 	case Gauge:

@@ -684,7 +684,8 @@ func TestTracerContribStats(t *testing.T) {
 		tracer := newTracer(WithDebugMode(true), WithLogger(tp))
 		defer tracer.Stop()
 		assert.NotNil(t, tracer.statsCarrier)
-		//check that the statscarrier has been set on the globalconfig
+		assert.True(t, globalconfig.StatsCarrier())
+		//check that we can push stats onto globalconfig's statscarrier
 		globalconfig.PushStat(stat)
 		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
@@ -693,7 +694,8 @@ func TestTracerContribStats(t *testing.T) {
 		tracer := newTracer(WithContribStats(false), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Nil(t, tracer.statsCarrier)
-		//check that there is no statscarrier on the globalconfig
+		assert.False(t, globalconfig.StatsCarrier())
+		// check that an attempt to push onto the globalconfig's StatsCarrier results in a dropped stat
 		globalconfig.PushStat(stat)
 		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
@@ -704,7 +706,8 @@ func TestTracerContribStats(t *testing.T) {
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Nil(t, tracer.statsCarrier)
-		//check that there is no statscarrier on the globalconfig
+		assert.False(t, globalconfig.StatsCarrier())
+		//check that an attempt to push onto the globalconfig's StatsCarrier results in a dropped stat
 		globalconfig.PushStat(stat)
 		assert.Contains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})
@@ -715,7 +718,8 @@ func TestTracerContribStats(t *testing.T) {
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithContribStats(true))
 		defer tracer.Stop()
 		assert.NotNil(t, tracer.statsCarrier)
-		//check that the statscarrier has been set on the globalconfig
+		assert.True(t, globalconfig.StatsCarrier())
+		//check that we can push stats onto globalconfig's statscarrier
 		globalconfig.PushStat(stat)
 		assert.NotContains(t, tp.Logs(), fmt.Sprintf("%vNo stats carrier found; dropping stat %v", debugPrefix, stat.Name()))
 	})

@@ -7,7 +7,6 @@ package sql
 
 import (
 	"context"
-	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
@@ -44,9 +43,6 @@ func TestMain(m *testing.M) {
 	cleanup()
 	os.Exit(testResult)
 }
-
-// func TestDBStats(){}
-// Holding off on writing this until I get review on the implementation decision
 
 func TestSqlServer(t *testing.T) {
 	driverName := "sqlserver"
@@ -273,32 +269,6 @@ func TestOpenOptions(t *testing.T) {
 		assert.Equal(t, "register-override", s0.Tag(ext.ServiceName))
 	})
 }
-
-func TestPollDBStats(t *testing.T) {
-	driverName := "postgres"
-	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-	db, err := Open(driverName, dsn)
-	assert.NoError(t, err)
-	interval := 3 * time.Millisecond
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pollDBStats(interval, db, pollDBStatsCounter)
-	}()
-	wg.Wait()
-	assert.Len(t, dbStatsCollector, 3)
-}
-
-var dbStatsCollector []sql.DBStats
-
-func pollDBStatsCounter(stats sql.DBStats) {
-	dbStatsCollector = append(dbStatsCollector, stats)
-}
-
-// func TestPushDBStats(t *testing.T){
-
-// }
 
 func TestMySQLUint64(t *testing.T) {
 	Register("mysql", &mysql.MySQLDriver{})
