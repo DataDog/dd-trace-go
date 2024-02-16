@@ -52,14 +52,18 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "spans_created", 1.0, telemetryTags, true)
 	var cfg tracer.StartSpanConfig
 	cfg.Tags = make(map[string]interface{})
-	for _, attr := range ssConfig.Attributes() {
-		cfg.Tags[string(attr.Key)] = attr.Value.AsInterface()
-	}
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {
 			o(&cfg)
 		}
+	}
+	for _, attr := range ssConfig.Attributes() {
+		k := string(attr.Key)
+		if _, ok := cfg.Tags[k]; ok {
+			continue
+		}
+		cfg.Tags[k] = attr.Value.AsInterface()
 	}
 	// Add provide OTel Span Links to the underlying Datadog span.
 	if len(ssConfig.Links()) > 0 {
