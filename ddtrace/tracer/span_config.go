@@ -122,7 +122,7 @@ func WithFinishConfig(cfg *FinishConfig) FinishOption {
 		if fc.FinishTime.IsZero() {
 			fc.FinishTime = cfg.FinishTime
 		}
-		if fc.NoDebugStack {
+		if !fc.NoDebugStack {
 			fc.NoDebugStack = cfg.NoDebugStack
 		}
 		if fc.SkipStackFrames == 0 {
