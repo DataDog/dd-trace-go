@@ -690,7 +690,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 var debugPrefix = fmt.Sprintf("Datadog Tracer %v DEBUG: ", version.Tag)
 
 func TestTracerContribStats(t *testing.T) {
-	stat := maininternal.NewGauge("test",float64(1),nil,1)
+	stat := maininternal.NewGauge("test", float64(1), nil, 1)
 	t.Run("default on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
 		tracer := newTracer(WithDebugMode(true), WithLogger(tp))

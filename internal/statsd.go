@@ -186,6 +186,10 @@ func (sc *StatsCarrier) Stop() {
 	sc.wg.Wait()
 }
 
+// func (sc *StatsCarrier) Stopped() bool {
+// 	return atomic.SwapUint64(&(sc.stopped), 1) > 0
+// }
+
 // push submits the stat of supported types (gauge or count) via its statsd client
 func (sc *StatsCarrier) push(s Stat) {
 	switch s.(type) {

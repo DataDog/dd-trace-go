@@ -186,7 +186,7 @@ func TestReportContribMetrics(t *testing.T) {
 	t.Run("timing", func(t *testing.T) {
 		var tg TestStatsdClient
 		sc := NewStatsCarrier(&tg)
-		s := NewTiming("timing", 1 * time.Second, nil, 1)
+		s := NewTiming("timing", 1*time.Second, nil, 1)
 		sc.Start()
 		defer sc.Stop()
 		sc.Add(s)

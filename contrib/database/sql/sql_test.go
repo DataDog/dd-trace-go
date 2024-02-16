@@ -286,7 +286,7 @@ func TestPollDBStats(t *testing.T) {
 		defer wg.Done()
 		pollDBStats(interval, db, pollDBStatsCounter)
 	}()
-	time.Sleep(3 * interval)
+	wg.Wait()
 	assert.Len(t, dbStatsCollector, 3)
 }
 

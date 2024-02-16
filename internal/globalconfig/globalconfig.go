@@ -112,5 +112,8 @@ func PushStat(stat internal.Stat) {
 
 // ClearStatsCarrier removes the statsCarrier on the global config
 func ClearStatsCarrier() {
+	// if !cfg.statsCarrier.Stopped() {
+	// 	cfg.statsCarrier.Stop()
+	// }
 	cfg.statsCarrier = nil
 }
