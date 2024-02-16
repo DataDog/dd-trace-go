@@ -91,6 +91,7 @@ func (c *Consumer) traceEventsChannel(in chan kafka.Event) chan kafka.Event {
 				setConsumeCheckpoint(c.cfg.dataStreamsEnabled, c.cfg.groupID, msg)
 			} else if offset, ok := evt.(kafka.OffsetsCommitted); ok {
 				commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, offset.Offsets, offset.Error)
+				c.trackHighWatermark(c.cfg.dataStreamsEnabled, offset.Offsets)
 			}
 
 			out <- evt
@@ -176,8 +177,20 @@ func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 		c.prev = c.startSpan(msg)
 	} else if offset, ok := evt.(kafka.OffsetsCommitted); ok {
 		commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, offset.Offsets, offset.Error)
+		c.trackHighWatermark(c.cfg.dataStreamsEnabled, offset.Offsets)
 	}
 	return evt
+}
+
+func (c *Consumer) trackHighWatermark(dataStreamsEnabled bool, offsets []kafka.TopicPartition) {
+	if !dataStreamsEnabled {
+		return
+	}
+	for _, tp := range offsets {
+		if _, high, err := c.Consumer.GetWatermarkOffsets(*tp.Topic, tp.Partition); err == nil {
+			tracer.TrackKafkaHighWatermarkOffset("", *tp.Topic, tp.Partition, high)
+		}
+	}
 }
 
 // ReadMessage polls the consumer for a message. Message will be traced.
@@ -199,6 +212,7 @@ func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
 func (c *Consumer) Commit() ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.Commit()
 	commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, tps, err)
+	c.trackHighWatermark(c.cfg.dataStreamsEnabled, tps)
 	return tps, err
 }
 
@@ -206,6 +220,7 @@ func (c *Consumer) Commit() ([]kafka.TopicPartition, error) {
 func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.CommitMessage(msg)
 	commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, tps, err)
+	c.trackHighWatermark(c.cfg.dataStreamsEnabled, tps)
 	return tps, err
 }
 
@@ -213,6 +228,7 @@ func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, er
 func (c *Consumer) CommitOffsets(offsets []kafka.TopicPartition) ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.CommitOffsets(offsets)
 	commitOffsets(c.cfg.dataStreamsEnabled, c.cfg.groupID, tps, err)
+	c.trackHighWatermark(c.cfg.dataStreamsEnabled, tps)
 	return tps, err
 }
 
@@ -338,8 +354,8 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.libraryVersion, msg)
 	err := p.Producer.Produce(msg, deliveryChan)
-	// with no delivery channel, finish immediately
-	if deliveryChan == nil {
+	// with no delivery channel or enqueue error, finish immediately
+	if err != nil || deliveryChan == nil {
 		span.Finish(tracer.WithError(err))
 	}
 

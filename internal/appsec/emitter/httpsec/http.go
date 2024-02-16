@@ -15,12 +15,11 @@ import (
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
-	"reflect"
 	"strings"
-	"sync"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec/types"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sharedsec"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
@@ -30,84 +29,29 @@ import (
 	"github.com/DataDog/appsec-internal-go/netip"
 )
 
-// Abstract HTTP handler operation definition.
-type (
-	// HandlerOperationArgs is the HTTP handler operation arguments.
-	HandlerOperationArgs struct {
-		// Method is the http method verb of the request, address is `server.request.method`
-		Method string
-		// RequestURI corresponds to the address `server.request.uri.raw`
-		RequestURI string
-		// Headers corresponds to the address `server.request.headers.no_cookies`
-		Headers map[string][]string
-		// Cookies corresponds to the address `server.request.cookies`
-		Cookies map[string][]string
-		// Query corresponds to the address `server.request.query`
-		Query map[string][]string
-		// PathParams corresponds to the address `server.request.path_params`
-		PathParams map[string]string
-		// ClientIP corresponds to the address `http.client_ip`
-		ClientIP netip.Addr
-	}
-
-	// HandlerOperationRes is the HTTP handler operation results.
-	HandlerOperationRes struct {
-		// Status corresponds to the address `server.response.status`.
-		Status  int
-		Headers map[string][]string
-	}
-
-	// SDKBodyOperationArgs is the SDK body operation arguments.
-	SDKBodyOperationArgs struct {
-		// Body corresponds to the address `server.request.body`.
-		Body interface{}
-	}
-
-	// SDKBodyOperationRes is the SDK body operation results.
-	SDKBodyOperationRes struct{}
-
-	// MonitoringError is used to vehicle an HTTP error, usually resurfaced through Appsec SDKs.
-	MonitoringError struct {
-		msg string
-	}
-)
-
-// Error implements the Error interface
-func (e *MonitoringError) Error() string {
-	return e.msg
-}
-
-// NewMonitoringError creates and returns a new HTTP monitoring error, wrapped under
-// sharedesec.MonitoringError
-func NewMonitoringError(msg string) error {
-	return &MonitoringError{
-		msg: msg,
-	}
-}
-
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
 // get preciser error logs.
-func MonitorParsedBody(ctx context.Context, body interface{}) error {
+func MonitorParsedBody(ctx context.Context, body any) error {
 	parent := fromContext(ctx)
 	if parent == nil {
 		log.Error("appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context: the request handler is not being monitored by a middleware function or the provided context is not the expected request context")
 		return nil
 	}
 
-	return ExecuteSDKBodyOperation(parent, SDKBodyOperationArgs{Body: body})
+	return ExecuteSDKBodyOperation(parent, types.SDKBodyOperationArgs{Body: body})
 }
 
 // ExecuteSDKBodyOperation starts and finishes the SDK Body operation by emitting a dyngo start and finish events
 // An error is returned if the body associated to that operation must be blocked
-func ExecuteSDKBodyOperation(parent dyngo.Operation, args SDKBodyOperationArgs) error {
+func ExecuteSDKBodyOperation(parent dyngo.Operation, args types.SDKBodyOperationArgs) error {
 	var err error
-	op := &SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
-	sharedsec.OnErrorData(op, func(e error) {
+	op := &types.SDKBodyOperation{Operation: dyngo.NewOperation(parent)}
+	dyngo.OnData(op, func(e error) {
 		err = e
 	})
 	dyngo.StartOperation(op, args)
-	dyngo.FinishOperation(op, SDKBodyOperationRes{})
+	dyngo.FinishOperation(op, types.SDKBodyOperationRes{})
 	return err
 }
 
@@ -128,10 +72,12 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 		var bypassHandler http.Handler
 		var blocking bool
 		args := MakeHandlerOperationArgs(r, clientIP, pathParams)
-		ctx, op := StartOperation(r.Context(), args, dyngo.NewDataListener(func(a *sharedsec.Action) {
-			bypassHandler = a.HTTP()
-			blocking = a.Blocking()
-		}))
+		ctx, op := StartOperation(r.Context(), args, func(op *types.Operation) {
+			dyngo.OnData(op, func(a *sharedsec.Action) {
+				bypassHandler = a.HTTP()
+				blocking = a.Blocking()
+			})
+		})
 		r = r.WithContext(ctx)
 
 		defer func() {
@@ -170,11 +116,11 @@ func WrapHandler(handler http.Handler, span ddtrace.Span, pathParams map[string]
 }
 
 // MakeHandlerOperationArgs creates the HandlerOperationArgs value.
-func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) HandlerOperationArgs {
+func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams map[string]string) types.HandlerOperationArgs {
 	cookies := makeCookies(r) // TODO(Julio-Guerra): avoid actively parsing the cookies thanks to dynamic instrumentation
 	headers := headersRemoveCookies(r.Header)
 	headers["host"] = []string{r.Host}
-	return HandlerOperationArgs{
+	return types.HandlerOperationArgs{
 		Method:     r.Method,
 		RequestURI: r.RequestURI,
 		Headers:    headers,
@@ -186,12 +132,12 @@ func MakeHandlerOperationArgs(r *http.Request, clientIP netip.Addr, pathParams m
 }
 
 // MakeHandlerOperationRes creates the HandlerOperationRes value.
-func MakeHandlerOperationRes(w http.ResponseWriter) HandlerOperationRes {
+func MakeHandlerOperationRes(w http.ResponseWriter) types.HandlerOperationRes {
 	var status int
 	if mw, ok := w.(interface{ Status() int }); ok {
 		status = mw.Status()
 	}
-	return HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
+	return types.HandlerOperationRes{Status: status, Headers: headersRemoveCookies(w.Header())}
 }
 
 // Remove cookies from the request headers and return the map of headers
@@ -222,119 +168,26 @@ func makeCookies(r *http.Request) map[string][]string {
 	return cookies
 }
 
-// TODO(Julio-Guerra): create a go-generate tool to generate the types, vars and methods below
-
-// Operation type representing an HTTP operation. It must be created with
-// StartOperation() and finished with its Finish().
-type (
-	Operation struct {
-		dyngo.Operation
-		trace.TagsHolder
-		trace.SecurityEventsHolder
-		mu sync.RWMutex
-	}
-
-	// SDKBodyOperation type representing an SDK body
-	SDKBodyOperation struct {
-		dyngo.Operation
-	}
-)
-
 // StartOperation starts an HTTP handler operation, along with the given
 // context and arguments and emits a start event up in the operation stack.
 // The operation is linked to the global root operation since an HTTP operation
 // is always expected to be first in the operation stack.
-func StartOperation(ctx context.Context, args HandlerOperationArgs, listeners ...dyngo.DataListener) (context.Context, *Operation) {
-	op := &Operation{
+func StartOperation(ctx context.Context, args types.HandlerOperationArgs, setup ...func(*types.Operation)) (context.Context, *types.Operation) {
+	op := &types.Operation{
 		Operation:  dyngo.NewOperation(nil),
 		TagsHolder: trace.NewTagsHolder(),
 	}
-	for _, l := range listeners {
-		op.OnData(l)
-	}
 	newCtx := context.WithValue(ctx, listener.ContextKey{}, op)
+	for _, cb := range setup {
+		cb(op)
+	}
 	dyngo.StartOperation(op, args)
 	return newCtx, op
 }
 
 // fromContext returns the Operation object stored in the context, if any
-func fromContext(ctx context.Context) *Operation {
+func fromContext(ctx context.Context) *types.Operation {
 	// Avoid a runtime panic in case of type-assertion error by collecting the 2 return values
-	op, _ := ctx.Value(listener.ContextKey{}).(*Operation)
+	op, _ := ctx.Value(listener.ContextKey{}).(*types.Operation)
 	return op
-}
-
-// Finish the HTTP handler operation, along with the given results and emits a
-// finish event up in the operation stack.
-func (op *Operation) Finish(res HandlerOperationRes) []any {
-	dyngo.FinishOperation(op, res)
-	return op.Events()
-}
-
-// Finish finishes the SDKBody operation and emits a finish event
-func (op *SDKBodyOperation) Finish() {
-	dyngo.FinishOperation(op, SDKBodyOperationRes{})
-}
-
-// HTTP handler operation's start and finish event callback function types.
-type (
-	// OnHandlerOperationStart function type, called when an HTTP handler
-	// operation starts.
-	OnHandlerOperationStart func(*Operation, HandlerOperationArgs)
-	// OnHandlerOperationFinish function type, called when an HTTP handler
-	// operation finishes.
-	OnHandlerOperationFinish func(*Operation, HandlerOperationRes)
-	// OnSDKBodyOperationStart function type, called when an SDK body
-	// operation starts.
-	OnSDKBodyOperationStart func(*SDKBodyOperation, SDKBodyOperationArgs)
-	// OnSDKBodyOperationFinish function type, called when an SDK body
-	// operation finishes.
-	OnSDKBodyOperationFinish func(*SDKBodyOperation, SDKBodyOperationRes)
-)
-
-var (
-	handlerOperationArgsType = reflect.TypeOf((*HandlerOperationArgs)(nil)).Elem()
-	handlerOperationResType  = reflect.TypeOf((*HandlerOperationRes)(nil)).Elem()
-	sdkBodyOperationArgsType = reflect.TypeOf((*SDKBodyOperationArgs)(nil)).Elem()
-	sdkBodyOperationResType  = reflect.TypeOf((*SDKBodyOperationRes)(nil)).Elem()
-)
-
-// ListenedType returns the type a OnHandlerOperationStart event listener
-// listens to, which is the HandlerOperationArgs type.
-func (OnHandlerOperationStart) ListenedType() reflect.Type { return handlerOperationArgsType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Operation), v.(HandlerOperationArgs))
-}
-
-// ListenedType returns the type a OnHandlerOperationFinish event listener
-// listens to, which is the HandlerOperationRes type.
-func (OnHandlerOperationFinish) ListenedType() reflect.Type { return handlerOperationResType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnHandlerOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*Operation), v.(HandlerOperationRes))
-}
-
-// ListenedType returns the type a OnSDKBodyOperationStart event listener
-// listens to, which is the SDKBodyOperationStartArgs type.
-func (OnSDKBodyOperationStart) ListenedType() reflect.Type { return sdkBodyOperationArgsType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion  on v whose type is the one returned by ListenedType().
-func (f OnSDKBodyOperationStart) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*SDKBodyOperation), v.(SDKBodyOperationArgs))
-}
-
-// ListenedType returns the type a OnSDKBodyOperationFinish event listener
-// listens to, which is the SDKBodyOperationRes type.
-func (OnSDKBodyOperationFinish) ListenedType() reflect.Type { return sdkBodyOperationResType }
-
-// Call calls the underlying event listener function by performing the
-// type-assertion on v whose type is the one returned by ListenedType().
-func (f OnSDKBodyOperationFinish) Call(op dyngo.Operation, v interface{}) {
-	f(op.(*SDKBodyOperation), v.(SDKBodyOperationRes))
 }

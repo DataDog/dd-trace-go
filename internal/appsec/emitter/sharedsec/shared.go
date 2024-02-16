@@ -39,9 +39,7 @@ var userIDOperationArgsType = reflect.TypeOf((*UserIDOperationArgs)(nil)).Elem()
 func ExecuteUserIDOperation(parent dyngo.Operation, args UserIDOperationArgs) error {
 	var err error
 	op := &UserIDOperation{Operation: dyngo.NewOperation(parent)}
-	OnErrorData(op, func(e error) {
-		err = e
-	})
+	dyngo.OnData(op, func(e error) { err = e })
 	dyngo.StartOperation(op, args)
 	dyngo.FinishOperation(op, UserIDOperationRes{})
 	return err
@@ -69,12 +67,5 @@ func MonitorUser(ctx context.Context, userID string) error {
 
 }
 
-// OnData is a facilitator that wraps a dyngo.Operation.OnData() call
-func OnData[T any](op dyngo.Operation, f func(T)) {
-	op.OnData(dyngo.NewDataListener(f))
-}
-
-// OnErrorData is a facilitator that wraps a dyngo.Operation.OnData() call with an error type constraint
-func OnErrorData[T error](op dyngo.Operation, f func(T)) {
-	op.OnData(dyngo.NewDataListener(f))
-}
+func (UserIDOperationArgs) IsArgOf(*UserIDOperation)   {}
+func (UserIDOperationRes) IsResultOf(*UserIDOperation) {}

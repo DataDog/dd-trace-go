@@ -30,6 +30,7 @@ import (
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 
@@ -193,8 +194,7 @@ func TestTracerStart(t *testing.T) {
 	})
 
 	t.Run("tracing_not_enabled", func(t *testing.T) {
-		os.Setenv("DD_TRACE_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_ENABLED")
+		t.Setenv("DD_TRACE_ENABLED", "false")
 		Start()
 		defer Stop()
 		if _, ok := internal.GetGlobalTracer().(*tracer); ok {
@@ -428,8 +428,7 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_dropped_with_single_spans:stats_enabled", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Stats are enabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop := startTestTracer(t)
@@ -458,8 +457,7 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_dropped_with_single_spans:stats_disabled", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Stats are disabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop := startTestTracer(t)
@@ -486,8 +484,7 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_dropped_with_single_span_rules", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "match","name":"nothing", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "match","name":"nothing", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Rules are available, but match nothing. Trace sample rate equals 0.
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop := startTestTracer(t)
@@ -514,8 +511,7 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_kept_with_single_spans", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*", "sample_rate": 1.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*", "sample_rate": 1.0}]`)
 		// Rules are available. Trace sample rate equals 1. Span sample rate equals 1.
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop := startTestTracer(t)
@@ -539,11 +535,9 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("single_spans_with_max_per_second:rate_1.0", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES",
+		t.Setenv("DD_SPAN_SAMPLING_RULES",
 			`[{"service": "test_*","name":"name_*", "sample_rate": 1.0,"max_per_second":50}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		tracer, _, _, stop := startTestTracer(t)
 		// Don't allow the rate limiter to reset while the test is running.
 		current := time.Now()
@@ -583,10 +577,8 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_*", "sample_rate": 1.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_*", "sample_rate": 1.0}]`)
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -619,10 +611,8 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_0.5", func(t *testing.T) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_2", "sample_rate": 0.5}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
-		os.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		defer os.Unsetenv("DD_TRACE_SAMPLE_RATE")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_2", "sample_rate": 0.5}]`)
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
@@ -667,8 +657,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 
 	t.Run("env", func(t *testing.T) {
-		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
-		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
@@ -677,8 +666,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	})
 
 	t.Run("overrideEnv", func(t *testing.T) {
-		os.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		defer os.Unsetenv("DD_RUNTIME_METRICS_ENABLED")
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		tp := new(log.RecordLogger)
 		tp.Ignore("appsec: ", telemetry.LogPrefix)
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
@@ -762,8 +750,7 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer internal.SetGlobalTracer(&internal.NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -983,6 +970,28 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	assert.Equal("changed!", childContext.baggage["key"])
 }
 
+func TestTracerInjectConcurrency(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+	span, _ := StartSpanFromContext(context.Background(), "main")
+	defer span.Finish()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+
+			traceContext := map[string]string{}
+			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
+		}(i)
+	}
+
+	wg.Wait()
+}
+
 func TestTracerSpanTags(t *testing.T) {
 	tracer := newTracer()
 	defer tracer.Stop()
@@ -1091,10 +1100,9 @@ func TestNewSpanChild(t *testing.T) {
 }
 
 func testNewSpanChild(t *testing.T, is128 bool) {
-	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(*testing.T) {
+	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(t *testing.T) {
 		if !is128 {
-			os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-			defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		}
 		assert := assert.New(t)
 
@@ -1667,45 +1675,54 @@ func TestTracerFlush(t *testing.T) {
 func TestTracerReportsHostname(t *testing.T) {
 	const hostname = "hostname-test"
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
-		os.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
-		defer os.Unsetenv("DD_TRACE_REPORT_HOSTNAME")
+	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
 
-		tracer, _, _, stop := startTestTracer(t)
-		defer stop()
+			tracer, _, _, stop := startTestTracer(t)
+			defer stop()
 
-		root := tracer.StartSpan("root").(*span)
-		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root").(*span)
+			child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		name, ok := root.Meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
+			name, ok := root.Meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
 
-		name, ok = child.Meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
-	})
+			name, ok = child.Meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
+		})
+	}
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/false", false)
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
-		tracer, _, _, stop := startTestTracer(t)
-		defer stop()
+	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			tracer, _, _, stop := startTestTracer(t)
+			defer stop()
 
-		root := tracer.StartSpan("root").(*span)
-		child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root").(*span)
+			child := tracer.StartSpan("child", ChildOf(root.Context())).(*span)
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		_, ok := root.Meta[keyHostname]
-		assert.False(ok)
-		_, ok = child.Meta[keyHostname]
-		assert.False(ok)
-	})
+			_, ok := root.Meta[keyHostname]
+			assert.False(ok)
+			_, ok = child.Meta[keyHostname]
+			assert.False(ok)
+		})
+	}
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/false", false)
 
 	t.Run("WithHostname", func(t *testing.T) {
 		tracer, _, _, stop := startTestTracer(t, WithHostname(hostname))
@@ -1728,8 +1745,7 @@ func TestTracerReportsHostname(t *testing.T) {
 	})
 
 	t.Run("DD_TRACE_SOURCE_HOSTNAME/set", func(t *testing.T) {
-		os.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
-		defer os.Unsetenv("DD_TRACE_SOURCE_HOSTNAME")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-test")
 
 		tracer, _, _, stop := startTestTracer(t)
 		defer stop()
@@ -2272,7 +2288,7 @@ func TestFlush(t *testing.T) {
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
 
-	ts := &testStatsdClient{}
+	ts := &statsdtest.TestStatsdClient{}
 	tr.statsd = ts
 
 	transport := newDummyTransport()
@@ -2307,11 +2323,11 @@ loop:
 	c.add(as)
 
 	assert.Len(t, tw.Flushed(), 0)
-	assert.Zero(t, ts.flushed)
+	assert.Zero(t, ts.Flushed())
 	assert.Len(t, transport.Stats(), 0)
 	tr.flushSync()
 	assert.Len(t, tw.Flushed(), 1)
-	assert.Equal(t, 1, ts.flushed)
+	assert.Equal(t, 1, ts.Flushed())
 	assert.Len(t, transport.Stats(), 1)
 }
 
@@ -2468,8 +2484,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 	})
 
 	b.Run("with-rules/match-half", func(b *testing.B) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
 		tracer.config.agent.DropP0s = true
@@ -2494,8 +2509,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 	})
 
 	b.Run("with-rules/match-all", func(b *testing.B) {
-		os.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		defer os.Unsetenv("DD_SPAN_SAMPLING_RULES")
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		tracer, _, _, stop := startTestTracer(b)
 		defer stop()
 		tracer.config.agent.DropP0s = true

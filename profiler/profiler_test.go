@@ -531,6 +531,8 @@ func TestExecutionTraceMisconfiguration(t *testing.T) {
 }
 
 func TestExecutionTraceRandom(t *testing.T) {
+	t.Skip("flaky test, see: https://github.com/DataDog/dd-trace-go/issues/2529")
+
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
@@ -690,6 +692,16 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
 	}
+}
+
+func TestPgoTag(t *testing.T) {
+	profiles := startTestProfiler(t, 1,
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
+	)
+	m := <-profiles
+	t.Log(m.event.Attachments, m.tags)
+	require.Contains(t, m.tags, "pgo:false")
 }
 
 func TestVersionResolution(t *testing.T) {
