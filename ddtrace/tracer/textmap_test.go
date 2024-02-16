@@ -102,7 +102,11 @@ func TestTextMapPropagatorErrors(t *testing.T) {
 	propagator := NewPropagator(nil)
 	assert := assert.New(t)
 
-	err := propagator.Inject(internal.SpanContextV2Adapter{}, 2)
+	Start()
+	defer Stop()
+
+	span := StartSpan("web.request")
+	err := propagator.Inject(span.Context(), 2)
 	assert.Equal(ErrInvalidCarrier, err)
 	err = propagator.Inject(internal.NoopSpanContext{}, TextMapCarrier(map[string]string{}))
 	assert.Equal(ErrInvalidSpanContext, err)
@@ -357,9 +361,10 @@ func TestPropagatingTagsConcurrency(_ *testing.T) {
 
 func TestMalformedTID(t *testing.T) {
 	tracer := newTracer()
-	internal.SetGlobalTracer(tracer)
-	defer tracer.Stop()
-	defer internal.SetGlobalTracer(&internal.NoopTracer{})
+	defer func() {
+		tracer.Stop()
+		internal.SetGlobalTracer(internal.NoopTracerV2)
+	}()
 
 	t.Run("datadog, short tid", func(t *testing.T) {
 		headers := TextMapCarrier(map[string]string{

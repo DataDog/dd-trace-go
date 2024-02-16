@@ -641,6 +641,8 @@ github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216113425-a633e06f5cc2 h1:18FbUQMs
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216113425-a633e06f5cc2/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216133339-c464ae920db1 h1:ASvMIAK0JQf1c5RBXPk56yi49r7tUTznkjp37vGUqrM=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216133339-c464ae920db1/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216140524-914f0c30cab1 h1:EAL7x/fqiHzbTGELq1iiadwQu+r7PQ01ipXj1d7k6Nc=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216140524-914f0c30cab1/go.mod h1:Xh0wvissbVfhJH5piMwhufBX6Os+EcjSilgnT9vRBmg=
 github.com/DataDog/go-libddwaf/v2 v2.3.1 h1:bujaT5+KnLDFQqVA5ilvVvW+evUSHow9FrTHRgUwN4A=
 github.com/DataDog/go-libddwaf/v2 v2.3.1/go.mod h1:gsCdoijYQfj8ce/T2bEDNPZFIYnmHluAgVDpuQOWMZE=
 github.com/DataDog/go-tuf v1.0.2-0.5.2 h1:EeZr937eKAWPxJ26IykAdWA4A0jQXJgkhUjqEI/w7+I=

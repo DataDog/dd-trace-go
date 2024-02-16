@@ -8,6 +8,7 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -136,7 +137,19 @@ func (sa SpanV2Adapter) SetTag(key string, value interface{}) {
 
 // Root implements appsec.rooter.
 func (sa SpanV2Adapter) Root() ddtrace.Span {
-	return SpanV2Adapter{Span: sa.Span.Root()}
+	if sa.Span == nil {
+		return nil
+	}
+	r := sa.Span.Root()
+	if r == nil {
+		return nil
+	}
+	return SpanV2Adapter{Span: r}
+}
+
+// Format implements fmt.Formatter.
+func (sa SpanV2Adapter) Format(f fmt.State, c rune) {
+	sa.Span.Format(f, c)
 }
 
 type SpanContextV2Adapter struct {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
@@ -129,15 +130,15 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 
 	err := errors.New("test error")
 	span := newBasicSpan("web.request")
-	span.Finish(WithError(err), StackFrames(2, 1))
+	span.Finish(WithError(err), StackFrames(3, 1))
 	sm := span.(internal.SpanV2Adapter).Span.AsMap()
 
 	assert.Equal(int32(1), sm[ext.MapSpanError].(int32))
 	assert.Equal("test error", sm[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", sm[ext.ErrorType])
 	assert.Contains(sm[ext.ErrorStack], "tracer.TestSpanFinishWithErrorStackFrames")
-	assert.Contains(sm[ext.ErrorStack], "tracer.(*span).Finish")
-	assert.Equal(strings.Count(sm[ext.ErrorStack].(string), "\n\t"), 2)
+	assert.Contains(sm[ext.ErrorStack], "tracer.(*Span).Finish")
+	assert.Equal(strings.Count(sm[ext.ErrorStack].(string), "\n\t"), 3)
 }
 
 // nilStringer is used to test nil detection when setting tags.
@@ -175,26 +176,27 @@ func TestSpanSetTag(t *testing.T) {
 
 	span := newBasicSpan("web.request")
 	tC := []struct {
-		key   string
-		value any
-		want  any
+		key    string
+		value  any
+		want   any
+		altKey string
 	}{
-		{"component", "tracer", "tracer"},
-		{"tagInt", 1234, "1234"},
-		{"tagStruct", struct{ A, B int }{1, 2}, "{1 2}"},
-		{ext.Error, true, int32(1)},
-		{ext.Error, false, int32(0)},
-		{ext.Error, nil, int32(0)},
-		{ext.Error, "something else", int32(1)},
-		{ext.SamplingPriority, 2, float64(2)},
-		{ext.AnalyticsEvent, true, 1.0},
-		{ext.AnalyticsEvent, false, 0.0},
-		{ext.ManualDrop, true, -1.0},
-		{ext.ManualKeep, true, 2.0},
-		{"some.bool", true, "true"},
-		{"some.other.bool", false, "false"},
-		{"time", (*time.Time)(nil), "<nil>"},
-		{"nilStringer", (*nilStringer)(nil), "<nil>"},
+		{key: "component", value: "tracer", want: "tracer"},
+		{key: "tagInt", value: 1234, want: float64(1234)},
+		{key: "tagStruct", value: struct{ A, B int }{1, 2}, want: "{1 2}"},
+		{key: ext.Error, value: true, want: int32(1), altKey: ext.MapSpanError},
+		{key: ext.Error, value: false, want: int32(0), altKey: ext.MapSpanError},
+		{key: ext.Error, value: nil, want: int32(0), altKey: ext.MapSpanError},
+		{key: ext.Error, value: "something else", want: int32(1), altKey: ext.MapSpanError},
+		{key: ext.SamplingPriority, value: 2, want: float64(2), altKey: keySamplingPriority},
+		{key: ext.AnalyticsEvent, value: true, want: 1.0},
+		{key: ext.AnalyticsEvent, value: false, want: 0.0},
+		{key: ext.ManualDrop, value: true, want: -1.0},
+		{key: ext.ManualKeep, value: true, want: 2.0},
+		{key: "some.bool", value: true, want: "true"},
+		{key: "some.other.bool", value: false, want: "false"},
+		{key: "time", value: (*time.Time)(nil), want: "<nil>"},
+		{key: "nilStringer", value: (*nilStringer)(nil), want: "<nil>"},
 	}
 	for _, tc := range tC {
 		tc := tc
@@ -207,6 +209,10 @@ func TestSpanSetTag(t *testing.T) {
 				k = ext.EventSampleRate
 			case ext.ManualDrop, ext.ManualKeep:
 				k = keySamplingPriority
+			default:
+				if tc.altKey != "" {
+					k = tc.altKey
+				}
 			}
 			assert.Equal(tc.want, sm[k])
 		})
@@ -425,7 +431,10 @@ func TestRootSpanAccessor(t *testing.T) {
 	defer stop()
 
 	t.Run("nil-span", func(t *testing.T) {
-		s := tracer.StartSpan("root").(internal.SpanV2Adapter)
+		s := internal.SpanV2Adapter{Span: nil}
+		require.Nil(t, s.Root())
+
+		s = internal.SpanV2Adapter{Span: &v2.Span{}}
 		require.Nil(t, s.Root())
 	})
 

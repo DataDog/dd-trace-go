@@ -25,7 +25,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
@@ -949,9 +948,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc ddtrace.Tracer, sto
 	}, opts...)
 	tracer := newTracer(o...)
 	return tracer, func() {
+		internal.SetGlobalTracer(internal.NoopTracerV2)
 		tracer.Stop()
-		// clear any service name that was set: we want the state to be the same as startup
-		globalconfig.SetServiceName("")
 	}
 }
 

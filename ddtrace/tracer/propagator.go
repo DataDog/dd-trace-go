@@ -55,7 +55,10 @@ func (pa *propagatorV2Adapter) Extract(carrier interface{}) (ddtrace.SpanContext
 
 // Inject implements Propagator.
 func (pa *propagatorV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{}) error {
-	sca := context.(internal.SpanContextV2Adapter)
+	sca, ok := context.(internal.SpanContextV2Adapter)
+	if !ok {
+		return internal.ErrInvalidSpanContext
+	}
 	return pa.propagator.Inject(sca.Ctx, carrier)
 }
 

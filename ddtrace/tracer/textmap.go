@@ -97,6 +97,9 @@ const (
 //  3. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
 //  4. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
+	if cfg == nil {
+		cfg = new(PropagatorConfig)
+	}
 	c := &v2.PropagatorConfig{
 		BaggagePrefix:  cfg.BaggagePrefix,
 		TraceHeader:    cfg.TraceHeader,

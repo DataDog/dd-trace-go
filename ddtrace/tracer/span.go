@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
-
 package tracer
 
 const (

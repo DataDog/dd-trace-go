@@ -22,33 +22,7 @@ func GetGlobalTracer() ddtrace.Tracer {
 	return TracerV2Adapter{Tracer: t}
 }
 
-// Testing is set to true when the mock tracer is active. It usually signifies that we are in a test
-// environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.
-var Testing = false
-
-var _ ddtrace.Tracer = (*NoopTracer)(nil)
-
-// NoopTracer is an implementation of ddtrace.Tracer that is a no-op.
-type NoopTracer struct{}
-
-// StartSpan implements ddtrace.Tracer.
-func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
-	return NoopSpan{}
-}
-
-// SetServiceInfo implements ddtrace.Tracer.
-func (NoopTracer) SetServiceInfo(_, _, _ string) {}
-
-// Extract implements ddtrace.Tracer.
-func (NoopTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
-	return NoopSpanContext{}, nil
-}
-
-// Inject implements ddtrace.Tracer.
-func (NoopTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return nil }
-
-// Stop implements ddtrace.Tracer.
-func (NoopTracer) Stop() {}
+var NoopTracerV2 = TracerV2Adapter{Tracer: v2.NoopTracer{}}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 
@@ -71,7 +45,7 @@ func (NoopSpan) SetBaggageItem(_, _ string) {}
 func (NoopSpan) Finish(_ ...ddtrace.FinishOption) {}
 
 // Tracer implements ddtrace.Span.
-func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracer{} }
+func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracerV2 }
 
 // Context implements ddtrace.Span.
 func (NoopSpan) Context() ddtrace.SpanContext { return NoopSpanContext{} }

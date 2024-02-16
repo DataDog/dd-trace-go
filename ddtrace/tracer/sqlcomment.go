@@ -61,23 +61,28 @@ func (c *SQLCommentCarrier) Inject(spanCtx ddtrace.SpanContext) error {
 	if c.v2carrier == nil {
 		c.v2carrier = &v2.SQLCommentCarrier{}
 	}
-	if c.Query != c.v2carrier.Query {
-		c.Query = c.v2carrier.Query
+	if c.v2carrier.Query != c.Query {
+		c.v2carrier.Query = c.Query
 	}
-	mode := DBMPropagationMode(c.v2carrier.Mode)
-	if c.Mode != mode {
-		c.Mode = mode
+	mode := v2.DBMPropagationMode(c.Mode)
+	if c.v2carrier.Mode != mode {
+		c.v2carrier.Mode = mode
 	}
-	if c.DBServiceName != c.v2carrier.DBServiceName {
-		c.DBServiceName = c.v2carrier.DBServiceName
+	if c.v2carrier.DBServiceName != c.DBServiceName {
+		c.v2carrier.DBServiceName = c.DBServiceName
 	}
-	if c.SpanID != c.v2carrier.SpanID {
-		c.SpanID = c.v2carrier.SpanID
+	if c.v2carrier.SpanID != c.SpanID {
+		c.v2carrier.SpanID = c.SpanID
 	}
-	ctx := spanCtx.(internal.SpanContextV2Adapter).Ctx
+	var ctx *v2.SpanContext
+	if spanCtx != nil {
+		ctx = spanCtx.(internal.SpanContextV2Adapter).Ctx
+	}
 	if err := c.v2carrier.Inject(ctx); err != nil {
 		return err
 	}
+	c.Query = c.v2carrier.Query
+	c.SpanID = c.v2carrier.SpanID
 	return nil
 }
 
@@ -93,5 +98,5 @@ func (c *SQLCommentCarrier) Extract() (ddtrace.SpanContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &internal.SpanContextV2Adapter{Ctx: ctx}, nil
+	return internal.SpanContextV2Adapter{Ctx: ctx}, nil
 }

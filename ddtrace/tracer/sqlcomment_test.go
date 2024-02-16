@@ -15,7 +15,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,6 +52,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:               "no-trace",
 			query:              "SELECT * from FOO",
+			injectSpan:         false,
 			mode:               DBMPropagationModeFull,
 			expectedQuery:      "/*dddbs='whiskey-db',ddps='whiskey-service%20%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D',traceparent='00-0000000000000000<span_id>-<span_id>-00'*/ SELECT * from FOO",
 			expectedSpanIDGen:  true,
@@ -99,14 +99,13 @@ func TestSQLCommentCarrier(t *testing.T) {
 		},
 	}
 
+	// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
+	// as per the sqlcommenter spec
+	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	defer tracer.Stop()
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
-			// as per the sqlcommenter spec
-			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
-			defer globalconfig.SetServiceName("")
-			defer tracer.Stop()
-
 			var spanCtx ddtrace.SpanContext
 			var traceID uint64
 			if tc.injectSpan {
@@ -116,6 +115,9 @@ func TestSQLCommentCarrier(t *testing.T) {
 				spanCtx = root.Context()
 			}
 
+			if tc.name == "no-trace" {
+				t.Log()
+			}
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db"}
 			err := carrier.Inject(spanCtx)
 			require.NoError(t, err)

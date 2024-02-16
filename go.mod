@@ -8,7 +8,7 @@ require (
 	github.com/DataDog/appsec-internal-go v1.4.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.48.1
 	github.com/DataDog/datadog-go/v5 v5.3.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216133339-c464ae920db1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216140524-914f0c30cab1
 	github.com/DataDog/go-libddwaf/v2 v2.3.1
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.3
