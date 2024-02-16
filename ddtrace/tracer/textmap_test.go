@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -188,8 +187,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
 			t.Setenv(headerPropagationStyle, tc.propagationStyle)
 			if tc.onlyExtractFirst {
-				os.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
-				defer os.Unsetenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST")
+				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 			}
 			tracer := newTracer()
 			assert := assert.New(t)
@@ -442,7 +440,7 @@ func TestTextMapPropagator(t *testing.T) {
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		}, {
 			name:               "Tracestate-Datadog",
-			injectStyle:        "tracecontext,datadog",
+			injectStyle:        "datadog,tracecontext",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=kept"},
 			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
 		},
@@ -517,8 +515,7 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		os.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
-		defer os.Unsetenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED")
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
@@ -1574,7 +1571,7 @@ func TestEnvVars(t *testing.T) {
 	})
 
 	t.Run("datadog extract / w3c,datadog inject", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleInject, "tracecontext,datadog")
+		t.Setenv(headerPropagationStyleInject, "datadog,tracecontext")
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		var tests = []struct {
 			outHeaders TextMapCarrier

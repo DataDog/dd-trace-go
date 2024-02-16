@@ -15,12 +15,14 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+      - '**/go.mod'
   merge_group: # on merge groups touching appsec files
     paths:
       - '.github/workflows/appsec.yml'
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+      - '**/go.mod'
   push:
     branches: release-v*
 env:
@@ -30,7 +32,7 @@ jobs:
   native:
     strategy:
       matrix:
-        runs-on: [ macos-13, macos-12, macos-11, ubuntu-22.04, ubuntu-20.04 ]
+        runs-on: [ macos-14, macos-13, macos-12, ubuntu-22.04, ubuntu-20.04 ]
         go-version: [ "1.21", "1.20", "1.19" ]
         cgo_enabled: [ "0", "1" ] # test it compiles with and without cgo
         appsec_enabled: # test it compiles with and without appsec enabled
@@ -44,21 +46,15 @@ jobs:
             cgocheck:  # 1.21 deprecates the GODEBUG=cgocheck=2 value, replacing it with GOEXPERIMENT=cgocheck2
               GOEXPERIMENT=cgocheck2
       fail-fast: false
+    name: native ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Go modules cache
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          restore-keys: go-pkg-mod-
 
       - name: go test
         shell: bash
@@ -74,7 +70,7 @@ jobs:
           files: ${{ env.JUNIT_REPORT }}*.xml
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
-  # Tests cases were appsec end up being disable
+  # Tests cases were appsec end up being disabled
   waf-disabled:
     strategy:
       fail-fast: false
@@ -87,19 +83,13 @@ jobs:
         include:
           - runs-on: windows-latest
             go-args: ""
+    name: disabled ${{ toJSON(matrix) }}
     runs-on: ${{ matrix.runs-on }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3 # TODO: rely on v4 which now provides github caching by default
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: stable
-
-      - name: Go modules cache
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
-          restore-keys: go-pkg-mod-
 
       - name: go test
         shell: bash
@@ -118,6 +108,7 @@ jobs:
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
+    name: golang-containers ${{ toJSON(matrix) }}
     runs-on: ubuntu-latest
     container:
       image: golang:${{ matrix.go-version }}-${{ matrix.distribution }}
@@ -138,7 +129,7 @@ jobs:
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       # Install gcc and the libc headers on alpine images
@@ -169,6 +160,7 @@ jobs:
 
   linux-arm64:
     runs-on: ubuntu-latest
+    name: linux/arm64 ${{ toJSON(matrix) }}
     strategy:
       matrix:
         cgo_enabled: # test it compiles with and without the cgo
@@ -179,17 +171,17 @@ jobs:
           - false
       fail-fast: false
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Go modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/go/pkg/mod
           key: go-pkg-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
       - run: |

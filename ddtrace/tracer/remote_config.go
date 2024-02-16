@@ -28,6 +28,7 @@ type target struct {
 }
 
 type libConfig struct {
+	Enabled      *bool       `json:"tracing_enabled,omitempty"`
 	SamplingRate *float64    `json:"tracing_sampling_rate,omitempty"`
 	HeaderTags   *headerTags `json:"tracing_header_tags,omitempty"`
 	Tags         *tags       `json:"tracing_tags,omitempty"`
@@ -110,6 +111,9 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
+		if !t.config.enabled.current {
+			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+		}
 		if len(telemConfigs) > 0 {
 			log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 			telemetry.GlobalClient.ConfigChange(telemConfigs)
@@ -150,6 +154,15 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		if updated {
 			telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 		}
+		if c.LibConfig.Enabled != nil {
+			if t.config.enabled.current == true && *c.LibConfig.Enabled == false {
+				log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
+				t.config.enabled.handleRC(c.LibConfig.Enabled)
+				telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
+			} else if t.config.enabled.current == false && *c.LibConfig.Enabled == true {
+				log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+			}
+		}
 	}
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
@@ -171,5 +184,6 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingSampleRate,
 		remoteconfig.APMTracingHTTPHeaderTags,
 		remoteconfig.APMTracingCustomTags,
+		remoteconfig.APMTracingEnabled,
 	)
 }

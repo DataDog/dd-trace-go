@@ -106,7 +106,8 @@ func (h *agentTraceWriter) flush() {
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
 			size, count = p.size(), p.itemCount()
 			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
-			rc, err := h.config.transport.send(p)
+			var rc io.ReadCloser
+			rc, err = h.config.transport.send(p)
 			if err == nil {
 				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
