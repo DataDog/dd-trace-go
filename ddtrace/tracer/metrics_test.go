@@ -87,24 +87,3 @@ func TestTracerMetrics(t *testing.T) {
 	assert.Equal(1, calls["datadog.tracer.stopped"])
 	assert.True(tg.Closed())
 }
-
-func TestContribStats(t *testing.T) {
-	// t.Run("gauge", func(t *testing.T) {
-	// 	assert := assert.New(t)
-	// 	var tg testStatsdClient
-	// 	trc := newUnstartedTracer(withStatsdClient(&tg))
-	// 	defer trc.statsd.Close()
-	// 	s := globalinternal.NewGauge("gauge", float64(1), nil, 1)
-	// 	tick := time.NewTicker(time.Millisecond)
-	// 	defer tick.Stop()
-	// 	trc.wg.Add(1)
-	// 	go func() {
-	// 		defer trc.wg.Done()
-	// 		for i := 0; i < 10; i++ {
-	// 			trc.statsCarrier.Add(s)
-	// 		}
-	// 		calls := tg.CallsByName()
-	// 		assert.Equal(10, calls["gauge"])
-	// 	}()
-	// })
-}
