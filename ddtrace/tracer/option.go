@@ -1209,6 +1209,9 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 		if c.Context == nil {
 			c.Context = cfg.Context
 		}
+		if c.SpanLinks == nil {
+			c.SpanLinks = cfg.SpanLinks
+		}
 		if c.StartTime.IsZero() {
 			c.StartTime = cfg.StartTime
 		}
