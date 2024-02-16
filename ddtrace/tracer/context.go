@@ -9,7 +9,6 @@ import (
 	"context"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -34,22 +33,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, it will only be used as the parent if there is no span found in `ctx`.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (Span, context.Context) {
-	ssc := new(ddtrace.StartSpanConfig)
-	for _, o := range opts {
-		o(ssc)
-	}
-	var parent *v2.SpanContext
-	if ssc.Parent != nil {
-		parent = internal.ResolveV2SpanContext(ssc.Parent)
-	}
-	cfg := &v2.StartSpanConfig{
-		Context:   ssc.Context,
-		Parent:    parent,
-		SpanID:    ssc.SpanID,
-		SpanLinks: ssc.SpanLinks,
-		StartTime: ssc.StartTime,
-		Tags:      ssc.Tags,
-	}
+	cfg := internal.BuildStartSpanConfigV2(opts...)
 	span, ctx := v2.StartSpanFromContext(ctx, operationName, v2.WithStartSpanConfig(cfg))
 	return internal.SpanV2Adapter{Span: span}, ctx
 }

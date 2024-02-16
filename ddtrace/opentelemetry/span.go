@@ -12,8 +12,11 @@ import (
 	"strings"
 	"sync"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
+	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
@@ -88,11 +91,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 
 // EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
 func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
-	s, ok := sp.(*span)
-	if !ok || !s.IsRecording() {
-		return
-	}
-	s.finishOpts = options
+	cfg := internal.BuildFinishConfigV2(options...)
+	v2.EndOptions(sp, v2tracer.WithFinishConfig(cfg))
 }
 
 // SpanContext returns implementation of the oteltrace.SpanContext.

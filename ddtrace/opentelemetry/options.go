@@ -8,6 +8,9 @@ package opentelemetry
 import (
 	"context"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
+	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -18,10 +21,8 @@ var startOptsKey = contextOptionsKey{}
 // ContextWithStartOptions returns a copy of the given context which includes the span s.
 // This can be used to pass a context with Datadog start options to the Start function on the OTel tracer to propagate the options.
 func ContextWithStartOptions(ctx context.Context, opts ...tracer.StartSpanOption) context.Context {
-	if len(opts) == 0 {
-		return ctx
-	}
-	return context.WithValue(ctx, startOptsKey, opts)
+	cfg := internal.BuildStartSpanConfigV2(opts...)
+	return v2.ContextWithStartOptions(ctx, v2tracer.WithStartSpanConfig(cfg))
 }
 
 // spanOptionsFromContext returns the span start configuration options contained in the given context.

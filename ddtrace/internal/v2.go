@@ -43,15 +43,21 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
+	cfg := BuildStartSpanConfigV2(opts...)
+	s := ta.Tracer.StartSpan(operationName, v2.WithStartSpanConfig(cfg))
+	return SpanV2Adapter{Span: s}
+}
+
+func BuildStartSpanConfigV2(opts ...ddtrace.StartSpanOption) *v2.StartSpanConfig {
 	ssc := new(ddtrace.StartSpanConfig)
 	for _, o := range opts {
 		o(ssc)
 	}
 	var parent *v2.SpanContext
 	if ssc.Parent != nil {
-		parent = ResolveV2SpanContext(ssc.Parent)
+		parent = resolveSpantContextV2(ssc.Parent)
 	}
-	cfg := &v2.StartSpanConfig{
+	return &v2.StartSpanConfig{
 		Context:   ssc.Context,
 		Parent:    parent,
 		SpanID:    ssc.SpanID,
@@ -59,11 +65,9 @@ func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartS
 		StartTime: ssc.StartTime,
 		Tags:      ssc.Tags,
 	}
-	s := ta.Tracer.StartSpan(operationName, v2.WithStartSpanConfig(cfg))
-	return SpanV2Adapter{Span: s}
 }
 
-func ResolveV2SpanContext(ctx ddtrace.SpanContext) *v2.SpanContext {
+func resolveSpantContextV2(ctx ddtrace.SpanContext) *v2.SpanContext {
 	if parent, ok := ctx.(SpanContextV2Adapter); ok {
 		return parent.Ctx
 	}
@@ -97,18 +101,22 @@ func (sa SpanV2Adapter) Context() ddtrace.SpanContext {
 
 // Finish implements ddtrace.Span.
 func (sa SpanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
+	cfg := BuildFinishConfigV2(opts...)
+	sa.Span.Finish(v2.WithFinishConfig(cfg))
+}
+
+func BuildFinishConfigV2(opts ...ddtrace.FinishOption) *v2.FinishConfig {
 	fc := new(ddtrace.FinishConfig)
 	for _, o := range opts {
 		o(fc)
 	}
-	cfg := &v2.FinishConfig{
+	return &v2.FinishConfig{
 		Error:           fc.Error,
 		FinishTime:      fc.FinishTime,
 		NoDebugStack:    fc.NoDebugStack,
 		SkipStackFrames: fc.SkipStackFrames,
 		StackFrames:     fc.StackFrames,
 	}
-	sa.Span.Finish(v2.WithFinishConfig(cfg))
 }
 
 // SetBaggageItem implements ddtrace.Span.
