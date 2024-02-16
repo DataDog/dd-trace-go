@@ -7,6 +7,7 @@ package opentelemetry
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
@@ -66,6 +67,10 @@ func TestSpanWithNewRoot(t *testing.T) {
 	var parentBytes oteltrace.TraceID
 	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
 	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
+}
+
+func uint64ToByte(n uint64, b []byte) {
+	binary.BigEndian.PutUint64(b, n)
 }
 
 func TestSpanWithoutNewRoot(t *testing.T) {
