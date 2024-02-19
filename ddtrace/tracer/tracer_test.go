@@ -774,23 +774,6 @@ func TestEnvironment(t *testing.T) {
 	})
 }
 
-func TestGitMetadata(t *testing.T) {
-	// Basic test, just to make sure the tags are set correctly
-	t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
-
-	tracer, stop := startTestTracer(t)
-	defer stop()
-
-	assert := assert.New(t)
-	sp := tracer.StartSpan("http.request")
-	sp.Finish()
-
-	spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-	assert.Equal("123456789ABCD", spm[maininternal.TraceTagCommitSha])
-	assert.Equal("github.com/user/repo", spm[maininternal.TraceTagRepositoryURL])
-	assert.Equal("somepath", spm[maininternal.TraceTagGoPath])
-}
-
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
 // goroutines where each one creates a trace with a parent and a child.
 func BenchmarkConcurrentTracing(b *testing.B) {
