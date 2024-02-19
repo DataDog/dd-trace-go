@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
@@ -52,6 +53,7 @@ func UseLogger(l Logger) (undo func()) {
 	defer mu.Unlock()
 	old := logger
 	logger = l
+	v2.UseLogger(l)
 	return func() {
 		logger = old
 	}
