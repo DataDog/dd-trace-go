@@ -22,3 +22,5 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 	return v2.UnaryClientInterceptor(opts...)
 }
+
+type FixtureRequest = v2.FixtureRequest
