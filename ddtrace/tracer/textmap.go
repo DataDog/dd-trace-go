@@ -101,11 +101,12 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg = new(PropagatorConfig)
 	}
 	c := &v2.PropagatorConfig{
-		BaggagePrefix:  cfg.BaggagePrefix,
-		TraceHeader:    cfg.TraceHeader,
-		ParentHeader:   cfg.ParentHeader,
-		PriorityHeader: cfg.PriorityHeader,
-		B3:             cfg.B3,
+		B3:               cfg.B3,
+		BaggagePrefix:    cfg.BaggagePrefix,
+		ParentHeader:     cfg.ParentHeader,
+		PriorityHeader:   cfg.PriorityHeader,
+		MaxTagsHeaderLen: cfg.MaxTagsHeaderLen,
+		TraceHeader:      cfg.TraceHeader,
 	}
 	wrapped := make([]v2.Propagator, len(propagators))
 	for i, p := range propagators {

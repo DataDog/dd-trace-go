@@ -31,7 +31,7 @@ func (pa *propagatorV1Adapter) Extract(carrier interface{}) (*v2.SpanContext, er
 	if err != nil {
 		return nil, err
 	}
-	return v2.FromGenericCtx(&internal.SpanContextV1Adapter{Ctx: ctx}), nil
+	return ctx.(internal.SpanContextV2Adapter).Ctx, nil
 }
 
 // Inject implements tracer.Propagator.

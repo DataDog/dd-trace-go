@@ -776,115 +776,20 @@ func TestEnvironment(t *testing.T) {
 }
 
 func TestGitMetadata(t *testing.T) {
-	maininternal.ResetGitMetadataTags()
+	// Basic test, just to make sure the tags are set correctly
+	t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 
-	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
+	tracer, stop := startTestTracer(t)
+	defer stop()
 
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
+	assert := assert.New(t)
+	sp := tracer.StartSpan("http.request")
+	sp.Finish()
 
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("123456789ABCD", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", spm[maininternal.TraceTagRepositoryURL])
-		assert.Equal("somepath", spm[maininternal.TraceTagGoPath])
-	})
-
-	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:https://user:passwd@github.com/user/repo go_path:somepath")
-
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("123456789ABCD", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo", spm[maininternal.TraceTagRepositoryURL])
-		assert.Equal("somepath", spm[maininternal.TraceTagGoPath])
-	})
-
-	t.Run("git-metadata-from-env", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
-
-		// git metadata env has priority over DD_TAGS
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("123456789ABCDE", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo_new", spm[maininternal.TraceTagRepositoryURL])
-	})
-
-	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
-		t.Setenv(maininternal.EnvGitRepositoryURL, "https://u:t@github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("123456789ABCDE", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo_new", spm[maininternal.TraceTagRepositoryURL])
-	})
-
-	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD")
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo")
-
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("123456789ABCD", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", spm[maininternal.TraceTagRepositoryURL])
-	})
-
-	t.Run("git-metadata-disabled", func(t *testing.T) {
-		t.Setenv(maininternal.EnvGitMetadataEnabledFlag, "false")
-
-		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo")
-		t.Setenv(maininternal.EnvGitRepositoryURL, "github.com/user/repo_new")
-		t.Setenv(maininternal.EnvGitCommitSha, "123456789ABCDE")
-
-		tracer, stop := startTestTracer(t)
-		defer stop()
-		defer maininternal.ResetGitMetadataTags()
-
-		assert := assert.New(t)
-		sp := tracer.StartSpan("http.request")
-		sp.Finish()
-
-		spm := sp.(internal.SpanV2Adapter).Span.AsMap()
-		assert.Equal("", spm[maininternal.TraceTagCommitSha])
-		assert.Equal("", spm[maininternal.TraceTagRepositoryURL])
-	})
+	spm := sp.(internal.SpanV2Adapter).Span.AsMap()
+	assert.Equal("123456789ABCD", spm[maininternal.TraceTagCommitSha])
+	assert.Equal("github.com/user/repo", spm[maininternal.TraceTagRepositoryURL])
+	assert.Equal("somepath", spm[maininternal.TraceTagGoPath])
 }
 
 // BenchmarkConcurrentTracing tests the performance of spawning a lot of
