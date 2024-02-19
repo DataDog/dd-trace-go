@@ -26,7 +26,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	maininternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -194,7 +193,7 @@ func TestTracerStartSpan(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "Instrumentation telemetry: ")
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -203,7 +202,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "Instrumentation telemetry: ")
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
@@ -212,7 +211,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("overrideEnv", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", telemetry.LogPrefix)
+		tp.Ignore("appsec: ", "Instrumentation telemetry: ")
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true))
 		defer tracer.Stop()
 		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")

@@ -6,45 +6,25 @@
 package gqlgen
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen"
 )
 
 const defaultServiceName = "graphql"
 
-type config struct {
-	serviceName   string
-	analyticsRate float64
-}
-
 // An Option configures the gqlgen integration.
-type Option func(t *config)
-
-func defaults(t *config) {
-	t.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	t.analyticsRate = globalconfig.AnalyticsRate()
-}
+type Option = v2.Option
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	if on {
-		return WithAnalyticsRate(1.0)
-	}
-	return WithAnalyticsRate(math.NaN())
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(t *config) {
-		t.analyticsRate = rate
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithServiceName sets the given service name for the gqlgen server.
 func WithServiceName(name string) Option {
-	return func(t *config) {
-		t.serviceName = name
-	}
+	return v2.WithService(name)
 }

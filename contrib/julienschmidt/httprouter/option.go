@@ -6,72 +6,35 @@
 package httprouter
 
 import (
-	"math"
-
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter"
+	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-const defaultServiceName = "http.router"
-
-type routerConfig struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption
-	analyticsRate float64
-	headerTags    *internal.LockMap
-}
-
 // RouterOption represents an option that can be passed to New.
-type RouterOption func(*routerConfig)
-
-func defaults(cfg *routerConfig) {
-	if internal.BoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.headerTags = globalconfig.HeaderTagMap()
-}
+type RouterOption = v2.RouterOption
 
 // WithServiceName sets the given service name for the returned router.
 func WithServiceName(name string) RouterOption {
-	return func(cfg *routerConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
-	return func(cfg *routerConfig) {
-		cfg.spanOpts = opts
-	}
+	cfg := tracer.BuildStartSpanConfigV2(opts...)
+	return v2.WithSpanOptions(v2tracer.WithStartSpanConfig(cfg))
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) RouterOption {
-	return func(cfg *routerConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) RouterOption {
-	return func(cfg *routerConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
@@ -79,8 +42,5 @@ func WithAnalyticsRate(rate float64) RouterOption {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) RouterOption {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *routerConfig) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
-	}
+	return v2.WithHeaderTags(headers)
 }

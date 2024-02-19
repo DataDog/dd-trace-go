@@ -13,6 +13,7 @@ import (
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	v2traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -554,4 +555,16 @@ func WithUserScope(scope string) UserMonitoringOption {
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
 	return v2.WithPropagation()
+}
+
+func BuildStartSpanConfigV2(opts ...StartSpanOption) *v2.StartSpanConfig {
+	return internal.BuildStartSpanConfigV2(opts...)
+}
+
+func BuildFinishConfigV2(opts ...FinishOption) *v2.FinishConfig {
+	return internal.BuildFinishConfigV2(opts...)
+}
+
+func WrapSpanV2(span *v2.Span) ddtrace.Span {
+	return &internal.SpanV2Adapter{Span: span}
 }
