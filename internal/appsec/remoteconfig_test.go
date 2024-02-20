@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
 	"sort"
@@ -483,12 +484,15 @@ func TestOnRCUpdate(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name    string
-		ruleset *config.RulesManager
+		name     string
+		ruleset  *config.RulesManager
+		statuses map[string]rc.ApplyStatus
+		removal  bool
 	}{
 		{
-			name:    "no-updates",
-			ruleset: BaseRuleset,
+			name:     "no-updates",
+			ruleset:  BaseRuleset,
+			statuses: map[string]rc.ApplyStatus{},
 		},
 		{
 			name: "ASM/overrides/1-config",
@@ -498,6 +502,9 @@ func TestOnRCUpdate(t *testing.T) {
 				Edits: map[string]config.RulesFragment{
 					"overrides1/path": overrides1,
 				},
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"overrides1/path": genApplyStatus(true, nil),
 			},
 		},
 		{
@@ -510,6 +517,10 @@ func TestOnRCUpdate(t *testing.T) {
 					"overrides2/path": overrides2,
 				},
 			},
+			statuses: map[string]rc.ApplyStatus{
+				"overrides1/path": genApplyStatus(true, nil),
+				"overrides2/path": genApplyStatus(true, nil),
+			},
 		},
 		{
 			name: "ASM_DD/1-config",
@@ -519,6 +530,9 @@ func TestOnRCUpdate(t *testing.T) {
 				Edits: map[string]config.RulesFragment{
 					"rules/path": rules,
 				},
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path": genApplyStatus(true, nil),
 			},
 		},
 		{
@@ -531,6 +545,25 @@ func TestOnRCUpdate(t *testing.T) {
 					"rules/path2": rules,
 				},
 			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path1": genApplyStatus(true, errors.New("more than one config received for ASM_DD")),
+				"rules/path2": genApplyStatus(true, errors.New("more than one config received for ASM_DD")),
+			},
+		},
+		{
+			name: "ASM_DD/1-config-1-removal",
+			ruleset: &config.RulesManager{
+				Base:     BaseRuleset.Base,
+				BasePath: BaseRuleset.BasePath,
+				Edits: map[string]config.RulesFragment{
+					"rules/path1": rules,
+				},
+			},
+			statuses: map[string]rc.ApplyStatus{
+				"rules/path1":       genApplyStatus(true, nil),
+				"rules/delete/path": genApplyStatus(true, nil),
+			},
+			removal: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -543,32 +576,18 @@ func TestOnRCUpdate(t *testing.T) {
 			tc.ruleset.Compile()
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.ruleset.Edits)
-			activeAppSec.onRCRulesUpdate(updates)
+			if tc.removal {
+				updates[rc.ProductASMDD]["rules/delete/path"] = nil
+			}
+
+			statuses := activeAppSec.onRCRulesUpdate(updates)
+			require.Equal(t, tc.statuses, statuses)
+
 			// Compare rulesets
+			// TODO: find have a proper way to compare rulesets
 			require.Equal(t, activeAppSec.cfg.RulesManager.Raw(), activeAppSec.cfg.RulesManager.Raw())
 		})
 	}
-
-	t.Run("add+delete", func(t *testing.T) {
-		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
-		defer Stop()
-		if !Enabled() {
-			t.Skip()
-		}
-
-		ruleset := BaseRuleset
-
-		ruleset.Compile()
-
-		update := make(map[string]remoteconfig.ProductUpdate)
-		data, err := json.Marshal(rules)
-		require.NoError(t, err)
-		update[rc.ProductASMDD] = map[string][]byte{"rules/old/path": nil, "rules/new/path": data}
-		statuses := activeAppSec.onRCRulesUpdate(update)
-		require.Len(t, statuses, 2)
-		require.Equal(t, rc.ApplyStateAcknowledged, statuses["rules/old/path"].State)
-		require.Equal(t, rc.ApplyStateAcknowledged, statuses["rules/new/path"].State)
-	})
 
 	t.Run("post-stop", func(t *testing.T) {
 		if supported, _ := waf.Health(); !supported {

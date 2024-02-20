@@ -48,31 +48,6 @@ func mergeMaps[K comparable, V any](m1 map[K]V, m2 map[K]V) map[K]V {
 	return m1
 }
 
-// asmDDUpdateChooser makes sure there is only one update for ASM_DD and returns it
-// If there are more than one update, it returns an error
-// but updates can also be update removals (if the value is nil), in this case, they are not taken into account
-// if a real update (not a removal) is found, the function returns the path and the update
-// if no real update is found, the function returns nil, nil, nil which means rules have to go back to the default ruleset
-func asmDDUpdateChooser(updateMap remoteconfig.ProductUpdate) (string, []byte, error) {
-	realUpdateFound := false
-	var update []byte
-	var path string
-	for p, data := range updateMap {
-		if data != nil {
-			if realUpdateFound {
-				// Multiple real updates in the map, return an error
-				return "", nil, errors.New("more than one config received for ASM_DD")
-			}
-
-			realUpdateFound = true
-			path = p
-			update = data
-		}
-	}
-
-	return path, update, nil
-}
-
 // combineRCRulesUpdates updates the state of the given RulesManager with the combination of all the provided rules updates
 func combineRCRulesUpdates(r *config.RulesManager, updates map[string]remoteconfig.ProductUpdate) (statuses map[string]rc.ApplyStatus, err error) {
 	// Spare some re-allocations (but there may still be some because 1 update may contain N configs)
@@ -95,28 +70,41 @@ updateLoop:
 			statuses = mergeMaps(statuses, status)
 			r.AddEdit("asmdata", config.RulesFragment{RulesData: rulesData})
 		case rc.ProductASMDD:
-			path, data, err := asmDDUpdateChooser(u)
-			if err != nil {
-				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
-				break updateLoop
+			updateFound := false
+			removalFound := false
+			for path, data := range u {
+				// Already seen a removal or an update, return an error
+				if (data == nil && removalFound) || (data != nil && updateFound) {
+					// Multiple real updates in the map, return an error
+					err = errors.New("more than one config received for ASM_DD")
+					statuses = mergeMaps(statuses, statusesFromUpdate(u, true, err))
+					break updateLoop
+				}
+
+				if data == nil {
+					removalFound = true
+					continue
+				}
+
+				updateFound = true
+				// Switch the base rules of the RulesManager if the config received through ASM_DD is valid
+				var newBase config.RulesFragment
+				if err := json.Unmarshal(data, &newBase); err != nil {
+					log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
+					statuses[path] = genApplyStatus(true, err)
+					break updateLoop
+				}
+				log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
+				r.ChangeBase(newBase, path)
+				statuses[path] = genApplyStatus(true, nil)
 			}
-			// If the config was removed, switch back to the static recommended rules
-			if data == nil {
+			// update with data = nil means the config was removed, so we switch back to the default rules
+			// only happens if no update was found, otherwise it could revert the switch to the new base rules
+			if !updateFound && removalFound {
 				log.Debug("appsec: Remote config: ASM_DD config removed. Switching back to default rules")
 				r.ChangeBase(config.DefaultRulesFragment(), "")
 				statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
-				continue
 			}
-			// Switch the base rules of the RulesManager if the config received through ASM_DD is valid
-			var newBase config.RulesFragment
-			if err = json.Unmarshal(data, &newBase); err != nil {
-				log.Debug("appsec: Remote config: could not unmarshall ASM_DD rules: %v", err)
-				statuses[path] = genApplyStatus(true, err)
-				break updateLoop
-			}
-			log.Debug("appsec: Remote config: switching to %s as the base rules file", path)
-			r.ChangeBase(newBase, path)
-			statuses = mergeMaps(statuses, statusesFromUpdate(u, true, nil))
 		case rc.ProductASM:
 			// Store each config received through ASM as an edit entry in the RulesManager
 			// Those entries will get merged together when the final rules are compiled
