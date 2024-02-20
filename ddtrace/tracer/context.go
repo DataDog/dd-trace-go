@@ -16,7 +16,12 @@ import (
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s Span) context.Context {
-	sp := s.(internal.SpanV2Adapter).Span
+	var sp *v2.Span
+	if s == nil {
+		sp = nil
+	} else {
+		sp = s.(internal.SpanV2Adapter).Span
+	}
 	return v2.ContextWithSpan(ctx, sp)
 }
 
