@@ -549,6 +549,27 @@ func TestOnRCUpdate(t *testing.T) {
 		})
 	}
 
+	t.Run("add+delete", func(t *testing.T) {
+		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+		if !Enabled() {
+			t.Skip()
+		}
+
+		ruleset := BaseRuleset
+
+		ruleset.Compile()
+
+		update := make(map[string]remoteconfig.ProductUpdate)
+		data, err := json.Marshal(rules)
+		require.NoError(t, err)
+		update[rc.ProductASMDD] = map[string][]byte{"rules/old/path": nil, "rules/new/path": data}
+		statuses := activeAppSec.onRCRulesUpdate(update)
+		require.Len(t, statuses, 2)
+		require.Equal(t, rc.ApplyStateAcknowledged, statuses["rules/old/path"].State)
+		require.Equal(t, rc.ApplyStateAcknowledged, statuses["rules/new/path"].State)
+	})
+
 	t.Run("post-stop", func(t *testing.T) {
 		if supported, _ := waf.Health(); !supported {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
