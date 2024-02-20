@@ -13,11 +13,17 @@
 package mocktracer
 
 import (
+	"sync/atomic"
+
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 )
 
 var _ Tracer = (*mocktracerV2Adapter)(nil)
+
+var (
+	active atomic.Value
+)
 
 // Tracer exposes an interface for querying the currently running mock tracer.
 type Tracer interface {
@@ -57,8 +63,8 @@ func (mta *mocktracerV2Adapter) OpenSpans() []Span {
 func convertSpans(spans []*v2.Span) []Span {
 	ss := make([]Span, len(spans))
 	for i, s := range spans {
-		ss[i] = mockspanV2Adapter{
-			span: s,
+		ss[i] = MockspanV2Adapter{
+			Span: s,
 		}
 	}
 	return ss
@@ -86,6 +92,7 @@ func (mta *mocktracerV2Adapter) SentDSMBacklogs() []datastreams.Backlog {
 func (mta *mocktracerV2Adapter) Stop() {
 	mta.tracer.Stop()
 	mta.tracer = nil
+	setActive(false)
 }
 
 // Start sets the internal tracer to a mock and returns an interface
@@ -94,5 +101,18 @@ func (mta *mocktracerV2Adapter) Stop() {
 // interface to query the tracer's state.
 func Start() Tracer {
 	t := v2.Start()
+	setActive(true)
 	return &mocktracerV2Adapter{tracer: t}
+}
+
+func IsActive() bool {
+	v := active.Load()
+	if v == nil {
+		return false
+	}
+	return v.(bool)
+}
+
+func setActive(b bool) {
+	active.Store(b)
 }

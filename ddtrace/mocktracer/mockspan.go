@@ -14,7 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
-var _ Span = (*mockspanV2Adapter)(nil)
+var _ Span = (*MockspanV2Adapter)(nil)
 
 // Span is an interface that allows querying a span returned by the mock tracer.
 type Span interface {
@@ -49,56 +49,82 @@ type Span interface {
 	fmt.Stringer
 }
 
-type mockspanV2Adapter struct {
-	span *v2.Span
+type MockspanV2Adapter struct {
+	Span *v2.Span
+}
+
+// BaggageItem implements ddtrace.Span.
+func (msa MockspanV2Adapter) BaggageItem(key string) string {
+	// no-op
+	return ""
+}
+
+// Finish implements ddtrace.Span.
+func (MockspanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
+	// no-op
+}
+
+// SetBaggageItem implements ddtrace.Span.
+func (MockspanV2Adapter) SetBaggageItem(key string, val string) {
+	// no-op
+}
+
+// SetOperationName implements ddtrace.Span.
+func (MockspanV2Adapter) SetOperationName(operationName string) {
+	// no-op
+}
+
+// SetTag implements ddtrace.Span.
+func (MockspanV2Adapter) SetTag(key string, value interface{}) {
+	// no-op
 }
 
 // Context implements Span.
-func (msa mockspanV2Adapter) Context() ddtrace.SpanContext {
-	return internal.SpanContextV2Adapter{Ctx: msa.span.Context()}
+func (msa MockspanV2Adapter) Context() ddtrace.SpanContext {
+	return internal.SpanContextV2Adapter{Ctx: msa.Span.Context()}
 }
 
 // FinishTime implements Span.
-func (msa mockspanV2Adapter) FinishTime() time.Time {
-	return msa.span.FinishTime()
+func (msa MockspanV2Adapter) FinishTime() time.Time {
+	return msa.Span.FinishTime()
 }
 
 // OperationName implements Span.
-func (msa mockspanV2Adapter) OperationName() string {
-	return msa.span.OperationName()
+func (msa MockspanV2Adapter) OperationName() string {
+	return msa.Span.OperationName()
 }
 
 // ParentID implements Span.
-func (msa mockspanV2Adapter) ParentID() uint64 {
-	return msa.span.ParentID()
+func (msa MockspanV2Adapter) ParentID() uint64 {
+	return msa.Span.ParentID()
 }
 
 // SpanID implements Span.
-func (msa mockspanV2Adapter) SpanID() uint64 {
-	return msa.span.SpanID()
+func (msa MockspanV2Adapter) SpanID() uint64 {
+	return msa.Span.SpanID()
 }
 
 // StartTime implements Span.
-func (msa mockspanV2Adapter) StartTime() time.Time {
-	return msa.span.StartTime()
+func (msa MockspanV2Adapter) StartTime() time.Time {
+	return msa.Span.StartTime()
 }
 
 // String implements Span.
-func (msa mockspanV2Adapter) String() string {
-	return msa.span.String()
+func (msa MockspanV2Adapter) String() string {
+	return msa.Span.String()
 }
 
 // Tag implements Span.
-func (msa mockspanV2Adapter) Tag(k string) interface{} {
-	return msa.span.Tag(k)
+func (msa MockspanV2Adapter) Tag(k string) interface{} {
+	return msa.Span.Tag(k)
 }
 
 // Tags implements Span.
-func (msa mockspanV2Adapter) Tags() map[string]interface{} {
-	return msa.span.Tags()
+func (msa MockspanV2Adapter) Tags() map[string]interface{} {
+	return msa.Span.Tags()
 }
 
 // TraceID implements Span.
-func (msa mockspanV2Adapter) TraceID() uint64 {
-	return msa.span.TraceID()
+func (msa MockspanV2Adapter) TraceID() uint64 {
+	return msa.Span.TraceID()
 }

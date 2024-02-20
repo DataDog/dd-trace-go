@@ -8,8 +8,10 @@ package tracer
 import (
 	"context"
 
+	v2mock "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
@@ -25,6 +27,9 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 	span, ok := v2.SpanFromContext(ctx)
 	if !ok {
 		return &internal.NoopSpan{}, false
+	}
+	if mocktracer.IsActive() {
+		return mocktracer.MockspanV2Adapter{Span: v2mock.MockSpan(span)}, true
 	}
 	return internal.SpanV2Adapter{Span: span}, true
 }
