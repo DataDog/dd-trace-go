@@ -98,11 +98,15 @@ func ClearHeaderTags() {
 
 // SetStatsCarrier sets the provided StatsCarrier as globalconfig's "sc"
 func SetStatsCarrier(sc *internal.StatsCarrier) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.statsCarrier = sc
 }
 
 // PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
 func PushStat(stat internal.Stat) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	if !StatsCarrier() {
 		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
@@ -112,6 +116,8 @@ func PushStat(stat internal.Stat) {
 
 // StatsCarrier returns true if there is a StatsCarrier on the globalconfig, else false
 func StatsCarrier() bool {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	return cfg.statsCarrier != nil
 }
 
@@ -119,5 +125,7 @@ func StatsCarrier() bool {
 // The scope that calls "Start" on the StatsCarrier is responsible for calling "Stop",
 // the globalconfig is not responsible
 func ClearStatsCarrier() {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 	cfg.statsCarrier = nil
 }

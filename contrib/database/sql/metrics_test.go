@@ -7,7 +7,6 @@ package sql
 
 import (
 	"database/sql"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -27,15 +26,21 @@ func TestPollDBStats(t *testing.T) {
 	db, err := Open(driverName, dsn)
 	require.NoError(t, err)
 	interval := 3 * time.Millisecond
-	go pollDBStats(interval, db, pollDBStatsCounter)
-	time.Sleep(3 * interval)
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		for i := 0; i < 3; i++ {
+			defer wg.Done()
+			pollDBStats(interval, db, pollDBStatsCounter)
+		}
+	}()
+	wg.Wait()
 	assert.Len(t, dbStatsCollector, 3)
 }
 
 var dbStatsCollector []sql.DBStats
 
 func pollDBStatsCounter(stats sql.DBStats) {
-	fmt.Println("dbstats counter")
 	dbStatsCollector = append(dbStatsCollector, stats)
 }
 
