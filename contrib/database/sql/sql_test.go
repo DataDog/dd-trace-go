@@ -21,6 +21,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
@@ -334,6 +337,38 @@ func TestConnectCancelledCtx(t *testing.T) {
 	s := spans[0]
 	assert.Equal("hangingConnector.query", s.OperationName())
 	assert.Equal("Connect", s.Tag("sql.query_type"))
+}
+
+func TestDBStats(t *testing.T) {
+	driverName := "postgres"
+	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+
+	var tg statsdtest.TestStatsdClient
+	sc := internal.NewStatsCarrier(&tg)
+	sc.Start()
+	defer sc.Stop()
+	globalconfig.SetStatsCarrier(sc)
+	
+	Register(driverName, &pq.Driver{}, WithDBStats(2 * time.Second))
+	defer unregister(driverName)
+	c, err := pq.NewConnector(dsn)
+	require.NoError(t, err)
+	db := OpenDB(c)
+	defer db.Close()
+
+	time.Sleep(3 * time.Second)
+
+	calls := tg.CallNames()
+	assert.Len(t, calls, 9)
+	assert.Contains(t, calls, MaxOpenConnections)
+	assert.Contains(t, calls, OpenConnections)
+	assert.Contains(t, calls, InUse)
+	assert.Contains(t, calls, Idle)
+	assert.Contains(t, calls, WaitCount)
+	assert.Contains(t, calls, WaitDuration)
+	assert.Contains(t, calls, MaxIdleClosed)
+	assert.Contains(t, calls, MaxIdleTimeClosed)
+	assert.Contains(t, calls, MaxLifetimeClosed)
 }
 
 func TestRegister(_ *testing.T) {

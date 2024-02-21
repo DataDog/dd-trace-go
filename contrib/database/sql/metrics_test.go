@@ -17,7 +17,7 @@ import (
 )
 
 // TestDBStats tests that pollDBStats collects DBStat data at the specified interval and passes all 9 statsd payloads up to the statsd client
-func TestDBStats(t *testing.T) {
+func TestPollDBStats(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 	db, err := Open(driverName, dsn)
@@ -31,9 +31,9 @@ func TestDBStats(t *testing.T) {
 	go func() {
 		pollDBStats(2*time.Second, db)
 	}()
-	time.Sleep(3 * time.Second) // not sure how else to "control" number of times DBStats is polled, as there is no signal to stop pollDBStats
+	time.Sleep(5 * time.Second)
 	calls := tg.CallNames()
-	assert.Len(t, calls, 9)
+	assert.Len(t, calls, 18)
 	assert.Contains(t, calls, MaxOpenConnections)
 	assert.Contains(t, calls, OpenConnections)
 	assert.Contains(t, calls, InUse)
