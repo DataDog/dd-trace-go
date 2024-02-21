@@ -16,8 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 )
 
-// TestDBStats tests that pollDBStats collects DBStat data at the specified interval
-// and passes off all 9 resulting statsd payloads all the way up to the stats client
+// TestDBStats tests that pollDBStats collects DBStat data at the specified interval and passes all 9 statsd payloads up to the statsd client
 func TestDBStats(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"

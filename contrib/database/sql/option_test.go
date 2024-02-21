@@ -49,22 +49,25 @@ func TestWithDBStats(t *testing.T) {
 	t.Run("default off", func(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg, "", nil)
-		assert.True(t, int64(cfg.dbStats) == 0)
+		var d time.Duration
+		assert.Equal(t, d, cfg.dbStats)
 		assert.False(t, dbStatsEnabled(cfg))
 	})
 	t.Run("on", func(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg, "", nil)
-		WithDBStats(1 * time.Second)
-		assert.True(t, int64(cfg.dbStats) == 1)
+		interval := 1 * time.Second
+		WithDBStats(interval)(cfg)
+		assert.Equal(t, interval, cfg.dbStats)
 		assert.True(t, dbStatsEnabled(cfg))
 	})
 	t.Run("interval 0", func(t *testing.T) {
 		// this test demonstrates that the logic for checking whether DBStats is enabled, is for the interval to be > 0
 		cfg := new(config)
 		defaults(cfg, "", nil)
-		WithDBStats(0 * time.Second)
-		assert.True(t, int64(cfg.dbStats) == 0)
+		interval := 0 * time.Second
+		WithDBStats(interval)(cfg)
+		assert.Equal(t, interval, cfg.dbStats)
 		assert.False(t, dbStatsEnabled(cfg))
 	})
 }
