@@ -348,12 +348,11 @@ func TestDBStats(t *testing.T) {
 	sc.Start()
 	defer sc.Stop()
 	globalconfig.SetStatsCarrier(sc)
-	
-	Register(driverName, &pq.Driver{}, WithDBStats(2 * time.Second))
+
+	Register(driverName, &pq.Driver{})
 	defer unregister(driverName)
-	c, err := pq.NewConnector(dsn)
+	db, err := Open(driverName, dsn, WithDBStats(2*time.Second))
 	require.NoError(t, err)
-	db := OpenDB(c)
 	defer db.Close()
 
 	time.Sleep(3 * time.Second)

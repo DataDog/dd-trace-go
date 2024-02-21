@@ -268,6 +268,7 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 // WithDBStats enables polling of DBStats metrics on the registered DB at the specified interval
 // the interval must be non-zero to enable the feature
 // ref: https://pkg.go.dev/database/sql#DBStats
+// WithDBStats should be provided as an Option to the Open function and does not work on the Register function
 // These metrics are submitted to Datadog and are not billed as custom metrics
 func WithDBStats(interval time.Duration) Option {
 	return func(cfg *config) {
