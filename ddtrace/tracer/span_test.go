@@ -364,7 +364,7 @@ func TestSpanSetTag(t *testing.T) {
 	span.SetTag("mapOfMap", mapOfMap)
 	assert.Equal(mapOfMap, span.MetaStruct["mapOfMap"])
 
-	// groupedStats is a struct that implements the msgp.Marshaler interface
+	// testMsgpStruct is a struct that implements the msgp.Marshaler interface
 	testValue := &testMsgpStruct{A: "test"}
 	span.SetTag("struct", testValue)
 	require.Equal(t, testValue, span.MetaStruct["struct"])
@@ -378,7 +378,7 @@ type testMsgpStruct struct {
 	A string
 }
 
-func (t *testMsgpStruct) MarshalMsg(b []byte) ([]byte, error) {
+func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 	return nil, nil
 }
 
