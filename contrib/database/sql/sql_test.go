@@ -339,6 +339,7 @@ func TestConnectCancelledCtx(t *testing.T) {
 	assert.Equal("Connect", s.Tag("sql.query_type"))
 }
 
+// TestDBStats tests that db stats are reported by the stats client when WithDBStats is provided to the Open function
 func TestDBStats(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
@@ -351,14 +352,14 @@ func TestDBStats(t *testing.T) {
 
 	Register(driverName, &pq.Driver{})
 	defer unregister(driverName)
-	db, err := Open(driverName, dsn, WithDBStats(2*time.Second))
+	db, err := Open(driverName, dsn, WithDBStats(2*time.Millisecond))
 	require.NoError(t, err)
 	defer db.Close()
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Millisecond)
 
 	calls := tg.CallNames()
-	assert.Len(t, calls, 9)
+	assert.Len(t, calls, 18)
 	assert.Contains(t, calls, MaxOpenConnections)
 	assert.Contains(t, calls, OpenConnections)
 	assert.Contains(t, calls, InUse)

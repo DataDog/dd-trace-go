@@ -16,7 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 )
 
-// TestDBStats tests that pollDBStats collects DBStat data at the specified interval and passes all 9 statsd payloads up to the statsd client
+// TestPollDBStats tests that pollDBStats collects DBStat data at the specified interval and passes all 9 statsd payloads up to the statsd client
 func TestPollDBStats(t *testing.T) {
 	driverName := "postgres"
 	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
@@ -29,9 +29,9 @@ func TestPollDBStats(t *testing.T) {
 	defer sc.Stop()
 	globalconfig.SetStatsCarrier(sc)
 	go func() {
-		pollDBStats(2*time.Second, db)
+		pollDBStats(2*time.Millisecond, db)
 	}()
-	time.Sleep(5 * time.Second)
+	time.Sleep(5 * time.Millisecond)
 	calls := tg.CallNames()
 	assert.Len(t, calls, 18)
 	assert.Contains(t, calls, MaxOpenConnections)

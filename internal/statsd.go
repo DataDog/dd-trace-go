@@ -29,6 +29,7 @@ type Stat interface {
 	Rate() float64
 }
 
+// Gauge implements the Stat interface and contains a float64 value
 type Gauge struct {
 	name  string
 	value float64
@@ -61,6 +62,7 @@ func (g Gauge) Rate() float64 {
 	return g.rate
 }
 
+// Count implements the Stat interface and contains a int64 value
 type Count struct {
 	name  string
 	value int64
@@ -93,6 +95,7 @@ func (c Count) Rate() float64 {
 	return c.rate
 }
 
+// Timing implements the Stat interface and contains a time.Duration value
 type Timing struct {
 	name  string
 	value time.Duration
@@ -143,7 +146,7 @@ func NewStatsCarrier(statsd StatsdClient) *StatsCarrier {
 }
 
 // Start runs the StatsCarrier in a goroutine
-// Whichever scope calls sc.Start() is resopnsible for calling sc.Stop()
+// The caller of sc.Start() is resopnsible for calling sc.Stop()
 func (sc *StatsCarrier) Start() {
 	if atomic.SwapUint64(&sc.stopped, 0) == 0 {
 		// already running
@@ -173,6 +176,7 @@ func (sc *StatsCarrier) run() {
 	}
 }
 
+// Stop closes the StatsCarrier's stop channel
 func (sc *StatsCarrier) Stop() {
 	if atomic.SwapUint64(&(sc.stopped), 1) > 0 {
 		return
@@ -215,6 +219,7 @@ func (sc *StatsCarrier) push(s Stat) {
 	}
 }
 
+// Add pushes the Stat, s, onto the StatsCarrier's contribStats channel
 func (sc *StatsCarrier) Add(s Stat) {
 	sc.contribStats <- s
 }
