@@ -49,4 +49,3 @@ func pollDBStats(interval time.Duration, db *sql.DB) {
 		globalconfig.PushStat(internal.NewGauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), nil, 1))
 	}
 }
-
