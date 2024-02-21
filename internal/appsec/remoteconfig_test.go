@@ -452,7 +452,8 @@ func TestOnRCUpdate(t *testing.T) {
 	BaseRuleset.Compile()
 
 	rules := config.RulesFragment{
-		Version: BaseRuleset.Latest.Version,
+		Version:  BaseRuleset.Latest.Version,
+		Metadata: BaseRuleset.Latest.Metadata,
 		Rules: []interface{}{
 			BaseRuleset.Base.Rules[0],
 		},
