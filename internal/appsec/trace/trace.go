@@ -8,9 +8,6 @@
 package trace
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
 )
@@ -45,11 +42,7 @@ func SetEventSpanTags(span TagSetter, events []any) error {
 	}
 
 	// Set the appsec event span tag
-	val, err := makeEventTagValue(events)
-	if err != nil {
-		return err
-	}
-	span.SetTag("_dd.appsec.json", string(val))
+	span.SetTag("_dd.appsec.json", map[string][]any{"triggers": events})
 	// Keep this span due to the security event
 	//
 	// This is a workaround to tell the tracer that the trace was kept by AppSec.
@@ -68,18 +61,4 @@ func SetTags[V any](span TagSetter, tags map[string]V) {
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
-}
-
-// Create the value of the security event tag.
-func makeEventTagValue(events []any) (json.RawMessage, error) {
-	type eventTagValue struct {
-		Triggers []any `json:"triggers"`
-	}
-
-	tag, err := json.Marshal(eventTagValue{events})
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
-	}
-
-	return tag, nil
 }

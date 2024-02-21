@@ -121,27 +121,18 @@ func TestAppSec(t *testing.T) {
 				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
 
 				events := make(map[string]string)
-				type ddAppsecJSON struct {
-					Triggers []struct {
-						Rule struct {
-							ID string `json:"id"`
-						} `json:"rule"`
-					} `json:"triggers"`
-				}
 
 				// Search for AppSec events in the set of spans
 				for _, span := range spans {
-					jsonText, ok := span.Tag("_dd.appsec.json").(string)
-					if !ok || jsonText == "" {
+					if span.Tag("_dd.appsec.json") == nil {
 						continue
 					}
-					var parsed ddAppsecJSON
-					err := json.Unmarshal([]byte(jsonText), &parsed)
-					require.NoError(t, err)
 
-					require.Len(t, parsed.Triggers, 1, "expected exactly 1 trigger on %s span", span.OperationName())
-					ruleID := parsed.Triggers[0].Rule.ID
-					_, duplicate := events[ruleID]
+					tag := span.Tag("_dd.appsec.json").(map[string][]any)
+
+					require.Len(t, tag["triggers"], 1, "expected exactly 1 trigger on %s span", span.OperationName())
+					ruleID := tag["triggers"][0].(map[string]any)["rule"].(map[string]any)["id"].(string)
+					_, duplicate := tag[ruleID]
 					require.False(t, duplicate, "found duplicated hit for rule %s", ruleID)
 					var origin string
 					switch name := span.OperationName(); name {
