@@ -7,6 +7,7 @@ package stacktrace
 
 import (
 	"github.com/stretchr/testify/require"
+	"runtime"
 	"testing"
 )
 
@@ -47,4 +48,10 @@ func TestStackMethodReceiver(t *testing.T) {
 	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test)", frame.ClassName)
 	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", frame.Function)
 	require.Contains(t, frame.File, "internal/stacktrace/stacktrace_test.go")
+}
+
+func BenchmarkTakeStackTrace(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		runtime.KeepAlive(Take())
+	}
 }

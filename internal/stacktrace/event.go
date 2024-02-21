@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 var _ msgp.Marshaler = (*Event)(nil)
@@ -27,6 +26,7 @@ const (
 	ExploitEvent EventCategory = "exploit"
 )
 
+// Event is the toplevel structure to contain a stacktrace and the additional information needed to correlate it with other data
 type Event struct {
 	// Category is a well-known type of the event, not optional
 	Category EventCategory `msg:"-"`
@@ -42,31 +42,23 @@ type Event struct {
 	Frames StackTrace `msg:"frames"`
 }
 
-func tagName(eventCategory EventCategory) string {
-	return fmt.Sprintf("_dd.stack.%s", eventCategory)
+// TagName returns the tag name for the event
+func (e *Event) TagName() string {
+	return fmt.Sprintf("_dd.stack.%s", e.Category)
 }
 
-func newEvent(eventCat EventCategory, message string) *Event {
+// NewEvent creates a new stacktrace event with the given category, type and message
+func NewEvent(eventCat EventCategory, type_, message string) *Event {
 	return &Event{
 		Category: eventCat,
+		Type:     type_,
 		Language: "go",
 		Message:  message,
 		Frames:   TakeWithSkip(defaultCallerSkip + 1),
 	}
 }
 
-func NewException(message string) *Event {
-	return newEvent(ExceptionEvent, message)
-}
-
-func NewVulnerability(message string) *Event {
-	return newEvent(VulnerabilityEvent, message)
-}
-
-func NewExploit(message string) *Event {
-	return newEvent(ExploitEvent, message)
-}
-
+// IDLink returns a UUID to link the stacktrace event with other data
 func (e *Event) IDLink() string {
 	if e.ID != "" {
 		newUUID, err := uuid.NewUUID()
@@ -80,6 +72,7 @@ func (e *Event) IDLink() string {
 	return e.ID
 }
 
-func (e *Event) AddToSpan(span ddtrace.Span) {
-	span.SetTag(tagName(e.Category), e)
+// AddToSpan uses (*Event).TagName to add the event to a span using span.SetTag
+func (e *Event) AddToSpan(span interface{ SetTag(key string, value any) }) {
+	span.SetTag(e.TagName(), *e)
 }

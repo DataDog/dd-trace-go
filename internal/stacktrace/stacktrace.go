@@ -8,12 +8,37 @@
 package stacktrace
 
 import (
+	"os"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
-const defaultMaxDepth = 32
+var enabled = true
+var topFrames = 8
+var defaultMaxDepth = 32
+
 const defaultCallerSkip = 4
+const stackTraceDepthEnvVar = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
+const stackTraceDisabledEnvVar = "DD_APPSEC_STACK_TRACE_ENABLE"
+
+func init() {
+	if env := os.Getenv(stackTraceDepthEnvVar); env != "" {
+		if depth, err := strconv.ParseUint(env, 10, 64); err == nil {
+			defaultMaxDepth = int(depth)
+
+			if defaultMaxDepth < topFrames {
+				topFrames = 0
+			}
+		}
+	}
+
+	if env := os.Getenv(stackTraceDisabledEnvVar); env != "" {
+		if e, err := strconv.ParseBool(env); err == nil {
+			enabled = e
+		}
+	}
+}
 
 // StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the top of the stack
 type StackTrace []StackFrame
@@ -74,13 +99,26 @@ func Take() StackTrace {
 
 // TakeWithSkip creates a new stack trace from the current call stack, skipping the first `skip` frames
 func TakeWithSkip(skip int) StackTrace {
-	frames, depth := callers(skip, defaultMaxDepth)
-	stack := make([]StackFrame, depth)
+	callers, realDepth := callers(skip, defaultMaxDepth)
 
 	// There can be way more frames than callers, so we need to check again that we don't store more frames that the depth specified
+	frames := runtime.CallersFrames(callers)
+	framesArray := make([]runtime.Frame, 0, defaultMaxDepth)
+	ok := true
 	var frame runtime.Frame
+	for ok {
+		frame, ok = frames.Next()
+		framesArray = append(framesArray, frame)
+	}
+
+	if len(framesArray) > defaultMaxDepth {
+		framesArray = append(framesArray[:defaultMaxDepth-topFrames], framesArray[len(framesArray)-topFrames:]...)
+	}
+
+	stack := make([]StackFrame, len(framesArray))
+
+	// We revert the order of
 	for i := depth - 1; i >= 0; i-- {
-		frame, _ = frames.Next()
 		stack[i] = StackFrame{
 			Index:     uint32(i),
 			Text:      "",
@@ -96,17 +134,35 @@ func TakeWithSkip(skip int) StackTrace {
 	return stack
 }
 
-func callers(skip, maxDepth int) (*runtime.Frames, int) {
-	pcs := make([]uintptr, maxDepth)
+// callers returns a maximum of `maxDepth` frames from the call stack, skipping the first `skip` frames
+// of the whole stack is bigger than `maxDepth`, the 8 first and the last `maxDepth-8` frames are returned
+// the depth
+// Lastly, keep in mind that pcs[0] is the current function, not the top of the stack
+// callers also returns the real depth of the stack so that the indexs of the frames can be calculated
+func callers(skip, maxDepth int) ([]uintptr, int) {
+	pcs := make([]uintptr, maxDepth+1)
 	n := runtime.Callers(skip, pcs[:])
 
-	depth := maxDepth
-	// Find the real depth of the stack (if the stack is smaller than the max depth)
-	for ; depth > 0; depth-- {
-		if pcs[depth-1] != 0 {
-			break
+	// The stack is smaller or equal to the max depth, return the whole stack
+	if n <= maxDepth+1 {
+		// Find the real depth of the stack (if the stack is smaller than the max depth)
+		for ; maxDepth >= 0; maxDepth-- {
+			if pcs[maxDepth-1] != 0 {
+				break
+			}
 		}
+
+		return pcs[:maxDepth], maxDepth
 	}
 
-	return runtime.CallersFrames(pcs[:n]), depth
+	// The stack is bigger than the max depth, proceed to find the top 8 frames and stitch them to the ones we have
+	topPcs := make([]uintptr, topFrames)
+	i := 0
+	var topN int
+	for ; topN > 0 && runtime.FuncForPC(topPcs[topN-1]).Name() != "goexit"; i += topFrames {
+		topN = runtime.Callers(skip+maxDepth+i, topPcs)
+	}
+
+	// stitch the top frames to the ones we have
+	return append(pcs[:maxDepth-topFrames], topPcs[:topN]...), maxDepth + i
 }
