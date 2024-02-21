@@ -29,29 +29,24 @@ const (
 	MaxLifetimeClosed  = tracerPrefix + "sql.db.connections.closed.max_lifetime"
 )
 
-// pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStat off to the pushFn.
-func pollDBStats(interval time.Duration, db *sql.DB, pushFn func(stat sql.DBStats)) {
+// pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStats off to the StatsCarrier
+func pollDBStats(interval time.Duration, db *sql.DB) {
+	if db == nil {
+		log.Debug("No traced DB connection found; cannot pull DB stats.")
+		return
+	}
+	log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
-		if db == nil {
-			log.Debug("No traced DB connection found; cannot pull DB stats.")
-			return
-		}
-		log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
-		pushFn(db.Stats())
+		stat := db.Stats()
+		globalconfig.PushStat(internal.NewGauge(MaxOpenConnections, float64(stat.MaxOpenConnections), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(OpenConnections, float64(stat.OpenConnections), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(InUse, float64(stat.InUse), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(Idle, float64(stat.Idle), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), nil, 1))
+		globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, nil, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxIdleClosed, float64(stat.MaxIdleClosed), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), nil, 1))
 	}
 }
 
-// pushDBStats separates the DBStats type out into individual statsd payloads and submits to the globalconfig's statsd client
-func pushDBStats(stat sql.DBStats) {
-	// TODO: ADD TAGS
-	// TODO: MAYBE NOT ALL GAUGES ?
-	globalconfig.PushStat(internal.NewGauge(MaxOpenConnections, float64(stat.MaxOpenConnections), nil, 1))
-	globalconfig.PushStat(internal.NewGauge(OpenConnections, float64(stat.OpenConnections), nil, 1))
-	globalconfig.PushStat(internal.NewGauge(InUse, float64(stat.InUse), nil, 1))
-	globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), nil, 1))
-	globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, nil, 1))
-	globalconfig.PushStat(internal.NewGauge(MaxIdleClosed, float64(stat.MaxIdleClosed), nil, 1))
-	globalconfig.PushStat(internal.NewGauge(MaxIdleTimeClosed, float64(stat.MaxIdleTimeClosed), nil, 1))
-	globalconfig.PushStat(internal.NewGauge(MaxLifetimeClosed, float64(stat.MaxLifetimeClosed), nil, 1))
-
-}

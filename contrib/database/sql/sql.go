@@ -211,7 +211,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if dbStatsEnabled(cfg) {
-		go pollDBStats(cfg.dbStats, db, pushDBStats)
+		go pollDBStats(cfg.dbStats, db)
 	}
 	return db
 }
