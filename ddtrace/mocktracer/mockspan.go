@@ -6,11 +6,13 @@
 package mocktracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
 
@@ -116,12 +118,30 @@ func (msa MockspanV2Adapter) String() string {
 
 // Tag implements Span.
 func (msa MockspanV2Adapter) Tag(k string) interface{} {
+	switch k {
+	case ext.Error:
+		v := msa.Span.Tag(ext.ErrorMsg).(string)
+		err := errors.New(v)
+		return err
+	case ext.SamplingPriority:
+		v := msa.Span.Tag("_sampling_priority_v1").(float64)
+		return int(v)
+	}
+
 	return msa.Span.Tag(k)
 }
 
 // Tags implements Span.
 func (msa MockspanV2Adapter) Tags() map[string]interface{} {
-	return msa.Span.Tags()
+	tags := msa.Span.Tags()
+	var hasError bool
+	if _, hasError = tags[ext.ErrorMsg]; hasError {
+		tags[ext.Error] = errors.New(tags[ext.ErrorMsg].(string))
+	}
+	if _, ok := tags[ext.ErrorStack]; !ok && hasError {
+		tags[ext.ErrorStack] = "<debug stack disabled>"
+	}
+	return tags
 }
 
 // TraceID implements Span.

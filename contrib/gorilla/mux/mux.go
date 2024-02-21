@@ -16,7 +16,8 @@ import (
 
 // Router registers routes to be matched and dispatches a handler.
 type Router struct {
-	*v2.Router
+	*mux.Router
+	wrappedRouter *v2.Router
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -77,12 +78,17 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	r.Router.ServeHTTP(w, req)
+	if r.wrappedRouter == nil {
+		// If this field is nil, it means that the router has not been created
+		// with WrapRouter. We wrap the assigned router on the fly with no options.
+		r.wrappedRouter = v2.WrapRouter(r.Router)
+	}
+	r.wrappedRouter.ServeHTTP(w, req)
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	r := v2.WrapRouter(router, opts...)
-	return &Router{r}
+	return &Router{router, r}
 }
