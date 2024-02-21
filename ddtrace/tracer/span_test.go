@@ -356,9 +356,30 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("[]", span.Meta["someslices.2"])
 	assert.Equal("[e, f]", span.Meta["someslices.3"])
 
+	mapStrStr := map[string]string{"b": "c"}
+	span.SetTag("map", map[string]string{"b": "c"})
+	assert.Equal(mapStrStr, span.MetaStruct["map"])
+
+	mapOfMap := map[string]map[string]any{"a": {"b": "c"}}
+	span.SetTag("mapOfMap", mapOfMap)
+	assert.Equal(mapOfMap, span.MetaStruct["mapOfMap"])
+
+	// groupedStats is a struct that implements the msgp.Marshaler interface
+	testValue := &testMsgpStruct{A: "test"}
+	span.SetTag("struct", testValue)
+	require.Equal(t, testValue, span.MetaStruct["struct"])
+
 	assert.Panics(func() {
 		span.SetTag("panicStringer", &panicStringer{})
 	})
+}
+
+type testMsgpStruct struct {
+	A string
+}
+
+func (t *testMsgpStruct) MarshalMsg(b []byte) ([]byte, error) {
+	return nil, nil
 }
 
 func TestSpanSetTagError(t *testing.T) {
