@@ -57,28 +57,30 @@ type MockspanV2Adapter struct {
 
 // BaggageItem implements ddtrace.Span.
 func (msa MockspanV2Adapter) BaggageItem(key string) string {
-	// no-op
-	return ""
+	return msa.Span.Unwrap().BaggageItem(key)
 }
 
 // Finish implements ddtrace.Span.
-func (MockspanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
-	// no-op
+func (msa MockspanV2Adapter) Finish(opts ...ddtrace.FinishOption) {
+	t := internal.GetGlobalTracer().(internal.TracerV2Adapter)
+	sp := msa.Span.Unwrap()
+	t.Tracer.(v2.Tracer).FinishSpan(sp)
+	sp.Finish()
 }
 
 // SetBaggageItem implements ddtrace.Span.
-func (MockspanV2Adapter) SetBaggageItem(key string, val string) {
-	// no-op
+func (msa MockspanV2Adapter) SetBaggageItem(key string, val string) {
+	msa.Span.Unwrap().SetBaggageItem(key, val)
 }
 
 // SetOperationName implements ddtrace.Span.
-func (MockspanV2Adapter) SetOperationName(operationName string) {
-	// no-op
+func (msa MockspanV2Adapter) SetOperationName(operationName string) {
+	msa.Span.Unwrap().SetOperationName(operationName)
 }
 
 // SetTag implements ddtrace.Span.
-func (MockspanV2Adapter) SetTag(key string, value interface{}) {
-	// no-op
+func (msa MockspanV2Adapter) SetTag(key string, value interface{}) {
+	msa.Span.SetTag(key, value)
 }
 
 // Context implements Span.

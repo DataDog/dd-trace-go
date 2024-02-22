@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.33.0
 	github.com/99designs/gqlgen v0.17.36
 	github.com/DataDog/appsec-internal-go v1.4.1
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240216140524-914f0c30cab1
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222143418-f576f22a3707
 	github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240216140524-914f0c30cab1
 	github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240216140524-914f0c30cab1
 	github.com/DataDog/dd-trace-go/v2/contrib/gin-gonic/gin v0.0.0-20240216140524-914f0c30cab1
