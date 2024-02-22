@@ -30,11 +30,11 @@ func TestPollDBStats(t *testing.T) {
 	globalconfig.SetStatsCarrier(sc)
 	go func() {
 		// TODO: integration-level service name, blocked by AIT-9869
-		pollDBStats(2*time.Millisecond, db, []string{"drivername:postgres"})
+		pollDBStats(db, []string{"drivername:postgres"})
 	}()
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(11 * time.Second) //unfortunate but the only way we can test it, as the poller runs every 10s
 	calls := tg.CallNames()
-	assert.Len(t, calls, 18)
+	assert.Len(t, calls, 9)
 	assert.Contains(t, calls, MaxOpenConnections)
 	assert.Contains(t, calls, OpenConnections)
 	assert.Contains(t, calls, InUse)

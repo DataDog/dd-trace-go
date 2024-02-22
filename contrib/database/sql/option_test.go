@@ -7,7 +7,6 @@ package sql
 
 import (
 	"testing"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
@@ -49,25 +48,12 @@ func TestWithDBStats(t *testing.T) {
 	t.Run("default off", func(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg, "", nil)
-		var d time.Duration
-		assert.Equal(t, d, cfg.dbStats)
-		assert.False(t, dbStatsEnabled(cfg))
+		assert.False(t, cfg.dbStats)
 	})
 	t.Run("on", func(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg, "", nil)
-		interval := 1 * time.Second
-		WithDBStats(interval)(cfg)
-		assert.Equal(t, interval, cfg.dbStats)
-		assert.True(t, dbStatsEnabled(cfg))
-	})
-	t.Run("interval 0", func(t *testing.T) {
-		// this test demonstrates that the logic for checking whether DBStats is enabled, is for the interval to be > 0
-		cfg := new(config)
-		defaults(cfg, "", nil)
-		interval := 0 * time.Second
-		WithDBStats(interval)(cfg)
-		assert.Equal(t, interval, cfg.dbStats)
-		assert.False(t, dbStatsEnabled(cfg))
+		WithDBStats()(cfg)
+		assert.True(t, cfg.dbStats)
 	})
 }

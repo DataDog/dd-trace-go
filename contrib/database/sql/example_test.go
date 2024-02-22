@@ -8,7 +8,6 @@ package sql_test
 import (
 	"context"
 	"log"
-	"time"
 
 	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -109,10 +108,9 @@ func Example_dbmPropagation() {
 }
 
 func Example_dbStats() {
-	// Determine how frequently you want to report stats about the DB, and use that as the interval to the WithDBStats Option
 	// You can pass WithDBStats to the Register or the Open methods
-	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBStats(10*time.Second))
-	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable" /*WithDBStats(10 * time.Second)*/)
+	sqltrace.Register("postgres", &pq.Driver{}, sqltrace.WithDBStats())
+	db, err := sqltrace.Open("postgres", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable" /*WithDBStats()*/)
 
 	if err != nil {
 		log.Fatal(err)

@@ -211,14 +211,10 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		cfg:        cfg,
 	}
 	db := sql.OpenDB(tc)
-	if dbStatsEnabled(cfg) {
-		go pollDBStats(cfg.dbStats, db, []string{fmt.Sprintf("drivername:%v", driverName)})
+	if cfg.dbStats {
+		go pollDBStats(db, []string{fmt.Sprintf("drivername:%v", driverName)})
 	}
 	return db
-}
-
-func dbStatsEnabled(cfg *config) bool {
-	return int64(cfg.dbStats) > 0
 }
 
 // Open returns connection to a DB using the traced version of the given driver. The driver may

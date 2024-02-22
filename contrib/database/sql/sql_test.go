@@ -352,14 +352,14 @@ func TestDBStats(t *testing.T) {
 
 	Register(driverName, &pq.Driver{})
 	defer unregister(driverName)
-	db, err := Open(driverName, dsn, WithDBStats(2*time.Millisecond))
+	db, err := Open(driverName, dsn, WithDBStats())
 	require.NoError(t, err)
 	defer db.Close()
 
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(11 * time.Second) //unfortunate but the only way we can test it, as the poller runs every 10s
 
 	calls := tg.CallNames()
-	assert.Len(t, calls, 18)
+	assert.Len(t, calls, 9)
 	assert.Contains(t, calls, MaxOpenConnections)
 	assert.Contains(t, calls, OpenConnections)
 	assert.Contains(t, calls, InUse)

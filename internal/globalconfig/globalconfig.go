@@ -105,6 +105,8 @@ func SetStatsCarrier(sc *internal.StatsCarrier) {
 
 // PushStat pushes the stat onto the StatsCarrier's stats channel, via the Add method
 func PushStat(stat internal.Stat) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
 	if !StatsCarrier() {
 		log.Debug("No stats carrier found; dropping stat %v", stat.Name())
 		return
@@ -114,16 +116,5 @@ func PushStat(stat internal.Stat) {
 
 // StatsCarrier returns true if there is a StatsCarrier on the globalconfig, else false
 func StatsCarrier() bool {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
 	return cfg.statsCarrier != nil
-}
-
-// ClearStatsCarrier removes the statsCarrier from the global config
-// The scope that calls "Start" on the StatsCarrier is responsible for calling "Stop",
-// the globalconfig is not responsible
-func ClearStatsCarrier() {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-	cfg.statsCarrier = nil
 }

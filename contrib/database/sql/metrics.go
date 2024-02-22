@@ -29,9 +29,11 @@ const (
 	MaxLifetimeClosed  = tracerPrefix + "sql.db.connections.closed.max_lifetime"
 )
 
+const interval = 10 * time.Second
+
 // pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStats off to the StatsCarrier
 // TODO: Perhaps grant a way for pollDBStats to grab the drivername so that it doesn't have to be passed in as a param
-func pollDBStats(interval time.Duration, db *sql.DB, tags []string) {
+func pollDBStats(db *sql.DB, tags []string) {
 	if db == nil {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
 		return

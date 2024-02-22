@@ -672,7 +672,6 @@ func (t *tracer) Stop() {
 	}
 	if t.statsCarrier != nil {
 		t.statsCarrier.Stop()
-		globalconfig.ClearStatsCarrier()
 	}
 	appsec.Stop()
 	remoteconfig.Stop()

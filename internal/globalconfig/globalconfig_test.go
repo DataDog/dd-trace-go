@@ -58,15 +58,3 @@ func TestStatsCarrier(t *testing.T) {
 	})
 }
 
-// Test that ClearStatsCarrier removes the statsCarrier from the globalconfig, but does not stop the underlying statsCarrier
-func TestClearStatsCarrier(t *testing.T) {
-	sc := internal.NewStatsCarrier(&statsd.NoOpClient{})
-	cfg.statsCarrier = sc
-	sc.Start()
-	ClearStatsCarrier()
-	assert.Nil(t, cfg.statsCarrier)
-	assert.False(t, sc.Stopped())
-	sc.Stop()
-	//reset globalconfig for other tests
-	cfg.statsCarrier = nil
-}
