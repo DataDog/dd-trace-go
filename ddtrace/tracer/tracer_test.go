@@ -31,6 +31,7 @@ import (
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
@@ -2237,7 +2238,7 @@ func TestFlush(t *testing.T) {
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
 
-	ts := &testStatsdClient{}
+	ts := &statsdtest.TestStatsdClient{}
 	tr.statsd = ts
 
 	transport := newDummyTransport()
@@ -2272,11 +2273,11 @@ loop:
 	c.add(as)
 
 	assert.Len(t, tw.Flushed(), 0)
-	assert.Zero(t, ts.flushed)
+	assert.Zero(t, ts.Flushed())
 	assert.Len(t, transport.Stats(), 0)
 	tr.Flush()
 	assert.Len(t, tw.Flushed(), 1)
-	assert.Equal(t, 1, ts.flushed)
+	assert.Equal(t, 1, ts.Flushed())
 	assert.Len(t, transport.Stats(), 1)
 }
 

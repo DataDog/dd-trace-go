@@ -503,6 +503,9 @@ github.com/DataDog/datadog-agent/pkg/util/scrubber v0.49.0/go.mod h1:EOGgNrSPskI
 github.com/DataDog/datadog-go v3.2.0+incompatible h1:qSG2N4FghB1He/r2mFrWKCaL7dXCilEuNEeAn20fdD4=
 github.com/DataDog/datadog-go/v5 v5.1.1/go.mod h1:KhiYb2Badlv9/rofz+OznKoEF5XKTonWyhx5K83AP8E=
 github.com/DataDog/datadog-go/v5 v5.3.0/go.mod h1:XRDJk1pTc00gm+ZDiBKsjh7oOOtJfYfglVCmFb8C2+Q=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8 h1:E3mNcvkwSpW9KKutFUuHtEVws2lrq4YH2a3QFKTQfdE=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8/go.mod h1:jcJ2a9Sz4MkWqxYi9fufYzURI7eIj7zJchzIlOG0w3Y=
+github.com/DataDog/dd-trace-go/v2/contrib/net/http v0.0.0-20240125124054-68de6a751ca1/go.mod h1:Egv1mBi64A3Nlw98p77lxkMhrK3z/FlLSPNA5GjJiz0=
 github.com/DataDog/go-sqllexer v0.0.8/go.mod h1:nB4Ea2YNsqMwtbWMc4Fm/oP98IIrSPapqwOwPioMspY=
 github.com/DataDog/viper v1.7.0 h1:hJvGT/zsNgVPxJLjW+ozl247LzEIRs7DdKakUgSsQzo=
 github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c h1:RGWPOewvKIROun94nF7v2cua9qP+thov/7M50KEoeSU=
