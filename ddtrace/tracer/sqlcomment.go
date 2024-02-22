@@ -57,8 +57,10 @@ const (
 	sqlCommentDBService     = "dddbs"
 	sqlCommentParentVersion = "ddpv"
 	sqlCommentEnv           = "dde"
-	sqlCommentPeerHostname  = "ddh"
-	sqlCommentPeerDBName    = "dddb"
+	// These keys are for the database we are connecting to, instead of the service we are running in.
+	// "Peer" is the OpenTelemetry nomenclature for "thing I am talking to"
+	sqlCommentPeerHostname = "ddh"
+	sqlCommentPeerDBName   = "dddb"
 )
 
 // Current trace context version (see https://www.w3.org/TR/trace-context/#version)
