@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -119,6 +120,56 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 2)
 		telemetryClient.AssertCalled(t, "ConfigChange", []telemetry.Configuration{{Name: "trace_header_tags", Value: "", Origin: ""}})
+	})
+
+	t.Run("RC tracing_enabled = false is applied", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		defer telemetry.MockGlobalClient(telemetryClient)()
+
+		Start(WithService("my-service"), WithEnv("my-env"))
+		defer Stop()
+
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+
+		tr, ok := internal.GetGlobalTracer().(*tracer)
+		require.Equal(t, true, ok)
+		applyStatus := tr.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Equal(t, false, tr.config.enabled.current)
+		headers := TextMapCarrier{
+			traceparentHeader:      "00-12345678901234567890123456789012-1234567890123456-01",
+			tracestateHeader:       "dd=s:2;o:rum;t.usr.id:baz64~~",
+			"ot-baggage-something": "someVal",
+		}
+		sctx, err := tr.Extract(headers)
+		require.NoError(t, err)
+		require.Equal(t, internal.NoopSpanContext{}, sctx)
+		err = tr.Inject(internal.NoopSpanContext{}, TextMapCarrier{})
+		require.NoError(t, err)
+		require.Equal(t, internal.NoopSpan{}, tr.StartSpan("noop"))
+
+		// all subsequent spans are of type internal.NoopSpan
+		// no further remoteConfig changes are applied
+		s := StartSpan("web.request").(internal.NoopSpan)
+		s.Finish()
+
+		// turning tracing back through reset should have no effect
+		input = remoteconfig.ProductUpdate{"path": nil}
+		applyStatus = tr.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Equal(t, false, tr.config.enabled.current)
+
+		// turning tracing back explicitly is not allowed
+		input = remoteconfig.ProductUpdate{
+			"path": []byte(`{"lib_config": {"tracing_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`),
+		}
+		applyStatus = tr.onRemoteConfigUpdate(input)
+		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
+		require.Equal(t, false, tr.config.enabled.current)
+
+		telemetryClient.AssertNumberOfCalls(t, "ConfigChange", 1)
 	})
 
 	t.Run("DD_TRACE_HEADER_TAGS=X-Test-Header:my-tag-name-from-env and RC header tags = X-Test-Header:my-tag-name-from-rc", func(t *testing.T) {
@@ -359,6 +410,10 @@ func TestStartRemoteConfig(t *testing.T) {
 	require.True(t, found)
 
 	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingCustomTags)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingEnabled)
 	require.NoError(t, err)
 	require.True(t, found)
 }
