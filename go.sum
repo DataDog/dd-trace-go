@@ -642,6 +642,8 @@ github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222143418-f576f22a3707 h1:/Vun9ABd
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222143418-f576f22a3707/go.mod h1:guG8Q4usCSwiYEsEMSyST8wosYKU9nNmpFy/4B/PyT0=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222143610-aff5f3bd78e5 h1:nWT5KWojsNg8WOT7MqrWSvzblIfxq30+dAD/vbaqCXY=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222143610-aff5f3bd78e5/go.mod h1:guG8Q4usCSwiYEsEMSyST8wosYKU9nNmpFy/4B/PyT0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222161352-386ab579ed42 h1:5ajZIPsujPQT/Yo7hPz3ojoOv1yXogoO8drCG4Z3/0s=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240222161352-386ab579ed42/go.mod h1:guG8Q4usCSwiYEsEMSyST8wosYKU9nNmpFy/4B/PyT0=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240216140524-914f0c30cab1 h1:tXKQV0O3XCFwZgintpKq3vnZqaMChY/vMCcXNaclHes=
 github.com/DataDog/dd-trace-go/v2/contrib/99designs/gqlgen v0.0.0-20240216140524-914f0c30cab1/go.mod h1:pmT1ExCMPtowsPWs493lMOYBu+nzSspKstJkN2gmgsk=
 github.com/DataDog/dd-trace-go/v2/contrib/emicklei/go-restful.v3 v0.0.0-20240216140524-914f0c30cab1 h1:KjUXtUuQR2kZ15BPDT5cu017abAVeRWP9kLcsMXZjS4=
