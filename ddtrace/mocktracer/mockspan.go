@@ -43,6 +43,7 @@ func (s *Span) SetTag(k string, v interface{}) {
 		return
 	}
 	s.m[k] = v
+	s.sp.SetTag(k, v)
 }
 
 func (s *Span) Tag(k string) interface{} {
