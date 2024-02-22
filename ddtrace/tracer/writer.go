@@ -219,8 +219,7 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		h.buf.WriteString(":")
 		h.marshalString(v)
 	}
-	h.buf.WriteString(`},"meta_struct":{`)
-	first = true
+	// We cannot pack messagepack into JSON, so we need to marshal the meta struct as JSON, and send them through the `meta` field
 	for k, v := range s.MetaStruct {
 		if first {
 			first = false
