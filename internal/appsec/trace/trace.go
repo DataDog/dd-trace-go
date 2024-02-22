@@ -42,7 +42,7 @@ func SetEventSpanTags(span TagSetter, events []any) error {
 	}
 
 	// Set the appsec event span tag
-	span.SetTag("_dd.appsec.json", map[string][]any{"triggers": events})
+	span.SetTag("_dd.appsec.json", map[string]any{"triggers": events})
 	// Keep this span due to the security event
 	//
 	// This is a workaround to tell the tracer that the trace was kept by AppSec.
