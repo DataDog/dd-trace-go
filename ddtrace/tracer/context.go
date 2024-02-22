@@ -54,6 +54,5 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	} else {
 		s = internal.SpanV2Adapter{Span: span}
 	}
-	ctx = ContextWithSpan(ctx, s)
 	return s, ctx
 }
