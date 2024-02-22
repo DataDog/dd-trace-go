@@ -57,4 +57,3 @@ func TestStatsCarrier(t *testing.T) {
 		cfg.statsCarrier = nil
 	})
 }
-

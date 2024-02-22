@@ -265,7 +265,7 @@ func WithDBMPropagation(mode tracer.DBMPropagationMode) Option {
 	}
 }
 
-// WithDBStats enables polling of DBStats metrics 
+// WithDBStats enables polling of DBStats metrics
 // ref: https://pkg.go.dev/database/sql#DBStats
 // These metrics are submitted to Datadog and are not billed as custom metrics
 func WithDBStats() Option {
