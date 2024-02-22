@@ -29,7 +29,8 @@ func TestPollDBStats(t *testing.T) {
 	defer sc.Stop()
 	globalconfig.SetStatsCarrier(sc)
 	go func() {
-		pollDBStats(2*time.Millisecond, db)
+		// TODO: integration-level service name, blocked by AIT-9869
+		pollDBStats(2*time.Millisecond, db, []string{"drivername:postgres"})
 	}()
 	time.Sleep(5 * time.Millisecond)
 	calls := tg.CallNames()
@@ -43,4 +44,6 @@ func TestPollDBStats(t *testing.T) {
 	assert.Contains(t, calls, MaxIdleClosed)
 	assert.Contains(t, calls, MaxIdleTimeClosed)
 	assert.Contains(t, calls, MaxLifetimeClosed)
+	tags := tg.Tags()
+	assert.Contains(t, tags, "drivername:postgres")
 }

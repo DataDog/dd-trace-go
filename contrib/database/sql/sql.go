@@ -19,6 +19,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -211,7 +212,7 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 	}
 	db := sql.OpenDB(tc)
 	if dbStatsEnabled(cfg) {
-		go pollDBStats(cfg.dbStats, db)
+		go pollDBStats(cfg.dbStats, db, []string{fmt.Sprintf("drivername:%v", driverName)})
 	}
 	return db
 }

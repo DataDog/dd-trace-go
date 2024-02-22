@@ -30,7 +30,8 @@ const (
 )
 
 // pollDBStats calls (*DB).Stats on the db, at the specified interval. It pushes the DBStats off to the StatsCarrier
-func pollDBStats(interval time.Duration, db *sql.DB) {
+// TODO: Perhaps grant a way for pollDBStats to grab the drivername so that it doesn't have to be passed in as a param
+func pollDBStats(interval time.Duration, db *sql.DB, tags []string) {
 	if db == nil {
 		log.Debug("No traced DB connection found; cannot pull DB stats.")
 		return
@@ -38,14 +39,14 @@ func pollDBStats(interval time.Duration, db *sql.DB) {
 	log.Debug("Traced DB connection found: DB stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
 		stat := db.Stats()
-		globalconfig.PushStat(internal.NewGauge(MaxOpenConnections, float64(stat.MaxOpenConnections), nil, 1))
-		globalconfig.PushStat(internal.NewGauge(OpenConnections, float64(stat.OpenConnections), nil, 1))
-		globalconfig.PushStat(internal.NewGauge(InUse, float64(stat.InUse), nil, 1))
-		globalconfig.PushStat(internal.NewGauge(Idle, float64(stat.Idle), nil, 1))
-		globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), nil, 1))
-		globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, nil, 1))
-		globalconfig.PushStat(internal.NewCount(MaxIdleClosed, int64(stat.MaxIdleClosed), nil, 1))
-		globalconfig.PushStat(internal.NewCount(MaxIdleTimeClosed, int64(stat.MaxIdleTimeClosed), nil, 1))
-		globalconfig.PushStat(internal.NewCount(MaxLifetimeClosed, int64(stat.MaxLifetimeClosed), nil, 1))
+		globalconfig.PushStat(internal.NewGauge(MaxOpenConnections, float64(stat.MaxOpenConnections), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(OpenConnections, float64(stat.OpenConnections), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(InUse, float64(stat.InUse), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(Idle, float64(stat.Idle), tags, 1))
+		globalconfig.PushStat(internal.NewGauge(WaitCount, float64(stat.WaitCount), tags, 1))
+		globalconfig.PushStat(internal.NewTiming(WaitDuration, stat.WaitDuration, tags, 1))
+		globalconfig.PushStat(internal.NewCount(MaxIdleClosed, int64(stat.MaxIdleClosed), tags, 1))
+		globalconfig.PushStat(internal.NewCount(MaxIdleTimeClosed, int64(stat.MaxIdleTimeClosed), tags, 1))
+		globalconfig.PushStat(internal.NewCount(MaxLifetimeClosed, int64(stat.MaxLifetimeClosed), tags, 1))
 	}
 }
