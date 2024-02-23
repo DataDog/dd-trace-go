@@ -203,12 +203,11 @@ func TestLogWriter(t *testing.T) {
 			Service:  "basicService",
 			Resource: "basicResource",
 			Meta: map[string]string{
-				"env":     "prod",
-				"version": "1.26.0",
-			},
-			MetaStruct: map[string]any{
+				"env":       "prod",
+				"version":   "1.26.0",
 				"_dd.stack": "{\"0\":\"github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter\"}",
 			},
+			MetaStruct: nil,
 			Metrics: map[string]float64{
 				"widgets": 1e26,
 				"zero":    0.0,
@@ -242,7 +241,7 @@ func TestLogWriter(t *testing.T) {
 		w.encodeSpan(s)
 
 		str := w.buf.String()
-		assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name\n","resource":"\"res\"","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"meta_struct":{},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv\t"}`, str)
+		assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name\n","resource":"\"res\"","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv\t"}`, str)
 		assert.NotContains(str, "\n")
 		assert.Contains(str, "\\n")
 	})
