@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -271,6 +272,40 @@ func TestOpenOptions(t *testing.T) {
 		s0 := spans[0]
 		assert.Equal(t, "register-override", s0.Tag(ext.ServiceName))
 	})
+
+	t.Run("WithDBStats", func(t *testing.T) {
+		Register(driverName, &pq.Driver{})
+		defer unregister(driverName)
+		_, err := Open(driverName, dsn, WithDBStats())
+		require.NoError(t, err)
+
+		var tg statsdtest.TestStatsdClient
+		sc := internal.NewStatsCarrier(&tg)
+		sc.Start()
+		defer sc.Stop()
+		globalconfig.SetStatsCarrier(sc)
+
+		// check that within 13s, at least one round of `pollDBStats` has completed
+		deadline := time.Now().Add(13 * time.Second)
+		for {
+			if time.Now().After(deadline) {
+				t.Fatalf("Stats not collected in expected interval of %v", interval)
+			}
+			calls := tg.CallNames()
+			if len(calls) < 9 {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			if ContainsAllStats(calls) {
+				break
+			}
+			t.Fatalf("Some stats missing")
+		}
+	})
+}
+
+func ContainsAllStats(calls []string) bool {
+	return (slices.Contains(calls, MaxOpenConnections) && slices.Contains(calls, OpenConnections) && slices.Contains(calls, InUse) && slices.Contains(calls, Idle) && slices.Contains(calls, WaitCount) && slices.Contains(calls, WaitDuration) && slices.Contains(calls, MaxIdleClosed) && slices.Contains(calls, MaxIdleTimeClosed) && slices.Contains(calls, MaxLifetimeClosed))
 }
 
 func TestMySQLUint64(t *testing.T) {
@@ -337,38 +372,6 @@ func TestConnectCancelledCtx(t *testing.T) {
 	s := spans[0]
 	assert.Equal("hangingConnector.query", s.OperationName())
 	assert.Equal("Connect", s.Tag("sql.query_type"))
-}
-
-// TestDBStats tests that db stats are reported by the stats client when WithDBStats is provided to the Open function
-func TestDBStats(t *testing.T) {
-	driverName := "postgres"
-	dsn := "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
-
-	var tg statsdtest.TestStatsdClient
-	sc := internal.NewStatsCarrier(&tg)
-	sc.Start()
-	defer sc.Stop()
-	globalconfig.SetStatsCarrier(sc)
-
-	Register(driverName, &pq.Driver{})
-	defer unregister(driverName)
-	db, err := Open(driverName, dsn, WithDBStats())
-	require.NoError(t, err)
-	defer db.Close()
-
-	time.Sleep(11 * time.Second) //unfortunate but the only way we can test it, as the poller runs every 10s
-
-	calls := tg.CallNames()
-	assert.Len(t, calls, 9)
-	assert.Contains(t, calls, MaxOpenConnections)
-	assert.Contains(t, calls, OpenConnections)
-	assert.Contains(t, calls, InUse)
-	assert.Contains(t, calls, Idle)
-	assert.Contains(t, calls, WaitCount)
-	assert.Contains(t, calls, WaitDuration)
-	assert.Contains(t, calls, MaxIdleClosed)
-	assert.Contains(t, calls, MaxIdleTimeClosed)
-	assert.Contains(t, calls, MaxLifetimeClosed)
 }
 
 func TestRegister(_ *testing.T) {

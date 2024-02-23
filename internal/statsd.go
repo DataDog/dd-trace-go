@@ -185,11 +185,6 @@ func (sc *StatsCarrier) Stop() {
 	sc.wg.Wait()
 }
 
-// Stopped returns true if the sc.stop channel has already been closed, else false
-func (sc *StatsCarrier) Stopped() bool {
-	return atomic.SwapUint64(&(sc.stopped), 1) > 0
-}
-
 // push submits the stat of supported types (gauge, count or timing) via its statsd client
 func (sc *StatsCarrier) push(s Stat) {
 	switch s.(type) {
