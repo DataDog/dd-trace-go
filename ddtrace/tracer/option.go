@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -30,6 +32,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
+	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -214,7 +217,7 @@ type config struct {
 	profilerEndpoints bool
 
 	// enabled reports whether tracing is enabled.
-	enabled bool
+	enabled dynamicConfig[bool]
 
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
@@ -342,7 +345,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolEnv("DD_RUNTIME_METRICS_ENABLED", false)
 	c.debug = internal.BoolEnv("DD_TRACE_DEBUG", false)
-	c.enabled = internal.BoolEnv("DD_TRACE_ENABLED", true)
+	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolEnv("DD_TRACE_ENABLED", true), func(b bool) bool { return true }, equal[bool])
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	c.enableHostnameDetection = internal.BoolEnv("DD_CLIENT_HOSTNAME_ENABLED", true)
@@ -389,6 +392,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	for _, fn := range opts {
+		if fn == nil {
+			continue
+		}
 		fn(c)
 	}
 	if c.agentURL == nil {
@@ -896,6 +902,15 @@ func (c *config) initGlobalTags(init map[string]interface{}) {
 	c.globalTags = newDynamicConfig[map[string]interface{}]("trace_tags", init, apply, equalMap[string])
 }
 
+// WithSampler sets the given sampler to be used with the tracer. By default
+// an all-permissive sampler is used.
+// Deprecated: Use WithSamplerRate instead. Custom sampling will be phased out in a future release.
+func WithSampler(s Sampler) StartOption {
+	return func(c *config) {
+		c.sampler = &customSampler{s: s}
+	}
+}
+
 // WithRateSampler sets the given sampler rate to be used with the tracer.
 // The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
 func WithSamplerRate(rate float64) StartOption {
@@ -1009,7 +1024,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		c.enabled = enabled
+		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(b bool) bool { return true }, equal[bool])
 	}
 }
 
@@ -1121,6 +1136,13 @@ func SpanType(name string) StartSpanOption {
 	return Tag(ext.SpanType, name)
 }
 
+// WithSpanLinks sets span links on the started span.
+func WithSpanLinks(links []SpanLink) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		cfg.SpanLinks = append(cfg.SpanLinks, links...)
+	}
+}
+
 var measuredTag = Tag(keyMeasured, 1)
 
 // Measured marks this span to be measured for metrics and stats calculations.
@@ -1174,7 +1196,7 @@ func AnalyticsRate(rate float64) StartSpanOption {
 
 // WithStartSpanConfig merges the given StartSpanConfig into the one used to start the span.
 // It is useful when you want to set a common base config, reducing the number of function calls in hot loops.
-func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
+func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 	return func(c *StartSpanConfig) {
 		// copy cfg into c only if cfg fields are not zero values
 		// c fields have precedence, as they may have been set up before running this option
@@ -1186,6 +1208,9 @@ func WithStartSpanConfig(cfg StartSpanConfig) StartSpanOption {
 		}
 		if c.Context == nil {
 			c.Context = cfg.Context
+		}
+		if c.SpanLinks == nil {
+			c.SpanLinks = cfg.SpanLinks
 		}
 		if c.StartTime.IsZero() {
 			c.StartTime = cfg.StartTime
@@ -1214,6 +1239,96 @@ func WithHeaderTags(headerAsTags []string) StartOption {
 		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
 		setHeaderTags(headerAsTags)
 	}
+}
+
+// WithTestDefaults configures the tracer to not send spans to the agent, and to not collect metrics.
+// Warning:
+// This option should only be used in tests, as it will prevent the tracer from sending spans to the agent.
+func WithTestDefaults(statsdClient any) StartOption {
+	return func(c *config) {
+		if statsdClient == nil {
+			statsdClient = &statsd.NoOpClient{}
+		}
+		c.statsdClient = statsdClient.(internal.StatsdClient)
+		c.transport = newDummyTransport()
+	}
+}
+
+// Mock Transport with a real Encoder
+type dummyTransport struct {
+	sync.RWMutex
+	traces spanLists
+	stats  []*statsPayload
+}
+
+func newDummyTransport() *dummyTransport {
+	return &dummyTransport{traces: spanLists{}}
+}
+
+func (t *dummyTransport) Len() int {
+	t.RLock()
+	defer t.RUnlock()
+	return len(t.traces)
+}
+
+func (t *dummyTransport) sendStats(p *statsPayload) error {
+	t.Lock()
+	t.stats = append(t.stats, p)
+	t.Unlock()
+	return nil
+}
+
+func (t *dummyTransport) Stats() []*statsPayload {
+	t.RLock()
+	defer t.RUnlock()
+	return t.stats
+}
+
+func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
+	traces, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	t.Lock()
+	t.traces = append(t.traces, traces...)
+	t.Unlock()
+	ok := io.NopCloser(strings.NewReader("OK"))
+	return ok, nil
+}
+
+func (t *dummyTransport) endpoint() string {
+	return "http://localhost:9/v0.4/traces"
+}
+
+func decode(p *payload) (spanLists, error) {
+	var traces spanLists
+	err := msgp.Decode(p, &traces)
+	return traces, err
+}
+
+func encode(traces [][]*Span) (*payload, error) {
+	p := newPayload()
+	for _, t := range traces {
+		if err := p.push(t); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
+func (t *dummyTransport) Reset() {
+	t.Lock()
+	t.traces = t.traces[:0]
+	t.Unlock()
+}
+
+func (t *dummyTransport) Traces() spanLists {
+	t.Lock()
+	defer t.Unlock()
+
+	traces := t.traces
+	t.traces = spanLists{}
+	return traces
 }
 
 // setHeaderTags sets the global header tags.

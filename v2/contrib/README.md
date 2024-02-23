@@ -7,8 +7,6 @@ them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
 
-:warning: These libraries are not built to be used with Opentracing. Opentracing integrations can be found in [their own organisation](https://github.com/opentracing-contrib/).
-
 ### Usage
 
 First, find the library which you'd like to integrate with. The naming convention for the integration packages has two things to take into consideration:
@@ -24,7 +22,7 @@ First, find the library which you'd like to integrate with. The naming conventio
     * The integration works with all versions (including v0), it won't have a version suffix.
     * The integration works with a specific major version, it will have a version suffix (in this example `.vN`) where N is the major version that is being covered. If the integration covers more than one major version, the minimum version supported should be chosen for the suffix. (ex. If the integration covers versions 2.x.x - 4.x.x, the suffix will be .v2).
 
-Important: the package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`
+Important: the package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`.
 
 Second, there are a few tags that should be found in all integration spans:
 

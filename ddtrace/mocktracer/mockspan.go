@@ -38,11 +38,18 @@ func (s *Span) OperationName() string {
 	return s.m[ext.SpanName].(string)
 }
 
+func (s *Span) SetTag(k string, v interface{}) {
+	if s == nil {
+		return
+	}
+	s.m[k] = v
+	s.sp.SetTag(k, v)
+}
+
 func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
 	}
-
 	return s.m[k]
 }
 

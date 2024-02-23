@@ -36,14 +36,17 @@ type StartSpanConfig struct {
 
 	// Context is the parent context where the span should be stored.
 	Context context.Context
+
+	// SpanLink represents a causal relationship between two spans. A span can have multiple links.
+	SpanLinks []SpanLink
 }
 
 // NewStartSpanConfig allows to build a base config struct. It accepts the same options as StartSpan.
 // It's useful to reduce the number of operations in any hot path and update it for request/operation specifics.
-func NewStartSpanConfig(opts ...StartSpanOption) StartSpanConfig {
-	var cfg StartSpanConfig
+func NewStartSpanConfig(opts ...StartSpanOption) *StartSpanConfig {
+	cfg := new(StartSpanConfig)
 	for _, fn := range opts {
-		fn(&cfg)
+		fn(cfg)
 	}
 	return cfg
 }
@@ -106,5 +109,27 @@ func StackFrames(n, skip uint) FinishOption {
 	return func(cfg *FinishConfig) {
 		cfg.StackFrames = n
 		cfg.SkipStackFrames = skip
+	}
+}
+
+// WithFinishConfig merges the given FinishConfig into the one used to finish the span.
+// It is useful when you want to set a common base finish config, reducing the number of function calls in hot loops.
+func WithFinishConfig(cfg *FinishConfig) FinishOption {
+	return func(fc *FinishConfig) {
+		if fc.Error == nil {
+			fc.Error = cfg.Error
+		}
+		if fc.FinishTime.IsZero() {
+			fc.FinishTime = cfg.FinishTime
+		}
+		if !fc.NoDebugStack {
+			fc.NoDebugStack = cfg.NoDebugStack
+		}
+		if fc.SkipStackFrames == 0 {
+			fc.SkipStackFrames = cfg.SkipStackFrames
+		}
+		if fc.StackFrames == 0 {
+			fc.StackFrames = cfg.StackFrames
+		}
 	}
 }

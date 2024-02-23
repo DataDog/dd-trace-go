@@ -91,18 +91,19 @@ func (s *Span) AsMap() map[string]interface{} {
 type Span struct {
 	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
-	name     string             `msg:"name"`              // operation name
-	service  string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
-	resource string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	spanType string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
-	start    int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
-	duration int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
-	meta     map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
-	metrics  map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
-	spanID   uint64             `msg:"span_id"`           // identifier of this span
-	traceID  uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
-	parentID uint64             `msg:"parent_id"`         // identifier of the span's direct parent
-	error    int32              `msg:"error"`             // error status of the span; 0 means no errors
+	name      string             `msg:"name"`              // operation name
+	service   string             `msg:"service"`           // service name (i.e. "grpc.server", "http.request")
+	resource  string             `msg:"resource"`          // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	spanType  string             `msg:"type"`              // protocol associated with the span (i.e. "web", "db", "cache")
+	start     int64              `msg:"start"`             // span start time expressed in nanoseconds since epoch
+	duration  int64              `msg:"duration"`          // duration of the span expressed in nanoseconds
+	meta      map[string]string  `msg:"meta,omitempty"`    // arbitrary map of metadata
+	metrics   map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+	spanID    uint64             `msg:"span_id"`           // identifier of this span
+	traceID   uint64             `msg:"trace_id"`          // lower 64-bits of the root span identifier
+	parentID  uint64             `msg:"parent_id"`         // identifier of the span's direct parent
+	error     int32              `msg:"error"`             // error status of the span; 0 means no errors
+	spanLinks []SpanLink         `msg:"span_links"`        // links to other spans
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces
@@ -616,18 +617,20 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	if t := GetGlobalTracer(); t != nil {
 		tc := t.TracerConf()
-		// we have an active tracer
-		if tc.CanComputeStats && shouldComputeStats(s) {
-			// the agent supports computed stats
-			t.SubmitStats(s)
-		}
-		if tc.CanDropP0s {
-			// the agent supports dropping p0's in the client
-			keep = shouldKeep(s)
-		}
-		if tc.DebugAbandonedSpans {
-			// the tracer supports debugging abandoned spans
-			t.SubmitAbandonedSpan(s, true)
+		if !tc.Disabled {
+			// we have an active tracer
+			if tc.CanComputeStats && shouldComputeStats(s) {
+				// the agent supports computed stats
+				t.SubmitStats(s)
+			}
+			if tc.CanDropP0s {
+				// the agent supports dropping p0's in the client
+				keep = shouldKeep(s)
+			}
+			if tc.DebugAbandonedSpans {
+				// the tracer supports debugging abandoned spans
+				t.SubmitAbandonedSpan(s, true)
+			}
 		}
 	}
 	if keep {

@@ -6,8 +6,8 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1 h1:tJNi6VbvrMENBYBDPKG3gc1F/85OQnSAsJ3LtcY4xBY=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1/go.mod h1:xBOE4HUzKYgS7n3GhUHZfETSsUB1slLDDBAyM/nrmA0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8 h1:E3mNcvkwSpW9KKutFUuHtEVws2lrq4YH2a3QFKTQfdE=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8/go.mod h1:jcJ2a9Sz4MkWqxYi9fufYzURI7eIj7zJchzIlOG0w3Y=
 github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240125124054-68de6a751ca1 h1:qZ/r4nNLdnsyDN2ScozCAtDfsDPnIfi7g6zaxh/uk8E=
 github.com/DataDog/dd-trace-go/v2/contrib/bradfitz/gomemcache v0.0.0-20240125124054-68de6a751ca1/go.mod h1:1LvRAZr6N3JuhnlaWKEYRFJvG7zJzhE6KoNu+mH3n/A=
 github.com/DataDog/dd-trace-go/v2/contrib/miekg/dns v0.0.0-20240125124054-68de6a751ca1 h1:86gOqLqfiOMMuFuUOGECKcbpIonDT16s5mqQX3aqVBo=
@@ -47,6 +47,7 @@ github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
+github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/gofuzz v1.2.0 h1:xRy4A+RhZaiKjJ1bPfwQ8sedCA+YS2YcCHW6ec7JMi0=
 github.com/google/gofuzz v1.2.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b h1:h9U78+dx9a4BKdQkBBos92HalKpaGKHrp+3Uo6yTodo=
@@ -59,7 +60,6 @@ github.com/hashicorp/go-multierror v1.1.1 h1:H5DkEtf6CXdFp0N0Em5UCwQpXMWke8IA0+l
 github.com/hashicorp/go-multierror v1.1.1/go.mod h1:iw975J/qwKPdAO1clOe2L8331t/9/fmwbPZ6JB6eMoM=
 github.com/kr/pretty v0.3.0 h1:WgNl7dwNpEZ6jJ9k1snq4pZsg7DOEN8hP9Xw0Tsjwk0=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
-github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/miekg/dns v1.1.57 h1:Jzi7ApEIzwEPLHWRcafCN9LZSBbqQpxjt/wpgvg7wcM=
 github.com/miekg/dns v1.1.57/go.mod h1:uqRjCRUuEAA6qsOiJvDd+CFo/vW+y5WR6SNmHE55hZk=
 github.com/outcaste-io/ristretto v0.2.3 h1:AK4zt/fJ76kjlYObOeNwh4T3asEuaCmp26pOvUOL9w0=

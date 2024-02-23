@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/DataDog/appsec-internal-go v1.4.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8
 	github.com/golang/protobuf v1.5.3
 	github.com/stretchr/testify v1.8.4
 	github.com/tinylib/msgp v1.1.9
@@ -29,12 +29,10 @@ require (
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect

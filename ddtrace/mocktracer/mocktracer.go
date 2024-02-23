@@ -33,8 +33,10 @@ type Tracer interface {
 	// OpenSpans returns the set of started spans that have not been finished yet.
 	OpenSpans() []*Span
 
+	FinishSpan(*tracer.Span)
 	// FinishedSpans returns the set of finished spans.
 	FinishedSpans() []*Span
+
 	SentDSMBacklogs() []datastreams.Backlog
 
 	// Reset resets the spans and services recorded in the tracer. This is

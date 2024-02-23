@@ -353,8 +353,8 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.libraryVersion, msg)
 	err := p.Producer.Produce(msg, deliveryChan)
-	// with no delivery channel, finish immediately
-	if deliveryChan == nil {
+	// with no delivery channel or enqueue error, finish immediately
+	if err != nil || deliveryChan == nil {
 		span.Finish(tracer.WithError(err))
 	}
 

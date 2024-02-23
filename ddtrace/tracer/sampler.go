@@ -15,18 +15,41 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
+// Sampler is an interface for sampling traces.
+type Sampler interface {
+	// Sample returns true if the given span should be sampled.
+	Sample(span *Span) bool
+}
+
 // RateSampler is a sampler implementation which randomly selects spans using a
 // provided rate. For example, a rate of 0.75 will permit 75% of the spans.
 // RateSampler implementations should be safe for concurrent use.
 type RateSampler interface {
-	// Sample returns true if the given span should be sampled.
-	Sample(span *Span) bool
+	Sampler
 
 	// Rate returns the current sample rate.
 	Rate() float64
 
 	// SetRate sets a new sample rate.
 	SetRate(rate float64)
+}
+
+type customSampler struct {
+	s Sampler
+}
+
+// Rate implements RateSampler.
+func (*customSampler) Rate() float64 {
+	return 1.0
+}
+
+// SetRate implements RateSampler.
+func (*customSampler) SetRate(rate float64) {
+	// noop
+}
+
+func (s *customSampler) Sample(span *Span) bool {
+	return s.s.Sample(span)
 }
 
 // rateSampler samples from a sample rate.

@@ -103,6 +103,15 @@ type SpanContext struct {
 	origin     string // e.g. "synthetics"
 }
 
+// Private interface for converting v1 span contexts to v2 ones.
+type spanContextV1Adapter interface {
+	SamplingDecision() uint32
+	Origin() string
+	Priority() *float64
+	PropagatingTags() map[string]string
+	Tags() map[string]string
+}
+
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
@@ -115,6 +124,16 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
+	ctx, ok := c.(spanContextV1Adapter)
+	if !ok {
+		return &sc
+	}
+	sc.origin = ctx.Origin()
+	sc.trace = newTrace()
+	sc.trace.priority = ctx.Priority()
+	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
+	sc.trace.tags = ctx.Tags()
+	sc.trace.propagatingTags = ctx.PropagatingTags()
 	return &sc
 }
 

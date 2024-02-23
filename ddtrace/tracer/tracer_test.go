@@ -31,11 +31,11 @@ import (
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func (t *tracer) newEnvSpan(service, env string) *Span {
@@ -942,6 +942,29 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	assert.Equal("changed!", childContext.baggage["key"])
 }
 
+func TestTracerInjectConcurrency(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+	span, _ := StartSpanFromContext(context.Background(), "main")
+	defer span.Finish()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 500; i++ {
+		wg.Add(1)
+		i := i
+		go func(val int) {
+			defer wg.Done()
+			span.SetBaggageItem("val", fmt.Sprintf("%d", val))
+
+			traceContext := map[string]string{}
+			_ = tracer.Inject(span.Context(), TextMapCarrier(traceContext))
+		}(i)
+	}
+
+	wg.Wait()
+}
+
 func TestTracerSpanTags(t *testing.T) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
@@ -1652,46 +1675,56 @@ func TestTracerFlush(t *testing.T) {
 func TestTracerReportsHostname(t *testing.T) {
 	const hostname = "hostname-test"
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/set", func(t *testing.T) {
-		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+	testReportHostnameEnabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
 
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+			tracer, _, _, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
+			defer stop()
 
-		root := tracer.StartSpan("root")
-		child := tracer.StartSpan("child", ChildOf(root.Context()))
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root")
+			child := tracer.StartSpan("child", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		name, ok := root.meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
+			name, ok := root.meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
 
-		name, ok = child.meta[keyHostname]
-		assert.True(ok)
-		assert.Equal(name, tracer.config.hostname)
-	})
+			name, ok = child.meta[keyHostname]
+			assert.True(ok)
+			assert.Equal(name, tracer.config.hostname)
+		})
+	}
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/false", false)
 
-	t.Run("DD_TRACE_REPORT_HOSTNAME/unset", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+	testReportHostnameDisabled := func(t *testing.T, name string, withComputeStats bool) {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_COMPUTE_STATS", fmt.Sprintf("%t", withComputeStats))
+			tracer, _, _, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
+			defer stop()
 
-		root := tracer.StartSpan("root")
-		child := tracer.StartSpan("child", ChildOf(root.Context()))
-		child.Finish()
-		root.Finish()
+			root := tracer.StartSpan("root")
+			child := tracer.StartSpan("child", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
 
-		assert := assert.New(t)
+			assert := assert.New(t)
 
-		_, ok := root.meta[keyHostname]
-		assert.False(ok)
-		_, ok = child.meta[keyHostname]
-		assert.False(ok)
-	})
+			_, ok := root.meta[keyHostname]
+			assert.False(ok)
+			_, ok = child.meta[keyHostname]
+			assert.False(ok)
+		})
+	}
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/true", true)
+	testReportHostnameDisabled(t, "DD_TRACE_REPORT_HOSTNAME/unset,DD_TRACE_COMPUTE_STATS/false", false)
 
 	t.Run("WithHostname", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithHostname(hostname))
@@ -2117,83 +2150,6 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	}, nil
 }
 
-// Mock Transport with a real Encoder
-type dummyTransport struct {
-	sync.RWMutex
-	traces spanLists
-	stats  []*statsPayload
-}
-
-func newDummyTransport() *dummyTransport {
-	return &dummyTransport{traces: spanLists{}}
-}
-
-func (t *dummyTransport) Len() int {
-	t.RLock()
-	defer t.RUnlock()
-	return len(t.traces)
-}
-
-func (t *dummyTransport) sendStats(p *statsPayload) error {
-	t.Lock()
-	t.stats = append(t.stats, p)
-	t.Unlock()
-	return nil
-}
-
-func (t *dummyTransport) Stats() []*statsPayload {
-	t.RLock()
-	defer t.RUnlock()
-	return t.stats
-}
-
-func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
-	traces, err := decode(p)
-	if err != nil {
-		return nil, err
-	}
-	t.Lock()
-	t.traces = append(t.traces, traces...)
-	t.Unlock()
-	ok := io.NopCloser(strings.NewReader("OK"))
-	return ok, nil
-}
-
-func (t *dummyTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
-}
-
-func decode(p *payload) (spanLists, error) {
-	var traces spanLists
-	err := msgp.Decode(p, &traces)
-	return traces, err
-}
-
-func encode(traces [][]*Span) (*payload, error) {
-	p := newPayload()
-	for _, t := range traces {
-		if err := p.push(t); err != nil {
-			return p, err
-		}
-	}
-	return p, nil
-}
-
-func (t *dummyTransport) Reset() {
-	t.Lock()
-	t.traces = t.traces[:0]
-	t.Unlock()
-}
-
-func (t *dummyTransport) Traces() spanLists {
-	t.Lock()
-	defer t.Unlock()
-
-	traces := t.traces
-	t.traces = spanLists{}
-	return traces
-}
-
 // comparePayloadSpans allows comparing two spans which might have been
 // read from the msgpack payload. In that case the private fields will
 // not be available and the maps (meta & metrics will be nil for lengths
@@ -2282,7 +2238,7 @@ func TestFlush(t *testing.T) {
 	tw := newTestTraceWriter()
 	tr.traceWriter = tw
 
-	ts := &testStatsdClient{}
+	ts := &statsdtest.TestStatsdClient{}
 	tr.statsd = ts
 
 	transport := newDummyTransport()
@@ -2317,11 +2273,11 @@ loop:
 	c.add(as)
 
 	assert.Len(t, tw.Flushed(), 0)
-	assert.Zero(t, ts.flushed)
+	assert.Zero(t, ts.Flushed())
 	assert.Len(t, transport.Stats(), 0)
 	tr.Flush()
 	assert.Len(t, tw.Flushed(), 1)
-	assert.Equal(t, 1, ts.flushed)
+	assert.Equal(t, 1, ts.Flushed())
 	assert.Len(t, transport.Stats(), 1)
 }
 

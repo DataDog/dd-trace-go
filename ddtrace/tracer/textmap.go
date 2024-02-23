@@ -196,7 +196,7 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{&propagatorW3c{}, dd}
+	defaultPs := []Propagator{dd, &propagatorW3c{}}
 	defaultPsName := "datadog,tracecontext"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
@@ -368,10 +368,11 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
-	// propagate OpenTracing baggage
-	for k, v := range ctx.baggage {
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
-	}
+		return true
+	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
@@ -766,7 +767,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	// we need to recreate tracestate
 	if ctx.updated ||
 		(ctx.trace != nil && !strings.HasPrefix(ctx.trace.propagatingTag(tracestateHeader), "dd=")) ||
-		ctx.trace.propagatingTagsLen() == 0 {
+		(ctx.trace != nil && ctx.trace.propagatingTagsLen() == 0) {
 		writer.Set(tracestateHeader, composeTracestate(ctx, p, ctx.trace.propagatingTag(tracestateHeader)))
 	} else {
 		writer.Set(tracestateHeader, ctx.trace.propagatingTag(tracestateHeader))

@@ -6,8 +6,8 @@ github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0 h1:/V/WtjIQCDNJp
 github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.50.0/go.mod h1:Vc+snp0Bey4MrrJyiV2tVxxJb6BmLomPvN1RgAvjGaQ=
 github.com/DataDog/datadog-go/v5 v5.4.0 h1:Ea3eXUVwrVV28F/fo3Dr3aa+TL/Z7Xi6SUPKW8L99aI=
 github.com/DataDog/datadog-go/v5 v5.4.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1 h1:tJNi6VbvrMENBYBDPKG3gc1F/85OQnSAsJ3LtcY4xBY=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125124054-68de6a751ca1/go.mod h1:xBOE4HUzKYgS7n3GhUHZfETSsUB1slLDDBAyM/nrmA0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8 h1:E3mNcvkwSpW9KKutFUuHtEVws2lrq4YH2a3QFKTQfdE=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8/go.mod h1:jcJ2a9Sz4MkWqxYi9fufYzURI7eIj7zJchzIlOG0w3Y=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63 h1:MOOzkoYNzflkuKOE+GGFKfd6IbrRQ1JFBiNJq83P1IY=
 github.com/DataDog/dd-trace-go/v2/contrib/google.golang.org/grpc v0.0.0-20231220194510-f0d293776f63/go.mod h1:yHv1unjMvzesvzHHBKxDl1SoSxMwH/zT2ISRVv7qKpc=
 github.com/DataDog/dd-trace-go/v2/contrib/julienschmidt/httprouter v0.0.0-20231220194510-f0d293776f63 h1:yDNaJPUxYyeYwjgkjbh3gAdq50DIaerl8v4F7MY3VZo=
@@ -47,6 +47,7 @@ github.com/golang/protobuf v1.5.3 h1:KhyjKVUg7Usr/dYsdSqoFveMYd5ko72D+zANwlG1mmg
 github.com/golang/protobuf v1.5.3/go.mod h1:XVQd3VNwM+JqD3oG2Ue2ip4fOMUkwXdXDdiuN0vRsmY=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
+github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/gofuzz v1.2.0 h1:xRy4A+RhZaiKjJ1bPfwQ8sedCA+YS2YcCHW6ec7JMi0=
 github.com/google/gofuzz v1.2.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b h1:h9U78+dx9a4BKdQkBBos92HalKpaGKHrp+3Uo6yTodo=
@@ -62,7 +63,6 @@ github.com/julienschmidt/httprouter v1.3.0 h1:U0609e9tgbseu3rBINet9P48AI/D3oJs4d
 github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8IZAc4RVcycCCAKdM=
 github.com/kr/pretty v0.3.0 h1:WgNl7dwNpEZ6jJ9k1snq4pZsg7DOEN8hP9Xw0Tsjwk0=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
-github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/outcaste-io/ristretto v0.2.3 h1:AK4zt/fJ76kjlYObOeNwh4T3asEuaCmp26pOvUOL9w0=
 github.com/outcaste-io/ristretto v0.2.3/go.mod h1:W8HywhmtlopSB1jeMg3JtdIhf+DYkLAr0VN/s4+MHac=
 github.com/philhofer/fwd v1.1.2 h1:bnDivRJ1EWPjUIRXV5KfORO897HTbpFAQddBdE8t7Gw=

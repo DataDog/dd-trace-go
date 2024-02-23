@@ -41,6 +41,7 @@ use (
 	./v2/contrib/graphql-go/graphql
 	./v2/contrib/hashicorp/consul
 	./v2/contrib/hashicorp/vault
+	./v2/contrib/jackc/pgx.v5
 	./v2/contrib/jmoiron/sqlx
 	./v2/contrib/julienschmidt/httprouter
 	./v2/contrib/k8s.io/client-go

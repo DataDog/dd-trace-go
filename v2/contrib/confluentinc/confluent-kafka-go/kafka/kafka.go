@@ -311,7 +311,7 @@ func (p *Producer) startSpan(msg *kafka.Message) *tracer.Span {
 	if !math.IsNaN(p.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, p.cfg.analyticsRate))
 	}
-	//if there's a span context in the headers, use that as the parent
+	// if there's a span context in the headers, use that as the parent
 	carrier := NewMessageCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
@@ -353,8 +353,8 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.libraryVersion, msg)
 	err := p.Producer.Produce(msg, deliveryChan)
-	// with no delivery channel, finish immediately
-	if deliveryChan == nil {
+	// with no delivery channel or enqueue error, finish immediately
+	if err != nil || deliveryChan == nil {
 		span.Finish(tracer.WithError(err))
 	}
 

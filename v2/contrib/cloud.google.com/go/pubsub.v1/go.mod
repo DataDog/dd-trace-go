@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	cloud.google.com/go/pubsub v1.33.0
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240125122826-007518dd2ff8
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-20240201104911-c56e9c54ffd8
 	github.com/stretchr/testify v1.8.4
 	google.golang.org/api v0.149.0
 	google.golang.org/grpc v1.60.1
@@ -37,12 +37,10 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/kr/pretty v0.3.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
 	github.com/tinylib/msgp v1.1.9 // indirect
 	go.opencensus.io v0.24.0 // indirect

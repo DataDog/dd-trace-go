@@ -10,6 +10,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -24,7 +26,8 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	noop.Span  // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	noop.Span               // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 	DD         *tracer.Span
 	finished   bool
 	attributes map[string]interface{}
@@ -37,10 +40,14 @@ type span struct {
 func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
 
 func (s *span) SetName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.finished {
 		return
 	}
@@ -70,13 +77,25 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
-	if t := finishCfg.Timestamp(); !t.IsZero() {
-		opts = append(opts, tracer.FinishTime(t))
-	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
 	}
+	// If finishOpts has been appended, the following option will be a no-op.
+	// This is because finishOpts may contain a FinishTime option, which will be
+	// used to set the finish time of the span.
+	if t := finishCfg.Timestamp(); !t.IsZero() {
+		opts = append(opts, finishTime(t))
+	}
 	s.DD.Finish(opts...)
+}
+
+func finishTime(t time.Time) tracer.FinishOption {
+	return func(cfg *tracer.FinishConfig) {
+		if !cfg.FinishTime.IsZero() {
+			return
+		}
+		cfg.FinishTime = t
+	}
 }
 
 // EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
@@ -151,6 +170,8 @@ type statusInfo struct {
 // value before (OK > Error > Unset), the code will not be changed.
 // The code and description are set once when the span is finished.
 func (s *span) SetStatus(code otelcodes.Code, description string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if code >= s.statusInfo.code {
 		s.statusInfo = statusInfo{code, description}
 	}
@@ -169,6 +190,8 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 // The list of reserved tags might be extended in the future.
 // Any other non-reserved tags will be set as provided.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, kv := range kv {
 		if k, v := toReservedAttributes(string(kv.Key), kv.Value); k != "" {
 			s.attributes[k] = v

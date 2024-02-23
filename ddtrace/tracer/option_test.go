@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
@@ -625,7 +625,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.True(t, c.enabled)
+			assert.True(t, c.enabled.current)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -634,7 +634,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.False(t, c.enabled)
+			assert.False(t, c.enabled.current)
 		})
 	})
 
@@ -724,7 +724,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert := assert.New(t)
 			c, err := newConfig()
 			assert.NoError(err)
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(200, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -732,7 +732,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert := assert.New(t)
 			c, err := newConfig()
 			assert.NoError(err)
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -741,7 +741,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert := assert.New(t)
 			c, err := newConfig()
 			assert.NoError(err)
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(0, p.cfg.MaxTagsHeaderLen)
 		})
 
@@ -750,7 +750,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert := assert.New(t)
 			c, err := newConfig()
 			assert.NoError(err)
-			p := c.propagator.(*chainedPropagator).injectors[1].(*propagator)
+			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 	})
@@ -1002,6 +1002,22 @@ func TestServiceName(t *testing.T) {
 		assert.Equal(c.serviceName, "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
 	})
+}
+
+func TestStartWithLink(t *testing.T) {
+	assert := assert.New(t)
+
+	links := []SpanLink{{TraceID: 1, SpanID: 2}, {TraceID: 3, SpanID: 4}}
+	tracer, err := newTracer()
+	assert.NoError(err)
+	defer tracer.Stop()
+
+	span := tracer.StartSpan("test.request", WithSpanLinks(links))
+	assert.Len(span.spanLinks, 2)
+	assert.Equal(span.spanLinks[0].TraceID, uint64(1))
+	assert.Equal(span.spanLinks[0].SpanID, uint64(2))
+	assert.Equal(span.spanLinks[1].TraceID, uint64(3))
+	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
 }
 
 func TestTagSeparators(t *testing.T) {
@@ -1273,7 +1289,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled)
+		assert.False(c.enabled.current)
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1281,7 +1297,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newConfig()
 		assert.NoError(err)
-		assert.False(c.enabled)
+		assert.False(c.enabled.current)
 	})
 
 	t.Run("env-override", func(t *testing.T) {
@@ -1289,7 +1305,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newConfig(WithTraceEnabled(true))
 		assert.NoError(err)
-		assert.True(c.enabled)
+		assert.True(c.enabled.current)
 	})
 }
 
