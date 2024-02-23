@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -296,7 +295,7 @@ func TestOpenOptions(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			if ContainsAllStats(calls) {
+			if containsAllStats(calls) {
 				break
 			}
 			t.Fatalf("Some stats missing")
@@ -304,8 +303,24 @@ func TestOpenOptions(t *testing.T) {
 	})
 }
 
-func ContainsAllStats(calls []string) bool {
-	return (slices.Contains(calls, MaxOpenConnections) && slices.Contains(calls, OpenConnections) && slices.Contains(calls, InUse) && slices.Contains(calls, Idle) && slices.Contains(calls, WaitCount) && slices.Contains(calls, WaitDuration) && slices.Contains(calls, MaxIdleClosed) && slices.Contains(calls, MaxIdleTimeClosed) && slices.Contains(calls, MaxLifetimeClosed))
+func containsAllStats(calls []string) bool {
+	wantStats := []string{MaxOpenConnections, OpenConnections, InUse, Idle, WaitCount, WaitDuration, MaxIdleClosed, MaxIdleTimeClosed, MaxLifetimeClosed}
+	for _, s := range wantStats {
+		if !contains(calls, s) {
+			return false
+		}
+	}
+	return true
+}
+
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
 }
 
 func TestMySQLUint64(t *testing.T) {
