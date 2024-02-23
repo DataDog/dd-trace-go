@@ -15,6 +15,12 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+type badWriter struct{}
+
+func (bw *badWriter) Write(_ []byte) (n int, err error) {
+	return 0, errors.New("bad writer error")
+}
+
 func TestMetaStructMap_EncodeDecode(t *testing.T) {
 	// Create a sample metaStructMap
 	meta := map[string]any{
@@ -77,28 +83,29 @@ func TestMetaStructMap_EncodeDecode(t *testing.T) {
 					"nested-key": make(chan struct{}),
 				},
 			},
-			encodingError: errors.New("msgp: type \"chan struct {}\" not supported"),
+			encodingError: errors.New("msgp: type \"chan struct {}\" not supported at MetaStruct/key"),
 		},
 		{
 			name: "encoding-error/channel",
 			input: metaStructMap{
 				"key": make(chan struct{}),
 			},
-			encodingError: errors.New("msgp: type \"chan struct {}\" not supported"),
+			encodingError: errors.New("msgp: type \"chan struct {}\" not supported at MetaStruct/key"),
 		},
 		{
 			name: "encoding-error/func",
 			input: metaStructMap{
 				"key": func() {},
 			},
-			encodingError: errors.New("msgp: type \"func()\" not supported"),
+			encodingError: errors.New("msgp: type \"func()\" not supported at MetaStruct/key"),
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name+"/serdes", func(t *testing.T) {
 			// Encode the metaStructMap
 			var buf bytes.Buffer
 			enc := msgp.NewWriter(&buf)
 			err := tc.input.EncodeMsg(enc)
+			require.NoError(t, enc.Flush())
 			if tc.encodingError != nil {
 				require.EqualError(t, err, tc.encodingError.Error())
 				return
@@ -120,6 +127,19 @@ func TestMetaStructMap_EncodeDecode(t *testing.T) {
 
 			// Compare the original and decoded metaStructMap
 			compareMetaStructMaps(t, tc.output, decodedMeta)
+		})
+
+		t.Run(tc.name+"/bad-writer", func(t *testing.T) {
+			// Encode the metaStructMap
+			enc := msgp.NewWriter(&badWriter{})
+			err := tc.input.EncodeMsg(enc)
+
+			if tc.encodingError != nil {
+				require.EqualError(t, err, tc.encodingError.Error())
+				return
+			}
+
+			require.EqualError(t, enc.Flush(), "bad writer error")
 		})
 	}
 }

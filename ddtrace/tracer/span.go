@@ -165,7 +165,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	}
 
 	// Can be sent as messagepack in `meta_struct` instead of `meta`
-	if _, ok := value.(msgp.Marshaler); ok {
+	if value, ok := value.(msgp.Marshaler); ok {
 		s.setMetaStruct(key, value)
 		return
 	}
@@ -188,7 +188,7 @@ func (s *span) SetTag(key string, value interface{}) {
 			}
 			return
 		case reflect.Map:
-			// `meta_struct` does not support slice as a top-level value.
+			// `meta_struct` does not support slice as a top-level value, only maps
 			s.setMetaStruct(key, value)
 			return
 		}
