@@ -50,7 +50,10 @@ func (s *Span) Tag(k string) interface{} {
 	if s == nil {
 		return nil
 	}
-	return s.m[k]
+	if v, ok := s.m[k]; ok {
+		return v
+	}
+	return s.sp.Tag(k)
 }
 
 func (s *Span) Tags() map[string]interface{} {

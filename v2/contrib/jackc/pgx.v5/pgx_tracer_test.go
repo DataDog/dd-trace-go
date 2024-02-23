@@ -226,8 +226,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -299,7 +299,7 @@ func assertCommonTags(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, componentName, s.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "127.0.0.1", s.Tag(ext.NetworkDestinationName))
-	assert.Equal(t, 5432, s.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(5432), s.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "postgres", s.Tag(ext.DBName))
 	assert.Equal(t, "postgres", s.Tag(ext.DBUser))
 }
