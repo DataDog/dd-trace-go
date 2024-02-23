@@ -22,10 +22,6 @@ type metaStructMap map[string]any
 
 // EncodeMsg transforms the map[string]any into a map[string][]byte agent-side (which is parsed back into a map[string]any in the backend)
 func (m *metaStructMap) EncodeMsg(en *msgp.Writer) error {
-	if m == nil {
-		return en.WriteNil()
-	}
-
 	err := en.WriteMapHeader(uint32(len(*m)))
 	if err != nil {
 		return msgp.WrapError(err, "MetaStruct")
@@ -39,9 +35,6 @@ func (m *metaStructMap) EncodeMsg(en *msgp.Writer) error {
 
 		// Wrap the encoded value in a byte array that will not be parsed by the agent
 		msg, err := msgp.AppendIntf(nil, value)
-		if err != nil {
-			return err
-		}
 		if err != nil {
 			return msgp.WrapError(err, "MetaStruct", key)
 		}
@@ -57,12 +50,6 @@ func (m *metaStructMap) EncodeMsg(en *msgp.Writer) error {
 
 // DecodeMsg transforms the map[string][]byte agent-side into a map[string]any where values are sub-messages in messagepack
 func (m *metaStructMap) DecodeMsg(de *msgp.Reader) error {
-	err := de.ReadNil()
-	if err == nil {
-		*m = nil
-		return nil
-	}
-
 	header, err := de.ReadMapHeader()
 	if err != nil {
 		return msgp.WrapError(err, "MetaStruct")
