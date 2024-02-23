@@ -56,7 +56,7 @@ func (mta *mocktracerV2Adapter) FinishedSpans() []Span {
 
 // OpenSpans implements Tracer.
 func (mta *mocktracerV2Adapter) OpenSpans() []Span {
-	spans := mta.tracer.FinishedSpans()
+	spans := mta.tracer.OpenSpans()
 	return convertSpans(spans)
 }
 
