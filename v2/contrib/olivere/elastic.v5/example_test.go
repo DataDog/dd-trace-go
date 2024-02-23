@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/olivere/elastic.v5"
 
-	elastictrace "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic"
+	elastictrace "github.com/DataDog/dd-trace-go/v2/contrib/olivere/elastic.v5"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

@@ -9,13 +9,20 @@ All of these libraries are supported by our [APM product](https://www.datadoghq.
 
 ### Usage
 
-First, find the library which you'd like to integrate with. The naming convention for the integration packages is:
+First, find the library which you'd like to integrate with. The naming convention for the integration packages has two things to take into consideration:
 
-* If the package is from the standard library (eg. `database/sql`), it will be located at the same path.
-* If the package is hosted on GitHub (eg. `github.com/user/repo`) and has version `v2.1.0`, it will be located at the shorthand path `user/repo.v2`.
-* If the package is from anywhere else (eg. `google.golang.org/grpc`) and has no stable version, it can be found under the full import path, followed by the version suffix (in this example `.v0`).
-* All new integrations should be suffixed with `.vN` where `N` is the major version that is being covered. If the integration covers more than one major version, the minimum version supported should be chosen for the suffix. (ex. If the integration covers versions `2.x.x` - `4.x.x`, the suffix will be `.v2`)
-* The package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`
+* Name of the package being instrumented:
+  * If the package is from the standard library (eg. `database/sql`), it will be located at the same path.
+  * If the package is hosted on Github (eg. `github.com/user/repo`), it will be located at the shorthand path `user/repo`.
+  * If the package is from anywhere else (eg. `google.golang.org/grpc`), it can be found under the full import path.
+* Version of the package being instrumented:
+  * If the package is from the standard library (eg. `database/sql`), it won't have a version suffix.
+  * If the package has no major version released, it won't have a version suffix.
+  * If the package has a major version released, and:
+    * The integration works with all versions (including v0), it won't have a version suffix.
+    * The integration works with a specific major version, it will have a version suffix (in this example `.vN`) where N is the major version that is being covered. If the integration covers more than one major version, the minimum version supported should be chosen for the suffix. (ex. If the integration covers versions 2.x.x - 4.x.x, the suffix will be .v2).
+
+Important: the package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`.
 
 Second, there are a few tags that should be found in all integration spans:
 

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka // import "github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka.go.v0"
+package kafka // import "github.com/DataDog/dd-trace-go/v2/contrib/segmentio/kafka-go"
 
 import (
 	"context"
@@ -87,7 +87,7 @@ func (r *Reader) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span
 	span, _ := tracer.StartSpanFromContext(ctx, r.cfg.consumerSpanName, opts...)
 	// reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in reader, %v", err)
+		log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in reader, %v", err)
 	}
 	return span
 }
@@ -141,7 +141,7 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *Writer {
 	if w.Addr.String() != "" {
 		writer.bootstrapServers = w.Addr.String()
 	}
-	log.Debug("contrib/segmentio/kafka.go.v0: Wrapping Writer: %#v", writer.cfg)
+	log.Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.cfg)
 	return writer
 }
 
@@ -172,7 +172,7 @@ func (w *Writer) startSpan(ctx context.Context, msg *kafka.Message) *tracer.Span
 	carrier := messageCarrier{msg}
 	span, _ := tracer.StartSpanFromContext(ctx, w.cfg.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		log.Debug("contrib/segmentio/kafka.go.v0: Failed to inject span context into carrier in writer, %v", err)
+		log.Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in writer, %v", err)
 	}
 	return span
 }
@@ -183,7 +183,7 @@ func finishSpan(span *tracer.Span, partition int, offset int64, err error) {
 	span.Finish(tracer.WithError(err))
 }
 
-// WriteMessages calls kafka.go.v0.Writer.WriteMessages and traces the requests.
+// WriteMessages calls kafka_go.Writer.WriteMessages and traces the requests.
 func (w *Writer) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
 	// treated individually, so we create a span for each one
