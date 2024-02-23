@@ -22,8 +22,6 @@ func withStatsdClient(s globalinternal.StatsdClient) StartOption {
 }
 
 func TestReportRuntimeMetrics(t *testing.T) {
-	var tg testStatsdClient
-	trc, err := newUnstartedTracer(withStatsdClient(&tg))
 	var tg statsdtest.TestStatsdClient
 	trc, err := newUnstartedTracer(withStatsdClient(&tg))
 	defer trc.statsd.Close()
@@ -68,11 +66,9 @@ func TestReportHealthMetrics(t *testing.T) {
 
 func TestTracerMetrics(t *testing.T) {
 	assert := assert.New(t)
-	var tg testStatsdClient
-	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
-	assert.Nil(err)
 	var tg statsdtest.TestStatsdClient
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
