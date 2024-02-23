@@ -72,8 +72,15 @@ func (s *Span) Tags() map[string]interface{} {
 	if s == nil {
 		return make(map[string]interface{})
 	}
-	m := make(map[string]interface{}, len(s.m))
-	for k, v := range s.m {
+	tm := s.sp.AsMap()
+	m := make(map[string]interface{}, len(s.m)+len(tm))
+	extractTags(s.m, m)
+	extractTags(tm, m)
+	return m
+}
+
+func extractTags(src, m map[string]interface{}) {
+	for k, v := range src {
 		switch k {
 		case ext.MapSpanStart:
 			continue
@@ -88,9 +95,11 @@ func (s *Span) Tags() map[string]interface{} {
 		case ext.MapSpanError:
 			continue
 		}
+		if _, ok := m[k]; ok {
+			continue
+		}
 		m[k] = v
 	}
-	return m
 }
 
 func (s *Span) String() string {
