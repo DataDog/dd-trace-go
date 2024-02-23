@@ -7,9 +7,11 @@ package internal // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql
 
 import (
 	"net"
+	"net/url"
 	"strings"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 // ParseDSN parses various supported DSN types into a map of key/value pairs which can be used as valid tags.
@@ -19,20 +21,36 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 	case "mysql":
 		meta, err = parseMySQLDSN(dsn)
 		if err != nil {
+			log.Debug("Error parsing DSN for mysql: %v", err)
 			return
 		}
 	case "postgres", "pgx":
 		meta, err = parsePostgresDSN(dsn)
 		if err != nil {
+			log.Debug("Error parsing DSN for postgres: %v", err)
 			return
 		}
 	case "sqlserver":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
+			log.Debug("Error parsing DSN for sqlserver: %v", err)
 			return
 		}
 	default:
-		// not supported
+		// Try to parse the DSN and see if the scheme contains a known driver name.
+		u, e := url.Parse(dsn)
+		if e != nil {
+			// dsn is not a valid URL, so just ignore
+			log.Debug("Error parsing driver name from DSN: %v", e)
+			return
+		}
+		if driverName != u.Scheme {
+			// In some cases the driver is registered under a non-official name.
+			// For example, "Test" may be the registered name with a DSN of "postgres://postgres:postgres@127.0.0.1:5432/fakepreparedb"
+			// for the purposes of testing/mocking.
+			// In these cases, we try to parse the DSN based upon the DSN itself, instead of the registered driver name
+			return ParseDSN(u.Scheme, dsn)
+		}
 	}
 	return reduceKeys(meta), nil
 }
