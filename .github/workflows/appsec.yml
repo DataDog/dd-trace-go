@@ -88,99 +88,99 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
-#  macos:
-#    name: macos ${{ toJSON(matrix) }}
-#    runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
-#    needs: go-mod-caching
-#    strategy:
-#      matrix:
-#        runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
-#        go-version: [ "1.21", "1.20", "1.19" ]
-#      fail-fast: true # saving some CI time - macos runners too long to get
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - name: Restore Go modules cache
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: ${{ needs.go-mod-caching.outputs.path }}
-#          key: ${{ needs.go-mod-caching.outputs.key }}
-#          restore-keys: go-pkg-mod-
-#          enableCrossOsArchive: true
-#          fail-on-cache-miss: true
-#
-#      - uses: actions/setup-go@v5
-#        with:
-#          go-version: ${{ matrix.go-version }}
-#          cache: false # we manage the caching ourselves
-#
-#      # go test is being manually called multiple times here for the sake of reusing the runner.
-#      # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
-#      # reruns under different settings.
-#      - name: go test
-#        shell: bash
-#        env:
-#          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-#        run: |
-#          set -euxo pipefail
-#          cgocheck="GOEXPERIMENT=cgocheck2"
-#          if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
-#            cgocheck="GODEBUG=cgocheck=2"
-#          fi
-#          for cgo in "0" "1"; do
-#            for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-#                for cgocheck_env in "" "$cgocheck"; do
-#                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
-#                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
-#                    exit 1
-#                  fi
-#                done
-#            done
-#          done
-#
-#  # Tests cases were appsec end up being disabled at compilation time
-#  disabled:
-#    name: disabled ${{ toJSON(matrix) }}
-#    needs: go-mod-caching
-#    runs-on: ${{ matrix.runs-on }}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - name: Restore Go modules cache
-#        uses: actions/cache/restore@v4
-#        with:
-#          path: ${{ needs.go-mod-caching.outputs.path }}
-#          key: ${{ needs.go-mod-caching.outputs.key }}
-#          restore-keys: go-pkg-mod-
-#          enableCrossOsArchive: true
-#          fail-on-cache-miss: true
-#
-#      - uses: actions/setup-go@v5
-#        with:
-#          go-version: stable
-#          cache: false # we manage the caching ourselves
-#
-#      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
-#        if: runner.os == 'Windows'
-#      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-#        if: runner.os != 'Windows'
-#
-#      - name: go test
-#        shell: bash
-#        run: |
-#          set -euxo pipefail
-#          for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-#            for go_tags in "" "-tags datadog.no_waf"; do
-#              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
-#                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
-#                exit 1
-#              fi
-#            done
-#          done
+  macos:
+    name: macos ${{ toJSON(matrix) }}
+    runs-on: macos-11 # oldest macos runner available - the full macOS matrix is in go-libddwaf
+    needs: go-mod-caching
+    strategy:
+      matrix:
+        runs-on: [ macos-11, macos-14 ] # oldest and newest macos runners available - macos-14 mainly is here to cover the fact it is an ARM machine
+        go-version: [ "1.21", "1.20", "1.19" ]
+      fail-fast: true # saving some CI time - macos runners too long to get
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false # we manage the caching ourselves
+
+      # go test is being manually called multiple times here for the sake of reusing the runner.
+      # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
+      # reruns under different settings.
+      - name: go test
+        shell: bash
+        env:
+          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        run: |
+          set -euxo pipefail
+          cgocheck="GOEXPERIMENT=cgocheck2"
+          if [[ "$(go version)" =~ (go1.20)|(go1.19) ]]; then
+            cgocheck="GODEBUG=cgocheck=2"
+          fi
+          for cgo in "0" "1"; do
+            for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+                for cgocheck_env in "" "$cgocheck"; do
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
+                    exit 1
+                  fi
+                done
+            done
+          done
+
+  # Tests cases were appsec end up being disabled at compilation time
+  disabled:
+    name: disabled ${{ toJSON(matrix) }}
+    needs: go-mod-caching
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Go modules cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ needs.go-mod-caching.outputs.path }}
+          key: ${{ needs.go-mod-caching.outputs.key }}
+          restore-keys: go-pkg-mod-
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false # we manage the caching ourselves
+
+      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os == 'Windows'
+      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+        if: runner.os != 'Windows'
+
+      - name: go test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
+            for go_tags in "" "-tags datadog.no_waf"; do
+              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
+                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
+                exit 1
+              fi
+            done
+          done
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -240,8 +240,8 @@ jobs:
               env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo enabled + appsec disabled
               env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo enabled + appsec enabled
           EOF
-#
-#  test-app-smoke-tests:
-#    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
-#    with:
-#      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  test-app-smoke-tests:
+    uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
+    with:
+      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
