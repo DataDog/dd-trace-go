@@ -229,18 +229,16 @@ jobs:
           cat <<EOF | docker run -i --platform=${{ matrix.platform }} -v "$PWD:$PWD" -w "$PWD" -v "$GOMODCACHE:$GOMODCACHE" \
             -eGOMODCACHE -eDD_APPSEC_WAF_TIMEOUT golang:${{ matrix.go-version }}-${{ matrix.distribution }}
               set -euxo pipefail
-              if [[ ${{ matrix.distribution }} == alpine ]]; then
+              if ${{ matrix.distribution == 'alpine' }}; then
                 apk add gcc musl-dev libc6-compat
               fi
               go env
-              for appsec_enabled_env in "UNDEF=1 DD_APPSEC_ENABLED=true DD_APPSEC_ENABLED=false"; do
-                for cgo in "0 1"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env go test -v $TESTS; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env go test -v $TESTS"
-                    exit 1
-                  fi
-                done
-              done
+              env CGO_ENABLED=0 go test -v $TESTS                         # cgo disabled + undefined appsec state
+              env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo disabled + appsec disabled
+              env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo disabled + appsec enabled
+              env CGO_ENABLED=1 go test -v $TESTS                         # cgo enabled + undefined appsec state
+              env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS # cgo enabled + appsec disabled
+              env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS  # cgo enabled + appsec enabled
           EOF
 #
 #  test-app-smoke-tests:
