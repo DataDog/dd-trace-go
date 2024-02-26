@@ -193,7 +193,7 @@ jobs:
         distribution: [ bookworm, bullseye, buster, alpine ]
         platform: [ linux/amd64 ] # qemu-arm64 is too slow to run on all the matrix dimensions - we test include it for a specific and good-enough set of dimensions above
         exclude:
-          - go-version: "1.22"
+          - go-version: "1.21"
             distribution: buster
         include:
           - platform: linux/arm64
