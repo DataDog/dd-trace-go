@@ -135,7 +135,8 @@ func (tq *Query) Iter() *Iter {
 	if tIter.Host() != nil {
 		tIter.span.SetMeta(ext.TargetHost, tIter.Iter.Host().HostID())
 		tIter.span.SetMeta(ext.TargetPort, strconv.Itoa(tIter.Iter.Host().Port()))
-		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().DataCenter())
+		tIter.span.SetMeta(ext.CassandraCluster, tIter.Iter.Host().ClusterName())
+		tIter.span.SetMeta(ext.CassandraDatacenter, tIter.Iter.Host().DataCenter())
 	}
 	return tIter
 }

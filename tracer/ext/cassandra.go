@@ -5,6 +5,7 @@ const (
 	CassandraQuery            = "cassandra.query"
 	CassandraConsistencyLevel = "cassandra.consistency_level"
 	CassandraCluster          = "cassandra.cluster"
+	CassandraDatacenter       = "cassandra.datacenter"
 	CassandraRowCount         = "cassandra.row_count"
 	CassandraKeyspace         = "cassandra.keyspace"
 	CassandraPaginated        = "cassandra.paginated"
