@@ -96,7 +96,7 @@ func ClearHeaderTags() {
 	cfg.headersAsTags.Clear()
 }
 
-// SetStatsCarrier sets the provided StatsCarrier as globalconfig's "sc"
+// SetStatsCarrier sets the provided StatsCarrier onto the globalconfig
 func SetStatsCarrier(sc *internal.StatsCarrier) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
