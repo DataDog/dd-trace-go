@@ -95,7 +95,7 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 // a bpf program to this function and extracts the raw bytes accordingly.
 //
 //go:noinline
-func passFullConfiguration(path, config string) {}
+func passFullConfiguration(_, _ string) {}
 
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
