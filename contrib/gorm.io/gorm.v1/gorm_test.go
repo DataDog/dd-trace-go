@@ -50,6 +50,19 @@ func TestMain(m *testing.M) {
 	os.Exit(testResult)
 }
 
+func TestOpenDoesNotPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			assert.Fail(t, "Opening connection panicked", r)
+		}
+	}()
+	// None of the following calls should end up in a panic.
+	_, _ = gorm.Open(nil, &gorm.Config{})
+	_, _ = gorm.Open(nil, nil)
+	_, _ = Open(nil, &gorm.Config{})
+	_, _ = Open(nil, nil)
+}
+
 func TestMySQL(t *testing.T) {
 	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
 	sqlDb, err := sqltrace.Open("mysql", mysqlConnString)
