@@ -116,4 +116,5 @@ func TestChildWrapperSpan(t *testing.T) {
 	assert.Equal(childSpan.GetMeta(ext.TargetPort), "9042")
 	assert.Equal(childSpan.GetMeta(ext.TargetHost), "127.0.0.1")
 	assert.Equal(childSpan.GetMeta(ext.CassandraCluster), "datacenter1")
+	assert.Equal(childSpan.GetMeta(ext.CassandraDatacenter), "datacenter1")
 }
